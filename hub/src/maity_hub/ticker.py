@@ -79,6 +79,8 @@ class Member:
     role_base: str  # the built-in role whose scopes `role` has (§2.3)
     kind: str  # human, agent
     areas: tuple[str, ...]
+    # An expert's declared sources (§2.3 "The expert", §17.3); empty for everyone else.
+    expert_sources: tuple[str, ...] = ()
 
 
 def members(conn: Connection, project_id: str) -> list[Member]:
@@ -96,6 +98,7 @@ def members(conn: Connection, project_id: str) -> list[Member]:
             r.role_base,
             "agent" if r.agent_id else "human",
             tuple(r.areas or ()),
+            tuple(r.expert_sources or ()) if r.role == "expert" else (),
         )
         for r in rows
     ]
@@ -851,6 +854,15 @@ def write_merge(
         for m in people:
             if m.areas:
                 audience.add(m.principal, "area_owner:*")
+    for m in people:  # an expert whose declared source changed (§2.3 "The expert", §17.3)
+        if not m.expert_sources:
+            continue
+        if merge.paths_truncated:
+            audience.add(m.principal, "expert_source:*")
+            continue
+        for source in m.expert_sources:
+            if any(contains(source, path) for path in merge.paths):
+                audience.add(m.principal, f"expert_source:{source}")
     cards = linked_cards(conn, project.id, merge.number, merge.head)
     for card in cards:
         holder = _principal_of(conn, card.claim_holder)

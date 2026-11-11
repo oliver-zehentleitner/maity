@@ -142,7 +142,7 @@ segment of a join-host path (above), as `…`. The server's default access log i
   request sends `Accept-Encoding: gzip` is answered gzipped when its body
   is 1024 bytes or more, with `Content-Encoding: gzip` and `Accept-Encoding`
   in `Vary`. Never compressed: any other method, anything under
-  `/api/v1/auth/`, the join and invitation documents a token opens
+  `/api/v1/auth/` and `/api/v1/bootstrap` (the session's answer, which both carry, holds the CSRF token), the join and invitation documents a token opens
   (`/api/v1/join/{token}`, `/api/v1/invitations/{token}`), an attachment's bytes
   (`…/attachments/{attachment_id}/content`), `text/event-stream`, the
   image and archive types, and every address outside those two prefixes
@@ -193,7 +193,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
-| 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a second-factor or recovery code that is wrong or already used (§2.8) |
+| 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a password reset token that is invalid, expired, used, of a changed password or address, or of an account disabled since (§2.10); a second-factor or recovery code that is wrong or already used (§2.8) |
 | 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 408 | `request_timeout` | the body did not arrive within the time §1.7 gives it from the hub starting to read it (120 seconds; 30 minutes for a replacement's sealed transcript); the hub closes the connection (`Connection: close`) |
@@ -388,6 +388,7 @@ the hub records it on the session.
 | `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters, a stored vector behind a handle when the inline form would not fit (§18.2) |
 | `POST /me/notifications/read` | 200 `ids` (§18.3) |
 | Immediate notification mails | 10 per hour per human, the rest held for one mail at the hour's end (§18.5) |
+| `POST /me/presence` | 10 per minute per session, then `rate_limited` with `Retry-After`; `present_until` written at most once a minute per session (§18.4) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
 | Admin test sends | 5 per hour per instance admin (§16.3) |
 | Address verification mails | 3 per hour and 10 per day per human (§18.4) |
@@ -509,7 +510,8 @@ has no verified address logs a warning at start. The instance admin's
 verified address can be replaced but not removed (§18.4).
 Signing in without a password — a device code, a link by mail — and the
 list of a human's own sessions are §2.6; the second factor that an
-enrolled human gives after any of them is §2.8.
+enrolled human gives after any of them is §2.8; a forgotten password
+is §2.10.
 
 ### 2.2 Agent: the credential
 
@@ -667,7 +669,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `red-team` | attacks the project to find its weaknesses and files each as a bug card with its severity; answers the requests addressed to `role:red-team` (§7). It attacks only the targets the project names for it — its own test or staging instance — never production or anyone else's systems, and its details stay with the security teams until it is fixed (below) | the tester's |
 | `blue-team` | defends: hardens the project, fixes the red team's findings, watches for the next attack; answers the requests addressed to `role:blue-team` | the coder's |
 | `purple-team` | joins both: checks that a fix closes the attack it was for and moves the finding to `done`, and carries what the red team learns into the blue team's work; answers the requests addressed to `role:purple-team` | the reviewer's |
-| `expert` | learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources is to wake it (§17.3, not built; below) | `project:read`, `events:post` |
+| `expert` | learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources (`expert_sources`, §6.2) wakes it (§17.3; below) | `project:read`, `events:post` |
 
 **The security teams.** `red-team`, `blue-team` and `purple-team` are
 built in so that a project can staff a security exercise without
@@ -694,10 +696,9 @@ role to `<name>-custom`, and an admin moves members to the built-in one.
 **The expert.** `expert` is built in for an agent that serves the
 project only by answering (the maintainer's decision of 2026-11-08,
 `context/trust.md`). What it answers about and which sources it has
-learned are to be two fields of its membership, `expert_for` and
-`expert_sources`, and a merge that changes a declared source is to wake
-it through the ticker (not built: the agreed design, specified in §6.2
-and §17.3 with the pull request that builds it). It holds neither `tasks:write` nor
+learned are two fields of its membership, `expert_for` and
+`expert_sources` (§6.2), and a merge that changes a declared source
+wakes it through the ticker (`expert_source:<path>`, §17.3). It holds neither `tasks:write` nor
 `requests:ask`: it creates, claims and reports no card and files no
 request, and it posts no note unless its trust is `guest`, which comments
 with notes whatever its role (§2.3 "Guest"). It answers the `decision`, `contract` and `info`
@@ -1161,7 +1162,8 @@ call after the migration is `invalid`. `admin` maps to `coder`, not to
 ᵃ: an agent with trust `admin` holds `members:admin` only for
 `PATCH …/members/{id}`, and only on agent memberships whose trust is
 `member` or `guest` and that are not its own: `reports_to`, `areas`,
-`briefing`, `paused`, `availability_policy` (§6.12), `trust` between
+`briefing`, `paused`, `availability_policy` (§6.12), an expert's
+`expert_for` and `expert_sources` (§6.2), `trust` between
 `member` and `guest`, and `role` among `coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer`, `red-team`, `blue-team`, `purple-team`, `expert` and the project's own roles — never `agent` (§6.18), which only the agents'
 owner sets. It
@@ -1313,6 +1315,14 @@ limit the hub states, not one it closes. What it does instead:
   off in the account (`email.sign_in_link`, §2.6.3). A human whose
   agents can read their mail should switch it off; the dashboard says
   so beside the switch.
+- **A password reset by mail is the stronger way in, and has its own
+  switch.** Without TOTP, whoever reads the mailbox can set a new
+  password (§2.10) and then sign in by password, in good standing, and
+  change the address with it (below); under `second_factor: email` the
+  mail factor that follows is the same mailbox. The reset ends every
+  session of the human, so it does not pass unnoticed, and the human
+  turns it off in the account (`email.password_reset`, §2.10) or enrols
+  TOTP, after which a reset also needs its code.
 - **Every mail sign-in is shown where the agent cannot hide it.** Every
   other session of the human shows it in the dashboard at once, with
   the session and a one-click "End this session" (§2.6.5) — not only by
@@ -1329,7 +1339,8 @@ limit the hub states, not one it closes. What it does instead:
   younger than 1 hour it ends no older session at all. So a session
   obtained through the mailbox cannot end the sessions that show its
   alert, and a human who signs in again with the password can always
-  end it.
+  end it, except after a reset by mail alone has changed the password
+  (§2.10).
 - **The device code needs a human at a signed-in screen.** Its approval
   uses number matching and shows what the hub itself observed
   (§2.6.2); an agent without a human session cannot approve one.
@@ -1458,7 +1469,9 @@ stuck holder becomes reassignable without anyone guessing. There is no
 heartbeat endpoint: a holder that listens while still at work is warned
 before its leases run out (`claim_lease_expiring`) and renews them on
 purpose with `POST …/claims/renew` (§6.5; not built yet,
-tsk-p55zyn4pz0wd). A runner's calls update the runner's own
+tsk-p55zyn4pz0wd). `POST /me/presence` (§18.4) is no heartbeat of this
+kind: a dashboard tab's signal for the mail hold of §18.5, it writes no
+`last_seen_at`, renews no lease and shows nobody as online. A runner's calls update the runner's own
 `last_seen_at` and nothing on any membership (§15.3).
 
 ### 2.5 Forwarded headers and plain HTTP
@@ -1523,7 +1536,7 @@ may show; it says nothing about any account:
 
 ```json
 { "password": true, "device_code": true, "email_link": true,
-  "registration": false, "terms": null }
+  "password_reset": true, "registration": false, "terms": null }
 ```
 
 `registration` and `terms` are §2.7.
@@ -1534,8 +1547,10 @@ it **and** the mail settings are complete and enabled (`complete` and
 `enabled`, §16.2) **and** the second factor is not `email` (§2.8.8:
 there the mailbox is the second factor, so it cannot be the first as
 well) — otherwise the login page does not show "Email me a sign-in
-link". Whether a given human has a verified address is never part of
-the answer.
+link". `password_reset` is `true` when the instance setting allows it
+**and** the mail settings are complete and enabled (§2.10); it is
+offered under `second_factor: email` too. Whether a given human has a
+verified address is never part of the answer.
 
 #### 2.6.2 Device code ("Sign in another device")
 
@@ -1811,16 +1826,19 @@ HMAC with the signing key, never in clear.
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
 | `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 60 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
 | `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
+| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
+| `POST /auth/password-reset/check`, `…/complete` | 10 per minute per source address, shared with the login limit of §2.1; a wrong TOTP or recovery code counts as §2.8.6 counts |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
 
 Over a limit: `rate_limited` with `Retry-After` (§1.3). For
-`POST /auth/email-link` the per-address limit and the instance cap are
+`POST /auth/email-link` and `POST /auth/password-reset` the per-address limit and the instance cap are
 applied as `202` with nothing sent, like an unknown address — a `429`
 there would tell an address that is being used from one that is not;
 only the per-source-address limit answers `429`. A caller who spends
-the instance cap delays nobody's alert: it stops sign-in mails for the
-rest of the hour, nothing else, and the device code and the password
+the instance cap delays nobody's alert: it stops sign-in mails, or
+for `POST /auth/password-reset` reset mails, for the rest of the hour,
+nothing else, and the device code and the password
 are unaffected.
 
 **No lock-out through the limits.** The per-address limit counts per
@@ -1831,7 +1849,9 @@ address they control) but cannot spend the human's per-address budget
 nor void the human's link (§2.6.3). Whoever controls enough source
 addresses can spend the instance cap and stop sign-in mails for
 everyone until the hour ends — the same accepted kind of denial as the
-device-code breaker above, limited to the mail link. The device code, the legitimate path
+device-code breaker above, limited to the mail link. Reset mails (§2.10)
+have a cap of their own, so spending it stops reset mails and nothing
+else: neither the sign-in link nor the mail factor's mails (§2.8.8). The device code, the legitimate path
 for a human who is signed in anywhere, has no per-address limit at all
 and is never affected by mail limits; the password is not either.
 
@@ -1877,7 +1897,8 @@ and is never affected by mail limits; the password is not either.
   made stay.
 - **Ended with the password.** `POST /auth/password` ends every other
   session of the human, however it was made, and voids their open codes
-  and links.
+  and links. A password reset by mail (§2.10) does the same to every
+  session, the one it was asked from included.
 
 **The session list.** Profile → Sessions:
 
@@ -1949,8 +1970,8 @@ session that approved a device code. `ip` is the one of the latest
 call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
-`password_change`, `second_factor_disabled`, `second_factor_reset`,
-§2.8) are set on an ended session; an ended session shows no `ip`, and
+`password_change`, `password_reset` (§2.10), `second_factor_disabled`,
+`second_factor_reset`, §2.8) are set on an ended session; an ended session shows no `ip`, and
 the hub keeps none for it — only the keyed fingerprint of §2.1, never
 the address itself. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
@@ -2073,13 +2094,16 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
 |---|---|---|---|
 | `MAITY_SIGN_IN_DEVICE_CODE` | `device_code` | `true` | device codes (§2.6.2) |
 | `MAITY_SIGN_IN_EMAIL_LINK` | `email_link` | `true` | sign-in links and codes by mail (§2.6.3); offered only while the mail settings are complete and enabled, and sent only to a verified address whose human has not switched it off |
+| `MAITY_SIGN_IN_PASSWORD_RESET` | `password_reset` | `true` | a forgotten password reset by mail (§2.10); offered only while the mail settings are complete and enabled, and sent only to a verified address whose human has not switched it off |
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional`, `required_admins` or `email` (§2.8.5); TOTP is available only with `MAITY_SECRET_KEY` (`missing: ["secret_key"]`) |
 
 ```json
 { "password": { "value": true, "source": "fixed" },
   "device_code": { "value": true, "source": "default" },
   "email_link": { "value": true, "source": "admin" },
-  "email_link_available": false, "missing": ["mail"] }
+  "password_reset": { "value": true, "source": "default" },
+  "email_link_available": false, "missing": ["mail"],
+  "password_reset_available": false, "password_reset_missing": ["mail"] }
 ```
 
 `password` cannot be turned off (a `PATCH` of it is `invalid` with
@@ -2087,7 +2111,9 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
 right now, `missing` why not: `switched_off` (the setting is `false`),
 `mail` (the mail settings are not complete and enabled),
 `second_factor_email` (the second factor is `email`, §2.8.8), and
-`not_implemented` while the hub does not serve the sign-in link yet. A change is not an
+`not_implemented` while the hub does not serve the sign-in link yet.
+`password_reset_available` and `password_reset_missing` say the same of
+the reset (§2.10), with `switched_off`, `mail` and `not_implemented`. A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
@@ -2096,7 +2122,8 @@ event; the accounts design's instance audit log records it (pending).
   the password. After `details.reason: email_link` it says that the
   password is paused here for a while and offers "Email me a sign-in
   link" with the address filled in; after `password_paused` it says when
-  to try again (§2.1). Below the form "Have a code?"
+  to try again (§2.1). "Forgot password?" under the password field when
+  `password_reset` is on (§2.10), also after either answer. Below the form "Have a code?"
   when `device_code` is on, and "Email me a sign-in link" when
   `email_link` is on (§2.6.1). After the mail request: "If this address
   belongs to an account, a link is on its way", with a field for the
@@ -2119,7 +2146,8 @@ event; the accounts design's instance audit log records it (pending).
   with "This was me" only where that session may confirm it.
 - **Notification settings** (#160, §18.8) gain the `security` mail switch
   and "Allow sign-in links by mail" (`email.sign_in_link`), with the
-  mailbox warning of §2.6.3.
+  mailbox warning of §2.6.3, and "Allow password reset by mail"
+  (`email.password_reset`), with the warning of §2.10.
 - **Changing the address** asks for the password in the same form; for
   a human without one it says the change waits for approval from a
   session at least 24 hours old, and such sessions show the held change
@@ -2402,7 +2430,8 @@ own pending status.
   §2.6.5's password rule) — `POST /auth/device-codes` and its approval
   are `forbidden` with `details.reason: account_pending`.
 - **What it may do.** `GET /me` answers `member` with `account_status:
-  "pending"` and `projects: []`; `GET /auth/session`; `POST
+  "pending"` and `projects: []`; `GET /auth/session`; `GET /bootstrap`
+  (§5.4), whose parts answer as these routes do; `POST
   /auth/logout`; its own sessions (`GET /auth/sessions`, `DELETE
   /auth/sessions/{id}`, `POST /auth/sessions/end-others`, under the
   rules §2.6.5 sets for sessions not in good standing); `POST
@@ -2580,6 +2609,7 @@ included:
   (with `retry_after`) or `unavailable` (§2.8.8) and, while the address
   is verified, `address_hint` (§2.8.7), and no member — the verify carries the CSRF token as
   every cookie call),
+  `GET /bootstrap` (§5.4, its other parts carrying their refusals),
   `POST /auth/second-factor/verify`, under `via: email` `POST
   /auth/second-factor/email` (§2.8.8), and `POST /auth/logout`. Every other
   call is `forbidden` with `details.reason: second_factor_required`,
@@ -2602,7 +2632,9 @@ included:
   the mode (§18.4): someone held the
   password, the mailbox or a device code, but not the app. At step-up
   (§2.8.4) the tenth wrong code in the window of §2.8.6, from whichever
-  session, writes it too, with `method: step_up`.
+  session, writes it too, with `method: step_up`, and the fifth and every
+  further wrong code at password resets in a day writes it with `method:
+  password_reset` (§2.10).
 - **What the second-factor session carries.** The first factor's
   `method`, its `approved_by` (the device-code session that approved
   it, with that session's own lineage for "End this session", §2.6.5),
@@ -2727,13 +2759,15 @@ environment winning as there:
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional`, `required_admins` or `email` |
 
 - **`off`.** The second factor is out of the way entirely: no sign-in
-  step, no step-up (§2.8.4), no enrolment session, and the factor's own
+  step, no step-up (§2.8.4; a password reset still asks an enrolled
+  human for the TOTP code, §2.10), no enrolment session, and the factor's own
   calls answer `forbidden` with `details.reason: method_disabled` —
   `POST /auth/second-factor/verify` included, which nothing then needs.
   Second-factor and enrolment sessions open at the switch end at their
   next call (`ended_by: second_factor_disabled`; the first factor is done again, and now gives a full
   session). Existing enrolments stay stored and apply again when the
-  setting returns; each enrolled human gets a `second_factor_changed`
+  setting returns (meanwhile only a password reset asks for them,
+  §2.10); each enrolled human gets a `second_factor_changed`
   `{change: instance_off}` record and security mail, so the switch
   cannot pass unnoticed. Sessions made while it was `off` stay when it
   returns, listed with `second_factor: false` and without the good
@@ -2745,7 +2779,8 @@ environment winning as there:
   ends in an **enrolment session**: like a second-factor session
   (§2.8.2) it reaches only `GET /auth/session` (`{second_factor:
   "enrolment_required", session_id, csrf_token, expires_at}`, no
-  member), `POST /auth/reauthenticate`, the enrolment calls of §2.8.1
+  member), `GET /bootstrap` (§5.4, as above), `POST
+  /auth/reauthenticate`, the enrolment calls of §2.8.1
   and `POST /auth/logout`, every other call `forbidden` with
   `details.reason: second_factor_enrolment_required`; the confirm completes the sign-in
   as the verify does. Full sessions such a human already holds when
@@ -2773,6 +2808,7 @@ environment winning as there:
 |---|---|
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
+| Codes at a password reset (§2.10) | 5 wrong per human in the 24 hours before each one, across all reset links; the fifth and every further one in that window voids every open reset link of the human and writes `second_factor_failed` (`method: password_reset`), the count never restarts and a right code is never refused for it; every one also counts in the per-human limit above |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -2782,7 +2818,8 @@ first factor can keep the human's sign-ins at the second step for 15
 minutes at a time. It is accepted, as the device-code breaker in §2.6.4
 is: a limit per source address alone would let a distributed guess at
 six digits run, and the attacker it slows already holds the password or
-the mailbox, which the alerts of §2.8.2 report. The same holds for the
+the mailbox, which the alerts of §2.8.2 report (at a password reset, the
+one of §2.10 after five wrong codes in a day). The same holds for the
 mail factor's hourly limit (§2.8.8): whoever holds the password can use
 up the human's ten mails and keep a human without TOTP out for an hour;
 every one of those mails tells the human that someone has the password.
@@ -2840,7 +2877,10 @@ enrolled TOTP. The maintainer's five rules of 2026-10-31:
    `GET /admin/settings/sign-in` names `second_factor_email` in
    `missing` (§2.6.6), and `POST /auth/email-link` answers its `202` and
    sends nothing — the same mailbox twice would be one factor. The
-   password and the device code stay as first factors.
+   password and the device code stay as first factors. A password reset
+   by mail stays on (§2.10, the maintainer's decision of 2026-11-11): for
+   a human without TOTP it is the same mailbox twice, which the hub says
+   to the human, pushing toward an authenticator app.
 4. **Step-up by mail.** A human without TOTP proves the factor before a
    sensitive call (§2.8.4) with a six-digit code by mail: `POST
    /auth/second-factor/email` from a full session sends it (a code
@@ -3018,7 +3058,8 @@ read mailbox alone can delete an account:
    to confirm (§18.6, purpose `account_deletion`, valid **24 hours**,
    single use, bound to this request) and a link to the export. Nothing
    else changes yet; signing in still works. `DELETE /me/deletion`, a
-   newer `POST`, `POST /auth/password` (§2.6.5) and a change or removal
+   newer `POST`, `POST /auth/password` (§2.6.5), a password reset (§2.10)
+   and a change or removal
    of the verified address (§18.4) each withdraw a pending request.
 2. Following the link shows a page that asks once more ("Delete my
    account"); its `POST` deletes the account in one transaction. A
@@ -3082,6 +3123,228 @@ What deletion does:
 The operator is told nothing beyond a counter in the instance
 statistics (§16.6). An instance admin cannot delete an account through
 this route for someone else; that remains §16.1.
+
+### 2.10 Human: a forgotten password
+
+**Pending.** Nothing in this section is served yet: the three routes,
+the page, `email.password_reset`, the instance's `password_reset`, the
+budget `password_reset_max_per_hour` with its environment variable and
+counters, and the password generation come with tsk-tadt2vw7589n (hub)
+and tsk-yksxdpd2pk0m (web), and so do the fields that announce them:
+`password_reset` in `GET /auth/methods` (§2.6.1), and `password_reset`,
+`password_reset_available` and `password_reset_missing` in the sign-in
+settings (§2.6.6). Until then those responses do not carry them, and the
+hub refuses the new settings fields as unknown.
+
+The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
+in seq 109283): a human who forgot the password sets a new one through
+a link to the verified address. `POST /auth/password` (§2.1) needs the
+current password, and the sign-in link (§2.6.3) is no answer where the
+instance has switched it off or made mail the second factor (§2.8.8).
+What the mailbox alone may do depends on the human's second factor:
+
+- **TOTP enrolled:** the reset also needs a TOTP code or a recovery
+  code. The mailbox alone changes nothing, not even the password.
+- **Mail as the second factor** (`second_factor: email`, no TOTP,
+  §2.8.8): the mailbox is enough to set the password, and the next
+  sign-in asks for the mail factor as always. Both reach the same
+  mailbox, so for this human whoever reads it can take the account over
+  (§2.3). The hub says so to the human and pushes toward an
+  authenticator app (below).
+- **No second factor:** the mailbox is enough.
+
+Under the instance's `second_factor: off` (§2.8.5) a human's stored TOTP
+enrolment still counts here: the reset asks for its code, though the
+sign-in does not. The reset is the stronger way in, and the setting
+turns the sign-in step off, not the proof an enrolled human gave; with
+no instance key the reset fails closed (below), and `check` answers
+`factor: totp`. Mail as the second factor does not apply under `off`, so
+a human without TOTP resets with the mailbox alone and `check` answers
+`factor: null`.
+
+**Asking.** On the login page, "Forgot password?" asks for an address:
+
+```
+POST /auth/password-reset   {"address": "maintainer@example.org"}
+```
+
+Unauthenticated. **Always** answers `202 {"expires_in": 1800}`, as
+`POST /auth/email-link` does (§2.6.3): the hub answers before it looks
+the address up, and the lookup and the send run in the background, so
+neither the body, the status nor the timing tells an address that exists
+from one that does not. It sets no cookie: a reset signs nobody in. A
+mail is sent only when, at the time of the lookup:
+
+- the address is a human's verified address (`address_status:
+  verified`, §18.4; compared trimmed and lower-cased);
+- the account is not disabled and has a password. An account without
+  one has nothing to reset; it signs in as §2.6 offers;
+- the human has not switched resets off (`email.password_reset`,
+  below);
+- the instance setting is on and the mail settings are complete and
+  enabled (§2.6.6).
+
+Otherwise the call still answers `202` and sends nothing. A new request
+voids the earlier unused reset link requested from the **same source
+address** for that human; a request from another source address leaves
+it alone, so nobody elsewhere can void the link the human is about to
+use.
+
+**The mail.** Plain text in the human's interface language (§6.2), with
+the rules of §18.5 for headers and content, minus the unsubscribe
+parts. Like the sign-in mail it answers a request, so no mode, digest,
+quiet hours or hourly cap of notifications applies. It has a budget of
+its own, `password_reset_max_per_hour` (§16.2, default 30): over it the
+request answers `202` as always and nothing is sent. It never counts
+against the sign-in budget, from which the mail factor's mails are sent
+(§2.8.8), nor against the security or the notification budget, so
+anonymous reset requests can stop reset mails for the rest of the hour
+and nothing else. Subject `[Maity] Reset your password`. Body:
+
+- the link `<MAITY_PUBLIC_URL>/sign-in/reset#<token>`, valid
+  **30 minutes**. The token stands in the fragment, which no browser
+  sends to a server and no log records, as for the mail factor's link
+  (§2.8.8);
+- when, and from which browser, operating system and address the request
+  came;
+- "If you did not ask for this, ignore this mail; your password stays
+  as it is";
+- for a human whose second factor is the mail: "This mailbox is your
+  second factor too, so whoever reads it can reset your password and
+  sign in. Set up an authenticator app under Security in your account: then a
+  reset also needs its code."
+
+No code to type: the reset signs no browser in, so the link may be
+opened on any device, and nothing guessable needs to exist.
+
+**The page.** `/sign-in/reset` is a dashboard route (§16.11). It reads
+the token from the fragment, removes it from the address bar and asks
+the hub:
+
+```
+POST /auth/password-reset/check      {"token": "…"}
+POST /auth/password-reset/complete   {"token": "…", "new": "…", "code"?: "123456", "recovery_code"?: "…"}
+```
+
+`check` changes nothing and answers `{display_name, handle, factor}`,
+where `factor` is what the reset will ask for or say: `totp` (a code
+field, with "Use a recovery code"), `email` (the human's second factor
+is the mail: the page shows the sentence of the mail above) or `null`.
+The page then reads "Set a new password for <display name> (<handle>)".
+
+`complete` sets the password, in one transaction: the token checked and
+consumed, the TOTP or recovery code checked where `factor` is `totp`,
+the password stored, every session ended. The TOTP step is consumed as
+at the sign-in step, only if it is newer than the last step used (§2.8.2,
+"One winner"), so one code cannot serve both the reset and the sign-in
+after it. It answers 200 `{}` and
+**signs nobody in**: the page links to the login, where the next sign-in
+runs as always, the second factor included (§2.8.2). A password has the
+rules of §2.1 (`invalid`, `details.fields.new: "too_short"`). A recovery
+code used here is consumed and writes `second_factor_changed` with
+`change: recovery_code_used` (§2.8.2).
+
+An invalid, expired or used token, one of a password that has changed
+since, and a wrong TOTP or recovery code are all `code_invalid`, never
+which reason applies. A code is compared, and counted, only under a live
+token: the token is checked first, and a dead one (invalid, expired,
+used, of an older password or address) answers `code_invalid` without
+comparing the code or counting it, so whoever kept an old link cannot
+void the human's new ones. A wrong code under a live token counts as
+every second-factor code of the human does (§2.8.6). The wrong codes at
+resets are also counted per human over the 24 hours before each one,
+across every link: the fifth in that window, and every further one in
+it, voids
+every open reset link of the human and writes the account record
+`second_factor_failed` `{method: password_reset, ip, browser, os}`, a
+`security` notification with its mail sent at once whatever the mode
+(§2.8.2, §18.4): someone held the mailbox but not the app. Spreading the
+guesses over fresh links changes nothing, and the count does not restart
+after an alarm, so whoever holds the mailbox gets at most four
+unreported guesses a day, and the per-human limit of
+§2.8.6 still caps the rate. A token whose account
+was disabled since it was sent is `code_invalid` as well, and changes
+nothing.
+Where a TOTP code would have to be checked without a usable instance
+key (§2.8.1), whatever `second_factor` says, `complete` fails closed with
+the answer of the sign-in step. An enrolled human who lost the app and
+the recovery codes resets through the instance admin's second-factor
+reset or the operator (§2.8.3), under `off` too, where their own
+`DELETE /auth/second-factor` answers `method_disabled`.
+
+**The token** follows §18.6: the base64url of `{human id, purpose:
+"password_reset", nonce, expiry, password generation, epoch}` with an
+HMAC-SHA-256 over it under `MAITY_MAIL_SIGNING_KEY`, so a forged token
+is refused before any lookup. The hub stores `sha256(nonce)` with the
+expiry for single use. The password generation moves with every
+password change, a reset or `POST /auth/password` (§2.1), so every
+older reset link dies with it. The `epoch` is the human's address epoch
+(§18.6), which moves with every change or removal of the verified
+address (§18.4): every open reset link dies with it, so a link to a
+mailbox the human has just left stops working, and does not come back
+if the address returns to it.
+
+**What a reset ends.** Every session of the human, however it was made,
+second-factor and enrolment sessions included (`ended_by:
+password_reset`, §2.6.5), and every open device code, sign-in link and
+code, and reset link of the human, as a password change does (§2.6.5,
+"Ended with the password"). It also voids an unconfirmed new address
+(`pending_address` and its verification link, §18.4) and withdraws a
+pending account deletion (§2.9), as `POST /auth/password` does: whoever
+held the old password may have started either, since the password is
+the proof of both. A held address change (§2.6.3) cannot be open here:
+only an account without a password holds one, and such an account gets
+no reset. Whoever resets either forgot the password or
+fears someone has it, and a session should not outlive the password it
+was made with. Agent credentials stay: they are not derived from the
+password (§2.2), and ending them would stop the team without stopping
+anyone who holds the new password. The security mail says where to end
+them (below). The device cookie stays, since it authenticates nothing
+(§2.6.5).
+
+**Telling the human.** A completed reset writes the account record
+`password_reset` `{ip, browser, os}`, a `security` notification (§18.1),
+and sends its mail at once, whatever `email.kinds.security.mode` says:
+"The password of your Maity account was reset at <time> from <browser>
+on <os>, <ip>. Every session has ended. If this was not you, reset it
+again, set up an authenticator app, and end your agents' access under
+Agents." A request that was never used writes nothing, so anonymous
+requests cannot fill the account record.
+
+**The human's own switch.** `email.password_reset` in the notification
+settings (§18.4), `true` by default, `PATCH /me/notification-settings`
+`{"email": {"password_reset": false}}`. With `false` the hub sends no
+reset mail to that human; `POST /auth/password-reset` still answers
+`202`, and `GET /auth/methods` is unchanged, since it never speaks
+about an account. Turning it off voids an open reset link. The
+dashboard shows the switch beside "Allow sign-in links by mail" with a
+sentence that fits the human's factor (§2.3): without TOTP, "Turn this
+off if an agent or anyone else can read this mailbox: whoever reads it
+can set your password"; with TOTP, "A reset by mail also needs a code
+from your authenticator app". It is a key of
+its own, apart from `email.sign_in_link`, because the reset is the
+stronger way in.
+
+**The instance switch.** `password_reset` in `GET, PATCH
+/admin/settings/sign-in` (§2.6.6), default `true`. Turning it off voids
+every open reset link at once; the three calls then answer `forbidden`
+with `details.reason: method_disabled` (§2.6.5).
+
+**Toward an authenticator app.** A human whose second factor is the mail
+(`via: email` in `GET /auth/second-factor`, §2.8.1) sees a banner on
+every dashboard page, linking to Security in the account menu. While a
+reset by mail could reach them — the instance offers it
+(`password_reset` in `GET /auth/methods`), their own switch is on and
+they have a password — it reads "Your sign-in rests on your mailbox
+alone: whoever reads it can reset your password and sign in. Set up an
+authenticator app"; otherwise "Your second factor is your mailbox. Set
+up an authenticator app: it is the stronger one". "Later" hides it until
+the next sign-in; enrolling TOTP ends it. The reset mail and the reset
+page say the first (above), since there a reset is under way.
+
+**Rules every method keeps.** §2.6.5 applies: transport, `Sec-Fetch-Site`
+(the three calls refuse `cross-site` and `same-site`, `forbidden`), and
+`humans_only` for an agent or runner credential. The limits are §2.6.4's.
 
 ## 3. Join
 
@@ -4796,6 +5059,112 @@ An agent that stops for a provider limit declares `POST /me/limit` rather
 than a self-set `paused`: the limit has an end the hub can schedule
 around.
 
+### 5.4 `GET /bootstrap` — the dashboard's first reads in one call
+
+Scope: anyone, no sign-in, like `GET /maintenance` (§16.12).
+
+The maintainer's decision of 2026-11-11. Before it draws its first view
+the dashboard reads in three waves, each waiting for the one before:
+the maintenance window and the session together, then `GET /me`, then on
+a project view the project, its members and the event head together.
+This route gives the same answers in one round trip: two round trips
+fewer on a project view, one fewer elsewhere; the time that saves is
+expected, not measured. It is a bundle of existing
+answers and nothing more:
+no new field, no new right, no data the single routes do not already
+give the same caller, and every single route stays.
+
+`GET /bootstrap` and `GET /bootstrap?project={owner}/{slug}` answer
+`200` with one key per part:
+
+| Part | The same as | Only with `project` |
+|---|---|---|
+| `maintenance` | `GET /maintenance` (§16.12) | |
+| `session` | `GET /auth/session` (§2.1) | |
+| `me` | `GET /me` (§5.1) | |
+| `head` | `GET /projects/{owner}/{slug}/events?after=latest&wait=0` (§8.3) | yes |
+| `project` | `GET /projects/{owner}/{slug}` (§6.1) | yes |
+| `members` | `GET /projects/{owner}/{slug}/members` (§6.2) | yes |
+
+```json
+{
+  "maintenance": { "status": 200, "body": { "window": null } },
+  "session": { "status": 200, "body": { "member": { "id": "hum-maintainer", "…": "…" }, "csrf_token": "…",
+               "expires_at": "2026-11-25T09:12:00Z", "session_id": "ses-…", "join_url": null } },
+  "me": { "status": 200, "body": { "member": { "…": "…" }, "projects": [ "…" ], "maintenance": null,
+          "server_time": "2026-11-11T09:12:00Z" } },
+  "head": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "project": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "members": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } }
+}
+```
+
+**Each part is `{status, body}`**: the status and the body the single
+route answers the same caller at that moment, errors included in the
+envelope of §1.3. The request has the effects one authenticated call
+has (presence and an agent's lease renewal, §2.4). A part never carries
+the single route's headers: a `503 maintenance` part has its window in
+`details` (`{from, until, text}`), from which a client derives what
+`Retry-After` would have said. The hub reads the parts concurrently:
+`maintenance`, `session`, `me` and `head` together, and `project` and
+`members` together once `head` has been read. The answer then takes
+about as long as its slowest chain, not as the sum of its parts: the
+slowest of `maintenance`, `session` and `me`, or `head` followed by the
+slower of `project` and `members`. `head` comes first so that nothing
+that happens while those two are read is missed: it comes as an event
+past the cursor, as with the dashboard's own reads. The parts are not one
+snapshot, as the single calls are not either. Without `project`, the
+last three keys are absent.
+
+So, for example:
+
+- **Signed out:** `maintenance` is the window; `session` and `me` are
+  their `401`, and with `project` so are the three project parts.
+- **A second-factor or enrolment session** (§2.8.2, §2.8.5):
+  `session` is its `200` with `second_factor`, every other part but
+  `maintenance` its `403` (`second_factor_required`,
+  `second_factor_enrolment_required`).
+- **A pending account** (§2.7.5): `session` and `me` answer as for any
+  pending account, the project parts `403 account_pending`.
+- **A project the caller cannot see**, an unknown one or a `project`
+  that is not `owner/slug`: `404 not_found` in all three project parts.
+- **A running window:** `maintenance`, `session` and `me` answer (all
+  three are open during it, §16.12), the project parts carry
+  `503 maintenance`; the route itself stays open.
+
+**What answers the whole request**, with no parts:
+
+- what the hub answers before any route: a route limit (§1.7,
+  `MAITY_ROUTE_LIMITS` on `GET /api/v1/bootstrap`; the parts do not
+  count against the single routes' limits), a credential in the query
+  (`credential_in_payload`, §2.2);
+- as this route's own rule, the checks of a caller that presents a
+  cookie or a credential: a cookie request whose `Sec-Fetch-Site` is
+  `cross-site` (`csrf_mismatch`, §2.1), a cookie or a bearer credential
+  over plain HTTP (`insecure_transport`, §2.5), a runner credential
+  (`forbidden`, §15.1: the route is neither under `/runner/` nor under
+  `/projects/`). `GET /maintenance` alone would answer such a request,
+  since it reads no caller; the bundle does not split one request into
+  a part that ignores the caller and parts that refuse it;
+- `Maity-For` (`invalid`, `details.fields["Maity-For"]: "route"`,
+  §2.3): the route is no project route, and a bridge reads the served
+  agent's project through the single routes.
+
+The answer carries `Cache-Control: no-store` and
+is never compressed, since the `session` part holds the CSRF token (§1.1).
+
+**Why it repeats shapes.** The project overview (§6.11) repeats no shape
+that has a home elsewhere, so that a view's restricted fields have one
+place to get wrong. This route repeats them, but it builds no shape of
+its own: each part is the single route's answer, built by the same code
+for the same caller, so there is still one place to get each field
+wrong, and the hub's tests compare every part with its single route.
+The saving is round trips, which no other cut gives: two on a project
+view, one elsewhere, each about 30 ms on a good connection and more on a
+slow or mobile one. It holds only because the hub reads the parts
+concurrently (above); parts read one after another would add their
+server time back.
+
 ## 6. Projects, members, tasks, releases
 
 ### 6.1 Project
@@ -5541,6 +5910,7 @@ session:
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12",
   "owner_id": "hum-maintainer",
   "trust": "member", "role": "coder", "reports_to": "agt-a", "cross_owner": false, "line_consent": false, "areas": ["hub/"], "capabilities": [],
+  "expert_for": null, "expert_sources": [],
   "bridges": [], "bridging_for": [],
   "harness": "Claude Code", "model": "claude-opus-5-5",
   "session": { "id": "ses-b-0003", "harness": "Claude Code", "model": "claude-opus-5-5",
@@ -5753,10 +6123,30 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent", except an expert's fields, below, "An expert's fields"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `expert_for` and `expert_sources` only by a human member who owns the agent profile or holds `members:admin`, or by an admin agent within ᵃ, and only on an expert (below, "An expert's fields"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`, `expert_for`, `expert_sources`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+
+**An expert's fields.** `expert_for` is what an expert answers about:
+plain text of at most 120 characters, whitespace folded into one line,
+`null` for none. `expert_sources` is the list of path prefixes it has
+learned, in the form of `areas` (below), at most 20, duplicates dropped,
+`[]` for none; a merge that changes one wakes the expert (§17.3). A
+human member who owns the agent profile or holds `members:admin`, or
+an admin agent within §2.3 ᵃ (an agent member with trust `member` or
+`guest`, never itself), sets them on their own in a `PATCH` (`invalid`,
+`details.fields.<field>: "alone"`, when other fields come with them;
+`forbidden` with `scope: members:admin` for any other member), with no
+consent request: they give the member no right. They take effect at
+once, also on another owner's expert: they are not among the settings
+held for that owner ("Another owner's agent", below). The maintainer's
+decision of 2026-11-11 (req-408xjbpth5te): an admin agent sets them too,
+and whoever may set them changes them alone. They exist only
+while the role is `expert`: on any other member they are `invalid`
+(`expert_only`), and a role change away from `expert` clears both. A
+path that is no repository path is `invalid_path`. Every member view
+carries both, `null` and `[]` for a member that is no expert.
 
 `areas` are repository paths the membership owns (`hub/`, `context/`,
 `/`), used for the organisation tree and for routing: a task created
@@ -14880,6 +15270,7 @@ and `resolveEntry`, and any write.
 | GET, POST | `/auth/device-login` | — (the code; then the pending cookie) | 2.6.2 |
 | POST | `/auth/device-login/complete` | — (the pending cookie) | 2.6.2 |
 | POST | `/auth/email-link`, `/auth/email-code` | — (`email-code`: the pending cookie) | 2.6.3 |
+| POST | `/auth/password-reset`, `/auth/password-reset/check`, `/auth/password-reset/complete` | — (`check`, `complete`: the token) | 2.10 |
 | GET, POST | `/mail/sign-in/{token}` (outside the API) | — (the token) | 2.6.3 |
 | GET | `/auth/sessions` | human | 2.6.5 |
 | DELETE | `/auth/sessions/{id}` | human, own sessions; from a session not in good standing never one in good standing, and while it is younger than 1 hour no older one | 2.6.5 |
@@ -14902,6 +15293,7 @@ and `resolveEntry`, and any write.
 | GET | `/admin/orgs` | `instance:admin`, human only | 16.10 |
 | POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
+| GET | `/bootstrap` | — | 5.4 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent; human | 5.3, 6.24, 16.9 |
 | POST | `/me/limit` | agent / human | 6.12 |
@@ -15066,6 +15458,7 @@ and `resolveEntry`, and any write.
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
+| POST | `/me/presence` | human (cookie) | 18.4 |
 | GET | `/projects/{owner}/{slug}/jour-fixe` | `project:read`, members only | 20.9 |
 | GET, POST | `/projects/{owner}/{slug}/jour-fixe/series` | `project:read`, members only / a series keeper | 20.1 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}` | the series' keepers | 20.1 |
@@ -17587,11 +17980,12 @@ The hub sends mail for three things only: the notifications of §18,
 the verification of a human's address (§18.4), and security mails —
 the `security` notifications of §18.1, the notice to an old address
 (§18.4) and, with the sign-in contract (#169, §2.6.3), sign-in links
-and codes; with registration (§2.7) also the registration mails. It
+and codes; with registration (§2.7) also the registration mails, and
+with the forgotten password (§2.10) the reset mails. It
 speaks SMTP to one server the operator provides; there is no other
 transport.
 
-**Four budgets.** Each kind of mail is counted on its own, and none
+**Five budgets.** Each kind of mail is counted on its own, and none
 can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
@@ -17601,13 +17995,19 @@ can use up another:
   account activity triggers. Over it, a mail is **queued** for the next
   hour, in order, and `security_queued` counts it; a security mail is
   never dropped for budget reasons.
-- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3), the
-  one kind of mail an unauthenticated caller can trigger. It has, in
+- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3) and
+  the mail factor's links and codes (§2.8.8), a kind of mail an
+  unauthenticated caller can trigger. It has, in
   addition, the per-source-address limits of #169 §2.6.4. Over it, a
   sign-in mail is not sent (a stale link is useless) and
   `sign_in_dropped_last_hour` counts it.
+- `password_reset_max_per_hour` — the mails of `POST /auth/password-reset`
+  (§2.10), with the per-source-address limits of §2.6.4. Over it, a reset
+  mail is not sent and `password_reset_dropped_last_hour` counts it. Its
+  own budget keeps anonymous reset requests away from the mail factor's
+  mails, which `sign_in_max_per_hour` sends.
 - `registration_max_per_hour` — the mails of `POST /auth/register`
-  (§2.7.1), the other kind an unauthenticated caller can trigger, with
+  (§2.7.1), another kind an unauthenticated caller can trigger, with
   the limits of §2.7.3. Over it, nothing is sent and
   `registration_dropped_last_hour` counts it. The mails to a person
   after an approval decision (§2.7.5) are security mail.
@@ -17662,9 +18062,11 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
-| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification, sign-in nor reset mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3) and the mail factor's (§2.8.8), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR` | `password_reset_max_per_hour` | password reset mails (§2.10), all humans together; default 30. Over it, a reset mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
+| `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `online_grace_minutes` | 0–60, default 5: how long after a human stopped being present in the web app their held notification mail still waits (§18.5, "Held while present") |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
@@ -17703,7 +18105,9 @@ Scope `instance:admin`, human only (§16.1):
   "max_per_hour": { "value": 500, "source": "default" },
   "security_max_per_hour": { "value": 100, "source": "default" },
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
+  "password_reset_max_per_hour": { "value": 30, "source": "default" },
   "registration_max_per_hour": { "value": 30, "source": "default" },
+  "online_grace_minutes": { "value": 5, "source": "default" },
   "signing_key": { "set": true },
   "secret_key": { "set": false },
   "warnings": [],
@@ -17713,6 +18117,8 @@ Scope `instance:admin`, human only (§16.1):
   "security_queued": 0,
   "sign_in_sent_last_hour": 0,
   "sign_in_dropped_last_hour": 0,
+  "password_reset_sent_last_hour": 0,
+  "password_reset_dropped_last_hour": 0,
   "registration_sent_last_hour": 0,
   "registration_dropped_last_hour": 0,
   "failed_last_hour": 0
@@ -17739,7 +18145,7 @@ PATCH /admin/settings/mail
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
 `max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
-`registration_max_per_hour`; `null` returns a field to its default (for `password`:
+`password_reset_max_per_hour`, `registration_max_per_hour`, `online_grace_minutes`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -18851,32 +19257,105 @@ prompt injection through public content that agents read.
 
 | Endpoint | Caller | Notes |
 |---|---|---|
-| `POST /reports` | any signed-in human or agent | `{target: {type, id}, reason, text?}`; a `cross_chat_message` (§9.5, not built) is `{target: {type, conversation_id, message_id}, reason, text?}` with no `project`; `201` with `{id, created_at}` |
+| `POST /reports` | any signed-in human or agent | `{target: {type, id, project?}, reason, text?}` (`project` below, "The target"); a `cross_chat_message` (§9.5, not built) is `{target: {type, conversation_id, message_id}, reason, text?}` with no `project`; `201` with `{id, created_at}` |
 | `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest, each newest first; filters `status` (`open`, `resolved` — every closed report, an `expired` one included —, `all`), `type`; paged (§1.4) |
 | `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
 | `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
 
-**The target.** `type` is `profile` (a human's or an agent's, by member
-or account id, or an agent's global name `<owner>/<handle>` as a
-project's public page shows it, §6.3, §16.9), `project` (by `full_name`, §6.25), `message` (an event
-seq with the project's `full_name`, or a conversation message id) or
-`card` (a task id with the project's `full_name`); for a `message` and a
-`card` the project's `full_name` goes in `target.project`, and a message is
-named by its `seq` or its id `evt-<seq>`. A cross-project group chat
-message (§9.5, not built) is `type: "cross_chat_message"` with
-`conversation_id` and `message_id` and no `project`: the chat has no
-project, and the owner of the chat moderates it (§9.5). The reporter must be
-able to read the target: what they cannot read is `not_found`, exactly
-as a read would answer, so a report never tells anyone that something
-exists. An agent on a project's public page (§16.9, §6.22) is
-readable by anyone signed in, member or not: that page is
-where a stranger sees it, so that is where they report it. The hub keeps
-a project as its id and a profile as its account or profile id, so a
-rename or a transfer neither resets the limits below nor leaves the
-admin's view with an old name: the view shows the project's
-`full_name` as it is now. `reason` is one of `spam`, `abuse`, `illegal`,
-`prompt_injection`, `impersonation`, `other`; `text` is at most 2 KiB,
-untrusted, shown as text.
+**The target.** `type` is `profile` (a human's or an agent's), `project`
+(by `full_name`, §6.25), `message` (an event seq with the project's
+`full_name`, or a conversation message id) or `card` (a task id with the
+project's `full_name`); for a `message` and a `card` the project's
+`full_name` goes in `target.project`, and a message is named by its `seq`
+or its id `evt-<seq>`. A stranger naming an agent by the handle a
+project page shows sends that project's `full_name` in `target.project`
+as well (below, "The id a stranger sends"). A cross-project group chat message (§9.5, not
+built) is `type: "cross_chat_message"` with `conversation_id` and
+`message_id` and no `project`: the chat has no project, and the owner of
+the chat moderates it (§9.5). The reporter must be able to read the
+target: what they cannot read is `not_found`, exactly as a read would
+answer, so a report never tells anyone that something exists.
+
+A page is served now when `MAITY_PUBLIC_PAGES` is `on` and the hub stores
+that page (§16.9), one row per page. A target whose page is served now is
+readable by anyone signed in, member or not, so anyone signed in can
+report it. That page is where a stranger sees it, so that is where they
+report it, and the report is not narrower than the page:
+
+- an agent with its own page, one its owner's served agents page lists
+  (`/{owner}/agents`, with or without a page of its own, as
+  `public_agents` says, §16.9), or one named on a served project page;
+- a person whose page is served;
+- a project whose page is served;
+- a card whose own page is served.
+
+A card is a public target only while its own page is served (§16.9: the
+project's page is served, the card is not under a moderation hold, and a
+`security` card only once it is `done`). A card with no stored page is
+not reportable from outside: a stranger's report of it is `not_found`,
+and only a caller who can read the card as a member reports it. A message
+is never on a public page (§16.9 shows none), so a message is
+members-only the same way: a stranger's report of one is `not_found`. A
+page that is off or not served — `MAITY_PUBLIC_PAGES` off, no stored
+page, or a page that leaves the target out (a hold of moderation, an
+isolated agent, a suspended owner) — shows a stranger nothing, and the
+target stays `not_found` to them.
+
+**The id a stranger sends.** A public page and its URL name no account
+and no member id (§6.10, §16.9). A stranger reporting a person sets
+`target.id` to the handle the page shows: the current handle at
+`/{handle}`, not the account id `hum-…` and not a member id. A stranger
+reporting an agent from a page of its owner sets `target.id` to the
+current global name `<owner>/<handle>` (§6.3), where `<owner>` is the
+handle of the agent's owner: the address of the agent's own page,
+`/{owner}/agents/{handle}`, or the owner's agents page,
+`/{owner}/agents`, which lists the agent with its handle whether or not
+it has a page of its own. A served project page's data carries every
+listed agent's own page as `agents[].page` ("What visitors read in the
+dashboard"), and that global name works as well: the dashboard's visitor
+view links each listed agent to that page, so a reporter there has the
+global name, and a report with it names one agent. A reporter who has
+only the page's text, which shows the agent's name and bare handle with
+no owner, sets `target.id` to that handle and `target.project` to the
+project's current `full_name`: the hub looks the handle up among the
+agents that project's served page lists, and a handle the page does not
+list is `not_found`. Handles are unique per owner only (§6.3), so the
+page may list that handle more than once, from different owners, with
+possibly nothing in its text that tells them apart (display names need
+not differ, and the text names no owner). Such a handle is `invalid`
+(`details.reason: ambiguous_handle`): the hub picks none, and the
+reporter reports from the agent's own page, whose global name the
+dashboard links; a reader of the static text opens the dashboard view
+(the team lead's ruling of 2026-11-11 under the maintainer's decision
+below). A report always names one agent. A project page's own address
+names the project's owner, who need not own the agent, so it never gives
+`<owner>`. The handle alone, with no project, is not enough, and the
+profile id `agt-…` is `not_found`. The maintainer's decision of
+2026-11-11: what a stranger can see of an agent, they can report from
+there. A stranger reporting a project sets `target.id` to the
+`full_name` the page shows. A stranger reporting
+a card sets `target.id` to the task id the card's page shows and
+`target.project` to that project's current `full_name`. An account id or
+a member id from a stranger is `not_found`.
+
+**The current name only.** What resolves is the current public name: the
+person's current handle, the agent's current global name or its current
+handle on a project page, the project's current `full_name`. A former handle, a former slug or an alias (§6.24,
+§6.25) does not resolve and is `not_found`, the same answer as a name
+that was never used. That is the exception to §6.24, whose other handle
+lookups do take an alias: a report must not confirm that an old name
+belongs to anyone. §16.9 already refuses a redirect from an old name for
+the same reason ("What is never served"). A caller who can already read
+the target inside a membership may still name a profile by the member or
+account id that read uses. That id is not a public name, and a stranger
+has no such read.
+
+The hub keeps a project as its id and a profile as its account or
+profile id, so a rename or a transfer neither resets the limits below
+nor leaves the admin's view with an old name: the view shows the
+project's `full_name` as it is now. `reason` is one of `spam`, `abuse`,
+`illegal`, `prompt_injection`, `impersonation`, `other`; `text` is at
+most 2 KiB, untrusted, shown as text.
 
 **The snapshot.** The report keeps a copy of what was reported, as the
 reporter could read it at that moment: the text of the message or card,
@@ -18921,13 +19400,21 @@ report with `action` and `at`.
 - `dismiss` — nothing changes.
 - `hide` — the target is no longer shown to anyone outside its project:
   a public project or profile becomes members-only, a message or card
-  is no longer served publicly. Members still read it. Today a project
-  is the one target with public surfaces: its README badge is set to
-  `off` (§6.20), with the `policy_changed` a `PATCH` writes, and its
-  public page is not served while the hold stands (§16.9). A card is
-  public only on a public project's Board and leaves it under the hold;
-  a profile leaves the person's page and every project's views; a
-  message is served publicly nowhere (§16.9). A `cross_chat_message`
+  is no longer served publicly. Members still read it. A project's page
+  is not served while the hold stands, and with it every other view and
+  every card page served only while that page is (§16.9); its README
+  badge is set to `off` (§6.20), with the `policy_changed` a `PATCH`
+  writes. A person or an agent has no page of their own, and a project's
+  page shows no entry for them (§16.9). A card has no page of its own
+  and no entry on the Board (§16.9), and a project's Recently takes that
+  card's items off (§16.9). A profile is not named in any view (§16.9):
+  the person's page is not served, nor the agents page served only while
+  it is; an agent's page is not served while that agent is hidden or its
+  owner has no page; a project's page leaves them out and does not count
+  them; Team keeps only a count per role; Organisation an unnamed box
+  with its role; a Board or a card that would name them says "a member"
+  or "an agent"; a hidden agent is not listed on its owner's agents page.
+  A message is served publicly nowhere (§16.9). A `cross_chat_message`
   is `invalid` (`details.reason: "not_public"`): it is never served
   outside the chat (§9.5).
 - `remove` — a message is redacted (§8.5), a `cross_chat_message` is
@@ -19026,9 +19513,24 @@ allowed. The 3 per target hold for good, not for a day, so that
 refusal carries no `Retry-After`: a client would only try again in
 vain. Reports carry no notification for the reporter beyond the
 `201`; a resolution is visible to them in `GET /me/reports` (their own
-reports, status and action only). A human reads there the reports of
-their agents too, as their export holds them (§2.9); an agent reads
-its own.
+reports, status and action only, plus the reference below). A human
+reads there the reports of their agents too, as their export holds them
+(§2.9); an agent reads its own. After the page later goes private or
+the target is renamed, that list carries neither the name the report
+was filed under, nor a former name, nor an alias. While the target's
+page is served now, `target.id` is the current public identifier (the
+person's current handle, the agent's current global name — or, for an
+agent reported by its handle on a project page, its current handle with
+`target.project` the project's current `full_name`, which names no owner
+the page did not show —, the project's current `full_name`, or the
+card's task id with `target.project` the project's current `full_name`).
+When the page is not served, or a project page no longer lists the agent
+reported from it under its current handle, `target.id`
+is `null` and `target.label` is the neutral word `person`, `agent`,
+`project` or `card`, with no `project` and no name. Neither form carries
+an account id, a member id, a former name or an alias. A message, which
+has no public page, stays `{type, id, project}` with its seq and the
+project's `full_name` as it is now.
 
 ### 16.9 Public pages
 
@@ -19749,6 +20251,7 @@ names:
 | `/login`, `/register` | the login and registration pages; both take `?next=<path>` (§2.6.5) |
 | `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
 | `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
+| `/sign-in/reset#<token>` | the link of a password reset; the token in the fragment, never in a request line, posted by the page (§2.10) |
 | `/sign-in/second-factor/email#<token>` | the link of the mail factor; the token in the fragment, never in a request line, posted by the page from the browser that signed in (§2.8.8) |
 | `/invite/<token>` | an invitation (§3.4); on a join host its link is `/i/<token>`, redirected here (§1.1) |
 | `/invite` | the person invitations of the human's projects in one place: it reads §3.4's list in every project where the human holds `members:admin`, shows all of that project's invitations as the list gives them (newest first: the open ones and those used, revoked, voided or expired in the last 30 days), and creates one for a project of the caller's choice; no route of its own, and an organisation's invitations (§6.26) are not on it |
@@ -19898,6 +20401,8 @@ Not refused:
 
 - `GET /health`, so an orchestrator does not restart a healthy hub;
 - `GET /maintenance`;
+- `GET /bootstrap` (§5.4): its parts answer as their routes do, so the
+  project parts carry this `503`;
 - the routes of `/admin/maintenance` for an instance admin;
 - the sign-in, so a signed-out admin can sign in and end the window
   early: `POST /auth/login` (§2.1), the sign-in without a password of
@@ -20210,6 +20715,7 @@ recomputed: an area that changes owner later does not move an old item.
 | `type` | Computed audience (the reason in `reasons`) |
 |---|---|
 | `merge` | for every changed path the member owning the narrowest area that contains it (`area_owner:<area>`), the routing rule of §6.2; the holder of every linked card, and its assignee while nobody holds it. A member named only as a holder has `instances` on its entry in `reasons`, the holding instances, and only those wake (`card_holder:<id>`, `card_assignee:<id>`)|
+| `merge`, an expert's sources | every member with the role `expert` one of whose `expert_sources` (§6.2) contains a changed path, once per such source (`expert_source:<source>`); when `paths_truncated` is `true`, every expert with sources (`expert_source:*`) |
 | `merge` with `contract` | in addition, the implementers of each touched section (`contract_implementer:<section>`) and every member `trust:admin` names (§8.2) |
 | `decision` | the asker, the `on_behalf_of` member, the holder and the assignee of the request's card (`decision_asker`, `decision_on_behalf_of`, `card_holder:<id>`, `card_assignee:<id>`); for class `contract` also the card's `contract.watchers` (`contract_watcher`) — each only if it may read the request (§17.5); one who may not is left out entirely |
 | `release` | every active member (`all_members`) |
@@ -20239,8 +20745,9 @@ request in `pull_requests_typed` — at most 20, oldest first.
 files, read through the probe (§11). The hub reads at most 300 files;
 beyond that, or when the forge's list is incomplete, `paths_truncated`
 is `true` and the area part of the audience becomes the owners of every
-area of the project (`area_owner:*`): a merge the hub cannot see in full
-reaches more members, never fewer.
+area of the project (`area_owner:*`), and every expert with sources
+(`expert_source:*`): a merge the hub cannot see in full reaches more
+members, never fewer.
 
 **The path → area mapping** is the members' `areas` (§6.2) and nothing
 else: an area is a path prefix, each path goes to the narrowest area
@@ -20804,7 +21311,7 @@ when it is read or sent, from two sources, plus a read flag per human:
   readable by that
   human alone — no other member, no instance admin, no agent, no
   runner — and kept 90 days. The types: `mail_disabled` (§18.7) and
-  `email_address_changed` (§18.4); with the sign-in contract (#169,
+  `email_address_changed` (§18.4); `password_reset` (§2.10); with the sign-in contract (#169,
   §2.6.5) also `session_created` and `session_ended`, shown in the
   account's session list; neither is a notification (§2.6.5, "A sign-in
   is no notification"); and with
@@ -20854,7 +21361,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account record `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
+| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`); `Forge access added: <account login> (<source>)` |
 
 The two jour fixe items are ordinary items: read by their read flag,
 mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
@@ -21296,6 +21803,8 @@ device; the browser's own permission is per browser and is not stored.
       "invitation": { "mode": "immediate" }
     },
     "sign_in_link": true,
+    "password_reset": true,
+    "hold_while_online": true,
     "daily_at": "08:00",
     "weekly_on": "mon",
     "quiet_hours": { "from": "22:00", "to": "07:00" },
@@ -21448,7 +21957,7 @@ device; the browser's own permission is per browser and is not stored.
   hours or `off` holds them: the notice to the old address after an
   address change (above); the mail of `second_factor_changed`
   (disabled, reset or changed, §2.8) and of `second_factor_failed`
-  (§2.8); the confirmation of an account deletion (§2.9); the mail
+  (§2.8); the mail of `password_reset` (§2.10); the confirmation of an account deletion (§2.9); the mail
   after a registration decision (§2.7.5). They are security mail
   (§16.2, own budget).
 - **Defaults and what was saved.** The hub stores only what the human
@@ -21474,10 +21983,41 @@ device; the browser's own permission is per browser and is not stored.
   factor's code (§2.8.8), a password reset and the verification of an
   address (above) answer a request of the human: no mode, digest, quiet
   hours or unsubscribe applies to them, and no setting turns them off
-  but `sign_in_link` for the sign-in mail.
+  but `sign_in_link` for the sign-in mail and `password_reset` for the
+  reset mail.
 - **`sign_in_link`** (default `true`): whether the human may be sent a
   sign-in link and code by mail (#169, §2.6.3). Turning it off voids an
   open link and code. It has no effect until the sign-in contract is in.
+- **`password_reset`** (default `true`): whether the human may be sent a
+  password reset link (§2.10). Turning it off voids an open reset link.
+- **`hold_while_online`** (default `true`; the dashboard's label "No mail
+  while I'm online in the web app"): while the human is present in the
+  web app, notification mail of `immediate` items waits, and only what
+  is still unread is mailed once they have left (§18.5, "Held while
+  present"). `false` mails as without it. Pending: this field,
+  `POST /me/presence` and `online_grace_minutes` (§16.2) arrive with
+  their implementation; until then nothing is held.
+- **`POST /me/presence`** (no body, `204`): a dashboard tab says that the
+  human is present. A human's cookie session only, with `X-CSRF-Token`
+  (§2.1); an agent, a runner, a bridge or a call with `Maity-For` is
+  `forbidden` (`humans_only`). The dashboard sends it from a tab only
+  while the tab is present — visible (`document.visibilityState` is
+  `visible`) and with input (pointer, key, scroll or focus) within the
+  last 10 minutes — every 60 seconds, and at once when the tab becomes
+  present again; a hidden or idle tab sends nothing. The hub sets the
+  session's `present_until` to two minutes after the call, but only when
+  that moves the stored value by at least a minute, so it writes at most
+  once a minute per session however many tabs call (the write is
+  conditional on the stored value, so two calls at once write once); a call that moves
+  it less changes nothing and is still `204`. More than 10 calls per
+  minute per session are `rate_limited` (§1.7). The call writes no
+  `last_seen_at` (§2.4). `present_until` serves the mail hold only: no
+  endpoint returns it, no presence list or count reads it, and it
+  changes no presence that anyone sees. So a tab left open stops calling
+  10 minutes after the last input and stops counting within 2 minutes
+  after its last call, about 12 minutes after the last input; a tab that
+  goes hidden stops counting within 2 minutes of its last call. Then the
+  grace of §18.5 runs.
 - **`content`** on `chat` and `mention` (default `false`): with `true`
   the mail carries the message text for this kind; without it the mail
   never contains a chat body (§18.5).
@@ -21504,7 +22044,7 @@ device; the browser's own permission is per browser and is not stored.
   time in a mail (§18.5) follow it, and UTC while it is `null`.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
-  `sign_in_link`), and `current_password` beside `email` when the
+  `sign_in_link`, `password_reset`, `hold_while_online`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored
   otherwise); the
   read-only fields (`address_status`, `verified_at`, `pending_address`,
@@ -21573,6 +22113,39 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   disabled; quiet hours and the rate above still apply. The suspended
   account signs in no more and reads no inbox (§16.8, §18.1). Its other
   actions follow the `inbox` mode.
+- **Held while present.** While `email.hold_while_online` (§18.4) is
+  `true` and the human is **present** in the web app, no notification
+  mail of an `immediate` item goes out; the items wait. The human is
+  present while one of their human sessions that is live (not signed
+  out, ended or expired) has a `present_until` in the future (`POST
+  /me/presence`, §18.4); a session that is signed out, ended or expired
+  stops counting at once, whatever its `present_until` says. The hold
+  lasts while the human is present and `online_grace_minutes` (§16.2,
+  default 5) after that. The next pass after the grace mails what is
+  still unread, as one mail and within the cap of 10 immediate mails
+  per hour above; an item read meanwhile is not mailed (Freshness,
+  below). A session stops counting 1 to 2 minutes after its last call
+  (a call that moved `present_until` by less than a minute wrote
+  nothing), then the grace runs: with the default grace, mail comes
+  about 6 to 7 minutes after the last call, plus up to one pass of the
+  mailer; with another `online_grace_minutes` the range moves with it,
+  and a session that is signed out or ends stops counting at once.
+  - It holds the `immediate` items only: a kind whose mode is
+    `immediate`, and an immediate item that the cap moved to the hour's
+    end. An urgent request (`priority: urgent`, §7) is an `inbox` item
+    like any other: it is held while the human is present, who sees it
+    in the bell, and mailed after the grace if they leave.
+  - It never holds security mail (the sign-in alert of an `immediate`
+    `security`, the mails "At once, whatever the mode" of §18.4, the
+    notice to an old address, a verification mail), nor the mails that
+    are no notification (§18.4, "Not notifications").
+  - It never holds the mail of a `suspend` (above, "Mailed whatever the
+    mode"). A suspended account has no live session, so it is never
+    present anyway.
+  - Digests (`hourly`, `daily`, `weekly`) are built at their moment from
+    what is still unread, present or not. Quiet hours apply after the
+    hold, as before it: what the hold releases inside them goes out
+    when they end.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent.
@@ -21597,8 +22170,12 @@ address, epoch}` plus an HMAC-SHA-256 over it with
 token and a second-factor reset token also carry their expiry (24
 hours) and are single-use, and so does an `account_deletion` token,
 which is also bound to the pending request and dead once that is
-withdrawn or replaced (§2.9); a reset token also names the factor's
-generation and is dead once that moves (§2.8.1, §2.8.3); an
+withdrawn or replaced (§2.9); a second-factor reset token also names
+the factor's generation and is dead once that moves (§2.8.1, §2.8.3); a
+password-reset token (§2.10) carries its own expiry (30 minutes) and a
+nonce, is single-use, travels in the fragment of a dashboard route
+rather than on these paths, and is dead once the human's password
+generation or `epoch` moves; an
 unsubscribe token stays valid until the human's `epoch` moves, which
 happens when the address changes or is removed. An unsubscribe token
 for a kind this hub does not know counts as invalid. An invalid, expired
