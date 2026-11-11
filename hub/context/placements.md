@@ -344,3 +344,132 @@ child older than this writes no line, so the detail is `null` with it.
   whose code is missing or not a code wrote no such line, so a message
   ending in a forged marker came last. The random value per call closes
   that, and the line comes after a failure the CLI handles itself.
+
+## Usage: no price list, cards by hub time, and a shared run counts for both
+
+**Id:** f9f61db3-b03b-4730-b092-4bbcea1bb7c8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf and req-2rfzehtgytp0 for the card readers, req-d5yq24ca6vh6 for the cards during the run, req-ej8gw7hcdmjj for hub-time attribution and its losses, req-xgj91endejrk and req-cyee4wf84bs6 for the owner boundary of the instance and agent totals); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); the contract reviews of 2026-11-11 on #1650 (two retry protocols on one call, a replay after the records are deleted, runner times stretched across runs and cards) and the team lead's decisions of the same day to attribute by hub time only and to bind a record to a run id the hub issues; contract `docs/api.md` §15.15
+**Revisit when:** the hub is asked for a price list, a budget or a limit; or a run's work can be tied to one card
+**See:** https://github.com/oliver-zehentleitner/maity — 5f6c87ce-132d-4f7e-921d-d74741f369fe — as of 2026-11-11
+
+The hub never turns tokens into money: it shows a cost only where the
+harness reported one, summed per currency, and says how many runs had
+one. Which cards a run counts for is decided by hub time alone: when a
+report changes `run` to `open`, the hub issues the run an id and keeps
+the report's time (`open_run`), and a record counts for every card the
+placement's instance held at any time between that time and the record's
+`received_at`, not only those held when it arrives: a report with `done`
+or a release during the run would otherwise drop the card the run
+finished. A record names the hub's id as `run` and is taken only while
+that run is open, at most once; one for a run that ended (after
+`waiting`, any state other than `running`) or that the hub never opened
+is `conflict` (`run_closed`) and is lost from every total. Only a real
+change to `open` opens a run, so a repeat or an activity-only report
+never restarts its interval. Any accepted report that does not keep a
+run open ends it, whatever its generation. A new generation (a spec
+change, a restart, a rejoin) ends an open run at once, and the old
+generation's run takes no record. The new generation's first report with
+`run: open` opens its run, whatever `run` the stored report still holds.
+The runner's `started_at` and `ended_at` are shown as sent and pick
+nothing. A run during which the instance held two cards counts in full
+for each and is marked as shared; instance and agent totals count every
+run once. A second record for a run with other numbers is refused
+(`conflict`, `run_recorded`), not answered as a repeat; the `run` is the
+call's only key, without an `Idempotency-Key`. The hub is to keep a
+holding per card and instance (from, until) for this (not built yet),
+since the card row keeps only its current claim. Card totals are for the
+project's human members and the agent members whose runs counted for the
+card, instance and agent totals by the owner boundary: the agent's owner
+and the owner's own agents with trust `admin`, nobody of another owner,
+the project's owner included; no public page shows usage.
+
+**Reason:** a price list in the hub would make it a pricing and billing
+system, which the maintainer keeps out, and prices change faster than
+the hub. The runner cannot know which card a run worked on, and the hub
+can only see which cards were held; any split between two held cards
+would be a guess presented as a fact. The runner's clock is the one
+input the hub cannot check: every rule built on `started_at` and
+`ended_at` (limits, clamps to the runs the hub saw, overlap checks) left
+a new way to stretch a run onto cards it never touched, round after
+round of review. Two hub times the runner cannot move bound the run
+instead, and the price is plain: a record that arrives after its run
+ended is lost. Hub time alone cannot tell which run a record belongs
+to once the next run has opened, so the hub names each run itself and
+the record echoes that name. A run is one stretch between a change of
+`run` to `open` and the next report that ends it, and it takes one
+record; the hub can check both from the placement and the stored
+records. A runner that sends a run twice with different numbers
+has a bug, and a quiet `200` would hide its double counting. Two keys on
+one call would answer the same resend in two ways (the key's replay, the
+`run`'s `200` or `conflict`), and a key lives 24 hours while a runner
+may resend later. A card row and the event log cannot say who held a
+card when: a release names no instance and a rejoin rewrites the
+instance in place.
+
+**Rejected alternatives:**
+- A price table per model in the hub: pricing, and the model name the
+  maintainer chose not to send.
+- Splitting a shared run evenly between the cards: a guess shown as a
+  measured number.
+- The cards held when the record is stored (the first draft): `done`
+  closes a card and a release ends its claim, often within the run that
+  did the work, so a card's total would miss the run that finished it.
+- Picking the cards by the runner's `started_at` and `ended_at`, bounded
+  by a 30-day and a 5-minute limit, clamped into the runs the hub saw,
+  and refused when spanning two runs, outside its run or overlapping a
+  stored one (the drafts up to the round-3 review): each rule closed one
+  stretch and the next review found another, and the runner's clock
+  stayed the input that picked the cards.
+- Binding a record to the open run by `run_opened_at` alone, with only
+  the runner's own run id in it (the draft at 80cbcdd9): a record of an
+  earlier run arriving during the next one would look like that run's
+  own and count on its cards.
+- Moving the run's opening time on every report that carries `run`
+  `open`: each report is a whole snapshot and a busy run sends one a
+  minute, so the window would shrink to the last minute and drop the
+  card the run finished; only a change to `open` sets it.
+- Taking any number of records while one run is open, trusting the
+  runner's one record per run: a runner that restarts and computes the
+  run again under a new id would count it twice for the same cards; the
+  hub takes one record per open run.
+- Letting a report of an older generation open a run: the runner's old
+  process is about to be replaced, and an opening the current
+  generation never made would start a window for it; a run opened then
+  loses its record, which is rare and stated.
+- Letting only the current generation end a run: a `waiting` from the
+  old process would leave the previous run open, and the old process's
+  next run would be handed its id and count on its cards; ending a run
+  can only lose a record, so any generation ends it.
+- Keeping an open run across a new generation: the new generation
+  could not open its own run while the old one stayed open, and nothing
+  in the protocol makes the runner close the old one first.
+- An id the runner chooses and sends with the opening report: it
+  works, but leaves two ids for one run and a runner bug that reuses
+  one; the hub's own id cannot repeat.
+- The opening report's `seq` as the run's id: an event counter, not a
+  promise to the runner.
+- Accepting a record after its run ended and counting it by the run it
+  names: the hub would need a log of every run's open and close, and a
+  late record could still land on the cards of a run it did not belong
+  to.
+- Answering every second record for a run with the stored record: a
+  runner's double count would stay invisible.
+- Deriving the cards of a run from the card rows or the event log: a
+  card keeps only its current claim, a release names no instance and a
+  rejoin rewrites the instance in place, so past holdings would be lost.
+- Writing a holding only on claim, takeover, cover, rejoin, release and
+  close: an expired claim that `assign` hands to another member would
+  stay open on the old instance and count its later runs.
+- An `Idempotency-Key` on the usage record beside the `run`: two
+  keys would answer one resend in two ways, and a stored key would
+  answer a resend with the first `201` for 24 hours only.
+- Totals for everyone who can read the project, public pages included:
+  spend is the owner's business, not a visitor's.
+- Instance and agent totals for the project's human admins as well (the
+  draft up to the maintainer's answers): an admin who does not own the
+  agent would read another owner's spend; the maintainer chose the
+  owner boundary, the same for humans and agents, and accepted that the
+  project's owner then reads no other owner's totals.

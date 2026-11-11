@@ -172,7 +172,9 @@ def patch_agent(
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
-        owned(conn, agent_id, caller.principal_id)
+        # The lock first: a reset holds this row until its hold is written, so a display
+        # name reads that hold. `handles.rename` locks the same row, then the handle lock.
+        owned(conn, agent_id, caller.principal_id, lock=True)
         if "handle" in given:
             if body.handle is None:  # as in `PATCH /me`: null renames nothing
                 raise invalid({"handle": "required"})

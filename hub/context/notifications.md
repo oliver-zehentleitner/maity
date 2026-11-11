@@ -652,15 +652,15 @@ callable keeps `preferences` free of the caller and the hub settings.
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §2.8.1, §18.1 (the `security` row), §18.5; the implementation of #380, part 3, 2026-10-28
-**Revisit when:** a third kind of security record needs a mail (the list in `mailer.SECURITY_MAIL` and the titles in `items._two_factor_title` are the places), or the security mail of a sign-in and of these records should share one builder
+**Revisit when:** a third kind of security record needs a mail (the list in `mailer.AT_ONCE` and the titles in `items._two_factor_title` are the places), or the security mail of a sign-in and of these records should share one builder
 
 The account records `second_factor_changed` and `second_factor_failed` (`records.SECURITY`)
 become `security` items with the titles of §18.1 (`items._two_factor_title`; a `change` this
 hub does not know reads "Two-factor sign-in changed", never a guess), and the mail pass sends each
 of them as a security mail of its own, as it does a new sign-in: not batched, not held by quiet
-hours, one mail per item (`mail_item_sent`), only while the human's `security` mode is
-`immediate`, with the subject `[Maity] <title>`, the time, the link to Profile → Security and the
-unsubscribe line of the `security` kind. The bell confirms them like the other security items
+hours, one mail per item (`mail_item_sent`), whatever the human's `security` mode (§18.4
+"At once, whatever the mode"; `mailer.AT_ONCE`), with the subject `[Maity] <title>`, the time,
+the link to Security and the settings line, and no unsubscribe line, since no mode turns it off. The bell confirms them like the other security items
 (`listing._may_mark`: from a session in good standing that is older than the item). The mail
 carries no code, no secret and no link that changes anything.
 
@@ -1134,12 +1134,13 @@ shipped, the kind's settings could be changed only through the API (§18.4).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
+**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11) and their approval of the contract's wording on req-a2wck5jr9xpb (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); hub/src/maity_hub/notifications/presence.py, mailer.py (`held`), auth/caller.py (`seen`), deps.py (`presence_caller`); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
 **Revisit when:** the maintainer reads the contract and wants urgent requests mailed while present, or the dashboard gets a live connection that every tab holds
 
 `email.hold_while_online` (default `true`) holds the mail of `immediate` items while one of
 the human's live sessions has a `present_until` in the future, and `online_grace_minutes`
-(default 5, an instance mail setting) after that; the next pass mails what is still unread.
+(default 5, an instance mail setting) after that; the next pass mails what is still unread,
+an item the hourly cap held over an hour's end included.
 A dashboard tab calls `POST /me/presence` every 60 seconds while it is visible and had input
 within 10 minutes. The hub moves `present_until` to two minutes ahead only when that moves it
 by at least a minute, so it writes at most once a minute per session: every present tab calls
@@ -1154,6 +1155,16 @@ writes no `last_seen_at` and shows nobody online, so nobody reads it as presence
 mail, the mails sent at once whatever the mode and the mail of a suspension are never held.
 An urgent request is an `inbox` item and is held: the present human sees it in the bell.
 Digests keep their moment.
+
+In the hub the call authenticates as any cookie call, the CSRF check included, but with
+`seen=False`: the session's liveness is read, not written, and no `last_seen_at` of the
+session, the human or a membership moves. A request with `Authorization` or `Maity-For` is
+refused (`humans_only`) before any credential is looked up, so a refused agent's call writes
+no presence either. The ten calls a minute count in the process (`Limiter(local=True)`), since
+a shared count writes a row per call on PostgreSQL. The mailer leaves a held item in
+`mailable`: `waiting` keeps the passes deriving until the grace ends, as an unread immediate
+item already did while it waited for its window. A suspension ends the account's sessions,
+and the hold excludes the `urgent` item as well.
 
 **Rejected alternatives:**
 - A `present=1|0` flag on the bell's long-poll (the first plan): the long-poll runs only while
