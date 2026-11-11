@@ -349,6 +349,58 @@ effect and the operator's command share one function so that the record, the ses
 - Resetting a human who has no factor: nothing would change and a mail would go out for nothing;
   it is a conflict.
 
+## A forgotten password is reset by mail, also where the mail is the second factor
+
+**Id:** 2caa97c3-3a24-401b-a29f-02579a503559
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-s113f1gsd892 (seq 109195, 109226, confirmed in seq 109283, 2026-11-11), docs/api.md §2.10, tsk-pk755085ctff
+**Revisit when:** an account is taken over through its mailbox; or passkeys (§2.8) give humans without TOTP another factor to require at a reset
+
+A reset link to the verified address sets a new password (§2.10). With TOTP enrolled the reset
+also needs a TOTP or recovery code. Without TOTP the mailbox is enough, and that includes
+`second_factor: email`, where the next sign-in's mail factor is the same mailbox again. For those
+humans the hub says so and pushes toward an authenticator app: a dashboard banner, a sentence in
+the reset mail and one on the reset page. A per-human switch (`email.password_reset`) and an
+instance switch (`password_reset`), both on by default, turn it off.
+
+**Reason:** a team instance needs a way back in without an admin for every forgotten password. Under
+mail as the second factor the sign-in link is already off (§2.8.8), so without the reset such a
+human had no self-service way at all. The maintainer chose the mailbox as enough and a strong
+nudge toward TOTP over a gate.
+
+**Rejected alternatives:**
+- Under mail as the second factor, no self-service: an instance admin sends the reset mail after
+  checking with the person by another channel (as the second-factor reset, §2.8.3). An admin for
+  every forgotten password.
+- A 24-hour hold, announced in every live session with "Cancel": a human who forgot the password
+  usually has no live session, so it mostly delays the honest one.
+- No reset at all under mail as the second factor, only the operator: too hard for a team
+  instance.
+- One switch for the sign-in link and the reset together: the reset is the stronger way in, and
+  a human may want the link off and the reset on.
+- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails come from
+  it too, so anonymous reset requests could stop them for an hour, and with them the sign-in of
+  every human without TOTP. Reset mails got `password_reset_max_per_hour` instead (review of the
+  contract PR).
+- Wrong TOTP codes at a reset counted only in the per-human limit: whoever holds the mailbox could
+  keep guessing with fresh links unreported. Nor per link: four wrong codes on each of several
+  links never reach a fifth on any one. The fifth wrong code at resets of one human in 24 hours,
+  across links, voids every open reset link and writes `second_factor_failed`, as the sign-in
+  step does (reviews of the contract PR). A code under a dead token is neither compared nor
+  counted, so a former reader of an old mailbox cannot void the human's new links, and every
+  further wrong code in the window alarms again rather than restarting the count. Nor are coded
+  resets refused for the rest of the day after the fifth: whoever reads the mailbox could then
+  lock the honest human out of the reset for 24 hours with five wrong codes, while voiding and
+  alarming keeps a right code working (review of the contract PR).
+- Under the instance's `second_factor: off`, a reset that follows the sign-in and asks for no
+  TOTP code: the mailbox alone would then set the password of a human who enrolled an
+  authenticator app. `off` turns the sign-in step off, not the enrolment the human made, and a
+  password outlives a link session. An enrolled human who lost the app gets out through the
+  admin's second-factor reset or the operator, since their own removal is refused under `off`
+  (review of the contract PR).
+
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 
 **Id:** 659d15cb-6c9b-4e06-8fec-164368951df4

@@ -696,6 +696,9 @@ def member_views(
             "line_consent": bool(row.line_consent),
             "areas": row.areas,
             "capabilities": row.capabilities,
+            # An expert's fields (§2.3 "The expert", §6.2): null and [] for everyone else.
+            "expert_for": row.expert_for,
+            "expert_sources": row.expert_sources or [],
         }
         if row.agent_id is None:  # a human's, §6.26: an owner of the organisation that owns it
             view["org_owner"] = row.human_id in org_owners.get(row.project_id, ())

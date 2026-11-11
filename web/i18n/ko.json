@@ -426,6 +426,9 @@
   "board.closed.failed": "닫힌 카드를 읽지 못했어요: {reason}",
   "board.closed.loading": "닫힌 카드를 읽는 중…",
   "board.closed.recheck_failed": "닫힌 카드를 읽는 동안 바뀐 내용을 확인하지 못했어요: {reason}",
+  "board.closed.show_more": {
+    "other": "닫힌 카드 {count}개 더 보기"
+  },
   "board.column.other": "기타",
   "board.column.unknown": "알 수 없는 상태",
   "board.contract.arbiter_admins": "관리자",

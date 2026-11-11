@@ -6065,3 +6065,83 @@ columns, the ones a reader works in, had long answered.
   changed card as well. Redrawing without moving the form (round 3) lost
   the draft: the form has no control in the redrawn part to carry it to.
 
+
+## A card's open menu outlives the board's redraws that no action of the reader starts
+
+**Id:** ddf3ddef-e153-4643-bea7-e79a85d7652a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-wp8hsgvha3n6 (web-e2e failed in `two_signatures_step` on #1635 and #1641: the item `Sign the review` resolved, became "not stable", then "detached from the DOM", and the click timed out after 25 s); a Chromium repro on the fixture dashboard with the closed group answering 1.5 s late (main: 0 of 20 clicks after the late draw, the menu closed; this change: 20 of 20)
+**See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
+**Revisit when:** the board stops drawing every card anew on a redraw, a card gets a menu without a `data-focus` key on its button, or another redraw that no action of the reader starts is added
+
+Since the board draws once the open groups have answered, the closed group's answer redraws the
+columns a moment later, every card anew, each with its menus closed (`M.menuButton` keeps its open
+state in the element it built). A card's status or assign menu opened in between closed under the
+reader's click. That happened to e2e, and it would happen to a person who opens a menu as soon as
+the board appears. Before such a redraw (the late draw, the closed read in or failed, and the
+presence refresh that redraws under the Silent filter), the board notes the open card menu by its
+button's `data-focus` key (`move:<id>`, `assign:<id>`) and the focused item by its key (`data-key`:
+`member:<id>`, `move:<status>`, `sign:<slot>`, set from the item's `key` in `M.menuButton`), and
+closes the old menu without moving the focus, so that its listener for clicks elsewhere goes with it.
+After the draw it opens the same menu of the redrawn card again, through the menu's own open
+(`M.menuOf`), and focuses the item with the same key. An item gone meanwhile (a member who left the
+assign menu) leaves the menu closed and the focus on its button, so that Enter lands on no other
+item; a menu whose items had no focus is not opened again. A redraw the reader starts (a move, a filter, a search)
+closes the menu as before: the reader's own action has replaced it.
+
+**Reason:** the race is in the page, not only in the test. The fix belongs where a person meets it,
+and the e2e step then needs no wait of its own.
+
+**Rejected alternatives:**
+- A wait in the e2e step for the closed columns to fill before opening the menu: the test would
+  pass, and a person would still lose the menu.
+- Skipping or deferring the late draw while a menu is open: the closed columns would stay stale
+  under an open menu, and a deferred draw must still keep the menu when it comes.
+- Reopening by a synthetic click on the new button: it goes through the click path (the outside
+  click listener, focus on the first item), not the menu's own open, and it loses the focused item.
+- The focused item by its place (the first version): the presence refresh sets the members before it
+  draws, so a member who left above the focused one shifted the places, and Enter would have assigned
+  the next member (review of #1654).
+- The focused item by its words (the second version): a member's words are not the member. An
+  agent's handle gets its owner (`@owner/sam`) once a human `sam` joins, who then reads `@sam`, so a
+  refresh that brought that human focused, and Enter assigned, the human (review of #1654).
+- Leaving the old menu open while its DOM is replaced (the first version): each reopening added a
+  listener for clicks elsewhere and none was removed until such a click, so repeated refreshes stacked
+  them on detached menus (review of #1654).
+
+## A closed column draws the 50 cards closed last; Show more draws the rest
+
+**Id:** b7b0a38f-66a0-4224-82de-57e1300cc63a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10
+**See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
+**Revisit when:** the closed window or the hub's board shape changes, or a full redraw of the board is measured over about 200 ms again
+
+The board still reads every card of the closed window (the entry above). The
+Done and Cancelled columns draw only the 50 cards closed last (by
+`closed_at`), in the column's own order, and a button below them shows how
+many more there are ("Show 11 more closed cards"). The column's count stays
+the whole number. The button draws that column whole for the rest of the
+board view, and the first card it added takes the focus, since the button is
+gone. A card the board is opened on (by its link, or coming back from it) is
+drawn wherever it stands, and a subtask folded under a parent with that
+parent, since it is found only under a drawn parent. A hub search's
+columns follow the same rule.
+
+**Reason:** every redraw of the board (a filter change, each keystroke of
+the board search, a card's update) drew every closed card: with 783 a full
+redraw took about 640 ms (2.7 s on a CPU four times slower), with 100 about
+100 ms (0.44 s). The closed cards are the ones a reader works in least; the
+newest are the ones looked for.
+
+**Rejected alternatives:**
+- A leaner card shape for the board's list, without the largest fields: a
+  contract change that saves bytes but not the drawing.
+- A shorter closed window by default: it hides closed cards from the read,
+  not only from the drawing, and changes what the board offers.
+- The first 50 in the column's order: that order is by rank and creation,
+  so it would show old closed cards and hide the ones just closed.

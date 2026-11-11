@@ -63,6 +63,8 @@ def test_the_member_view_has_the_contract_shape(
         "line_consent",
         "areas",
         "capabilities",
+        "expert_for",  # an expert's fields: null and [] for every other member (§6.2)
+        "expert_sources",
         "harness",
         "model",
         "session",

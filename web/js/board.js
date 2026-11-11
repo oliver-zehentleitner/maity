@@ -13,6 +13,9 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
+  // A closed column draws the cards closed last up to this, the rest on "Show more" (tsk-a5pxwgkgr73e):
+  // 783 closed cards cost a full redraw about 640 ms in Chromium, 100 of them about 100 ms.
+  const CLOSED_SHOWN = 50;
   // The open column groups the board reads side by side; the closed one, with its window, after them.
   const LIST_GROUPS = ["proposed", "open", "in_progress", "blocked,review"];
   // The read of the cards changed while the groups were read (below): a page of the newest, and how
@@ -984,9 +987,40 @@ window.Maity = window.Maity || {};
       h("h3", { class: "column-head" }, label, closedWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
       closedWaiting(s) && !cards.length
         ? h("p", { class: closedError ? "send-status failed closed-read" : "muted closed-read" }, closedWords())
-        : cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+        : cards.length ? shownOf(s, cards).drawn.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"),
+      moreButton(s, cards));
       if (closedWaiting(s) && !closedError) col.setAttribute("aria-busy", "true");
       return col;
+    }
+
+    // The cards a column draws: a closed one the CLOSED_SHOWN closed last (by closed_at, newest first)
+    // until Show more opened it for this view, and the marked card wherever it stands, so a link to it
+    // still finds it on the board, folded under a parent or not. They keep the column's order; only which
+    // of them are drawn changes.
+    const shownWhole = new Set();
+    const closedLater = (a, b) => ((a.closed_at || "") < (b.closed_at || "") ? 1 : (a.closed_at || "") > (b.closed_at || "") ? -1
+      : a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+    function shownOf(s, cards) {
+      if (!(s === "done" || s === "cancelled") || shownWhole.has(s) || cards.length <= CLOSED_SHOWN) return { drawn: cards, rest: 0 };
+      const kept = new Set(cards.slice().sort(closedLater).slice(0, CLOSED_SHOWN).map((c) => c.id));
+      // The marked card, and the card it is folded under: a folded child is found under its parent only
+      // where that parent is drawn (review of #1645). The walk up stops after three ids, whatever the data.
+      for (let id = marked, depth = 0; id && depth < 3; id = byId[id] && byId[id].parent, depth++) kept.add(id);
+      const drawn = cards.filter((c) => kept.has(c.id));
+      return { drawn, rest: cards.length - drawn.length };
+    }
+    // Show more draws the column whole; the first card it adds takes the focus, the button being gone.
+    function moreButton(s, cards) {
+      const { drawn, rest } = shownOf(s, cards);
+      if (!rest) return null;
+      const first = cards.find((c) => !drawn.includes(c));
+      return h("button", { type: "button", class: "small show-more", "data-focus": "more:" + s, onclick: () => {
+        shownWhole.add(s);
+        draw();
+        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === first.id);
+        const title = el && el.querySelector("a.card-open");
+        if (title || el) (title || el).focus();
+      } }, M.t("board.closed.show_more", { count: rest }));
     }
 
     // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
@@ -1053,6 +1087,36 @@ window.Maity = window.Maity || {};
       panelDrawn = drawnState(part);
       const fresh = new Map(controlsOf(part));
       typed.forEach(([k, state]) => { if (fresh.has(k)) setState(fresh.get(k), state); });
+    }
+    // A card's open menu (status, assign) and its focused item, for a redraw that no action of the
+    // reader starts: the draw builds every card anew, each with its menus closed, so a menu opened
+    // just before would close under the reader's click (tsk-wp8hsgvha3n6). The old menu is closed
+    // here, without moving the focus, so that its listener for clicks elsewhere goes with it. The
+    // item is found again by its key (data-key: `member:<id>`, `move:<status>`, `sign:<slot>`),
+    // neither by its place nor by its words: a refresh that changed the members shifts the places,
+    // and a handle's words change when another member takes the same short handle (review of #1654).
+    // Returns what opens the same menu of the redrawn card on that item, or null when no keyed item
+    // of an open menu had the focus. An item gone meanwhile leaves the menu closed and the focus on
+    // its button, so that Enter lands on no other item.
+    function openMenuSpot() {
+      const open = Array.from(columnsBox.querySelectorAll(".menu-button"))
+        .find((b) => b.getAttribute("aria-expanded") === "true" && b.getAttribute("data-focus"));
+      if (!open) return null;
+      const key = open.getAttribute("data-focus");
+      const focused = Array.from(open.parentNode.querySelectorAll(".menu-item")).find((e) => e === document.activeElement);
+      const was = M.menuOf(open);
+      if (was) was.close(false);
+      const itemKey = focused ? focused.getAttribute("data-key") : null;
+      if (!itemKey) return null;
+      return () => {
+        const again = Array.from(columnsBox.querySelectorAll(".menu-button")).find((b) => b.getAttribute("data-focus") === key);
+        const menu = again && M.menuOf(again);
+        if (!menu || again.getAttribute("aria-expanded") === "true") return;
+        menu.open("first");
+        const item = Array.from(again.parentNode.querySelectorAll(".menu-item")).find((e) => e.getAttribute("data-key") === itemKey);
+        if (item) item.focus();
+        else menu.close(true);
+      };
     }
     function focusSpot() {
       const at = document.activeElement;
@@ -1315,6 +1379,7 @@ window.Maity = window.Maity || {};
       if (!apply(1)) return;
       const at = document.activeElement;
       const back = focusSpot();
+      const menuBack = openMenuSpot();
       boardItems = all;
       closedPending = false;
       sayClosed();
@@ -1330,14 +1395,18 @@ window.Maity = window.Maity || {};
         const title = found.querySelector("a.card-open");
         window.setTimeout(() => (title || found).focus(), 0);
       }
+      // After the focus is back: an open menu's item takes it again (null when no item had it).
+      if (menuBack) menuBack();
     }, (err) => {
       if (applied > 1) return;
       const back = focusSpot();
+      const menuBack = openMenuSpot();
       closedPending = false;
       closedError = err;
       sayClosed();
       draw(true);
       if (back) back();
+      if (menuBack) menuBack();
     });
     // The board as it was left: its search too, the hub's one asked again.
     if (kept && kept.search) {
@@ -1359,7 +1428,11 @@ window.Maity = window.Maity || {};
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
         M.withMembers(ctx, fresh);
-        if (filter.silent) draw();
+        if (filter.silent) {
+          const menuBack = openMenuSpot();
+          draw();
+          if (menuBack) menuBack();
+        }
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);
         });
