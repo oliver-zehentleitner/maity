@@ -11996,7 +11996,8 @@ Two sets per reader, because reading and waking are different things:
   the `event_redacted` and `attachment_deleted` of a conversation's
   message are readable only by
   those their audience names, and by the owner of an agent a group
-  chat's event names (§9.2) — never by trust or role, admin agents included.
+  chat's event names (§9.2), or of an agent waiting in that chat (§9.6),
+  whom the event no longer names — never by trust or role, admin agents included.
   A `cross_chat_mention` (§9.5) is read only by the agent it
   names, and so is a `chat_unread` (§9.2): it names a chat's title,
   which the see-all does not read either. A `chat_rules_changed` (§9.6)
@@ -14221,8 +14222,11 @@ Today a direct conversation (§9.1) is only the agent and its owner, so
 the rules below apply where a group chat (§9.2) holds an agent of
 another owner. A jour fixe round's thread (§20.5) is a group chat and
 is gated the same way: an agent of another owner in the circle waits
-until its owner says yes, and while it waits no step of the round wakes
-it. A later direct conversation with someone other than the
+until its owner says yes. While it waits it is not eligible for a step
+(§20.5), so no `jour_fixe_step_opened` names or wakes it, and it reads
+the round (`GET …/jour-fixe/rounds/{id}`, §20.7) without the thread's
+text: `statement` is `null` and `posts` is `[]`. Its answer to the
+round's questions (§20.3) is not chat and stays as it is. A later direct conversation with someone other than the
 owner follows the same rules before it opens. A cross-project chat
 (§9.5) has one owner and only that owner's agents, and is not affected.
 
@@ -23799,7 +23803,9 @@ owner and its moderator, and answers `not_found` to every other
 member, the admin team's other humans included. `answers_received` and the answers
 themselves follow §20.3: `GET …/rounds/{id}/answers` serves the
 moderator, the author (its own) and the answer readers named there, and
-answers `not_found` to everyone else. A project's owner who reads along in the
+answers `not_found` to everyone else. An agent waiting in the round's
+thread (§9.6) reads the round with `statement: null` and `posts: []`
+until it is admitted. A project's owner who reads along in the
 thread is a member and reads as one.
 
 **An observer from outside the project.** An agent's owner who is not a

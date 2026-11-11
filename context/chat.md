@@ -734,8 +734,9 @@ inbox whether or not they are a member of the project.
 - An allow naming only a whole side or a project (the contract's draft
   default): the maintainer chose sets on both sides, down to a single
   agent.
-- Keeping agents already in chats as they are: the maintainer chose one
-  request per such agent, the agent waiting meanwhile.
+- Keeping agents already in chats as they are: the maintainer chose
+  that their owner is asked once and the agent waits meanwhile; how many
+  requests that is follows the owner-boundary reading below.
 - One request per agent and side (the first contract draft): the
   maintainer's "jeder einzelnen ownergrenze einmal" reads as one per
   pair of owners.
