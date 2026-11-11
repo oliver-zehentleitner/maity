@@ -1,3 +1,0 @@
-### Added
-
-- Contract: no notification mail while the human is present in the web app (§18.5, "Held while present"). `email.hold_while_online` (§18.4, default `true`) holds the mail of `immediate` items while a live session of the human has a `present_until` in the future, and for `online_grace_minutes` (§16.2, default 5) after that; then only what is still unread is mailed. `POST /me/presence` (§18.4) is the tab's signal: sent only while the tab is visible and had input within 10 minutes, written at most once a minute per session, never shown as presence (§2.4). Security mail, the mails sent at once whatever the mode and the mail of a suspension are never held; digests are built at their time as before. No route yet.
