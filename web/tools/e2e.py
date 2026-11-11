@@ -4692,6 +4692,7 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
     expect(card).to_contain_text("It has not reported what it can do yet")
     run.shot(page, "project-runners")
     run.a11y(page, "project runners")
+    bootstrap_boot(run, page)
     start_on_runner_form(run, page, name)
     page.goto(f"{run.base}/owner/e2e-alpha/runners")
     expect(card).to_contain_text("no agent running here")
@@ -4736,6 +4737,47 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
         page.unroute(project_read, with_repository)
         page.unroute(runners_read, offering_it)
     no_problems(run, "start on a runner")
+
+
+def bootstrap_boot(run: Run, page: Page) -> None:
+    """The boot's first reads in one GET /bootstrap (docs/api.md §5.4, tsk-j591fzgnmspf): a cold load of
+    a project view asks the bundle with the project and none of the six single reads it replaces; with
+    the route answering 404, as an older hub does, the page reads them one by one and draws all the same."""
+    run.step("boot: one GET /bootstrap?project=… instead of the three waves; an older hub's 404 falls back")
+    base = "/api/v1"
+    singles = {f"{base}/maintenance", f"{base}/auth/session", f"{base}/me", f"{base}/projects/owner/e2e-alpha",
+               f"{base}/projects/owner/e2e-alpha/members", f"{base}/projects/owner/e2e-alpha/events?after=latest&wait=0"}
+    asked: list[str] = []
+
+    def record(r) -> None:
+        path = r.url.split("://", 1)[1].split("/", 1)[1]
+        if path.startswith("api/v1/"):
+            asked.append("/" + path)
+
+    page.on("request", record)
+    try:
+        page.goto(f"{run.base}/owner/e2e-alpha/board")
+        expect(page.locator("main section.view-board")).to_be_visible()
+        boot = [a for a in asked if a.startswith(f"{base}/bootstrap")]
+        assert boot == [f"{base}/bootstrap?project=owner/e2e-alpha"], asked
+        assert not singles.intersection(asked), f"single reads beside the bundle: {sorted(singles.intersection(asked))}"
+        asked.clear()
+
+        def older_hub(route) -> None:
+            route.fulfill(status=404, json={"error": {"code": "not_found", "message": "no such route", "details": {}}})
+
+        page.route(re.compile(r"/api/v1/bootstrap(\?|$)"), older_hub)
+        try:
+            page.goto(f"{run.base}/owner/e2e-alpha/board")
+            expect(page.locator("main section.view-board")).to_be_visible()
+            missing = {f"{base}/auth/session", f"{base}/me", f"{base}/projects/owner/e2e-alpha"} - set(asked)
+            assert not missing, f"the fallback did not read {sorted(missing)}: {asked}"
+            # The 404 is this step's own answer, not a failure of the page.
+            run.problems[:] = [x for x in run.problems if not re.fullmatch(r"GET /api/v1/bootstrap\S* answered 404", x)]
+        finally:
+            page.unroute(re.compile(r"/api/v1/bootstrap(\?|$)"), older_hub)
+    finally:
+        page.remove_listener("request", record)
 
 
 def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:

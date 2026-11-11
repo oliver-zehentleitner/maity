@@ -14521,6 +14521,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       + JSON.stringify([whileWindow, beforeSession, asked, drawn]));
   }
 
+  // GET /bootstrap (§5.4, tsk-j591fzgnmspf): a cold boot asks the hub one bundle instead of its three
+  // waves; the reads take their answers from its parts, which end with the boot; an older hub's 404
+  // leaves every read to its own route.
+  {
+    const A = win.Maity.api.fixtureAsked;
+    const SINGLE = ["GET /maintenance", "GET /auth/session", "GET /me", "GET /projects/maintainer/maity",
+      "GET /projects/maintainer/maity/members", "GET /projects/maintainer/maity/events?after=latest&wait=0"];
+    const singles = (list) => list.filter((x) => SINGLE.includes(x));
+    A.length = 0;
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 10; k++) await tick();
+    const onProject = A.slice();
+    const projectDrawn = !!main.querySelector("section.view-board");
+    expect(onProject[0] === "GET /bootstrap?project=maintainer/maity" && !singles(onProject).length && projectDrawn,
+      "boot: a project view asks one GET /bootstrap?project=…, none of the six single reads, and draws " + JSON.stringify(onProject.slice(0, 8)));
+    A.length = 0;
+    await win.Maity.api.get("/me"); await win.Maity.api.get("/projects/maintainer/maity/members");
+    expect(JSON.stringify(A) === JSON.stringify(["GET /me", "GET /projects/maintainer/maity/members"]),
+      "boot: the parts end with the boot; a later read asks its own route " + JSON.stringify(A));
+    A.length = 0;
+    await go("#/all"); for (let k = 0; k < 10; k++) await tick();
+    expect(A[0] === "GET /bootstrap" && !singles(A).length && !!main.querySelector("section.view-inbox"),
+      "boot: a view outside a project asks GET /bootstrap without a project " + JSON.stringify(A.slice(0, 6)));
+    win.MAITY_FIXTURE_NO_BOOTSTRAP = true;
+    A.length = 0;
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 10; k++) await tick();
+    const older = A.slice();
+    const olderDrawn = !!main.querySelector("section.view-board");
+    win.MAITY_FIXTURE_NO_BOOTSTRAP = false;
+    expect(older[0] === "GET /bootstrap?project=maintainer/maity" && SINGLE.slice(1).every((x) => older.includes(x)) && olderDrawn,
+      "boot: an older hub's 404 for /bootstrap leaves the reads to their own routes, and the page draws " + JSON.stringify(older.slice(0, 8)));
+  }
+
   // The invitation and registration pages read the session themselves: the drawing asks it no second
   // time before handing over (review of #1524). A late 401 of an older session read sets no language
   // over a newer one.

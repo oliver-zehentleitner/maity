@@ -2224,133 +2224,144 @@ window.Maity = window.Maity || {};
     // second factor and for a session cookie that outlived its session.
     // Not for the invitation and registration pages, which read the session themselves (review
     // of #1524): an early read there was one more, and its late answer could still set a language.
-    let first = null;
-    try { first = parseRoute().scope; } catch { /* the drawing below says why */ }
+    let firstWhere = null;
+    try { firstWhere = parseRoute(); } catch { /* the drawing below says why */ }
+    const first = firstWhere ? firstWhere.scope : null;
     const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    // The three waves (the window and the session, then /me, then the project's head, project and
+    // members) come in one GET /bootstrap (§5.4, tsk-j591fzgnmspf): the reads below take their
+    // answers from its parts, in the same order and with the same handling; an older hub's 404
+    // leaves them to their own routes. Ended with this boot (finally, below).
+    const primed = reuse || ownRead ? null : M.api.prime(first === "project" ? firstWhere.slug : null);
     const early = reuse || ownRead ? null : M.api.get("/auth/session");
     if (early) early.catch(() => {});
-    await M.maintenance.fresh();
-    if (seq !== renderSeq) return;
     try {
-      where = parseRoute();
-      const held = M.maintenance.running();
-      if (where.scope === "invite" && M.invite && !held) { M.siteChrome.leave(); await M.invite.page(main, document.getElementById("header"), where.token); return; }
-      if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
-      let session;
+      await M.maintenance.fresh();
+      if (seq !== renderSeq) return;
       try {
-        session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
-      } catch (err) {
-        // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
-        if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
-        // Without a session the login page; the landing page at the root
-        // is the hub's own static page (§16.7), never drawn here.
-        if (err.status === 401) {
-          // §16.12: while a window runs a visitor gets the full page, with the way to the
-          // sign-in, which stays open so the instance admin can end the window.
-          if (M.maintenance.running()) {
-            if (seq !== renderSeq) return;
-            if (where.scope === "login") { M.maintenance.aware(); renderLogin(main); return; }
-            M.siteChrome.leave();
-            M.maintenance.fullPage(main, document.getElementById("header"), { brand: brandTitle(false), tools: themeMenu(), signIn: true });
+        where = parseRoute();
+        const held = M.maintenance.running();
+        if (where.scope === "invite" && M.invite && !held) { M.siteChrome.leave(); await M.invite.page(main, document.getElementById("header"), where.token); return; }
+        if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
+        let session;
+        try {
+          session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
+        } catch (err) {
+          // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
+          if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
+          // Without a session the login page; the landing page at the root
+          // is the hub's own static page (§16.7), never drawn here.
+          if (err.status === 401) {
+            // §16.12: while a window runs a visitor gets the full page, with the way to the
+            // sign-in, which stays open so the instance admin can end the window.
+            if (M.maintenance.running()) {
+              if (seq !== renderSeq) return;
+              if (where.scope === "login") { M.maintenance.aware(); renderLogin(main); return; }
+              M.siteChrome.leave();
+              M.maintenance.fullPage(main, document.getElementById("header"), { brand: brandTitle(false), tools: themeMenu(), signIn: true });
+              return;
+            }
+            // A public page of this address, read-only (§16.9); otherwise the login.
+            // A frame of the sign-in drawn before stays until the page is known, then goes.
+            const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
+            if (shown) {
+              if (seq === renderSeq) M.siteChrome.leave();
+              return;
+            }
+            // The hub's own page in <main> stands when its data could not be read. A dashboard
+            // route asks for the sign-in; an address that shows a visitor nothing says so
+            // (js/not-found.js), with the sign-in one link away, but only where the hub said it
+            // has no page: a read that failed otherwise (null) keeps the sign-in.
+            if (seq === renderSeq && !hubPage) {
+              if (M.notFound && shown === false && showsVisitorNothing(where)) {
+                M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
+              } else renderLogin(main);
+            }
             return;
           }
-          // A public page of this address, read-only (§16.9); otherwise the login.
-          // A frame of the sign-in drawn before stays until the page is known, then goes.
-          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
-          if (shown) {
-            if (seq === renderSeq) M.siteChrome.leave();
-            return;
-          }
-          // The hub's own page in <main> stands when its data could not be read. A dashboard
-          // route asks for the sign-in; an address that shows a visitor nothing says so
-          // (js/not-found.js), with the sign-in one link away, but only where the hub said it
-          // has no page: a read that failed otherwise (null) keeps the sign-in.
-          if (seq === renderSeq && !hubPage) {
-            if (M.notFound && shown === false && showsVisitorNothing(where)) {
-              M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
-            } else renderLogin(main);
-          }
+          throw err;
+        }
+        // A new session after a sign-out or an ended one: what the old one still gets back (a late
+        // 401) ends nothing, and one that ends now is told again — the second step included.
+        if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
+        // Signed in, no page is in the frame: the second step, the setup and every view. A drawing
+        // overtaken while it read the session leaves nothing, or it would take the newer one's frame.
+        if (seq !== renderSeq) return;
+        M.siteChrome.leave();
+        // A session that owes the second factor reaches nothing else (§2.8.2): its step.
+        if (session && session.second_factor === "required" && M.secondFactor) { if (M.maintenance.running()) M.maintenance.aware(); renderStep(main, session); return; }
+        // So does one that must set the factor up first (§2.8.5): the setup is its page.
+        if (session && session.second_factor === "enrolment_required" && M.security) {
+          if (seq !== renderSeq) return;
+          if (M.maintenance.running()) M.maintenance.fullPage(main, document.getElementById("header"), { me: null, brand: brandTitle(true), tools: [themeMenu(), maintenanceSignOut()] });
+          else renderEnrolment(main);
           return;
         }
-        throw err;
-      }
-      // A new session after a sign-out or an ended one: what the old one still gets back (a late
-      // 401) ends nothing, and one that ends now is told again — the second step included.
-      if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
-      // Signed in, no page is in the frame: the second step, the setup and every view. A drawing
-      // overtaken while it read the session leaves nothing, or it would take the newer one's frame.
-      if (seq !== renderSeq) return;
-      M.siteChrome.leave();
-      // A session that owes the second factor reaches nothing else (§2.8.2): its step.
-      if (session && session.second_factor === "required" && M.secondFactor) { if (M.maintenance.running()) M.maintenance.aware(); renderStep(main, session); return; }
-      // So does one that must set the factor up first (§2.8.5): the setup is its page.
-      if (session && session.second_factor === "enrolment_required" && M.security) {
+        // The link opened where the sign-in is already complete: nothing to post here.
+        if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
+        // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
+        if (M.route.current().path === "/sign-in/second-factor") { M.route.go("/", { replace: true }); return; }
+        const me = reuse ? reuse.me : await M.api.get("/me");
         if (seq !== renderSeq) return;
-        if (M.maintenance.running()) M.maintenance.fullPage(main, document.getElementById("header"), { me: null, brand: brandTitle(true), tools: [themeMenu(), maintenanceSignOut()] });
-        else renderEnrolment(main);
-        return;
-      }
-      // The link opened where the sign-in is already complete: nothing to post here.
-      if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
-      // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
-      if (M.route.current().path === "/sign-in/second-factor") { M.route.go("/", { replace: true }); return; }
-      const me = reuse ? reuse.me : await M.api.get("/me");
-      if (seq !== renderSeq) return;
-      // A kept /me is no news about a window: GET /maintenance above was read for this drawing.
-      if (!reuse && "maintenance" in me) M.maintenance.know(me.maintenance, true);
-      if (M.maintenance.running() && heldPage(main, me.member, where)) return;
-      // Signed in again after signing out here: the stream may run again.
-      M.notify.resume();
-      // An account that waits for approval (§2.7.5) sees that, and nothing else.
-      if (me.member && me.member.account_status === "pending") {
-        // Its one page has its own address (§16.11): /account/pending.
-        if (M.route.current().path !== "/account/pending") M.route.go("/account/pending", { replace: true });
-        renderPending(main);
-        return;
-      }
-      if (where.scope === null || where.scope === "login") {
-        const next = where.scope === "login" ? routeNext() : null;
-        M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
-        return;
-      }
-      // Someone else's project may have a public page (§16.9): the reader sees it, read-only,
-      // under their own header. Asked first: a stranger's address touches no member route.
-      if (where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug) && M.visitor) {
-        const head = async () => {
-          const own = await loadContext({ scope: "all" }, me);
-          own.projectViews = await projectViews(me);
-          if (seq === renderSeq) renderHeader(own, null);
-        };
-        if (await M.visitor.page(main, null, where, M.route.current().path, { signedIn: true, head, live: () => seq === renderSeq })) return;
+        // A kept /me is no news about a window: GET /maintenance above was read for this drawing.
+        if (!reuse && "maintenance" in me) M.maintenance.know(me.maintenance, true);
+        if (M.maintenance.running() && heldPage(main, me.member, where)) return;
+        // Signed in again after signing out here: the stream may run again.
+        M.notify.resume();
+        // An account that waits for approval (§2.7.5) sees that, and nothing else.
+        if (me.member && me.member.account_status === "pending") {
+          // Its one page has its own address (§16.11): /account/pending.
+          if (M.route.current().path !== "/account/pending") M.route.go("/account/pending", { replace: true });
+          renderPending(main);
+          return;
+        }
+        if (where.scope === null || where.scope === "login") {
+          const next = where.scope === "login" ? routeNext() : null;
+          M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
+          return;
+        }
+        // Someone else's project may have a public page (§16.9): the reader sees it, read-only,
+        // under their own header. Asked first: a stranger's address touches no member route.
+        if (where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug) && M.visitor) {
+          const head = async () => {
+            const own = await loadContext({ scope: "all" }, me);
+            own.projectViews = await projectViews(me);
+            if (seq === renderSeq) renderHeader(own, null);
+          };
+          if (await M.visitor.page(main, null, where, M.route.current().path, { signedIn: true, head, live: () => seq === renderSeq })) return;
+          if (seq !== renderSeq) return;
+        }
+        // An earlier address of a project (a rename, a transfer) leads to its current one.
+        const moved = await movedTo(where, me);
         if (seq !== renderSeq) return;
+        if (moved) { M.route.go(moved, { replace: true }); return; }
+        // Notifications never stop the page: a failed read is said in the
+        // notice (watch), and the counts stay as /me has them.
+        // The project's own reads are kept only for a switch inside the same project.
+        keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
+        const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
+          M.notify.read().catch((err) => { notifyError = err; })]);
+        ctx = loaded;
+        ctx.projectViews = views;
+        ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
+        if (seq !== renderSeq) return;
+        // What the next switch may start from: read just now, or kept and read again below; nothing
+        // a write of this tab came after.
+        if (writes === wrote && !reuse) kept = { epoch: M.sessionEpoch || 0, at: Date.now(), session, me, project: ctx.keptProject || null };
+        // A view outside the project lets the project go: only a switch inside it takes it again.
+        else if (writes === wrote && kept === reuse) reuse.project = ctx.keptProject || null;
+      } catch (err) {
+        if (seq !== renderSeq) return;
+        // The page could not load: the header with the lockup stays, the
+        // failure stands where the loader stood, with a way to try again.
+        M.siteChrome.leave();
+        append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
+        append(clear(main), pageFailed(err));
+        return;
       }
-      // An earlier address of a project (a rename, a transfer) leads to its current one.
-      const moved = await movedTo(where, me);
-      if (seq !== renderSeq) return;
-      if (moved) { M.route.go(moved, { replace: true }); return; }
-      // Notifications never stop the page: a failed read is said in the
-      // notice (watch), and the counts stay as /me has them.
-      // The project's own reads are kept only for a switch inside the same project.
-      keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
-      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
-        M.notify.read().catch((err) => { notifyError = err; })]);
-      ctx = loaded;
-      ctx.projectViews = views;
-      ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
-      if (seq !== renderSeq) return;
-      // What the next switch may start from: read just now, or kept and read again below; nothing
-      // a write of this tab came after.
-      if (writes === wrote && !reuse) kept = { epoch: M.sessionEpoch || 0, at: Date.now(), session, me, project: ctx.keptProject || null };
-      // A view outside the project lets the project go: only a switch inside it takes it again.
-      else if (writes === wrote && kept === reuse) reuse.project = ctx.keptProject || null;
-    } catch (err) {
-      if (seq !== renderSeq) return;
-      // The page could not load: the header with the lockup stays, the
-      // failure stands where the loader stood, with a way to try again.
-      M.siteChrome.leave();
-      append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
-      append(clear(main), pageFailed(err));
-      return;
+    } finally {
+      // A part nobody asked for (a window read a minute ago, a visitor's page) is dropped.
+      if (primed) M.api.unprime(primed);
     }
     if (seq !== renderSeq) return;
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
