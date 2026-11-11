@@ -6082,10 +6082,11 @@ state in the element it built). A card's status or assign menu opened in between
 reader's click. That happened to e2e, and it would happen to a person who opens a menu as soon as
 the board appears. Before such a redraw (the late draw, the closed read in or failed, and the
 presence refresh that redraws under the Silent filter), the board notes the open card menu by its
-button's `data-focus` key (`move:<id>`, `assign:<id>`) and the focused item by what it says, and
+button's `data-focus` key (`move:<id>`, `assign:<id>`) and the focused item by its key (`data-key`:
+`member:<id>`, `move:<status>`, `sign:<slot>`, set from the item's `key` in `M.menuButton`), and
 closes the old menu without moving the focus, so that its listener for clicks elsewhere goes with it.
 After the draw it opens the same menu of the redrawn card again, through the menu's own open
-(`M.menuOf`), and focuses the item that says the same. An item gone meanwhile (a member who left the
+(`M.menuOf`), and focuses the item with the same key. An item gone meanwhile (a member who left the
 assign menu) leaves the menu closed and the focus on its button, so that Enter lands on no other
 item; a menu whose items had no focus is not opened again. A redraw the reader starts (a move, a filter, a search)
 closes the menu as before: the reader's own action has replaced it.
@@ -6103,6 +6104,9 @@ and the e2e step then needs no wait of its own.
 - The focused item by its place (the first version): the presence refresh sets the members before it
   draws, so a member who left above the focused one shifted the places, and Enter would have assigned
   the next member (review of #1654).
+- The focused item by its words (the second version): a member's words are not the member. An
+  agent's handle gets its owner (`@owner/sam`) once a human `sam` joins, who then reads `@sam`, so a
+  refresh that brought that human focused, and Enter assigned, the human (review of #1654).
 - Leaving the old menu open while its DOM is replaced (the first version): each reopening added a
   listener for clicks elsewhere and none was removed until such a click, so repeated refreshes stacked
   them on detached menus (review of #1654).
