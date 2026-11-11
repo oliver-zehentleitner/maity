@@ -88,7 +88,7 @@ window.Maity = window.Maity || {};
           e.preventDefault();
           error.textContent = "";
           input.removeAttribute("aria-invalid");
-          const code = input.value.replace(/\s+/g, ""); // the mail writes it "123 456"
+          const code = input.value.replace(/\s+/g, ""); // the mail writes it "123456"
           if (!code) { error.textContent = M.t("admin_sign_in.confirm.empty"); input.setAttribute("aria-invalid", "true"); input.focus(); return; }
           confirm.disabled = true;
           askStatus.busy(M.t("admin_sign_in.confirm.checking"));

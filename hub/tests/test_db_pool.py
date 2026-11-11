@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import replace
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import TimeoutError as PoolTimeout
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
 from maity_hub import db
@@ -152,6 +154,45 @@ def captured_connect_args(engine: Any, driver: str = "psycopg") -> dict[str, Any
     finally:
         patch.undo()
     return seen
+
+
+def captured_async_connect_args(engine: AsyncEngine) -> dict[str, Any]:
+    """What the async engine would hand to psycopg's `AsyncConnection.connect`, without
+    connecting."""
+    import psycopg
+
+    seen: dict[str, Any] = {}
+
+    async def fake(*args: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        raise psycopg.OperationalError("stop")
+
+    async def connect() -> None:
+        async with engine.connect():
+            pass
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(psycopg.AsyncConnection, "connect", fake)
+    try:
+        with pytest.raises(Exception, match="stop"):
+            asyncio.run(connect())
+    finally:
+        patch.undo()
+    return seen
+
+
+def test_the_async_engine_takes_the_same_connection_options() -> None:
+    """The two engines of a hub must not drift apart: the time zone, the timeouts, the name in
+    `pg_stat_activity` and the connect timeout reach both (tsk-v874y63b4z8p)."""
+    url = "postgresql+psycopg://u:p@localhost/h"
+    engine = db.make_engine(url, 2, 0, 60, 30, 60, db.APPLICATION_SERVING)
+    async_engine = db.make_async_engine(url, 2, 60, 30, 60, db.APPLICATION_SERVING)
+    wanted = captured_connect_args(engine)
+    seen = captured_async_connect_args(async_engine)
+    for key in ("options", "application_name", "connect_timeout"):
+        assert seen[key] == wanted[key], key
+    levels = [e.dialect._on_connect_isolation_level for e in (engine, async_engine.sync_engine)]
+    assert levels == ["READ COMMITTED", "READ COMMITTED"]
 
 
 def test_a_postgres_engine_sets_the_timeouts_on_each_connection() -> None:

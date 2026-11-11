@@ -1666,8 +1666,8 @@ profile (views.md#the-header-gets-a-menu-to-bring-someone-in-invitations-get-the
 `counts.chat` from `/me/notifications`, which the header already reads,
 worded "N unread chat messages". `/chats` reads the conversations
 across projects (§9.3, `GET /me/conversations`) and shows them in the
-hub's order: pinned with unread, unpinned with unread, quiet pinned, the
-rest. On a hub
+hub's order: pinned with unread, quietly pinned (pinned, no unread),
+unpinned with unread, the rest. On a hub
 without notifications both buttons stand without a count, the bell as a
 link to everything waiting.
 
@@ -1935,7 +1935,9 @@ not the sum.
   boundary excludes.
 - The open columns first and the closed window after them: the board
   would draw twice, and its closed columns and counts would change under
-  the reader.
+  the reader. Taken up on 2026-11-10, after prod measured the closed
+  window as the board's longest wait: [the board draws once the open
+  groups have answered](#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow).
 - One request per status: seven instead of five, for groups (`blocked`,
   `review`; `done`, `cancelled`) that are small next to the rest.
 - Reconciling from the project's event feed (the cards a task event names
@@ -4399,6 +4401,25 @@ The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New
 - Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
 - Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
 
+## The tabs menu is drawn as the row's last tab, fixed at the end, and stays a menu button
+
+**Id:** dd8eaa01-7117-4ed2-94de-8eee9ee82e57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10, seq 105570: the "⋯" beside the project tabs should look like a tab; the proposal approved in seq 105578; seq 105588: it cannot be moved, it stays the last tab)
+**Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
+
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 40px)` on `.switcher` in a row with the menu), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+
+**Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
+
+**Rejected alternatives:**
+- Leaving the many-tab wrap as it was and saying so: the owner's rule is that it stays the last tab (seq 105588), and it would not be exactly when there are the most tabs.
+- A real tab (`role="tab"` or a link in `nav.switcher`): a screen reader would announce a view that does not exist, and the drag and keyboard moves would treat it as a project tab.
+- Leaving it as it was, a small button with a gap: it did not read as part of the row.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7
@@ -5919,6 +5940,32 @@ word for what the number is, and the list
 is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
 reports nothing).
 
+## Each credential in an agent's list names its instance, so the one to revoke is told apart by name
+
+**Id:** 9bfd0309-9db6-47e1-bc8c-46cbac6def9c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-s0jb9wkdp41j (the maintainer, 2026-11-10: he had to revoke one dead instance of each of two agents and could tell their credentials apart only by their dates); docs/api.md §10 (each credential carries `instance`) and §6.17
+**Revisit when:** an instance can be revoked from its own line on the member's Sessions tab, or the member list carries the credentials
+
+In an agent's credentials list (its row on Team, its Details on Agents) each credential names its
+instance after its id as `<handle>#<id>`: where the member lists that instance, the `#id` links
+to it on the member's Sessions tab, and an active one shows its presence from the member list.
+A revoked credential's instance is usually no longer listed (Sessions shows the active instances,
+docs/api.md §6.2), so its `#id` is plain text: a link would only lead to "not listed". The revoke confirmation
+names the same address, by the same handle rule (owner/handle where two members share the
+short one): "Revoke maity-coder-claude-001#qwju (crd-…)?".
+
+**Reason:** revoking a credential ends that instance's session at once. With two instances of one
+agent the list showed only ids, client, created and last used, so the right one was picked by its
+dates, which is error-prone for a step that cannot be undone. The instance name is what every
+other view uses for an instance (messages, cards, the ticker).
+
+**Rejected alternative:** the list as it was, the instance told apart by its created and last-used
+times: what the maintainer had to do, and what this card is for. Alternatives beyond that were not
+discussed: unknown.
+
 ## All projects reads each project's members once per page drawn, shared by the Lead button and the inbox
 
 **Id:** e66cb966-b6f3-417b-bb0a-0bd84ce1899d
@@ -5944,3 +5991,77 @@ All projects. A switch inside one project already keeps its members for at most 
 (`KEPT_MS` in web/js/app.js) and reads them again behind the view; a cache without that re-read
 would show a member list from before a change on the next visit, and adding it was more than the
 card asked for. Alternatives beyond that were not discussed.
+
+## The board draws once the open groups have answered; the closed columns follow
+
+**Id:** e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a5pxwgkgr73e: the owner's feedback on deploy 6 (2026-11-10, the board one of two pages still over 1 s); the operators' per-call measurement of the board on rev 30 (2026-11-10: the five group reads start together and take 83–203 ms each; the closed group then pages serially, 4 pages of 200, about 0.9 s and 550 kB); the coordinator's go for this change the same day
+**See:** views.md#the-board-reads-its-column-groups-side-by-side — 145f0bf3-3024-414a-8026-19dad1960ff7 — as of 2026-11-10
+**Revisit when:** the hub serves the closed window in one page or a smaller shape, the closed window changes, or the board's first draw is measured over 1 s again
+
+The board still asks its five groups at once and reconciles as before
+(the entry above). What changed is when it first draws: once the four open
+groups (`proposed`, `open`, `in_progress`, `blocked,review`) have
+answered, with their cards, while the closed group (`done,cancelled` with
+the 14-day window) is still paging. Until the whole read is in, the Done
+and Cancelled columns hold no count and say that the closed cards are
+being read; if that read fails, those columns say so and the open ones
+stay as drawn. A failure of the read again of the cards changed meanwhile,
+after the groups have answered, is named as that, not as a failed read of
+the closed cards. A live region outside the columns says the same once for a
+screen reader, and the two columns are marked busy while read. A filter
+that shows the closed columns gives no "no card matches" while they are
+unknown. A hub search keeps its own results, closed cards and counts
+included: all of this is the board's own state without one. A closed card
+it finds is marked outside the window by its `closed_at` (at or before the
+cutoff, as the strict `closed_after` reads it), not by whether the board has
+loaded it, since while the closed group is read the loaded cards are the
+open groups' alone; the late draw clears the mark from a card it loaded.
+Then the board draws again with every card (with the search's results
+where one is active). The element in the columns that had the focus, a
+card's title link included, keeps it, after a failed read too, where it
+still stands in a column; a card now folded under a parent that came with
+the closed cards, or gone from the columns, hands the focus to the status
+line. The opened card's panel draws its card part anew in that draw, so
+its subtask list, dependency lines and related and parent lists read the
+closed cards that came with it: what the reader chose or typed in its
+controls and has not saved is carried over, a new subtask's form opened in
+it moves into the new part with its draft where the new part offers one
+(otherwise, on a card now closed, a subtask or a release, it closes), and
+the focus stays on the same
+control where it is drawn again, on the panel otherwise. A reload after a write
+draws the panel anew as before. A board left from a
+closed card finds that card now. A reload after a write
+supersedes the first read: an answer is drawn only if no later read's
+answer has been.
+
+**Reason:** on the maintainer's project the closed window was 783 cards,
+the largest group by far, and its pages follow each other through a
+keyset cursor, so it held the first draw by about a second while the open
+columns, the ones a reader works in, had long answered.
+
+**Rejected alternatives:**
+- Waiting for every group, as before: the reason above. The objection
+  recorded then, that the closed columns and counts change under the
+  reader, is met by showing no count and a loading line in those columns
+  until they are complete (on the board without a hub search, whose
+  results come complete).
+- A leaner card shape for the board, or a shorter closed window by default:
+  each a contract or product change, held until this change and a faster
+  200-card page on the hub have been measured.
+- Holding a hub search until the closed group has answered, so that the
+  loaded cards mean the window again: it brings the wait back for a
+  search. The loaded cards as the test, as before: wrong while the closed
+  group is read (review of #1622).
+- Keeping the panel's card part as it is when its card is unchanged
+  (round 4 of #1622), so that an editor opened in it keeps its draft: the
+  part's subtask list and dependency lines read the cards loaded at the
+  first draw, the open groups' alone, and went on saying that a closed
+  subtask the columns now showed was not loaded. Redrawing the part and
+  moving the open form into it keeps the draft without stale lists, on a
+  changed card as well. Redrawing without moving the form (round 3) lost
+  the draft: the form has no control in the redrawn part to carry it to.
+

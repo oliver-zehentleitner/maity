@@ -504,8 +504,8 @@
     "text": "46d0c43d8a07ac0f"
   },
   "agentparts.credential.revoke_confirm": {
-    "en": "679fcaf26da1fa34",
-    "text": "038b3e6f5e1bb9f3"
+    "en": "ba9034e3015741da",
+    "text": "d0749e2612d3c7e7"
   },
   "agentparts.credential.revoked": {
     "en": "76b56ef03abaec9d",
@@ -1542,6 +1542,18 @@
   "board.claim.unclaimed": {
     "en": "89fa136908846c6b",
     "text": "1142f3b14dee1049"
+  },
+  "board.closed.failed": {
+    "en": "76ff07448abbd4a4",
+    "text": "24975ce67263b644"
+  },
+  "board.closed.loading": {
+    "en": "2ed9637177518fe0",
+    "text": "71fa498079717f17"
+  },
+  "board.closed.recheck_failed": {
+    "en": "a778f95d9908435e",
+    "text": "3e64e50ad92b77a9"
   },
   "board.column.other": {
     "en": "1f1260ddd48575a9",

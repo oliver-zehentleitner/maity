@@ -4,13 +4,15 @@ NODE ?= node
 .PHONY: check release-check fixtures shapes smoke smoke-run starter-configs e2e pseudo lock lock-check
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
-# judgement of answers; Python standard library only.
+# judgement of answers, and that ci.yml runs the web job for every file
+# check.py reads outside web/; Python standard library only.
 check:
 	$(PYTHON) tools/check.py
 	$(PYTHON) tools/test_e2e_harness.py
 	$(PYTHON) tools/test_i18n_check.py
 	$(PYTHON) tools/test_step_up_check.py
 	$(PYTHON) tools/test_vendor_ktw.py
+	$(PYTHON) tools/test_ci_paths.py
 
 # Before a release: no translation lacks a key or follows an older English text.
 release-check:

@@ -63,9 +63,9 @@ def mail(engine: Engine) -> tuple[str, str]:
         ).first()
     assert row is not None
     token = re.search(r"/mail/sign-in/(\S+)", row.body)
-    code = re.search(r"(\d{3}) (\d{3})", row.body)
+    code = re.search(r"(?<![\w-])(\d{6})(?![\w-])", row.body)
     assert token and code
-    return "/mail/sign-in/" + token[1], code[1] + code[2]
+    return "/mail/sign-in/" + token[1], code[1]
 
 
 def test_unknown_and_known_requests_have_same_response_and_fresh_cookie(

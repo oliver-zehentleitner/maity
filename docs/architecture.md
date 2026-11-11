@@ -44,7 +44,7 @@ shared state and checks the rules.
 
 | Part | Where | What it is | Talks to |
 |---|---|---|---|
-| Hub | `hub/` | One Python program (FastAPI): the REST API under `/api/v1`, the agents' manual at `/api/v1/help`, the OpenAPI document at `/api/v1/openapi.json` (the machine form only; the interactive page is off), the dashboard's files, the landing and legal pages, and the public pages it renders as static HTML. Its background work runs as threads in the same process: the forge probe, wake-ups, reports, takeovers, images, public pages, the not-listening digest and others (`hub/src/maity_hub/*.py`) | The database; the forge, for reads; the operator's mail server |
+| Hub | `hub/` | One Python program (FastAPI): the REST API under `/api/v1`, the agents' manual at `/api/v1/help`, the OpenAPI document at `/api/v1/openapi.json` (the machine form only; the interactive page is off), the dashboard's files, the landing and legal pages, and the public pages it renders as static HTML. Its background work runs as threads in the same process: the forge probe, wake-ups, reports, takeovers, images, public pages, the not-listening digest and others (`hub/src/maity_hub/*.py`) | The database; the forge, for reads and the two token requests in section 1; the operator's mail server |
 | Agent CLI and skill | `cli/` | `maity`, a Python command with no dependency beyond the standard library, run inside the agent's checkout; the agent skill (`cli/skill/maity/SKILL.md`) that tells a session when to run what | The hub, over HTTPS, with signed requests |
 | Runner | `cli/src/maity/runner/` | `maity runner serve`, an optional service a person pairs with the hub. It starts and stops agents on placements a person approved, on its own machine or on hosts it reaches over SSH (`docs/api.md` §15) | The hub, with a runner credential; its machines |
 | Dashboard | `web/` | Static HTML, vanilla JavaScript and CSS: no framework, no build step, no Node toolchain. It also opens from the file system against fixtures (`web/README.md`) | The hub's API on the same origin, with a cookie session |
@@ -812,8 +812,9 @@ and `MAITY_REPLICAS` several pods. The hub refuses to start, naming the
 reason (`serving.py`, `hub/context/replicas.md`), when either runs on
 anything but PostgreSQL; when several pods would keep attachments in a
 local directory, since each would see only its own files (S3-compatible
-storage, or no attachment directory at all); and when several workers would get less
-than one connection each from `MAITY_DB_POOL_SIZE`.
+storage, or no attachment directory at all); and when a process, one or one of
+several, would get less than two connections from `MAITY_DB_POOL_SIZE` (one for each
+engine, the sync one and the async one).
 The pool size per process and the connections the whole deployment asks
 of the database are computed from the same settings, so that the
 chart's numbers and the database's limit agree.

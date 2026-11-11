@@ -1857,6 +1857,7 @@ web/
 ├── js/org.js         (5) the organisation tree, a section of the Overview
 ├── js/paths.js       the organisation's Paths face: reporting lines and where an event goes
 ├── js/project-message.js message the project (§8.4)
+├── js/event.js       one event by its seq (§8.9): opens it where it lives, "not visible" otherwise
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
 ├── js/chats.js       every chat across the projects (/chats)

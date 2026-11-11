@@ -10,14 +10,15 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 from sqlalchemy.dialects import postgresql, sqlite
 
-from maity_hub import clock, conversation_list, namespace, wakeups
+from maity_hub import clock, conversation_list, events, namespace, wakeups
 from maity_hub import tables as t
 from maity_hub.auth import sessions
+from maity_hub.notifications import items as derived
 from maity_hub.notifications import records
-from maity_hub.notifications.items import EVENT_KINDS, Item, Scope
+from maity_hub.notifications.items import EVENT_KINDS, REQUEST_EVENTS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.routes.me import open_requests
 
@@ -93,6 +94,26 @@ def _slugs(conn: Connection, by_project: dict[str, Any]) -> dict[str, str]:
 
 # --- positions -----------------------------------------------------------------------
 
+# The kinds a held long-poll's look passes over as quiet besides the item kinds it filters
+# (`quietly_moved`): an agent's own work on cards, notes, sessions and probes, which changes no
+# relation `items.derive_page` reads. Every other kind (a cover starting or ending, a claim, a
+# membership's role or trust, a chat's participants, and any kind added later) is not quiet:
+# the derive judges older rows with the relations of now, so such a row may make an item of a
+# row below the seen head (review of #1623).
+QUIET_KINDS = frozenset(
+    {
+        *events.CARD_KINDS,
+        *events.NOTE_KINDS,
+        "task_checkpoint",
+        "placement_reported",
+        "probe_observed",
+        "link_observed",
+        "session_started",
+        "session_paused",
+        "session_model_changed",
+    }
+)
+
 
 def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
     """A few aggregate reads that change whenever a notifications answer could: the
@@ -150,6 +171,102 @@ def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
         tuple(reads),
         tuple(chats),
     )
+
+
+def held_stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
+    """What a held long-poll compares between passes: `stamp`, and each member project's
+    highest `seq` of any kind, the position `quietly_moved` looks past. Only a call with `wait`
+    reads it, its first answer included when that answer lists no item; the mail pass stores
+    `stamp` alone, which card churn does not move."""
+    found = stamp(conn, human_id)
+    project_ids = [project_id for _, project_id in found[0]]
+    tops = (
+        sorted(
+            conn.execute(
+                select(t.event.c.project_id, func.max(t.event.c.seq))
+                .where(t.event.c.project_id.in_(project_ids))
+                .group_by(t.event.c.project_id)
+            ).all()
+        )
+        if project_ids
+        else []
+    )
+    return found, tuple(tops)
+
+
+def quietly_moved(
+    conn: Connection, human_id: str, seen: tuple[Any, ...], now: tuple[Any, ...]
+) -> bool:
+    """Whether a held stamp (`held_stamp`) moved by nothing but rows that can make no item of
+    the human: the same memberships, account records and read marks, and in every member
+    project only rows past the seen position, of any kind, that `items.derive_page` would leave
+    out in SQL. A held long-poll then keeps holding with `now` as its stamp instead of deriving
+    everything again (§18.2): agents writing to each other move the heads all the time and are
+    no item of the human's (tsk-a5pxwgkgr73e).
+
+    The look is a superset of the derive's own rows in the range: a request's event unless its
+    request is personal or another member's alone (`_may_concern`), a message only where its
+    text may mention the human (`_names`) or its audience names them in a chat (`_addressed`),
+    every other kind that makes items. Any row of a kind outside those and `QUIET_KINDS` makes
+    the move not quiet: a change of a relation the derive reads with its state of now (a
+    cover, a claim, a role) can make an item of an older row, in its own project or in another
+    (a cover in one project, chatter in a second), which the next derive then finds, as it did
+    before this look. The look runs only when `stamp` moved, so a relation change with no later
+    move of a head or mark stays unseen until the deadline, as without the look; the position
+    it is seen past stays where it was until then.
+
+    It reads one range per project whose position moved, `(seen position, new
+    position]`: within a project `seq` follows commit order (`events.emit` inserts under
+    `lock_project`), so no row below a visible position is still to commit, the argument the
+    held events wait rests on (hub/context/events.md, 2263cf0a). The statement stops at its first
+    row (`LIMIT 1`), but the range has no bound in rows: a long wait whose stamp does not move
+    collects every row written meanwhile into the next look's."""
+    (seen_stamp, seen_tops), (now_stamp, now_tops) = seen, now
+    members = now_stamp[0]
+    if members != seen_stamp[0] or now_stamp[2:] != seen_stamp[2:]:
+        return False
+    before = dict(seen_tops)
+    after = dict(now_tops)
+    if len(after) != len(now_tops) or any(
+        after.get(project_id, -1) < floor for project_id, floor in before.items()
+    ):
+        return False
+    member_of = {project_id: member_id for member_id, project_id in members}
+    ranges = []
+    for project_id, top in now_tops:
+        floor = before.get(project_id, 0)
+        if floor == top:
+            continue
+        if project_id not in member_of:  # cannot be: the positions are read for these memberships
+            return False
+        e = t.event.c
+        ranges.append(
+            and_(
+                e.project_id == project_id,
+                e.seq > floor,
+                e.seq <= top,
+                or_(
+                    e.kind.notin_(REQUEST_EVENTS), derived.may_concern_member(member_of[project_id])
+                ),
+            )
+        )
+    if not ranges:
+        return True
+    e = t.event.c
+    found = conn.execute(
+        select(e.seq)
+        .where(
+            or_(*ranges),
+            e.kind.notin_(QUIET_KINDS),
+            or_(
+                e.kind != "message",
+                derived.names(human_id),
+                and_(e.conversation_id.is_not(None), derived.addressed(human_id)),
+            ),
+        )
+        .limit(1)
+    ).first()
+    return found is None
 
 
 def head(conn: Connection, where: Scope) -> Position:
