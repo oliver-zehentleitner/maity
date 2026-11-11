@@ -375,8 +375,10 @@ rename or a motif count in the same request is rolled back with it.
 Checked and left as they are: a human has no display-name write after
 registration; an agent's own `PATCH /me` sets no display name (a motif
 goes through `choose_motif`, which already locks first); an
-organisation's display name is under a suspension hold, and that route
-locks the organisation row before it reads the hold.
+organisation has no profile hold, only a suspension: its handle rename
+and `public_page: on` read that hold after the route locked the
+organisation row, and its display name reads no hold at all (a
+suspended organisation may still change it).
 
 **Reason:** a read of the hold does not wait for an uncommitted one. A
 writer that looked before taking the row the reset holds can commit
