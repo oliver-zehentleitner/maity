@@ -451,7 +451,8 @@ through the database (`hub/context/replicas.md`).
   Each worker splits its pool share between its two engines: the async
   engine, where every call authenticates, takes 8 of it but at most half, and
   the sync engine, where the route bodies run, the rest and the whole
-  overflow. A pool lowered to 8 gives 4 + 4 per worker; with 2 workers, 2 + 2.
+  overflow. A pool lowered to 8 gives 4 + 4 with one worker; with 2 workers,
+  2 + 2 each.
 
 ## When an install or upgrade fails
 
