@@ -175,6 +175,8 @@ def test_the_reporters_list_shows_the_current_public_name_or_a_neutral_word(
     assert world.owner.patch(f"/projects/{PROJECT}", {"public_page": "off"}).status_code == 200
     shown = mine(zoe)
     assert shown[0] == {"type": "profile", "id": None, "label": "person"}
+    # Its only public project went off, so its own page went too: neutral as well.
+    assert shown[1] == {"type": "profile", "id": None, "label": "agent"}
     assert shown[2] == {"type": "profile", "id": None, "label": "agent"}
     assert shown[3] == {"type": "project", "id": None, "label": "project"}
     assert agent["id"] not in str(shown) and world.anna.id not in str(shown)
@@ -213,3 +215,55 @@ def test_a_public_handle_that_looks_like_an_id_is_taken_as_a_handle(
     assert shot["id"] == world.anna.id
     # A real account id is still no name a stranger can use.
     assert report(zoe, {"type": "profile", "id": world.ben.id}).status_code == 404
+
+
+def test_with_public_pages_off_for_the_instance_the_stored_pages_admit_nobody(
+    world: World, make_client: ClientFactory
+) -> None:
+    yan = flow.human(make_client, world.migrated, "yan")  # a client of an instance with pages off
+    with world.migrated.connect() as conn:
+        stored = conn.execute(select(t.public_page.c.path)).scalars().all()
+    assert f"/{PROJECT}" in stored and "/anna" in stored
+    assert report(yan, {"type": "project", "id": PROJECT}).status_code == 404
+    assert report(yan, {"type": "profile", "id": "anna"}).status_code == 404
+
+
+def test_a_renamed_or_isolated_agent_is_not_found_by_what_no_page_shows(
+    world: World, make_client: ClientFactory
+) -> None:
+    zoe = stranger(world, make_client)
+    agent = bot(world)
+    old = agent["handle"]
+    renamed = world.owner.patch(f"/agents/{agent['id']}", {"handle": "swift-fox"})
+    assert renamed.status_code == 200, renamed.text
+    assert report(zoe, {"type": "profile", "id": f"maintainer/{old}"}).status_code == 404
+    assert report(zoe, {"type": "profile", "id": old, "project": PROJECT}).status_code == 404
+    assert report(zoe, {"type": "profile", "id": "maintainer/swift-fox"}).status_code == 201
+    isolate = f"/projects/{PROJECT}/members/{agent['id']}/isolate"
+    assert world.owner.post(isolate, {"reason": "it rewrote the notes"}).status_code == 200
+    name = {"type": "profile", "id": "swift-fox", "project": PROJECT}
+    assert report(zoe, name).status_code == 404
+
+
+def test_a_member_may_send_a_project_beside_an_id(world: World) -> None:
+    agent = bot(world)
+    target = {"type": "profile", "id": agent["id"], "project": PROJECT}
+    assert report(world.anna, target).status_code == 201
+
+
+def test_after_renames_only_the_current_names_resolve(
+    world: World, make_client: ClientFactory
+) -> None:
+    zoe = stranger(world, make_client)
+    agent = bot(world)
+    assert world.anna.patch("/me", {"handle": "anna2"}).status_code == 200
+    assert report(zoe, {"type": "profile", "id": "anna"}).status_code == 404
+    assert report(zoe, {"type": "profile", "id": "anna2"}).status_code == 201
+    owner = world.owner.patch("/me", {"handle": "boss"})
+    assert owner.status_code == 200, owner.text
+    assert (
+        report(zoe, {"type": "profile", "id": f"maintainer/{agent['handle']}"}).status_code == 404
+    )
+    assert report(zoe, {"type": "profile", "id": f"boss/{agent['handle']}"}).status_code == 201
+    assert report(zoe, {"type": "project", "id": PROJECT}).status_code == 404
+    assert report(zoe, {"type": "project", "id": "boss/maity"}).status_code == 201

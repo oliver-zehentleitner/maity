@@ -257,6 +257,11 @@ def _profile(
         if not (_reads_member(conn, caller, row) or _agent_shown(conn, pages, row, owner)):
             raise not_found()
         return _agent_shot(conn, row)
+    # A member's read by id comes first, so a `project` beside an id is not taken for the
+    # handle form; an id that reads nothing falls through to the public names.
+    by_id = _profile_by_id(conn, caller, profile_id)
+    if by_id is not None:
+        return by_id
     if project is not None:  # the bare handle a served project page shows, with its name
         if not isinstance(project, str) or not project:
             raise invalid({"target.project": "required"})
@@ -264,9 +269,6 @@ def _profile(
         row = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == agent_id)).one()
         # The project it was reported from, so the reporter's list names it the same way.
         return {**_agent_shot(conn, row), "project": project_id}
-    by_id = _profile_by_id(conn, caller, profile_id)
-    if by_id is not None:
-        return by_id
     # A person's current handle, as their page shows it at `/{handle}`.
     human = conn.execute(
         select(t.human).where(t.human.c.handle == profile_id, t.human.c.deleted_at.is_(None))
