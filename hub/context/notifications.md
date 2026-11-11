@@ -1127,3 +1127,44 @@ shipped, the kind's settings could be changed only through the API (§18.4).
 - A count of its own: the counts' five keys are a contract the dashboard's badges read; the
   request is an open request like any other.
 - Moving an organisation's invitation into the kind too: not decided, left to a later card.
+
+## Notification mail waits while the human is present in the web app, told by a heartbeat of its own
+
+**Id:** 59e31f20-6e15-4827-866d-ec17444e7efb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
+**Revisit when:** the maintainer reads the contract and wants urgent requests mailed while present, or the dashboard gets a live connection that every tab holds
+
+`email.hold_while_online` (default `true`) holds the mail of `immediate` items while one of
+the human's live sessions has a `present_until` in the future, and `online_grace_minutes`
+(default 5, an instance mail setting) after that; the next pass mails what is still unread.
+A dashboard tab calls `POST /me/presence` every 60 seconds while it is visible and had input
+within 10 minutes. The hub moves `present_until` to two minutes ahead only when that moves it
+by at least a minute, so it writes at most once a minute per session: every present tab calls
+the route each minute, and a row write per call would cost the database a write for each of
+them. A tab that goes hidden or idle stops counting within 2 minutes of its last call, then the
+grace runs. A signed-out, ended or expired session stops counting at once.
+
+**Reason:** a human who reads the dashboard sees the items in the bell; a mail two minutes
+later repeats them. "Present" needs input as well as a visible tab, since a visible tab on an
+unattended desk would hold mail all night. `present_until` is the hold's input only. The call
+writes no `last_seen_at` and shows nobody online, so nobody reads it as presence. Security
+mail, the mails sent at once whatever the mode and the mail of a suspension are never held.
+An urgent request is an `inbox` item and is held: the present human sees it in the bell.
+Digests keep their moment.
+
+**Rejected alternatives:**
+- A `present=1|0` flag on the bell's long-poll (the first plan): the long-poll runs only while
+  browser pop-ups are on or a view watches the stream (`wanted()` in notify.js), so a reader
+  without pop-ups would never count. And one session holds one long-poll: a hidden tab that
+  takes it over pauses the visible one for 5 minutes (`SUPERSEDED_MS`), and the present
+  human is mailed.
+- A "hidden at once" end (`present=0` clearing the value): tabs of one browser share a
+  session, so one tab going hidden would end another's presence; and the write throttle allows
+  at most one write a minute.
+- A valid session alone as "online": a signed-in browser left closed would hold mail forever.
+- Holding the items the mailer marks `urgent` (the first plan): the only such item is the mail
+  of a suspension, and a suspended account has no live session; the contract lists it among the
+  mails never held instead.

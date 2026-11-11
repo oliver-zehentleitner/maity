@@ -388,6 +388,7 @@ the hub records it on the session.
 | `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters, a stored vector behind a handle when the inline form would not fit (§18.2) |
 | `POST /me/notifications/read` | 200 `ids` (§18.3) |
 | Immediate notification mails | 10 per hour per human, the rest held for one mail at the hour's end (§18.5) |
+| `POST /me/presence` | 10 per minute per session, then `rate_limited` with `Retry-After`; `present_until` written at most once a minute per session (§18.4) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
 | Admin test sends | 5 per hour per instance admin (§16.3) |
 | Address verification mails | 3 per hour and 10 per day per human (§18.4) |
@@ -1468,7 +1469,9 @@ stuck holder becomes reassignable without anyone guessing. There is no
 heartbeat endpoint: a holder that listens while still at work is warned
 before its leases run out (`claim_lease_expiring`) and renews them on
 purpose with `POST …/claims/renew` (§6.5; not built yet,
-tsk-p55zyn4pz0wd). A runner's calls update the runner's own
+tsk-p55zyn4pz0wd). `POST /me/presence` (§18.4) is no heartbeat of this
+kind: a dashboard tab's signal for the mail hold of §18.5, it writes no
+`last_seen_at`, renews no lease and shows nobody as online. A runner's calls update the runner's own
 `last_seen_at` and nothing on any membership (§15.3).
 
 ### 2.5 Forwarded headers and plain HTTP
@@ -15455,6 +15458,7 @@ and `resolveEntry`, and any write.
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
+| POST | `/me/presence` | human (cookie) | 18.4 |
 | GET | `/projects/{owner}/{slug}/jour-fixe` | `project:read`, members only | 20.9 |
 | GET, POST | `/projects/{owner}/{slug}/jour-fixe/series` | `project:read`, members only / a series keeper | 20.1 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}` | the series' keepers | 20.1 |
@@ -18062,6 +18066,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3) and the mail factor's (§2.8.8), all humans together; default 60. Over it, a sign-in mail is not sent |
 | `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR` | `password_reset_max_per_hour` | password reset mails (§2.10), all humans together; default 30. Over it, a reset mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
+| `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `online_grace_minutes` | 0–60, default 5: how long after a human stopped being present in the web app their held notification mail still waits (§18.5, "Held while present") |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
@@ -18102,6 +18107,7 @@ Scope `instance:admin`, human only (§16.1):
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
   "password_reset_max_per_hour": { "value": 30, "source": "default" },
   "registration_max_per_hour": { "value": 30, "source": "default" },
+  "online_grace_minutes": { "value": 5, "source": "default" },
   "signing_key": { "set": true },
   "secret_key": { "set": false },
   "warnings": [],
@@ -18139,7 +18145,7 @@ PATCH /admin/settings/mail
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
 `max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
-`password_reset_max_per_hour`, `registration_max_per_hour`; `null` returns a field to its default (for `password`:
+`password_reset_max_per_hour`, `registration_max_per_hour`, `online_grace_minutes`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -21798,6 +21804,7 @@ device; the browser's own permission is per browser and is not stored.
     },
     "sign_in_link": true,
     "password_reset": true,
+    "hold_while_online": true,
     "daily_at": "08:00",
     "weekly_on": "mon",
     "quiet_hours": { "from": "22:00", "to": "07:00" },
@@ -21983,6 +21990,34 @@ device; the browser's own permission is per browser and is not stored.
   open link and code. It has no effect until the sign-in contract is in.
 - **`password_reset`** (default `true`): whether the human may be sent a
   password reset link (§2.10). Turning it off voids an open reset link.
+- **`hold_while_online`** (default `true`; the dashboard's label "No mail
+  while I'm online in the web app"): while the human is present in the
+  web app, notification mail of `immediate` items waits, and only what
+  is still unread is mailed once they have left (§18.5, "Held while
+  present"). `false` mails as without it. Pending: this field,
+  `POST /me/presence` and `online_grace_minutes` (§16.2) arrive with
+  their implementation; until then nothing is held.
+- **`POST /me/presence`** (no body, `204`): a dashboard tab says that the
+  human is present. A human's cookie session only, with `X-CSRF-Token`
+  (§2.1); an agent, a runner, a bridge or a call with `Maity-For` is
+  `forbidden` (`humans_only`). The dashboard sends it from a tab only
+  while the tab is present — visible (`document.visibilityState` is
+  `visible`) and with input (pointer, key, scroll or focus) within the
+  last 10 minutes — every 60 seconds, and at once when the tab becomes
+  present again; a hidden or idle tab sends nothing. The hub sets the
+  session's `present_until` to two minutes after the call, but only when
+  that moves the stored value by at least a minute, so it writes at most
+  once a minute per session however many tabs call (the write is
+  conditional on the stored value, so two calls at once write once); a call that moves
+  it less changes nothing and is still `204`. More than 10 calls per
+  minute per session are `rate_limited` (§1.7). The call writes no
+  `last_seen_at` (§2.4). `present_until` serves the mail hold only: no
+  endpoint returns it, no presence list or count reads it, and it
+  changes no presence that anyone sees. So a tab left open stops calling
+  10 minutes after the last input and stops counting within 2 minutes
+  after its last call, about 12 minutes after the last input; a tab that
+  goes hidden stops counting within 2 minutes of its last call. Then the
+  grace of §18.5 runs.
 - **`content`** on `chat` and `mention` (default `false`): with `true`
   the mail carries the message text for this kind; without it the mail
   never contains a chat body (§18.5).
@@ -22009,7 +22044,7 @@ device; the browser's own permission is per browser and is not stored.
   time in a mail (§18.5) follow it, and UTC while it is `null`.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
-  `sign_in_link`, `password_reset`), and `current_password` beside `email` when the
+  `sign_in_link`, `password_reset`, `hold_while_online`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored
   otherwise); the
   read-only fields (`address_status`, `verified_at`, `pending_address`,
@@ -22078,6 +22113,39 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   disabled; quiet hours and the rate above still apply. The suspended
   account signs in no more and reads no inbox (§16.8, §18.1). Its other
   actions follow the `inbox` mode.
+- **Held while present.** While `email.hold_while_online` (§18.4) is
+  `true` and the human is **present** in the web app, no notification
+  mail of an `immediate` item goes out; the items wait. The human is
+  present while one of their human sessions that is live (not signed
+  out, ended or expired) has a `present_until` in the future (`POST
+  /me/presence`, §18.4); a session that is signed out, ended or expired
+  stops counting at once, whatever its `present_until` says. The hold
+  lasts while the human is present and `online_grace_minutes` (§16.2,
+  default 5) after that. The next pass after the grace mails what is
+  still unread, as one mail and within the cap of 10 immediate mails
+  per hour above; an item read meanwhile is not mailed (Freshness,
+  below). A session stops counting 1 to 2 minutes after its last call
+  (a call that moved `present_until` by less than a minute wrote
+  nothing), then the grace runs: with the default grace, mail comes
+  about 6 to 7 minutes after the last call, plus up to one pass of the
+  mailer; with another `online_grace_minutes` the range moves with it,
+  and a session that is signed out or ends stops counting at once.
+  - It holds the `immediate` items only: a kind whose mode is
+    `immediate`, and an immediate item that the cap moved to the hour's
+    end. An urgent request (`priority: urgent`, §7) is an `inbox` item
+    like any other: it is held while the human is present, who sees it
+    in the bell, and mailed after the grace if they leave.
+  - It never holds security mail (the sign-in alert of an `immediate`
+    `security`, the mails "At once, whatever the mode" of §18.4, the
+    notice to an old address, a verification mail), nor the mails that
+    are no notification (§18.4, "Not notifications").
+  - It never holds the mail of a `suspend` (above, "Mailed whatever the
+    mode"). A suspended account has no live session, so it is never
+    present anyway.
+  - Digests (`hourly`, `daily`, `weekly`) are built at their moment from
+    what is still unread, present or not. Quiet hours apply after the
+    hold, as before it: what the hold releases inside them goes out
+    when they end.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent.
