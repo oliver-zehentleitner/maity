@@ -16,8 +16,8 @@ from maity.runner import adapters, config, loop, supervisor
 from maity.runner.asuser import AsUser
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
-CLAUDE_START = adapters.START_PROMPT + adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
-CLAUDE_SUPERVISED = adapters.SUPERVISED_PROMPT + adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
+# Under the sandbox: the git commands that fail, and `maity` alone.
+SANDBOXED = adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
 
 
 def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -> adapters.Context:
@@ -38,7 +38,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     argv = launch.argv
     assert argv[0] == "/usr/bin/claude"
-    assert argv[-1] == CLAUDE_START
+    assert argv[-1] == adapters.START_PROMPT  # no sandbox: nothing about git or `maity` alone
     assert argv[argv.index("--setting-sources") + 1] == "user"
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -63,7 +63,7 @@ def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_
     and Claude Code exited 1 at once (2.1.319, the first runner test)."""
     ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "interactive"})
     argv = adapters.launch(ctx).argv
-    assert argv[-1] == CLAUDE_START and "--model" not in argv
+    assert argv[-1] == adapters.START_PROMPT and "--model" not in argv
     assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
 
 
@@ -179,11 +179,42 @@ def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
-    assert spec["first"][-2:] == ["-p", CLAUDE_SUPERVISED]
+    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT]
     assert spec["env"]["MAITY_SUPERVISOR"] == f"maity-runner/{__version__}"
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert spec["restart"]["crash_cap"] == 5
+
+
+def test_the_sandboxed_session_prompt_and_git_settings(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True, placement={**PLACEMENT, "mode": "supervised"})
+    launch = adapters.launch(ctx)
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    assert spec["first"][-1] == adapters.SUPERVISED_PROMPT + SANDBOXED
+    assert spec["env"]["GIT_CONFIG_COUNT"] == "5"
+    keys = {spec["env"][f"GIT_CONFIG_KEY_{i}"]: spec["env"][f"GIT_CONFIG_VALUE_{i}"]
+            for i in range(5)}  # fmt: skip
+    assert keys == {"core.fsmonitor": "false", "diff.ignoreSubmodules": "all",
+                    "branch.autoSetupMerge": "false", "push.default": "current",
+                    "fetch.recurseSubmodules": "false"}  # fmt: skip
+    codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", sandbox=True)
+    assert adapters.launch(codex).argv[-1] == adapters.START_PROMPT + adapters.GIT_PROMPT
+
+
+def test_without_a_sandbox_the_clone_git_configuration_stands(tmp_path: Path) -> None:
+    """Without a sandbox `.git/config` is writable, and the session leaves the repository's
+    own tracking, push and submodule settings alone (review of #1663)."""
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    for key, value in (("branch.autoSetupMerge", "true"), ("push.default", "simple"),
+                       ("fetch.recurseSubmodules", "on-demand")):  # fmt: skip
+        subprocess.run(["git", "-C", str(clone), "config", key, value], check=True)
+    env = {**os.environ, **adapters.launch(context(tmp_path, clone=clone)).env}
+    for key, value in (("branch.autoSetupMerge", "true"), ("push.default", "simple"),
+                       ("fetch.recurseSubmodules", "on-demand")):  # fmt: skip
+        got = subprocess.run(["git", "-C", str(clone), "config", "--get", key], env=env,
+                             capture_output=True, text=True, check=True)  # fmt: skip
+        assert got.stdout.strip() == value
 
 
 def test_the_session_git_needs_no_configuration_write(tmp_path: Path) -> None:
@@ -191,12 +222,13 @@ def test_the_session_git_needs_no_configuration_write(tmp_path: Path) -> None:
     branch on `switch -c` failed and an upstream could not be stored (the first runner test of
     0.1.0a8). With the session's settings a branch is cut, committed and pushed without one."""
     remote, clone = tmp_path / "remote.git", tmp_path / "clone"
+    sandboxed = context(tmp_path, sandbox=True)
     env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
            "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@b", "GIT_COMMITTER_NAME": "a",
            "GIT_COMMITTER_EMAIL": "a@b"}  # fmt: skip
 
     def git(*args: str, cwd: Path = clone, session: bool = True) -> None:
-        extra = adapters.SESSION_GIT_CONFIG if session else {}
+        extra = adapters.git_config(sandboxed) if session else {}
         subprocess.run(["git", *args], cwd=cwd, env={**env, **extra}, check=True,
                        capture_output=True)  # fmt: skip
 
@@ -220,13 +252,38 @@ def test_the_sandbox_placeholders_are_hidden_and_other_lines_kept(tmp_path: Path
     exclude = ctx.clone / ".git" / "info" / "exclude"
     exclude.parent.mkdir(parents=True)
     exclude.write_text("# git's own comment\n*.tmp\n")
+    (ctx.clone / ".claude" / "agents").mkdir(parents=True)  # empty: Claude Code makes these
     adapters.launch(ctx)
     adapters.launch(ctx)  # a second start replaces the block, it does not add another
     lines = exclude.read_text().splitlines()
     assert lines[:2] == ["# git's own comment", "*.tmp"]
     assert lines.count(adapters.EXCLUDE_BEGIN) == 1
     assert lines[3:-1] == [f"/{name}" for name in adapters.CLAUDE_PLACEHOLDERS]
-    assert "/.gitmodules" in lines and "/.claude/skills" in lines
+
+
+def test_real_content_at_a_placeholder_path_stays_visible(tmp_path: Path) -> None:
+    """Untracked files of the agent's own at those paths are not placeholders, and hiding
+    them would hide real work (review of #1663). A block from an earlier start is rebuilt, so
+    content that appeared since shows again."""
+    ctx = context(tmp_path, sandbox=True)
+    clone = ctx.clone
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    adapters.launch(ctx)  # nothing there yet: every path is hidden
+    assert "/.gitmodules" in (clone / ".git" / "info" / "exclude").read_text()
+    (clone / ".gitmodules").write_text("[submodule]\n")
+    (clone / ".mcp.json").write_text("{}\n")
+    (clone / ".claude" / "skills").mkdir(parents=True)
+    (clone / ".claude" / "skills" / "real.md").write_text("a skill\n")
+    adapters.launch(ctx)
+    lines = (clone / ".git" / "info" / "exclude").read_text().splitlines()
+    assert {"/.gitmodules", "/.mcp.json", "/.claude/skills"}.isdisjoint(lines)
+    assert "/.bashrc" in lines
+    status = subprocess.run(["git", "-C", str(clone), "status", "--porcelain",
+                             "--untracked-files=all"], capture_output=True, text=True,
+                            check=True).stdout  # fmt: skip
+    assert {"?? .gitmodules", "?? .mcp.json", "?? .claude/skills/real.md"} <= set(
+        status.splitlines()
+    )
 
 
 def test_without_a_sandbox_the_exclude_file_is_left_alone(tmp_path: Path) -> None:

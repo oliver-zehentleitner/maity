@@ -286,7 +286,9 @@ def _push_target(cwd: Path, branch: str) -> tuple[str | None, str | None]:
     `git push` would choose (`branch.<b>.pushRemote`, `remote.pushDefault`, else `origin`),
     when that remote is configured. A clone whose `.git/config` cannot be written, as under
     the runner's sandbox, pushes without `-u` and so never has an upstream
-    (cli/context/report.md)."""
+    (cli/context/report.md). None when the push could go elsewhere than what is read: the
+    remote has a `pushurl` or a `pushInsteadOf` applies (the report reads the fetch URL), or it
+    has `push` refspecs (the branch may land under another name)."""
     remote = (
         _git(cwd, "config", "--get", f"branch.{branch}.pushRemote")
         or _git(cwd, "config", "--get", "remote.pushDefault")
@@ -294,6 +296,11 @@ def _push_target(cwd: Path, branch: str) -> tuple[str | None, str | None]:
     )
     if remote.startswith("-") or not _git(cwd, "config", "--get", f"remote.{remote}.url"):
         return None, None
+    for key in ("pushurl", "push"):
+        if _git(cwd, "config", "--get-all", f"remote.{remote}.{key}") is not None:
+            return None, None
+    if _git(cwd, "config", "--get-regexp", r"^url\..*\.pushinsteadof$") is not None:
+        return None, None  # pushes may be rewritten to another URL than the one read
     return remote, f"refs/heads/{branch}"
 
 
@@ -362,8 +369,9 @@ def mismatches(facts: Facts) -> list[str]:
         return problems
     if facts.remote is None or facts.remote_branch is None:
         problems.append(
-            f"branch {facts.branch} has no upstream on a remote; push it "
-            f"(`git push origin {facts.branch}`)"
+            f"branch {facts.branch} has no upstream on a remote, and its push remote is not "
+            "one maity reads without one (none, or a pushurl or push refspec of its own); "
+            f"push it to `origin` (`git push origin {facts.branch}`) or set an upstream"
         )
     elif facts.remote_head is None:
         problems.append(

@@ -31,7 +31,7 @@ START_PROMPT = (
 )
 # The clone's `.git/config` is not writable from Claude Code's or Codex's sandbox
 # (GIT_PROTECTED, codex_config), so git's commands that store a setting there fail. The
-# session's git needs none of them for the usual flow (SESSION_GIT_CONFIG); the prompt names
+# session's git needs none of them for the usual flow (SANDBOX_GIT_CONFIG); the prompt names
 # the ones that still fail.
 GIT_PROMPT = (
     " Git here cannot write `.git/config`: cut a branch with `git switch -c <branch> "
@@ -80,26 +80,48 @@ GIT_DENIED = (
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
 READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
-# The session's git settings, through the environment: the clone's `.git/config` is not
-# writable from the sandbox. `branch.autoSetupMerge=false` cuts a branch from a remote one
-# without storing an upstream there (which fails), and `push.default=current` pushes the
-# branch to its own name without one. `fetch.recurseSubmodules=false` keeps fetch from reading
-# `.gitmodules`, which Claude Code's sandbox replaces with an unreadable placeholder when the
-# repository has none (cli/context/runner.md).
 SESSION_GIT_CONFIG = {
-    "GIT_CONFIG_COUNT": "5",
+    "GIT_CONFIG_COUNT": "2",
     "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
     "GIT_CONFIG_KEY_1": "diff.ignoreSubmodules", "GIT_CONFIG_VALUE_1": "all",
-    "GIT_CONFIG_KEY_2": "branch.autoSetupMerge", "GIT_CONFIG_VALUE_2": "false",
-    "GIT_CONFIG_KEY_3": "push.default", "GIT_CONFIG_VALUE_3": "current",
-    "GIT_CONFIG_KEY_4": "fetch.recurseSubmodules", "GIT_CONFIG_VALUE_4": "false",
 }  # fmt: skip
+# Only where the harness's sandbox keeps `.git/config` unwritable: `branch.autoSetupMerge=false`
+# cuts a branch from a remote one without storing an upstream there (which fails), and
+# `push.default=current` pushes the branch to its own name without one.
+# `fetch.recurseSubmodules=false` keeps fetch from reading `.gitmodules`, which Claude Code's
+# sandbox replaces with an unreadable placeholder when the repository has none. They override
+# the clone's own values; a runner's clone is a plain one the clone check keeps free of
+# other keys (cli/context/runner.md). Without a sandbox the clone's configuration stands.
+SANDBOX_GIT_CONFIG = (
+    ("branch.autoSetupMerge", "false"),
+    ("push.default", "current"),
+    ("fetch.recurseSubmodules", "false"),
+)
+
+
+def git_config(ctx: Context) -> dict[str, str]:
+    """The session's `GIT_CONFIG_*`: SESSION_GIT_CONFIG, plus SANDBOX_GIT_CONFIG under a
+    sandbox that keeps `.git/config` unwritable."""
+    extra = SANDBOX_GIT_CONFIG if writes_denied(ctx) else ()
+    env = dict(SESSION_GIT_CONFIG)
+    first = int(SESSION_GIT_CONFIG["GIT_CONFIG_COUNT"])
+    for index, (key, value) in enumerate(extra, start=first):
+        env[f"GIT_CONFIG_KEY_{index}"], env[f"GIT_CONFIG_VALUE_{index}"] = key, value
+    env["GIT_CONFIG_COUNT"] = str(first + len(extra))
+    return env
+
+
+def writes_denied(ctx: Context) -> bool:
+    """Whether the session's git cannot write `.git/config`: Claude Code's and Codex's
+    sandboxes deny it (claude_settings, codex_config)."""
+    return ctx.sandbox and ctx.harness.id in ("claude-code", "codex")
+
 
 # What Claude Code's sandbox puts into the work tree's root where the path is missing, so that
 # nothing can create it there: an empty placeholder each, which `git status` lists as
-# untracked. Read from `git status` in a sandboxed run of 2.1.322. The runner hides them in
-# `.git/info/exclude`, which the agent cannot write (GIT_PROTECTED); the sandbox keeps those
-# paths unwritable anyway, so hiding them hides nothing the agent could add.
+# untracked. Read from `git status` in a sandboxed run of 2.1.322. The runner hides those that
+# are missing (or an empty directory) at the start in `.git/info/exclude`, which the agent
+# cannot write (GIT_PROTECTED); a path with real content stays visible (hide_placeholders).
 CLAUDE_PLACEHOLDERS = (
     ".bash_profile", ".bashrc", ".claude/agents", ".claude/commands", ".claude/hooks",
     ".claude/launch.json", ".claude/loop.md", ".claude/output-styles", ".claude/routines",
@@ -156,7 +178,7 @@ def launch(ctx: Context) -> Launch:
         "GIT_COMMON_DIR": str(ctx.clone / ".git"),
         # A nested repository the agent registers as a submodule keeps its own configuration,
         # which the pin does not reach; git passes these settings on to it.
-        **SESSION_GIT_CONFIG,
+        **git_config(ctx),
         **ctx.extra_env,
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
@@ -282,22 +304,52 @@ def trust_clone(ctx: Context) -> None:
         )
 
 
+def _sandbox_prompt(ctx: Context) -> str:
+    """What the start prompt adds under the harness's sandbox: the git commands that fail, and
+    for Claude Code that `maity` runs alone."""
+    if not writes_denied(ctx):
+        return ""
+    return GIT_PROMPT + (CLAUDE_MAITY_PROMPT if ctx.harness.id == "claude-code" else "")
+
+
 def hide_placeholders(ctx: Context) -> None:
-    """Write CLAUDE_PLACEHOLDERS into the clone's `.git/info/exclude`, as the agents' user,
-    between markers: a block from an earlier start is replaced, every other line stays."""
+    """Write the CLAUDE_PLACEHOLDERS that are missing in the clone, or an empty directory there,
+    into its `.git/info/exclude`, as the agents' user, between markers: the sandbox puts a
+    placeholder there, and nothing else can be. A path with content (a file, a link, a
+    directory with entries) is left out, so real untracked content stays visible. The block is
+    rebuilt at every start; a block from an earlier start is replaced, every other line stays."""
     path = ctx.clone / ".git" / "info" / "exclude"
     kept: list[str] = []
+    had_block = False
     if ctx.as_user.exists(path, "-f"):
         inside = False
         for line in ctx.as_user.read(path).decode("utf-8", "replace").splitlines():
             if line == EXCLUDE_BEGIN:
-                inside = True
+                inside = had_block = True
             elif line == EXCLUDE_END:
                 inside = False
             elif not inside:
                 kept.append(line)
-    block = [EXCLUDE_BEGIN, *(f"/{name}" for name in CLAUDE_PLACEHOLDERS), EXCLUDE_END]
+    hidden = [name for name in CLAUDE_PLACEHOLDERS if _placeholder_only(ctx, ctx.clone / name)]
+    if not hidden and not had_block:
+        return
+    block = [EXCLUDE_BEGIN, *(f"/{name}" for name in hidden), EXCLUDE_END] if hidden else []
     ctx.as_user.write(path, "\n".join([*kept, *block]) + "\n")
+
+
+def _placeholder_only(ctx: Context, path: Path) -> bool:
+    """Whether `path` holds nothing of its own: missing, or an empty directory (Claude Code
+    makes some of them as real directories). A link, even a dangling one, is content."""
+    if ctx.as_user.exists(path, "-L"):
+        return False
+    if not ctx.as_user.exists(path):
+        return True
+    if not ctx.as_user.exists(path, "-d"):
+        return False
+    try:
+        return not ctx.as_user.tree(path)
+    except OSError:  # unreadable: it may hold something, so it stays visible
+        return False
 
 
 def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
@@ -320,14 +372,14 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
-        return Launch([*base, START_PROMPT + GIT_PROMPT + CLAUDE_MAITY_PROMPT], env)
+        return Launch([*base, START_PROMPT + _sandbox_prompt(ctx)], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).
     quiet = {**env, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
     return _supervised(
         ctx,
-        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT + CLAUDE_MAITY_PROMPT],
-        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT + CLAUDE_MAITY_PROMPT, "--continue"],
+        [*base, "-p", SUPERVISED_PROMPT + _sandbox_prompt(ctx)],
+        [*base, "-p", SUPERVISED_PROMPT + _sandbox_prompt(ctx), "--continue"],
         quiet,
     )
 
@@ -386,7 +438,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     env = {**env, "CODEX_HOME": str(home)}
     model = ctx.placement.get("model")
     chosen = ["-m", model] if model else []
-    prompt = START_PROMPT + GIT_PROMPT
+    prompt = START_PROMPT + _sandbox_prompt(ctx)
     if ctx.placement.get("mode") == "interactive":
         return Launch([ctx.binary, "-C", str(ctx.clone), *chosen, prompt], env)
     first = [ctx.binary, "exec", "-C", str(ctx.clone), *chosen, prompt]

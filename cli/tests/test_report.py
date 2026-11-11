@@ -84,6 +84,28 @@ def test_a_branch_without_an_upstream_uses_the_push_remote(clone: Path) -> None:
     assert (facts.remote, facts.remote_branch) == ("fork", "local-only")
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("remote.origin.pushurl", "elsewhere"),
+        ("remote.origin.push", "refs/heads/local-only:refs/heads/published"),
+        ("url.elsewhere.pushInsteadOf", "https://"),
+    ],
+)
+def test_a_push_that_may_go_elsewhere_is_not_read_without_an_upstream(
+    clone: Path, key: str, value: str
+) -> None:
+    """The report reads the fetch URL and the branch's own name. A `pushurl`, a
+    `pushInsteadOf` or a `push` refspec can send the push to another repository or name, so
+    the pushed head would be checked against what was not pushed (review of #1663)."""
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "push", "--quiet", "origin", "local-only")  # what the report would read
+    git(clone, "config", key, value)
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None
+    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
+
+
 def test_a_branch_without_an_upstream_and_without_origin_has_no_upstream(clone: Path) -> None:
     git(clone, "remote", "rename", "origin", "elsewhere")
     git(clone, "switch", "--quiet", "-c", "local-only")
