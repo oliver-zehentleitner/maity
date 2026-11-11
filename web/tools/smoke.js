@@ -14543,7 +14543,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     A.length = 0;
     await go("#/all"); for (let k = 0; k < 10; k++) await tick();
     // Outside a project the bundle is the window, the session and /me; the inbox reads its projects itself.
-    expect(A[0] === "GET /bootstrap" && !singles(A, 3).length && !!main.querySelector("section.view-inbox"),
+    expect(A[0] === "GET /bootstrap" && !singles(A, 3).length && !!main.querySelector("section.view-all"),
       "boot: a view outside a project asks GET /bootstrap without a project " + JSON.stringify(A.slice(0, 6)));
     win.MAITY_FIXTURE_NO_BOOTSTRAP = true;
     A.length = 0;
