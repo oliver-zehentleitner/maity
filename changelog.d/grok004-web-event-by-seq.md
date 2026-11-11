@@ -6,11 +6,12 @@
   request or issue number, and a code span of one seq form alone links as
   code. The page reads `GET …/events/{seq}` and opens the event where it
   lives: its chat (direct or group), else the card or request it is about,
-  else Messages for a message whose type says it is a project message,
-  scrolled to and marked, a chat or Messages reading at most ten older
-  pages for it. An event with no such place, such as a removed message
-  whose tombstone has no type and no conversation for the reader, is shown
-  on the page, and an answer that arrives after the reader left the page
+  else Messages for a message that is not a conversation's, scrolled to
+  and marked, a chat or Messages reading at most ten older pages for it.
+  A removed message whose tombstone has no type and no conversation for
+  the reader opens in Messages when the Messages listing holds it (one
+  extra read of one item), else, like an event with no such place, it is
+  shown on the page; an answer that arrives after the reader left the page
   moves nothing.
   A hidden event and a missing one both show "not visible"
   (tsk-6g2h8dag2fkg).

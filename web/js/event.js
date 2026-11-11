@@ -2,8 +2,8 @@
 // the page a `seq 68216` in a text links to (js/ids.js). It reads the event once and opens it
 // where it lives, the address replaced by that place's with `#seq-<n>` after it: the chat it
 // was said in (direct or group) when the hub names its conversation, else the card or the
-// request it is about, else the project's messages for a message whose type says it is one
-// (a chat's tombstone with no conversation and no type is not); the place then shows it
+// request it is about, else the project's messages for a message that is not a conversation's
+// (one whose type says so, or a tombstone the Messages listing holds); the place then shows it
 // marked (js/chat.js reveal, js/messages.js). An event that lives nowhere the reader may open
 // is shown here. A 404 says "not visible", the same words for an event the reader may not see
 // and one that does not exist, as the hub's answer is the same (§8.9): the page never tells
@@ -23,9 +23,11 @@ window.Maity = window.Maity || {};
   // Where the event lives (§8.9 "The answer"): its conversation when the hub names one for
   // this reader, else its subject (a card, a request), else the project's messages for a
   // message whose type says it is a project message; null for none of them. A missing type
-  // says nothing: a chat's tombstone the reader can no longer open in its chat comes with no
-  // conversation and no type, and Messages, which lists no chat message, would not reach it.
-  // Such a tombstone is drawn on the event's page.
+  // says nothing: a removed project message and a chat's tombstone the reader can no longer
+  // open in its chat both come with no conversation and no type (review of #1629), and
+  // Messages lists only the first. The kept audience tells most of them apart, but not a
+  // project message to one member, whose audience is member: tokens alone like a chat's
+  // (spq4, #1629 R2). Such a tombstone is undecided here (listedTombstone).
   function placeOf(ctx, e) {
     if (e.conversation_id) return ctx.link("chat", e.conversation_id);
     const s = e.subject;
@@ -34,6 +36,27 @@ window.Maity = window.Maity || {};
     const type = e.payload && e.payload.type;
     if (e.kind === "message" && typeof type === "string" && type && type !== "chat") return ctx.link("messages");
     return null;
+  }
+
+  // A message placeOf left without a place and without a type: a tombstone, of a project
+  // message or of a chat the reader no longer opens. Never guessed (review of #1629).
+  const undecided = (e) => e.kind === "message" && !(e.payload && typeof e.payload.type === "string" && e.payload.type);
+
+  // Whether the project's messages (§8.8) list this seq for this reader: the hub keeps a
+  // message's conversation through its redaction and never lists a chat's, so the listing
+  // tells the two tombstones apart in every case, the member-only one included. One page of one item, oldest
+  // first from just below the seq, without a type (a tombstone is listed only unfiltered):
+  // the seq is the first event that page examines, so the scan budget cannot pass it by, and
+  // `after` stays valid at 2⁶³ − 1 where `before` = seq + 1 would not. seq ≥ 1 here (0 is
+  // always a 404). Any failure is "not listed": the tombstone is then drawn on this page.
+  async function listedTombstone(ctx, seq) {
+    try {
+      const page = await M.api.get(ctx.base + "/messages?after=" + (BigInt(seq) - BigInt(1)).toString() + "&limit=1");
+      const first = page && Array.isArray(page.items) ? page.items[0] : null;
+      return !!first && String(first.seq) === seq;
+    } catch (err) {
+      return false;
+    }
   }
 
   // The event itself, where it has no other place: what it is, who and when, and a message's
@@ -71,10 +94,16 @@ window.Maity = window.Maity || {};
       throw err;
     }
     if (left()) return;
-    const place = placeOf(ctx, e);
+    let place = placeOf(ctx, e);
+    if (!place && undecided(e)) {
+      const listed = await listedTombstone(ctx, seq);
+      // The second read may outlive the page as the first may (above).
+      if (left()) return;
+      if (listed) place = ctx.link("messages");
+    }
     if (place && M.route.isRoute(place)) { M.route.go(place + "#seq-" + seq, { replace: true }); return; }
     append(root, heading, h("p", { class: "muted" }, M.t("event.here")), drawn(ctx, e));
   };
 
-  M.event = { placeOf, seqOf };
+  M.event = { placeOf, seqOf, listedTombstone };
 })(window.Maity);
