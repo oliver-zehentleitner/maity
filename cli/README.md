@@ -1024,7 +1024,8 @@ project's own harness configuration is never loaded:
   loads the clone's project hooks and MCP configuration (a Claude Code
   configuration directory per placement would avoid that). This is a
   known limit: do not start your own `claude` in a runner workspace. Where
-  bubblewrap and socat are on the agents' `PATH`, its OS sandbox is
+  its OS sandbox's tools are on the agents' `PATH` (bubblewrap and socat
+  on Linux, Seatbelt's `sandbox-exec` on macOS), the sandbox is
   switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the

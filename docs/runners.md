@@ -10,7 +10,7 @@ The hub never starts anything itself. You install the runner, and its configurat
 - An agent with the right to propose should be able to bring in another member, with your consent where the project asks for it.
 
 > [!NOTE]
-> The runner does not run on Windows: it needs tmux, systemd and OS users. Run it inside WSL. Every other `maity` command works on Windows.
+> The runner needs tmux and runs on Linux and, without a system service, on macOS ([below](#macos)). It does not run on Windows: run it inside WSL. Every other `maity` command works on Windows.
 
 ## Pair a runner
 
@@ -52,6 +52,19 @@ The hub never starts anything itself. You install the runner, and its configurat
 
 > [!WARNING]
 > Allow rules and hooks in the runner user's own harness settings are inherited by every agent it starts. `maity runner check` warns about them. Use a user of its own for the runner.
+
+## macOS
+
+On a Mac the runner works as on Linux, with these differences:
+
+- **No service.** `maity runner install` and `maity runner unit` set up a systemd service and refuse on macOS; there is no launchd service yet. Run `maity runner serve` in a terminal of its own, for example as `caffeinate -i maity runner serve`, so the Mac does not sleep while it runs. Agents keep running when `serve` ends.
+- **What to install.** [Homebrew](https://brew.sh), then `brew install tmux pipx gh`. pipx brings a Python 3.11 or later; the `python3` that comes with macOS is too old for `maity`. Install `maity` with pipx, and Claude Code and the forge login (`gh auth login`, `gh auth setup-git`) as the user the runner runs as.
+- **Claude Code's sandbox is Seatbelt.** Where `/usr/bin/sandbox-exec` is on the agents' `PATH`, the runner switches Claude Code's sandbox on with the same strict settings as bubblewrap on Linux. `maity runner check` says `ok harness claude-code: OS sandbox (sandbox-exec)`. Without it, agents run unsandboxed, `check` warns and the placement reports `running` with `sandbox_unavailable`. Set `require_sandbox = true` under `[harness.claude-code]` to refuse such a start instead.
+- **https remotes.** Claude Code's documentation says `git fetch` and `git push` over ssh fail inside Seatbelt even to an allowed host. Give the project an https repository URL.
+- **One OS user.** Use the default `single` layout: agents run as the runner's user and can read everything in its home except a [fixed list of secrets](../cli/README.md#maity-runner). Run the runner in a macOS account of its own rather than your own.
+- **Only Claude Code.** Codex's sandbox and the ssh backend to a Mac host have not been tried on macOS.
+
+The first run on a real Mac is still to come; [`maity runner`](../cli/README.md#maity-runner) has every setting.
 
 ## Start an agent on it
 
