@@ -12,6 +12,17 @@ from tests import factory
 from tests.conftest import ClientFactory
 
 
+def drive(client: TestClient, scope: Any, receive: Any, send: Any) -> None:
+    """One ASGI call at the client's app, on the client's own event loop (its portal), as
+    every request of the client runs. An async connection belongs to the loop that opened it
+    (aiomysql's stream does), and the app's async pool holds what earlier requests opened on
+    the client's loop: on a fresh loop (`asyncio.run`) the pool's ping of such a connection
+    fails with "attached to a different loop", on MariaDB only (#1649)."""
+    portal = client.portal
+    assert portal is not None, "an entered client (the fixtures enter every one)"
+    portal.call(client.app, scope, receive, send)
+
+
 @dataclass
 class Human:
     client: TestClient
