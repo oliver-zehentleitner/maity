@@ -956,19 +956,31 @@ pull_requests = true
 The agents then run `maity gh pr create --title <title> --body-file <file>`
 (or `--body <text>`, with `--base`, `--head`, `--draft`) and
 `maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]`.
-These run outside the sandbox, with the gh on the runner's `PATH` and the
-login of the agents' user, always on the repository of the placement's
-clone (`--repo` comes from the runner, never from the command line). An
-option not listed, a URL, or a body file outside the clone or under its
-`.git` is refused, and the refusal lists what is allowed. No placed
-session can run gh itself, and the runner adds no `api.github.com` to the
-sandbox (`maity runner check` warns when a grant with `pull_requests` lists
-it). A gh
-entry in `allow` is not applied: `maity runner check` warns about it and
-the runner still starts. A Codex placement is refused for a repository
-whose grant has `allow` or `pull_requests`. Open: `git push` in the sandbox
-reads the same login, so code an allowed command runs can push to other
-repositories the account reaches (tsk-anek9pkb5r82).
+These run outside the sandbox, with the gh the runner found on its `PATH`
+and the login of the agents' user under `HOME`, always on the repository
+of the placement's clone (`--repo` comes from the runner, never from the
+command line). gh runs in an empty directory of its own and gets only
+`HOME`, the locale, the temporary directory, proxy and certificate
+variables; maity names the branch. An option not listed, a URL, or a
+body file that is a link, a FIFO, a file with other hard links, outside
+the clone or under its `.git` is refused, and the refusal lists what is
+allowed. Under the harness's sandbox no placed session can run gh itself,
+and the runner adds no `api.github.com` to the sandbox (`maity runner
+check` warns when a grant with `pull_requests` lists it). A gh entry in
+`allow` is not applied: `maity runner check` warns about it and the
+runner still starts. A Codex placement is refused for a repository whose
+grant has `allow` or `pull_requests`.
+
+Open gaps:
+
+- `git push` in the sandbox reads the same login, so code an allowed
+  command runs can push to other repositories the account reaches
+  (tsk-anek9pkb5r82).
+- Without the harness's sandbox (opencode, Claude Code off Linux or
+  without bwrap and socat) the deny rules are no boundary: repository
+  code can run gh or rewrite the runner's record of the repository.
+- On an ssh target, gh must be at the path the runner found on its own
+  host, or `maity gh` refuses.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,

@@ -10,15 +10,25 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from maity import cli, ghpr
+from maity import cli, clonecheck, ghpr
 
 REPOSITORY = "github.com/oliver-zehentleitner/maity"
+BRANCH = "agent-g/the-change"
+# What gh must not see from maity's environment: another repository, host, configuration or
+# login, or a program to start (ghpr.ENV_PASSED is what it does see).
+DROPPED = (
+    "GH_REPO", "GH_HOST", "GH_CONFIG_DIR", "XDG_CONFIG_HOME", "GH_TOKEN", "GITHUB_TOKEN",
+    "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_PAGER", "PAGER", "GH_BROWSER",
+    "BROWSER", "GH_EDITOR", "EDITOR", "VISUAL", "GH_FORCE_TTY", "GH_DEBUG",
+)  # fmt: skip
 # The tests that start gh: a Python script with a shebang stands in for it, which Windows
 # does not run (a real gh there is an .exe). Every refusal comes before gh starts and runs
 # everywhere.
@@ -33,7 +43,12 @@ runs_gh = pytest.mark.skipif(
 def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """A runner's clone with a pull-request record and a gh that writes down how it ran."""
     clone = tmp_path / "ws" / "maity" / "agent-3"
-    (clone / ".git" / "maity").mkdir(parents=True)
+    clone.mkdir(parents=True)
+    git = shutil.which("git")
+    assert git is not None
+    subprocess.run([git, "init", "-q", "-b", BRANCH, str(clone)], check=True)
+    (clone / ".git" / "maity").mkdir()
+    (clone / clonecheck.GIT_PATH).write_text(git + "\n")
     log = tmp_path / "gh.json"
     gh = tmp_path / "bin" / "gh"
     gh.parent.mkdir()
@@ -41,7 +56,7 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         f"#!{sys.executable}\n"
         "import json, os, sys\n"
         f"json.dump({{'argv': sys.argv[1:], 'stdin': sys.stdin.read(), 'cwd': os.getcwd(),"
-        f" 'env': {{k: os.environ.get(k) for k in {list(ghpr.DROPPED_ENV)!r}}}}},"
+        f" 'env': {{k: os.environ.get(k) for k in {[*DROPPED, 'PATH', 'GH_PROMPT_DISABLED']!r}}}}},"
         f" open({str(log)!r}, 'w'))\n"
     )
     gh.chmod(0o755)
@@ -71,19 +86,23 @@ def refused(argv: list[str], capsys: pytest.CaptureFixture[str]) -> str:
 def test_create_runs_gh_on_the_recorded_repository_with_the_body_on_stdin(
     placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("GH_REPO", "other/repo")
-    monkeypatch.setenv("GH_HOST", "evil.example")
-    monkeypatch.setenv("GH_CONFIG_DIR", "/srv/elsewhere")
+    for name in DROPPED:
+        monkeypatch.setenv(name, "set-by-the-session")
     (placed["clone"] / "body.md").write_text("Card tsk-x\n")
     assert cli.main(["gh", "pr", "create", "--title", "-R x", "--body-file", "body.md",
                      "--base", "main", "--draft"]) == 0  # fmt: skip
     call = ran(placed)
     assert call is not None
     assert call["argv"] == ["pr", "create", f"--repo={REPOSITORY}", "--title=-R x",
-                            "--body-file=-", "--base=main", "--draft"]  # fmt: skip
+                            "--body-file=-", "--base=main", f"--head={BRANCH}",
+                            "--draft"]  # fmt: skip
     assert call["stdin"] == "Card tsk-x\n"
-    assert call["cwd"] == str(placed["clone"].resolve())
-    assert call["env"] == {name: None for name in ghpr.DROPPED_ENV}
+    # gh runs in an empty directory of its own: it reads nothing from the clone's .git.
+    assert Path(call["cwd"]).resolve() != placed["clone"].resolve()
+    assert placed["clone"].resolve() not in Path(call["cwd"]).resolve().parents
+    assert call["env"]["GH_PROMPT_DISABLED"] == "1"
+    assert call["env"]["PATH"].split(os.pathsep)[0] == str(Path(placed["gh"]).parent)
+    assert {name: call["env"][name] for name in DROPPED} == {name: None for name in DROPPED}
 
 
 @runs_gh
@@ -173,7 +192,7 @@ def test_a_link_in_the_clone_to_a_file_outside_is_refused(
 ) -> None:
     (placed["clone"] / "body.md").symlink_to(login_file(tmp_path))
     err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "body.md"], capsys)
-    assert "not a file in this clone" in err and ran(placed) is None
+    assert "a link; name the file itself" in err and ran(placed) is None
 
 
 def test_dot_dot_out_of_the_clone_is_refused(
@@ -272,5 +291,90 @@ def test_the_body_file_is_read_from_where_the_agent_is(
     assert call is not None and call["stdin"] == "from docs\n"
 
 
-def test_every_dropped_variable_names_a_repository_host_or_login() -> None:
-    assert set(ghpr.DROPPED_ENV) >= {"GH_REPO", "GH_HOST", "GH_CONFIG_DIR"}
+def test_no_dropped_variable_is_passed() -> None:
+    assert not set(DROPPED) & set(ghpr.ENV_PASSED)
+    assert "PATH" not in ghpr.ENV_PASSED  # gh's own directory and the system's, set by maity
+
+
+@runs_gh
+def test_view_without_a_selector_names_the_current_branch(placed: dict[str, Any]) -> None:
+    """gh does not read the branch from git: maity names it, read with its own pinned git."""
+    assert cli.main(["gh", "pr", "view"]) == 0
+    call = ran(placed)
+    assert call is not None and call["argv"][-2:] == ["--", BRANCH]
+
+
+def test_a_detached_head_without_head_is_refused(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    git = str(shutil.which("git"))
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.org",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.org"}  # fmt: skip
+    env.pop("GIT_COMMON_DIR", None)
+    clone = placed["clone"]
+    subprocess.run([git, "-C", str(clone), "commit", "-q", "--allow-empty", "-m", "x"],
+                   check=True, env=env)  # fmt: skip
+    subprocess.run([git, "-C", str(clone), "checkout", "-q", "--detach"], check=True, env=env)
+    err = refused(["gh", "pr", "create", "--title", "t", "--body", "b"], capsys)
+    assert "detached HEAD" in err and ran(placed) is None
+
+
+def test_a_directory_swapped_between_the_open_and_the_check_is_refused(
+    placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """spq4's race (review of #1663 round 3): sandboxed code swaps a directory while maity,
+    outside the sandbox, reads the body. Here the swap lands right after the open: the
+    descriptor holds the secret, the path then names a harmless file in the clone. The
+    device and inode differ, so nothing is read."""
+    secret_dir = tmp_path / "secret"
+    secret_dir.mkdir()
+    (secret_dir / "body.md").write_text("dummysecret\n")
+    swapped = placed["clone"] / "d"
+    swapped.symlink_to(secret_dir, target_is_directory=True)
+    real_open = os.open
+
+    def open_then_swap(path: Any, flags: int, *args: Any) -> int:
+        fd = real_open(path, flags, *args)
+        if not str(path).endswith("body.md") or not swapped.is_symlink():
+            return fd  # every other open, and the body only once
+        swapped.unlink()
+        swapped.mkdir()
+        (swapped / "body.md").write_text("harmless\n")
+        return fd
+
+    monkeypatch.setattr(os, "open", open_then_swap)
+    err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "d/body.md"], capsys)
+    assert "changed while it was read" in err and ran(placed) is None
+
+
+def test_a_directory_link_into_the_clones_git_is_refused(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The final name is no link, a directory on the way is: the file opened is the
+    credential, and its resolved path is under .git, found by inode."""
+    (placed["clone"] / ".git" / "maity" / "credential").write_text("dummysecret\n")
+    (placed["clone"] / "G").symlink_to(placed["clone"] / ".git", target_is_directory=True)
+    err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "G/maity/credential"],
+                  capsys)  # fmt: skip
+    assert "under the clone's .git" in err and ran(placed) is None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_is_refused_without_blocking(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    os.mkfifo(placed["clone"] / "body.md")
+    err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "body.md"], capsys)
+    assert "not a plain file" in err and ran(placed) is None
+
+
+def test_a_hard_link_is_refused(
+    placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A second name for a file: its other name may be anywhere on the volume."""
+    other = tmp_path / "ws" / "elsewhere.md"
+    other.write_text("dummysecret\n")
+    os.link(other, placed["clone"] / "body.md")
+    err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "body.md"], capsys)
+    assert "other hard links" in err and ran(placed) is None

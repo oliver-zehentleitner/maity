@@ -2125,19 +2125,22 @@ do, and hid that the cause was the shape of its own command.
 **Source:** the maintainer's decision on req-mvywh1gykvpg (option o1), 2026-11-11, recorded on card tsk-3qb19f0r56zf: placed agents open their pull requests themselves, scoped to the project's repository; the shape (a maity command instead of gh rules) by the lead on #1663, messages 113208 and 113224
 **Revisit when:** the runner gets a forge credential per placement or per repository (tsk-anek9pkb5r82), or a harness's sandbox can deny reading a file to one command and allow it to another
 
-No placed session runs gh: every session denies `gh` and `gh *`
-(`adapters.GH_DENIED`). A repository's grant sets `pull_requests = true`,
+Every placed session denies `gh` and `gh *` (`adapters.GH_DENIED`);
+under the harness's sandbox, which the rules rely on, no placed session
+runs gh (without it, see the second known gap). A repository's grant sets `pull_requests = true`,
 and its agents then run `maity gh pr create` and `maity gh pr view`
 (`maity/ghpr.py`). Like every `maity` call, it runs outside the harness's
 sandbox. It takes only the options it knows, with no abbreviations, so
 bundles such as `-dR` are refused. It does not take `--repo`, a URL, or an
 option gh would read a file with. It starts gh with `--repo=` set to the
 repository the runner wrote into `.git/maity/pull_requests` at launch, and
-it drops `GH_REPO`, `GH_HOST`, `GH_CONFIG_DIR` and the enterprise tokens
-from gh's environment. maity reads a `--body-file` itself and passes it
-to gh on standard input. Before reading, it resolves the file's real path
-(links and `..`) and checks that the path is in the clone and not under
-`.git`. An `allow` entry naming gh is not applied:
+it gives gh only the environment it names (`ghpr.ENV_PASSED`: `HOME`,
+the locale, the temporary directory, proxies and certificates), so no
+variable names another repository, configuration or login, or a program
+to start. gh runs in an empty directory of its own, never in the clone,
+and maity names the branch (`--head`, the pull request to view), read
+with its own pinned git, so gh's git reads nothing of the clone's `.git`.
+maity reads a `--body-file` itself and passes it to gh on standard input. An `allow` entry naming gh is not applied:
 `maity runner check` warns about it and names `pull_requests`, and the
 runner still starts. Codex is refused for a repository whose grant has
 `allow` or `pull_requests`. Codex cannot honour a command allowlist, and
@@ -2168,6 +2171,19 @@ the repository. A glob rule cannot.
   fallback offered for the test): the maintainer chose that agents do it
   themselves.
 
+maity reads a body file through one descriptor. It opens the file
+without following a final link and without blocking, then checks what it
+opened: a regular file with no other hard link, whose path, resolved
+again after the open, is that same file (device and inode), inside the
+clone and not under its `.git`, both compared by device and inode, not by
+name. Reason: maity runs outside the sandbox, and sandboxed code can swap
+a directory between a path check and an open by name. That made maity
+read the clone's credential (review of #1663 round 3). Rejected:
+checking the resolved path and then opening it by name (racy); refusing
+every link in the clone (a work tree may hold links, and a swap needs
+none at check time); a lock (sandboxed code does not take it); comparing
+`.git` by name (a case-insensitive volume has `.GIT` too).
+
 **Known gap:** the login stays readable in the sandbox, because `git push`
 needs it. So code that an allowed command runs (tests, builds) can read
 it and push to any repository the account may push to. `maity gh` closes
@@ -2175,3 +2191,9 @@ gh's paths and keeps the forge's API out of the sandbox, but not this one.
 It stays open until tsk-anek9pkb5r82 lands, either as a push outside the
 sandbox with the same pin or as a credential scoped to the project's
 repository.
+
+**Known gap:** without the harness's sandbox (opencode, Claude Code off
+Linux or without bwrap and socat), nothing keeps repository code from
+running gh or rewriting `.git/maity/pull_requests`: the deny rules are no
+boundary there. On an ssh target, gh must be at the path the runner found
+on its own host, or `maity gh` refuses.
