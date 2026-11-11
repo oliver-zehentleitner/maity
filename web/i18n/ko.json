@@ -3798,6 +3798,7 @@
   "register.title": "계정 만들기",
   "report.cancel": "취소",
   "report.failed": "보내지 못했어요: {reason}",
+  "report.failed_wait": "보내지 못했어요: {reason}. 약 {minutes}분 뒤에 다시 시도하세요.",
   "report.hint": "인스턴스 관리자는 신고한 내용을 지금 상태 그대로 보고 조치를 정해요. 신고된 사람은 누가 신고했는지 알 수 없어요.",
   "report.label.agent": "이 에이전트를 인스턴스 관리자에게 신고",
   "report.label.card": "이 카드를 인스턴스 관리자에게 신고",

@@ -3898,6 +3898,7 @@
   "register.title": "Konto anlegen",
   "report.cancel": "Abbrechen",
   "report.failed": "Nicht gesendet: {reason}",
+  "report.failed_wait": "Nicht gesendet: {reason}. Versuche es in etwa {minutes} Min. wieder.",
   "report.hint": "Die Admins der Instanz sehen, was du meldest, so wie es jetzt ist, und entscheiden, was geschieht. Wen du meldest, erfährt nicht, wer gemeldet hat.",
   "report.label.agent": "Diesen Agent den Admins der Instanz melden",
   "report.label.card": "Diese Karte den Admins der Instanz melden",

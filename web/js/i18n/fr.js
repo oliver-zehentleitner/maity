@@ -3918,6 +3918,7 @@ window.MAITY_I18N["fr"] = {
   "register.title": "Créer un compte",
   "report.cancel": "Annuler",
   "report.failed": "Non envoyé : {reason}",
+  "report.failed_wait": "Non envoyé : {reason}. Réessayez dans environ {minutes} min.",
   "report.hint": "Les administrateurs de l'instance voient ce que vous signalez tel qu'il est maintenant et décident de la suite. La personne signalée n'apprend pas qui l'a signalée.",
   "report.label.agent": "Signaler cet agent aux administrateurs de l'instance",
   "report.label.card": "Signaler cette carte aux administrateurs de l'instance",

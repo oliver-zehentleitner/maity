@@ -2705,7 +2705,7 @@ window.Maity = window.Maity || {};
       if (!["spam", "abuse", "illegal", "prompt_injection", "impersonation", "other"].includes(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "unknown" } });
       if ("text" in body && (typeof body.text !== "string" || utf8Length(body.text) > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
       const key = t.type + " " + t.id + " " + (t.project || "");
-      if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "at most 3 reports per target", path, {});
+      if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "this target was reported 3 times already", path, {});
       const made = { id: "rpt-f" + String(ownReports.length + 1).padStart(4, "0"), created_at: nowIso() };
       ownReports.unshift(Object.assign({ key, target: { type: t.type, id: t.id, project: t.project || null }, reason: body.reason, status: "open", action: null }, made));
       return made;

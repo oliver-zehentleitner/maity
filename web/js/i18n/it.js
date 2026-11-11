@@ -3918,6 +3918,7 @@ window.MAITY_I18N["it"] = {
   "register.title": "Crea un account",
   "report.cancel": "Annulla",
   "report.failed": "Non inviata: {reason}",
+  "report.failed_wait": "Non inviata: {reason}. Riprova tra circa {minutes} min.",
   "report.hint": "Gli amministratori dell'istanza vedono ciò che segnali com'è adesso e decidono cosa fare. Chi segnali non viene a sapere chi l'ha segnalato.",
   "report.label.agent": "Segnala questo agente agli amministratori dell'istanza",
   "report.label.card": "Segnala questa scheda agli amministratori dell'istanza",

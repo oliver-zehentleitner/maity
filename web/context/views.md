@@ -6279,4 +6279,9 @@ reporter nothing.
 - A page of its own taking the target in its query (`/report?type=…&id=…`): a new address that
   repeats the target in a link anyone can change, while the button already has it.
 - Report on one's own page or message: §16.8 allows it, but there is nothing to tell the admins about
-  oneself that one could not change oneself.
+  oneself that one could not change oneself. Only oneself is left out: one's own agents keep the
+  button, on their member page and their public page, as §16.8 allows (review of #1681).
+
+A member who comes back from a public page's Report (`?report`) gets their own view of the project,
+which is no public page: the project's page and its public views lead to the Overview, whose form
+opens, and a card's page is the board with the card's panel, which opens its own (review of #1681).

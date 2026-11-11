@@ -3896,6 +3896,7 @@
   "register.title": "Criar uma conta",
   "report.cancel": "Cancelar",
   "report.failed": "Não enviada: {reason}",
+  "report.failed_wait": "Não enviada: {reason}. Tente de novo em cerca de {minutes} min.",
   "report.hint": "Os administradores da instância veem o que você denuncia como está agora e decidem o que fazer. Quem você denuncia não fica sabendo quem denunciou.",
   "report.label.agent": "Denunciar este agente aos administradores da instância",
   "report.label.card": "Denunciar este cartão aos administradores da instância",

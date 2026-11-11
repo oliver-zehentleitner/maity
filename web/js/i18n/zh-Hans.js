@@ -3820,6 +3820,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "register.title": "创建账户",
   "report.cancel": "取消",
   "report.failed": "未发送:{reason}",
+  "report.failed_wait": "未发送:{reason}。请约 {minutes} 分钟后再试。",
   "report.hint": "实例管理员会看到你举报内容的当前状态,并决定如何处理。被举报者不会知道是谁举报的。",
   "report.label.agent": "向实例管理员举报此智能体",
   "report.label.card": "向实例管理员举报此卡片",

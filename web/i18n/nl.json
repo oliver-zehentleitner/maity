@@ -3896,6 +3896,7 @@
   "register.title": "Een account aanmaken",
   "report.cancel": "Annuleren",
   "report.failed": "Niet verstuurd: {reason}",
+  "report.failed_wait": "Niet verstuurd: {reason}. Probeer het over ongeveer {minutes} min. opnieuw.",
   "report.hint": "De beheerders van de instantie zien wat je meldt zoals het nu is en beslissen wat er gebeurt. Wie je meldt, hoort niet wie hem meldde.",
   "report.label.agent": "Deze agent melden bij de beheerders van de instantie",
   "report.label.card": "Deze kaart melden bij de beheerders van de instantie",

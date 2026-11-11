@@ -3946,6 +3946,7 @@ window.MAITY_I18N["en"] = {
   "register.title": "Create an account",
   "report.cancel": "Cancel",
   "report.failed": "Not sent: {reason}",
+  "report.failed_wait": "Not sent: {reason}. Try again in about {minutes} min.",
   "report.hint": "The instance's admins see what you report as it is now and decide what to do. Whoever you report is not told who reported them.",
   "report.label.agent": "Report this agent to the instance's admins",
   "report.label.card": "Report this card to the instance's admins",

@@ -111,7 +111,13 @@ window.Maity = window.Maity || {};
       } catch (err) {
         busy = false;
         send.disabled = false;
-        status.fail(M.t("report.failed"), err.code ? { message: M.t("report.refusal", { reason: err.message, code: err.code }) } : err);
+        const said = err.code ? { message: M.t("report.refusal", { reason: err.message, code: err.code }) } : err;
+        // The day's limit says when it lets up (Retry-After, kept as `retry_after`); the per-target
+        // limit has none, for good (§16.8).
+        const wait = err.details && Number(err.details.retry_after);
+        const minutes = Math.max(1, Math.ceil(wait / 60));
+        if (wait > 0) status.fail((reason) => M.t("report.failed_wait", { reason, minutes }), said);
+        else status.fail(M.t("report.failed"), said);
         return;
       }
       hooks.sent(h("p", { class: "ok report-sent", role: "status", tabindex: "-1" },

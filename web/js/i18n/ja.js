@@ -3820,6 +3820,7 @@ window.MAITY_I18N["ja"] = {
   "register.title": "アカウントを作成",
   "report.cancel": "キャンセル",
   "report.failed": "送信できませんでした: {reason}",
+  "report.failed_wait": "送信できませんでした: {reason}。約 {minutes} 分後にもう一度お試しください。",
   "report.hint": "インスタンスの管理者は、報告されたものを今の状態で見て、対応を決めます。報告された人には、誰が報告したかは伝わりません。",
   "report.label.agent": "このエージェントをインスタンスの管理者に報告",
   "report.label.card": "このカードをインスタンスの管理者に報告",

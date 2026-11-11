@@ -3918,6 +3918,7 @@ window.MAITY_I18N["es"] = {
   "register.title": "Crear una cuenta",
   "report.cancel": "Cancelar",
   "report.failed": "No enviado: {reason}",
+  "report.failed_wait": "No enviado: {reason}. Vuelve a intentarlo en unos {minutes} min.",
   "report.hint": "Los administradores de la instancia ven lo que reportas tal como está ahora y deciden qué hacer. A quien reportas no se le dice quién lo reportó.",
   "report.label.agent": "Reportar este agente a los administradores de la instancia",
   "report.label.card": "Reportar esta tarjeta a los administradores de la instancia",

@@ -180,6 +180,8 @@ window.Maity = window.Maity || {};
       updatesBox,
       h("h3", null, M.t("cardpanel.history")), historyBox);
     box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) close(); });
+    // A card's public page's Report comes back here with `?report` for a member (§16.9): open it.
+    if (reporting && M.report.asked()) reporting.open();
 
     // Who may do what to a note (§6.16): its author edits it, a human holding
     // events:admin (owner, admin) edits any note and removes it. A removed note
