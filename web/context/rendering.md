@@ -488,8 +488,11 @@ a word longer than the line (`overflow-wrap: anywhere`); the id stays
 nowrap. A code span that is the reference alone keeps the same split inside
 its `code`. Text, link and copy stay as written. Every view that draws an
 id draws it through `js/ids.js`, so the chat's bubbles, the inbox's title
-links, rows and body, card bodies and notes all take it from these two
-rules.
+links, rows, Card row and body, card bodies and notes all take it from
+these two rules. The inbox detail's Card row sits inside a link already,
+so it draws its reference with `M.ids.plain` (the same markup, no
+second link) and the e2e step checks that its `.id-ref-id` stays on one
+line.
 
 **Reason:** `white-space: nowrap` on the whole reference made
 `oliver-zehentleitner/maity/req-…` (43 characters, about 340 px in the

@@ -331,9 +331,9 @@ card or request it is about, the page read the Messages listing once
 tombstone and never a chat's: listed, it opened in Messages; not listed,
 or the read failed, it was drawn on the page. A tombstone with a
 conversation or a subject was placed at its chat or its subject without
-that read. §8.9 now
-keeps every removed message out of Messages (req-5zfznap3s3bj, o1;
-context/messages.md, See above), so that read is gone.
+that read. §8.9 now keeps every removed message out of Messages
+(req-5zfznap3s3bj, o1; context/messages.md, See above), so that read is
+gone.
 
 A `404` and a path that is no `seq` (`068216`, sent to the hub never)
 both show "not visible" in one sentence, the same for an event the
@@ -372,9 +372,10 @@ message with no conversation and no card or request it is about: a
 second read on every link to such a message, for a place that showed no
 text and no card; §8.9 dropped that place (req-5zfznap3s3bj, o1).
 Reading a missing type as a project message (the Messages listing's own
-filter judges only unredacted events, which carry their type): a chat's tombstone without a
-conversation went to Messages, which lists no chat message, and the event
-the hub had just served ended as "not reached" (review of #1629).
+filter judges only unredacted events, which carry their type): a chat's
+tombstone without a conversation went to Messages, which lists no chat
+message, and the event the hub had just served ended as "not reached"
+(review of #1629).
 Routing a typeless tombstone by its audience (one token that is not
 `member:` or `instance:` sends it to Messages): a member-only project
 message cannot be told apart from a chat by audience (spq4 108278, vuur
