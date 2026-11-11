@@ -714,9 +714,11 @@ def _attachments_suffix(event: dict[str, Any]) -> str:
     return f" [{len(atts)} attachment{'s' if len(atts) != 1 else ''}: {names}]"
 
 
-# An id the printed command carries exactly as the hub sent it: letters, digits, `.`, `_`, `-`,
-# not starting with `-` (an option to argparse) or `.` (`.` and `..`). Anything else would change
-# when shown, quoted or parsed, and the command would fetch another id or none.
+# The ids the printed command supports, a conservative policy: 1 to 128 letters, digits, `.`,
+# `_` and `-`, not starting with `-` or `.`; the hub's ids always fit. Outside it lie the real
+# hazards (an option such as `-h`, `.` and `..`, shell characters, line breaks, escape and bidi
+# characters, which would change when shown, quoted or parsed) and some ids that would pass
+# unharmed (`.abc`, 129 letters); the CLI gives a command for none of them.
 FETCHABLE_ID = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", re.ASCII)
 
 

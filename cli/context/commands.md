@@ -1023,9 +1023,11 @@ to check, and the rule in `docs/agents.md` carries the weight.
 The event line `wait` prints on stderr gets, for a message with files, `[N attachment(s): name, …]` before the author's standing: each name as `files get` would
 save it (`file_name`), cleaned for a line, its square brackets made round so it cannot close the list, cut at 60 characters, and
 the whole list at 200. Under it, without the `maity:` prefix and in the same order, one line per file: `  maity files get <id>`,
-or `  : attachment <k> of <n> has no id the CLI can fetch`, which starts with the shell's no-op `:`. Only an id the command carries exactly gets one: 1 to 128 letters, digits,
-`.`, `_` and `-`, not starting with `-` or `.` (the hub's are a prefix and 12 Crockford characters); any other id, or none, would
-change when shown, quoted or parsed and fetch another id or none. These lines carry nothing the sender wrote, neither the name nor an
+or `  : attachment <k> of <n> has no id the CLI can fetch`, which starts with the shell's no-op `:`. Only an id inside a conservative policy gets one: 1 to 128 letters,
+digits, `.`, `_` and `-`, not starting with `-` or `.` (the hub's are a prefix and 12 Crockford characters). Outside it lie the
+real hazards, an option such as `-h`, `.` and `..`, shell characters, line breaks, escape and bidi characters, which would change
+when shown, quoted or parsed and fetch another id or none; also some ids that would pass unharmed, such as `.abc` or 129 letters,
+which the CLI does not support either. These lines carry nothing the sender wrote, neither the name nor an
 id the CLI cannot fetch, so a pasted one runs the fetch or nothing in any shell. The event line above them quotes the names and is
 not for pasting: in an interactive zsh a name's `;` there would run, as a task title's always could. The event stream keeps a message's payload as it
 was written (`docs/api.md` §8.7), so a file taken out since still has its command; `files get` then says it was taken out. The names
