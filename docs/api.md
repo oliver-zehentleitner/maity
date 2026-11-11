@@ -5251,15 +5251,11 @@ server time back.
 namespace owner alone (for a project of an organisation, any of its
 owners, §6.26).
 
-**Repository** (proposed target): `url` is an `https` URL of the shape
+**Repository**: `url` is an `https` URL of the shape
 below, on any DNS host; anything else is `invalid`
 (`details.fields["repository.url"]: "not_a_repository_url"`). This
 replaces `not_a_configured_forge`, which named a forge list the
-operator was said to configure and the hub does not have. Until the
-implementation lands, the hub refuses every URL whose host is not
-`github.com` with `invalid`
-(`details.fields["repository.url"]: "not_a_configured_forge"`), and the
-dashboard reports that same reason. `forge` is
+operator was said to configure and the hub does not have. `forge` is
 derived from the host, below. `probe_configured` is `true` only when
 `forge` is `github` and §11.4 has a grant that covers the repository;
 otherwise it is `false` and `probe_via` is `null`. When `forge` is
@@ -5271,7 +5267,7 @@ the human who did (for a project of an organisation, one of its
 owners, §6.26). Off GitHub the confirmation is still recorded, and
 still cleared when the URL changes, and it authorises no read and
 sends no token.
-One repository per project in V1. Under this target the hub stores the
+One repository per project in V1. The hub stores the
 URL. Where `forge` is `github`, `gitlab`, `gitea` or `bitbucket`, the
 dashboard links the forge's merge or pull-request list from it (§6.11);
 `other` has the repository link and no such list. The hub does not clone the
@@ -14218,9 +14214,7 @@ GET /projects/{owner}/{slug}/probe?commit=6e3eceee…40 hex
 GET /projects/{owner}/{slug}/probe?pr=3&max_age=0
 ```
 
-Scope `project:read`. This section is the proposed target, as §6.1 is.
-Until the implementation lands, a non-GitHub URL is refused when the
-project is written (§6.1) and never reaches a probe. The hub's read-only
+Scope `project:read`. The hub's read-only
 view of the project's forge when that forge is GitHub.
 `repository.forge` (§6.1) is `github` only for the exact host
 `github.com`, which selects the only supported forge kind. That kind's
@@ -14300,11 +14294,11 @@ runs only when `probe_configured` is true.
 target from `repository.url`. That URL is stored and linked (§6.1). The
 hub does not resolve its host and does not connect to it. A read whose
 target comes from somewhere else may still name the same host. The
-state URL of §11.3, and the bodies file §11.5 reads beside it, are
-taken from the repository file and are never derived from
-`repository.url`. That file may name `github.com`, or whatever host the
-repository uses; the two hosts being equal is not a refusal, and it is
-not a request to `repository.url`. The reads below run only when
+state URL of §11.3 is taken from the repository file. The bodies file
+§11.5 reads is the one the export names, beside that URL. Neither is
+derived from `repository.url`. The repository file may name
+`github.com`, or whatever host the repository uses; the two hosts being
+equal is not a refusal, and it is not a request to `repository.url`. The reads below run only when
 `forge` is `github`, and, apart from that state URL and its bodies
 file, only against `api.github.com` or the two image hosts of §11.2. A
 token — the instance token, an installation token, an owner's token —
@@ -14326,10 +14320,11 @@ exchange §11.4 describes; it does not use `repository.url`.
 - The forge logo and banner (§11.2).
 - The Keep the Why contents read that finds `dashboard-state:` (§11.3)
   and the views' reads (§11.5). The contents and metadata reads stay on
-  GitHub's fixed hosts. The state download, and the bodies download
-  beside it, use the validated export URL: the target is the one the
-  repository file names and is never derived from `repository.url`.
-  That host may equal the repository host. The fetch is §11.1.
+  GitHub's fixed hosts. The state download uses the validated URL from
+  the repository file. The bodies download is the file the export
+  names, beside that URL (§11.5). Neither target is derived from
+  `repository.url`. That host may equal the repository host. The fetch
+  is §11.1.
 - The webhook (§17.4). It is a delivery the forge sends to the hub. The
   hub checks GitHub's `X-Hub-Signature-256` and `X-GitHub-Event` and
   does not call the sender. A verified delivery queues a probe read;
@@ -14374,11 +14369,12 @@ read:
   of §11.2, all public names. A request target is never taken from
   `repository.url` or from a project link, and such a host is never
   exempt (above, "No request to a repository host"). The export's state
-  URL, and the bodies file beside it, come from the repository file and
-  are still fetched, only after the contents read on `api.github.com`
-  (§11.3). They are never derived from `repository.url`. The file may
-  name the same host as the repository; that equality does not make
-  `repository.url` a target and does not refuse the export URL. The
+  URL is taken from the repository file and is still fetched, only
+  after the contents read on `api.github.com` (§11.3). The bodies file
+  is the one the export names, beside that URL (§11.5). Neither is
+  derived from `repository.url`. The file may name the same host as
+  the repository; that equality does not make `repository.url` a
+  target and does not refuse the export URL. The
   export URL is not exempt from the address rule. A self-hosted forge
   on a private network is not fetched.
 - 10 seconds per read, connect to last byte. The body is read up to its

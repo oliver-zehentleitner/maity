@@ -595,7 +595,8 @@ project = Table(
     Column("state_changed_at", UtcDateTime, nullable=False),
     # Set once, when the probe first finds a release's tag; never cleared (§6.1).
     Column("released_at", UtcDateTime),
-    Column("repository_url", String(255)),
+    # 2048 is the contract's maximum for a stored repository URL (§6.1).
+    Column("repository_url", String(2048)),
     Column("repository_default_branch", String(255)),
     # The one check that says a commit is good (§6.1 `repository.required_check`), or null.
     Column("repository_required_check", String(200)),

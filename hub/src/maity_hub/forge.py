@@ -1,5 +1,9 @@
 """The forge the probe reads (docs/api.md §11): which host, whether a token is held, the reads.
 
+A repository URL may name any DNS host (§6.1, `stored_repository_url`). The hub
+stores that URL and links it. Only the exact host `github.com` is read, and the
+read goes to `api.github.com`, never to the host of `repository.url`.
+
 The token comes from the operator's environment only (`Settings`) and lives in
 one `Forge` object, which the app hands to whoever reads: the probe route, the
 worker, readiness. It is not a process global and never in a `repr`. Nothing a
@@ -18,6 +22,7 @@ import base64
 import hashlib
 import http.client
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -29,9 +34,129 @@ from typing import Any
 
 from maity_hub import shared_budget
 
-HOSTS = {"github.com": "github"}  # host -> forge kind
+# Hosts the probe reads, and the GitHub-shaped forge links of §6.13. A repository
+# URL's kind is `kind_of`; only `github.com` is read, and not from this map.
+HOSTS = {"github.com": "github"}  # host -> forge kind the probe reads
 API_HOST = "api.github.com"
 TIMEOUT = 10.0
+
+# docs/api.md §6.1. The stored URL is at most 2048 characters. A request may also
+# carry one trailing slash and a lower-case `.git`, which the check removes.
+# An empty or longer value fails here as `not_a_repository_url`; the request
+# body cap is the outer bound, not a field length.
+STORED_URL_MAX = 2048
+_HOST_MAX = 253  # a DNS name, as for a person's website (person_links._dns, §16.9)
+_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_DNS_HOST = re.compile(rf"{_LABEL}(?:\.{_LABEL})+")
+_SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,255}")
+
+
+class RepositoryURLError(Exception):
+    """`url` is not a repository URL of the shape in docs/api.md §6.1."""
+
+
+def _dns_host(host: str) -> bool:
+    """A DNS name: at least two labels, ASCII, the last label not all digits."""
+    return (
+        len(host) <= _HOST_MAX
+        and _DNS_HOST.fullmatch(host) is not None
+        and not host.rsplit(".", 1)[1].isdigit()
+    )
+
+
+def stored_repository_url(url: str) -> str:
+    """The repository URL as stored (§6.1), or `RepositoryURLError`.
+
+    Five steps, in order: lower-case the scheme and the host, drop one trailing
+    slash, drop a lower-case `.git` from the last segment, check what remains,
+    and store `https://` plus the lower-case host plus that path. The path's own
+    case is kept. Nothing here looks up a name or connects to the host.
+    """
+    if (
+        not isinstance(url, str)
+        or not url
+        or "%" in url
+        or any(char.isspace() or ord(char) < 0x20 or ord(char) == 0x7F for char in url)
+    ):
+        raise RepositoryURLError()
+    scheme, separator, rest = url.partition("://")
+    if separator != "://" or scheme.lower() != "https" or not rest:
+        raise RepositoryURLError()
+    if "?" in rest or "#" in rest:
+        raise RepositoryURLError()
+    host_raw, slash, path = rest.partition("/")
+    if not slash or "@" in host_raw or ":" in host_raw or "[" in host_raw or "]" in host_raw:
+        raise RepositoryURLError()
+    # Before case-folding. `str.lower` maps U+212A (KELVIN SIGN) to ASCII "k",
+    # which would store a different host. A Unicode host is refused; an IDN is
+    # accepted only already written in its `xn--` form (§6.1).
+    if not host_raw.isascii():
+        raise RepositoryURLError()
+    host = host_raw.lower()
+    if not _dns_host(host) or host == "localhost" or host.endswith(".localhost"):
+        raise RepositoryURLError()
+    # One trailing slash only: a second slash is an empty segment and fails below.
+    if path.endswith("/") and not path.endswith("//"):
+        path = path[:-1]
+    if not path:
+        raise RepositoryURLError()
+    segments = path.split("/")
+    if any(segment == "" for segment in segments):
+        raise RepositoryURLError()
+    if segments[-1].endswith(".git"):
+        segments[-1] = segments[-1][:-4]
+        if not segments[-1]:
+            raise RepositoryURLError()
+    for segment in segments:
+        folded = segment.lower()
+        if (
+            _SEGMENT.fullmatch(segment) is None
+            or segment in (".", "..")
+            or folded.endswith(".git")
+            or folded.endswith(".atom")
+        ):
+            raise RepositoryURLError()
+    if host == "github.com":
+        if len(segments) != 2:
+            raise RepositoryURLError()
+    elif not 2 <= len(segments) <= 22:
+        raise RepositoryURLError()
+    stored = "https://" + host + "/" + "/".join(segments)
+    if len(stored) > STORED_URL_MAX:
+        raise RepositoryURLError()
+    return stored
+
+
+def _kind(host: str) -> str:
+    """`forge` from a lower-case host (§6.1). No lookup and no connection."""
+    if host == "github.com":
+        return "github"
+    if host == "codeberg.org":
+        return "gitea"
+    label = host.split(".", 1)[0]
+    if label == "gitlab":
+        return "gitlab"
+    if label == "bitbucket":
+        return "bitbucket"
+    if label in ("gitea", "forgejo"):
+        return "gitea"
+    return "other"
+
+
+def kind_of(url: str | None) -> str | None:
+    """The forge kind of a repository URL, from its host alone (§6.1).
+
+    `github` only for the exact host `github.com`. A leftmost label of `gitlab`,
+    `bitbucket`, `gitea` or `forgejo`, and the host `codeberg.org`, name that kind
+    (`gitea` for Codeberg, Gitea and Forgejo). Every other host is `other`. None
+    when `url` names no host. A label `github` does not select `github`.
+    """
+    if not url:
+        return None
+    host = url.split("://", 1)[-1].split("/", 1)[0].split("@")[-1]
+    if not host or ":" in host:
+        return None
+    return _kind(host.lower())
 
 
 class ForgeUnavailableError(Exception):
@@ -60,13 +185,6 @@ class NotCoveredError(ForgeUnavailableError):
     def __init__(self, reason: str) -> None:
         super().__init__(f"no source covers the repository ({reason})")
         self.reason = reason
-
-
-def kind_of(url: str | None) -> str | None:
-    if not url:
-        return None
-    host = url.split("://", 1)[-1].split("/", 1)[0].lower()
-    return HOSTS.get(host)
 
 
 def repository_of(url: str) -> str:
