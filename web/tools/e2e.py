@@ -3887,7 +3887,7 @@ def account_tabs_layout(run: Run, browser) -> None:
                     where = f"{path} at {width}x{height}" + (" with the banner" if banner else "")
                     m = page.evaluate(TABS_MEASURE)
                     assert not m["problems"] and not errors, f"{where}: {m['problems'] + errors}"
-                    want = [t if t != tab else "*" + t for t in ("Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts")]
+                    want = [t if t != tab else "*" + t for t in ("Profile", "Settings", "Notifications", "Security", "Organisations", "Reports", "Linked accounts")]
                     assert m["tabs"][0] == want, f"{where}: the tabs are {m['tabs'][0]}"
                     if sub:
                         assert "*" + sub in m["tabs"][1] and len(m["tabs"]) == 2, f"{where}: Security's tabs are {m['tabs'][1:]}"
@@ -3927,7 +3927,7 @@ def account_tabs_layout(run: Run, browser) -> None:
             menu = page.locator("#header .profile-menu")
             menu.click()
             items = page.locator("#header ul.menu:visible .menu-item")
-            expect(items).to_have_text(["Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts · later", "Sign out"])
+            expect(items).to_have_text(["Profile", "Settings", "Notifications", "Security", "Organisations", "Reports", "Linked accounts · later", "Sign out"])
             m = page.evaluate(LINES_MEASURE, "#header ul.menu:not([hidden])")
             assert not m["problems"] and not errors, f"the profile menu at {width}: {m['problems'] + errors}"
             run.shot(page, f"fixtures-account-menu-{width}")

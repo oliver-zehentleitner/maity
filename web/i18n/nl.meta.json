@@ -10607,6 +10607,10 @@
     "en": "8cbac9b5c6e35c9f",
     "text": "3634139973da05c7"
   },
+  "menu.reports": {
+    "en": "e316f374662d8d01",
+    "text": "46de8924b1fd6951"
+  },
   "menu.runners": {
     "en": "9aa56c3dab3c6957",
     "text": "9aa56c3dab3c6957"
@@ -14442,6 +14446,162 @@
   "register.title": {
     "en": "37b37da08ca830f6",
     "text": "83d5624859bcc65a"
+  },
+  "report.cancel": {
+    "en": "c0774c185060fc13",
+    "text": "08186719ac5dcbc6"
+  },
+  "report.failed": {
+    "en": "241164566757aa1a",
+    "text": "afdde9de1ecc8fe1"
+  },
+  "report.hint": {
+    "en": "cbc48e0e27bfb414",
+    "text": "53e3cd8dc9240494"
+  },
+  "report.label.agent": {
+    "en": "f2b028c8ca03500d",
+    "text": "9b33f4c91edefb62"
+  },
+  "report.label.card": {
+    "en": "688d504ab911b15f",
+    "text": "5a8da0395b985480"
+  },
+  "report.label.message": {
+    "en": "066646382b892853",
+    "text": "808035c156142049"
+  },
+  "report.label.person": {
+    "en": "4bc58aa8209efe88",
+    "text": "c51d451b82002abf"
+  },
+  "report.label.project": {
+    "en": "70b72e3aa7827ad6",
+    "text": "97dc80b2f212027b"
+  },
+  "report.mine.action.dismiss": {
+    "en": "ae59c228b5d8cf6a",
+    "text": "d8c2aeb19fa6b4b2"
+  },
+  "report.mine.action.hide": {
+    "en": "fe33418adaa10fdd",
+    "text": "d98bd0720f7360e2"
+  },
+  "report.mine.action.remove": {
+    "en": "ccd78884d3e80244",
+    "text": "619c207f384b186c"
+  },
+  "report.mine.action.suspend": {
+    "en": "e14122fc288d5451",
+    "text": "aacaa54c524f6975"
+  },
+  "report.mine.failed": {
+    "en": "4c36d59d01c94a9f",
+    "text": "9c40a6cf460faabf"
+  },
+  "report.mine.hint": {
+    "en": "aed322d76b7a9865",
+    "text": "32e8b6303bcdea60"
+  },
+  "report.mine.none": {
+    "en": "4973eeecf398688e",
+    "text": "528a92d86b0889af"
+  },
+  "report.mine.older": {
+    "en": "04c127ea957c8d8b",
+    "text": "0f5d46df17bb98e1"
+  },
+  "report.mine.reading": {
+    "en": "51e8069cec8a538b",
+    "text": "8de12b7cc6db238a"
+  },
+  "report.mine.status.expired": {
+    "en": "2d5cbb12eaf37727",
+    "text": "da62d0d1d4940e8a"
+  },
+  "report.mine.status.open": {
+    "en": "35ff74aeea25311f",
+    "text": "35ff74aeea25311f"
+  },
+  "report.mine.status.resolved": {
+    "en": "0772fde17309bd27",
+    "text": "e378de0236061556"
+  },
+  "report.mine.target.agent": {
+    "en": "ffde9228e448cfe0",
+    "text": "4af17fa15168d0db"
+  },
+  "report.mine.target.card": {
+    "en": "f2226fc23be4ed99",
+    "text": "03a466009fa66576"
+  },
+  "report.mine.target.message": {
+    "en": "13e9d59dfe8259e7",
+    "text": "21607de1e106923d"
+  },
+  "report.mine.target.person": {
+    "en": "508e7eee093b1c8d",
+    "text": "061875c8b8d10f97"
+  },
+  "report.mine.target.project": {
+    "en": "fd7f5cc7ed1e5646",
+    "text": "c42eac985b3526ca"
+  },
+  "report.mine.title": {
+    "en": "ed7acb5465dc68aa",
+    "text": "506a3618a35cbc70"
+  },
+  "report.open": {
+    "en": "85d640066187108d",
+    "text": "ec995de3ed944d7e"
+  },
+  "report.reason": {
+    "en": "dafc3476fe7d3275",
+    "text": "d5939ae40539faee"
+  },
+  "report.reason.choose": {
+    "en": "03bc3b85e82e78f6",
+    "text": "6a7457ad4e90d950"
+  },
+  "report.reason.needed": {
+    "en": "bd1d7fae8f0edcfe",
+    "text": "b3744fe12f882796"
+  },
+  "report.refusal": {
+    "en": "72bb8b9e25412e8a",
+    "text": "72bb8b9e25412e8a"
+  },
+  "report.send": {
+    "en": "6723431f1f8bbfc5",
+    "text": "f5783fb22db8bb91"
+  },
+  "report.sending": {
+    "en": "bb2e3496f3e0d7e0",
+    "text": "e39fe9339502ba82"
+  },
+  "report.sent": {
+    "en": "df24c6d26f23b982",
+    "text": "015e310bb9d3c7df"
+  },
+  "report.sent.link": {
+    "en": "94fb39f4f952b5a2",
+    "text": "305a81512e4c6075"
+  },
+  "report.sign_in": {
+    "en": "b3d263d35c9b95f3",
+    "text": "540bffc61306e2c7"
+  },
+  "report.text": {
+    "en": "d62a4209c077be41",
+    "text": "931132296325d83e"
+  },
+  "report.text.hint": {
+    "en": "d7962a695cf7202d",
+    "text": "cee0b76884b13974"
+  },
+  "report.text.too_long": {
+    "en": "c47f2e8083a5312c",
+    "text": "c2f30c4a9f40bc86"
   },
   "reports.action": {
     "en": "5efcc1e437cbeada",
