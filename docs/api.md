@@ -3429,7 +3429,21 @@ for an agent that has never heard of Maity and has no tool installed:
    never the hand-over's text, which the URL's holder could read;
    with `subagents: true`, the subagent instruction of §3.1 as a quote,
    with the owner's handle — the same words the human copied and the
-   resume packet carries.
+   resume packet carries; and the sentence "You will read and write
+   this project's restricted texts." when the project's
+   restricted-access set (§6.1) would hold the membership the exchange
+   creates, resolved as "Who is in the set" says when the page is
+   served: a setting is stored, the join's trust is above `guest`, the
+   agent's owner (for a profile the exchange creates, the join's
+   creator) is an active member above `guest`, and the mode names the
+   agent — its id listed under `nobody_except`; not listed under
+   `all_except`, where its owner must be in the set as well. Nothing
+   when the set would not hold that membership, whoever the set holds
+   now, and nothing for a join of an agent that is an active member
+   already (a new instance or a replacement, §6.17: it enters nothing), and never how many cards have a text, since
+   whoever holds the URL reads the page. The setting may change
+   between the page and the exchange; the set learns who entered from
+   the exchange's `restricted_changed` (§3.3), not from the page.
 3. The exchange call (§3.3): the directory, the one command that saves
    the response to a file, the config file for later calls, and the
    rule that the credential file is never read, printed or passed on a
@@ -3751,15 +3765,34 @@ person, one project and one trust and role, it is used once, and it expires.
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
 name, logo_url?}, trust, role, invited_by: {display_name}, note, expires_at,
 address_bound: true|false, registration: "sign_in_or_register" |
-"sign_in_only"}` — enough for the dashboard's `/invite/<token>` to
-say who invites to what and which ways lead in. `registration` is
+"sign_in_only", restricted_texts: true|false}` — enough for the
+dashboard's `/invite/<token>` to say who invites to what, which ways
+lead in and, with `restricted_texts`, that the new member will read
+the project's restricted texts (§6.1, "Every way into the set").
+`registration` is
 computed from the instance and the invitation alone, never from who
 reads or whether an account exists: `sign_in_or_register` under
 registration `open`, and under `closed` or `allowlist` when the
 invitation is address-bound and admits (its project open, its issuer
 with authority — the predicate of accept); `sign_in_only` otherwise — a visitor without an account then sees that
 the instance does not register, and the inviter sees the invitation
-stay open. It carries no token in the body and no handle of anyone. It
+stay open.
+`restricted_texts` is `true` when the project's restricted-access
+setting is `all_except` and the invitation's trust is above `guest`:
+every new member above `guest` enters that set. It is `false` for
+`nobody_except`, for no setting and for trust `guest`. Like
+`registration` it is computed from the project and the invitation
+alone, never from who reads, so the page does not name a person the
+setting lists, and for an invitation above `guest` it is wrong in two
+cases: a former member whose id an `all_except` list still holds does
+not enter, though the page says they will read the texts; a former
+member whose id a `nobody_except` list still holds enters, though the
+page says nothing. The set learns who did enter from the accept: when
+the new membership puts anyone into the set, the human or an agent of
+theirs entering with them, the accept writes the set's
+`restricted_changed` with `cause: joined` (§6.4); when nobody enters,
+it writes none.
+The answer carries no token in the body and no handle of anyone. It
 is rate limited per source address as the join exchange is (§3.3, 10
 per minute); the answer is identical for every reader. An invitation by
 `handle` has no page: its token was given to nobody, and the page and
@@ -5243,7 +5276,8 @@ its owner when its owner enters. Each way that gains the
 set a member writes one `restricted_changed` with `action: "entered"`,
 read by the set (§6.4, "When the set changes without the setting"),
 so the set learns of every member that reads with it. Where the
-dashboard creates a join, raises a guest, ends an isolation, transfers
+dashboard creates a join, accepts a project invitation (§3.4), raises
+a guest, ends an isolation, transfers
 a project into an organisation, accepts an organisation invitation as
 owner or promotes a human to owner of an organisation (§6.26) — and,
 once an owner change is built, where it changes an agent profile's
