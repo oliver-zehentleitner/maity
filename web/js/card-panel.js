@@ -161,7 +161,7 @@ window.Maity = window.Maity || {};
     const notesList = h("div", { class: "card-note-items" });
     append(notesBox, notesList);
     // Report this card to the instance's admins (§16.8, tsk-7ze5w6ymf7bw): its id with the project.
-    const reporting = M.report && ctx.me.kind === "human" ? M.report.control({ type: "card", id: c.id, project: ctx.slug }, "card") : null;
+    const reporting = M.report && ctx.me && ctx.me.kind === "human" && ctx.slug ? M.report.control({ type: "card", id: c.id, project: ctx.slug }, "card") : null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("span", { class: "card-panel-actions" }, watchButton, reporting ? reporting.button : null,
