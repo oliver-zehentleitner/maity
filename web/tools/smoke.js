@@ -13365,11 +13365,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       prWait(5000);
       expect(prPosts.length === 15, "presence: and calls once that minute is over");
       win.Maity.presence.stop();
+      // A call time later than now (the clock was set back an hour since) counts as none: the tab
+      // calls at once and then every minute, instead of waiting an hour for the clock.
+      prStore["maity-presence-sent"] = String(prClock + 3600000);
+      win.Maity.presence.start(prHuman);
+      expect(prPosts.length === 16 && prStore["maity-presence-sent"] === String(prClock),
+        "presence: a stored call time in the future counts as none, so it calls at once " + prPosts.length);
+      prWait(60000);
+      expect(prPosts.length === 17, "presence: and a minute after that call " + prPosts.length);
+      win.Maity.presence.stop();
       // Storage blocked: each tab counts alone, as before.
       win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
       win.Maity.presence.start(prHuman);
       prWait(60000);
-      expect(prPosts.length === 17, "presence: with storage blocked it calls at once and every minute " + prPosts.length);
+      expect(prPosts.length === 19, "presence: with storage blocked it calls at once and every minute " + prPosts.length);
       win.Maity.api.source = prSource;
       win.Maity.presence.stop();
       [win.Maity.api.post, win.setTimeout, win.clearTimeout, Date.now, win.addEventListener, win.removeEventListener, document.addEventListener, document.removeEventListener, win.localStorage] = prSaved;

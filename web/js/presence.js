@@ -25,11 +25,13 @@ window.Maity = window.Maity || {};
 
   const now = () => Date.now();
   const present = () => document.visibilityState === "visible" && now() - lastInput < IDLE_MS;
-  // The latest call of any tab, never later than now (a clock set back would hold the calls).
+  // The latest call of any tab. A time later than now (the clock was set back since) counts as no
+  // call: kept, it would hold every tab of the session until the clock caught up with it.
   function last() {
+    const t = now();
     let shared = 0;
     try { shared = Number(window.localStorage.getItem(SENT_KEY)) || 0; } catch (err) { /* this browser keeps nothing */ }
-    return Math.min(now(), Math.max(lastSent, shared));
+    return Math.max(0, ...[lastSent, shared].filter((v) => v <= t));
   }
 
   function later() {
