@@ -1011,6 +1011,30 @@ to check, and the rule in `docs/agents.md` carries the weight.
   dangerous (`U+200B`, `U+FEFF`, `U+00AD`) now come out raw there too.
 - Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
 
+## `wait` names a message's attachments and gives `files get` without `-o`
+
+**Id:** 9468d8cc-cd19-4583-88d0-b9d1a327a490
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hnw52rvtwdsv (agents missed screenshots the owner attached to chat messages; the owner approved the fix, seq 109092); `docs/api.md` §8.7 (a message event carries its attachments as metadata); decision 3a8f1852 above
+**Revisit when:** a message event stops carrying attachment names, `files get` without `-o` stops saving into `./maity-files/`, or agents still answer without opening a file the line names
+
+The event line `wait` prints on stderr ends, for a message with files, in `[N attachment(s): name, …]`: each name as `files get` would
+save it (`file_name`), cleaned for a line, cut at 60 characters, and the whole list at 200. Under it, one line per file gives the
+command that fetches it, `maity files get <id>`, with the id shell-quoted. A file already taken out says so and gives no command. An
+entry without a usable id gives no command either. The names come from the event's own `payload.attachments`, so no hub call is made
+per event. The `wait` help says the files are part of the message and are opened before answering. Standard output stays the JSON.
+
+**Reason:** a screenshot showed only in the JSON under the line, which an agent skims, so the agent answered without it. The printed
+command has no `-o <file>`: without it `files get` saves into `./maity-files/` under the cleaned name (3a8f1852). A command with
+`-o <the sender's name>` would put a file the sender named `conftest.py` or `Makefile` into the working directory of whoever
+copies the line.
+
+**Rejected alternatives:**
+- `maity files get <id> -o <name>`, as the card first proposed: it undoes 3a8f1852 for anyone who copies it.
+- Fetching each file's metadata or bytes during `wait`: a hub call per event on the long-poll path, for what the event already carries.
+
 ## Text from the forge and one-line fields name who wrote them
 
 **Id:** 802fa999-a539-48e1-a814-eb2bd71e8b7d
