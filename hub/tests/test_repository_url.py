@@ -93,6 +93,17 @@ def test_what_the_checks_refuse() -> None:
     assert forge.kind_of(deep) == "gitlab"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://\u212a.example/a/b",  # U+212A KELVIN SIGN, whose lower case is ASCII "k"
+        "https://\u0130.example/a/b",  # U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE
+    ],
+)
+def test_a_unicode_host_is_refused_before_it_is_casefolded(url: str) -> None:
+    assert _refused(url)
+
+
 def test_forge_comes_from_the_host_alone() -> None:
     kinds = {
         "https://github.com/a/b": "github",

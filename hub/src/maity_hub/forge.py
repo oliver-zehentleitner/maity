@@ -86,6 +86,11 @@ def stored_repository_url(url: str) -> str:
     host_raw, slash, path = rest.partition("/")
     if not slash or "@" in host_raw or ":" in host_raw or "[" in host_raw or "]" in host_raw:
         raise RepositoryURLError()
+    # Before case-folding. `str.lower` maps U+212A (KELVIN SIGN) to ASCII "k",
+    # which would store a different host. A Unicode host is refused; an IDN is
+    # accepted only already written in its `xn--` form (§6.1).
+    if not host_raw.isascii():
+        raise RepositoryURLError()
     host = host_raw.lower()
     if not _dns_host(host) or host == "localhost" or host.endswith(".localhost"):
         raise RepositoryURLError()
