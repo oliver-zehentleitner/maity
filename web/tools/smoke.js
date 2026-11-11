@@ -13274,7 +13274,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(!win.Maity.presence.running(), "presence: fixture mode sends no presence");
     {
       const prPosts = [], prTimers = [], prWin = {}, prDoc = {};
-      const prSaved = [win.Maity.api.post, win.setTimeout, win.clearTimeout, Date.now, win.addEventListener, win.removeEventListener, document.addEventListener, document.removeEventListener];
+      const prSaved = [win.Maity.api.post, win.setTimeout, win.clearTimeout, Date.now, win.addEventListener, win.removeEventListener, document.addEventListener, document.removeEventListener, win.localStorage];
+      const prStore = {};
+      win.localStorage = { getItem: (k) => (k in prStore ? prStore[k] : null), setItem: (k, v) => { prStore[k] = String(v); }, removeItem: (k) => { delete prStore[k]; } };
       let prClock = Date.parse("2026-11-11T12:00:00Z");
       Date.now = () => prClock;
       win.Maity.api.post = (p) => { prPosts.push(p); return Promise.resolve(null); };
@@ -13313,9 +13315,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(prPosts.length === 13, "presence: the next call a minute after the last");
       win.Maity.presence.stop();
       prWait(5 * 60000);
-      expect(prPosts.length === 13 && !win.Maity.presence.running() && !Object.keys(prWin).length && !prDoc.visibilitychange,
-        "presence: stopped, it sends nothing and listens to nothing");
-      [win.Maity.api.post, win.setTimeout, win.clearTimeout, Date.now, win.addEventListener, win.removeEventListener, document.addEventListener, document.removeEventListener] = prSaved;
+      expect(prPosts.length === 13 && !win.Maity.presence.running() && !Object.keys(prWin).length && !prDoc.visibilitychange
+        && !("maity-presence-sent" in prStore),
+        "presence: stopped, it sends nothing, listens to nothing and keeps no time of a call");
+      // Another tab or an earlier page load of the session called 20 seconds ago: this load waits
+      // for that minute, so reloads and many tabs stay within the hub's ten calls a minute.
+      prStore["maity-presence-sent"] = String(prClock - 20000);
+      win.Maity.presence.start();
+      expect(prPosts.length === 13, "presence: a call of another tab within the minute covers a new page load");
+      prWait(39000);
+      expect(prPosts.length === 13, "presence: still within that minute, no call");
+      prWait(2000);
+      expect(prPosts.length === 14 && prStore["maity-presence-sent"] === String(prClock - 1000),
+        "presence: a minute after the other tab's call, this one calls and records it");
+      prStore["maity-presence-sent"] = String(prClock - 5000);
+      prWait(56000);
+      expect(prPosts.length === 14, "presence: the other tab called meanwhile, so this one waits a minute from that call");
+      prWait(5000);
+      expect(prPosts.length === 15, "presence: and calls once that minute is over");
+      win.Maity.presence.stop();
+      // Storage blocked: each tab counts alone, as before.
+      win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+      win.Maity.presence.start();
+      prWait(60000);
+      expect(prPosts.length === 17, "presence: with storage blocked it calls at once and every minute " + prPosts.length);
+      win.Maity.presence.stop();
+      [win.Maity.api.post, win.setTimeout, win.clearTimeout, Date.now, win.addEventListener, win.removeEventListener, document.addEventListener, document.removeEventListener, win.localStorage] = prSaved;
       delete document.visibilityState;
     }
     // The account's time zone (§18.4, §5.1, tsk-j8s6n725a06r), under Settings: none set at first, so

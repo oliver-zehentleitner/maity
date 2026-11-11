@@ -1,8 +1,9 @@
 // The tab's presence for the notification mail's hold (docs/api.md §18.4, §18.5): while the tab
 // is visible and had input within ten minutes, `POST /me/presence` every 60 seconds, and at once
-// when it becomes present again. A hidden or idle tab sends nothing, so the hub lets the mail of
-// an immediate item go about two minutes after the last call and the grace after that. Nothing on
-// the page reads it: it is no presence anyone sees, and it keeps no session alive (§2.4).
+// when it becomes present again; the session's tabs and page loads share the minute. A hidden or
+// idle tab sends nothing, so the hub lets the mail of an immediate item go about two minutes
+// after the last call and the grace after that. Nothing on the page reads it: it is no presence
+// anyone sees, and it keeps no session alive (§2.4).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -13,6 +14,9 @@ window.Maity = window.Maity || {};
   // Input in the sense of §18.4: pointer, key, scroll or focus. Scroll does not bubble, so every
   // listener is on the capture phase.
   const INPUT = ["pointerdown", "keydown", "wheel", "scroll", "focus"];
+  // The time of the session's last call, shared by its tabs and page loads in this browser: the
+  // hub takes ten calls a minute per session (§1.7), and every page load would start with one.
+  const SENT_KEY = "maity-presence-sent";
 
   let running = false;
   let lastInput = 0;
@@ -21,21 +25,31 @@ window.Maity = window.Maity || {};
 
   const now = () => Date.now();
   const present = () => document.visibilityState === "visible" && now() - lastInput < IDLE_MS;
+  // The latest call of any tab, never later than now (a clock set back would hold the calls).
+  function last() {
+    let shared = 0;
+    try { shared = Number(window.localStorage.getItem(SENT_KEY)) || 0; } catch (err) { /* this browser keeps nothing */ }
+    return Math.min(now(), Math.max(lastSent, shared));
+  }
 
   function later() {
     window.clearTimeout(timer);
     timer = null;
-    if (running && present()) timer = window.setTimeout(tick, Math.max(0, lastSent + EVERY_MS - now()));
+    if (running && present()) timer = window.setTimeout(tick, Math.max(0, last() + EVERY_MS - now()));
   }
 
-  // One call, then the next a minute after it while the tab stays present. A refusal (a 429,
-  // a lost connection) waits for that minute too; a 401 ends the session's page (js/api.js),
-  // which stops this.
+  // One call, then the next a minute after it while the tab stays present; none while another
+  // tab or an earlier page load called within the minute, whose two minutes still cover this
+  // one. A refusal (a 429, a lost connection) waits for that minute too; a 401 ends the
+  // session's page (js/api.js), which stops this.
   function tick() {
     timer = null;
     if (!running || !present()) return;
-    lastSent = now();
-    M.api.post("/me/presence").catch(() => {});
+    if (now() - last() >= EVERY_MS) {
+      lastSent = now();
+      try { window.localStorage.setItem(SENT_KEY, String(lastSent)); } catch (err) { /* this tab counts alone */ }
+      M.api.post("/me/presence").catch(() => {});
+    }
     later();
   }
 
@@ -43,7 +57,7 @@ window.Maity = window.Maity || {};
   // went within the minute, whose two minutes still cover the tab.
   function again() {
     if (!running || !present()) return;
-    if (now() - lastSent >= EVERY_MS) tick();
+    if (now() - last() >= EVERY_MS) tick();
     else if (!timer) later();
   }
 
@@ -69,10 +83,11 @@ window.Maity = window.Maity || {};
     again();
   }
 
-  // Signed out, or the session ended under the page.
+  // Signed out, or the session ended under the page: the next session starts with a call.
   function stop() {
     if (!running) return;
     running = false;
+    try { window.localStorage.removeItem(SENT_KEY); } catch (err) { /* nothing kept */ }
     INPUT.forEach((type) => window.removeEventListener(type, onInput, { capture: true }));
     document.removeEventListener("visibilitychange", onVisibility);
     window.clearTimeout(timer);
