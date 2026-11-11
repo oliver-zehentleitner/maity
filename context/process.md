@@ -196,7 +196,7 @@ review.
 
 **Id:** 06b11a79-65dc-4364-b6ca-bd36927ae829
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's card of 2026-10-23 (the Actions queue held 30–100 runs with about seven running, and every merge waited hours); `.github/workflows/ci.yml`
 **Revisit when:** a suite starts depending on files outside the paths that gate it, or a regression reaches main that a skipped suite would have caught
@@ -224,6 +224,11 @@ run names.
   hold itself.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
+
+(2026-11-11, needs-review: the revisit condition above has fired. `make -C web check` reads `docs/api.md` and
+`hub/src/maity_hub/landing_assets/landing.js`, and neither started the web job; #1593, which changed only `docs/api.md`,
+merged green and left main's web check red (tsk-fffx19yteh4x). The entry below closes that gap for the web part; whether
+this entry stands as it is, with the hub tests' known gap of 5b0f7a42 still open, is the re-check.)
 
 ## A change to the contract alone runs a light `hub-contract` part, not the database jobs
 
@@ -253,6 +258,33 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
   selects them by the path they build.
 - Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
   CI only chooses when to run them.
+
+## The web part runs for every file `make -C web check` reads, and a test holds the filter to the reads
+
+**Id:** 66aced31-14ac-4f51-90d2-4232e22f2e8e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fffx19yteh4x (#1593, merged as f75de2db, added two error codes to `docs/api.md` §1.3 with a green CI, and every later pull request touching `web/` failed the web check until #1628); `.github/workflows/ci.yml`; `web/tools/test_ci_paths.py`
+**Revisit when:** a file that `make -C web check` reads is opened some other way than `os.path.join(os.path.dirname(ROOT), …)` in `web/tools/check.py` (the test does not see it), or the web job grows slow enough that a contract-only pull request should not run it
+
+`web/tools/check.py` reads four places outside `web/`: the hub's words, `hub/words-meta/`, the error codes of `docs/api.md`
+§1.3 (each needs words in `web/js/errors.js`) and the landing page's script
+`hub/src/maity_hub/landing_assets/landing.js` (size and request rules). The `web` part of the `changes` job listed only the
+first two, so a pull request that changed only the contract or only the landing script ran no web check, and main went red
+after the merge. The `web` part now also matches `docs/api.md` and `hub/src/maity_hub/landing_assets/*`.
+`web/tools/test_ci_paths.py`, run by `make check`, collects every path `check.py` builds from the repository root and fails
+unless a `web:` pattern of the `changes` job matches it; a new outside read changes `web/tools/`, which runs the web job,
+so the test names the missing pattern in the same pull request.
+
+**Reason:** the web job is `make check` and `make smoke`, standard library and node, about a minute; running all of it for a
+contract change costs less than keeping a second place that knows which part of the check reads which file.
+
+**Rejected alternatives:**
+- The error-code check as its own job on `docs/api.md` (the card's second option): one more checkout and one more `ci-ok`
+  need, and a second list of what reads the contract, to save under a minute; the landing script would still need the web
+  part.
+- Only the two patterns, with no test: the gap came from a read nobody added to the filter, and the next one would too.
 
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
