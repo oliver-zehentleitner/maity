@@ -12723,21 +12723,24 @@ the former participant unless it reads along as the owner of an agent
 participant (§9.2);
 the field never names a conversation its reader may not open. Where an
 event lives is then: its conversation when `conversation_id` is set,
-else the project's messages (§8.8) for a message that is not a
-conversation's, one about a card (the event's `subject`) included
-unless it is removed, else its `subject` (a card, a request), else
+else the project's messages (§8.8) for a message that belongs to no
+conversation and is not removed, one about a card (the event's
+`subject`) included, else its `subject` (a card, a request), else
 nowhere but the dashboard's page of the event (below). A project message
 about a card lives in the messages, not on the card, because that is
 where its text is read: the card shows no list of the messages about it,
 and the listing names the card beside the message (`task_id`, §8.8). The
 owner decided so on 2026-11-11 (req-cxyyb2w01s8m, option o2, seq
-109453). A removed one stays on its card: its tombstone keeps the
-event's `subject` but has no text and, in the listing, no `task_id`
-(§8.5, §8.8), so the messages would show neither the message nor the
-card. A chat message with a `task_id` that a former participant no
-longer opens in its chat (`conversation_id: null`, above) is a
-conversation's message, never listed in the project's messages, so it
-goes to its `subject`, the card.
+109453). A removed project message never lives in the messages: one
+about a card stays on its card, one without a card goes to its
+`subject`, else to the event's page. Its tombstone keeps the event's
+`subject` but has no text and, in the listing, no `task_id` (§8.5,
+§8.8), so the messages would show neither the message nor the card. The
+owner confirmed this on 2026-11-11 (req-5zfznap3s3bj, option o1,
+clarified in chat, seq 110013). A chat message the reader can no longer
+open in its chat (`conversation_id: null`, above) goes to its
+`subject`, else to the event's page: it is a conversation's message,
+which the project's messages never list.
 
 ```json
 { "seq": 68216, "kind": "message", "at": "2026-11-04T09:12:40Z",
@@ -12832,10 +12835,10 @@ event where it lives (above) — the chat, the thread, the card, the
 request or the project's messages — scrolled to and highlighted, the
 address replaced by that place's; a project message about a card opens
 in the project's messages at its `seq`, the card linked beside it, not
-on the card, unless it is removed, when it opens its card (above); an
-event that lives nowhere else (no
-conversation the reader may open, no subject, no message) is shown on
-the page itself. A `404` shows "not visible" there, the same for an
+on the card; a removed message never opens in the messages, but on its
+card, else its subject, else this page (above); an event that lives
+nowhere else (no conversation the reader may open, no subject, not a
+project message that is not removed) is shown on the page itself. A `404` shows "not visible" there, the same for an
 event the reader may not see and one that does not exist; a participant
 added to a group chat later sees it too for those of the chat's earlier
 messages the event list does not serve it (above).
