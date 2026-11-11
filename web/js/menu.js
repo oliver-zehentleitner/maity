@@ -14,6 +14,10 @@ window.Maity = window.Maity || {};
   const { h, append, clear } = M.dom;
   const SVG = "http://www.w3.org/2000/svg";
   let serial = 0;
+  // Each menu by its button, so that a view which draws a menu anew can open the new one where the
+  // old one stood open (M.menuOf): the board's redraws that no action of the reader starts.
+  const MENUS = new WeakMap();
+  M.menuOf = (button) => MENUS.get(button) || null;
 
   // A gear of eight teeth, drawn from points; it takes the text colour.
   function gear(size) {
@@ -207,6 +211,8 @@ window.Maity = window.Maity || {};
       else if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
       else if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
     });
-    return { el: box, button, close };
+    const api = { el: box, button, close, open };
+    MENUS.set(button, api);
+    return api;
   };
 })(window.Maity);

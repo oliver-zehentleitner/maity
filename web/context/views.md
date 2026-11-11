@@ -6066,6 +6066,38 @@ columns, the ones a reader works in, had long answered.
   the draft: the form has no control in the redrawn part to carry it to.
 
 
+## A card's open menu outlives the board's redraws that no action of the reader starts
+
+**Id:** ddf3ddef-e153-4643-bea7-e79a85d7652a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-wp8hsgvha3n6 (web-e2e failed in `two_signatures_step` on #1635 and #1641: the item `Sign the review` resolved, became "not stable", then "detached from the DOM", and the click timed out after 25 s); a Chromium repro on the fixture dashboard with the closed group answering 1.5 s late (main: 0 of 20 clicks after the late draw, the menu closed; this change: 20 of 20)
+**See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
+**Revisit when:** the board stops drawing every card anew on a redraw, a card gets a menu without a `data-focus` key on its button, or another redraw that no action of the reader starts is added
+
+Since the board draws once the open groups have answered, the closed group's answer redraws the
+columns a moment later, every card anew, each with its menus closed (`M.menuButton` keeps its open
+state in the element it built). A card's status or assign menu opened in between closed under the
+reader's click. That happened to e2e, and it would happen to a person who opens a menu as soon as
+the board appears. Before such a redraw (the late draw, the closed read in or failed, and the
+presence refresh that redraws under the Silent filter), the board notes the open card menu by its
+button's `data-focus` key (`move:<id>`, `assign:<id>`) and the focused item. After the draw it opens
+the same menu of the redrawn card again, through the menu's own open (`M.menuOf`), on the same item,
+where that card and menu are still drawn. A redraw the reader starts (a move, a filter, a search)
+closes the menu as before: the reader's own action has replaced it.
+
+**Reason:** the race is in the page, not only in the test. The fix belongs where a person meets it,
+and the e2e step then needs no wait of its own.
+
+**Rejected alternatives:**
+- A wait in the e2e step for the closed columns to fill before opening the menu: the test would
+  pass, and a person would still lose the menu.
+- Skipping or deferring the late draw while a menu is open: the closed columns would stay stale
+  under an open menu, and a deferred draw must still keep the menu when it comes.
+- Reopening by a synthetic click on the new button: it goes through the click path (the outside
+  click listener, focus on the first item), not the menu's own open, and it loses the focused item.
+
 ## A closed column draws the 50 cards closed last; Show more draws the rest
 
 **Id:** b7b0a38f-66a0-4224-82de-57e1300cc63a

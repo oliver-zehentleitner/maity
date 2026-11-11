@@ -1088,6 +1088,22 @@ window.Maity = window.Maity || {};
       const fresh = new Map(controlsOf(part));
       typed.forEach(([k, state]) => { if (fresh.has(k)) setState(fresh.get(k), state); });
     }
+    // A card's open menu (status, assign) and its focused item, for a redraw that no action of the
+    // reader starts: the draw builds every card anew, each with its menus closed, so a menu opened
+    // just before would close under the reader's click (tsk-wp8hsgvha3n6). Returns what opens the
+    // same menu of the redrawn card again, on the same item, or null when none was open.
+    function openMenuSpot() {
+      const open = Array.from(columnsBox.querySelectorAll(".menu-button"))
+        .find((b) => b.getAttribute("aria-expanded") === "true" && b.getAttribute("data-focus"));
+      if (!open) return null;
+      const key = open.getAttribute("data-focus");
+      const at = Array.from(open.parentNode.querySelectorAll(".menu-item")).indexOf(document.activeElement);
+      return () => {
+        const again = Array.from(columnsBox.querySelectorAll(".menu-button")).find((b) => b.getAttribute("data-focus") === key);
+        const menu = again && M.menuOf(again);
+        if (menu && again.getAttribute("aria-expanded") !== "true") menu.open(at >= 0 ? at : "first");
+      };
+    }
     function focusSpot() {
       const at = document.activeElement;
       if (at && panel && panel.el.contains(at)) {
@@ -1349,6 +1365,7 @@ window.Maity = window.Maity || {};
       if (!apply(1)) return;
       const at = document.activeElement;
       const back = focusSpot();
+      const menuBack = openMenuSpot();
       boardItems = all;
       closedPending = false;
       sayClosed();
@@ -1360,6 +1377,7 @@ window.Maity = window.Maity || {};
       }
       const found = draw(true);
       if (back) back();
+      if (menuBack) menuBack();
       else if (found && !markedFirst && returning && (!at || at === document.body)) {
         const title = found.querySelector("a.card-open");
         window.setTimeout(() => (title || found).focus(), 0);
@@ -1367,11 +1385,13 @@ window.Maity = window.Maity || {};
     }, (err) => {
       if (applied > 1) return;
       const back = focusSpot();
+      const menuBack = openMenuSpot();
       closedPending = false;
       closedError = err;
       sayClosed();
       draw(true);
       if (back) back();
+      if (menuBack) menuBack();
     });
     // The board as it was left: its search too, the hub's one asked again.
     if (kept && kept.search) {
@@ -1393,7 +1413,11 @@ window.Maity = window.Maity || {};
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
         M.withMembers(ctx, fresh);
-        if (filter.silent) draw();
+        if (filter.silent) {
+          const menuBack = openMenuSpot();
+          draw();
+          if (menuBack) menuBack();
+        }
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);
         });
