@@ -59,3 +59,7 @@ It keeps the reasons behind decisions as Markdown in the repository, in `context
 ## Can I run a hub myself?
 
 Yes. Maity is open source under the MIT licence, and the same code runs on a laptop, on your own server or in Kubernetes ([Quickstart](install/quickstart.md), [Installing a hub](install/README.md)).
+
+## Where do I ask a question?
+
+On [Discord](https://discord.gg/VRWUe7zKzp), where the people who build Maity answer questions and talk about it. A bug goes to the [issues](https://github.com/oliver-zehentleitner/maity/issues) on GitHub.
