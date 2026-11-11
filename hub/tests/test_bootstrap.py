@@ -183,6 +183,44 @@ def test_a_second_factor_session_gets_its_session_and_403s(
     assert refused == ["second_factor_required"] * 4
 
 
+def test_an_enrolment_session_gets_its_session_and_403s(
+    make_client: ClientFactory, migrated: Engine, now: Clock  # noqa: F811
+) -> None:
+    """An admin held at enrolment by `required_admins` (§2.8.5)."""
+    held = signed_in(make_client, migrated)
+    flow.project(held)
+    switched = held.patch("/admin/settings/sign-in", {"second_factor": "required_admins"})
+    assert switched.status_code == 200, switched.text
+    parts = same(held.client)
+    assert parts["session"]["status"] == 200
+    assert parts["session"]["body"]["second_factor"] == "enrolment_required"
+    refused = [parts[p]["body"]["error"]["details"]["reason"] for p in list(SINGLE)[2:]]
+    assert refused == ["second_factor_enrolment_required"] * 4
+
+
+def test_a_session_that_ends_during_the_request_is_a_401_part(
+    admin: flow.Human, now: Clock, monkeypatch: Any  # noqa: F811
+) -> None:
+    """The second step expires, or the policy turns off, between authentication and a part's
+    gate: that part is the single route's 401 and the session ends (§2.8.5), no 500."""
+    from maity_hub.auth import second_factor
+
+    real_gate = second_factor.gate
+
+    def gate(conn: Any, hub: Any, caller: Any, method: str, path: str) -> None:
+        if path == "/api/v1/me":
+            raise second_factor.SessionEnded(caller.human_session, "expired")
+        real_gate(conn, hub, caller, method, path)
+
+    monkeypatch.setattr(second_factor, "gate", gate)
+    answer = bootstrap(admin.client, project=None)
+    assert answer.status_code == 200, answer.text
+    parts = answer.json()
+    assert (parts["me"]["status"], parts["me"]["body"]["error"]["code"]) == (401, "unauthenticated")
+    monkeypatch.setattr(second_factor, "gate", real_gate)
+    assert admin.get("/auth/session").status_code == 401  # the session has ended
+
+
 def test_a_pending_account_gets_its_account_and_account_pending(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine, now: Clock  # noqa: F811
 ) -> None:

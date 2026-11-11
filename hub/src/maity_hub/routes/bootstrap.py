@@ -27,6 +27,7 @@ from maity_hub.auth.caller import Caller, refuse_isolated
 from maity_hub.deps import (  # the single routes' own refusals, per part
     _confine_pending,
     _confine_runner,
+    _end_session,
     _refuse_other_project,
     authenticated,
     engine_of,
@@ -93,6 +94,13 @@ async def bootstrap(request: Request) -> JSONResponse:
                 return _part(200, body(conn, caller))
         except ApiError as error:
             return _refusal(error)
+        except second_factor.SessionEnded as ended:
+            # The second step expired or the policy turned off since authentication: the
+            # session ends, as `deps.authenticated` ends it, and the part is the single
+            # route's 401 (§2.8.5).
+            with engine.begin() as conn:
+                _end_session(conn, ended)
+            return _refusal(unauthenticated("the sign-in has to start again"))
 
     def read_maintenance() -> Part:
         return _part(200, {"window": maintenance.window_now(engine)})

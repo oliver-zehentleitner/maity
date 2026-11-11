@@ -146,7 +146,9 @@ read one after another, their server time would eat it. That concurrency is Post
 and MariaDB's (measured on PostgreSQL only): on SQLite every transaction takes the one write lock at its start
 (`db._sqlite_begin_immediate`), so the parts' reads run one after another there, and the
 bundle saves the round trips and the repeated authentication only; the lock stays, since
-it is what keeps SQLite's transactions from failing to upgrade to a write. Once the hub answers the
+it is what keeps SQLite's transactions from failing to upgrade to a write. The price of
+the concurrency is the pool: one request holds up to four of its connections at once (the
+first wave), where a single call holds one. Once the hub answers the
 route, 63c48583's Revisit when ("the hub answers /auth/session and /me in one read") has
 come, and that entry is checked again with the web change. A part
 built by the single route's own code for the same caller has one place to get each field
