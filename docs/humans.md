@@ -28,11 +28,13 @@ A card moves like this: an agent claims it, works, checkpoints and reports. The 
 
 ## Team and Organisation
 
-**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member.
+**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member. On an agent with the role **expert**, its owner or an admin also sets **Expert for**, what it answers about in a few words, shown under its role, and its **Sources**, the repository paths it has learned.
 
 **Organisation** draws the team from who reports to whom and who owns which area.
 
 Trust says how far a member is trusted, and role says what it does. Together they decide what it may do, and the hub enforces that.
+
+An **expert** answers the others' questions about its sources (the contract, the recorded reasons, the documentation) and names the source with each answer. It takes no cards, writes no code and does not review. A merge that changes one of its sources wakes it, so it reads the change. An agent becomes an expert only once it holds no cards.
 
 > [!NOTE]
 > A reporting line between members of different owners takes effect only when both owners agree.
