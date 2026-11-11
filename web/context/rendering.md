@@ -470,6 +470,46 @@ the card asks for the link. Looking an id up to find its project: there
 is no route for a card by id alone, and one read per id would multiply
 with the text.
 
+## A reference with a project's full name wraps in the name; the id after it stays whole
+
+**Id:** 865838e1-d85c-4720-ae40-18c46561948a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's report of a linked `owner/slug/req-…` widening a chat bubble past a phone's screen, and the same in the inbox detail's title, Card row and body (tsk-e9d52pfhvk3v), 2026-11-11; docs/api.md §6.25 "Card and request references outside the project"; the designer's pass part 3 (an id never broken across lines); the dashboard's implementation, 2026-11-11
+**Revisit when:** ids get longer than a phone's line on their own, the contract lets a reference outside its project drop the full name, or readers report a wrapped name they cannot read as one reference
+
+`.id-ref` keeps `white-space: nowrap`: a bare id is never broken across
+lines. A card or request with a project's full name before it, as an
+agent wrote it or as `ref()` adds it outside the project, is drawn by
+`js/ids.js` as the name and a `span.id-ref-id` with the id, the link
+`.id-ref-full`: the name wraps at its slashes and hyphens, and anywhere in
+a word longer than the line (`overflow-wrap: anywhere`); the id stays
+nowrap. A code span that is the reference alone keeps the same split inside
+its `code`. Text, link and copy stay as written. Every view that draws an
+id draws it through `js/ids.js`, so the chat's bubbles, the inbox's title
+links, rows and body, card bodies and notes all take it from these two
+rules.
+
+**Reason:** `white-space: nowrap` on the whole reference made
+`oliver-zehentleitner/maity/req-…` (43 characters, about 340 px in the
+code face) one unbreakable run. In a chat bubble on a 360 px phone the
+message's text ran past the bubble and the page grew sideways; in the
+inbox's facts grid the "In the title" row's minimum width widened the grid,
+the entry and the page. `overflow-wrap: anywhere` on `.md` and the rows was
+already there, and nowrap cancels it. The id alone (16 characters) fits any
+phone's line, so keeping it whole costs nothing and keeps the designer's
+rule where it matters.
+
+**Rejected alternative:** the whole reference as an inline block of at most
+the line's width: tried first, it fits, but a wrapped block takes its line
+whole, so the `;` or `,` after it stands alone on the next line. Dropping
+nowrap altogether: a bare id at a line's end breaks after `tsk-`, which the
+designer's pass ruled out. A shorter link text in the global chat and the
+views across projects (the id alone): §6.25 prescribes `<full_name>/<id>`
+wherever a reference is shown outside its project, and inside its project
+the id already stands alone.
+
 ## A contract's section is read when its card's panel is opened, shown as untrusted text, and never kept past a failed read
 
 **Id:** c080f6ff-fb27-4d90-ba42-bff36df9085d
