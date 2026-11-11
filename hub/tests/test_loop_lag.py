@@ -3,18 +3,27 @@
 A route moved to the async engine runs its database work on the event loop
 (`AsyncConnection.run_sync`), so a slow body there delays the requests and held long-polls'
 wakes that are due meanwhile. This test sends concurrent requests of the hot families and fails
-when the loop's own tick (`request_stats.watch_load`, the `loop_late_*` of the `stats` line) ran
-later than the limit at any time during them. Each app's loop gets a window of its own for the
-test, which the `stats` reporter does not drain, so no tick of the run is lost to a report, and
-the apps of the test (the owner's, the agent's) are each checked. It also prints the windows'
-fields, the numbers each PR of the series names before and after.
+when an app's loop ran later than the machine let an idle loop run. Each app's loop gets a window
+of its own for the test (`request_stats.watch_load`, the `loop_late_*` of the `stats` line), which
+the `stats` reporter does not drain, so no tick of the run is lost to a report, and the apps of
+the test (the owner's, the agent's) are each checked.
+
+The reference is a bare event loop in a thread of its own, the same tick and nothing else on it:
+what it is late is the machine's share (CPU and the GIL taken by the request threads and the
+database), which on a shared CI runner reached 247 ms on a loop that served nothing. An app's loop
+fails the guard when its worst tick runs more than `LOOP_LATE_MARGIN_MS` later than the
+reference's worst tick, or when its average is above `LOOP_LATE_AVG_LIMIT_MS`. The test prints
+every window's fields, the numbers each PR of the series names before and after.
 
 A `load` test: PostgreSQL in CI's `hub-load` job (`pytest -m load`), not the ordinary suite."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import threading
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -28,12 +37,16 @@ from tests.test_notifications_load import inbox_item, owner  # noqa: F401
 
 pytestmark = pytest.mark.load
 
-# The loop's tick may run this much later than due, at most, while the requests run (250 ms by
-# default; `MAITY_LOOP_LATE_LIMIT_MS` sets another). The tick looks every 0.1 s; a late tick is
-# the loop's scheduling delay, the loop busy (or the GIL held) for that long, and what was due on
-# it meanwhile waited up to as much. Agreed in PR 1 from runs on main and the branch (the PR's
-# body); a PR that moves a family onto the loop must stay under it.
-LOOP_LATE_LIMIT_MS = int(os.environ.get("MAITY_LOOP_LATE_LIMIT_MS", "250"))
+# The tick looks every 0.1 s; a late tick is the loop's scheduling delay, the loop busy (or the GIL
+# held) for that long, and what was due on it meanwhile waited up to as much. An app's loop may run
+# its worst tick this much later than the idle reference loop's worst tick
+# (`MAITY_LOOP_LATE_MARGIN_MS` sets another), and late by this much on average at most
+# (`MAITY_LOOP_LATE_AVG_LIMIT_MS`): the margin is the hub's own share of the lag, the average
+# catches a loop that is late all the time. The numbers behind both are in
+# hub/context/persistence.md (66f0bcf9); a PR that moves a family onto the loop must stay under
+# them.
+LOOP_LATE_MARGIN_MS = int(os.environ.get("MAITY_LOOP_LATE_MARGIN_MS", "150"))
+LOOP_LATE_AVG_LIMIT_MS = int(os.environ.get("MAITY_LOOP_LATE_AVG_LIMIT_MS", "20"))
 THREADS = 16
 ROUNDS = int(os.environ.get("MAITY_LOOP_ROUNDS", "20"))
 
@@ -61,7 +74,31 @@ def loop_windows(monkeypatch: pytest.MonkeyPatch) -> list[request_stats.LoadWind
     return windows
 
 
+@pytest.fixture
+def reference() -> Iterator[request_stats.LoadWindow]:
+    """An idle event loop beside the apps' for the length of the test: its window shows how late
+    the machine alone makes a loop's tick, with nothing of the hub's on it."""
+    window = request_stats.LoadWindow()
+    started = threading.Event()
+    held: dict[str, Any] = {}
+
+    async def watch() -> None:
+        held["loop"] = asyncio.get_running_loop()
+        held["task"] = asyncio.current_task()
+        started.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await request_stats.watch_load(window)
+
+    runner = threading.Thread(target=asyncio.run, args=(watch(),), name="loop-reference")
+    runner.start()
+    started.wait(timeout=10)
+    yield window
+    held["loop"].call_soon_threadsafe(held["task"].cancel)
+    runner.join(timeout=10)
+
+
 def test_the_event_loop_stays_on_time_under_concurrent_requests(
+    reference: request_stats.LoadWindow,
     loop_windows: list[request_stats.LoadWindow],
     make_client: ClientFactory,
     owner: flow.Human,  # noqa: F811
@@ -88,14 +125,23 @@ def test_the_event_loop_stays_on_time_under_concurrent_requests(
             failures.append(error)
 
     assert loop_windows, "no app's loop was watched"
-    for window in loop_windows:
+    for window in (reference, *loop_windows):
         window.fields()  # each window starts here
     callers = [threading.Thread(target=calls) for _ in range(THREADS)]
     for caller in callers:
         caller.start()
     for caller in callers:
         caller.join(timeout=600)
+    idle = fields(reference.fields())
     seen = [fields(window.fields()) for window in loop_windows]
-    print(f"\nloop-lag guard ({THREADS} threads × {ROUNDS} rounds), one window per app: {seen}")
+    print(
+        f"\nloop-lag guard ({THREADS} threads × {ROUNDS} rounds), the idle reference: {idle}, "
+        f"one window per app: {seen}"
+    )
     assert failures == []
-    assert max(w["loop_late_max_ms"] for w in seen) <= LOOP_LATE_LIMIT_MS, seen
+    for window in seen:
+        assert window["loop_late_max_ms"] - idle["loop_late_max_ms"] <= LOOP_LATE_MARGIN_MS, (
+            idle,
+            seen,
+        )
+        assert window["loop_late_avg_ms"] <= LOOP_LATE_AVG_LIMIT_MS, (idle, seen)

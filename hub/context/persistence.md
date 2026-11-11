@@ -1049,11 +1049,14 @@ last read always was.
 **Verification:** corroborated
 **Source:** the owner's decision on the asyncio plan (req-hd5k9fprpxp7, 2026-11-09, card
 tsk-v874y63b4z8p and its plan notes); the project lead's decision on the pool split (2026-11-10);
+the project lead's decision on the loop-lag guard's reference (2026-11-11, after `hub-load` on
+main 30d84d15 and 448332b9);
 `db.make_async_engine`, `db.retrying_async`, `events.async_transaction`, `serving.pool_shares`,
 `hub/tests/test_async_engine.py`, `hub/tests/test_loop_lag.py`
 **Revisit when:** a measurement asks for a native async helper instead of `run_sync`, the series'
 cleanup removes sync paths the routes no longer use, the Docker base and every pinned binary wheel
-support free-threaded Python, or aiomysql falls behind PyMySQL's error numbers
+support free-threaded Python, aiomysql falls behind PyMySQL's error numbers, or the loop-lag
+guard's reference stops tracking the runner's lag (a run red with the reference's lag alone)
 **See:** replicas.md — 4e24abd8-ab64-4844-897b-629bfa211f6d — as of 2026-11-10
 
 A serving hub has two engines on one database. The sync engine is the one it always had: the routes
@@ -1078,9 +1081,24 @@ What the bridge has to keep:
   pause. The steps of a rollback (a rate given back, which may write the shared counter) and those
   after a commit (blobs and files removed) run in a worker thread, shielded from a cancelled
   request. What a route's body does itself is audited when its family moves, and the loop-lag
-  guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) fails when any tick of a test app's
-  loop runs later than its limit (250 ms by default) while concurrent requests of the hot
-  families run.
+  guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) checks the loops while concurrent
+  requests of the hot families run (below).
+- **The loop-lag guard measures against an idle loop.** An app's loop fails when its worst tick
+  runs more than 150 ms later than the worst tick of a bare event loop beside it (a thread of its
+  own, the same 0.1 s tick, nothing else on it), or when it is late by more than 20 ms on average.
+  The reference's lag is the machine's: CPU and the GIL taken by the 16 request threads and the
+  database. The first guard (#1626) took a fixed 250 ms from local runs (69–129 ms) and was red on
+  its first GitHub runs: on main 30d84d15 the owner's loop 269 ms and the agent's 247 ms, on
+  448332b9 237 ms and 251 ms, the agent's app serving nothing during the test (`threads_busy` 0).
+  Its maximum measured the runner, not the hub. In two plain local runs the reference was 75 and
+  78 ms late and the apps' loops at most 16 ms more; on the runners the busy and the idle app's
+  loop differed by 14–22 ms (the runs before the reference had none). The
+  margin of 150 ms keeps that noise out and still fails a loop blocked once for 400 ms (366 ms
+  against a reference of 89). The average catches a loop busy in many slices, which the margin
+  does not see: blocked in random slices of 30–120 ms, an app's loop ran 35 ms late on average
+  (the reference 1 ms) with its worst tick only 40 ms over the reference's. A periodic block of
+  equal slices does not show in the average: the tick takes its next due time from when it ran,
+  so it falls into the gaps.
 - **A cancellation stays a cancellation.** A statement cancelled in the driver invalidates the
   connection, and reading `conn.info` on it again inside the transaction raises
   `PendingRollbackError` in place of the `CancelledError` that must unwind the request.
