@@ -5946,7 +5946,9 @@ line. The opened card's panel draws its card part anew in that draw, so
 its subtask list, dependency lines and related and parent lists read the
 closed cards that came with it: what the reader chose or typed in its
 controls and has not saved is carried over, a new subtask's form opened in
-it moves into the new part with its draft, and the focus stays on the same
+it moves into the new part with its draft where the new part offers one
+(otherwise, on a card now closed, a subtask or a release, it closes), and
+the focus stays on the same
 control where it is drawn again, on the panel otherwise. A reload after a write
 draws the panel anew as before. A board left from a
 closed card finds that card now. A reload after a write
