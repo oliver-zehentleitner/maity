@@ -13904,20 +13904,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await rpSend("spam");
     const rpCardSent = viView().querySelector(".report-sent");
     const rpTargets = [];
-    for (const [hash, kind] of [["#/stranger/tool", "project"], ["#/stranger/agents/overview", "agent"], ["#/sam", "person"]]) {
+    for (const [hash, kind] of [["#/stranger/tool", "project"], ["#/stranger/agents/overview", "agent"]]) {
       await go(hash); for (let k = 0; k < 4; k++) await tick();
       if (viView() && rpOpen()) { await rpSend("other"); rpTargets.push(kind); }
     }
     win.Maity.api.post = rpPost;
     expect(rpCardLabel === "Report this card to the instance's admins" && rpCardSent && rpCardSent.querySelector("a").getAttribute("href").endsWith("/account/reports")
       && JSON.stringify(rpSent.map((b) => b.target)) === JSON.stringify([{ type: "card", id: "tsk-1", project: "stranger/tool" }, { type: "project", id: "stranger/tool" },
-        { type: "profile", id: "stranger/overview" }, { type: "profile", id: "sam" }])
+        { type: "profile", id: "stranger/overview" }])
       && rpSent[0].reason === "spam" && !("text" in rpSent[0]),
-      "report: a public card, project, agent and person each send their public name, and the sent line links Your account → Reports " + JSON.stringify([rpCardLabel, rpTargets, rpSent.map((b) => b.target)]));
+      "report: a public card, project and agent each send their public name, and the sent line links Your account → Reports " + JSON.stringify([rpCardLabel, rpTargets, rpSent.map((b) => b.target)]));
     await go("#/stranger/tool?report"); for (let k = 0; k < 6; k++) await tick();
     const rpAsked = viView() && viView().querySelector("form.report-form");
-    expect(rpAsked && document.activeElement === rpAsked.querySelector("select") && rpOpen().hidden,
-      "report: ?report on a public page opens the form at once, its reason focused (the sign-in link's way back)");
+    expect(rpAsked && rpOpen().hidden && rpOpen().getAttribute("aria-expanded") === "true",
+      "report: ?report on a public page opens the form at once (the sign-in link's way back) " + JSON.stringify([!!viView(), !!rpAsked, rpOpen() && rpOpen().hidden]));
     await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
   }
   const viNotes = viView().querySelectorAll("li").filter((li) => li.getAttribute("data-note"));
@@ -14065,6 +14065,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(pvView().querySelector(".person-bio")) === "Builds trading tools."
     && pvPublic() && pvPublic().getAttribute("href") === "#/wolfgang?as=public" && pvPublic().getAttribute("target") === "_blank",
     "person: name, handle, bio and View public page where the hub serves one, opened at ?as=public");
+  {
+    // Report a person from their page by the current handle (§16.8, tsk-7ze5w6ymf7bw).
+    const pvPost = win.Maity.api.post, pvSent = [];
+    win.Maity.api.post = (p, body) => { if (p === "/reports") pvSent.push(body); return pvPost(p, body); };
+    const pvReport = pvView().querySelector("button.report-open");
+    if (pvReport) {
+      pvReport.click(); await tick();
+      const f = pvView().querySelector("form.report-form");
+      f.querySelector("select").value = "impersonation";
+      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    }
+    win.Maity.api.post = pvPost;
+    expect(pvReport && pvReport.getAttribute("aria-label") === "Report this person to the instance's admins"
+      && JSON.stringify(pvSent.map((b) => b.target)) === JSON.stringify([{ type: "profile", id: "wolfgang" }]) && pvView().querySelector(".report-sent"),
+      "report: a person's page sends their current handle " + JSON.stringify(pvSent.map((b) => b.target)));
+  }
   expect(pvView().querySelector(".person-picture-none.size-64") && !pvView().querySelector(".person-head img"),
     "person: without an avatar_url a neutral placeholder, never a generated avatar");
   expect(JSON.stringify(pvLinks().map((a) => a.getAttribute("href"))) === JSON.stringify(["https://example.org", "https://github.com/wolfgang", "https://mastodon.social/@wolfgang"])
