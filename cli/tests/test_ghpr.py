@@ -9,6 +9,7 @@ clone (a link, `..`, `.git`, the login file), gh's other file options, and a for
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,14 @@ import pytest
 from maity import cli, ghpr
 
 REPOSITORY = "github.com/oliver-zehentleitner/maity"
+# The tests that start gh: a Python script with a shebang stands in for it, which Windows
+# does not run (a real gh there is an .exe). Every refusal comes before gh starts and runs
+# everywhere.
+runs_gh = pytest.mark.skipif(
+    os.name == "nt",
+    reason="the stand-in for gh is a shebang script, which Windows cannot start;"
+    " a real gh there is an .exe",
+)
 
 
 @pytest.fixture
@@ -58,6 +67,7 @@ def refused(argv: list[str], capsys: pytest.CaptureFixture[str]) -> str:
     return capsys.readouterr().err
 
 
+@runs_gh
 def test_create_runs_gh_on_the_recorded_repository_with_the_body_on_stdin(
     placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -76,6 +86,7 @@ def test_create_runs_gh_on_the_recorded_repository_with_the_body_on_stdin(
     assert call["env"] == {name: None for name in ghpr.DROPPED_ENV}
 
 
+@runs_gh
 def test_view_takes_a_number_or_branch_after_the_options_end(placed: dict[str, Any]) -> None:
     assert cli.main(["gh", "pr", "view", "1663", "--json", "state,headRefOid", "--comments"]) == 0
     call = ran(placed)
@@ -240,12 +251,14 @@ def test_outside_a_runners_placement_it_refuses(
     assert "a session a runner placed" in err and ran(placed) is None
 
 
+@runs_gh
 def test_gh_exit_code_is_maitys(placed: dict[str, Any]) -> None:
     gh = Path(placed["gh"])
     gh.write_text("#!/bin/sh\nexit 7\n")
     assert cli.main(["gh", "pr", "view"]) == 7
 
 
+@runs_gh
 def test_the_body_file_is_read_from_where_the_agent_is(
     placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
