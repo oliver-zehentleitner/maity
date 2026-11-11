@@ -325,13 +325,14 @@ before Messages, so a link to a notice about a card opened the card,
 whose panel lists no messages: the reader never saw the text clicked,
 and the owner chose Messages with the card beside it (req-cxyyb2w01s8m,
 o2). And a removed project message belonged in Messages while a chat's
-tombstone did not, so for a message with no type and no conversation the
-page read the Messages listing once (`…/messages?after=<seq − 1>&limit=1`,
-§8.8), which holds the project's tombstone and never a chat's: listed, it
-opened in Messages; not listed, or the read failed, at its subject, else
-on the page. §8.9 now keeps every removed message out of Messages
-(req-5zfznap3s3bj, o1; context/messages.md, See above), so that read is
-gone.
+tombstone did not, so for a message with no type, no conversation and no
+card or request it is about, the page read the Messages listing once
+(`…/messages?after=<seq − 1>&limit=1`, §8.8), which holds the project's
+tombstone and never a chat's: listed, it opened in Messages; not listed,
+or the read failed, it was drawn on the page. A tombstone with a
+conversation or a subject was placed there without that read. §8.9 now
+keeps every removed message out of Messages (req-5zfznap3s3bj, o1;
+context/messages.md, See above), so that read is gone.
 
 A `404` and a path that is no `seq` (`068216`, sent to the hub never)
 both show "not visible" in one sentence, the same for an event the
@@ -347,8 +348,9 @@ opening a chat does (no request whose cost grows with history). Ten pages
 of fifty are the last 500 messages of a chat, which is where a cited
 `seq` almost always is. A removed message has no text to show in
 Messages, and its tombstone there has no `task_id` (§8.8), so Messages
-would show neither the message nor its card; placing every tombstone by
-its subject spares a second read on every link to one. One sentence for
+would show neither the message nor its card; placing a tombstone by its
+subject, else on the page, spares the second read that a link to one
+with no conversation and no subject cost. One sentence for
 404 keeps the page as silent as the route about whether the event
 exists.
 
@@ -364,8 +366,10 @@ and the owner chose Messages with the card beside it (req-cxyyb2w01s8m,
 o2). A list of a card's messages in its panel, the cited one marked: a new
 part of the card view for one link, not what the owner chose. A removed
 project message in Messages, told from a chat's tombstone by one read of
-the Messages listing, as the page did until 2026-11-11: a second read on
-every link to a tombstone, for a place that showed no text and no card;
+the Messages listing, as the page did until 2026-11-11 for a typeless
+message with no conversation and no card or request it is about: a
+second read on every link to such a message, for a place that showed no
+text and no card;
 §8.9 dropped that place (req-5zfznap3s3bj, o1). Reading a missing type as
 a project message (the Messages listing's own filter judges only
 unredacted events, which carry their type): a chat's tombstone without a
