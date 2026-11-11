@@ -522,7 +522,7 @@ def moved_during_a_cut_scan(
     return found
 
 
-def test_an_old_merge_that_moves_up_during_a_cut_scan_is_still_announced(
+def test_a_merge_that_moves_up_during_a_cut_scan_is_still_announced(
     owner: flow.Human, github: FakeGitHub, migrated: Engine
 ) -> None:
     found = moved_during_a_cut_scan(owner, github, migrated, timedelta(hours=1), timedelta(hours=2))
