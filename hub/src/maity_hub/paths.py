@@ -49,11 +49,12 @@ def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
 # The views of a project in the dashboard (§16.11): `/<owner>/<slug>/<view>…`. A slug is never
 # one of them, so that `/<owner>/<word>` stays free for pages of an owner's own. `members` is
 # no view since the Team view moved to `team`, and stays reserved (the maintainer, 2026-11-10).
+# `placements` is the tab "Where they run" (tsk-3s3eb6bsp15n, context/routing.md).
 PROJECT_VIEWS = frozenset(
     {
         "agents", "board", "chat", "contract", "events", "inbox", "jour-fixe", "members",
-        "memory", "message", "messages", "organisation", "overview", "runners", "settings",
-        "tasks", "team", "ticker", "why",
+        "memory", "message", "messages", "organisation", "overview", "placements", "runners",
+        "settings", "tasks", "team", "ticker", "why",
     }
 )  # fmt: skip
 
