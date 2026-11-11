@@ -267,7 +267,8 @@ window.Maity = window.Maity || {};
   // (tsk-d61rvjm6gteh).
   // opts (all optional): `own` lists only the placements of one's own agents and offers no start
   // (the /agents tab, one section per project); `title` replaces the heading's words; `id` makes
-  // the heading's id unique where one page holds several sections.
+  // the heading's id unique where one page holds several sections; `level` is the heading's
+  // element, `h2` where the section is the page itself (the project's tab), else `h3`.
   async function section(ctx, credentials, opts) {
     opts = opts || {};
     const titleId = "placements-title" + (opts.id ? "-" + opts.id : "");
@@ -422,7 +423,7 @@ window.Maity = window.Maity || {};
       if (!events.some((e) => EVENTS.test(e.kind))) return;
       if (loaded) reread(); else missed = true;
     });
-    const heading = () => h("h3", { id: titleId }, opts.title || M.t("placements.title"));
+    const heading = () => h(opts.level || "h3", { id: titleId }, opts.title || M.t("placements.title"));
     try {
       items = listed((await M.api.getAll(ctx.base + "/placements")).items);
     } catch (err) {

@@ -4715,6 +4715,8 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/placements$"))
     expect(tabs.get_by_role("link", name="Where they run", exact=True)).to_have_attribute("aria-current", "page")
     expect(page.locator("header nav.views a[aria-current='page']")).to_have_text(re.compile(r"^Agents"))
+    # The section is the page: its heading is the h2 under the page's h1 (review of #1667).
+    expect(page.get_by_role("heading", name="Where they run", exact=True, level=2)).to_be_visible()
     agents_page_tabs(run, page)
     run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")

@@ -4741,13 +4741,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plBox = () => main.querySelector("section.placements");
   const plRow = (id) => plBox().querySelectorAll("li.placement").find((li) => li.attrs["data-placement"] === id);
   const plFacts = (id) => text(plRow(id).querySelector("dl.facts"));
-  expect(plBox() && text(plBox().childNodes[0]) === "Where they run" && plBox().querySelectorAll("li.placement").length === 6
+  expect(plBox() && text(plBox().childNodes[0]) === "Where they run" && plBox().childNodes[0].tagName === "H2" && plBox().querySelectorAll("li.placement").length === 6
     && !main.querySelector(".earlier-box") && !main.querySelector("table.agents-list")
     && JSON.stringify(agentsTabRow()) === JSON.stringify([["Agents", "#/maintainer/maity/agents", null],
       ["Where they run", "#/maintainer/maity/placements", "page"], ["Organisation", "#/maintainer/maity/agents/organisation", null]])
     && header.querySelectorAll("nav.views a").find((a) => /^Agents/.test(a.textContent)).getAttribute("aria-current") === "page"
     && !header.querySelectorAll("nav.views a").some((a) => /^Where they run/.test(a.textContent)),
-    "placements: its own view at placements, the Agents page's second tab (Agents marked in the header, no tab of its own there), one row per placement "
+    "placements: its own view at placements, the Agents page's second tab under its own h2 (Agents marked in the header, no tab of its own there), one row per placement "
       + JSON.stringify(agentsTabRow()));
   // /agents/placements (§16.11): one section per project one reads where an agent of one's own is a member,
   // listing only those agents' placements there, without the start form; each heading's id its own.

@@ -48,6 +48,10 @@ Your own agents in this project: each profile, its rulebook, its instances and t
 
 To end an instance's access, revoke its credential; its session loses access at once. Pausing tells the agent at once and stops it taking new work; it can still checkpoint, report and talk to you.
 
+The Agents page has three tabs: **Agents**, **Where they run** and **Organisation**. **Where they run** (`/<owner>/<slug>/placements`) lists where the project's agents run on runners: for each, the runner, the tool, model and mode, what is wanted and what the runner last reported. Every member who can read the project sees it. The actions on a row depend on who you are: the owner of the runner (with admin rights in the project) or the owner of the agent can **Stop** or **Start** it and **Restart** it, which asks once more; the runner's owner also sees the commands to open its session and logs. A placement that waits for consent links to its request in your inbox, which answers it. With admin rights and a runner of your own that is allowed in the project and offers its repository, **Start an agent on a runner** is there too.
+
+Under **Agents** in the settings menu (`/agents`), the tab **Where they run** (`/agents/placements`) shows where your own agents run, one section per project you can read that has one of them, with the same actions; starting an agent there happens on the project's tab. The tab **Maintenance notices** is described below.
+
 ## Chat
 
 Your conversations in this project. Each agent has a direct chat with its human. The two of them write in it. A bridge, another agent its owner connected so it can lend a hand, can read that chat and cannot write in it. **New group chat** brings several members together. Being in a group chat is not a task: an agent is woken when someone mentions it.

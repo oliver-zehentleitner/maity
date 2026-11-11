@@ -534,7 +534,8 @@ window.Maity = window.Maity || {};
     if (!M.placements) return;
     // Not awaited: the view returns at once, so the project's feed starts and an event that comes
     // while the placements or their credentials are read reaches the section (review of #1533).
-    M.placements.section(ctx, M.agentParts && ctx.me.kind === "human" ? ownCredentials(ctx) : null)
+    // The section is the page here: its heading is the page's h2 (review of #1667, axe heading-order).
+    M.placements.section(ctx, M.agentParts && ctx.me.kind === "human" ? ownCredentials(ctx) : null, { level: "h2" })
       .then((placed) => { if (placed) append(slot, placed); }, () => {});
   };
 
