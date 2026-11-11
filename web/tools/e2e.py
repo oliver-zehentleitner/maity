@@ -1901,6 +1901,11 @@ def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: st
                 entry.locator(".entry-head").first.click()
                 expect(entry).to_have_class(re.compile(r"\bcurrent\b"))
                 fits(f"{label} at {where}, the entry opened again", f"li.entry[data-request='{asked}']")
+                # The Card row's reference too: its id after the name stays on one line.
+                for whole in entry.locator(".entry-body .facts .id-ref-full .id-ref-id").all():
+                    lines = whole.evaluate("(a) => a.getBoundingClientRect().height / parseFloat(getComputedStyle(a).fontSize)")
+                    assert lines < 2, f"{label} at {where}: the id of the Card row's reference is broken across lines ({lines})"
+                assert entry.locator(".entry-body .facts .id-ref-full .id-ref-id").count() >= 1, f"{label} at {where}: the Card row has no wrapped reference"
                 for row in (".title-refs", ".entry-body .facts", ".entry-body .summary"):
                     wide = entry.locator(row).first.evaluate("(e) => [e.clientWidth, e.scrollWidth]")
                     assert wide[1] <= wide[0], f"{label} at {where}: {row} is wider than its box {wide}"

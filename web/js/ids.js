@@ -144,5 +144,9 @@ window.Maity = window.Maity || {};
     return a;
   }
 
-  M.ids = { link, refs, only, where, ref, forgeBase };
+  // A reference as plain drawn text, not a link, for a place that sits inside a
+  // link already (the inbox's Card row): the same wrapping markup as link().
+  const plain = (text) => h("span", { class: kindOf(String(text)) }, label(String(text)));
+
+  M.ids = { link, refs, only, where, ref, plain, forgeBase };
 })(window.Maity);

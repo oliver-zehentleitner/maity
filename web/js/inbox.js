@@ -197,7 +197,13 @@ window.Maity = window.Maity || {};
   }
 
   // A card as an entry names it: its reference, title and status (the hub's word).
-  const cardLine = (cardRef, task) => M.t("inbox.card", { ref: cardRef, title: task.title, status: task.status.replace("_", " ") });
+  // The reference goes through the same markup as every other one (M.ids.plain), so a long
+  // full name wraps and the id stays whole (tsk-e9d52pfhvk3v); the translation places it.
+  const cardLine = (cardRef, task) => {
+    const mark = "\u0000";
+    const parts = M.t("inbox.card", { ref: mark, title: task.title, status: task.status.replace("_", " ") }).split(mark);
+    return [parts[0], M.ids.plain(cardRef), parts.slice(1).join("")];
+  };
 
   // The member ids of the reader's own agent profiles (GET /agents), read once
   // per view: who Talk may go to across projects and for personal requests.
