@@ -17,7 +17,15 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import attachment_store, clock, events, handles, moderation, namespace, worker_runs
+from maity_hub import (
+    attachment_store,
+    clock,
+    events,
+    moderation,
+    namespace,
+    public_people,
+    worker_runs,
+)
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.admin import instance_admin_id
@@ -75,9 +83,75 @@ def _member(conn: Connection, caller: Caller, project: str | None) -> Membership
     if not isinstance(project, str) or not project:
         raise invalid({"target.project": "required"})
     mine = membership(conn, caller, project)
-    if not mine.may("project:read"):
+    if not mine.may("project:read") or namespace.full_name(conn, mine.project) != project:
+        # The current name only: a former slug must not confirm whose it was (§16.8).
         raise not_found()
     return mine
+
+
+# --- what a stranger sees: the pages served now (§16.8, §16.9) ------------------------------
+
+
+def _page(conn: Connection, pages: bool, path: str, view: str) -> Any:
+    """The stored page of `path` with that view while the instance serves pages, else None.
+    Its path is the current public name, so a former name finds no page."""
+    if not pages:
+        return None
+    return conn.execute(
+        select(t.public_page.c.target_id, t.public_page.c.data).where(
+            t.public_page.c.path == path, t.public_page.c.view == view
+        )
+    ).first()
+
+
+def _lists(page: Any, path: str) -> bool:
+    """Whether a page's `agents` names the agent whose own page is `path`."""
+    data = (page.data or {}) if page is not None else {}
+    return any(isinstance(a, dict) and a.get("page") == path for a in data.get("agents") or [])
+
+
+def _agent_shown(conn: Connection, pages: bool, agent: Any, owner: str) -> bool:
+    """Whether a page served now shows the agent: its own page, its owner's agents page, or
+    the page of a project it is named on (§16.8)."""
+    path = f"/{owner}/agents/{agent.handle}"
+    if _page(conn, pages, path, "agent") is not None:
+        return True
+    if _lists(_page(conn, pages, f"/{owner}/agents", public_people.AGENTS_VIEW), path):
+        return True
+    m = t.membership.c
+    projects = conn.execute(
+        select(t.project)
+        .join(t.membership, m.project_id == t.project.c.id)
+        .where(m.agent_id == agent.id, m.active.is_(True))
+    ).all()
+    return any(
+        _lists(_page(conn, pages, f"/{namespace.full_name(conn, p)}", "project"), path)
+        for p in projects
+    )
+
+
+def _on_project_page(conn: Connection, pages: bool, handle: str, project: str) -> tuple[str, str]:
+    """The agent a served project page lists with this bare handle: `not_found` for none,
+    `invalid` (`ambiguous_handle`) for more than one, since a report names one agent."""
+    page = _page(conn, pages, f"/{project}", "project")
+    if page is None:
+        raise not_found()
+    listed = [
+        a
+        for a in (page.data or {}).get("agents") or []
+        if isinstance(a, dict) and a.get("handle") == handle
+    ]
+    if not listed:
+        raise not_found()
+    if len(listed) > 1:
+        raise ApiError(
+            400,
+            "invalid",
+            "the page lists this handle more than once; report from the agent's own page",
+            {"reason": "ambiguous_handle"},
+        )
+    owner, _, rest = str(listed[0].get("page") or "").lstrip("/").partition("/agents/")
+    return str(_agent_by_name(conn, f"{owner}/{rest}")[0].id), str(page.target_id)
 
 
 def _shares_a_project(conn: Connection, caller: Caller, principal: str) -> bool:
@@ -99,63 +173,78 @@ def _shares_a_project(conn: Connection, caller: Caller, principal: str) -> bool:
     )
 
 
-def _agent_by_name(conn: Connection, name: str) -> str:
-    """An agent's id from its global name `<owner>/<handle>`, as a project's public page
-    shows it (§6.3, §16.9); `not_found` for none."""
+def _agent_by_name(conn: Connection, name: str) -> tuple[Any, str]:
+    """An agent's row and its owner's handle from its current global name `<owner>/<handle>`
+    (§6.3); `not_found` for none. A former handle of either does not resolve (§16.8)."""
     owner, _, handle = name.partition("/")
-    owner_id = handles.human_id_of(conn, owner)  # a handle or an alias of the owner (§6.24)
-    if owner_id is None:
-        raise not_found()
-    found = conn.execute(
-        select(t.agent_profile.c.id).where(
-            t.agent_profile.c.owner_id == owner_id,
+    row = conn.execute(
+        select(t.agent_profile)
+        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
+        .where(
+            t.human.c.handle == owner,
             t.agent_profile.c.handle == handle,
+            t.agent_profile.c.deleted_at.is_(None),
         )
-    ).scalar()
-    if found is None:  # the profile's handle may be an alias as well
-        found = conn.execute(
-            select(t.handle_alias.c.agent_id)
-            .join(t.agent_profile, t.agent_profile.c.id == t.handle_alias.c.agent_id)
-            .where(
-                t.handle_alias.c.scope == owner_id,
-                t.handle_alias.c.handle == handle,
-                t.handle_alias.c.live.is_(True),
-            )
-        ).scalar()
-    if found is None:
+    ).first()
+    if row is None:
         raise not_found()
-    return str(found)
+    return row, owner
 
 
-def _profile(conn: Connection, caller: Caller, profile_id: str) -> dict[str, Any]:
-    if "/" in profile_id:
-        profile_id = _agent_by_name(conn, profile_id)
-    if profile_id.startswith("agt-"):
+def _agent_shot(conn: Connection, row: Any) -> dict[str, Any]:
+    return {
+        "type": "profile",
+        "id": row.id,
+        "kind": "agent",
+        "handle": row.handle,
+        "display_name": row.display_name,
+        "owner": _author(conn, row.owner_id),
+        "author": _author(conn, row.id),
+    }
+
+
+def _human_shot(conn: Connection, human: Any) -> dict[str, Any]:
+    return {
+        "type": "profile",
+        "id": human.id,
+        "kind": "human",
+        "handle": human.handle,
+        "display_name": human.display_name,
+        "author": _author(conn, human.id),
+    }
+
+
+def _reads_member(conn: Connection, caller: Caller, row: Any) -> bool:
+    """Whether the caller reads the agent inside a membership: its owner, itself, or a
+    member of a project it is in."""
+    own = caller.kind != "agent" and row.owner_id == caller.human_id
+    return own or row.id == caller.principal_id or _shares_a_project(conn, caller, row.id)
+
+
+def _profile(
+    conn: Connection, caller: Caller, profile_id: str, project: Any, pages: bool
+) -> dict[str, Any]:
+    if "/" in profile_id:  # an agent's global name, from a page of its owner or a project
+        row, owner = _agent_by_name(conn, profile_id)
+        if not (_reads_member(conn, caller, row) or _agent_shown(conn, pages, row, owner)):
+            raise not_found()
+        return _agent_shot(conn, row)
+    if project is not None:  # the bare handle a served project page shows, with its name
+        if not isinstance(project, str) or not project:
+            raise invalid({"target.project": "required"})
+        agent_id, project_id = _on_project_page(conn, pages, profile_id, project)
+        row = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == agent_id)).one()
+        # The project it was reported from, so the reporter's list names it the same way.
+        return {**_agent_shot(conn, row), "project": project_id}
+    if profile_id.startswith("agt-"):  # a member's read only; a stranger has no such id
         row = conn.execute(
             select(t.agent_profile).where(
                 t.agent_profile.c.id == profile_id, t.agent_profile.c.deleted_at.is_(None)
             )
         ).first()
-        if row is None:
+        if row is None or not _reads_member(conn, caller, row):
             raise not_found()
-        own = caller.kind != "agent" and row.owner_id == caller.human_id
-        if not (
-            own
-            or profile_id == caller.principal_id
-            # An agent on a project's public page joins these with the public pages
-            # (§16.9, tsk-w89mspg3gwx1); no page outside a project shows one yet.
-            or _shares_a_project(conn, caller, profile_id)
-        ):
-            raise not_found()
-        return {
-            "type": "profile",
-            "id": profile_id,
-            "kind": "agent",
-            "handle": row.handle,
-            "display_name": row.display_name,
-            "owner": _author(conn, row.owner_id),
-            "author": _author(conn, profile_id),
-        }
+        return _agent_shot(conn, row)
     if profile_id.startswith("hum-"):
         human = conn.execute(
             select(t.human).where(t.human.c.id == profile_id, t.human.c.deleted_at.is_(None))
@@ -164,20 +253,32 @@ def _profile(conn: Connection, caller: Caller, profile_id: str) -> dict[str, Any
             raise not_found()
         if not (profile_id == caller.principal_id or _shares_a_project(conn, caller, profile_id)):
             raise not_found()
-        return {
-            "type": "profile",
-            "id": profile_id,
-            "kind": "human",
-            "handle": human.handle,
-            "display_name": human.display_name,
-            "author": _author(conn, profile_id),
-        }
-    raise not_found()
+        return _human_shot(conn, human)
+    # A person's current handle, as their page shows it at `/{handle}`.
+    human = conn.execute(
+        select(t.human).where(t.human.c.handle == profile_id, t.human.c.deleted_at.is_(None))
+    ).first()
+    if human is None:
+        raise not_found()
+    if not (
+        human.id == caller.principal_id
+        or _shares_a_project(conn, caller, human.id)
+        or _page(conn, pages, f"/{human.handle}", "person") is not None
+    ):
+        raise not_found()
+    return _human_shot(conn, human)
 
 
-def _project(conn: Connection, caller: Caller, full_name: str) -> tuple[str, dict[str, Any]]:
-    mine = _member(conn, caller, full_name)
-    project = mine.project
+def _project(
+    conn: Connection, caller: Caller, full_name: str, pages: bool
+) -> tuple[str, dict[str, Any]]:
+    try:
+        project = _member(conn, caller, full_name).project
+    except ApiError as refused:
+        page = _page(conn, pages, f"/{full_name}", "project")
+        if refused.code != "not_found" or page is None:
+            raise
+        project = conn.execute(select(t.project).where(t.project.c.id == page.target_id)).one()
     owner = namespace.owner_of(conn, project)
     return project.id, {
         "type": "project",
@@ -189,17 +290,28 @@ def _project(conn: Connection, caller: Caller, full_name: str) -> tuple[str, dic
 
 
 def _card(
-    conn: Connection, caller: Caller, card_id: str, project: str | None
+    conn: Connection, caller: Caller, card_id: str, project: str | None, pages: bool
 ) -> tuple[str, dict[str, Any]]:
-    mine = _member(conn, caller, project)
+    try:
+        project_row = _member(conn, caller, project).project
+    except ApiError as refused:
+        # A stranger reads a card only through its own page (§16.8, §16.9).
+        page = _page(conn, pages, f"/{project}/tasks/{card_id}", "card")
+        if refused.code != "not_found" or page is None:
+            raise
+        project_row = conn.execute(
+            select(t.project)
+            .join(t.card, t.card.c.project_id == t.project.c.id)
+            .where(t.card.c.id == page.target_id)
+        ).one()
     card = conn.execute(
-        select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
+        select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == project_row.id)
     ).first()
     if card is None:
         raise not_found()
-    return mine.project.id, {
+    return project_row.id, {
         "type": "card",
-        "project": namespace.full_name(conn, mine.project),
+        "project": namespace.full_name(conn, project_row),
         "kind": card.kind,
         "title": card.title,
         "body": card.body,
@@ -245,7 +357,7 @@ def _message(
 
 
 def target(
-    conn: Connection, caller: Caller, given: dict[str, Any]
+    conn: Connection, caller: Caller, given: dict[str, Any], pages: bool = False
 ) -> tuple[str, str, str | None, dict[str, Any]]:
     """(type, id, project id, snapshot) of what the caller reports, read as the caller may
     read it; `not_found` for anything it cannot read."""
@@ -256,15 +368,16 @@ def target(
         raise invalid({"target.id": "required"})
     project = given.get("project")
     if kind == "profile":
-        shot = _profile(conn, caller, target_id)
-        return kind, shot["id"], None, shot
+        shot = _profile(conn, caller, target_id, project, pages)
+        from_page = shot.pop("project", None)
+        return kind, shot["id"], from_page, shot
     if kind == "project":
         # Keyed by its id, not its full name: the limit and the admin's view outlast a
         # rename or a transfer (§6.25).
-        project_id, shot = _project(conn, caller, target_id)
+        project_id, shot = _project(conn, caller, target_id, pages)
         return kind, project_id, project_id, shot
     if kind == "card":
-        project_id, shot = _card(conn, caller, target_id, project)
+        project_id, shot = _card(conn, caller, target_id, project, pages)
         return kind, target_id, project_id, shot
     project_id, shot = _message(conn, caller, target_id, project)
     return kind, str(shot["seq"]), project_id, shot
@@ -301,7 +414,9 @@ def _limit(conn: Connection, account: str, kind: str, target_id: str, now: datet
         raise ApiError(429, "rate_limited", "this target was reported 3 times already")
 
 
-def create(conn: Connection, caller: Caller, body: dict[str, Any]) -> dict[str, Any]:
+def create(
+    conn: Connection, caller: Caller, body: dict[str, Any], pages: bool = False
+) -> dict[str, Any]:
     """File a report and the instance admin's request about it; `{id, created_at}`."""
     reason, text = body.get("reason"), body.get("text")
     if reason not in REASONS:
@@ -311,7 +426,7 @@ def create(conn: Connection, caller: Caller, body: dict[str, Any]) -> dict[str, 
     given = body.get("target")
     if not isinstance(given, dict):
         raise invalid({"target": "required"})
-    kind, target_id, project_id, snapshot = target(conn, caller, given)
+    kind, target_id, project_id, snapshot = target(conn, caller, given, pages)
     account = account_of(conn, caller)
     now = clock.now()
     _limit(conn, account, kind, target_id, now)
@@ -359,12 +474,58 @@ def _target_view(row: Any, conn: Connection) -> dict[str, Any]:
     return shown
 
 
-def own_view(conn: Connection, row: Any) -> dict[str, Any]:
-    """The reporter's view: status and action only (§16.8), never the note."""
+def _public_target(conn: Connection, row: Any, pages: bool) -> dict[str, Any]:
+    """The reporter's form of the target (§16.8 "Limits"): its current public name while its
+    page is served now, else `null` with a neutral word; never an account or member id, a
+    former name or an alias. A message keeps its seq and the project's name as it is now."""
+    if row.target_type == "message":
+        return _target_view(row, conn)
+    gone = {"type": row.target_type, "id": None, "label": row.target_type}
+    full = (
+        namespace.full_names(conn, [row.project_id]).get(row.project_id)
+        if row.project_id is not None
+        else None
+    )
+    if row.target_type == "project":
+        if full and _page(conn, pages, f"/{full}", "project") is not None:
+            return {"type": "project", "id": full}
+        return gone
+    if row.target_type == "card":
+        if full and _page(conn, pages, f"/{full}/tasks/{row.target_id}", "card") is not None:
+            return {"type": "card", "id": row.target_id, "project": full}
+        return gone
+    if str(row.target_id).startswith("hum-"):
+        human = conn.execute(
+            select(t.human).where(t.human.c.id == row.target_id, t.human.c.deleted_at.is_(None))
+        ).first()
+        if human is not None and _page(conn, pages, f"/{human.handle}", "person") is not None:
+            return {"type": "profile", "id": human.handle}
+        return {**gone, "label": "person"}
+    agent = conn.execute(
+        select(t.agent_profile, t.human.c.handle.label("owner_handle"))
+        .join(t.human, t.human.c.id == t.agent_profile.c.owner_id)
+        .where(t.agent_profile.c.id == row.target_id, t.agent_profile.c.deleted_at.is_(None))
+    ).first()
+    neutral = {**gone, "label": "agent"}
+    if agent is None:
+        return neutral
+    path = f"/{agent.owner_handle}/agents/{agent.handle}"
+    if row.project_id is not None:  # reported by its handle on a project page
+        if full and _lists(_page(conn, pages, f"/{full}", "project"), path):
+            return {"type": "profile", "id": agent.handle, "project": full}
+        return neutral
+    if _agent_shown(conn, pages, agent, agent.owner_handle):
+        return {"type": "profile", "id": f"{agent.owner_handle}/{agent.handle}"}
+    return neutral
+
+
+def own_view(conn: Connection, row: Any, pages: bool | None = None) -> dict[str, Any]:
+    """The reporter's view: status and action only (§16.8), never the note. With `pages`
+    (whether the instance serves public pages), the target in the reporter's form."""
     return {
         "id": row.id,
         "created_at": ts(row.created_at),
-        "target": _target_view(row, conn),
+        "target": _target_view(row, conn) if pages is None else _public_target(conn, row, pages),
         "reason": row.reason,
         "status": row.status,
         "action": row.action,

@@ -43,7 +43,7 @@ async def file_report(request: Request, caller: AnyCaller) -> JSONResponse:
         raise invalid({"body": "unknown_field"})
 
     def action(conn: Connection) -> idempotency.Outcome:
-        made = reports.create(conn, caller, body)
+        made = reports.create(conn, caller, body, settings_of(request).public_pages)
         return idempotency.Outcome(201, "abuse_report", made["id"], made)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -79,7 +79,12 @@ def my_reports(
             paging.cursor(page[-1].created_at, page[-1].id, bound) if len(rows) > limit else None
         )
         return JSONResponse(
-            {"items": [reports.own_view(conn, row) for row in page], "next_cursor": next_cursor}
+            {
+                "items": [
+                    reports.own_view(conn, row, settings_of(request).public_pages) for row in page
+                ],
+                "next_cursor": next_cursor,
+            }
         )
 
 
