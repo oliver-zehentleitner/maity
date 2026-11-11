@@ -11171,8 +11171,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await evAt(5015);
   expect(win.location.hash === "#/maintainer/maity/chat/cnv-0007#seq-5015" && evMarked() === "5015" && main.querySelector("section.group-chat"),
     "event: a group chat's message opens in that chat, marked " + win.location.hash + " " + evMarked());
-  await evAt(6003);
-  expect(win.location.hash === "#/maintainer/maity/chat/agt-b#seq-6003", "event: a removed direct chat message still opens in its chat (conversation_id survives) " + win.location.hash);
   const evNotVisible = () => text(main.querySelector("p.event-not-visible") || main);
   evReads.length = 0;
   await evAt(4990);
@@ -11217,6 +11215,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(evPending && win.location.hash === "#/account" && main.querySelector("section.view-account"),
     "event: an answer that comes after the reader left for another page moves nothing, the address stays where the reader went " + win.location.hash);
   win.Maity.api.get = evGet;
+  // A removed direct chat message opens in its chat, marked there (spq4, #1629): the chat holds 6003 as its tombstone.
+  // agt-b's chat stays empty in fixtures/maity/conversations.json, as the chat list cases above need, so the tombstone
+  // is put there in a copy of the fixtures; the next case loads the mock afresh.
+  const evFx = win.MAITY_FIXTURES, evFxB = JSON.parse(JSON.stringify(evFx));
+  evFxB["maity/conversations.json"]["agt-b"] = { cursor: 6003, items: [{ id: "evt-6003", seq: 6003, conversation_id: "agt-b", from: "agt-b", from_instance: null,
+    to: "hum-maintainer", to_instance: null, body: null, sent_at: "2026-10-22T09:40:00Z", delivered_at: "2026-10-22T09:40:02Z", mentions: [], attachments: [],
+    redacted: true, redaction: { at: "2026-10-22T09:45:00Z", by: "hum-maintainer", reason: "a token in the chat" } }] };
+  win.MAITY_FIXTURES = evFxB;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  await evAt(6003);
+  expect(win.location.hash === "#/maintainer/maity/chat/agt-b#seq-6003" && evMarked() === "6003" && main.querySelector("li.seq-target p.msg-redacted"),
+    "event: a removed direct chat message still opens in its chat (conversation_id survives), its tombstone marked there " + win.location.hash + " " + evMarked());
+  win.MAITY_FIXTURES = evFx;
   await go("#/maintainer/maity/inbox");
   // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).
   win.location.search = "?as=agt-a";
