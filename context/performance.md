@@ -142,13 +142,15 @@ server time was measured in-process against PostgreSQL when the hub route was wr
 41 ms for its slowest chain and 79 ms for the six single routes one after another. The
 saving holds only
 because the hub reads the parts concurrently, the head before the project and its members:
-read one after another, their server time would eat it. That concurrency is PostgreSQL's
-and MariaDB's (measured on PostgreSQL only): on SQLite every transaction takes the one write lock at its start
+read one after another, their server time would eat it. That concurrency is measured on
+PostgreSQL; on MariaDB it is expected (a server with a pool and no lock at a transaction's
+start) and not measured. On SQLite every transaction takes the one write lock at its start
 (`db._sqlite_begin_immediate`), so the parts' reads run one after another there, and the
 bundle saves the round trips and the repeated authentication only; the lock stays, since
 it is what keeps SQLite's transactions from failing to upgrade to a write. The price of
-the concurrency is the pool: one request holds up to four of its connections at once (the
-first wave), where a single call holds one. Once the hub answers the
+the concurrency is the pool: one request holds up to five of its connections at once,
+where a single call holds one (`project` and `members` start once `head` is read, while
+`maintenance`, `session` and `me` may still hold theirs). Once the hub answers the
 route, 63c48583's Revisit when ("the hub answers /auth/session and /me in one read") has
 come, and that entry is checked again with the web change. A part
 built by the single route's own code for the same caller has one place to get each field
