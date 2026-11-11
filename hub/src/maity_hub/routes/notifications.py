@@ -147,8 +147,10 @@ async def list_notifications(
             # while the request waited receives nothing more (§18.2).
             _require_live(conn, session)
             found = _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
-            # Only a call that can hold compares stamps; any other reads none (review of #1623).
-            return found, listing.held_stamp(conn, human_id) if wait else ()
+            # Only a call that can hold compares stamps; any other reads none (review of #1623),
+            # nor does an answer with items, which a held call returns at once and a held loop
+            # returns as moved: nothing compares its stamp.
+            return found, listing.held_stamp(conn, human_id) if wait and not found["items"] else ()
 
     def unchanged(seen: tuple[Any, ...]) -> tuple[bool, tuple[Any, ...]]:
         """Whether nothing an answer reads moved since `seen`, and the stamp to compare
