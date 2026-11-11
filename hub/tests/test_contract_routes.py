@@ -31,6 +31,7 @@ NOT_ROUTED = {
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
+    ("POST", "/me/presence"),  # no route yet: tsk-41cejk2czbnq, the mail hold while present
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/auth/password-reset"),  # no route yet: tsk-pk755085ctff, forgot password
     ("POST", "/auth/password-reset/check"),  # no route yet: tsk-pk755085ctff, forgot password

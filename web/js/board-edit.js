@@ -187,8 +187,8 @@ window.Maity = window.Maity || {};
     const menu = M.menuButton({
       label: M.t("cards.move.label", { id: c.id, column: columnName(c.status) }),
       face: [columnName(c.status), h("span", { "aria-hidden": "true" }, " ▾")],
-      items: () => slots.map((slot) => ({ label: slot === "review" ? M.t("cards.sign.review") : M.t("cards.sign.test"), onSelect: () => move(c, "done", "move:" + c.id, slot) }))
-        .concat(allowed.map((s) => ({ label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) }))),
+      items: () => slots.map((slot) => ({ key: "sign:" + slot, label: slot === "review" ? M.t("cards.sign.review") : M.t("cards.sign.test"), onSelect: () => move(c, "done", "move:" + c.id, slot) }))
+        .concat(allowed.map((s) => ({ key: "move:" + s, label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) }))),
     });
     menu.button.setAttribute("data-focus", "move:" + c.id);
     menu.el.className = "menu-box card-move";
@@ -205,6 +205,7 @@ window.Maity = window.Maity || {};
       face: [word, h("span", { "aria-hidden": "true" }, " ▾")],
       // A guest is never assigned a card (§2.3).
       items: () => ctx.members.filter((m) => m.id !== c.assigned_to && !M.trust.guest(m)).map((m) => ({
+        key: "member:" + m.id,
         label: [M.avatar(m, 16), " @" + M.dom.handleOf(ctx, m)],
         title: m.display_name,
         onSelect: () => assign(c, m.id, "assign:" + c.id),

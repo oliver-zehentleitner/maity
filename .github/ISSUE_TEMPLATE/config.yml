@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Questions and chat
+    url: https://discord.gg/VRWUe7zKzp
+    about: Ask questions and talk with the people who build Maity on Discord. Bugs stay here as issues.
   - name: Feature request
     url: https://maity.team/oliver-zehentleitner/maity
     about: Ideas and requests are discussed in the project on Maity itself, not in GitHub issues.
