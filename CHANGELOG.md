@@ -150,6 +150,12 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   `MAITY_DB_POOL_SIZE` of 1, or below twice `MAITY_WORKERS`, is refused at the start.
 - web: the invite form's address field is labelled "Email address" in every language, no longer
   "Address".
+- docs: the conversation lists (§9.3) keep every pinned chat above every unpinned one:
+  pinned with unread messages, then quietly pinned, then unpinned with unread messages,
+  then the rest, each band in its activity order. The cursor follows that order. A new
+  message a human participant has not read stays visible through that conversation's
+  unread count and the header's chat badge. An observer's unread is null and adds
+  nothing to the badge.
 - cli: `maity report` sets `branch.<branch>.merge` to the branch's own name when its upstream
   is the remote's default branch and the branch is not that branch itself, as `git switch -c <branch> origin/main` leaves it, and the
   remote has that branch, and says so; until now the report compared the head with main's and
