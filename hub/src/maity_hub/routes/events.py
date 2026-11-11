@@ -139,6 +139,14 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     engine = engine_of(request)
 
     served_param = request.query_params.get("for")
+    if after_param == "latest" and wait == 0 and served_param is None:
+        # From now on, without the history; acknowledges nothing (§8.3). The same code builds
+        # the `head` part of `GET /bootstrap` (§5.4).
+        def head() -> dict[str, Any]:
+            with engine.begin() as conn:
+                return head_body(conn, caller, slug)
+
+        return JSONResponse(await run_in_threadpool(head))
 
     def start() -> tuple[Caller, Membership, int, bool]:
         with engine.begin() as conn:
@@ -168,7 +176,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     reader, mine, after, supervised = await run_in_threadpool(start)
     carried = reader.bridge is not None
     if after_param == "latest" and wait == 0:
-        # From now on, without the history; acknowledges nothing (§8.3).
+        # A bridge's read for an agent (`for`); without it, `head_body` above (§8.3).
         return answer([], after, superseded=False)
 
     def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int] | None:
@@ -397,15 +405,28 @@ def _still_carried(conn: Connection, reader: Caller) -> bool:
 
 
 def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:
-    return JSONResponse(
-        {
-            "items": items,
-            "cursor": cursor,
-            "server_time": clock.rfc3339(clock.now()),
-            "superseded": superseded,
-            "cli_version": CLI_VERSION,
-        }
-    )
+    return JSONResponse(answer_body(items, cursor, superseded))
+
+
+def answer_body(items: list[dict[str, Any]], cursor: int, superseded: bool) -> dict[str, Any]:
+    return {
+        "items": items,
+        "cursor": cursor,
+        "server_time": clock.rfc3339(clock.now()),
+        "superseded": superseded,
+        "cli_version": CLI_VERSION,
+    }
+
+
+def head_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
+    """`?after=latest&wait=0` without `for` (§8.3): the head, no history, nothing
+    acknowledged. `read_events` answers that query with it, and it is the `head` part of
+    `GET /bootstrap` (§5.4)."""
+    mine = membership(conn, caller, slug)
+    mine.require("project:read")
+    after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
+    not_listening.called(conn, caller.session_id)
+    return answer_body([], after, superseded=False)
 
 
 def _acknowledge(conn: Connection, caller: Caller, after: int) -> None:

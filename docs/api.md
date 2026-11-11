@@ -4322,7 +4322,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a7" },
+  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a8" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=7f3a91c0",
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
@@ -5118,10 +5118,15 @@ the single route's headers: a `503 maintenance` part has its window in
 `details` (`{from, until, text}`), from which a client derives what
 `Retry-After` would have said. The hub reads the parts concurrently:
 `maintenance`, `session`, `me` and `head` together, and `project` and
-`members` together once `head` has been read. The answer then takes
-about as long as its slowest chain, not as the sum of its parts: the
-slowest of `maintenance`, `session` and `me`, or `head` followed by the
-slower of `project` and `members`. `head` comes first so that nothing
+`members` together once `head` has been read. On PostgreSQL the answer
+then takes about as long as its slowest chain, not as the sum of its
+parts: the slowest of `maintenance`, `session` and `me`, or `head`
+followed by the slower of `project` and `members`. MariaDB behaves the
+same: a server with a pool and no lock taken at a transaction's start. On
+SQLite, where every
+transaction takes the one write lock at its start, the parts' reads run
+one after another; what the bundle saves there is the round trips and
+the repeated authentication. `head` comes first so that nothing
 that happens while those two are read is missed: it comes as an event
 past the cursor, as with the dashboard's own reads. The parts are not one
 snapshot, as the single calls are not either. Without `project`, the
@@ -12041,7 +12046,7 @@ Scope `project:read`, cookie sessions included. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a7" }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a8" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger
