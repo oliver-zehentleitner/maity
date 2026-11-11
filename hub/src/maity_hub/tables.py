@@ -2703,7 +2703,8 @@ abuse_report = Table(
     _ref("account_id", "human.id", nullable=False, index=True),
     Column("target_type", String(16), nullable=False),  # profile, project, message, card
     Column("target_id", String(255), nullable=False),
-    Column("project_id", String(ID)),  # the target's project; null for a profile
+    Column("project_id", String(ID)),  # the target's project; for a profile, the project
+    # page it was reported from by its handle (§16.8), else null
     Column("reason", String(32), nullable=False),
     Column("text", Text),
     Column("snapshot", JSON_VALUE),
