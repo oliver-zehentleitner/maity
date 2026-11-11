@@ -285,7 +285,11 @@ members that the contract waives only for this one change.
 type, stable target id, action); resolving the report again replaces
 it and `dismiss` deletes it. Ordinary writes that would undo it ask
 `moderation.refuse_held`: turning a project's badge on, reopening an archived project, a status change of a held cancelled card (checked before the transition, which §6.4 refuses anyway), renaming an agent
-or uploading a picture over a reset one. Since the public pages, the hold also decides what they serve: a held project,
+or uploading a picture over a reset one, changing an agent's display
+name, or turning a person's public profile on. A profile's writers take
+the owner's row before that read, and the reset and a hide take the
+same row before the hold is written (the entry "A profile writer takes
+the owner's row before it reads the hold"). Since the public pages, the hold also decides what they serve: a held project,
 profile or organisation has no page (`moderation.hold` in `public_projects`, `public_people`, `public_orgs`,
 `public_agents`). A message is public nowhere, so its hold changes nothing yet. A suspension is no hold: only the operator's
 `maity-hub account unsuspend` lifts it, `dismiss` does not.
@@ -330,3 +334,59 @@ The lock order is account, then project, then the human's own rows
 for an uncommitted suspension, so an issue could see the account
 unsuspended, and then commit a fresh credential after the suspension has
 revoked all the others.
+
+## A profile writer takes the owner's row before it reads the hold
+
+**Id:** d4ba888f-22ba-4a5c-b262-13dab0dedff8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-4mnn5q5cg3w4; pull request #1471 (motif choice and picture upload)
+**Revisit when:** a profile hold covers a writer that cannot take the owner's row first, or the lock order changes
+**See:** reports.md#holds-live-in-their-own-table-keyed-by-report-hide-is-the-hold-alone-until-public-pages — aab2c1b8-0a27-4bcf-832d-4f34a389e3d8 — as of 2026-11-11
+**See:** reports.md#a-suspension-takes-the-account-lock-first-every-issue-waits-for-it — 525c4922-109b-418f-82e2-0b02b285b946 — as of 2026-11-11
+
+Every writer that asks `moderation.refuse_held` for a profile takes the
+owner's row lock first (`avatars.lock_owner`, or `owned(..., lock=True)`
+on the same `agent_profile` row). A `remove` (`_reset_profile`) and a
+`hide` of a profile take that same lock before the hold is written. A
+writer that read "no hold" and then waited on the lock therefore reads
+the hold the reset or the hide committed, and is refused.
+
+The order is the suspension's: the account lock, then a project row,
+then the human's row or the agent profile's row. A request already holds
+the account lock shared before any other lock. `handles.rename` locks
+the profile row and then the handle lock, so a patch that locks the
+profile row first leaves that order. A project hide locks the project
+and does not take a profile row. A profile hide takes the profile row
+only, and `apply` holds no project lock before that. After the hold,
+`apply` may lock a project while it reconciles agents, and the notice
+locks the account's human row. A `remove` already holds the owner's row
+across both, because the reset locks it and then announces the picture
+in each project. The hide lock matches that; it does not take a lock
+`apply` already held.
+
+Writers this covers: an agent's display name (`PATCH /agents/{id}`), a
+person's `public_profile: true` (`PATCH /me`), a motif choice and a
+picture upload. `display_name: null` changes nothing and does not read
+the hold. A refusal raises inside the request's transaction, so a handle
+rename or a motif count in the same request is rolled back with it.
+
+Checked and left as they are: a human has no display-name write after
+registration; an agent's own `PATCH /me` sets no display name (a motif
+goes through `choose_motif`, which already locks first); an
+organisation's display name is under a suspension hold, and that route
+locks the organisation row before it reads the hold.
+
+**Reason:** a read of the hold does not wait for an uncommitted one. A
+writer that looked before taking the row the reset holds can commit
+after the reset, and undo it.
+
+**Rejected alternative:** only locking in the writers. A `hide` of a
+profile took no row lock, so `public_profile: true` could read "no hold"
+and commit after the hide had written one. The hide takes the same lock
+the writer waits on.
+
+**Rejected alternative:** a lock of its own for the hold, apart from the
+owner's row. The picture, the motif and the display name already
+serialise on that row; a second lock is another order to get wrong.
