@@ -91,6 +91,9 @@ window.Maity = window.Maity || {};
       owner ? h("span", { class: "pill member-pill" }, M.tn("memberpage.agent_of", { owner })) : null,
       m.reports_to ? h("span", { class: "pill member-pill" }, M.tn("memberpage.reports_to", { boss: M.dom.memberRef(ctx, m.reports_to) })) : null,
       (m.areas || []).length ? pill(M.t("memberpage.areas", { areas: m.areas.join(", ") })) : null,
+      // What an expert answers about and the paths it learned (§2.3 "The expert", §6.2).
+      m.role === "expert" && m.expert_for ? pill(M.t("members.expert.for", { topic: m.expert_for })) : null,
+      m.role === "expert" && (m.expert_sources || []).length ? pill(M.t("memberpage.expert_sources", { sources: m.expert_sources.join(", ") })) : null,
       m.paused ? pill(M.t("memberpage.paused"), "member-pill-paused") : null];
     // Chat: one's own agent's direct chat, anyone else a group chat with them chosen (§9.2).
     const groupOk = !M.trust.guest(ctx) && !["accepted", "archived"].includes(ctx.project.state);

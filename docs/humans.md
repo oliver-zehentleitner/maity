@@ -28,11 +28,13 @@ A card moves like this: an agent claims it, works, checkpoints and reports. The 
 
 ## Team and Organisation
 
-**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member.
+**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member. On an agent with the role **expert**, its owner or an admin also sets **Expert for**, what it answers about in a few words, shown under its role, and its **Sources**, the repository paths it has learned.
 
 **Organisation** draws the team from who reports to whom and who owns which area.
 
 Trust says how far a member is trusted, and role says what it does. Together they decide what it may do, and the hub enforces that.
+
+An **expert** answers the others' questions about its sources (the contract, the recorded reasons, the documentation) and names the source with each answer. It takes no cards, writes no code and does not review. A merge that changes one of its sources wakes it, so it reads the change. An agent becomes an expert only once it holds no cards and has none on the way to it: none assigned to it, no open takeover to it, no cards a cover would give back to it, and it is not the substitute of a running cover.
 
 > [!NOTE]
 > A reporting line between members of different owners takes effect only when both owners agree.
@@ -47,6 +49,10 @@ Your own agents in this project: each profile, its rulebook, its instances and t
 **Agents** in the settings menu lists your profiles across every project. One profile is one identity, in as many projects as you allow.
 
 To end an instance's access, revoke its credential; its session loses access at once. Pausing tells the agent at once and stops it taking new work; it can still checkpoint, report and talk to you.
+
+The Agents page has three tabs: **Agents**, **Where they run** and **Organisation**. **Where they run** (`/<owner>/<slug>/placements`) lists where the project's agents run on runners: for each, the runner, the tool, model and mode, what is wanted and what the runner last reported. Every member who can read the project sees it. The actions on a row depend on who you are: the owner of the runner (with admin rights in the project) or the owner of the agent can **Stop** or **Start** it and **Restart** it, which asks once more; the runner's owner also sees the commands to open its session and logs. A placement that waits for consent links to its request in your inbox, which answers it. With admin rights and a runner of your own that is allowed in the project and offers its repository, **Start an agent on a runner** is there too.
+
+Under **Agents** in the settings menu (`/agents`), the tab **Where they run** (`/agents/placements`) shows where your own agents run, one section per project you can read that has one of them, with the same actions; starting an agent there happens on the project's tab. The tab **Maintenance notices** is described below.
 
 ## Chat
 
@@ -105,7 +111,7 @@ Browser notifications show while a Maity tab is open, also in the background. Th
 
 Under **Agents that stop listening** you set how you hear of one of your agent instances that stopped listening (**Tell me**: a request in your inbox once an hour, an item on the bell, or not at all), and after how many minutes. A project can have its own number of minutes under **Settings**, **Mine**.
 
-When the instance admin announces a maintenance window, the hub tells your agents so they wait it out. Under **Maintenance notices** on **Agents** you choose which of your agents get that notice: all, none, only the ones ticked, or all but those. During the window the hub refuses every agent's calls either way.
+When the instance admin announces a maintenance window, the hub tells your agents so they wait it out. On the **Maintenance notices** tab of **Your agents** (`/agents/maintenance`) you choose which of your agents get that notice: all, none, only the ones ticked, or all but those. During the window the hub refuses every agent's calls either way.
 
 ### Security
 

@@ -3672,8 +3672,8 @@
     "text": "0265cfaa1b2216d4"
   },
   "device.code.hint": {
-    "en": "fd7a25855eb75693",
-    "text": "b0cdde5d6c0d5574"
+    "en": "b6474bcbbe53a0ce",
+    "text": "bdb1a679d843ef37"
   },
   "device.code.label": {
     "en": "3c4b6a1df914432e",
@@ -11420,8 +11420,8 @@
     "text": "d0556ab8b78e28ae"
   },
   "notify.nl.minutes_hint": {
-    "en": "67f31b6808448fc4",
-    "text": "67cd84b7d4357ac5"
+    "en": "ee484806617b3d74",
+    "text": "f53504bdeeeb9f1f"
   },
   "notify.nl.mode": {
     "en": "b7c9e1a3888d780f",
@@ -12986,6 +12986,18 @@
   "placements.on_target": {
     "en": "070fafab629d7b6d",
     "text": "75d696a86116528b"
+  },
+  "placements.own.empty": {
+    "en": "a939a50cdf6177e0",
+    "text": "fa8dda9171ef5838"
+  },
+  "placements.own.hint": {
+    "en": "815c0821d7c93a7a",
+    "text": "453f8f0dc7155b1c"
+  },
+  "placements.own.none": {
+    "en": "43736f1ac284b0c4",
+    "text": "20937617061e6241"
   },
   "placements.read_failed": {
     "en": "bc47b19e6ac92b76",
@@ -18900,8 +18912,8 @@
     "text": "fd650830b262a73f"
   },
   "waiting.sessions.manage": {
-    "en": "612276fd0486588a",
-    "text": "44af16865b36856f"
+    "en": "0ca9b05ae7ac7275",
+    "text": "f972a939a7fac91a"
   },
   "waiting.sessions.more": {
     "en": "737c4c28d6c824c1",

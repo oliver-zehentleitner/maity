@@ -377,6 +377,13 @@ def still_with(card: Any, sub_id: int | None) -> bool:
     return bool(card.assigned_to == sub_id and card.claim_holder in (None, sub_id))
 
 
+def gives_back(card: Any, sub_id: int | None) -> bool:
+    """Whether a cover's end gives this covered card back to the member (§6.12), the
+    member's role aside: still with its substitute, not touched by it, not closed. The role
+    guard of §2.3 asks the same, so the two cannot drift."""
+    return still_with(card, sub_id) and not card.cover.get("touched") and card.status not in CLOSED
+
+
 def _set_state(
     conn: Connection, row: Any, state: str | None, by: int | None, since: datetime | None
 ) -> None:
@@ -427,7 +434,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
             continue
-        if cover.get("touched") or card.status in CLOSED or row.role == "expert":
+        if not gives_back(card, members_by_principal.get(cover["by"])) or row.role == "expert":
             # An expert takes no cards back (§2.3 "The expert"): the substitute keeps it.
             kept.append(card.id)
         else:

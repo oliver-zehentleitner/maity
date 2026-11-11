@@ -465,7 +465,7 @@ def _cards_on_the_way(conn: Connection, target: Any) -> bool:
     open takeover (§6.19), has cards out with a substitute that a cover's end gives back to
     it, or is the substitute of a running cover, to which area routing hands new cards
     (§6.12, `cover.routed`)."""
-    from maity_hub import takeovers
+    from maity_hub import cover, takeovers
 
     if conn.execute(select(t.card.c.id).where(cards.open_claims(target.id)).limit(1)).first():
         return True
@@ -492,13 +492,26 @@ def _cards_on_the_way(conn: Connection, target: Any) -> bool:
         .limit(1)
     ).first():
         return True
-    principal = str(target.agent_id or target.human_id)
-    covers = conn.execute(
-        select(t.card.c.cover).where(
-            t.card.c.project_id == target.project_id, t.card.c.cover.isnot(None)
+    if target.cover_state != "covered" or target.cover_since is None:
+        return False
+    # Only what the running cover's end would give back (`cover.gives_back`): a card the
+    # substitute touched, one closed since, or one no longer with the substitute stays where
+    # it is (§2.3, §6.12).
+    principal, since = str(target.agent_id or target.human_id), clock.rfc3339(target.cover_since)
+    members_by_principal = {
+        str(m.agent_id or m.human_id): m.id
+        for m in conn.execute(
+            select(t.membership).where(t.membership.c.project_id == target.project_id)
         )
-    ).scalars()
-    return any((cover or {}).get("for") == principal for cover in covers)
+    }
+    for card in conn.execute(
+        select(t.card).where(t.card.c.project_id == target.project_id, t.card.c.cover.isnot(None))
+    ):
+        if card.cover.get("for") != principal or card.cover.get("since") != since:
+            continue
+        if cover.gives_back(card, members_by_principal.get(card.cover["by"])):
+            return True
+    return False
 
 
 def _check_no_cards_for_expert(conn: Connection, target: Any, role: Any) -> None:

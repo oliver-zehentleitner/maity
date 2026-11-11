@@ -458,6 +458,7 @@ def test_the_database_error_handler_logs_the_cause_not_the_secret(
         response = client.get("/api/v1/_broken")
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "database_unavailable"
+    assert response.headers["Retry-After"] == "5"
     logged = " ".join(record.getMessage() for record in caplog.records)
     assert logged.endswith(" dns") and "pw-in-dsn" not in logged
     assert "pw-in-dsn" not in response.text
