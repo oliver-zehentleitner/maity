@@ -1090,18 +1090,30 @@ window.Maity = window.Maity || {};
     }
     // A card's open menu (status, assign) and its focused item, for a redraw that no action of the
     // reader starts: the draw builds every card anew, each with its menus closed, so a menu opened
-    // just before would close under the reader's click (tsk-wp8hsgvha3n6). Returns what opens the
-    // same menu of the redrawn card again, on the same item, or null when none was open.
+    // just before would close under the reader's click (tsk-wp8hsgvha3n6). The old menu is closed
+    // here, without moving the focus, so that its listener for clicks elsewhere goes with it. The
+    // item is found again by what it says, not by its place: a refresh that changed who may be
+    // assigned shifts the places, and Enter must not land on another member. Returns what opens the
+    // same menu of the redrawn card on that item, or null when no item of an open menu had the focus.
+    // An item gone meanwhile leaves the menu closed and the focus on its button (review of #1654).
     function openMenuSpot() {
       const open = Array.from(columnsBox.querySelectorAll(".menu-button"))
         .find((b) => b.getAttribute("aria-expanded") === "true" && b.getAttribute("data-focus"));
       if (!open) return null;
       const key = open.getAttribute("data-focus");
-      const at = Array.from(open.parentNode.querySelectorAll(".menu-item")).indexOf(document.activeElement);
+      const focused = Array.from(open.parentNode.querySelectorAll(".menu-item")).find((e) => e === document.activeElement);
+      const was = M.menuOf(open);
+      if (was) was.close(false);
+      if (!focused) return null;
+      const label = focused.textContent;
       return () => {
         const again = Array.from(columnsBox.querySelectorAll(".menu-button")).find((b) => b.getAttribute("data-focus") === key);
         const menu = again && M.menuOf(again);
-        if (menu && again.getAttribute("aria-expanded") !== "true") menu.open(at >= 0 ? at : "first");
+        if (!menu || again.getAttribute("aria-expanded") === "true") return;
+        menu.open("first");
+        const item = Array.from(again.parentNode.querySelectorAll(".menu-item")).find((e) => e.textContent === label);
+        if (item) item.focus();
+        else menu.close(true);
       };
     }
     function focusSpot() {
@@ -1377,11 +1389,12 @@ window.Maity = window.Maity || {};
       }
       const found = draw(true);
       if (back) back();
-      if (menuBack) menuBack();
       else if (found && !markedFirst && returning && (!at || at === document.body)) {
         const title = found.querySelector("a.card-open");
         window.setTimeout(() => (title || found).focus(), 0);
       }
+      // After the focus is back: an open menu's item takes it again (null when no item had it).
+      if (menuBack) menuBack();
     }, (err) => {
       if (applied > 1) return;
       const back = focusSpot();

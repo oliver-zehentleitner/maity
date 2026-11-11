@@ -6082,9 +6082,12 @@ state in the element it built). A card's status or assign menu opened in between
 reader's click. That happened to e2e, and it would happen to a person who opens a menu as soon as
 the board appears. Before such a redraw (the late draw, the closed read in or failed, and the
 presence refresh that redraws under the Silent filter), the board notes the open card menu by its
-button's `data-focus` key (`move:<id>`, `assign:<id>`) and the focused item. After the draw it opens
-the same menu of the redrawn card again, through the menu's own open (`M.menuOf`), on the same item,
-where that card and menu are still drawn. A redraw the reader starts (a move, a filter, a search)
+button's `data-focus` key (`move:<id>`, `assign:<id>`) and the focused item by what it says, and
+closes the old menu without moving the focus, so that its listener for clicks elsewhere goes with it.
+After the draw it opens the same menu of the redrawn card again, through the menu's own open
+(`M.menuOf`), and focuses the item that says the same. An item gone meanwhile (a member who left the
+assign menu) leaves the menu closed and the focus on its button, so that Enter lands on no other
+item; a menu whose items had no focus is not opened again. A redraw the reader starts (a move, a filter, a search)
 closes the menu as before: the reader's own action has replaced it.
 
 **Reason:** the race is in the page, not only in the test. The fix belongs where a person meets it,
@@ -6097,6 +6100,12 @@ and the e2e step then needs no wait of its own.
   under an open menu, and a deferred draw must still keep the menu when it comes.
 - Reopening by a synthetic click on the new button: it goes through the click path (the outside
   click listener, focus on the first item), not the menu's own open, and it loses the focused item.
+- The focused item by its place (the first version): the presence refresh sets the members before it
+  draws, so a member who left above the focused one shifted the places, and Enter would have assigned
+  the next member (review of #1654).
+- Leaving the old menu open while its DOM is replaced (the first version): each reopening added a
+  listener for clicks elsewhere and none was removed until such a click, so repeated refreshes stacked
+  them on detached menus (review of #1654).
 
 ## A closed column draws the 50 cards closed last; Show more draws the rest
 

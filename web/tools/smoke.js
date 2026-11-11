@@ -5056,6 +5056,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     }
     expect(clMenuKept.every((r) => r.slice(1).every(Boolean)),
       "board: a card's open status menu and its focused item outlive the late draw, the closed read in or failed " + JSON.stringify(clMenuKept));
+
+    // The presence refresh under the Silent filter redraws too, after the members changed: the assign menu
+    // opens again on the same member, found by name, not by place (an earlier member gone shifts the places),
+    // and closes onto its button when that member is gone; the old menu's listener for clicks elsewhere goes
+    // with each redraw (review of #1654).
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    // Every agent away, so that the cards they hold show under the Silent filter; the members read by the
+    // presence refresh, which then drops asDrop (by name) as a member who left.
+    const asDocAdd = document.addEventListener, asDocRemove = document.removeEventListener;
+    let asClicks = 0;
+    const asMembers = win.Maity.api.getAll;
+    let asDrop = null;
+    win.Maity.api.getAll = (p) => (/\/members$/.test(p)
+      ? asMembers(p).then((r) => ({ ...r, items: r.items.filter((m) => m.display_name !== asDrop)
+        .map((m) => (m.kind === "agent" ? { ...m, presence: "offline" } : m)) })) : asMembers(p));
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    byId("board-silent").checked = true; byId("board-silent").dispatch("change"); await tick();
+    // A card the Silent filter shows that has an assign menu, whichever the fixtures make it.
+    const asId = (main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.querySelector(".card-assign .menu-button")) || { attrs: {} }).attrs["data-card"];
+    const asCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === asId);
+    const asButton = () => asCard().querySelector(".card-assign .menu-button");
+    const asItems = () => asCard().querySelectorAll(".card-assign .menu-item");
+    document.addEventListener = (t, f, o) => { if (t === "click") asClicks += 1; return asDocAdd(t, f, o); };
+    document.removeEventListener = (t, f, o) => { if (t === "click") asClicks -= 1; return asDocRemove(t, f, o); };
+    asButton().click(); await tick();
+    const asNames = asItems().map((b) => b.getAttribute("title"));
+    const asLabel = asItems()[1].textContent;
+    asItems()[1].focus();
+    asDrop = asNames[0];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asSame = [asNames.length >= 3, asButton().getAttribute("aria-expanded") === "true",
+      document.activeElement && document.activeElement.textContent === asLabel, asItems()[0].getAttribute("title") !== asNames[0], asClicks === 1];
+    asDrop = asNames[1];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asGone = [asButton().getAttribute("aria-expanded") === "false", document.activeElement === asButton(), asClicks === 0];
+    win.Maity.api.getAll = asMembers;
+    document.addEventListener = asDocAdd; document.removeEventListener = asDocRemove;
+    byId("board-silent").checked = false; byId("board-silent").dispatch("change"); await tick();
+    expect(!!asId && asSame.every(Boolean) && asGone.every(Boolean),
+      "board: under the Silent filter the assign menu opens again on the same member after an earlier one left, closes when that member left, and leaves one listener " + JSON.stringify([asId, asSame, asGone]));
     clProto.focus = clFocus; document.activeElement = undefined;
 
     // The Closed filter gives no "No card matches" while the closed cards are still read.
