@@ -1523,14 +1523,14 @@ deadline is what the deadline promises, not an outage.
   load, and the last ones were cut off anyway. An event that arrives
   while `wait` rests is returned by the next call.
 
-## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After`
+## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After` (a 503's too)
 
 **Id:** 6288d23f-c0fb-477d-a120-8e862ae10628
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built
-**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, or a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule
+**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built; for the 503, card tsk-p80cre8r9355 (2026-11-11), its split into a hub PR and this CLI PR agreed with the team lead
+**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule, or the hub sends `Retry-After` on a 5xx other than 503
 
 A `429` on the events long-poll is retried with the same cursor, as a
 `5xx` or a dropped connection is: the first one prints `hub answered
@@ -1540,6 +1540,12 @@ the deadline. A `429` without `Retry-After`, as a limit on open
 requests sends it, gets the backoff alone. A wait whose deadline comes
 first ends as any timeout does, with exit 3, so the loop around it
 re-arms. Every other `4xx` still ends `wait` with exit 1.
+
+A `503` keeps its `Retry-After` the same way: the hub sends one with
+`database_unavailable`, when its database cannot be reached or no pooled
+connection came free in time (`docs/api.md` §1.3), and reading again
+sooner only adds to that load. Other `5xx` keep the plain backoff, since
+the hub sends `Retry-After` on no other.
 
 **Reason:** a `429` says "not now", not "this request is wrong": a
 rate limit in front of the hub (an ingress or a proxy) or in it answers
