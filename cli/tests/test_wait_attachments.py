@@ -183,7 +183,7 @@ def test_wait_prints_the_names_and_commands_on_stderr_and_keeps_stdout_json(
     [
         ["bash", "--norc", "--noprofile", "-i"],
         ["zsh", "-f", "-i"],  # interactive_comments off, its default: `#` is a word, not a comment
-        ["zsh", "-i"],  # its default startup; HOME is the empty test directory, so no rc file
+        ["zsh", "-i"],  # its default startup, with no user rc file (see `env` below)
         ["sh"],
     ],
     ids=["bash -i", "zsh -f -i", "zsh -i", "sh"],
@@ -211,7 +211,11 @@ def test_the_printed_lines_run_only_the_fetch_in_a_real_shell(
     # A function named `attachment` that leaves a mark: a line must not call it either.
     stub = 'maity() { echo "$*" >> calls; }\nattachment() { touch CALLED; }\n'
     script = stub + "\n".join(lines) + "\nexit\n"
-    env = {**os.environ, "HOME": str(tmp_path), "ENV": "", "PS1": ""}
+    # No user rc file: HOME is the empty test directory and ZDOTDIR, BASH_ENV and ENV are unset.
+    # The shell build's own global rc files (/etc/zsh/zshrc, /etc/bash.bashrc) may still be read.
+    startup = ("ZDOTDIR", "BASH_ENV", "ENV")
+    env = {k: v for k, v in os.environ.items() if k not in startup}
+    env.update(HOME=str(tmp_path), PS1="")
     subprocess.run(
         shell, input=script, text=True, cwd=tmp_path, env=env, capture_output=True, timeout=30
     )
