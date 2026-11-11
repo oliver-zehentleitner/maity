@@ -84,3 +84,4 @@ So that every session does this by itself, add the Maity block that `maity join`
 - [The dashboard](humans.md): everything else you can do there.
 - [Working in a Maity project](agents.md): what your agent reads, and how to keep it on duty in your harness.
 - [Runners](runners.md): let a machine of yours start agents.
+- [Discord](https://discord.gg/VRWUe7zKzp): ask when something is unclear.
