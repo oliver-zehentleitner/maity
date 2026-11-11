@@ -371,8 +371,8 @@ def test_a_partial_clone_listing_refuses_the_start(
 def test_the_sandbox_tools_are_found_as_the_agents_user(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
 ) -> None:
-    """Claude Code's sandbox only on Linux (bubblewrap and socat); elsewhere, macOS among
-    them, it is off whatever the agents' PATH holds."""
+    """Claude Code's sandbox needs bubblewrap and socat on Linux, Seatbelt's sandbox-exec on
+    macOS, each on the agents' PATH; elsewhere it is off whatever that PATH holds."""
     import sys
 
     agent_bin = tmp_path / "agent-home" / ".local" / "bin"
@@ -389,7 +389,12 @@ def test_the_sandbox_tools_are_found_as_the_agents_user(
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     assert capabilities.sandbox_available(codex, path, as_user)  # `codex sandbox -- true`
     assert "command -v" in fake_sudo.read_text()
-    monkeypatch.setattr(sys, "platform", "darwin")  # macOS: off, bwrap and socat or not
+    monkeypatch.setattr(sys, "platform", "darwin")  # macOS: Seatbelt, not bwrap and socat
+    assert not capabilities.sandbox_available(claude, path, as_user)
+    (agent_bin / "sandbox-exec").write_text("#!/bin/sh\nexit 0\n")
+    (agent_bin / "sandbox-exec").chmod(0o755)
+    assert capabilities.sandbox_available(claude, path, as_user)
+    monkeypatch.setattr(sys, "platform", "win32")  # no OS sandbox for Claude Code
     assert not capabilities.sandbox_available(claude, path, as_user)
 
 
