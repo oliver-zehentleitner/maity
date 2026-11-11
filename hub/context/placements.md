@@ -344,3 +344,41 @@ child older than this writes no line, so the detail is `null` with it.
   whose code is missing or not a code wrote no such line, so a message
   ending in a forged marker came last. The random value per call closes
   that, and the line comes after a failure the CLI handles itself.
+
+## Usage: no price list, and a run shared by two cards counts for both
+
+**Id:** f9f61db3-b03b-4730-b092-4bbcea1bb7c8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf for who sees it); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); contract `docs/api.md` §15.15
+**Revisit when:** the hub is asked for a price list, a budget or a limit; or a run's work can be tied to one card
+**See:** ../../cli/context/runner.md#model-access-stays-the-operators-a-runs-usage-counts-reach-the-hub — 5f6c87ce-132d-4f7e-921d-d74741f369fe — as of 2026-11-11
+
+The hub never turns tokens into money: it shows a cost only where the
+harness reported one, summed per currency, and says how many runs had
+one. A run counts for the cards the placement's instance holds when the
+hub stores its record. A run while the instance holds two cards counts
+in full for each and is marked as shared; instance and agent totals
+count every run once. A repeated `run_id` with other numbers is refused
+(`conflict`, `run_id_reused`), not answered as a repeat. Card totals are
+for the project's members, instance and agent totals for the agent's
+owner and the project's human admins; no public page shows usage.
+
+**Reason:** a price list in the hub would make it a pricing and billing
+system, which the maintainer keeps out, and prices change faster than
+the hub. The runner cannot know which card a run worked on, and the hub
+can only see which cards were held; any split between two held cards
+would be a guess presented as a fact. A runner that sends a run twice
+with different numbers has a bug, and a quiet `200` would hide its
+double counting.
+
+**Rejected alternatives:**
+- A price table per model in the hub: pricing, and the model name the
+  maintainer chose not to send.
+- Splitting a shared run evenly between the cards: a guess shown as a
+  measured number.
+- Answering every repeated `run_id` with the stored record: a runner's
+  double count would stay invisible.
+- Totals for everyone who can read the project, public pages included:
+  spend is the owner's and the admins' business, not a visitor's.

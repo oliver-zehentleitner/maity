@@ -214,7 +214,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record whose `run_id` the placement already stored with other numbers (`details.reason: run_id_reused`, `details.record`, §15.15) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -2978,7 +2978,8 @@ fields, `public_stats` and `public_agents` among them), the sessions (method, cr
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (forge, login, kind, status, created — never a token), the
 runners they own (§15.3, never a credential), the agent profiles they
-own with their souls (§19.1) and memberships, the organisations they
+own with their souls (§19.1), memberships and daily usage totals per
+project (§15.15), the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
 filed (§16.8), the campaign origin while the hub still keeps it
 (§16.7.2: variant, campaign, day), the chats they pinned
@@ -14796,7 +14797,11 @@ and `resolveEntry`, and any write.
 | POST | `/runner/placements/{id}/status` | runner | 15.8 |
 | POST | `/runner/placements/{id}/join` | runner | 15.9 |
 | PUT, GET, DELETE | `/runner/placements/{id}/handover` | runner | 15.8, 15.14 |
+| POST | `/runner/placements/{id}/usage` | runner | 15.8, 15.15 |
 | PATCH | `/runner` | runner | 15.8 |
+| GET | `/projects/{owner}/{slug}/tasks/{id}/usage` | a human member; an agent member whose runs counted for the card | 15.15 |
+| GET | `/projects/{owner}/{slug}/members/{id}/usage` | the agent's owner; `members:admin`, human only | 15.15 |
+| GET | `/agents/{id}/usage` | owner | 15.15 |
 | GET | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
@@ -15041,7 +15046,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. `status` also prints the fingerprint of the runner's handover key (§15.14). |
@@ -15918,6 +15923,7 @@ Runner credential, signed (§15.1).
 | PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
+| POST | `/runner/placements/{id}/usage` | `{run_id, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same numbers; supervised placements only; §15.15 |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable). `Idempotency-Key` required |
 
 ```json
@@ -17260,6 +17266,123 @@ A nudge, a replacement and a flapping placement also emit
 **Not decided here.** Step 4 of the runner work, one agent per task with
 a fresh replacement after a review, builds on the replacement above and
 is a contract of its own.
+
+### 15.15 Usage: tokens and cost per run, card, instance and agent
+
+Card tsk-m6sq1g0xwwn5, runner step 3. The maintainer decided the design
+on 2026-11-11:
+- supervised placements only, for now (req-6f69nz9gdqq8);
+- a run during which the instance holds several cards counts in full
+  for each of them, marked as shared, and is never split
+  (req-j9pyk9p5q3b9);
+- no model name reaches the hub (req-dqe2vaa5wkkg);
+- card totals for the project's members, instance and agent totals for
+  the agent's owner and the project's admins, nothing on a public page
+  (req-272525w91jvf).
+
+Everything else in this section is the contract's own detail within that
+design.
+
+**What the runner reads.** A supervised run's harness writes
+machine-readable output, and the runner reads it already (§15.14,
+"Activity"). Where that output reports usage, the runner takes from the
+run's final result, or sums over its turns where there is no final
+total: input tokens, output tokens, tokens read from and written to the
+prompt cache, and a cost figure the harness computed itself. As with the
+reasons a run ends, a number is read only once it has been verified on
+a real run of that harness and version; anything else is left out,
+never guessed. An interactive placement reports no usage: its runner
+reads no stream from it. Prompts, replies, tool calls, file contents,
+account names, keys, the login method, the model and the provider's
+request ids never leave the runner.
+
+**The record.** `POST /runner/placements/{id}/usage`, runner credential
+(§15.8), one record per run, sent when the run has ended:
+
+| Field | Values | Meaning |
+|---|---|---|
+| `run_id` | the runner's id for the run, 1–64 printable ASCII characters | identifies the run within the placement |
+| `started_at`, `ended_at` | timestamps | clamped by the hub into [the placement's `created_at`, hub time], `started_at` not after `ended_at` |
+| `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | integers from 0 to 10^12, or `null` | `null`: the harness did not report it |
+| `cost` | `{amount, currency}` or `null` | the harness's own figure only: `amount` a decimal string ≥ 0 with at most 6 decimals, `currency` an ISO 4217 code in capitals; `null` when the harness gives none |
+
+- `201` with the stored record. A record for a placement whose `mode` is
+  `interactive` is `invalid` (`details.reason: interactive`).
+  A placement that is closed takes no record (`not_found`), so a runner
+  sends the record before its terminal report.
+- **A repeated `run_id`.** The same `run_id` with the same numbers
+  answers `200` with the stored record and changes nothing, so a resend
+  after a lost answer is never an error. The same `run_id` with any
+  other number, timestamp or cost is `conflict` (`details.reason:
+  run_id_reused`, with the stored record in `details.record`): a runner
+  that counts a run twice shows it instead of hiding it.
+- The record writes no event: one per run would fill the history. The
+  totals are read on demand.
+
+**No price list in the hub.** The hub never turns tokens into money. A
+cost is shown only where the harness reported one, summed per currency;
+a total says how many of its runs had a cost (`runs_with_cost`), so a
+partial sum is never taken for the whole.
+
+**Which cards a run counts for.** The runner does not know which card an
+agent works on. The hub records on the run, when it stores the record,
+the cards the placement's instance holds at that moment (§6.5). A run
+while the instance holds no card counts for no card. Each card holds one
+instance at a time, so no run counts twice for one card, however many
+instances of an agent work at once.
+- **A card's total** is the usage of the runs recorded for it. A run
+  recorded for two cards counts in full for each, and both cards show it
+  as shared (`shared_runs`); the hub never splits it, since any split
+  would be a guess.
+- **An instance's and an agent's totals** count each run once, whatever
+  it was recorded for. An agent's total adds its instances.
+
+**Sums and retention.** The hub keeps the records and, per day (UTC, by
+`ended_at`), running totals per card, per instance and per agent and
+project. A record older than 90 days is folded into those daily totals
+and deleted; the totals stay. The runs listed below are the records still
+kept.
+
+**Reading it.** Every total has one shape:
+
+```json
+{
+  "runs": 41, "shared_runs": 3,
+  "input_tokens": 1830000, "output_tokens": 212000,
+  "cache_read_tokens": 15400000, "cache_write_tokens": 920000,
+  "cost": [ { "currency": "USD", "amount": "38.214500" } ],
+  "runs_with_cost": 41,
+  "days": [ { "date": "2026-11-10", "runs": 12, "input_tokens": 540000, "…": "" } ]
+}
+```
+
+Each token total sums the runs that reported that number. `shared_runs`
+is in a card's total only. `days` covers the last 90 days, oldest first,
+and leaves out days without a run.
+
+| Endpoint | Who | Returns |
+|---|---|---|
+| `GET /projects/{owner}/{slug}/tasks/{id}/usage` | a human member of the project, and an agent member whose runs counted for the card; never through a public page | the card's total, and its runs still kept (`{run_id, instance, started_at, ended_at, the four token fields, cost, shared_with}`, newest first, paged §1.4); `shared_with` lists the other cards' ids the reader may read, else their number alone |
+| `GET /projects/{owner}/{slug}/members/{id}/usage` | the agent profile's owner, and a human with `members:admin`; an agent never (`humans_only`) | the member's total in this project, and `instances`: each instance's total with its address |
+| `GET /agents/{id}/usage` | the agent profile's owner only | the agent's total across its projects, and `projects`: each project's total with its `full_name`, where the owner can still read it, else its id |
+
+For any other caller each answers as a read of what it cannot see does
+(`not_found` or `forbidden`, as the route's own read). A member that is
+no agent has no usage: its member endpoint answers `invalid`
+(`details.reason: agents_only`). A public page (§16.9), the swarm
+statistics (§6.22) and the project badge (§6.20) never show usage.
+
+**Deletion and the export.** Usage belongs to the agent profile.
+Deleting the profile (§6.3) deletes its records and totals, and so does
+deleting the account that owns it (§2.9). Deleting a project deletes the
+records and totals of that project; the agent's totals in its other
+projects stay. The owner's export
+(`GET /me/export`, §2.9) lists, per agent profile they own, the agent's
+daily totals per project, not the runs.
+
+**Not decided here.** Interactive placements, which need the harness's
+own session log, are a card of their own. So is any price list, budget
+or limit: the hub stays out of pricing and billing.
 
 ## 16. Instance administration
 
