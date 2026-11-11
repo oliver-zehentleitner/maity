@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, exc, select, text
 
-from maity_hub import events
+from maity_hub import events, write_guard
 from maity_hub import tables as t
 from tests import factory
 
@@ -107,3 +107,35 @@ def test_at_never_runs_backwards_within_a_project(migrated: Engine) -> None:
     ats = [r.at for r in rows if r.project_id == project_id]
     assert ats == [start + timedelta(minutes=m) for m in (10, 10, 12)]
     assert [r.at for r in rows if r.project_id == other] == [start + timedelta(minutes=5)]
+
+
+# Ends the connection under the transaction, as a database restart or a dropped network does.
+LOSE = {
+    "postgresql": "SELECT pg_terminate_backend(pg_backend_pid())",
+    "mysql": "KILL CONNECTION_ID()",
+    "mariadb": "KILL CONNECTION_ID()",
+}
+
+
+def test_a_connection_lost_in_a_transaction_ends_as_the_drivers_error(migrated: Engine) -> None:
+    """A connection lost while a request's transaction runs must end with the driver's error,
+    which the hub answers with 503 `database_unavailable` (`errors.py`): the driver invalidates
+    the connection, and reading `conn.info` on it again (`write_guard`'s `rollback` event, the
+    end of `transaction`) would ask SQLAlchemy to revalidate it inside the transaction, raising
+    `PendingRollbackError` (a 500) in its place. What the request counted is given back once."""
+    write_guard.install(migrated)
+    undone: list[int] = []
+    dialect = migrated.dialect.name
+    with pytest.raises(exc.DBAPIError) as ended, events.transaction(migrated) as conn:
+        events.on_rollback(conn, lambda: undone.append(1))
+        conn.execute(select(t.human.c.id).limit(1)).all()
+        if dialect == "sqlite":  # no server to lose: the file's connection is closed
+            conn.connection.dbapi_connection.close()  # type: ignore[union-attr]
+            conn.execute(text("SELECT 1"))
+        else:
+            conn.execute(text(LOSE[dialect]))
+            conn.execute(text("SELECT 1"))
+    assert ended.value.connection_invalidated
+    assert undone == [1]
+    with migrated.begin() as conn:  # the pool hands out a working connection again
+        assert conn.execute(text("SELECT 1")).scalar() == 1

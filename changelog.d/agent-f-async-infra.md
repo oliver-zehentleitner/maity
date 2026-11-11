@@ -19,3 +19,10 @@
 
 - hub: a server database's pool needs at least 2 connections per process (one for each engine):
   `MAITY_DB_POOL_SIZE` of 1, or below twice `MAITY_WORKERS`, is refused at the start.
+
+### Fixed
+
+- hub: a database connection lost while a request's transaction runs (a database restart, a
+  dropped network) ends with 503 `database_unavailable`, as `docs/api.md` promises, instead of
+  500 `internal`: the end of the transaction no longer reads the lost connection again, which
+  made SQLAlchemy raise `PendingRollbackError` in place of the driver's error.

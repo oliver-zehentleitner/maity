@@ -1084,8 +1084,10 @@ What the bridge has to keep:
 - **A cancellation stays a cancellation.** A statement cancelled in the driver invalidates the
   connection, and reading `conn.info` on it again inside the transaction raises
   `PendingRollbackError` in place of the `CancelledError` that must unwind the request.
-  `events.async_transaction` unbinds the dict it bound, and `write_guard`'s transaction events
-  leave an invalidated connection alone.
+  `events.async_transaction` and `transaction` unbind the dict they bound, and `write_guard`'s
+  transaction events leave an invalidated connection alone. The same holds on the sync engine for
+  a connection lost mid-transaction: the driver's error (503 `database_unavailable`) stays,
+  where `PendingRollbackError` (a 500) took its place before.
 - **SQLite's connection setup.** The pragmas and `BEGIN IMMEDIATE` hang on the async engine's sync
   engine as on the sync one, so tests and single-server hubs run the same path as a server.
 
