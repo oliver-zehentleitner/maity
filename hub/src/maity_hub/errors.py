@@ -40,6 +40,11 @@ class ApiError(Exception):
         self.headers = headers or {}
 
 
+def envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The error body of §1.3, without the headers that go with it."""
+    return {"error": {"code": code, "message": message, "details": details or {}}}
+
+
 def error_response(
     status: int,
     code: str,
@@ -48,7 +53,7 @@ def error_response(
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     return JSONResponse(
-        {"error": {"code": code, "message": message, "details": details or {}}},
+        envelope(code, message, details),
         status_code=status,
         headers={ERROR_HEADER: code, **(headers or {})},
     )

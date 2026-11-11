@@ -499,8 +499,35 @@ def _refuse_revoked(row: Any) -> None:
         raise runner_revoke.RevocationDue(row.id, row.revoke_due_by)
 
 
-# The two calls an isolated agent may still make, so that it learns why (§6.2).
-ISOLATED_MAY = {("GET", b"/api/v1/me"), ("POST", b"/api/v1/me/resume")}
+# The two calls an isolated agent may still make, so that it learns why (§6.2), and
+# `GET /bootstrap`, whose parts are refused one by one as their single routes are (§5.4,
+# `refuse_isolated`).
+ISOLATED_MAY = {
+    ("GET", b"/api/v1/me"),
+    ("POST", b"/api/v1/me/resume"),
+    ("GET", b"/api/v1/bootstrap"),
+}
+
+
+def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) -> None:
+    """The refusal an isolated agent's call on `path` gets (§6.2), for a caller authenticated
+    on another path: each part of `GET /bootstrap` (§5.4). Read as of now, in the part's
+    own transaction."""
+    if caller.kind != "agent" or caller.membership_id is None:
+        return
+    if (method, path.encode()) in ISOLATED_MAY:
+        return
+    row = conn.execute(
+        select(
+            t.membership.c.isolated_reason,
+            t.membership.c.isolated_since,
+            t.membership.c.isolated_by,
+        ).where(t.membership.c.id == caller.membership_id)
+    ).first()
+    if row is not None and row.isolated_since is not None:
+        from maity_hub import isolation
+
+        raise isolation.refusal(row)
 
 
 def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFacts) -> Caller:

@@ -106,10 +106,11 @@ LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
 
 
-# Not refused during a maintenance window (§16.12): health, the window's own routes, and the
-# sign-in a signed-out admin needs to end it early. Registration is refused like the rest.
+# Not refused during a maintenance window (§16.12): health, the window's own routes, the
+# sign-in a signed-out admin needs to end it early, and `GET /bootstrap`, whose project parts
+# carry the refusal themselves (§5.4). Registration is refused like the rest.
 MAINTENANCE_OPEN = re.compile(
-    r"/api/v1/(health|maintenance|admin/maintenance(/end|/changes)?"
+    r"/api/v1/(health|maintenance|bootstrap|admin/maintenance(/end|/changes)?"
     r"|auth/(login|logout|session|methods|pages/sign_in|email-link|email-code|second-factor/(verify|email)))"
     r"|/mail/sign-in/[^/]+"
 )
