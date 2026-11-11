@@ -4,8 +4,11 @@ command that fetches each (tsk-hnw52rvtwdsv): a screenshot was only visible in t
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -168,3 +171,43 @@ def test_wait_prints_the_names_and_commands_on_stderr_and_keeps_stdout_json(
     assert "[1 attachment: shot.png]" in lines[at]
     # Without the `maity:` prefix: the line pasted whole is the command.
     assert lines[at + 1] == "  maity files get att-0042"
+
+
+@pytest.mark.parametrize(
+    "shell",
+    [
+        ["bash", "--norc", "--noprofile", "-i"],
+        ["zsh", "-f", "-i"],  # interactive_comments off, its default: `#` is a word, not a comment
+        ["sh"],
+    ],
+    ids=["bash -i", "zsh -i", "sh"],
+)
+def test_the_printed_lines_run_only_the_fetch_in_a_real_shell(
+    shell: list[str], tmp_path: Path
+) -> None:
+    """Every line, pasted whole into the shell with stub functions, calls `maity files get
+    att-1` and nothing else: no file the name or a bad id tries to create appears."""
+    if shutil.which(shell[0]) is None:
+        pytest.skip(f"{shell[0]} is not installed")
+    names = [
+        "x; touch PWNED",
+        "$(touch PWNED)",
+        "`touch PWNED`",
+        "a | touch PWNED",
+        "x # ;touch PWNED",
+    ]
+    bad_ids = ["-h", "att 7;touch PWNED", "$(touch PWNED)", None]
+    lines = []
+    for name in names:
+        lines += cli._attachment_lines(_message(_att("att-1", name)))
+        for bad in bad_ids:
+            lines += cli._attachment_lines(_message(_att(bad, name)))  # type: ignore[arg-type]
+    stub = 'maity() { echo "$*" >> calls; }\nattachment() { :; }\n'
+    script = stub + "\n".join(lines) + "\nexit\n"
+    env = {**os.environ, "HOME": str(tmp_path), "ENV": "", "PS1": ""}
+    subprocess.run(
+        shell, input=script, text=True, cwd=tmp_path, env=env, capture_output=True, timeout=30
+    )
+    assert not (tmp_path / "PWNED").exists()
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert calls == ["files get att-1"] * len(names)
