@@ -5132,17 +5132,22 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     assert alphabet and not set("zi0l") <= set(alphabet[1]), alphabet
     foreign_instance = re.compile(r"(?<![0-9A-Za-z])zi0l(?![0-9A-Za-z])")
 
-    def with_foreign_boss(route) -> None:
-        body = route.fetch().json()
+    def foreign_boss(body) -> None:
         for item in body.get("items", []):
             if item["id"] == agent_id:
                 item["reports_to"] = foreign["id"]
                 for n, inst in enumerate(i for i in item.get("instances", []) if not i.get("revoked_at")):
                     inst["lead"] = n == 0
         body["items"].append(foreign)
+
+    def with_foreign_boss(route) -> None:
+        body = route.fetch().json()
+        foreign_boss(body)
         route.fulfill(json=body)
 
+    boss_in_bundle = bundled("members", foreign_boss)
     page.route(listing, with_foreign_boss)
+    page.route(BOOTSTRAP, boss_in_bundle)
     try:
         for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
             page.set_viewport_size({"width": width, "height": height})
@@ -5159,6 +5164,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             run.shot(page, f"agents-fleet-foreign-boss-{width}-{scheme}")
     finally:
         page.unroute(listing, with_foreign_boss)
+        page.unroute(BOOTSTRAP, boss_in_bundle)
         page.emulate_media(color_scheme="light")
         page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "agents organisation")
