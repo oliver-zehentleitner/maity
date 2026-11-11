@@ -37,12 +37,13 @@ GIT_PROMPT = (
     " Git here cannot write `.git/config`: cut a branch with `git switch -c <branch> "
     "origin/<default branch>`, push it with `git push origin <branch>` and pull with `git pull "
     "origin <branch>`; never `push -u`, `--set-upstream`, `--track` or `branch -m`, which "
-    "store an upstream or rename one and fail. `maity report` needs no upstream."
+    "store an upstream or rename one and print an error. `maity report` needs no upstream."
 )
 # Claude Code's sandbox hides the clone's credential; only a command that is a `maity` call
 # alone matches `excludedCommands` and runs outside it (cli/context/runner.md).
 CLAUDE_MAITY_PROMPT = (
-    " Run every `maity` command alone: in a pipe or chained with `;`, `&&` or `||` it runs "
+    " Run every `maity` command alone: in a pipe, chained with `;`, `&&` or `||`, sent to the "
+    "background with `&` or inside `$(...)` it runs "
     "inside the sandbox and cannot read this clone's credential."
 )
 # Supervised runs end with the turn: the loop starts the next one on the next event.

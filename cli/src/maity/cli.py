@@ -176,7 +176,7 @@ def _renamed(path: str, renamed: dict[str, str]) -> str:
 SANDBOXED_CALL = (
     "this session cannot read the clone's credential: a runner placed it, and its sandbox "
     "hides the credential from every command but a `maity` call of its own; run maity alone, "
-    "not in a pipe or chained with `;`, `&&` or `||`"
+    "not in a pipe, chained with `;`, `&&` or `||`, with a trailing `&` or inside `$(...)`"
 )
 
 
