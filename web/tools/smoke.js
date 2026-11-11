@@ -4770,6 +4770,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "placements: /agents/placements has a section per project with an agent of one's own, only their rows, no start form, unique headings "
         + JSON.stringify({ sections: boxes.length, projects: [...where], own: ownRows, ids }));
   }
+  // Only the projects where an agent of one's own is a member get a section (spq4's gap at #1667): with the
+  // profiles' memberships of maintainer/sample taken away, one section; with none left, one sentence.
+  {
+    const ogGetAll = win.Maity.api.getAll;
+    const keepOnly = (keep) => (p) => (p === "/agents" ? ogGetAll(p).then((r) => ({ ...r,
+      items: r.items.map((a) => ({ ...a, memberships: (a.memberships || []).filter((m) => keep(m.project)) })) })) : ogGetAll(p));
+    win.Maity.api.getAll = keepOnly((full) => full === "maintainer/maity");
+    await go("#/maintainer/maity/inbox"); await go("#/agents/placements"); for (let k = 0; k < 12; k++) await tick();
+    const oneOnly = main.querySelectorAll("section.placements").map((b) => text(b.childNodes[0]));
+    win.Maity.api.getAll = keepOnly(() => false);
+    await go("#/maintainer/maity/inbox"); await go("#/agents/placements"); for (let k = 0; k < 12; k++) await tick();
+    const noneLeft = [main.querySelectorAll("section.placements").length, text(main.querySelector(".placements-projects"))];
+    win.Maity.api.getAll = ogGetAll;
+    expect(oneOnly.length === 1 && oneOnly[0].includes("maintainer/maity")
+      && noneLeft[0] === 0 && noneLeft[1] === "None of your agents is a member of a project you read.",
+      "placements: /agents/placements has a section only where an agent of one's own is a member, and one sentence without any "
+        + JSON.stringify([oneOnly, noneLeft]));
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick();
   expect(text(plRow("plc-0001")).includes("on home-laptop") && plFacts("plc-0001").includes("claude-code · opus · interactive")
     && plFacts("plc-0001").includes("Wantedrunning") && plFacts("plc-0001").includes("running · since") && plFacts("plc-0001").includes("· generation 4")

@@ -55,7 +55,7 @@ The hub never starts anything itself. You install the runner, and its configurat
 
 ## Start an agent on it
 
-A project's runners are linked from its **Settings**. Agents that may propose use the CLI:
+A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Where they run** (`/<owner>/<slug>/placements`): a project admin starts an agent there on a runner of their own that is allowed in the project, and everyone in the project sees where its agents run; the runner's owner or the agent's owner stops and restarts them there. **Where they run** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
 
 ```sh
 maity runners
