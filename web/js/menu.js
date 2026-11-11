@@ -5,7 +5,8 @@
 // closes it too. Items are links (href), actions (onSelect) or a
 // disabled note (disabled: true, with why). An item with `checkbox: true`
 // and `checked` is a switch: it keeps the menu open, so several are
-// switched in one go, and the focus stays on it.
+// switched in one go, and the focus stays on it. An item's `key` (data-key) names what it does
+// independently of its words, so that a view drawing the menu anew can find the same item again.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -14,6 +15,10 @@ window.Maity = window.Maity || {};
   const { h, append, clear } = M.dom;
   const SVG = "http://www.w3.org/2000/svg";
   let serial = 0;
+  // Each menu by its button, so that a view which draws a menu anew can open the new one where the
+  // old one stood open (M.menuOf): the board's redraws that no action of the reader starts.
+  const MENUS = new WeakMap();
+  M.menuOf = (button) => MENUS.get(button) || null;
 
   // A gear of eight teeth, drawn from points; it takes the text colour.
   function gear(size) {
@@ -165,7 +170,7 @@ window.Maity = window.Maity || {};
         // An item of a choice (checked given) says whether it is the current one.
         const choice = typeof it.checked === "boolean";
         const attrs = { role: choice ? (it.checkbox ? "menuitemcheckbox" : "menuitemradio") : "menuitem", "aria-checked": choice ? String(it.checked) : null,
-          tabindex: "-1", class: "menu-item" + (choice && it.checked ? " checked" : ""), title: it.title || null };
+          tabindex: "-1", class: "menu-item" + (choice && it.checked ? " checked" : ""), title: it.title || null, "data-key": it.key || null };
         let el;
         if (it.disabled) {
           el = h("span", Object.assign(attrs, { "aria-disabled": "true", class: "menu-item disabled" }), it.label,
@@ -207,6 +212,8 @@ window.Maity = window.Maity || {};
       else if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
       else if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
     });
-    return { el: box, button, close };
+    const api = { el: box, button, close, open };
+    MENUS.set(button, api);
+    return api;
   };
 })(window.Maity);

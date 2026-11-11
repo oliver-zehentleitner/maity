@@ -31,6 +31,9 @@ NOT_ROUTED = {
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
+    ("POST", "/auth/password-reset"),  # no route yet: tsk-pk755085ctff, forgot password
+    ("POST", "/auth/password-reset/check"),  # no route yet: tsk-pk755085ctff, forgot password
+    ("POST", "/auth/password-reset/complete"),  # no route yet: tsk-pk755085ctff, forgot password
     ("POST", "/projects/{}/{}/claims/renew"),  # no route yet: tsk-p55zyn4pz0wd
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
     ("POST", "/projects/{}/{}/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
