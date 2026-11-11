@@ -264,9 +264,10 @@ def test_a_cover_in_one_project_and_chatter_in_another_answers_at_once(
     one, two = flow.agent(make_client, owner), flow.agent(make_client, owner)
     three, four = flow.agent(make_client, owner, "other"), flow.agent(make_client, owner, "other")
     # A message in each project before the wait: its item head then stands past the agents'
-    # joins. This head's look reads from the position of any kind and needs none of it; they
-    # keep the test red for the right reason on a look from the item heads (a1f50690), where
-    # B's joins would make it derive anyway.
+    # joins. This head's look reads from the position of any kind and needs none of it. On a
+    # look from the item heads (a1f50690) the message in the second project keeps the test red
+    # for the right reason: without it the joins of `three` and `four` there would make it
+    # derive anyway. The one in this project only keeps the two projects alike.
     _between(one, two, 1)
     _between(three, four, 1, other)
 
@@ -329,6 +330,30 @@ def test_a_call_that_cannot_hold_reads_no_stamp(
         heads = _per_project_heads(statements)
         assert any("event.kind in " in s for s in heads), heads  # the stamp's heads
         assert any("event.kind in " not in s for s in heads), heads  # the positions of any kind
+    finally:
+        event.remove(migrated, "before_cursor_execute", heard)
+
+
+def test_a_held_call_whose_first_answer_has_items_reads_no_stamp(
+    owner: flow.Human, migrated: Engine, make_client: ClientFactory
+) -> None:
+    """A held call with an item past `after` answers at once, so it compares no stamp and reads
+    none (gb8w, review of #1623)."""
+    one = flow.agent(make_client, owner)
+    start = bell(owner, limit=0)["next_after"]  # the key's first use is behind
+    asked = one.post(f"{PROJECT}/requests", {"class": "decision", "title": "Go?", "to": "owner"})
+    assert asked.status_code == 201, asked.text
+    statements: list[str] = []
+
+    def heard(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        statements.append(statement)
+
+    event.listen(migrated, "before_cursor_execute", heard)
+    try:
+        took = time.monotonic()
+        answer = bell(owner, after=start, wait=5)
+        assert time.monotonic() - took < 4 and answer["items"], answer
+        assert _per_project_heads(statements) == [], statements
     finally:
         event.remove(migrated, "before_cursor_execute", heard)
 
