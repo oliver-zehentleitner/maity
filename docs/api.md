@@ -22007,7 +22007,8 @@ device; the browser's own permission is per browser and is not stored.
   present again; a hidden or idle tab sends nothing. The hub sets the
   session's `present_until` to two minutes after the call, but only when
   that moves the stored value by at least a minute, so it writes at most
-  once a minute per session however many tabs call; a call that moves
+  once a minute per session however many tabs call (the write is
+  conditional on the stored value, so two calls at once write once); a call that moves
   it less changes nothing and is still `204`. More than 10 calls per
   minute per session are `rate_limited` (§1.7). The call writes no
   `last_seen_at` (§2.4). `present_until` serves the mail hold only: no
@@ -22127,7 +22128,8 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   (a call that moved `present_until` by less than a minute wrote
   nothing), then the grace runs: with the default grace, mail comes
   about 6 to 7 minutes after the last call, plus up to one pass of the
-  mailer.
+  mailer; with another `online_grace_minutes` the range moves with it,
+  and a session that is signed out or ends stops counting at once.
   - It holds the `immediate` items only: a kind whose mode is
     `immediate`, and an immediate item that the cap moved to the hour's
     end. An urgent request (`priority: urgent`, §7) is an `inbox` item
