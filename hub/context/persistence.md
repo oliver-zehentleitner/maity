@@ -1050,13 +1050,16 @@ last read always was.
 **Source:** the owner's decision on the asyncio plan (req-hd5k9fprpxp7, 2026-11-09, card
 tsk-v874y63b4z8p and its plan notes); the project lead's decision on the pool split (2026-11-10);
 the project lead's decision on the loop-lag guard's reference (2026-11-11, after `hub-load` on
-main 30d84d15 and 448332b9);
+main 30d84d15 and 448332b9); the review of #1632 (a computation holding the GIL on an app's loop
+delayed the reference as much and passed the margin), local runs with the garbage collector's time
+measured per callback;
 `db.make_async_engine`, `db.retrying_async`, `events.async_transaction`, `serving.pool_shares`,
 `hub/tests/test_async_engine.py`, `hub/tests/test_loop_lag.py`
 **Revisit when:** a measurement asks for a native async helper instead of `run_sync`, the series'
 cleanup removes sync paths the routes no longer use, the Docker base and every pinned binary wheel
 support free-threaded Python, aiomysql falls behind PyMySQL's error numbers, or the loop-lag
-guard's reference stops tracking the runner's lag (a run red with the reference's lag alone)
+guard's reference stops tracking the runner's lag (a run red with the reference's lag alone), or
+an app loop's longest callback nears the CPU limit on a branch that moved no route onto the loop
 **See:** replicas.md — 4e24abd8-ab64-4844-897b-629bfa211f6d — as of 2026-11-10
 
 A serving hub has two engines on one database. The sync engine is the one it always had: the routes
@@ -1085,10 +1088,19 @@ What the bridge has to keep:
   requests of the hot families run (below).
 - **The loop-lag guard measures against an idle loop.** An app's loop fails when its worst tick
   runs more than 150 ms later than the worst tick of a bare event loop beside it (a thread of its
-  own, the same 0.1 s tick, nothing else on it), or when it is late by more than 20 ms on average.
-  The reference's lag is the machine's: CPU and the GIL taken by the 16 request threads and the
-  database. The first guard (#1626) took a fixed 250 ms from local runs (69–129 ms) and was red on
-  its first GitHub runs: on main 30d84d15 the owner's loop 269 ms and the agent's 247 ms, on
+  own, the same 0.1 s tick, nothing else on it), when it is late by more than 20 ms on average, or
+  when one callback on it (a task step, a timer) spends more than 50 ms of the loop thread's own
+  CPU time. The reference's lag is the machine's and the process's: CPU and the GIL taken by the
+  16 request threads and the database, the garbage collector, and also anything that holds the
+  GIL on an app's loop, since the reference shares the process. A computation on the owner's loop
+  that held the GIL for 750 ms made the reference 673 ms late and the owner's loop 674, so the
+  margin passed it; the CPU time per callback is what catches it (750 ms against the limit of
+  50). That time leaves out the garbage collector's: a full collection runs in whichever thread
+  allocates when it is due, about 90 ms locally, as often on a loop as on a request thread. Without
+  it the hub's longest callback was about 3 ms in local runs, on main and on the branch that moves
+  authentication onto the loop (#1631) alike. Work that blocks without the CPU (a sleep, a lock)
+  shows only in the margin and the average. The first guard (#1626) took a fixed 250 ms from local
+  runs (69–129 ms) and was red on its first GitHub runs: on main 30d84d15 the owner's loop 269 ms and the agent's 247 ms, on
   448332b9 237 ms and 251 ms, the agent's app serving nothing during the test (`threads_busy` 0).
   Its maximum measured the runner, not the hub. In two plain local runs the reference was 75 and
   78 ms late and the apps' loops at most 16 ms more; on the runners the busy and the idle app's
