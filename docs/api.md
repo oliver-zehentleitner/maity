@@ -142,7 +142,7 @@ segment of a join-host path (above), as `…`. The server's default access log i
   request sends `Accept-Encoding: gzip` is answered gzipped when its body
   is 1024 bytes or more, with `Content-Encoding: gzip` and `Accept-Encoding`
   in `Vary`. Never compressed: any other method, anything under
-  `/api/v1/auth/` and `/api/v1/bootstrap` (both carry the CSRF token), the join and invitation documents a token opens
+  `/api/v1/auth/` and `/api/v1/bootstrap` (the session's answer, which both carry, holds the CSRF token), the join and invitation documents a token opens
   (`/api/v1/join/{token}`, `/api/v1/invitations/{token}`), an attachment's bytes
   (`…/attachments/{attachment_id}/content`), `text/event-stream`, the
   image and archive types, and every address outside those two prefixes
@@ -4803,12 +4803,14 @@ around.
 
 Scope: anyone, no sign-in, like `GET /maintenance` (§16.12).
 
-The maintainer's decision of 2026-11-11. On a cold start the dashboard
-reads the maintenance window, the session, `GET /me` and, on a project
-view, the project, its members and the event head one after another:
-five to eight calls of 140–260 ms each before the first view is drawn.
-This route gives the same answers in one round trip, so a cold start
-saves 0.3–0.6 s. It is a bundle of existing answers and nothing more:
+The maintainer's decision of 2026-11-11. Before it draws its first view
+the dashboard reads in three waves, each waiting for the one before:
+the maintenance window and the session together, then `GET /me`, then on
+a project view the project, its members and the event head together.
+This route gives the same answers in one round trip: two round trips
+fewer on a project view, one fewer elsewhere; the time that saves is
+expected, not measured. It is a bundle of existing
+answers and nothing more:
 no new field, no new right, no data the single routes do not already
 give the same caller, and every single route stays.
 
@@ -4820,9 +4822,9 @@ give the same caller, and every single route stays.
 | `maintenance` | `GET /maintenance` (§16.12) | |
 | `session` | `GET /auth/session` (§2.1) | |
 | `me` | `GET /me` (§5.1) | |
+| `head` | `GET /projects/{owner}/{slug}/events?after=latest&wait=0` (§8.3) | yes |
 | `project` | `GET /projects/{owner}/{slug}` (§6.1) | yes |
 | `members` | `GET /projects/{owner}/{slug}/members` (§6.2) | yes |
-| `head` | `GET /projects/{owner}/{slug}/events?after=latest&wait=0` (§8.3) | yes |
 
 ```json
 {
@@ -4831,20 +4833,24 @@ give the same caller, and every single route stays.
                "expires_at": "2026-11-25T09:12:00Z", "session_id": "ses-…", "join_url": null } },
   "me": { "status": 200, "body": { "member": { "…": "…" }, "projects": [ "…" ], "maintenance": null,
           "server_time": "2026-11-11T09:12:00Z" } },
-  "project": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } }
+  "head": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "project": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "members": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } }
 }
 ```
 
 **Each part is `{status, body}`**: the status and the body the single
-route answers the same caller at that moment, with the same effects
-(the session's presence, an agent's lease renewal on the event read,
-§8.3), errors included in the envelope of §1.3. A part never carries
+route answers the same caller at that moment, errors included in the
+envelope of §1.3. The request has the effects one authenticated call
+has (presence and an agent's lease renewal, §2.4). A part never carries
 the single route's headers: a `503 maintenance` part has its window in
 `details` (`{from, until, text}`), from which a client derives what
-`Retry-After` would have said. The parts are read one after another in
-the order of the table, each as its own call would be; they are not one
-snapshot, as the single calls are not either. Without `project`, the
-last three keys are absent.
+`Retry-After` would have said. The hub reads `head` before it starts
+`project` and `members`, so that nothing that happens while those two
+are read is missed: it comes as an event past the cursor, as with the
+dashboard's own reads. Otherwise the parts may be read in any order or
+together; they are not one snapshot, as the single calls are not
+either. Without `project`, the last three keys are absent.
 
 So, for example:
 
@@ -4862,12 +4868,26 @@ So, for example:
   three are open during it, §16.12), the project parts carry
   `503 maintenance`; the route itself stays open.
 
-**What answers the whole request.** Only what the hub decides before
-any route is reached: a cookie request whose `Sec-Fetch-Site` is
-`cross-site` (§2.1), or a route limit (§1.7, `MAITY_ROUTE_LIMITS` on
-`GET /api/v1/bootstrap`; the parts do not count against the single
-routes' limits). The answer carries `Cache-Control: no-store` and
-is never compressed, since `session` carries the CSRF token (§1.1).
+**What answers the whole request**, with no parts:
+
+- what the hub answers before any route: a route limit (§1.7,
+  `MAITY_ROUTE_LIMITS` on `GET /api/v1/bootstrap`; the parts do not
+  count against the single routes' limits), a credential in the query
+  (`credential_in_payload`, §2.2);
+- as this route's own rule, the checks of a caller that presents a
+  cookie or a credential: a cookie request whose `Sec-Fetch-Site` is
+  `cross-site` (`csrf_mismatch`, §2.1), a cookie or a bearer credential
+  over plain HTTP (`insecure_transport`, §2.5), a runner credential
+  (`forbidden`, §15.1: the route is neither under `/runner/` nor under
+  `/projects/`). `GET /maintenance` alone would answer such a request,
+  since it reads no caller; the bundle does not split one request into
+  a part that ignores the caller and parts that refuse it;
+- `Maity-For` (`invalid`, `details.fields["Maity-For"]: "route"`,
+  §2.3): the route is no project route, and a bridge reads the served
+  agent's project through the single routes.
+
+The answer carries `Cache-Control: no-store` and
+is never compressed, since the `session` part holds the CSRF token (§1.1).
 
 **Why it repeats shapes.** The project overview (§6.11) repeats no shape
 that has a home elsewhere, so that a view's restricted fields have one
@@ -4875,8 +4895,11 @@ place to get wrong. This route repeats them, but it builds no shape of
 its own: each part is the single route's answer, built by the same code
 for the same caller, so there is still one place to get each field
 wrong, and the hub's tests compare every part with its single route.
-The saving is round trips, which no other cut gives: the single answers
-are already fast, it is their serial order on a cold start that costs.
+The saving is round trips, which no other cut gives: two on a project
+view. It holds only where the hub reads together what the dashboard
+reads together today (the window and the session; `project` and
+`members` after `head` has been read); parts read strictly one after
+another would add their server time back.
 
 ## 6. Projects, members, tasks, releases
 

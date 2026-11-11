@@ -119,17 +119,25 @@ instance admin, who measures and may read the instance's metadata anyway, gets i
 **Status:** active
 **Evidence:** confirmed
 **Source:** the owner's decision of 2026-11-11 on measure 10 of the list above; the shape agreed with the lead on card tsk-x4z69ff785y6; `GET /bootstrap`, §5.4 of `docs/api.md`
-**Revisit when:** a part needs a field or a right its single route does not give, or the dashboard's cold start no longer reads these routes one after another
+**Revisit when:** the route is measured against the dashboard's waves (the saving is expected until then), a part needs a field or a right its single route does not give, or the dashboard's boot no longer reads these routes in waves
 
 `GET /bootstrap` gives the dashboard's first reads (the maintenance window, the session,
-`GET /me`, and for a project view the project, its members and the event head) in one
+`GET /me`, and for a project view the event head, the project and its members) in one
 round trip. Each part is `{status, body}`: what the single route answers the same caller,
 errors included. The route needs no sign-in, and only what the hub decides before any
 route (a cross-site cookie request, a route limit) answers the whole request. Every single
 route stays.
 
-**Reason:** on a cold start these five to eight calls ran one after another at 140–260 ms
-each; the answers themselves were already fast, so only fewer round trips save time. A part
+**Reason:** the dashboard's boot reads them in three waves, each waiting for the one before
+(the window and the session together, decision 63c48583 in `web/context/views.md`; then
+`/me`; then the project, its members and the head together). The bundle saves two round
+trips on a project view and one elsewhere. One round trip from a development machine to the
+hub measured about 30 ms on a kept connection (2026-11-11, `GET /api/v1/maintenance`, ten
+runs, 29–45 ms); the server time of each call is not measured, so the time the route saves
+is expected, not measured, until the route exists and is measured against the waves. The saving holds only where
+the hub reads together what the dashboard reads together today. Once the hub answers the
+route, 63c48583's Revisit when ("the hub answers /auth/session and /me in one read") has
+come, and that entry is checked again with the web change. A part
 built by the single route's own code for the same caller has one place to get each field
 wrong, and a test can compare each part with its route. Per-part statuses keep the pages
 that are drawn before or without a full session (signed out, the second-factor step, a
