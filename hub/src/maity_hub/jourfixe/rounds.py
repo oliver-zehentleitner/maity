@@ -54,7 +54,9 @@ def _instances(conn: Connection, membership_ids: list[int]) -> dict[int, list[di
             t.credential.c.membership_id,
             t.credential.c.instance,
             t.agent_session.c.id.label("session_id"),
-            t.agent_session.c.last_seen_at,
+            # The instance's latest call: its credential's last use, written on every call,
+            # where the session's `last_seen_at` is written at most once a minute (§2.4).
+            t.credential.c.last_used_at.label("last_seen_at"),
         )
         .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
         .where(
@@ -196,12 +198,17 @@ def record_presence(conn: Connection, now: datetime) -> None:
     from maity_hub import instances, listening
 
     minute = now.replace(second=0, microsecond=0)
+    # Each instance's latest call is its credential's last use, written on every call, as
+    # `instances.presence` reads it elsewhere; the session's `last_seen_at` is written at most
+    # once a minute (§2.4).
     live = conn.execute(
         select(
             t.agent_session.c.membership_id,
             t.agent_session.c.id,
-            t.agent_session.c.last_seen_at,
-        ).where(t.agent_session.c.live.is_(True))
+            t.credential.c.last_used_at,
+        )
+        .join(t.credential, t.credential.c.id == t.agent_session.c.credential_id)
+        .where(t.agent_session.c.live.is_(True))
     ).all()
     heard = listening.which((session for _, session, _ in live), conn)
     found = {

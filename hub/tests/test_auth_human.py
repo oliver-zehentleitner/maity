@@ -252,8 +252,26 @@ def test_a_session_expires_after_14_idle_days(make_client: ClientFactory, owner:
     start = clock.now()
     clock.set_source(lambda: start + timedelta(days=13))
     assert client.get("/api/v1/me").status_code == 200  # and renews last_seen
-    clock.set_source(lambda: start + timedelta(days=13 + 14, seconds=1))
+    # The idle time runs from the latest call the stored time may stand for, up to a minute
+    # after it (§2.4, `seen.SEEN_EVERY`).
+    clock.set_source(lambda: start + timedelta(days=13 + 14, seconds=61))
     assert client.get("/api/v1/me").headers["Maity-Error"] == "unauthenticated"
+
+
+def test_a_session_used_within_the_minute_after_a_write_lives_14_days_from_that_call(
+    make_client: ClientFactory, owner: str
+) -> None:
+    client = make_client()
+    _login(client)
+    start = clock.now()
+    clock.set_source(lambda: start + timedelta(days=1))
+    assert client.get("/api/v1/me").status_code == 200  # writes last_seen
+    clock.set_source(lambda: start + timedelta(days=1, seconds=59))
+    assert client.get("/api/v1/me").status_code == 200  # within the minute: writes nothing
+    # 14 days after the second call, less a second: the stored time is 14 days and 58 s old,
+    # and the session lives on.
+    clock.set_source(lambda: start + timedelta(days=15, seconds=58))
+    assert client.get("/api/v1/me").status_code == 200
 
 
 def test_a_session_expires_30_days_after_login_whatever_the_activity(
