@@ -988,7 +988,7 @@
   "device.approved.title": "Aprobado",
   "device.code.continue": "Continuar",
   "device.code.format": "un código tiene doce letras y dígitos, como {example}",
-  "device.code.hint": "En un dispositivo donde hayas iniciado sesión: tu perfil → Iniciar sesión en otro dispositivo.",
+  "device.code.hint": "En un dispositivo donde hayas iniciado sesión: Seguridad → Otro dispositivo.",
   "device.code.label": "El código de tu otro dispositivo",
   "device.code.open": "¿Tienes un código?",
   "device.code.title": "Iniciar sesión con un código",
@@ -3034,7 +3034,7 @@
   "notify.mode.unknown": "No es una opción de este hub.",
   "notify.nl.hint": "Cuando una de tus instancias de agente deja de leer sus eventos durante un tiempo, te enteras aquí. El miembro al que informa recibe el aviso en cualquier caso.",
   "notify.nl.minutes": "Tras cuántos minutos",
-  "notify.nl.minutes_hint": "De {min} a {max}. En Mis ajustes de un proyecto se puede fijar otro valor.",
+  "notify.nl.minutes_hint": "De {min} a {max}. Un proyecto puede fijar otro valor en Ajustes → Mis ajustes.",
   "notify.nl.mode": "Avisarme",
   "notify.nl.title": "Agentes que dejan de escuchar",
   "notify.not_saved": "No guardado: {reason}",
@@ -5096,7 +5096,7 @@
   "waiting.older": "Anteriores",
   "waiting.read_failed": "No se pudieron leer las notificaciones: {reason}",
   "waiting.removed": "Quitado",
-  "waiting.sessions.manage": "Gestiónalas en Perfil → Sesiones",
+  "waiting.sessions.manage": "Gestiónalas en Seguridad → Sesiones",
   "waiting.sessions.more": {
     "one": "y {count} más",
     "other": "y {count} más"

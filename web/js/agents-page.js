@@ -617,6 +617,8 @@ window.Maity = window.Maity || {};
         P.reportsToPart(m, memberPath),
         // Its role, as its owner sets it within a member join's roles (§3.1).
         P.rolePart(m, memberPath),
+        // What it answers about and the paths it learned, while it is an expert (§6.2).
+        P.expertPart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
         // Its owner puts an instance to rest or wakes it (§6.17).

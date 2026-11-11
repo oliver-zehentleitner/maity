@@ -3672,8 +3672,8 @@
     "text": "b92e207575d361dc"
   },
   "device.code.hint": {
-    "en": "fd7a25855eb75693",
-    "text": "40f8d5085461bc94"
+    "en": "b6474bcbbe53a0ce",
+    "text": "32ebbf229147e425"
   },
   "device.code.label": {
     "en": "3c4b6a1df914432e",
@@ -9499,6 +9499,10 @@
     "en": "269f42a7504fad94",
     "text": "7101cd3f1c6c538e"
   },
+  "memberpage.expert_sources": {
+    "en": "5bafd8d16c96efec",
+    "text": "3d38b0afce650628"
+  },
   "memberpage.holds": {
     "en": "c892790504187ecd",
     "text": "2ea8621ca2ecd0c2"
@@ -9798,6 +9802,66 @@
   "members.edit.trust": {
     "en": "a820cd68d01373b5",
     "text": "dad197c87bf2651d"
+  },
+  "members.expert.for": {
+    "en": "3125dc3edf6b94f5",
+    "text": "5fd8349194d5ad4d"
+  },
+  "members.expert.for.hint": {
+    "en": "6a104f75799c40a3",
+    "text": "c58590621a2bbb57"
+  },
+  "members.expert.for.label": {
+    "en": "ebdf1939760301fa",
+    "text": "58905123e1b5f705"
+  },
+  "members.expert.for.placeholder": {
+    "en": "aaae3c19a9211219",
+    "text": "c6bc9e8621d077d6"
+  },
+  "members.expert.refused.expert_only": {
+    "en": "86756677eff37538",
+    "text": "b336525f5be358e2"
+  },
+  "members.expert.refused.for_too_long": {
+    "en": "bf6d94e7cdd39411",
+    "text": "c6b5594212b82e6f"
+  },
+  "members.expert.refused.invalid_path": {
+    "en": "ce652a009326045e",
+    "text": "32f0ad8857286037"
+  },
+  "members.expert.refused.sources_too_long": {
+    "en": "071f25a5df2ce278",
+    "text": "23451111bf44058d"
+  },
+  "members.expert.save": {
+    "en": "d1cb50ec8b994891",
+    "text": "f10a86c5b98e97bf"
+  },
+  "members.expert.saved": {
+    "en": "4c361a2ae08749e9",
+    "text": "ad96706bbccf26bf"
+  },
+  "members.expert.saving": {
+    "en": "7370a6da2a0c3139",
+    "text": "e5ec65faec932fa9"
+  },
+  "members.expert.sources.hint": {
+    "en": "2eafc61c77d6ef4d",
+    "text": "d8a0a071f9813caa"
+  },
+  "members.expert.sources.label": {
+    "en": "267b19cf16b7766d",
+    "text": "65d15d36c68a13aa"
+  },
+  "members.expert.sources.placeholder": {
+    "en": "e2daeddbd41c59e5",
+    "text": "e2daeddbd41c59e5"
+  },
+  "members.expert.title": {
+    "en": "24920cfebceeec81",
+    "text": "d56f49e53d9b37b1"
   },
   "members.filter.mine": {
     "en": "8243f893d1902413",
@@ -10102,6 +10166,10 @@
   "members.refused.capabilities_unknown": {
     "en": "a76d717cd87a179a",
     "text": "13a399bc70244a12"
+  },
+  "members.refused.holds_cards": {
+    "en": "97b7ef41e748dd04",
+    "text": "ab8463bcf4d2ccde"
   },
   "members.refused.humans_only": {
     "en": "bc316578fa54c2b7",
@@ -11428,8 +11496,8 @@
     "text": "4c810452ee9cfb0f"
   },
   "notify.nl.minutes_hint": {
-    "en": "67f31b6808448fc4",
-    "text": "87a08a62253e0adf"
+    "en": "ee484806617b3d74",
+    "text": "5e9f82229be5da88"
   },
   "notify.nl.mode": {
     "en": "b7c9e1a3888d780f",
@@ -15063,6 +15131,14 @@
     "en": "6c6e0d351a8d2e93",
     "text": "ce40fd9b4528fc2b"
   },
+  "role.expert": {
+    "en": "08c178ee733ff009",
+    "text": "08c178ee733ff009"
+  },
+  "role.expert.help": {
+    "en": "258cad4a527d9476",
+    "text": "24cfec6a8b302c71"
+  },
   "role.manager": {
     "en": "118716c1f3f8803d",
     "text": "118716c1f3f8803d"
@@ -16510,6 +16586,10 @@
   "settings.onboarding.role.designer": {
     "en": "26aad0574b7dc985",
     "text": "0b84397634fb341d"
+  },
+  "settings.onboarding.role.expert": {
+    "en": "564c6383033c7a58",
+    "text": "4451562ae720fb4c"
   },
   "settings.onboarding.role.manager": {
     "en": "5dfc60d19bec9597",
@@ -18411,6 +18491,10 @@
     "en": "e6a6c8a0c903de08",
     "text": "10829b681063dbcc"
   },
+  "trust.every.role.expert": {
+    "en": "68f94cf24275627a",
+    "text": "bac1f76a100c7699"
+  },
   "trust.every.role.manager": {
     "en": "2b7fe293fc8a7539",
     "text": "1f3f3510e1e93fc2"
@@ -18454,6 +18538,10 @@
   "trust.role_word.designer": {
     "en": "82508a215e216b2e",
     "text": "82508a215e216b2e"
+  },
+  "trust.role_word.expert": {
+    "en": "706409660b325866",
+    "text": "706409660b325866"
   },
   "trust.role_word.manager": {
     "en": "ae4e94930bf9413d",
@@ -18920,8 +19008,8 @@
     "text": "8f142bfcdf42a3fc"
   },
   "waiting.sessions.manage": {
-    "en": "612276fd0486588a",
-    "text": "2411ceeced4ac0b1"
+    "en": "0ca9b05ae7ac7275",
+    "text": "76e5227fdac23d02"
   },
   "waiting.sessions.more": {
     "en": "737c4c28d6c824c1",

@@ -3717,7 +3717,7 @@ window.MAITY_FIXTURES = {
         "joined_at": "2026-10-21T08:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-20T18:30:00Z",
-        "model": "unknown",
+        "model": null,
         "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer",
         "paused": null,

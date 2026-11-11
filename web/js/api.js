@@ -726,11 +726,20 @@ window.Maity = window.Maity || {};
   // member or guest, to those trusts and the work roles; capabilities, admin,
   // owner, proxy and manager stay a human's.
   const AGENT_TRUSTS = ["member", "guest"];
-  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team"];
+  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team", "expert"];
   // Every built-in role (§2.3), as the hub's one list; and what a member may
   // give an agent of their own (§3.1: not ops, not proxy).
-  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team"];
+  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
   const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // §2.3 "The expert" (routes/members.py): the role expert waits until the member holds no
+  // card and is assigned no open one; the fixture has no takeovers or covers to add.
+  function holdsCards(slug, target, body, path) {
+    if (body.role !== "expert" || target.role === "expert") return;
+    const items = (fixtures()[slug + "/tasks.json"] || { items: [] }).items;
+    if (items.some((t) => !["done", "cancelled"].includes(t.status) && (t.assigned_to === target.id || (t.claim && t.claim.holder === target.id)))) {
+      fail(409, "conflict", "the member holds cards or has cards on the way to it; settle them before the role is expert", path, { reason: "holds_cards" });
+    }
+  }
   function agentLimits(who, target, body, path) {
     const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
     if (who.kind !== "agent") return;
@@ -4752,6 +4761,36 @@ window.Maity = window.Maity || {};
           return target;
         }
       }
+      // §6.2 "An expert's fields": alone in their PATCH, by the agent's human owner or
+      // members:admin, only on an expert, at once (hub/routes/members.py _expert_fields).
+      if ("expert_for" in body || "expert_sources" in body) {
+        const given = Object.keys(body);
+        const own = ["expert_for", "expert_sources"].filter((k) => k in body);
+        if (given.length !== own.length) fail(400, "invalid", "set them alone", path, { fields: Object.fromEntries(own.map((k) => [k, "alone"])) });
+        const target = member(m[1], m[2], path);
+        if (who.member.kind === "agent") {
+          // An admin agent within §2.3 ᵃ (admin_agents.check_target): another agent with trust
+          // member or guest, never a human's membership and never its own.
+          if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+          if (target.kind !== "agent") fail(403, "forbidden", "an agent never changes a human's membership", path, { reason: "humans_only" });
+          if (target.id === who.member.id || !AGENT_TRUSTS.includes(target.trust)) {
+            fail(403, "forbidden", "an admin agent manages member and guest agents, never itself", path, { scope: "members:admin" });
+          }
+        } else if (!who.admin && !(target.kind === "agent" && target.owner_id === who.member.id)) {
+          fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        }
+        if (target.role !== "expert") fail(400, "invalid", "only an expert has these fields", path, { fields: Object.fromEntries(own.map((k) => [k, "expert_only"])) });
+        const errors = {};
+        if ("expert_for" in body && body.expert_for !== null && [...body.expert_for].length > 120) errors.expert_for = "string_too_long";
+        if ("expert_sources" in body) {
+          if ((body.expert_sources || []).length > 20) errors.expert_sources = "too_long";
+          else if ((body.expert_sources || []).some((a) => !/^[A-Za-z0-9._/-]{1,255}$/.test(a) || a.startsWith("..") || ("/" + a + "/").includes("/../"))) errors.expert_sources = "invalid_path";
+        }
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if ("expert_for" in body) target.expert_for = (body.expert_for || "").split(/\s+/).filter(Boolean).join(" ") || null;
+        if ("expert_sources" in body) target.expert_sources = [...new Set(body.expert_sources || [])];
+        return target;
+      }
       // §3.1 "The owner changes the role": the human who owns the agent, without
       // members:admin, sets its role alone while they could let it join now
       // (hub/routes/members.py _owner_sets_role), to a role a member join may give.
@@ -4772,6 +4811,8 @@ window.Maity = window.Maity || {};
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
           if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
+          holdsCards(m[1], target, body, path);
+          if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
           target.role = body.role;
           target.role_base = base;
           return target;
@@ -4820,6 +4861,7 @@ window.Maity = window.Maity || {};
         else if ((body.capabilities || []).some((c) => c !== "tag")) errors.capabilities = "unknown";
       }
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      if ("role" in body) holdsCards(m[1], target, body, path);
       if (guarded(m[1], target)) {
         const consent = ("role" in body && body.role !== target.role) || ("trust" in body && body.trust !== target.trust)
           ? consentFor(m[1], who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
@@ -4831,7 +4873,11 @@ window.Maity = window.Maity || {};
       const foreign = held.length ? foreignConsent(m[1], who.member, target, who.member.handle + " asks to change " + held.join(", ") + " of " + target.handle + ".") : null;
       const applies = (k) => k in body && !held.includes(k);
       if (applies("trust")) target.trust = body.trust;
-      if (applies("role")) target.role = body.role;
+      if (applies("role")) {
+        // A role change away from expert clears its fields (§6.2 "An expert's fields").
+        if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
+        target.role = body.role;
+      }
       if ("reports_to" in body) target.reports_to = body.reports_to;
       if (applies("areas")) target.areas = [...new Set(body.areas)];
       if (applies("capabilities")) target.capabilities = [...new Set(body.capabilities)];

@@ -976,7 +976,7 @@ window.MAITY_I18N["ja"] = {
   "device.approved.title": "承認しました",
   "device.code.continue": "続ける",
   "device.code.format": "コードは英数字 12 文字です。例: {example}",
-  "device.code.hint": "サインイン済みのデバイスで: プロフィール → 別のデバイスにサインイン",
+  "device.code.hint": "サインイン済みのデバイスで: セキュリティ → 別のデバイス",
   "device.code.label": "別のデバイスのコード",
   "device.code.open": "コードをお持ちですか?",
   "device.code.title": "コードでサインイン",
@@ -2993,7 +2993,7 @@ window.MAITY_I18N["ja"] = {
   "notify.mode.unknown": "このハブの選択肢ではありません。",
   "notify.nl.hint": "あなたのエージェントのインスタンスがしばらくイベントの読み取りを止めると、ここでお知らせします。報告先のメンバーには、どちらの場合も通知されます。",
   "notify.nl.minutes": "何分後に",
-  "notify.nl.minutes_hint": "{min} から {max}。プロジェクトの「自分の設定」で、そのプロジェクト用の値を設定できます。",
+  "notify.nl.minutes_hint": "{min} から {max}。プロジェクトの「設定 → 自分の設定」で、そのプロジェクト用の値を設定できます。",
   "notify.nl.mode": "通知する方法",
   "notify.nl.title": "待機を止めたエージェント",
   "notify.not_saved": "保存できませんでした: {reason}",
@@ -4998,7 +4998,7 @@ window.MAITY_I18N["ja"] = {
   "waiting.older": "さらに前",
   "waiting.read_failed": "通知を読み取れませんでした: {reason}",
   "waiting.removed": "取り除かれました",
-  "waiting.sessions.manage": "「プロフィール → セッション」で管理できます",
+  "waiting.sessions.manage": "「セキュリティ → セッション」で管理できます",
   "waiting.sessions.more": {
     "other": "ほか {count} 件"
   },

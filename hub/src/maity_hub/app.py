@@ -136,6 +136,7 @@ from maity_hub.routes import (
 )
 from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import auth_pages as auth_pages_routes
+from maity_hub.routes import bootstrap as bootstrap_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
@@ -476,6 +477,7 @@ def create_app(
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(maintenance_routes.router, prefix=prefix)
+    app.include_router(bootstrap_routes.router, prefix=prefix)
     app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)

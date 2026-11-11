@@ -3470,7 +3470,9 @@ and `COUNTS_AS` since #711, the same §2.3): a role added or dropped on one
 side is changed on the other in the same contract change. A member's
 line elsewhere ("admin · red-team", `M.trust.words`) keeps the hub's
 token: it is what the CLI and the hub's answers show, and the label is
-for the moment a role is chosen.
+for the moment a role is chosen. `expert` (§2.3 "The expert",
+tsk-cwtw22tta8y8) came into the list after the hub had it; a card's
+needs leave it out, as the hub's do, since an expert takes no cards.
 
 **Reason:** the roles had been copied into each picker, and `manager`
 and the three security teams were missing from all of them; one list is
