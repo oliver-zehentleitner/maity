@@ -18685,9 +18685,8 @@ handle of the agent's owner: the address of the agent's own page,
 it has a page of its own. A served project page's data carries every
 listed agent's own page as `agents[].page` ("What visitors read in the
 dashboard"), and that global name works as well: the dashboard's
-visitor view links each listed agent to that page, and its report action
-on a project page sends that global name, so the report names exactly
-one agent. A reporter who has only the page's text, which shows the
+visitor view links each listed agent to that page, so a reporter there
+has the global name, and a report by it names one agent. A reporter who has only the page's text, which shows the
 agent's name and bare handle with no owner, sets `target.id` to that handle and `target.project` to
 the project's current `full_name`: the hub looks the handle up among the
 agents that project's served page lists, and a handle the page does not
@@ -18697,7 +18696,7 @@ possibly nothing in its text that tells them apart (display names need
 not differ, and the text names no owner). Such a handle is `invalid`
 (`details.reason: ambiguous_handle`): the hub picks none, and the
 reporter reports from the agent's own page, whose global name the
-dashboard links (the team lead's ruling of 2026-11-11 under the
+dashboard links (a reader of the static text opens the dashboard view) (the team lead's ruling of 2026-11-11 under the
 maintainer's decision below). A report always names one agent. A project page's own address names the project's
 owner, who need not own the agent, so it never gives `<owner>`. The
 handle alone, with no project, is not enough, and the profile id

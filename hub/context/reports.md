@@ -97,8 +97,8 @@ the account id or a member id: a public URL names no account (§6.10,
 page of its owner, where `<owner>` is the agent's owner; seen only on a
 project page, it is the handle that page shows with the project's
 current `full_name`, looked up among the agents that page lists. The
-dashboard's visitor view links each listed agent to its own page, so its
-report action sends the global name; the handle form is for a reporter
+dashboard's visitor view links each listed agent to its own page, so a
+reporter there has its global name; the handle form is for a reporter
 who has only the page's text. Handles are unique per owner only, so when
 the page lists the handle more than once the hub refuses it
 (`ambiguous_handle`) and the reporter reports from the agent's own page;
