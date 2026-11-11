@@ -12386,14 +12386,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "Not joined: this invitation is for another address (invitation_address_mismatch)", "Not joined: the request does not validate (already_member)",
     "Not joined: the person who invited you can no longer give this role (invitation_void)", "Not joined: the project is closed (project_closed)",
     "Not joined: your account waits for approval (account_pending)"]), "invite: each refusal said in the hub's words with its reason " + JSON.stringify(ivSaid));
+  // The tab's presence (§18.4) starts after /me and stops on a sign-out and an ended session (js/app.js);
+  // js/presence.js decides whether to send (fixture mode never does), so the calls are watched here.
+  const pzStart = win.Maity.presence.start, pzStop = win.Maity.presence.stop, pzCalls = [];
+  win.Maity.presence.start = (m) => { pzCalls.push("start " + (m && m.member ? m.member.kind : "none")); return pzStart(m); };
+  win.Maity.presence.stop = () => { pzCalls.push("stop"); return pzStop(); };
   // Not you? Sign out (H on #461): signed out, the same invitation again, with its ways in; never the root.
   const soPost = win.Maity.api.post, soEnd = win.Maity.api.endSession, soGet = win.Maity.api.get;
   let soOut = false;
   win.Maity.api.post = (p, b) => (p === "/auth/logout" ? (soOut = true, Promise.resolve({})) : soPost(p, b));
   win.Maity.api.endSession = () => {};
   win.Maity.api.get = (p) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p));
+  await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  expect(pzCalls.includes("start human"), "presence: a human's page starts it after /me " + JSON.stringify(pzCalls));
   await go("#/invite/void-xxxxxxxxxxxxxxxx6"); for (let k = 0; k < 6; k++) await tick();
+  pzCalls.length = 0;
   btn(ivArticle(), "Not you? Sign out").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(pzCalls[0] === "stop", "presence: signing out stops it " + JSON.stringify(pzCalls));
   expect(soOut && win.location.hash === "#/invite/void-xxxxxxxxxxxxxxxx6" && ivArticle()
     && ivArticle().querySelectorAll("a").some((a) => text(a) === "Sign in to accept") && !btn(ivArticle(), "Not you? Sign out"),
     "invite: Not you? Sign out signs out and shows the same invitation, signed out " + win.location.hash);
@@ -12416,7 +12425,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/maintainer/maity/team", "register: signed in, it goes on to its next");
   // An account waiting for approval (§2.7.5) sees that page and nothing else.
   win.Maity.api.get = (p) => ivGet(p).then((v) => (p === "/me" ? Object.assign({}, v, { member: Object.assign({}, v.member, { account_status: "pending" }), projects: [] }) : v));
+  pzCalls.length = 0;
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
+  expect(!pzCalls.some((c) => c.startsWith("start")), "presence: an account waiting for approval does not start it " + JSON.stringify(pzCalls));
   expect(text(main).includes("Your account waits for the operator's approval") && btn(main, "Sign out") && !header.querySelector("nav.switcher")
     && win.location.hash === "#/account/pending", "pending: an account waiting for approval sees that at /account/pending, and can sign out");
   // The invitation page for such an account: no Join, the invitation waits.
@@ -12441,7 +12452,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => { seCalls.push(p); return seGetAll(p); };
   win.Maity.api.post = (p, b) => { seCalls.push("POST " + p); return sePost(p, b); };
   win.Maity.api.del = (p) => { seCalls.push("DELETE " + p); return seDel(p); };
+  pzCalls.length = 0;
   await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  expect(pzCalls.includes("stop"), "presence: a session that ends under the page stops it " + JSON.stringify(pzCalls));
   expect(byId("login-email") && main.querySelector(".session-ended") && text(main.querySelector(".session-ended")).includes("Your session has ended")
     && win.location.hash === "#/maintainer/maity/board" && win.Maity.notify.state.settings === null && !win.Maity.notify.running(),
     "session: the first 401 under the page shows sign-in with a note, the route kept; the browser notifications' settings go with it");
@@ -12462,6 +12475,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
   win.Maity.api.get = seGet; win.Maity.api.getAll = seGetAll;
+  win.Maity.presence.start = pzStart; win.Maity.presence.stop = pzStop;
 
   // Which 401s say a session ended: the visitor's calls, with or without a query, never; the session's own always.
   const ppPublic = ["/auth/session", "/auth/login", "/auth/device-login?wait=0", "/auth/device-login/complete", "/auth/email-code", "/auth/methods",
@@ -13295,7 +13309,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       };
       const prShow = (state) => { document.visibilityState = state; prDoc.visibilitychange(); };
       document.visibilityState = "visible";
-      win.Maity.presence.start();
+      const prHuman = { member: { kind: "human" } };
+      win.Maity.presence.start(prHuman);
+      expect(!win.Maity.presence.running() && !prPosts.length, "presence: fixture mode does not start it, even for a human");
+      const prSource = win.Maity.api.source;
+      win.Maity.api.source = "api";
+      win.Maity.presence.start({ member: { kind: "agent" } });
+      expect(!win.Maity.presence.running() && !prPosts.length, "presence: an agent's page does not start it");
+      // Its call is no write: what the page keeps between switches stays (entry f71932e2). The real
+      // client is asked here (fixture mode has no route for it, so the call itself is refused).
+      const prOnWrite = win.Maity.onWrite;
+      let prWrites = 0;
+      win.Maity.onWrite = () => { prWrites += 1; };
+      await prSaved[0]("/me/presence").catch(() => null);
+      const prNoWrite = prWrites;
+      await prSaved[0]("/me/presence/x").catch(() => null);
+      win.Maity.onWrite = prOnWrite;
+      expect(prNoWrite === 0 && prWrites === 1, "presence: its call does not drop what the page keeps, another POST does " + prNoWrite + "," + prWrites);
+      win.Maity.presence.start(prHuman);
       expect(prPosts.length === 1 && prPosts[0] === "/me/presence"
         && ["pointerdown", "keydown", "wheel", "scroll", "focus"].every((t) => prWin[t]) && prDoc.visibilitychange,
         "presence: a visible tab calls at once and listens for pointer, key, scroll and focus input");
@@ -13321,7 +13352,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       // Another tab or an earlier page load of the session called 20 seconds ago: this load waits
       // for that minute, so reloads and many tabs stay within the hub's ten calls a minute.
       prStore["maity-presence-sent"] = String(prClock - 20000);
-      win.Maity.presence.start();
+      win.Maity.presence.start(prHuman);
       expect(prPosts.length === 13, "presence: a call of another tab within the minute covers a new page load");
       prWait(39000);
       expect(prPosts.length === 13, "presence: still within that minute, no call");
@@ -13336,9 +13367,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       win.Maity.presence.stop();
       // Storage blocked: each tab counts alone, as before.
       win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
-      win.Maity.presence.start();
+      win.Maity.presence.start(prHuman);
       prWait(60000);
       expect(prPosts.length === 17, "presence: with storage blocked it calls at once and every minute " + prPosts.length);
+      win.Maity.api.source = prSource;
       win.Maity.presence.stop();
       [win.Maity.api.post, win.setTimeout, win.clearTimeout, Date.now, win.addEventListener, win.removeEventListener, document.addEventListener, document.removeEventListener, win.localStorage] = prSaved;
       delete document.visibilityState;

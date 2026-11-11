@@ -72,10 +72,11 @@ window.Maity = window.Maity || {};
     else later(); // hidden: the pending call goes
   }
 
-  // A human's dashboard session against a hub, signed in and not waiting for approval (js/app.js;
-  // fixture mode holds no mail). Opening or signing in counts as input: the human is at the page.
-  function start() {
-    if (running) return;
+  // After `/me` for an account that does not wait for approval (js/app.js): a human's dashboard
+  // session against a hub only, since an agent has no mail hold and fixture mode holds no mail.
+  // Opening or signing in counts as input: the human is at the page.
+  function start(me) {
+    if (running || M.api.source !== "api" || !me || !me.member || me.member.kind !== "human") return;
     running = true;
     INPUT.forEach((type) => window.addEventListener(type, onInput, { capture: true, passive: true }));
     document.addEventListener("visibilitychange", onVisibility);

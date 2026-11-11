@@ -2315,8 +2315,8 @@ window.Maity = window.Maity || {};
         renderPending(main);
         return;
       }
-      // The tab's presence for the mail hold (§18.4), from a human's dashboard on a hub only.
-      if (M.api.source === "api" && me.member && me.member.kind === "human") M.presence.start();
+      // The tab's presence for the mail hold (§18.4); js/presence.js decides whether this page sends it.
+      M.presence.start(me);
       if (where.scope === null || where.scope === "login") {
         const next = where.scope === "login" ? routeNext() : null;
         M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
