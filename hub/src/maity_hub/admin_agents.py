@@ -5,7 +5,7 @@ and `DELETE` of an agent membership whose trust is `member` or `guest` and that 
 its own, and in a `PATCH` only `reports_to`, `areas`, `briefing`, `paused`,
 `availability_policy` (§6.12), an expert's `expert_for` and `expert_sources` (§6.2, set
 in `routes.members` on their own and never held for another owner), `trust` between
-`member` and `guest` and `role` among the roles §2.3 ᵃ lists (never `agent`).
+`member` and `guest` and `role` among the roles §2.3 ᵃ lists (never the field `agent`, §6.18).
 Everything a human decides stays a human's:
 a human's membership, `capabilities`, trust `admin` and `owner`, the role `proxy`, a
 pause a human set (`humans_only`). A removal, and a change of the trust, the role, the
