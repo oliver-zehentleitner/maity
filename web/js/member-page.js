@@ -249,7 +249,7 @@ window.Maity = window.Maity || {};
     // Read only here: Revoke is in the Manage row (#643).
     append(clear(slot), got.error ? M.errorBox(got.error) : h("div", null, h("h3", null, M.t("members.credentials")),
       h("ul", { class: "member-creds" }, ((got.list && got.list.items) || []).map((c) => h("li", { class: c.revoked_at ? "revoked" : null },
-        h("span", { class: "mono" }, c.id), " ",
+        h("span", { class: "mono" }, c.id), M.agentParts.credentialInstance(ctx, m, c), " ",
         h("span", { class: "muted" }, [c.client || null, M.t("memberpage.cred.created", { when: formatTime(c.created_at) }),
           c.revoked_at ? M.t("memberpage.cred.revoked", { ago: formatAgo(c.revoked_at) }) : c.last_used_at ? M.t("memberpage.cred.used", { ago: formatAgo(c.last_used_at) }) : M.t("memberpage.cred.never")].filter(Boolean).join(" · ")))))));
   }

@@ -540,6 +540,14 @@ def test_join_failed_takes_any_hub_error_code_as_its_detail(setup: Setup, detail
     assert get(setup, body["id"])["reported"]["detail"] == detail
 
 
+@pytest.mark.parametrize("detail", ["origin_mismatch", "not_a_plain_clone"])
+def test_workspace_in_use_takes_its_details(setup: Setup, detail: str) -> None:
+    body = placed(setup)
+    taken = report(setup, body, 1, state="failed", reason="workspace_in_use", detail=detail)
+    assert taken.status_code == 200, taken.text
+    assert get(setup, body["id"])["reported"]["detail"] == detail
+
+
 def test_since_is_clamped_to_hub_time(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, since="2999-01-01T00:00:00Z")

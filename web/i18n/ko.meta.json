@@ -504,8 +504,8 @@
     "text": "7aa04e7818f72791"
   },
   "agentparts.credential.revoke_confirm": {
-    "en": "679fcaf26da1fa34",
-    "text": "1bf0638bc95e894d"
+    "en": "ba9034e3015741da",
+    "text": "fcdfef8b8fdf39a3"
   },
   "agentparts.credential.revoked": {
     "en": "76b56ef03abaec9d",
@@ -1542,6 +1542,22 @@
   "board.claim.unclaimed": {
     "en": "89fa136908846c6b",
     "text": "eb244f9e91cbe32c"
+  },
+  "board.closed.failed": {
+    "en": "76ff07448abbd4a4",
+    "text": "ac5696345b44d849"
+  },
+  "board.closed.loading": {
+    "en": "2ed9637177518fe0",
+    "text": "cf0a02a340b05061"
+  },
+  "board.closed.recheck_failed": {
+    "en": "a778f95d9908435e",
+    "text": "ead190ae5a44909f"
+  },
+  "board.closed.show_more": {
+    "en": "9a777e4ebf5e3b6f",
+    "text": "820c2c22c4851502"
   },
   "board.column.other": {
     "en": "1f1260ddd48575a9",
@@ -5612,8 +5628,8 @@
     "text": "cdd9d649bec6301d"
   },
   "invite.address": {
-    "en": "3b5a53b6d058a02a",
-    "text": "2940ecdd680e4785"
+    "en": "c6394f33e6b9bb97",
+    "text": "ef06b1c01a1e333d"
   },
   "invite.address.placeholder": {
     "en": "1e824f589a3ef8f9",
@@ -5659,13 +5675,49 @@
     "en": "3c57b331ce9ee343",
     "text": "ecc4897b6f0254bc"
   },
+  "invite.for_handle": {
+    "en": "32c8e66d92472dc6",
+    "text": "dedd811891ed9d84"
+  },
   "invite.for_link": {
     "en": "172afafc8d7aa283",
     "text": "561f82f76609cabf"
   },
+  "invite.handle": {
+    "en": "41483b645efc0c65",
+    "text": "614e92be8c1545d8"
+  },
+  "invite.handle.format": {
+    "en": "457410cbfc57b13f",
+    "text": "d954c25febeddc64"
+  },
+  "invite.handle.invited": {
+    "en": "b63e1d97f6f5f310",
+    "text": "78ac1dff7a068233"
+  },
+  "invite.handle.member": {
+    "en": "c5730fbe4e7b0e46",
+    "text": "d694fbbec2c32384"
+  },
+  "invite.handle.not_a_person": {
+    "en": "2d089ec22ce8f9fc",
+    "text": "513c17f4ca1665c3"
+  },
+  "invite.handle.placeholder": {
+    "en": "fb972b15314e00c6",
+    "text": "596e712d6e2fb1b0"
+  },
+  "invite.handle.unknown": {
+    "en": "0c4c95fb5ced76e2",
+    "text": "fbf6b545a8eeff7f"
+  },
+  "invite.handle.with_address": {
+    "en": "4b69c566df7cbaeb",
+    "text": "0d22cb048b167400"
+  },
   "invite.hint": {
-    "en": "86b43565e6245777",
-    "text": "d75049aaf1eeb8d2"
+    "en": "bb2abdda41f8d27e",
+    "text": "4c83e80776d0a9b4"
   },
   "invite.join_heading": {
     "en": "cb4b8edc94eecaf9",
@@ -5779,6 +5831,14 @@
     "en": "53e8ea77422c2216",
     "text": "b59e28aaf1467ae6"
   },
+  "invite.sent": {
+    "en": "3f007bc2f7c83798",
+    "text": "f5d690bb527862db"
+  },
+  "invite.sent.hint": {
+    "en": "c37f01fb275b59cf",
+    "text": "6889a7bb0f0fa872"
+  },
   "invite.session_failed": {
     "en": "f349f279f3c3600f",
     "text": "451e8244ff3479bf"
@@ -5802,6 +5862,10 @@
   "invite.signed_in_as": {
     "en": "b6a5224cd009a6cb",
     "text": "ea887eeec2a9fe57"
+  },
+  "invite.state.declined": {
+    "en": "b10ff80c0d7a9025",
+    "text": "28599badd57e4aaa"
   },
   "invite.state.expired": {
     "en": "1dabed06d716e646",
@@ -8879,6 +8943,10 @@
     "en": "847f0edf5fd1f88e",
     "text": "c433e3285a92d6f8"
   },
+  "mail.kind.invitation": {
+    "en": "2599f62d476ce717",
+    "text": "a5d6cd150aeabc1e"
+  },
   "mail.kind.mention": {
     "en": "c03f431cb5a58f9a",
     "text": "7982354e4c4e11ab"
@@ -11282,6 +11350,10 @@
   "notify.kind.inbox": {
     "en": "847f0edf5fd1f88e",
     "text": "c433e3285a92d6f8"
+  },
+  "notify.kind.invitation": {
+    "en": "2599f62d476ce717",
+    "text": "a5d6cd150aeabc1e"
   },
   "notify.kind.mention": {
     "en": "c03f431cb5a58f9a",

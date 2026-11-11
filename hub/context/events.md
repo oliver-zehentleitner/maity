@@ -353,6 +353,7 @@ mark.
 **Evidence:** inferred
 **Source:** docs/api.md §9.3 "Pinned" (contract #914) and the card tsk-9a3ph3jvhhrb; the contract fixes the routes, the 20 across projects, the four bands and that a chat left keeps no pin; how the hub keeps that is this entry's reading
 **Revisit when:** a way to lose access to a chat appears that neither ends a stay nor removes a membership (a trust change that ends reading a round's thread along is one today), or the lists move into SQL
+**See:** https://github.com/oliver-zehentleitner/maity — 1820f379-0c1f-47c1-9352-672d62cdaf62 — as of 2026-11-11
 
 `conversation_pin` is keyed by human, project and chat id, not by membership: an owner outside the
 project reads its agents' chats along without a membership (§9.2) and may pin them, and the 20 are
@@ -362,8 +363,10 @@ membership's removal (its direct chats), and drops every pin of the project its 
 reads; `PUT …/pin` prunes the holder's own pins before it counts, under the human's row lock, so a
 pin lost some other way never blocks a new one and two projects cannot both take the 21st. A chat
 left and joined again therefore comes back unpinned. The lists add `pinned` after the entries are
-built and sort in Python, a stable sort per band; the cursor carries the band, and the cursor scope
-changed so a cursor from before the bands is refused instead of read wrongly.
+built and sort in Python, a stable sort per band. The bands are the contract's: pinned with unread,
+quietly pinned, unpinned with unread, the rest; an observer's null unread counts as none. The cursor
+carries the band. The scope names that order (`bands` is `pinned-top`), so a cursor from before the
+bands, and one from the earlier band order, is refused instead of read wrongly.
 
 **Reason:** the contract says a chat left keeps no pin, and a stale row would count against the 20
 and come back on a later join. The places where access ends are few and already central. The
@@ -664,3 +667,45 @@ isolation, a bridge's end) exactly where they were, and needs no state between p
 - Keeping the highest `seq` per project in memory: another replica's commits would not move
   it, and the look would answer nothing for rows that exist.
 - A longer fallback alone (step 2): left until this step's prod numbers are in.
+
+## One event by its seq is the event list's read bounded to that seq; its chat is given by the chat route's own checks
+
+**Id:** 90c305d5-1fae-4933-aa40-d0e4fc0eda2b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-6g2h8dag2fkg, hub step ("exactly the visibility rules of the event list", reuse its code rather than copy its rules); contract `docs/api.md` §8.9 (#1599) and the root decision in `context/messages.md` (90a7c56b); the way the hub gets there is the implementer's
+**Revisit when:** `events.read` gains a filter that depends on more than the reader and the rows past its cursor (a window, a page budget), or `…/conversations/{id}/messages` gains an access check outside `_group` and `_party`, or §8.9 gains a `for` query
+
+`GET …/events/{seq}` calls `events.read` with `after = seq − 1`, `until = seq` and a limit of
+one: the same function `GET /events` with `wait=0` reads with, over the one row the bounds
+leave, with the same `hidden_redactions` and `readable_by`, and shapes the row with the same
+`event_views`. A row the read does not return, for whatever reason, and a `seq` with no row
+both raise the one `not_found()`. `conversation_id` is the row's recorded conversation, kept
+only when `conversations.reads_messages` says the caller's `…/messages` would answer, which
+runs that route's own `_group` and `_party` checks. A bridge reads for an agent with
+`Maity-For`, which the caller resolution already makes the served agent (§2.3); a `for` query
+is `invalid` (`details.fields.for: "not_allowed"`), checked before the `seq`. The route does
+not touch the session's `events_at`: reading one event is no listening (§5.3, §8.9 "writes
+nothing").
+
+**Reason:** §8.9 promises the answer exactly when `GET /events?after=<seq − 1>` would serve
+the event. Calling that read makes it true by construction, including every exception §8.2
+adds later, and `tests/test_event_by_seq.py` checks it seq by seq for several callers. The same
+holds for the chat: the field is given exactly when the chat route answers.
+`reads_messages` calls `_party` with `hidden=True` where the messages route passes
+`hidden=False`; the flag only chooses `not_found` over `forbidden`, both an `ApiError` it turns
+into `False`, and that route's `Outsider` branch cannot apply, as an outsider never passes
+`membership` here, so it is not a divergence.
+
+**Rejected alternatives:**
+- Reading the row and calling `readable_by` on it here: the batch-level lookups of
+  `hidden_redactions` would have to be repeated beside it, a second place to keep in step.
+- Ignoring a `for` query: a bridge that sent one would get its own answer where it asked
+  for the agent's, a `404` that looks like a hidden event. Reading `for` as the list does:
+  §8.9 names the `Maity-For` rule only, so serving `for` would widen the contract (the PR
+  names it as an open point; that change goes to the maintainer).
+- Marking the session as listening, as `GET /events` does: §8.9 says the read writes nothing,
+  and a link opened is not a wait for events.
+- A shortcut for a `seq` beyond the head or `0`: it would answer a missing event with
+  fewer reads than a hidden one for no gain, and the contract leaves time open anyway (§8.9).

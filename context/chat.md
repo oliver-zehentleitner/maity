@@ -433,7 +433,8 @@ bounded:
 
 **Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1820f379-0c1f-47c1-9352-672d62cdaf62
 **Evidence:** confirmed
 **Source:** the maintainer's request, 2026-10-31 ("Empfänger pinnen … ganz oben, außer sie haben keine neuen Nachrichten, aber ein anderer Chat hat neue, dann ist der auch ungepinnt drüber"); contract `docs/api.md` §9.3
 **See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-10-31
@@ -457,6 +458,48 @@ exactly that and keep the activity order inside each.
 - The dashboard sorting the pins into the list the hub returns: the list
   is paged (§1.4), so a pinned chat on a later page would stay hidden;
   the hub orders, and the cursor follows the bands.
+
+## Pinned chats stay above every unpinned one
+
+**Id:** 1820f379-0c1f-47c1-9352-672d62cdaf62
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-0km9ys53dynd, request req-cch3p5aszxpy (the maintainer chose option o1 on 2026-11-05; the four bands match it exactly); contract `docs/api.md` §9.3
+**Revisit when:** a human participant's unread count or the header's chat badge no longer shows a new message that participant has not read
+**See:** chat.md#a-human-pins-chats-a-pin-keeps-a-chat-on-top-only-while-nothing-newer-waits-elsewhere — d39e2f76-8cfd-4d23-9408-5c03bf39c014 — as of 2026-11-10
+**See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-11-10
+
+A human pins conversations. Both lists are ordered in four bands, and
+each band keeps its activity order: pinned with unread messages, quietly
+pinned (pinned, no unread), unpinned with unread, then the rest. The
+cursor follows that order. The pin stays the human's own, stored by the
+hub so it holds across devices, emits no event, and is limited to 20.
+
+**Reason:** a pinned chat stays on top of the list, including when it is
+quiet. A new message a human participant has not read does not have to
+rise above those quiet pins to be noticed: it stays visible through that
+conversation's unread count and the header's chat badge. An observer's
+unread is null and adds nothing to the badge. The pin is stored by the
+hub, not only in the browser: it holds across the human's devices, and
+the list is paged, so the hub has to know the order. The dashboard does
+not sort on its own. The list is paged (§1.4), so a pinned chat on a
+later page would stay hidden; the hub orders the list, and the cursor
+follows that order.
+
+**Rejected alternatives:**
+- The previous order (pinned with unread, then unpinned with unread,
+  then quiet pins, then the rest): a quiet pin sat below every chat with
+  something new, so a pin did not keep its chat on top. For a human
+  participant, the unread count and the header's chat badge already show
+  a new message, so the list no longer lifts that chat above a quiet pin.
+  An observer's unread is null and adds nothing to either.
+- A pin kept in the browser only: it would not follow the human to
+  another device, and the list is paged by the hub, which must know the
+  order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows that order.
 
 ## A human switches the meat-proxy mode per chat; the profile gives the default
 

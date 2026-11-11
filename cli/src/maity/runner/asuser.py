@@ -152,7 +152,11 @@ class AsUser:
         Links are listed, never followed."""
         if self.direct:
             found: list[tuple[str, str, int]] = []
-            for root, dirs, files in os.walk(path):  # does not descend into links
+
+            def unreadable(exc: OSError) -> None:
+                raise exc  # an unlisted directory would look empty
+
+            for root, dirs, files in os.walk(path, onerror=unreadable):  # no links followed
                 for name in dirs + files:
                     full = Path(root) / name
                     mode = full.lstat()

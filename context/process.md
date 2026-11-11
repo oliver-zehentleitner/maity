@@ -196,7 +196,7 @@ review.
 
 **Id:** 06b11a79-65dc-4364-b6ca-bd36927ae829
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's card of 2026-10-23 (the Actions queue held 30–100 runs with about seven running, and every merge waited hours); `.github/workflows/ci.yml`
 **Revisit when:** a suite starts depending on files outside the paths that gate it, or a regression reaches main that a skipped suite would have caught
@@ -224,6 +224,14 @@ run names.
   hold itself.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
+
+(2026-11-11, needs-review: the revisit condition above has fired. `make -C web check` reads `docs/api.md` and
+`hub/src/maity_hub/landing_assets/landing.js`, and neither started the web job; #1593, which changed `docs/api.md` and no
+file under `web/`, merged green and left main's web check red (tsk-fffx19yteh4x). The entry "The web part runs for every
+file `make -C web check` reads, and a test holds the filter to the reads" closes that gap for the web part; whether this
+entry stands as it is, with the hub tests' known gap of 5b0f7a42 still open, is the re-check. For that re-check: the web
+job's `make smoke` also runs `tools/run_slot.sh` (web/Makefile's `SLOT`), which no `web:` pattern matches;
+`tools/test_run_slot.py` runs in the changelog job, which always runs.)
 
 ## A change to the contract alone runs a light `hub-contract` part, not the database jobs
 
@@ -253,6 +261,39 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
   selects them by the path they build.
 - Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
   CI only chooses when to run them.
+
+## The web part runs for every file `make -C web check` reads, and a test holds the filter to the reads
+
+**Id:** 66aced31-14ac-4f51-90d2-4232e22f2e8e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fffx19yteh4x (#1593, merged as f75de2db, added two error codes to `docs/api.md` §1.3 with a green CI, and every later pull request touching `web/` failed the web check until #1628); `.github/workflows/ci.yml`; `web/tools/test_ci_paths.py`
+**Revisit when:** `web/tools/check.py` reads a file outside `web/` without starting from `os.path.dirname(ROOT)` (the test does not see it), or the web job grows slow enough that a contract-only pull request should not run it
+
+`web/tools/check.py` reads four places outside `web/`: the hub's words, `hub/words-meta/`, the error codes of `docs/api.md`
+§1.3 (each needs words in `web/js/errors.js`) and the landing page's script
+`hub/src/maity_hub/landing_assets/landing.js` (size and request rules). The `web` part of the `changes` job listed only the
+first two, so a pull request that changed only the contract or only the landing script ran no web check, and main went red
+after the merge. The `web` part now also matches `docs/api.md` and `hub/src/maity_hub/landing_assets/*`.
+`web/tools/test_ci_paths.py`, run by `make check`, reads `check.py`'s syntax tree, collects every
+`os.path.join(os.path.dirname(ROOT), "a", "b")` whatever its quotes or commas, and fails unless a `web:` pattern of the
+`changes` job matches the path; any other use of `os.path.dirname(ROOT)` (a variable part, the parent kept in a name) fails
+with its line instead of being skipped. A new outside read changes `web/tools/`, which runs the web job, so the test names
+the missing pattern in the same pull request. The first version matched the join with a regular expression and missed
+single quotes and a trailing comma (review of #1630).
+
+**Reason:** the web job is `make check` and `make smoke`, standard library and node, about five minutes (306 to 310 s on
+#1630's two heads and on main 30d84d15); running all of it for a contract change costs a few minutes of a runner, less
+than keeping a second place that knows which part of the check reads which file.
+
+**Rejected alternatives:**
+- The error-code check as its own job on `docs/api.md` (the card's second option): one more checkout and one more `ci-ok`
+  need, and a second list of what reads the contract, to save a few minutes per contract-only pull request; the landing
+  script would still need the web part.
+- Only the two patterns, with no test: the gap came from a read nobody added to the filter, and the next one would too.
+- A regular expression over `check.py`'s text: it matched only double-quoted parts without a trailing comma, and single
+  quotes, mixed quotes or a trailing comma passed unseen.
 
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
@@ -1388,6 +1429,9 @@ cancel a green run; the title's "90 minutes for the database jobs" holds for `hu
 stays the rule for the database jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite`
 keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 minutes median and up to 54.)
 
+(2026-11-10, later: `hub-postgresql` runs in three shards, each with the 120-minute limit; the first sharded run's legs took
+19 to 29 minutes. See the entry on the shards, f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
+
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
 **Id:** 6fd85f09-8fe4-4941-98d2-fecafb969da4
@@ -1461,6 +1505,52 @@ passes is confirmed (proof run on #1316, and a local counter-check without the s
 hang's dump itself names no test is confirmed by the #1255 log and by a local reproduction in the review of #1319; that
 without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the
 value is the author's weighing, not measured against a real hang beyond #1255.
+
+## hub-postgresql runs in three shards by test file, each with its own PostgreSQL
+
+**Id:** f150febd-ce19-4493-9a97-cfc3bc1c01fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
+**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
+**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+
+`hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
+keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
+deselected, and a malformed value stops the run before collection. Each leg has its own PostgreSQL
+service and the 120-minute limit. ci-ok's `needs` is unchanged: a matrix job's result is the result
+over all its legs, so one red or cancelled leg fails ci-ok as before; ci-ok stays the one required
+check. Locally the three shards together collect the whole suite (2125, 2288 and 2227 of 6640 tests, counted at the head that adds `hub/tests/test_test_shard.py`).
+
+**Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
+only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
+over the suite. Three legs side by side cut the wall time as far as the shards take about the same
+time and three runners are free at once: the first sharded run, ci 42909006763 on hosted runners
+(2026-11-10), took 25.0, 29.1 and 19.4 minutes per leg, so about 29 minutes against 59 to 85 for
+the whole suite; one run, not yet a median. By file, a test file stays in one leg, so a fixture set
+up once per file (today only the S3 server of `test_attachments_s3.py`, scope `module`) starts in
+one leg only. The session fixtures start once per xdist worker in every leg whichever way the
+suite is split, and within a leg a module fixture starts once per worker that runs some of its
+file's tests.
+
+**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set and `pg` among `HUB_RUNNER_TYPES`
+(unset means all three) the job asks for the maintainer's
+one `pg` runner, where the three legs run one after another (the service keeps the fixed host port
+5432, so two legs must not share that machine at once). Whether main's `hub-postgresql` stays there
+or goes to hosted runners is the owner's to decide; `HUB_RUNNER_TYPES` without `pg` is the switch,
+and it needs no commit.
+
+**Rejected alternatives:**
+- Speeding up the slowest tests first (plan B): making all 50 free would save 2 to 3 minutes of wall
+  time.
+- Sharding by test node id, as the card's plan said first: a file's tests would spread over the
+  legs, and each leg would set up that file's module fixtures again. Today that is one fixture, so
+  the gain is small; the split by file keeps it from growing with new ones.
+- A random host port for the service, so that two legs could share a runner: not needed for hosted
+  runners, and the self-hosted machine runs one job per type by design (the entry on one runner
+  service per database job type).
+- A sharding plugin: a new dependency in the hashed locks for what one hook does.
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 

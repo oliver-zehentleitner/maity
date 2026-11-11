@@ -25,7 +25,8 @@
       "state": "build",
       "trust": "owner",
       "role": "coder",
-      "open_requests": 7
+      "open_requests": 7,
+      "public_page": "on"
     },
     {
       "id": "prj-sample000001",
@@ -35,7 +36,8 @@
       "state": "review",
       "trust": "owner",
       "role": "coder",
-      "open_requests": 1
+      "open_requests": 1,
+      "public_page": "off"
     }
   ],
   "server_time": "2026-10-21T13:42:00Z"
