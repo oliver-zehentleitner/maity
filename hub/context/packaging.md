@@ -210,6 +210,37 @@ them at one version.
 - Pointing `MAITY_WEB_DIR` at a checkout: an extra clone and an
   environment variable in a path meant to take five minutes.
 
+## A hub test holds the image's dockerignore allowlist to what the wheel build reads
+
+**Id:** db4cb20a-6023-4d18-9546-cb6d80b41a31
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the jour fixe of 2026-11-06 (round jfx-nerr4n29p2ce), card tsk-4x5fmke93m1r: `hub/hatch_build.py` became a build input in #1424 and was missing from the image's context until the image job failed; `hub/tests/test_image_context.py`
+**Revisit when:** the image's build stage reads a file the test does not collect (a new `COPY`, a requirements file named outside the Dockerfile, a second build hook), Docker changes how `.dockerignore` patterns match, or the build stops using `deploy/Dockerfile.dockerignore`
+
+`deploy/Dockerfile.dockerignore` is an allowlist: `*`, then a `!` line for each thing the build needs. A new
+build input nobody adds there is missing from the context, and only the image job noticed, about an hour into CI.
+`hub/tests/test_image_context.py` collects what the build stage reads from the files the build reads it from:
+the `hub/requirements/*.txt` that `deploy/Dockerfile` names, `hub/pyproject.toml` with its `readme`, wheel
+`packages` and custom build hook, and the keys of `hatch_build.py`'s `BUNDLED` (read from its syntax tree, as the
+hook imports hatchling). It runs every git-tracked file of those through a copy of Docker's matching rules (`*`
+and `?` stop at `/`, `**/` matches zero or more directories, a match on a parent directory counts, the last
+matching line decides) and names each excluded file; an input with no tracked file fails too. When it was written,
+the copy picked exactly the 722 of 9461 working-tree files that a real `docker build` context held (Docker 29.9.2,
+a `FROM scratch` build exported with `--output type=local`), and the same 721 for the allowlist before #1424.
+
+**Reason:** the jour fixe wanted the gap found locally, before CI: the hub's tests run on every hub change and in
+the pre-push routine, and need neither Docker nor a network.
+
+**Rejected alternatives:**
+- A `docker build` of the context inside the test: needs a Docker daemon, which neither the hub's test jobs nor
+  most contributors' machines have, and the image job already does it.
+- The `docker` Python package's `exclude_paths` as the matcher: a new test dependency, pinned with hashes, for
+  about forty lines of matching rules.
+- A fixed list of the build inputs in the test: the next new input would be missing from it, as `hatch_build.py`
+  was from the allowlist.
+
 ## The image sets MALLOC_ARENA_MAX=2, because the process grew with every request through fragmented arenas
 
 **Id:** a20c28f6-6b1d-48c1-b60e-7fc9191e90df
