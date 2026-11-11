@@ -32,7 +32,8 @@ def configure_logging() -> None:
 
 def pool_shares(settings: Settings) -> tuple[int, int]:
     """The pooled connections of one process's sync and async engine, from its settings (after
-    `per_worker`): the async engine holds `db_async_pool_size`, at least one and never all, and
+    `per_worker`): the async engine holds `db_async_pool_size` (8 by default: every call
+    authenticates there), at least one and never all, and
     the sync engine the rest of the pool share and the whole overflow, so the two never ask for
     more than the pool share did alone (hub/context/replicas.md). That holds on a server
     database; on SQLite the engines take no pool sizes and keep SQLAlchemy's default for a file

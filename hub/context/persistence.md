@@ -1105,8 +1105,9 @@ lock on SQLite and MariaDB (`credentials.NonceWindow`, held for a dictionary loo
 over at most 10,000 entries); no password hash (scrypt runs in routes only: sign-in, registration,
 the account's settings), no mail, no forge call and no shared counter (`second_factor` counts a
 wrong code only in `verify`, a route). It writes no event and registers no `on_commit` step
-(`bridges.carry` included); it opens `engine.begin()`, not `events.transaction`, as before. On a server database the authentication takes one of the async
-engine's connections (`MAITY_DB_ASYNC_POOL_SIZE`, no overflow) for its few statements, so the
+(`bridges.carry` included); it opens `engine.begin()`, not `events.transaction`, as before. On a
+server database the authentication takes one of the async engine's connections
+(`MAITY_DB_ASYNC_POOL_SIZE`, 8 by default since PR 2, no overflow) for its few statements, so the
 `stats` line names that pool too (`async_pool_*`, `hub/context/serving.md`).
 
 **Reason:** the routes paid two thread hops (authentication, then the body) and competed for the

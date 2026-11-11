@@ -66,8 +66,8 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
     settings = _settings(MAITY_WORKERS="4", MAITY_DB_POOL_SIZE="16", MAITY_DB_MAX_OVERFLOW="6")
     share = serving.per_worker(settings)
     assert (share.db_pool_size, share.db_max_overflow) == (4, 1)  # never more than the total
-    # The async engine's part of the share, at least one: 2 // 4 rounds down to 0.
-    assert share.db_async_pool_size == 1 and serving.pool_shares(share) == (3, 1)
+    # The async engine's part of the share: the default 8 divided by the 4 workers.
+    assert share.db_async_pool_size == 2 and serving.pool_shares(share) == (2, 2)
     alone = replace(settings, workers=1)
     assert serving.per_worker(alone) is alone
 
