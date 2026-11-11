@@ -1003,8 +1003,8 @@ window.Maity = window.Maity || {};
     function shownOf(s, cards) {
       if (!(s === "done" || s === "cancelled") || shownWhole.has(s) || cards.length <= CLOSED_SHOWN) return { drawn: cards, rest: 0 };
       const kept = new Set(cards.slice().sort(closedLater).slice(0, CLOSED_SHOWN).map((c) => c.id));
-      // The marked card, and the cards it is folded under (subtasks are two levels deep at most): a
-      // folded child is found under its parent only where that parent is drawn (review of #1645).
+      // The marked card, and the card it is folded under: a folded child is found under its parent only
+      // where that parent is drawn (review of #1645). The walk up stops after three ids, whatever the data.
       for (let id = marked, depth = 0; id && depth < 3; id = byId[id] && byId[id].parent, depth++) kept.add(id);
       const drawn = cards.filter((c) => kept.has(c.id));
       return { drawn, rest: cards.length - drawn.length };
