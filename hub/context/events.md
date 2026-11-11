@@ -353,6 +353,7 @@ mark.
 **Evidence:** inferred
 **Source:** docs/api.md §9.3 "Pinned" (contract #914) and the card tsk-9a3ph3jvhhrb; the contract fixes the routes, the 20 across projects, the four bands and that a chat left keeps no pin; how the hub keeps that is this entry's reading
 **Revisit when:** a way to lose access to a chat appears that neither ends a stay nor removes a membership (a trust change that ends reading a round's thread along is one today), or the lists move into SQL
+**See:** https://github.com/oliver-zehentleitner/maity — 1820f379-0c1f-47c1-9352-672d62cdaf62 — as of 2026-11-11
 
 `conversation_pin` is keyed by human, project and chat id, not by membership: an owner outside the
 project reads its agents' chats along without a membership (§9.2) and may pin them, and the 20 are
@@ -362,8 +363,10 @@ membership's removal (its direct chats), and drops every pin of the project its 
 reads; `PUT …/pin` prunes the holder's own pins before it counts, under the human's row lock, so a
 pin lost some other way never blocks a new one and two projects cannot both take the 21st. A chat
 left and joined again therefore comes back unpinned. The lists add `pinned` after the entries are
-built and sort in Python, a stable sort per band; the cursor carries the band, and the cursor scope
-changed so a cursor from before the bands is refused instead of read wrongly.
+built and sort in Python, a stable sort per band. The bands are the contract's: pinned with unread,
+quietly pinned, unpinned with unread, the rest; an observer's null unread counts as none. The cursor
+carries the band. The scope names that order (`bands` is `pinned-top`), so a cursor from before the
+bands, and one from the earlier band order, is refused instead of read wrongly.
 
 **Reason:** the contract says a chat left keeps no pin, and a stale row would count against the 20
 and come back on a later join. The places where access ends are few and already central. The
