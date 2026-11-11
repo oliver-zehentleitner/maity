@@ -214,7 +214,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record whose `run_id` the placement already stored with other numbers (`details.reason: run_id_reused`, `details.record`, §15.15) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record whose `run_id` the placement already stored with other numbers (`details.reason: run_id_reused`) or whose run overlaps one it stored (`details.reason: run_overlaps`), each with `details.record` (§15.15) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -17304,10 +17304,12 @@ provider's request ids never leave the runner with a record.
 | Field | Values | Meaning |
 |---|---|---|
 | `run_id` | the runner's id for the run, 1–64 printable ASCII characters | identifies the run within the placement |
-| `started_at`, `ended_at` | timestamps | clamped by the hub into [the placement's `created_at`, hub time], `started_at` not after `ended_at` |
+| `started_at`, `ended_at` | timestamps | clamped by the hub into [the placement's `created_at`, hub time], `started_at` not after `ended_at`, and `started_at` not before the run's start as the hub saw it (below, "Which cards a run counts for") |
 | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | integers from 0 to 10^12, or `null` | `null`: the harness did not report it |
-| `cost` | `{amount, currency}` or `null` | the harness's own figure only: `amount` a decimal string ≥ 0 with at most 6 decimals, `currency` an ISO 4217 code in capitals; `null` when the harness gives none |
+| `cost` | `{amount, currency}` or `null` | the harness's own figure only: `amount` a decimal string from 0 to 10^9 with at most 6 decimals, `currency` an ISO 4217 code in capitals; `null` when the harness gives none |
 
+- Only the placement's runner sends it; for any other runner the
+  placement is `not_found`, as on every runner route (§15.8).
 - `201` with the stored record. A record for a placement whose `mode` is
   `interactive` is `invalid` (`details.reason: interactive`).
   A placement that is closed takes no record (`not_found`), so a runner
@@ -17322,7 +17324,7 @@ provider's request ids never leave the runner with a record.
   number, timestamp or cost is `conflict` (`details.reason:
   run_id_reused`, with the stored record in `details.record`): a runner
   that counts a run twice shows it instead of hiding it.
-- **A late record.** A record whose `ended_at`, as sent, lies more than
+- **A late record.** A record whose `started_at`, as sent, lies more than
   30 days before hub time is `invalid` (`details.reason: too_old`), a
   first send as much as a repeat. Records are kept 90 days, so every
   `run_id` the hub still accepts finds its stored record, and a resend
@@ -17340,24 +17342,57 @@ agent works on. When it stores the record, the hub records on the run
 every card the placement's instance held at any time between
 `started_at` and `ended_at` (§6.5): the cards it held when the run
 started and the ones it claimed before the run ended, whether it then
-reported them, closed them, released them or handed them over during
-the run. A run's work often ends a card before the run ends (a report
+closed them, released them or handed them over during the run. A report
+to `review`, or a card set `blocked`, keeps the claim (§6.5), so a card
+waiting in review keeps counting for every later run while its holder
+still holds it; a close (`done`, `cancelled`) or a release ends it. A run's work often ends a card before the run ends (a report
 with `done`, a release), so the cards held only at the run's end would
 miss the very card the run finished. A run while the instance held no
 card counts for no card. A card has one holding instance at a time, so
 no run counts twice for one card, however many instances of an agent
 work at once.
+
+The card row keeps only its current claim, so the hub keeps a
+**holding** per card and instance — `{card, membership, instance, from,
+until}` — for this alone: new hub state, a table of its own, which the
+card's claim columns do not replace. Every claim, move, takeover,
+cover, rejoin with `replaces` (§6.5, §15.14), release, isolation, close
+and cancel writes it: it opens a holding or ends one at that moment. A team claim
+opens none until an instance of the team calls (§6.5); a lease that
+runs out ends nothing, as it releases nothing. Retention: a holding is
+kept while it is open and for 30 days after its `until`, then deleted —
+for a card held by a placement's instance that is the placement's life
+plus 30 days. No accepted run started earlier than that (above, "A late
+record"), so every holding a record can touch is still there. A holding that touches [`started_at`, `ended_at`] at any point
+counts.
+
+**The run's start.** A runner could date `started_at` back and count one
+run for every card its instance ever held. The hub takes the start it
+saw: the latest report (§15.7) that set `run` to `open` at or before
+`ended_at`, by the hub's `reported_at`. `started_at` is clamped to not
+before the latest of that report, the placement's `created_at` and the
+`ended_at` of the placement's previous record; a placement that never
+reported an open run counts the run for no card. So a runner can stretch
+a run back no further than the moment the hub saw it open. A record whose clamped interval overlaps one already stored
+for the placement is `conflict` (`details.reason: run_overlaps`, with the
+stored record in `details.record`): a supervised placement runs one run
+at a time.
 - **A card's total** is the usage of the runs recorded for it. A run
   recorded for two cards counts in full for each, and both cards show it
   as shared (`shared_runs`); the hub never splits it, since any split
   would be a guess.
 - **An instance's and an agent's totals** count each run once, whatever
-  it was recorded for. An agent's total adds its instances.
+  it was recorded for. An agent's total adds its instances. A run counts
+  for the instance the placement had when the record was stored; an
+  instance replaced in place (§6.5, a rejoin with `replaces`) keeps its
+  totals under its own address, and the agent's total keeps both.
 
 **Sums and retention.** The hub keeps the records and, per day (UTC, by
-`ended_at`), running totals per card, per instance and per agent and
-project. A record older than 90 days is folded into those daily totals
-and deleted; the totals stay. The runs listed below are the records still
+`ended_at`), running totals per project and instance (the agent's
+instance), and per card and instance; a card's, an agent's and a
+project's totals add those. A record older than 90 days is folded into
+those daily totals and deleted; the totals stay, still keyed by the
+agent's instance, so a deletion below finds them. The runs listed below are the records still
 kept. The 30-day limit on a late record (above) keeps a deleted record's
 run from being counted again.
 
@@ -17391,8 +17426,10 @@ no agent has no usage: its member endpoint answers `invalid`
 statistics (§6.22) and the project badge (§6.20) never show usage.
 
 **Deletion and the export.** Usage belongs to the agent profile.
-Deleting the profile (§6.3) deletes its records and totals, and so does
-deleting the account that owns it (§2.9). Deleting a project deletes the
+Deleting the profile (§6.3) deletes its records and every daily total of
+its instances, the folded ones included, so a card's total drops that
+agent's share too; deleting the account that owns it does the same
+(§2.9). Deleting a project deletes the
 records and totals of that project; the agent's totals in its other
 projects stay. The owner's export
 (`GET /me/export`, §2.9) lists, per agent profile they own, the agent's

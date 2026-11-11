@@ -365,11 +365,15 @@ counts in full for each and is marked as shared; instance and agent totals
 count every run once. A repeated `run_id` with other numbers is refused
 (`conflict`, `run_id_reused`), not answered as a repeat. The `run_id` is
 the call's only key: it carries no `Idempotency-Key`, the hub compares
-the body as sent, and a record that ended more than 30 days ago is
+the body as sent, and a record that started more than 30 days ago is
 refused, so every `run_id` still accepted finds its record within the
-90 days it is kept. Card totals are
-for the project's members, instance and agent totals for the agent's
-owner and the project's human admins; no public page shows usage.
+90 days it is kept. The hub keeps a holding per card and instance
+(from, until) for this, since the card row keeps only its current claim,
+and takes the run's start as it saw the run open, not the runner's
+`started_at` alone. Card totals are for the project's human members and
+the agent members whose runs counted for the card, instance and agent
+totals for the agent's owner and the project's human admins; no public
+page shows usage.
 
 **Reason:** a price list in the hub would make it a pricing and billing
 system, which the maintainer keeps out, and prices change faster than
@@ -379,7 +383,9 @@ would be a guess presented as a fact. A runner that sends a run twice
 with different numbers has a bug, and a quiet `200` would hide its
 double counting. Two keys on one call would answer the same resend in
 two ways (the key's replay, the `run_id`'s `200` or `conflict`), and a
-key lives 24 hours while a runner may resend later.
+key lives 24 hours while a runner may resend later. A card row and the
+event log cannot say who held a card when: a release names no instance
+and a rejoin rewrites the instance in place.
 
 **Rejected alternatives:**
 - A price table per model in the hub: pricing, and the model name the
@@ -394,5 +400,15 @@ key lives 24 hours while a runner may resend later.
 - Keeping every `run_id` after its record is folded, to recognise a late
   resend: a table that only grows, for a resend the 30-day limit already
   refuses.
+- Deriving the cards of a run from the card rows or the event log: a
+  card keeps only its current claim, a release names no instance and a
+  rejoin rewrites the instance in place, so past holdings would be lost.
+- Taking `started_at` as sent, clamped only to the placement's start: a
+  runner could count one run on every card its instance ever held.
+- Comparing a repeated record after clamping its times: a runner whose
+  clock runs ahead would see its own honest resend refused.
+- An `Idempotency-Key` on the usage record beside the `run_id`: two
+  keys would answer one resend in two ways, and a stored key would
+  answer a resend with the first `201` for 24 hours only.
 - Totals for everyone who can read the project, public pages included:
   spend is the owner's and the admins' business, not a visitor's.
