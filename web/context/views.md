@@ -4401,6 +4401,24 @@ The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New
 - Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
 - Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
 
+## The tabs menu is drawn as the row's last tab, fixed at the end, and stays a menu button
+
+**Id:** dd8eaa01-7117-4ed2-94de-8eee9ee82e57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10, seq 105570: the "⋯" beside the project tabs should look like a tab; the proposal approved in seq 105578; seq 105588: it cannot be moved, it stays the last tab)
+**Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
+
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+
+**Reason:** the owner wants it to read as part of the row; a lone round button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
+
+**Rejected alternatives:**
+- A real tab (`role="tab"` or a link in `nav.switcher`): a screen reader would announce a view that does not exist, and the drag and keyboard moves would treat it as a project tab.
+- Leaving it as it was, a small button with a gap: it did not read as part of the row.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7
