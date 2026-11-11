@@ -13,6 +13,9 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
+  // A closed column draws the cards closed last up to this, the rest on "Show more" (tsk-a5pxwgkgr73e):
+  // 783 closed cards cost a full redraw about 640 ms in Chromium, 100 of them about 100 ms.
+  const CLOSED_SHOWN = 50;
   // The open column groups the board reads side by side; the closed one, with its window, after them.
   const LIST_GROUPS = ["proposed", "open", "in_progress", "blocked,review"];
   // The read of the cards changed while the groups were read (below): a page of the newest, and how
@@ -984,9 +987,40 @@ window.Maity = window.Maity || {};
       h("h3", { class: "column-head" }, label, closedWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
       closedWaiting(s) && !cards.length
         ? h("p", { class: closedError ? "send-status failed closed-read" : "muted closed-read" }, closedWords())
-        : cards.length ? cards.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"));
+        : cards.length ? shownOf(s, cards).drawn.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"),
+      moreButton(s, cards));
       if (closedWaiting(s) && !closedError) col.setAttribute("aria-busy", "true");
       return col;
+    }
+
+    // The cards a column draws: a closed one the CLOSED_SHOWN closed last (by closed_at, newest first)
+    // until Show more opened it for this view, and the marked card wherever it stands, so a link to it
+    // still finds it on the board, folded under a parent or not. They keep the column's order; only which
+    // of them are drawn changes.
+    const shownWhole = new Set();
+    const closedLater = (a, b) => ((a.closed_at || "") < (b.closed_at || "") ? 1 : (a.closed_at || "") > (b.closed_at || "") ? -1
+      : a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+    function shownOf(s, cards) {
+      if (!(s === "done" || s === "cancelled") || shownWhole.has(s) || cards.length <= CLOSED_SHOWN) return { drawn: cards, rest: 0 };
+      const kept = new Set(cards.slice().sort(closedLater).slice(0, CLOSED_SHOWN).map((c) => c.id));
+      // The marked card, and the card it is folded under: a folded child is found under its parent only
+      // where that parent is drawn (review of #1645). The walk up stops after three ids, whatever the data.
+      for (let id = marked, depth = 0; id && depth < 3; id = byId[id] && byId[id].parent, depth++) kept.add(id);
+      const drawn = cards.filter((c) => kept.has(c.id));
+      return { drawn, rest: cards.length - drawn.length };
+    }
+    // Show more draws the column whole; the first card it adds takes the focus, the button being gone.
+    function moreButton(s, cards) {
+      const { drawn, rest } = shownOf(s, cards);
+      if (!rest) return null;
+      const first = cards.find((c) => !drawn.includes(c));
+      return h("button", { type: "button", class: "small show-more", "data-focus": "more:" + s, onclick: () => {
+        shownWhole.add(s);
+        draw();
+        const el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === first.id);
+        const title = el && el.querySelector("a.card-open");
+        if (title || el) (title || el).focus();
+      } }, M.t("board.closed.show_more", { count: rest }));
     }
 
     // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
