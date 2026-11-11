@@ -2761,7 +2761,8 @@ environment winning as there:
   Second-factor and enrolment sessions open at the switch end at their
   next call (`ended_by: second_factor_disabled`; the first factor is done again, and now gives a full
   session). Existing enrolments stay stored and apply again when the
-  setting returns; each enrolled human gets a `second_factor_changed`
+  setting returns (meanwhile only a password reset asks for them,
+  §2.10); each enrolled human gets a `second_factor_changed`
   `{change: instance_off}` record and security mail, so the switch
   cannot pass unnoticed. Sessions made while it was `off` stay when it
   returns, listed with `second_factor: false` and without the good
@@ -3239,20 +3240,30 @@ code used here is consumed and writes `second_factor_changed` with
 
 An invalid, expired or used token, one of a password that has changed
 since, and a wrong TOTP or recovery code are all `code_invalid`, never
-which reason applies. A wrong code counts as every second-factor code of
-the human does (§2.8.6). The wrong codes at resets are also counted per
-human over 24 hours, across every link: the fifth in that window voids
+which reason applies. A code is compared, and counted, only under a live
+token: the token is checked first, and a dead one (invalid, expired,
+used, of an older password or address) answers `code_invalid` without
+comparing the code or counting it, so whoever kept an old link cannot
+void the human's new ones. A wrong code under a live token counts as
+every second-factor code of the human does (§2.8.6). The wrong codes at
+resets are also counted per human over 24 hours, across every link: the
+fifth in that window, and every further one in it, voids
 every open reset link of the human and writes the account record
 `second_factor_failed` `{method: password_reset, ip, browser, os}`, a
 `security` notification with its mail sent at once whatever the mode
 (§2.8.2, §18.4): someone held the mailbox but not the app. Spreading the
-guesses over fresh links changes nothing, so whoever holds the mailbox
-gets at most four unreported guesses a day, and the per-human limit of
+guesses over fresh links changes nothing, and the count does not restart
+after an alarm, so whoever holds the mailbox gets at most four
+unreported guesses a day, and the per-human limit of
 §2.8.6 still caps the rate. A token whose account
 was disabled since it was sent is `code_invalid` as well, and changes
 nothing.
-Where the sign-in step would fail closed for TOTP (no instance key,
-§2.8.1), `complete` does too, with the same answer.
+Where a TOTP code would have to be checked without a usable instance
+key (§2.8.1), whatever `second_factor` says, `complete` fails closed with
+the answer of the sign-in step. An enrolled human who lost the app and
+the recovery codes resets through the instance admin's second-factor
+reset or the operator (§2.8.3), under `off` too, where their own
+`DELETE /auth/second-factor` answers `method_disabled`.
 
 **The token** follows §18.6: the base64url of `{human id, purpose:
 "password_reset", nonce, expiry, password generation, epoch}` with an

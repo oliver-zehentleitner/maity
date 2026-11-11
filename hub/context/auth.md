@@ -388,7 +388,15 @@ nudge toward TOTP over a gate.
   keep guessing with fresh links unreported. Nor per link: four wrong codes on each of several
   links never reach a fifth on any one. The fifth wrong code at resets of one human in 24 hours,
   across links, voids every open reset link and writes `second_factor_failed`, as the sign-in
-  step does (reviews of the contract PR).
+  step does (reviews of the contract PR). A code under a dead token is neither compared nor
+  counted, so a former reader of an old mailbox cannot void the human's new links, and every
+  further wrong code in the window alarms again rather than restarting the count.
+- Under the instance's `second_factor: off`, a reset that follows the sign-in and asks for no
+  TOTP code: the mailbox alone would then set the password of a human who enrolled an
+  authenticator app. `off` turns the sign-in step off, not the enrolment the human made, and a
+  password outlives a link session. An enrolled human who lost the app gets out through the
+  admin's second-factor reset or the operator, since their own removal is refused under `off`
+  (review of the contract PR).
 
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 
