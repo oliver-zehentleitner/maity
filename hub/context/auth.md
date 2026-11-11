@@ -385,8 +385,10 @@ nudge toward TOTP over a gate.
   every human without TOTP. Reset mails got `password_reset_max_per_hour` instead (review of the
   contract PR).
 - Wrong TOTP codes at a reset counted only in the per-human limit: whoever holds the mailbox could
-  keep guessing with fresh links unreported. The fifth wrong code on one link voids it and writes
-  `second_factor_failed`, as the sign-in step does (review of the contract PR).
+  keep guessing with fresh links unreported. Nor per link: four wrong codes on each of several
+  links never reach a fifth on any one. The fifth wrong code at resets of one human in 24 hours,
+  across links, voids every open reset link and writes `second_factor_failed`, as the sign-in
+  step does (reviews of the contract PR).
 
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 

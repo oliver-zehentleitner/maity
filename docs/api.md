@@ -2796,7 +2796,7 @@ environment winning as there:
 |---|---|
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
-| Codes at a password reset (§2.10) | 5 wrong per reset link, then the link is void and `second_factor_failed` (`method: password_reset`) is written; every one also counts in the per-human limit above |
+| Codes at a password reset (§2.10) | 5 wrong per human in 24 hours, across all reset links; the fifth voids every open reset link of the human and writes `second_factor_failed` (`method: password_reset`); every one also counts in the per-human limit above |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -2807,7 +2807,7 @@ minutes at a time. It is accepted, as the device-code breaker in §2.6.4
 is: a limit per source address alone would let a distributed guess at
 six digits run, and the attacker it slows already holds the password or
 the mailbox, which the alerts of §2.8.2 report (at a password reset, the
-one of §2.10 after five wrong codes on one link). The same holds for the
+one of §2.10 after five wrong codes in a day). The same holds for the
 mail factor's hourly limit (§2.8.8): whoever holds the password can use
 up the human's ten mails and keep a human without TOTP out for an hour;
 every one of those mails tells the human that someone has the password.
@@ -3212,13 +3212,15 @@ code used here is consumed and writes `second_factor_changed` with
 An invalid, expired or used token, one of a password that has changed
 since, and a wrong TOTP or recovery code are all `code_invalid`, never
 which reason applies. A wrong code counts as every second-factor code of
-the human does (§2.8.6). The fifth wrong code on one token voids it and
-writes the account record `second_factor_failed` `{method:
-password_reset, ip, browser, os}`, a `security` notification with its
-mail sent at once whatever the mode (§2.8.2, §18.4): someone held the
-mailbox but not the app. Each new link starts its own count, so whoever
-keeps guessing with fresh links is reported every five codes, and the
-per-human limit of §2.8.6 still caps the guesses. A token whose account
+the human does (§2.8.6). The wrong codes at resets are also counted per
+human over 24 hours, across every link: the fifth in that window voids
+every open reset link of the human and writes the account record
+`second_factor_failed` `{method: password_reset, ip, browser, os}`, a
+`security` notification with its mail sent at once whatever the mode
+(§2.8.2, §18.4): someone held the mailbox but not the app. Spreading the
+guesses over fresh links changes nothing, so whoever holds the mailbox
+gets at most four unreported guesses a day, and the per-human limit of
+§2.8.6 still caps the rate. A token whose account
 was disabled since it was sent is `code_invalid` as well, and changes
 nothing.
 Where the sign-in step would fail closed for TOTP (no instance key,
@@ -3264,9 +3266,11 @@ settings (§18.4), `true` by default, `PATCH /me/notification-settings`
 reset mail to that human; `POST /auth/password-reset` still answers
 `202`, and `GET /auth/methods` is unchanged, since it never speaks
 about an account. Turning it off voids an open reset link. The
-dashboard shows the switch beside "Allow sign-in links by mail" with
-the sentence "Turn this off if an agent or anyone else can read this
-mailbox: whoever reads it can set your password" (§2.3). It is a key of
+dashboard shows the switch beside "Allow sign-in links by mail" with a
+sentence that fits the human's factor (§2.3): without TOTP, "Turn this
+off if an agent or anyone else can read this mailbox: whoever reads it
+can set your password"; with TOTP, "A reset by mail also needs a code
+from your authenticator app". It is a key of
 its own, apart from `email.sign_in_link`, because the reset is the
 stronger way in.
 
@@ -3277,11 +3281,15 @@ with `details.reason: method_disabled` (§2.6.5).
 
 **Toward an authenticator app.** A human whose second factor is the mail
 (`via: email` in `GET /auth/second-factor`, §2.8.1) sees a banner on
-every dashboard page: "Your sign-in rests on your mailbox alone: whoever
-reads it can reset your password and sign in. Set up an authenticator
-app", linking to Security in the account menu. "Later" hides it until the next
-sign-in; enrolling TOTP ends it. The reset mail and the reset page say
-the same (above).
+every dashboard page, linking to Security in the account menu. While a
+reset by mail could reach them — the instance offers it
+(`password_reset` in `GET /auth/methods`), their own switch is on and
+they have a password — it reads "Your sign-in rests on your mailbox
+alone: whoever reads it can reset your password and sign in. Set up an
+authenticator app"; otherwise "Your second factor is your mailbox. Set
+up an authenticator app: it is the stronger one". "Later" hides it until
+the next sign-in; enrolling TOTP ends it. The reset mail and the reset
+page say the first (above), since there a reset is under way.
 
 **Rules every method keeps.** §2.6.5 applies: transport, `Sec-Fetch-Site`
 (the three calls refuse `cross-site` and `same-site`, `forbidden`), and
