@@ -205,11 +205,87 @@ def _unreadable(branch: str) -> str:
     )
 
 
+def _default_branch(cwd: Path, remote: str) -> str | None:
+    """The remote's default branch: what `refs/remotes/<remote>/HEAD` points at (set by the
+    clone), else what the remote's HEAD names (`ls-remote --symref`); None when neither says."""
+    local = _git(cwd, "symbolic-ref", "--quiet", f"refs/remotes/{remote}/HEAD")
+    prefix = f"refs/remotes/{remote}/"
+    if local and local.startswith(prefix):
+        return local.removeprefix(prefix)
+    listing = _git(cwd, "ls-remote", "--symref", "--", remote, "HEAD") or ""
+    for line in listing.splitlines():
+        ref, _, name = line.partition("\t")
+        if name == "HEAD" and ref.startswith("ref: refs/heads/"):
+            return ref.removeprefix("ref: refs/heads/")
+    return None
+
+
+def _branch(cwd: Path) -> str | None:
+    """The branch HEAD is on, None when detached. Read as the full ref and cut, not with
+    `--short`: that gives `heads/<b>` when a tag `<b>` exists too, and `branch.<b>.*` would then
+    name another branch's configuration."""
+    ref = _git(cwd, "symbolic-ref", "--quiet", "HEAD")
+    if not ref or not ref.startswith("refs/heads/"):
+        return None
+    return ref.removeprefix("refs/heads/")
+
+
+def _remote_head(cwd: Path, remote: str, ref: str) -> str | None:
+    """The commit the remote's `ref` points at, None when it has no such ref. `ls-remote` takes
+    the pattern as a suffix (`refs/heads/<b>` also lists `refs/heads/x/refs/heads/<b>`), so only
+    a line naming exactly `ref` counts."""
+    for line in _git_required(cwd, "ls-remote", "--heads", "--", remote, ref).splitlines():
+        sha, _, name = line.partition("\t")
+        if name == ref:
+            return sha
+    return None
+
+
+@dataclass(frozen=True)
+class Retrack:
+    """What `track_own_branch` did: `note` when it set the upstream, `problem` when the branch
+    tracks the default branch and the remote has no branch of its name (nothing changed)."""
+
+    note: str | None = None
+    problem: str | None = None
+
+
+def track_own_branch(cwd: Path) -> Retrack:
+    """A branch whose upstream is the remote's default branch, as `git switch -c <b>
+    origin/main` sets it, is set to track its own branch of the same name on that remote:
+    `branch.<b>.merge` becomes `refs/heads/<b>`, the remote stays. Only when the remote has that
+    branch; else nothing changes and the problem names `git push -u`. Any other upstream, the
+    default branch itself and a detached HEAD are left as they are (cli/context/report.md)."""
+    branch = _branch(cwd)
+    if not branch:
+        return Retrack()
+    remote = _git(cwd, "config", "--get", f"branch.{branch}.remote")
+    merge_ref = _git(cwd, "config", "--get", f"branch.{branch}.merge")
+    if not remote or remote == "." or not merge_ref:
+        return Retrack()
+    _check_upstream(cwd, branch, remote, merge_ref)  # what git is asked about, checked first
+    tracked = merge_ref.removeprefix("refs/heads/")
+    if tracked == branch or tracked != _default_branch(cwd, remote):
+        return Retrack()
+    own = f"refs/heads/{branch}"
+    shown = without_userinfo(remote)
+    if _remote_head(cwd, remote, own) is None:
+        return Retrack(
+            problem=f"branch {branch} tracks {shown}/{tracked}, the default branch, and "
+            f"{shown} has no branch {branch}; push it with `git push -u {shown} {branch}`"
+        )
+    _git_required(cwd, "config", f"branch.{branch}.merge", own)
+    return Retrack(
+        note=f"branch {branch} tracked {shown}/{tracked}, the default branch; set "
+        f"branch.{branch}.merge to {own}, its own branch on {shown}"
+    )
+
+
 def collect(cwd: Path) -> Facts:
     head = _git(cwd, "rev-parse", "--verify", "HEAD")
     if head is None:
         raise FactsError(f"{cwd} is not a Git clone with at least one commit")
-    branch = _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
+    branch = _branch(cwd)
     # proc.GIT's diff.ignoreSubmodules keeps git out of submodules; a staged gitlink still shows.
     dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 
@@ -222,10 +298,7 @@ def collect(cwd: Path) -> Facts:
         if remote and merge_ref:
             _check_upstream(cwd, branch, remote, merge_ref)
             remote_branch = merge_ref.removeprefix("refs/heads/")
-            listing = _git_required(
-                cwd, "ls-remote", "--heads", "--", remote, merge_ref
-            ).splitlines()
-            remote_head = listing[0].split()[0] if listing else None
+            remote_head = _remote_head(cwd, remote, merge_ref)
 
     unknown = _forge_unknown(cwd, remote)
     pr = forge_error = None

@@ -188,6 +188,7 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
             t.project.c.slug,
             t.project.c.name,
             t.project.c.state,
+            t.project.c.public_page,
         )
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.human_id == human_id, t.membership.c.removed_at.is_(None))
@@ -206,6 +207,9 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
                 names[row.project_id],
             ),
             "open_requests": open_requests(conn, row.id),
+            # The project's own setting (§16.9), so the tabs mark a private project without a read
+            # per project (§5.1); whether a page is served is the public read's business.
+            "public_page": row.public_page,
         }
         for row in rows
     ]

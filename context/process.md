@@ -1347,17 +1347,24 @@ for the newest run to finish.
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
 **Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
 
-`hub-sqlite`, `hub-postgresql` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`; every other job
-`ci-ok` waits for carries 30 (`web-e2e` keeps its 15). Without it a job runs to GitHub's limit of six hours; while main's one
-running ci run hangs, every newer push only replaces the waiting run (the entry above), so nothing on main finishes and the
-MariaDB start from `ci` never comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29
-(MariaDB, on the rented runners); the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a
-slow runner and still fail a hang the same evening.
+(2026-11-10: `web-e2e` now carries 30 as well. Its 15 had become too tight: in the last 60 `ci` runs before the change (ids
+42825184191 to 42853402637, 13:30 to 16:19 UTC; the jobs that had finished by 16:35 UTC), its 44 green jobs took 835 s
+median and up to 893 s, 12 of them 870 s or more, and on #1610 one ran past 900 s and was cancelled after its end-to-end
+step had passed, in `pseudo_run.py --strict`. Card tsk-w81egrhwz7a7. The same day `hub-postgresql` went to 120; see the
+paragraph after the rejected alternatives.)
+
+`hub-sqlite` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`, `hub-postgresql` 120 since
+2026-11-10 (90 before); every other job `ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15
+until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one running ci run hangs, every newer
+push only replaces the waiting run (the entry above), so nothing on main finishes and the MariaDB start from `ci` never
+comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29 (MariaDB, on the rented runners);
+the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a slow runner and still fail a hang
+the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
@@ -1370,6 +1377,19 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+(2026-11-10, needs-review: the revisit condition above has fired. In the last 100 `ci` runs (ids 42819492463 to 42872347637,
+12:52 to 18:09 UTC; the jobs that had finished by 18:19 UTC), the 12 green `hub-postgresql` jobs took 73 minutes median and
+up to 88, 9 of them 70 or more; in main's last 60 `ci` runs (from 2026-11-09 11:51 UTC), its green jobs took about 68
+minutes median on 2026-11-09 and 86 on 2026-11-10. Each of the 12 ran about 6,600 tests on a hosted runner with 4 cpus and 4
+workers (read from their logs), so the growth did not come from the number of tests; that it came from the runners is an
+inference, since no run compares one commit on two runners. `hub-postgresql` now carries 120 so that a slow runner does not
+cancel a green run; the title's "90 minutes for the database jobs" holds for `hub-sqlite` and `hub-mariadb` only. Whether 90
+stays the rule for the database jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite`
+keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 minutes median and up to 54.)
+
+(2026-11-10, later: `hub-postgresql` runs in three shards, each with the 120-minute limit; the first sharded run's legs took
+19 to 29 minutes. See the entry on the shards, f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
 
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
@@ -1399,9 +1419,11 @@ depends on a human; the approval has to come from Oliver).
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
 **See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
-`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
+with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
 setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
-once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's limit (90 minutes,
+120 since 2026-11-10, 97f338fd). The log then
 already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
 when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
 fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
@@ -1411,8 +1433,9 @@ about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
 300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
 costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
 (`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
-300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
-an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s was
+an eighteenth of the then 90 minutes (a twenty-fourth of the 120 since 2026-11-10), so a hang shows where it waits early
+in the run.
 
 **Rejected alternatives:**
 - `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
@@ -1441,6 +1464,52 @@ passes is confirmed (proof run on #1316, and a local counter-check without the s
 hang's dump itself names no test is confirmed by the #1255 log and by a local reproduction in the review of #1319; that
 without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the
 value is the author's weighing, not measured against a real hang beyond #1255.
+
+## hub-postgresql runs in three shards by test file, each with its own PostgreSQL
+
+**Id:** f150febd-ce19-4493-9a97-cfc3bc1c01fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
+**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
+**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+
+`hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
+keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
+deselected, and a malformed value stops the run before collection. Each leg has its own PostgreSQL
+service and the 120-minute limit. ci-ok's `needs` is unchanged: a matrix job's result is the result
+over all its legs, so one red or cancelled leg fails ci-ok as before; ci-ok stays the one required
+check. Locally the three shards together collect the whole suite (2125, 2288 and 2227 of 6640 tests, counted at the head that adds `hub/tests/test_test_shard.py`).
+
+**Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
+only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
+over the suite. Three legs side by side cut the wall time as far as the shards take about the same
+time and three runners are free at once: the first sharded run, ci 42909006763 on hosted runners
+(2026-11-10), took 25.0, 29.1 and 19.4 minutes per leg, so about 29 minutes against 59 to 85 for
+the whole suite; one run, not yet a median. By file, a test file stays in one leg, so a fixture set
+up once per file (today only the S3 server of `test_attachments_s3.py`, scope `module`) starts in
+one leg only. The session fixtures start once per xdist worker in every leg whichever way the
+suite is split, and within a leg a module fixture starts once per worker that runs some of its
+file's tests.
+
+**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set and `pg` among `HUB_RUNNER_TYPES`
+(unset means all three) the job asks for the maintainer's
+one `pg` runner, where the three legs run one after another (the service keeps the fixed host port
+5432, so two legs must not share that machine at once). Whether main's `hub-postgresql` stays there
+or goes to hosted runners is the owner's to decide; `HUB_RUNNER_TYPES` without `pg` is the switch,
+and it needs no commit.
+
+**Rejected alternatives:**
+- Speeding up the slowest tests first (plan B): making all 50 free would save 2 to 3 minutes of wall
+  time.
+- Sharding by test node id, as the card's plan said first: a file's tests would spread over the
+  legs, and each leg would set up that file's module fixtures again. Today that is one fixture, so
+  the gain is small; the split by file keeps it from growing with new ones.
+- A random host port for the service, so that two legs could share a runner: not needed for hosted
+  runners, and the self-hosted machine runs one job per type by design (the entry on one runner
+  service per database job type).
+- A sharding plugin: a new dependency in the hashed locks for what one hook does.
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
@@ -1554,6 +1623,8 @@ each command is checked only once.
 **Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
 **See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
 
+(2026-11-10: the fixture-only rule below, and its rejected "screenshots of a real hub", are reversed by the maintainer for his own screenshots: see e148b060-628a-43ae-a5bf-35270d1c1b75. Where the images live, how the site points at them, and the 1600 px and 256-colour reduction still hold.)
+
 The images of the docs pages are files in `docs/img/`, linked from the
 Markdown with a relative path, so they show on GitHub as on the site.
 `tools/site_docs.py` rewrites a relative image the way it rewrites a link:
@@ -1601,6 +1672,42 @@ state that holds nothing private.
   enough.
 - Screenshots of a real hub: real names and data in the repository; the
   fixtures exist for this.
+
+## Docs screenshots may show the real hub with the maintainer's own data; they are still reduced to 1600 px and 256 colours
+
+**Id:** e148b060-628a-43ae-a5bf-35270d1c1b75
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to request req-wj3x9gr5nazr on card tsk-8cjckxxbvhm1 (pull request #1601), 2026-11-10T15:03:20Z, option o1; his go for the board picture's visible card text and tabs the same day ("passt schon nimm die")
+**Revisit when:** a screenshot would show someone else's account, a secret (a token, a join code, an address) or a private project; or the screenshots are made by a script
+**See:** process.md#docs-images-and-diagrams-live-in-docsimg-screenshots-are-of-fixture-mode-and-the-site-points-a-relative-image-at-the-deployed-file — 7f3f6220-0bf0-4d81-8521-5761b877a1dd — as of 2026-11-10
+
+The screenshots of the board, the inbox and Create a project in `docs/img/` are the
+maintainer's own, taken on the real hub. They show his name, his projects' tabs, agent
+handles, a session id and a card's checkpoint text, and no mail address, token or join
+code. They are scaled to 1600 px wide and reduced to 256 colours (libimagequant, then
+oxipng level 4), as 7f3f6220 says, which keeps their text readable.
+
+The request asked whether to lift the fixture-only rule of 7f3f6220. Its options, verbatim:
+
+- o1: "(a) So veröffentlichen, alte Regel aufheben"
+- o2: "(b) Session-ID und OVH-Zeile schwärzen"
+- o3: "(c) Neu im Fixture-Modus aufnehmen"
+- o4: "Erst besprechen"
+
+The answer was o1, given without a text.
+
+**Reason:** the maintainer had already released what the pictures show, and the request
+recommended (a), since real pictures look better than fixture data. The reduction stays
+because every version of an image stays in the history.
+
+**Rejected alternatives:**
+
+- o2, blacking out the session id and the checkpoint's hosting line: not chosen.
+- o3, new screenshots in fixture mode, which keeps the old rule but looks less real.
+- Publishing at full size (2554 px, truecolour, about 787 KB for three): against the
+  reduction of 7f3f6220, which this answer keeps.
 
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 

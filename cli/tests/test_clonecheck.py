@@ -120,6 +120,116 @@ def test_an_entry_a_plain_clone_has_not_is_refused(placed: Path) -> None:
         gitfacts.collect(placed)
 
 
+# What one sandboxed Claude Code session left in a clone, and a plain clone has not: Claude
+# Code 2.1.321, bubblewrap (cli/context/runner.md). A trailing `/` is an empty directory.
+SANDBOX_LEFT = (
+    "config.worktree",
+    "objects/info/alternates",
+    "remotes/",
+    "info/.claude-sandbox-noreplace/",
+    "objects/info/.claude-sandbox-noreplace/",
+    "objects/info/commit-graphs/.claude-sandbox-noreplace/",
+)
+
+
+def _leave(clone: Path, entries: tuple[str, ...]) -> None:
+    for entry in entries:
+        path = clone / ".git" / entry
+        if entry.endswith("/"):
+            path.mkdir(parents=True, exist_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+
+
+def test_what_the_sandbox_leaves_empty_reads_as_before(placed: Path) -> None:
+    """Empty, they change nothing git does; without this, the next start of a placement whose
+    session ran sandboxed refused its own clone (tsk-2zz5tjpbt28n)."""
+    _leave(placed, SANDBOX_LEFT)
+    assert gitfacts.mismatches(gitfacts.collect(placed)) == []
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "config.worktree",
+        "objects/info/alternates",
+        "objects/info/http-alternates",
+        "remotes/origin",
+        "info/.claude-sandbox-noreplace/hook",
+        "objects/info/.claude-sandbox-noreplace/pack",
+        "objects/info/commit-graphs/.claude-sandbox-noreplace/graph",
+    ],
+)
+def test_a_sandbox_placeholder_with_anything_in_it_is_refused(placed: Path, entry: str) -> None:
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[core]\n\tsparseCheckout = true\n")
+    with pytest.raises(gitfacts.FactsError, match=r"not a plain clone's|exists|not supported"):
+        gitfacts.collect(placed)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no FIFOs in a file system")
+@pytest.mark.parametrize(
+    "entry", ["config.worktree", "objects/info/alternates", "remotes", "commondir"]
+)
+def test_a_fifo_in_place_of_a_placeholder_is_refused(placed: Path, entry: str) -> None:
+    """Empty means an empty regular file or directory: a FIFO (or a socket, a device) is
+    neither, and a local read lists it with no type of its own (4hv7)."""
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    if path.is_dir():
+        path.rmdir()
+    elif path.exists():
+        path.unlink()
+    os.mkfifo(path)
+    with pytest.raises(gitfacts.FactsError, match="not a regular file or directory"):
+        gitfacts.collect(placed)
+
+
+@pytest.mark.parametrize("entry", ["config.worktree", "remotes"])
+def test_a_link_in_place_of_a_placeholder_is_refused(placed: Path, entry: str) -> None:
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    if path.is_dir():
+        path.rmdir()
+    else:
+        path.unlink()
+    path.symlink_to(placed / "elsewhere")
+    with pytest.raises(gitfacts.FactsError, match="is a symlink"):
+        gitfacts.collect(placed)
+
+
+@pytest.mark.parametrize("entry", ["remotes/.hidden", "info/.claude-sandbox-noreplace/.hidden"])
+def test_a_hidden_entry_in_a_placeholder_is_refused(placed: Path, entry: str) -> None:
+    _leave(placed, SANDBOX_LEFT)
+    (placed / ".git" / entry).touch()
+    with pytest.raises(gitfacts.FactsError, match="not a plain clone's"):
+        gitfacts.collect(placed)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="POSIX modes; root lists any directory",
+)
+@pytest.mark.parametrize("entry", ["remotes", "info/.claude-sandbox-noreplace"])
+def test_a_placeholder_that_cannot_be_listed_is_refused(placed: Path, entry: str) -> None:
+    """Unlisted, a directory would look empty and pass as a placeholder, with a file in it
+    git reads (gb8w: a `remotes/other` behind mode 0311). Both listings refuse it."""
+    from maity.runner.asuser import RUNNER
+
+    _leave(placed, SANDBOX_LEFT)
+    here = placed / ".git" / entry
+    (here / "other").write_text("URL: https://example.invalid/other.git\n")
+    here.chmod(0o311)
+    try:
+        for files in (clonecheck.LOCAL, RUNNER):
+            assert clonecheck.not_inspectable(placed, files) == "its .git cannot be listed in full"
+    finally:
+        here.chmod(0o755)
+
+
 def test_without_git_common_dir_nothing_runs(placed: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GIT_COMMON_DIR")
     with pytest.raises(gitfacts.FactsError, match="without GIT_COMMON_DIR"):

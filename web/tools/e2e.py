@@ -519,6 +519,16 @@ def totp_code(secret: str, step: int) -> str:
     return str(value % 10**6).zfill(6)
 
 
+def wrong_totp_code(secret: str) -> str:
+    """A code the hub must refuse: none of the codes for now ± 2 steps.
+
+    The hub takes now ± 1 step, so a fixed "000000" is the real code by chance in about
+    3 of a million runs (tsk-4hn9nv7dbxw4); the extra step on each side covers a slow page."""
+    step = int(time.time() // 30)
+    valid = {totp_code(secret, s) for s in range(step - 2, step + 3)}
+    return next(c for c in (str(d) * 6 for d in range(10)) if c not in valid)
+
+
 def stop_hub(hub: subprocess.Popen) -> None:
     if hub.poll() is None:
         hub.terminate()  # exactly the PID this script started
@@ -2218,7 +2228,7 @@ def security_section(run: Run, browser) -> None:
     run.a11y(page, "security: off")
     secret = set_up_factor(page)
     step = int(time.time() // 30)
-    turn_on(page, "000000")
+    turn_on(page, wrong_totp_code(secret))
     expect(section).to_contain_text("That code is not valid.")
     turn_on(page, totp_code(secret, step))
     expect(page.locator(".security-code-list li")).to_have_count(10)
@@ -2336,7 +2346,7 @@ def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
     expect(code).to_be_visible()
     run.shot(older, "second-hub-step-up")
     run.a11y(older, "second hub: the step-up question")
-    code.fill("000000")
+    code.fill(wrong_totp_code(secret))
     older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
     # A step after the enrolment's, which is used up; the hub takes only now ± 1 step, so after a
@@ -2524,11 +2534,11 @@ def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
     code = section.locator("#admin-sign-in-code")
     expect(code).to_be_visible()
     run.shot(page, "admin-sign-in-code")
-    mailed = re.search(r"(\d{3} \d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+    mailed = re.search(r"(?<![\w-])(\d{6})(?![\w-])", newest_mail(catcher, MAIL_ADDRESS, seen))
     assert mailed, "no code in the mail"
     # Nothing has changed until the code is typed, and a wrong one is said.
     assert page.evaluate("""() => window.Maity.api.get("/admin/settings/sign-in")""")["second_factor"]["value"] == "optional"
-    wrong = "000 001" if mailed.group(1) != "000 001" else "000 002"
+    wrong = "000 001" if mailed.group(1) != "000001" else "000 002"
     code.fill(wrong)
     section.get_by_role("button", name="Turn on", exact=True).click()
     expect(section.locator("#admin-sign-in-code-error")).to_have_text("That code is wrong or was used.")
@@ -2890,18 +2900,22 @@ CHAT_MEASURE = """() => {
   const box = (sel) => { const el = document.querySelector(sel); if (!el) return null;
     const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, height: b.height }; };
   return { overflow: document.scrollingElement.scrollHeight - window.innerHeight,
+    vh: window.innerHeight,
     history: box('.chat-layout.open .chat-pane .messages'), compose: box('.chat-layout.open .chat-pane .compose'),
     footer: box('#product-line'), errors: window.__errors.slice() };
 }"""
 
 
 def chat_height_views(run: Run, browser) -> None:
-    """The open chat against the window (tsk-j10w2hsm1h90), in fixture mode: on a project's Chat
-    tab and on Chats, direct and group, at 1280 x 800, 390 x 844 and 375 x 667; and after the pane
-    grew or shrank inside (the composer folded, shown, three times its rows, a group's Manage opened). Without the sign-in banner the
-    page ends at the window's bottom edge; with it (a phone has no room then) the page scrolls, but
-    the history keeps some height and the composer never runs under the product line. A
-    ResizeObserver loop is reported on window only, so a collector there counts it as an error."""
+    """The open chat against the window (tsk-j10w2hsm1h90, tsk-df4tcq83pnf6), in fixture mode: on a
+    project's Chat tab and on Chats, direct and group, at 1280 x 800, 390 x 844 and 375 x 667; and
+    after the pane grew or shrank inside (the composer folded, shown, three times its rows, a group's
+    Manage opened). Without the sign-in banner the composer stays inside the viewport (its bottom
+    at or above the window's edge); where the window has room the page ends at that edge, and on a
+    short phone the product line may sit just below the fold rather than pushing the input off
+    screen. With the banner (a phone has no room then) the page may scroll, but the history keeps
+    some height and the composer never runs under the product line. A ResizeObserver loop is
+    reported on window only, so a collector there counts it as an error."""
     run.step("fixtures: the open chat ends at the window's bottom edge, the composer above the product line")
     index = (WEB / "index.html").as_uri()
     # 375 x 667 is too small for a composer and 60 px of history: there the page scrolls, never overlaps.
@@ -2941,12 +2955,31 @@ def chat_height_views(run: Run, browser) -> None:
                     m = page.evaluate(CHAT_MEASURE)
                     where = f"{route} at {width}x{height}" + (" with the sign-in banner" if banner else "")
                     assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
-                    assert m["history"]["height"] >= 56, f"{where}: the history is {m['history']['height']:.0f} px tall"
+                    # Some history always. Preferred ~60 px floor when the window can take the
+                    # fixed chrome plus that floor without the banner; otherwise history may
+                    # shrink so the composer stays in view (tsk-df4tcq83pnf6).
+                    assert m["history"]["height"] >= 8, f"{where}: the history is {m['history']['height']:.0f} px tall"
+                    if fits and not banner:
+                        assert m["history"]["height"] >= 56, (
+                            f"{where}: the history is {m['history']['height']:.0f} px tall (preferred floor)"
+                        )
                     assert m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, (
                         f"{where}: the composer ends at {m['compose']['bottom']:.0f}, the product line starts at {m['footer']['top']:.0f}"
                     )
+                    # Without the banner the input stays in the viewport (tsk-df4tcq83pnf6), a group
+                    # chat on a short phone too (on the project's Chat tab its composer ran to 681 at
+                    # 375 x 667 before the fix). Only grown chrome (Manage opened, below) may exceed it.
+                    if not banner:
+                        assert m["compose"]["bottom"] <= m["vh"] + 0.5, (
+                            f"{where}: the composer ends at {m['compose']['bottom']:.0f}, past the window ({m['vh']})"
+                        )
                     if fits and not banner:
                         assert m["overflow"] <= 1, f"{where}: the page scrolls {m['overflow']} px past the window"
+                    elif not banner and "cnv-" not in route:
+                        # Short phone, direct chat: product line may sit just below the fold.
+                        assert m["overflow"] <= m["footer"]["height"] + 24, (
+                            f"{where}: the page scrolls {m['overflow']} px past the window (footer {m['footer']['height']:.0f})"
+                        )
                     toggle = page.locator(".chat-layout.open .chat-pane .compose-toggle")
                     if toggle.is_visible():
                         # Folding the composer changes the pane's fixed part, not the body: measured again.
@@ -2959,9 +2992,17 @@ def chat_height_views(run: Run, browser) -> None:
                             f"{where}, composer folded: the page scrolls {folded['overflow']} px past the window"
                         )
                         unfolded = page.evaluate(CHAT_MEASURE)
-                        assert unfolded["history"]["height"] >= 56 and unfolded["compose"]["bottom"] <= unfolded["footer"]["top"] + 0.5, (
+                        assert unfolded["history"]["height"] >= 8 and unfolded["compose"]["bottom"] <= unfolded["footer"]["top"] + 0.5, (
                             f"{where}, composer folded and shown again: {unfolded}"
                         )
+                        if fits and not banner:
+                            assert unfolded["history"]["height"] >= 56, (
+                                f"{where}, composer folded and shown again: history {unfolded['history']['height']:.0f}"
+                            )
+                        if not banner:
+                            assert unfolded["compose"]["bottom"] <= unfolded["vh"] + 0.5, (
+                                f"{where}, composer folded and shown again: past the window: {unfolded}"
+                            )
                     # What grows inside the pane after it was fitted: the composer three times its
                     # rows (a wide screen), a group's "Manage or leave" opened.
                     grown = []
@@ -2981,7 +3022,8 @@ def chat_height_views(run: Run, browser) -> None:
                         page.wait_for_timeout(300)
                         back = page.evaluate(CHAT_MEASURE)
                         what = ", ".join(n for n, _ in grown)
-                        assert g["history"]["height"] >= 56 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
+                        # Grown chrome can exceed the window; composer must stay above the product line.
+                        assert g["history"]["height"] >= 8 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
                         # And back: the pane shrinks again by itself, as a fresh fit (a window resize) would size it.
                         page.evaluate("() => window.dispatchEvent(new Event('resize'))")
                         page.wait_for_timeout(300)
@@ -3000,7 +3042,11 @@ def chat_height_views(run: Run, browser) -> None:
             m = page.evaluate(CHAT_MEASURE)
             where = f"Chats with the sign-in banner, agt-a then cnv-0007, at {width}x{height}"
             assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
-            assert m["history"]["height"] >= 56 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, f"{where}: {m}"
+            # Banner stays for this switch: on a phone the group pane's chrome can leave
+            # less than the preferred history floor while the composer stays above the product line.
+            assert m["history"]["height"] >= 8 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, f"{where}: {m}"
+            if fits and width >= 1280:
+                assert m["history"]["height"] >= 56, f"{where}: history {m['history']['height']:.0f} (preferred floor)"
             page.evaluate("() => window.dispatchEvent(new Event('resize'))")
             page.wait_for_timeout(300)
             fresh = page.evaluate(CHAT_MEASURE)
@@ -3943,6 +3989,7 @@ def board_cards_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "board cards")
     two_signatures_step(run, page)
     public_page_step(run, page)
+    private_lock_step(run, page)
     request_action_step(run, page)
     board_order_step(run, page)
     overview_step(run, page)
@@ -4135,6 +4182,48 @@ def visitor_step(run: Run, page: Page) -> None:
         form.locator("#public-page").set_checked(False)
         form.get_by_role("button", name="Save", exact=True).click()
         expect(page.locator("main")).to_contain_text("Public page saved.")
+
+
+def private_lock_step(run: Run, page: Page) -> None:
+    """A private project carries a lock after its name, a public one none (tsk-5t3qd0m9rj6r; the owner's
+    word on req-tj5y18pc44qz: it follows the project's public_page, which /me now carries, §5.1)."""
+    run.step("private lock: E2E Beta made private shows a lock in its tab, the header and the tabs menu")
+    form = page.locator("form.public-page-form")
+    page.goto(f"{run.base}/owner/e2e-beta/settings")
+    was_on = form.locator("#public-page").is_checked()
+    if was_on:
+        form.locator("#public-page").set_checked(False)
+        form.get_by_role("button", name="Save", exact=True).click()
+        expect(page.locator("main")).to_contain_text("Public page saved.")
+    try:
+        mine = {p["full_name"]: p["public_page"] for p in page.request.get(f"{run.base}/api/v1/me").json()["projects"]}
+        assert mine.get("owner/e2e-beta") == "off", mine
+        page.goto(f"{run.base}/owner/e2e-beta/inbox")
+        tab = lambda name: page.locator("nav.switcher a[data-project]", has_text=name)
+        expect(tab("E2E Beta").get_by_role("img", name="Private", exact=True)).to_have_count(1)
+        # Alpha's lock follows its own setting, whatever the public page step left it at.
+        expect(tab("E2E Alpha").locator(".private-mark")).to_have_count(1 if mine.get("owner/e2e-alpha") == "off" else 0)
+        expect(page.locator("header .bar .project").get_by_role("img", name="Private", exact=True)).to_have_count(1)
+        expect(tab("E2E Beta").locator(".private-mark")).to_have_attribute("title", "This project is private: only its members can read it.")
+        for width in (1280, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            run.shot(page, f"private-lock-tabs-{width}")
+            box = page.locator(".tabs-menu-box")
+            box.get_by_role("button", name="Project tabs", exact=True).click()
+            expect(box.get_by_role("menuitemcheckbox", name="E2E Beta").locator(".private-mark")).to_have_count(1)
+            run.shot(page, f"private-lock-menu-{width}")
+            page.keyboard.press("Escape")
+        run.a11y(page, "private lock: tabs and header")
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+        expect(page.locator("header .bar .project .private-mark")).to_have_count(1 if mine.get("owner/e2e-alpha") == "off" else 0)
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        if was_on:
+            page.goto(f"{run.base}/owner/e2e-beta/settings")
+            form.locator("#public-page").set_checked(True)
+            form.get_by_role("button", name="Save", exact=True).click()
+            expect(page.locator("main")).to_contain_text("Public page saved.")
+    no_problems(run, "private lock")
 
 
 def public_page_step(run: Run, page: Page) -> None:
@@ -5074,6 +5163,18 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/team")
     page.locator("main .members-agents").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
+    # Each credential names its instance as <handle>#<id> (tsk-s0jb9wkdp41j), read here with the
+    # owner's session, so the agent's bearer use stays as the signing check below reads it.
+    listed = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    agent = next(m for m in listed if m["id"] == agent_id)
+    credentials = page.request.get(
+        f"{run.base}/api/v1/projects/owner/e2e-alpha/members/{agent_id}/credentials"
+    ).json()["items"]
+    active = [c for c in credentials if not c["revoked_at"]]
+    assert active and all(c.get("instance") for c in active), credentials
+    for c in active:
+        row = page.locator("main tr.member-manage .credentials li", has=page.locator("code", has_text=c["id"]))
+        expect(row.locator(".credential-instance")).to_contain_text(f"{agent['handle']}#{c['instance']}")
     # Its bridges (§2.3, tsk-x0krjnw8p78t): the owner connects the reviewer (one owner behind
     # both, so at once), the hub's member views carry it on both sides, then End ends it. Read
     # with the owner's session: a CLI call would sign with the agent's credential and change
@@ -6237,6 +6338,28 @@ def project_tabs_step(run: Run, page: Page) -> None:
     menu.get_by_role("button", name="Project tabs", exact=True).click()
     menu.get_by_role("menuitem", name="Keep these tabs at start", exact=True).click()
     expect(page.locator(".tabs-said")).to_have_text("Saved: a browser with no tabs of its own yet opens these.")
+    # New project in the tabs menu too, beside the projects (tsk-c4dz5x6rb2h8), at desktop and phone width;
+    # it opens the create form, and the header's "+" keeps its own entry.
+    size = page.viewport_size
+    try:
+        for width in (1280, 390):
+            page.set_viewport_size({"width": width, "height": 844})
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox")
+            menu.get_by_role("button", name="Project tabs", exact=True).click()
+            new_item = menu.get_by_role("menuitem", name="New project", exact=True)
+            expect(new_item).to_be_visible()
+            if width == 390:
+                run.a11y(page, "tabs menu, new project, phone")
+            new_item.focus()
+            page.keyboard.press("Enter")
+            expect(page).to_have_url(re.compile(r"/new$"))
+            expect(page.locator("main h2", has_text="Create a project")).to_be_visible()
+        page.locator("header button.add-menu").click()
+        expect(page.locator("header .menu-box:has(button.add-menu)").get_by_role("menuitem", name="Project", exact=True)).to_be_visible()
+        page.keyboard.press("Escape")
+    finally:
+        if size:
+            page.set_viewport_size(size)
     # A fresh browser profile: no tabs of its own, so it opens the account's start set.
     fresh, other = signed_in_page(run, page.context.browser)
     try:

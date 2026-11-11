@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 from sqlalchemy.orm import aliased
 
-from maity_hub import avatars, catalog, clock, events, inbox, namespace
+from maity_hub import avatars, catalog, clock, events, inbox, invitations, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
@@ -304,6 +304,12 @@ def _may_concern(mine: Membership) -> Any:
     another member that no admin pool holds, nobody covers, and the member neither holds
     nor asked: agents asking each other, which make no item of the human's
     (tsk-spa1tad26vs1)."""
+    return may_concern_member(mine.id)
+
+
+def may_concern_member(member_id: int) -> Any:
+    """`_may_concern` by the membership's id, for the held long-poll's look
+    (`listing.quietly_moved`), which reads the stamp's memberships, not a `Scope`."""
     r = t.request.c
     return (
         select(r.id)
@@ -312,16 +318,26 @@ def _may_concern(mine: Membership) -> Any:
             r.personal.is_(False),
             or_(
                 r.to_kind != "member",
-                r.to_member == mine.id,
-                r.holder_member == mine.id,
+                r.to_member == member_id,
+                r.holder_member == member_id,
                 r.holder_pool.is_(True),
                 r.cover.is_not(None),
-                r.asked_by == mine.id,
-                r.on_behalf_of == mine.id,
+                r.asked_by == member_id,
+                r.on_behalf_of == member_id,
             ),
         )
         .exists()
     )
+
+
+def names(human_id: str) -> Any:
+    """`_names`, for the held long-poll's look (`listing.quietly_moved`)."""
+    return _names(human_id)
+
+
+def addressed(human_id: str) -> Any:
+    """`_addressed`, for the held long-poll's look (`listing.quietly_moved`)."""
+    return _addressed(human_id)
 
 
 def _names(human_id: str) -> Any:
@@ -676,7 +692,7 @@ def _personal_kind(request: Any) -> str:
     an invitation by handle files (§3.4), so that its bell, push and mail follow that kind's
     settings (§18.4); `inbox` for every other."""
     proposal = request.proposal if isinstance(request.proposal, dict) else {}
-    return "invitation" if proposal.get("kind") == "invitation" else "inbox"
+    return "invitation" if proposal.get("kind") == invitations.KIND else "inbox"
 
 
 def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[Any]) -> list[Item]:

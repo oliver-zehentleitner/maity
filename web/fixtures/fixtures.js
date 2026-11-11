@@ -1631,6 +1631,7 @@ window.MAITY_FIXTURES = {
           "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T10:12:00Z",
           "id": "crd-b-0003",
+          "instance": "wle2",
           "last_used_at": "2026-10-21T13:39:30Z",
           "last_used_via": "bearer",
           "member_id": "agt-b",
@@ -1649,6 +1650,7 @@ window.MAITY_FIXTURES = {
           "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T12:10:00Z",
           "id": "crd-c-0003",
+          "instance": "k3pa",
           "last_used_at": "2026-10-21T12:10:00Z",
           "last_used_via": null,
           "member_id": "agt-c",
@@ -1662,6 +1664,7 @@ window.MAITY_FIXTURES = {
           "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T09:40:00Z",
           "id": "crd-c-0002",
+          "instance": "q7rd",
           "last_used_at": "2026-10-21T12:05:00Z",
           "last_used_via": "bearer",
           "member_id": "agt-c",
@@ -6342,6 +6345,7 @@ window.MAITY_FIXTURES = {
         "id": "prj-maity0000001",
         "name": "Maity",
         "open_requests": 7,
+        "public_page": "on",
         "role": "coder",
         "slug": "maity",
         "state": "build",
@@ -6352,6 +6356,7 @@ window.MAITY_FIXTURES = {
         "id": "prj-sample000001",
         "name": "Sample shop",
         "open_requests": 1,
+        "public_page": "off",
         "role": "coder",
         "slug": "sample",
         "state": "review",
@@ -6430,17 +6435,17 @@ window.MAITY_FIXTURES = {
       {
         "actor": {
           "avatar_url": null,
-          "display_name": "LV Agent",
-          "member_id": "agt-l1"
+          "display_name": "Agent Q",
+          "member_id": "agt-q"
         },
         "at": "2026-10-22T12:55:00Z",
         "id": "ntf-acr-6",
         "kind": "inbox",
         "project": {
-          "full_name": "lv/lasteverlm",
+          "full_name": "ada/elsewhere",
           "member": false,
-          "name": "lasteverLM",
-          "slug": "lasteverlm"
+          "name": "Elsewhere",
+          "slug": "elsewhere"
         },
         "read": false,
         "record": "acr-6",
@@ -6449,7 +6454,7 @@ window.MAITY_FIXTURES = {
           "id": "req-p001",
           "type": "request"
         },
-        "title": "LV Agent asks you: May I take over tsk-77?",
+        "title": "Agent Q asks you: Agent Q proposes a change to its soul",
         "url": "https://maity.team/requests/req-p001"
       },
       {
@@ -6483,6 +6488,7 @@ window.MAITY_FIXTURES = {
         "kinds": {
           "chat": true,
           "inbox": true,
+          "invitation": true,
           "mention": true,
           "security": true
         }
@@ -6507,6 +6513,9 @@ window.MAITY_FIXTURES = {
           "inbox": {
             "mode": "immediate"
           },
+          "invitation": {
+            "mode": "immediate"
+          },
           "mention": {
             "content": false,
             "mode": "daily"
@@ -6527,7 +6536,8 @@ window.MAITY_FIXTURES = {
         "inbox",
         "chat",
         "mention",
-        "security"
+        "security",
+        "invitation"
       ],
       "mail_available": true,
       "not_listening": {
@@ -7687,6 +7697,7 @@ window.MAITY_FIXTURES = {
       "steward_writes": "cards_only",
       "tag_authority": "human"
     },
+    "public_page": "off",
     "released_at": "2026-09-14T10:00:00Z",
     "repository": {
       "default_branch": "main",

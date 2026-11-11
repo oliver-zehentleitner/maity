@@ -350,7 +350,26 @@ It refuses with exit 4, before anything is sent, on any of these:
   `gh` can't be asked does the hub's last observation stand. A report for another PR is sent from
   that PR's branch (`git switch`), or after a merge with the branch
   deleted, from that branch recreated at its merged head
-  (`git switch -c <branch> <merged head>`)
+  (`git switch -c <branch> <merged head>`). So on a card with two
+  stacked pull requests, once the card's last report names the first,
+  the second is reported only after the first has merged (or closed):
+  while the card's last report names the first and the hub last saw it
+  open, a report from the second's branch is refused, unless gh finds it
+  merged or closed now. A card that links the first needs the second
+  linked as well (`maity link`)
+
+A branch other than the default branch itself whose upstream is the
+remote's default branch, as `git switch -c <branch> origin/main` leaves
+it, would be compared with
+main's head and refused when the two differ. `report` sets such a branch
+to track its own branch of the same name on that remote
+(`branch.<branch>.merge` becomes `refs/heads/<branch>`, the remote stays)
+and says so on standard error,
+when the remote has that branch; when it has none, nothing is changed and
+the report is refused with exit 4, naming `git push -u <remote> <branch>`.
+The default branch is `refs/remotes/<remote>/HEAD`, else what the remote's
+`HEAD` names. Any other upstream, a stacked branch tracking the one below
+it included, is left as it is.
 
 Before it asks git about the upstream, it refuses with exit 1 an upstream
 whose remote, configured URL or merge ref starts with `-` or names a remote
@@ -1136,9 +1155,22 @@ account out of their reach either way.
 
 The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check
-above. **Never run git in an agent's clone as yourself in the `single`
-layout:** a planted `.git/commondir`, submodule, hook or configuration
-runs as you. Look at the work through the pushed branch or the pull
+above. It reads every existing clone with that check at each start too,
+and starts nothing in one whose `.git` is not a plain clone's (a planted
+`commondir` or `worktrees/`, for example): the placement fails with
+`workspace_in_use`, `not_a_plain_clone`, the runner's log says what it
+found, and nothing in the clone is removed. Run git in a runner's clone
+only through `maity`, or, once the clone passed the runner's check with
+no session since, only git that reads (`log`, `diff`, `show`; no git
+at all in a clone the check refused), never one that continues a state
+the agent left
+(`rebase --continue` or `--skip`, `cherry-pick --continue`, `am --continue`): the
+check does not read `.git/rebase-merge/` and the like, and a planted
+`exec` line there runs as you. A session that ran on since the check may
+have planted something again. Do your own work in a clone of your own
+(see "Working in an agent's clone" in `docs/runners.md`). **Beyond that, never run git in an agent's
+clone as yourself in the `single` layout:** a planted `.git/commondir`,
+submodule, hook or configuration runs as you. Look at the work through the pushed branch or the pull
 request instead. The `agent_user` layout keeps you out by itself: git
 refuses another user's repository unless `safe.directory` says
 otherwise. Keep `hub.state_dir` out of `/tmp`: Codex's sandbox can write

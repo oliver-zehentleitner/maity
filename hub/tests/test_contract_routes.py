@@ -18,12 +18,14 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
+    ("DELETE", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/soul/versions"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
+    ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
@@ -31,7 +33,11 @@ NOT_ROUTED = {
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/projects/{}/{}/claims/renew"),  # no route yet: tsk-p55zyn4pz0wd
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
+    ("POST", "/projects/{}/{}/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
+    ("POST", "/projects/{}/{}/placements/{}/nudge"),  # no route yet: tsk-j9e0yapj21wj
+    ("POST", "/projects/{}/{}/placements/{}/replace"),  # no route yet: tsk-j9e0yapj21wj
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
+    ("PUT", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an
