@@ -330,7 +330,8 @@ card or request it is about, the page read the Messages listing once
 (`…/messages?after=<seq − 1>&limit=1`, §8.8), which holds the project's
 tombstone and never a chat's: listed, it opened in Messages; not listed,
 or the read failed, it was drawn on the page. A tombstone with a
-conversation or a subject was placed there without that read. §8.9 now
+conversation or a subject was placed at its chat or its subject without
+that read. §8.9 now
 keeps every removed message out of Messages (req-5zfznap3s3bj, o1;
 context/messages.md, See above), so that read is gone.
 
@@ -369,10 +370,9 @@ project message in Messages, told from a chat's tombstone by one read of
 the Messages listing, as the page did until 2026-11-11 for a typeless
 message with no conversation and no card or request it is about: a
 second read on every link to such a message, for a place that showed no
-text and no card;
-§8.9 dropped that place (req-5zfznap3s3bj, o1). Reading a missing type as
-a project message (the Messages listing's own filter judges only
-unredacted events, which carry their type): a chat's tombstone without a
+text and no card; §8.9 dropped that place (req-5zfznap3s3bj, o1).
+Reading a missing type as a project message (the Messages listing's own
+filter judges only unredacted events, which carry their type): a chat's tombstone without a
 conversation went to Messages, which lists no chat message, and the event
 the hub had just served ended as "not reached" (review of #1629).
 Routing a typeless tombstone by its audience (one token that is not
