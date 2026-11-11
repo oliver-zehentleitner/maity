@@ -725,10 +725,12 @@ def _attachment_lines(event: dict[str, Any]) -> list[str]:
     command that fetches it, or a line saying the CLI cannot. No `-o`: without it `files get`
     saves into ./maity-files/ under the cleaned name, never into the working directory, where a
     sender's `conftest.py` would be picked up (§13). Only an id FETCHABLE_ID takes gets a
-    command. These lines carry nothing the sender wrote, neither the name nor an id the CLI
-    cannot fetch: pasted into any shell (an interactive zsh reads `#` as a word, not a comment),
-    a line is `maity files get <id>` and nothing else. The event stream keeps the payload as it
-    was written (§8.7), so a file taken out since still has its command; `files get` says so."""
+    command; the line for any other starts with `:`, the shell's no-op, followed by plain words.
+    These lines carry nothing the sender wrote, neither the name nor an id the CLI cannot fetch:
+    pasted into any shell (an interactive zsh reads `#` as a word, not a comment), a line runs
+    the fetch or nothing. The event line above them is not for pasting: it quotes the names.
+    The event stream keeps the payload as it was written (§8.7), so a file taken out since
+    still has its command; `files get` says so."""
     atts = _event_attachments(event)
     lines = []
     for n, att in enumerate(atts, 1):
@@ -736,7 +738,7 @@ def _attachment_lines(event: dict[str, Any]) -> list[str]:
         if isinstance(raw, str) and FETCHABLE_ID.fullmatch(raw):
             lines.append(f"  maity files get {raw}")
         else:
-            lines.append(f"  attachment {n} of {len(atts)}: no id the CLI can fetch")
+            lines.append(f"  : attachment {n} of {len(atts)} has no id the CLI can fetch")
     return lines
 
 

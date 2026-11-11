@@ -102,7 +102,10 @@ def test_a_pasted_line_is_the_fetch_and_nothing_else_in_any_shell(name: str) -> 
     assert shlex.split(line) == ["maity", "files", "get", "att-1"]  # no comment needed
     for bad in HOSTILE_IDS:
         lines = cli._attachment_lines(_message(_att("att-2", "ok.png"), _att(bad, name)))  # type: ignore[arg-type]
-        assert lines == ["  maity files get att-2", "  attachment 2 of 2: no id the CLI can fetch"]
+        assert lines == [
+            "  maity files get att-2",
+            "  : attachment 2 of 2 has no id the CLI can fetch",
+        ]
         assert all(SHELL_INERT.fullmatch(x) for x in lines)
 
 
@@ -141,7 +144,9 @@ def test_many_long_names_keep_the_line_bounded() -> None:
 )
 def test_an_id_the_command_cannot_carry_exactly_gets_no_command(bad: Any) -> None:
     (line,) = cli._attachment_lines(_message(_att(bad, "a.png")))
-    assert line == "  attachment 1 of 1: no id the CLI can fetch"  # neither the id nor the name
+    assert (
+        line == "  : attachment 1 of 1 has no id the CLI can fetch"
+    )  # neither the id nor the name
 
 
 def test_an_ordinary_id_is_carried_exactly() -> None:
@@ -202,12 +207,14 @@ def test_the_printed_lines_run_only_the_fetch_in_a_real_shell(
         lines += cli._attachment_lines(_message(_att("att-1", name)))
         for bad in bad_ids:
             lines += cli._attachment_lines(_message(_att(bad, name)))  # type: ignore[arg-type]
-    stub = 'maity() { echo "$*" >> calls; }\nattachment() { :; }\n'
+    # A function named `attachment` that leaves a mark: a line must not call it either.
+    stub = 'maity() { echo "$*" >> calls; }\nattachment() { touch CALLED; }\n'
     script = stub + "\n".join(lines) + "\nexit\n"
     env = {**os.environ, "HOME": str(tmp_path), "ENV": "", "PS1": ""}
     subprocess.run(
         shell, input=script, text=True, cwd=tmp_path, env=env, capture_output=True, timeout=30
     )
     assert not (tmp_path / "PWNED").exists()
+    assert not (tmp_path / "CALLED").exists()
     calls = (tmp_path / "calls").read_text().splitlines()
     assert calls == ["files get att-1"] * len(names)
