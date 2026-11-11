@@ -11419,9 +11419,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
     "event: a removed project message's tombstone (no type) that the Messages listing holds opens there, marked, after one listing read of one item "
     + win.location.hash + " " + evMarked() + " " + JSON.stringify(evLists));
+  // A project message about a card opens in Messages at its seq, the card linked beside it, not on the card, whose
+  // panel lists no messages (§8.9, the owner's decision of 2026-11-11, req-cxyyb2w01s8m o2, tsk-hpzs907e3xvx).
+  evReads.length = 0; evLists.length = 0;
   await evAt(6005);
-  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-6005" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004"),
-    "event: a message about a card opens that card (its subject) " + win.location.hash);
+  const evCardLi = main.querySelectorAll("li").find((li) => li.classList.contains("seq-target") && li.getAttribute("data-seq") === "6005");
+  expect(win.location.hash === "#/maintainer/maity/messages#seq-6005" && evMarked() === "6005"
+    && !!evCardLi && evCardLi.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004")
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6005"]) && evLists.length === 0,
+    "event: a project message about a card opens in Messages at its seq, marked, the card linked beside it, after one read of the event "
+    + win.location.hash + " " + evMarked() + " " + JSON.stringify(evReads) + " " + JSON.stringify(evLists));
+  // A removed project message about a card (its subject kept, §8.5): the Messages listing holds it, so it opens there too.
+  evLists.length = 0;
+  win.Maity.api.get = (p, ...r) => { evList(p); return p === "/projects/maintainer/maity/events/6001"
+    ? evGet(p, ...r).then((e) => Object.assign({}, e, { subject: { type: "task", id: "tsk-0004" } }))
+    : evGet(p, ...r); };
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/messages#seq-6001" && evMarked() === "6001"
+    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
+    "event: a removed project message about a card, held by the Messages listing, opens there, not on the card "
+    + win.location.hash + " " + JSON.stringify(evLists));
+  // A chat's tombstone about a card that the reader no longer opens in its chat: the listing does not hold it, so it
+  // opens at its card, as before.
+  evLists.length = 0;
+  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7003"
+    ? Promise.resolve({ seq: 7003, kind: "message", at: "2026-10-22T09:07:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: { type: "task", id: "tsk-0004" },
+      audience: ["member:agt-b", "member:hum-maintainer"], payload: { redacted: true, reason: null, by: "hum-maintainer", at: "2026-10-22T09:08:00Z" }, redacted: true, conversation_id: null })
+    : evGet(p, ...r)); };
+  await evAt(7003);
+  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-7003" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004")
+    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=7002&limit=1"]),
+    "event: a chat's tombstone about a card, absent from the Messages listing, opens that card " + win.location.hash + " " + JSON.stringify(evLists));
+  win.Maity.api.get = (p, ...r) => { if (/\/events\/\d/.test(p)) evReads.push(p); evList(p); return evGet(p, ...r); };
   await evAt(4202);
   expect(win.location.hash === "#/maintainer/maity/chat/agt-a#seq-4202" && evMarked() === "4202",
     "event: a message of one's direct chat opens in that chat, marked " + win.location.hash + " " + evMarked());

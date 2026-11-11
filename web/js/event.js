@@ -1,10 +1,11 @@
 // One event by its number (/<owner>/<slug>/events/<seq>, docs/api.md §8.9, tsk-6g2h8dag2fkg):
 // the page a `seq 68216` in a text links to (js/ids.js). It reads the event once and opens it
 // where it lives, the address replaced by that place's with `#seq-<n>` after it: the chat it
-// was said in (direct or group) when the hub names its conversation, else the card or the
-// request it is about, else the project's messages for a message that is not a conversation's
-// (one whose type says so, or a tombstone the Messages listing holds); the place then shows it
-// marked (js/chat.js reveal, js/messages.js). An event that lives nowhere the reader may open
+// was said in (direct or group) when the hub names its conversation, else the project's
+// messages for a message that is not a conversation's (one whose type says so, or a tombstone
+// the Messages listing holds), one about a card included, whose card Messages links beside it,
+// else the card or the request it is about; the place then shows it marked (js/chat.js
+// reveal, js/messages.js). An event that lives nowhere the reader may open
 // is shown here. A 404 says "not visible", the same words for an event the reader may not see
 // and one that does not exist, as the hub's answer is the same (§8.9): the page never tells
 // the two apart either.
@@ -21,26 +22,34 @@ window.Maity = window.Maity || {};
   const seqOf = (raw) => (typeof raw === "string" && /^(0|[1-9][0-9]{0,18})$/.test(raw) && BigInt(raw) <= SEQ_MAX ? raw : null);
 
   // Where the event lives (§8.9 "The answer"): its conversation when the hub names one for
-  // this reader, else its subject (a card, a request), else the project's messages for a
-  // message whose type says it is a project message; null for none of them. A missing type
-  // says nothing: a removed project message and a chat's tombstone the reader can no longer
-  // open in its chat both come with no conversation and no type (review of #1629), and
-  // Messages lists only the first. The kept audience tells most of them apart, but not a
-  // project message to one member, whose audience is member: tokens alone like a chat's
-  // (spq4, #1629 R2). Such a tombstone is undecided here (listedTombstone).
+  // this reader, else the project's messages for a message whose type says it is a project
+  // message, one about a card included (the owner's decision of 2026-11-11, req-cxyyb2w01s8m
+  // o2: the card panel lists no messages, Messages shows the text and links the card beside
+  // it), else its subject (a card, a request); null for none of them. A missing type says
+  // nothing: a removed project message and a chat's tombstone the reader can no longer open in
+  // its chat both come with no conversation and no type (review of #1629), and Messages lists
+  // only the first. The kept audience tells most of them apart, but not a project message to
+  // one member, whose audience is member: tokens alone like a chat's (spq4, #1629 R2). Such a
+  // tombstone is undecided here, its subject included (listedTombstone, then subjectOf).
   function placeOf(ctx, e) {
     if (e.conversation_id) return ctx.link("chat", e.conversation_id);
+    const type = e.payload && e.payload.type;
+    if (e.kind === "message" && typeof type === "string" && type && type !== "chat") return ctx.link("messages");
+    if (undecided(e)) return null;
+    return subjectOf(ctx, e);
+  }
+
+  // The card or the request an event is about (its subject), null for neither.
+  function subjectOf(ctx, e) {
     const s = e.subject;
     if (s && s.type === "task" && s.id) return ctx.link("tasks", s.id);
     if (s && s.type === "request" && s.id) return ctx.link("inbox", s.id);
-    const type = e.payload && e.payload.type;
-    if (e.kind === "message" && typeof type === "string" && type && type !== "chat") return ctx.link("messages");
     return null;
   }
 
-  // A message placeOf left without a place and without a type: a tombstone, of a project
-  // message or of a chat the reader no longer opens. Never guessed (review of #1629).
-  const undecided = (e) => e.kind === "message" && !(e.payload && typeof e.payload.type === "string" && e.payload.type);
+  // A message without a conversation for this reader and without a type: a tombstone, of a
+  // project message or of a chat the reader no longer opens. Never guessed (review of #1629).
+  const undecided = (e) => !e.conversation_id && e.kind === "message" && !(e.payload && typeof e.payload.type === "string" && e.payload.type);
 
   // Whether the project's messages (§8.8) list this seq for this reader: the hub keeps a
   // message's conversation through its redaction and never lists a chat's, so the listing
@@ -101,11 +110,13 @@ window.Maity = window.Maity || {};
       const listed = await listedTombstone(ctx, seq);
       // The second read may outlive the page as the first may (above).
       if (left()) return;
-      if (listed) place = ctx.link("messages");
+      // Not listed: a chat's tombstone, or the read failed; it opens at the card or the
+      // request it is about, as before, else it is drawn here.
+      place = listed ? ctx.link("messages") : subjectOf(ctx, e);
     }
     if (place && M.route.isRoute(place)) { M.route.go(place + "#seq-" + seq, { replace: true }); return; }
     append(root, heading, h("p", { class: "muted" }, M.t("event.here")), drawn(ctx, e));
   };
 
-  M.event = { placeOf, seqOf, listedTombstone };
+  M.event = { placeOf, subjectOf, seqOf, listedTombstone };
 })(window.Maity);
