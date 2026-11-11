@@ -1144,14 +1144,17 @@ What the bridge has to keep:
   p50 / p95 in ms, main's two runs and then the throttled two: the bell 331/616, 324/588 →
   327/490, 339/569; members 291/539, 276/517 → 290/390, 295/405; the project 246/494, 234/490 →
   251/357, 246/354; tasks 218/510, 216/461 → 227/324, 231/346; requests 247/513, 233/454 →
-  247/341, 243/351. No route got slower at p50, and p95 fell by a quarter to a third on every
-  route, the bell (on the loop) among them. The cause is the missing write, not the code around
-  it: the same code writing on every call (`SEEN_EVERY` 0) is back at 4 ms. Not the row lock
-  either: 16 sessions of the owner give main 4 ms, main without its human and membership writes
-  5. A call no longer waits for its write and commit, so more request threads run Python at the
-  same time and the owner's loop waits for the GIL more often; its longest callback stays about
-  3 ms of CPU. The guard watches the loop's ticks, and the requests it serves did not get worse,
-  so the limit went up rather than the throttle back. Not further: 35 leaves 8–11 ms over the
+  247/341, 243/351. As means of the two runs: p95 lower on every route (the bell 602 → 529.5, −12
+  %; the others −25 to −31 %), p50 up 1.7–5.5 % (the bell 327.5 → 333, members 283.5 → 292.5, the
+  project 240 → 248.5, tasks 217 → 229, requests 240 → 245); n=2 runs each, not
+  significance-tested. The cause is the missing write, not the code around it: the same code
+  writing on every call (`SEEN_EVERY` 0) is back at 4 ms. Not the row lock either: 16 sessions of
+  the owner give main 4 ms, main without its human and membership writes 5. A call no longer waits
+  for its write and commit, so more request threads run Python at the same time and the owner's
+  loop waits for the GIL more often; its longest callback stays about 3 ms of CPU. The guard
+  watches the loop's ticks, and the requests it serves gained about 4 % throughput and a lower p95
+  for a p50 up to 5.5 % higher, so the limit went up rather than the throttle back. Not further:
+  35 leaves 8–11 ms over the
   runner's 24–27, and the block in random slices of 30–120 ms still fails it on the throttled
   branch (55 and 58 ms locally, the reference 1). The average stays absolute rather than relative
   to the reference: the reference shares the GIL, so blocks that hold it move the reference too
