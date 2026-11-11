@@ -407,3 +407,34 @@ at a branch that does not exist when it is set.
   as the branch, and naming the suffix match as not covered: a remote
   with only `x/refs/heads/<b>` would get `<b>` retracked and its head
   read as `<b>`'s, so "the remote has that branch" would be false.
+
+## A branch without an upstream is read as its own branch on the push remote
+
+**Id:** d22e2b28-91c5-468d-a373-bc832ec95d24
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf ("check whether `maity report` needs an upstream; if it does, make it work without one", the maintainer's runner test of 0.1.0a8, 2026-11-11); `cli/src/maity/gitfacts.py`
+**See:** runner.md#git-in-a-sandboxed-session-works-without-writing-gitconfig — 82e70deb-7cf9-4ea1-be2f-137186b20b2d — as of 2026-11-11
+**Revisit when:** the runner's sandbox can store an upstream again, or `report` learns to read a pull request without a remote branch
+
+`collect()` read the remote and the branch from `branch.<b>.remote` and
+`.merge` only, so a branch without an upstream was refused ("push it with
+`git push -u`"). Under the runner's sandbox nothing can store an upstream.
+A branch with neither key set is now compared with the branch of its own
+name on the remote a plain `git push` chooses: `branch.<b>.pushRemote`,
+else `remote.pushDefault`, else `origin`, when that remote has a URL
+configured. The same checks then apply as to an upstream: the remote and
+the ref are checked before git is asked, and the remote's head must equal
+the local one.
+
+**Reason:** that is where `git push` (with `push.default=current`, which
+the runner sets) and `git push origin <b>` put the branch, so the report
+reads what was pushed.
+
+**Rejected alternatives:**
+- The runner writes the upstream from outside the sandbox: it would have
+  to watch for every new branch, and write the very file the sandbox
+  keeps unwritable.
+- Reading only the pull request by the branch name: the report then no
+  longer checks that the remote has the local head.

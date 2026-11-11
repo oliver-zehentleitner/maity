@@ -1109,7 +1109,8 @@ it would be told to `maity wait` under a runner that already wakes it.
 
 **Id:** 8d425d7d-6b2f-4af0-92e1-d1bc9b1a10cd
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 497f16bd-9dc7-4aca-b4d2-b3055c782410
 **Evidence:** confirmed
 **Source:** docs/api.md §15.11 (resume accepts `supervisor`); the coordinator's approval of the environment variable, 2026-10-23; the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n)
 **Revisit when:** the runner resumes on the agent's behalf instead of the agent's own `maity resume`, or a harness drops the session environment before the agent's commands run
@@ -1942,3 +1943,96 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
   tool's message, which is outside the contract.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
+
+## Only a supervised placement tells the hub it is supervised
+
+**Id:** 497f16bd-9dc7-4aca-b4d2-b3055c782410
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (the maintainer's runner test of 0.1.0a8, 2026-11-11: two interactive placements went away after each answer and missed later messages); `hub/src/maity_hub/rules.py` (`SUPERVISED`); `cli/src/maity/runner/adapters.py`
+**See:** runner.md#default-session-modes-claude-code-attachable-codex-woken-by-events — 46741392-ca22-48e6-9417-d509c67d31a8 — as of 2026-11-11
+**Revisit when:** the runner gets a way to wake an interactive session on an event, or the hub's supervised duty changes
+
+`adapters.launch` puts `MAITY_SUPERVISOR=maity-runner/<version>` into the
+session's environment only for a supervised (headless) placement, beside
+`MAITY_PLACEMENT` and `GIT_COMMON_DIR`; the agent's `maity resume` sends
+it as `supervisor`, as before (8d425d7d). An interactive placement gets no
+such variable, so the hub gives it the ordinary duty: wait with `maity
+wait`, which in Claude Code's interactive mode is a background command
+that wakes the session.
+
+**Reason:** the variable used to go into every session. The hub then told
+an interactive agent "do not start `maity wait`, end your turn, the runner
+wakes you", but only the supervised loop wakes a harness. The agent ended
+its turn, stopped listening, and never saw the next message.
+
+**Rejected alternatives:**
+- The runner types into an interactive session's pane when an event comes:
+  the pane is one a person may be attached to and typing in, and the
+  keystrokes race with what the agent is doing.
+- Keeping the variable and telling the hub the mode: a second field in the
+  resume and a hub change for what the runner already decides at launch.
+
+## Git in a sandboxed session works without writing `.git/config`
+
+**Id:** 82e70deb-7cf9-4ea1-be2f-137186b20b2d
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (the maintainer's runner test of 0.1.0a8, 2026-11-11: `git switch -c <b> origin/main` failed on `could not lock config file .git/config`, as did `push -u`; `branch -D` warned; a `.gitmodules` permission warning on fetch); git 2.47.3 with a held `config.lock`, checked locally and in `test_the_session_git_needs_no_configuration_write`
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
+**Revisit when:** the sandbox lets git write `.git/config` again, or git changes what `switch -c` or `push` store there
+
+The sandbox keeps `.git/config` unwritable on purpose: what it sets can
+run a program outside the sandbox. So the runner gives every session, by
+`GIT_CONFIG_COUNT`, `branch.autoSetupMerge=false` (a branch cut from a
+remote one stores no upstream), `push.default=current` (a plain `git push`
+pushes the branch to its own name) and `fetch.recurseSubmodules=false`
+(fetch does not read `.gitmodules`, which the sandbox replaces with an
+unreadable placeholder in a repository that has none). The start prompt of
+Claude Code and Codex names what still fails: `push -u`,
+`--set-upstream`, `--track` and `branch -m`. `maity report` reads a
+branch without an upstream as its own branch on the push remote
+(report.md).
+
+**Reason:** with these settings the plain commands an agent types work,
+without the agent having to remember a flag in every session.
+
+**Rejected alternatives:**
+- Letting the sandbox write `.git/config`: hooks, `core.fsmonitor` or an
+  alias there run code outside the sandbox the next time any git runs.
+- Only telling the agent the flags (`--no-track`, an explicit refspec): an
+  agent that forgets one fails, and a compaction loses the prompt's
+  details.
+- Deny rules for `push -u` and `--track`: the push itself happens before
+  the configuration write fails, so a deny would refuse a push that
+  works; the prompt names them instead.
+
+## The sandbox's placeholders are hidden in `.git/info/exclude`
+
+**Id:** c4c60f8e-d87f-44f6-bce6-97f2d5671af8
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (22 untracked files in a placed clone, 2026-11-11); `git status --porcelain --untracked-files=all` in a sandboxed `claude -p` run of 2.1.322 with the runner's settings in a scratch clone, 2026-11-11
+**Revisit when:** a Claude Code version adds or drops a placeholder, or the sandbox stops creating them
+
+Claude Code's sandbox puts an empty placeholder in the work tree's root
+for each protected path that is missing (`.bashrc`, `.gitconfig`,
+`.gitmodules`, `.mcp.json`, `.claude/skills` and others), and `git status`
+listed all 22 as untracked. Before a sandboxed Claude Code start the
+runner writes them, root-anchored, into the clone's `.git/info/exclude`
+between two marker lines (`adapters.CLAUDE_PLACEHOLDERS`); a block from
+an earlier start is replaced, every other line stays. The agent cannot
+write `info/` itself (GIT_PROTECTED). Hiding them hides nothing the agent
+could add: the sandbox keeps those paths unwritable.
+
+**Rejected alternatives:**
+- An entry in the repository's `.gitignore`: it would be every project's
+  business, for files only this runner's sandbox creates.
+- `core.excludesFile` through the session's environment, pointing to a
+  file in the runner's state: the sandbox denies reading the runner's
+  state, so git inside it could not read the file (inferred, not run).
