@@ -492,8 +492,8 @@ refiling is at most one item per human and hour.
 
 A new sign-in (`session_created`) is no bell item: it is not listed, not counted, not pinned,
 gives no browser notification and has nothing to mark read. The account record stays, for
-Profile → Sessions, `sessions_rev` and the wake of a held long-poll (§18.2), and the mail. The Notifications page shows a small "Current
-sessions" box: the active sessions, compact, linking to Profile → Sessions, with no buttons and
+Security → Sessions, `sessions_rev` and the wake of a held long-poll (§18.2), and the mail. The Notifications page shows a small "Current
+sessions" box: the active sessions, compact, linking to Security → Sessions, with no buttons and
 no unread state. Kept as they were: the sign-in mail by the `security` mode, the banner of a mail
 sign-in in every other session with "End this session" and "This was me", "This was me" in the
 session list, and the rule that only an older session in good standing confirms. The long-poll
@@ -507,7 +507,7 @@ use, the maintainer found three alerts he could not clear three days later, beca
 session he had then was newer, and over time that is the normal case. A notification nobody may
 clear does not say "react to this" (1ebd4cc1-6f1b-445f-8c88-98103a4bc3ef); the list of
 sessions shows what the alert showed, though only to a human who opens the page; for a human
-without mail that is all that is left (§2.6.5), and Profile → Sessions is where the human acts on it. What
+without mail that is all that is left (§2.6.5), and Security → Sessions is where the human acts on it. What
 guards against a session obtained through the mailbox never was the unread count: it is the
 banner, which that session cannot remove, the confirm only from an older session, and the
 rules on ending sessions (7865693c, d01ba62b). They all stay. The banner used to be rebuilt when
