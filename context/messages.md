@@ -692,23 +692,42 @@ in a new tab, copies and reloads.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's decision of 2026-11-11, request req-cxyyb2w01s8m (option o2, seq 109453), card tsk-hpzs907e3xvx; contract `docs/api.md` §8.9 ("The answer", where an event lives, and "The dashboard's links"), 2026-11-11
+**Source:** the owner's decision of 2026-11-11, request req-cxyyb2w01s8m (option o2, seq 109453), card tsk-hpzs907e3xvx; contract `docs/api.md` §8.9 ("The answer", where an event lives, and "The dashboard's links"), 2026-11-11; a removed message kept out of the messages (on its card, else its subject, else the event's page) is the lead's choice after review of PR #1644, confirmed by the owner, request req-5zfznap3s3bj (option o1, clarified in chat, seq 110013), 2026-11-11
 **See:** messages.md#one-event-is-read-by-its-seq-under-the-event-lists-rule-and-a-hidden-one-answers-as-a-missing-one — 90a7c56b-199c-496f-87da-a06dbe0c7a69 — as of 2026-11-11
+**See:** https://github.com/oliver-zehentleitner/maity — 25f39a28-47e6-4562-94bd-414f1da5a14e — as of 2026-11-11
 **Revisit when:** the card panel lists the messages about a card, or a project message can be about something other than a card
 
 Where an event lives (§8.9) is ordered: its conversation when the hub
 names one for the reader, else the project's messages for a message that
-is not a conversation's, a card it is about (`task_id`) included, else
-its subject (a card, a request), else only the dashboard's page of the
-event. Until 2026-11-11 the subject came before the messages, so a
-`seq` link to a notice about a card opened the card.
+belongs to no conversation and is not removed, one about a card
+included, else its subject (a card, a request), else only the
+dashboard's page of the event. Until 2026-11-11 the subject came before the
+messages, so a `seq` link to a notice about a card opened the card. The
+dashboard's routing entry (`web/context/routing.md`, "An event's page
+opens the event where it lives", See above) records that older order
+until the web change follows.
+
+A removed project message stays out of the messages, so one about a card
+stays on that card, and one without a card goes to its subject, else the
+event's page: its tombstone keeps the event's `subject` but has no text
+and, in the listing, no `task_id` (§8.5, §8.8), so Messages would show
+neither the message nor the card. Until 2026-11-11 a removed one without
+a card went to Messages; it no longer does.
 
 **Reason:** a `seq` link stands for a message someone cites, and the
 reader wants its text. The card panel has no list of the messages about
 a card, so opening the card showed everything but the message clicked.
-The project's messages show the text at its `seq` and name the card
-beside it (`task_id`, §8.8), so the card stays one click away. The
-owner chose this (req-cxyyb2w01s8m, o2).
+For a message that is not removed, the project's messages show the text
+at its `seq` and name the card beside it (`task_id`, §8.8), so the card
+stays one click away. The owner chose this (req-cxyyb2w01s8m, o2). A
+removed message has no text to read there, so Messages gains nothing by
+it, and one rule for every removed message spares the dashboard telling a
+project's tombstone from a chat's, which takes a read of the listing
+(`web/context/routing.md`); the owner confirmed this
+(req-5zfznap3s3bj, o1). A chat message the reader can no longer open in
+its chat goes to its subject, else the event's page: it is a
+conversation's message, which the project's messages never list, so the
+subject is the next place in the order, as it was before.
 
 **Rejected alternatives:**
 - The card first, as §8.9 said until then: the reader lands where the
@@ -716,3 +735,8 @@ owner chose this (req-cxyyb2w01s8m, o2).
 - A list of a card's messages in the card panel, with the cited one
   marked: a new part of the card view for the sake of a link, which the
   owner did not choose; the entry is revisited if that list comes.
+- A removed message in Messages like any other: its tombstone there has no
+  `task_id`, so the card the message was about is not shown beside it.
+- Only a removed message without a card in Messages, as before: a
+  tombstone with no text and no card, and the dashboard would still have
+  to tell it from a chat's by a read of the listing.
