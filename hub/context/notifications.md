@@ -202,7 +202,8 @@ kept by the held call alone.
 **Rejected alternatives:**
 - Narrowing the stamp's heads to the rows that may make an item: the filters read the payload
   text, so the head would read the project's whole history on every look, where the range read
-  is bounded by the two heads.
+  starts at the seen position. That bounds it in `seq`, not in rows: a long wait whose stamp
+  does not move collects every row written meanwhile into the next look's range.
 - Only the item kinds in the range, as the first version had it: a cover (`cover_started`,
   not an item kind) made an older request the human's without being looked at, and the chatter
   that followed held to the deadline where main derived at once (review of #1623).

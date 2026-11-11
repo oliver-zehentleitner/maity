@@ -215,10 +215,12 @@ def quietly_moved(
     move of a head or mark stays unseen until the deadline, as without the look; the position
     it is seen past stays where it was until then.
 
-    It reads one bounded range per project whose position moved, `(seen position, new
+    It reads one range per project whose position moved, `(seen position, new
     position]`: within a project `seq` follows commit order (`events.emit` inserts under
     `lock_project`), so no row below a visible position is still to commit, the argument the
-    held events wait rests on (hub/context/events.md, 2263cf0a)."""
+    held events wait rests on (hub/context/events.md, 2263cf0a). The statement stops at its first
+    row (`LIMIT 1`), but the range has no bound in rows: a long wait whose stamp does not move
+    collects every row written meanwhile into the next look's."""
     (seen_stamp, seen_tops), (now_stamp, now_tops) = seen, now
     members = now_stamp[0]
     if members != seen_stamp[0] or now_stamp[2:] != seen_stamp[2:]:
