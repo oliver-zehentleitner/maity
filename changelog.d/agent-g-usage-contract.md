@@ -12,4 +12,5 @@
   every rule built on the runner's clock left a way to count a run on cards it never touched. A shared run counts in
   full for each card, and the hub never prices tokens. Card totals for the project's human members and the agents
   whose runs counted, member and agent totals for the owner and the human admins, nothing public; the owner's export
-  lists the daily totals. The routes, `open_run` and the holding table are not built yet.
+  lists the daily totals. The routes, the status report's `run` field, `open_run` and the
+  holding table are not built yet.

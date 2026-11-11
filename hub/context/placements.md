@@ -368,7 +368,8 @@ only while that run is open, at most once; one for a run that ended
 (after `waiting`, any state other than `running`) or that the hub never
 opened is `conflict` (`run_closed`) and is lost from every total. Only
 a real change to `open` opens a run, so a repeat or an activity-only
-report never restarts its interval. The runner's `started_at` and
+report never restarts its interval. Any accepted report that does not
+keep a run open ends it, whatever its generation. The runner's `started_at` and
 `ended_at` are shown as sent and pick nothing. A run during which the
 instance held two cards counts in full for each and is marked as
 shared; instance and agent totals count every run once. A second
@@ -430,11 +431,14 @@ instance in place.
   runner's one record per run: a runner that restarts and computes the
   run again under a new id would count it twice for the same cards; the
   hub takes one record per open run.
-- Letting a report of an older generation open or end a run: the
-  runner's old process is about to be replaced, and an opening the
-  current generation never made would start a window for it. A new
-  generation ends the open run instead, so the old generation's run
+- Letting a report of an older generation open a run: the runner's old
+  process is about to be replaced, and an opening the current
+  generation never made would start a window for it; a run opened then
   loses its record, which is rare and stated.
+- Letting only the current generation end a run: a `waiting` from the
+  old process would leave the previous run open, and the old process's
+  next run would be handed its id and count on its cards; ending a run
+  can only lose a record, so any generation ends it.
 - Keeping an open run across a new generation: the new generation
   could not open its own run while the old one stayed open, and nothing
   in the protocol makes the runner close the old one first.

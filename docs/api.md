@@ -15730,7 +15730,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `restarts` | integer | restarts in this generation |
 | `sessions` | integer | fresh sessions started in this generation; every other start resumes the placement's session (§15.14) |
 | `last_activity_at` | timestamp or `null` | the latest harness output or loop call the runner saw; clamped like `since`; a report changing only this field is sent at most once a minute and writes no event (§15.14) |
-| `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14). A report whose `state` is not `running` carries no `run` and ends an open run. A run opens only when an accepted report of the placement's current generation changes `run` to `open` while none is open: the hub then issues the run an id and keeps that report's `reported_at`, both on the placement as `open_run` (§15.5, §15.15), which the answer carries. A repeat (a `seq` not above the stored one, answered with the stored placement and its `open_run`), a report changing only `last_activity_at` and a report for an older generation open nothing and keep the open run's id and time |
+| `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14). A report whose `state` is not `running` carries no `run` and ends an open run. A run opens only when an accepted report of the placement's current generation changes `run` to `open` while none is open: the hub then issues the run an id and keeps that report's `reported_at`, both on the placement as `open_run` (§15.5, §15.15), which the answer carries. A repeat (a `seq` not above the stored one, answered with the stored placement and its `open_run`), a report changing only `last_activity_at` and a report for an older generation open nothing and keep the open run's id and time; any accepted report that does not keep a run open ends it, whatever its generation |
 | `nudge` | `{id, outcome}` or absent | the outcome of the placement's latest nudge, `woken`, `resumed` or `left_running` (§15.14); a different `id` from the placement's current nudge is ignored |
 | `handover` | `{transcript: "received"}` or absent | on the new placement of a `full` replacement: the transcript is in the clone (§15.14); anywhere else `invalid` |
 | `retry_at` | timestamp or `null` | when the runner starts it again; `null` when it will not |
@@ -15954,6 +15954,7 @@ A placement as the runner reads it:
   "health": { "flapping": false,
               "settings": { "hang_after_minutes": 30, "reply_within_minutes": 10, "tool_call_max_minutes": 120 } },
   "nudge": null, "replace": null, "handover": null,
+  "open_run": null,
   "seq": 41
 }
 ```
@@ -15967,7 +15968,9 @@ A placement as the runner reads it:
   first start needs a pickup. `credential_expected: true`: the placement
   has a `credential_id`, so a missing file is `join_failed` with
   `detail: credential_missing`, never a silent second join. `seq` is
-  the highest report counter the hub has stored. Never in this shape:
+  the highest report counter the hub has stored. `open_run` is as in
+  §15.5: the id the runner names in a run's usage record (§15.15), here
+  and in the answer to every status report. Never in this shape:
   `briefing`, the join URL or code, `approval`, `created_by`.
 - **What a runner reads.** Its projects are those it is attached to plus
   those where it still has an active placement (a detached runner's
@@ -17335,10 +17338,10 @@ below), the hub time of the report that opened it (§15.7). It is new hub state 
 placement, not a log. A run opens only on a transition: an accepted
 report of the placement's current generation that changes `run` to
 `open` while no run is open. A repeat, a report that changes only
-`last_activity_at` and a report for an older generation leave
-`open_run` as it is, so the interval never restarts within a run. The
-run stays open until the placement's next accepted report that does not
-keep it open: `run: waiting`, or a `state` other than `running`
+`last_activity_at` and a report for an older generation never open
+one, so the interval never restarts within a run. The run stays open
+until the placement's next accepted report, of any generation, that
+does not keep it open: `run: waiting`, or a `state` other than `running`
 (`rate_limited`, `exited`, `failed`, `stopped` and the rest), which
 carries no `run`; `open_run` is then `null`. A report repeating `run:
 open` keeps the run and its time; a supervised `running` report without
@@ -17358,17 +17361,20 @@ the hub counts that silence as for any open run (§15.14). A record never lands 
 record refused as `run_closed` is lost from every total. A new generation (§15.5: a change of the
 spec, a restart, a rejoin) ends an open run at that moment: `open_run`
 becomes `null`, and the old generation's run takes no record
-(`run_closed`). A report of an older generation neither opens nor ends
-a run (§15.7), so a run the old process opens before the runner acts on
-the new generation has no `open_run` either; the first change of `run`
+(`run_closed`). A report of an older generation ends an open run like
+any other but never opens one (§15.7), so a run the old process opens
+before the runner acts on the new generation has no `open_run` either
+and its record is `run_closed`; the first change of `run`
 to `open` under the new generation opens the next run.
 
 **When the hub starts keeping usage.** The hub release that builds this
 section opens a holding, from the moment of its migration, for every
 card an instance holds at that moment, so cards claimed earlier count
-for later runs. A run already open then has no `open_run` and its record
-is `run_closed`; the next change of `run` to `open` opens a run as
-above.
+for later runs. The hub stores no `run` before that release, so the
+first report after the upgrade that carries `run` only stores it and
+opens nothing: a run already going then has no `open_run`, and its
+record is `run_closed`. The next change of `run` to `open` opens a run
+as above.
 
 **No price list in the hub.** The hub never turns tokens into money. A
 cost is shown only where the harness reported one, summed per currency;
