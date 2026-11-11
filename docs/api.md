@@ -388,6 +388,7 @@ the hub records it on the session.
 | `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters, a stored vector behind a handle when the inline form would not fit (§18.2) |
 | `POST /me/notifications/read` | 200 `ids` (§18.3) |
 | Immediate notification mails | 10 per hour per human, the rest held for one mail at the hour's end (§18.5) |
+| `POST /me/presence` | 10 per minute per session, then `rate_limited` with `Retry-After`; `present_until` written at most once a minute per session (§18.4) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
 | Admin test sends | 5 per hour per instance admin (§16.3) |
 | Address verification mails | 3 per hour and 10 per day per human (§18.4) |
@@ -499,8 +500,8 @@ agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
 the one shape §2.3 uses. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
-call and 30 days after login regardless. Every call renews the human's
-`last_seen_at`. The first human account comes from an operator command of the hub,
+call (up to 60 s later, never earlier, §2.4) and 30 days after login regardless. Calls renew the human's
+`last_seen_at`, at most once every 60 seconds (§2.4). The first human account comes from an operator command of the hub,
 `maity-hub owner create`, which takes the account's address (`--email`)
 and stores it as verified on the operator's word, so that the account
 signs in with its password even where the hub has no mail; the command
@@ -1459,7 +1460,14 @@ Additional rules that are not scopes:
 ### 2.4 Presence and leases as side effects
 
 Every authenticated call updates `last_seen_at` on the caller's
-membership and, for agents, on the instance and the session. A call by
+membership and, for agents, on the instance and the session, at most
+once every **60 seconds**: a call within 60 s of the last write leaves
+it as it is, so a `last_seen_at` (and a human session's `ip`, §2.6.5)
+may be up to 60 s older than the latest call. Every reader that turns it
+into a state counts from the latest call it may stand for, 60 s after it,
+never early: a member that calls stays `online`, and `online` and `away`
+(§5.3), a stalled holder's threshold (§5.3) and a session's idle end
+(§2.1) each come up to 60 s later after the last call. The maintainer's decision of 2026-11-11. A call by
 an instance renews the leases of the claims that instance holds (§6.5),
 not those of its agent's other instances, with one exception: the events
 long-poll (`wait > 0`, §8.3) is presence, not work — a session that only
@@ -1468,7 +1476,9 @@ stuck holder becomes reassignable without anyone guessing. There is no
 heartbeat endpoint: a holder that listens while still at work is warned
 before its leases run out (`claim_lease_expiring`) and renews them on
 purpose with `POST …/claims/renew` (§6.5; not built yet,
-tsk-p55zyn4pz0wd). A runner's calls update the runner's own
+tsk-p55zyn4pz0wd). `POST /me/presence` (§18.4) is no heartbeat of this
+kind: a dashboard tab's signal for the mail hold of §18.5, it writes no
+`last_seen_at`, renews no lease and shows nobody as online. A runner's calls update the runner's own
 `last_seen_at` and nothing on any membership (§15.3).
 
 ### 2.5 Forwarded headers and plain HTTP
@@ -1964,7 +1974,9 @@ every other session, since it needs the password.
 completed registration starts, §2.7.1); `second_factor` says whether
 the sign-in included the second factor (§2.8.2). `approved_by` names the
 session that approved a device code. `ip` is the one of the latest
-call; `created` is the account record of the sign-in (below), with the
+call the hub recorded: it writes `last_seen_at` and `ip` at most once
+every 60 seconds (§2.4), so both may be up to 60 s older than the
+session's latest call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
 `password_change`, `password_reset` (§2.10), `second_factor_disabled`,
@@ -4310,7 +4322,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a7" },
+  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a8" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=7f3a91c0",
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
@@ -4760,8 +4772,8 @@ event:
 | Value | Condition |
 |---|---|
 | `paused` | `paused` is set on the membership |
-| `online` | a call within the last 120 s, or a long-poll open |
-| `away` | last call within the last 2 h |
+| `online` | a call within the last 120 s, or a long-poll open. The hub records calls at most once a minute (§2.4), so a member stays `online` up to 60 s longer after its last call |
+| `away` | last call within the last 2 h, up to 60 s longer as for `online` |
 | `offline` | otherwise, or no session |
 
 Each instance has its own `presence` by the same table; a member's
@@ -4849,7 +4861,8 @@ personal `not_listening.minutes` (§18.4, default 60) — or longer:
   `last_seen_at`, whether that session is still open — a harness that
   crashed or was closed leaves it open until the next resume or a
   revocation (above) — or ended by a revocation. Its length is counted
-  from that `last_seen_at`, the last sign of life; it ends when the
+  from 60 seconds after that `last_seen_at`, the latest call it may stand
+  for (§2.4), so it is never reported early; it ends when the
   instance calls again (a resume included, §5.2) or holds no claim any
   more. Only the instance's latest session counts, so a session that a
   resume replaced never makes it away. Claims a bridge holds for an
@@ -4934,8 +4947,9 @@ moves back. An away instance is *silenced* for its owner
 when
 
 1. its `last_seen_at` equals one the owner recorded for it: it has made
-   no call, a resume included, since the request the owner answered
-   showed it; or
+   no call, a resume included, that moved it since the request the owner
+   answered showed it (calls within 60 seconds of a write leave it as it
+   is, §2.4); or
 2. it is listed as an episode and the owner recorded that episode's
    `since`:
    the owner saw this episode, however the instance called meanwhile.
@@ -12027,7 +12041,7 @@ Scope `project:read`, cookie sessions included. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a7" }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a8" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger
@@ -15455,6 +15469,7 @@ and `resolveEntry`, and any write.
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
+| POST | `/me/presence` | human (cookie) | 18.4 |
 | GET | `/projects/{owner}/{slug}/jour-fixe` | `project:read`, members only | 20.9 |
 | GET, POST | `/projects/{owner}/{slug}/jour-fixe/series` | `project:read`, members only / a series keeper | 20.1 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}` | the series' keepers | 20.1 |
@@ -17951,7 +17966,7 @@ runner credential is `forbidden`. The humans of the instance, paged
   (`pending_address`) is not shown.
 - `last_login_at` is the time of the human's latest new session, by
   password or without one (§2.1, §2.6), `null` when none; `last_seen_at` is the one every call
-  renews (§2.1).
+  renews, at most once every 60 seconds (§2.4).
 - `memberships` counts the human's own active project memberships;
   `agents` the agent profiles they own (§6.3). Counts only: which
   projects, which agents and what is in them is not part of this answer.
@@ -18062,6 +18077,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3) and the mail factor's (§2.8.8), all humans together; default 60. Over it, a sign-in mail is not sent |
 | `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR` | `password_reset_max_per_hour` | password reset mails (§2.10), all humans together; default 30. Over it, a reset mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
+| `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `online_grace_minutes` | 0–60, default 5: how long after a human stopped being present in the web app their held notification mail still waits (§18.5, "Held while present") |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
 
@@ -18102,6 +18118,7 @@ Scope `instance:admin`, human only (§16.1):
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
   "password_reset_max_per_hour": { "value": 30, "source": "default" },
   "registration_max_per_hour": { "value": 30, "source": "default" },
+  "online_grace_minutes": { "value": 5, "source": "default" },
   "signing_key": { "set": true },
   "secret_key": { "set": false },
   "warnings": [],
@@ -18139,7 +18156,7 @@ PATCH /admin/settings/mail
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
 `max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
-`password_reset_max_per_hour`, `registration_max_per_hour`; `null` returns a field to its default (for `password`:
+`password_reset_max_per_hour`, `registration_max_per_hour`, `online_grace_minutes`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -18620,8 +18637,8 @@ same header and footer (§16.7.5).
   `cards_done_week` (cards moved to `done` in the last 7 days across
   every project of the instance, public or not: a weekly sum names no
   project and no card), and `people_online`, counted by the presence
-  rule of §5.3 (a call in the last 120 s or a long-poll open; each
-  person once). `instances` and `instances_online` count the instances
+  rule of §5.3 (a call in the last 120 s, up to 60 s longer, or a
+  long-poll open; each person once). `instances` and `instances_online` count the instances
   behind the agents: every active instance of an agent with an active
   membership, and of those the ones online by the same rule or dormant
   (§6.17), as `manages` counts them (§6.2); `agents_online` counts each
@@ -20251,14 +20268,14 @@ names:
 | `/invite` | the person invitations of the human's projects in one place: it reads §3.4's list in every project where the human holds `members:admin`, shows all of that project's invitations as the list gives them (newest first: the open ones and those used, revoked, voided or expired in the last 30 days), and creates one for a project of the caller's choice; no route of its own, and an organisation's invitations (§6.26) are not on it |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
-| `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
+| `/agents`, `/agents/<id>`, `/agents/placements`, `/agents/maintenance` | the human's agent profiles across projects (§6.3), and one of them marked; and the page's two tabs: **Where they run**, where the human's agents run in the projects the human reads (§15.6), and **Maintenance notices**, which of them the hub tells about a maintenance window (§16.12). `placements` and `maintenance` under `/agents/` are view names: the hub never issues either as an id |
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Where they run**: where the project's agents run, their wanted and reported state and the start on a runner, §15.5–§15.7; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/team`, `/organisation` and
@@ -21417,7 +21434,7 @@ no membership.
 | `unread` | `true`: unread items only |
 | `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`, `invitation`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
-| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_rev`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
+| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_rev`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`). A `wait` above 0 with `limit=0` is `invalid` with `details.fields.wait: "needs_limit"`: it would wait for an item it may not list |
 
 ```json
 {
@@ -21798,6 +21815,7 @@ device; the browser's own permission is per browser and is not stored.
     },
     "sign_in_link": true,
     "password_reset": true,
+    "hold_while_online": true,
     "daily_at": "08:00",
     "weekly_on": "mon",
     "quiet_hours": { "from": "22:00", "to": "07:00" },
@@ -21983,6 +22001,34 @@ device; the browser's own permission is per browser and is not stored.
   open link and code. It has no effect until the sign-in contract is in.
 - **`password_reset`** (default `true`): whether the human may be sent a
   password reset link (§2.10). Turning it off voids an open reset link.
+- **`hold_while_online`** (default `true`; the dashboard's label "No mail
+  while I'm online in the web app"): while the human is present in the
+  web app, notification mail of `immediate` items waits, and only what
+  is still unread is mailed once they have left (§18.5, "Held while
+  present"). `false` mails as without it. Pending: this field,
+  `POST /me/presence` and `online_grace_minutes` (§16.2) arrive with
+  their implementation; until then nothing is held.
+- **`POST /me/presence`** (no body, `204`): a dashboard tab says that the
+  human is present. A human's cookie session only, with `X-CSRF-Token`
+  (§2.1); an agent, a runner, a bridge or a call with `Maity-For` is
+  `forbidden` (`humans_only`). The dashboard sends it from a tab only
+  while the tab is present — visible (`document.visibilityState` is
+  `visible`) and with input (pointer, key, scroll or focus) within the
+  last 10 minutes — every 60 seconds, and at once when the tab becomes
+  present again; a hidden or idle tab sends nothing. The hub sets the
+  session's `present_until` to two minutes after the call, but only when
+  that moves the stored value by at least a minute, so it writes at most
+  once a minute per session however many tabs call (the write is
+  conditional on the stored value, so two calls at once write once); a call that moves
+  it less changes nothing and is still `204`. More than 10 calls per
+  minute per session are `rate_limited` (§1.7). The call writes no
+  `last_seen_at` (§2.4). `present_until` serves the mail hold only: no
+  endpoint returns it, no presence list or count reads it, and it
+  changes no presence that anyone sees. So a tab left open stops calling
+  10 minutes after the last input and stops counting within 2 minutes
+  after its last call, about 12 minutes after the last input; a tab that
+  goes hidden stops counting within 2 minutes of its last call. Then the
+  grace of §18.5 runs.
 - **`content`** on `chat` and `mention` (default `false`): with `true`
   the mail carries the message text for this kind; without it the mail
   never contains a chat body (§18.5).
@@ -22009,7 +22055,7 @@ device; the browser's own permission is per browser and is not stored.
   time in a mail (§18.5) follow it, and UTC while it is `null`.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
-  `sign_in_link`, `password_reset`), and `current_password` beside `email` when the
+  `sign_in_link`, `password_reset`, `hold_while_online`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored
   otherwise); the
   read-only fields (`address_status`, `verified_at`, `pending_address`,
@@ -22078,6 +22124,39 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   disabled; quiet hours and the rate above still apply. The suspended
   account signs in no more and reads no inbox (§16.8, §18.1). Its other
   actions follow the `inbox` mode.
+- **Held while present.** While `email.hold_while_online` (§18.4) is
+  `true` and the human is **present** in the web app, no notification
+  mail of an `immediate` item goes out; the items wait. The human is
+  present while one of their human sessions that is live (not signed
+  out, ended or expired) has a `present_until` in the future (`POST
+  /me/presence`, §18.4); a session that is signed out, ended or expired
+  stops counting at once, whatever its `present_until` says. The hold
+  lasts while the human is present and `online_grace_minutes` (§16.2,
+  default 5) after that. The next pass after the grace mails what is
+  still unread, as one mail and within the cap of 10 immediate mails
+  per hour above; an item read meanwhile is not mailed (Freshness,
+  below). A session stops counting 1 to 2 minutes after its last call
+  (a call that moved `present_until` by less than a minute wrote
+  nothing), then the grace runs: with the default grace, mail comes
+  about 6 to 7 minutes after the last call, plus up to one pass of the
+  mailer; with another `online_grace_minutes` the range moves with it,
+  and a session that is signed out or ends stops counting at once.
+  - It holds the `immediate` items only: a kind whose mode is
+    `immediate`, and an immediate item that the cap moved to the hour's
+    end. An urgent request (`priority: urgent`, §7) is an `inbox` item
+    like any other: it is held while the human is present, who sees it
+    in the bell, and mailed after the grace if they leave.
+  - It never holds security mail (the sign-in alert of an `immediate`
+    `security`, the mails "At once, whatever the mode" of §18.4, the
+    notice to an old address, a verification mail), nor the mails that
+    are no notification (§18.4, "Not notifications").
+  - It never holds the mail of a `suspend` (above, "Mailed whatever the
+    mode"). A suspended account has no live session, so it is never
+    present anyway.
+  - Digests (`hourly`, `daily`, `weekly`) are built at their moment from
+    what is still unread, present or not. Quiet hours apply after the
+    hold, as before it: what the hold releases inside them goes out
+    when they end.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent.
@@ -22918,8 +22997,9 @@ back.
 and for an agent by the instance the round would reach:
 
 - A **human** is present when its availability is `available` and its
-  presence `online` (a dashboard call within the last 120 seconds, or a
-  long-poll open).
+  presence `online` (a dashboard call within the last 120 seconds, up to
+  60 s longer as §5.3 says, or a long-poll open). An agent instance's call
+  is read from its credential's last use, which every call writes.
 - An **agent** is present when its availability is `available` and the
   instance its agent's `wake` rule (§6.18) selects is `online` with an
   events long-poll open (`listening`, §5.3). Under `wake: lead` that is

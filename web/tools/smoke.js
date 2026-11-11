@@ -141,7 +141,7 @@ const win = {
   clearInterval: (id) => { intervals.delete(id); },
 };
 const fireIntervals = async () => { for (const fn of [...intervals.values()]) await fn(); };
-const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error };
+const ctx = { window: win, document, Node: Node_, URL, URLSearchParams, Uint8Array, console, Promise, JSON, Date, Set, Object, Array, Number, String, Error, btoa, atob };
 win.window = win;
 vm.createContext(ctx);
 const html = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
@@ -5036,6 +5036,98 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(clBusy && clTitleKept && clKeyKept,
       "board: the focus stays on a title link when the closed cards come in and on a keyed control when their read fails "
       + JSON.stringify([clBusy, clTitleKept, clKey, clKeyKept]));
+    // A card's status menu opened while the closed cards are read stays open across the late draw, the
+    // focused item with it, when they come in and when their read fails (tsk-wp8hsgvha3n6: the redraw
+    // rebuilt the card and dropped the open menu under a person's click, and under e2e's).
+    const clMenuCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0008");
+    const clMenuButton = () => clMenuCard().querySelector(".card-move .menu-button");
+    const clMenuItems = () => clMenuCard().querySelectorAll(".card-move .menu-item");
+    const clMenuKept = [];
+    for (const outcome of ["go", "fail"]) {
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+      const before = clMenuButton();
+      before.click(); await tick();
+      const opened = before.getAttribute("aria-expanded") === "true" && clMenuItems().length === 2;
+      clMenuItems()[1].focus();
+      clHeld[outcome](); for (let k = 0; k < 8; k++) await tick();
+      const after = clMenuButton();
+      const items = clMenuItems();
+      clMenuKept.push([outcome, opened, after !== before, after.getAttribute("aria-expanded") === "true",
+        !clMenuCard().querySelector(".card-move .menu").hidden, items.length === 2, document.activeElement === items[1]]);
+    }
+    expect(clMenuKept.every((r) => r.slice(1).every(Boolean)),
+      "board: a card's open status menu and its focused item outlive the late draw, the closed read in or failed " + JSON.stringify(clMenuKept));
+
+    // The presence refresh under the Silent filter redraws too, after the members changed: the assign menu
+    // opens again on the same member, found by name, not by place (an earlier member gone shifts the places),
+    // and closes onto its button when that member is gone; the old menu's listener for clicks elsewhere goes
+    // with each redraw (review of #1654).
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    // Every agent away, so that the cards they hold show under the Silent filter; the members read by the
+    // presence refresh, which then drops asDrop (by name) as a member who left.
+    const asDocAdd = document.addEventListener, asDocRemove = document.removeEventListener;
+    let asClicks = 0;
+    const asMembers = win.Maity.api.getAll;
+    let asDrop = null;
+    let asTwinOf = null;
+    // asTwinOf: a human who takes the same short handle as that member joins at the top of the list, so the
+    // member's words change (an agent's handle gets its owner) and the twin's match the old ones.
+    const asTwin = (items) => {
+      const of = asTwinOf && items.find((m) => m.display_name === asTwinOf);
+      return of ? [{ ...of, id: "hum-twin", kind: "human", display_name: "Twin of " + of.display_name, presence: "online" }, ...items] : items;
+    };
+    win.Maity.api.getAll = (p) => (/\/members$/.test(p)
+      ? asMembers(p).then((r) => ({ ...r, items: asTwin(r.items.filter((m) => m.display_name !== asDrop)
+        .map((m) => (m.kind === "agent" ? { ...m, presence: "offline" } : m))) })) : asMembers(p));
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    byId("board-silent").checked = true; byId("board-silent").dispatch("change"); await tick();
+    // A card the Silent filter shows that has an assign menu, whichever the fixtures make it.
+    const asId = (main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.querySelector(".card-assign .menu-button")) || { attrs: {} }).attrs["data-card"];
+    const asCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === asId);
+    const asButton = () => asCard().querySelector(".card-assign .menu-button");
+    const asItems = () => asCard().querySelectorAll(".card-assign .menu-item");
+    document.addEventListener = (t, f, o) => { if (t === "click") asClicks += 1; return asDocAdd(t, f, o); };
+    document.removeEventListener = (t, f, o) => { if (t === "click") asClicks -= 1; return asDocRemove(t, f, o); };
+    asButton().click(); await tick();
+    const asNames = asItems().map((b) => b.getAttribute("title"));
+    const asLabel = asItems()[1].textContent;
+    asItems()[1].focus();
+    asDrop = asNames[0];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asSame = [asNames.length >= 3, asButton().getAttribute("aria-expanded") === "true",
+      document.activeElement && document.activeElement.textContent === asLabel, asItems()[0].getAttribute("title") !== asNames[0], asClicks === 1];
+    // A member with the same short handle joins: the focus stays on the member it was on, by key, not on
+    // the twin whose words are now what the focused item said (review of #1654).
+    asTwinOf = asNames[1];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asTwinAt = document.activeElement;
+    const asKept = [asButton().getAttribute("aria-expanded") === "true", !!asTwinAt && asTwinAt.getAttribute("title") === asNames[1],
+      asItems().some((b) => b.getAttribute("data-key") === "member:hum-twin"), asClicks === 1];
+    // The other way round (4hch): the twin focused, then the twin leaves; the member it shared the handle
+    // with reads the twin's old words again, and the menu still closes onto its button instead of opening on it.
+    if (asButton().getAttribute("aria-expanded") !== "true") { asButton().click(); await tick(); }
+    const asTwinItem = asItems().find((b) => b.getAttribute("data-key") === "member:hum-twin");
+    if (asTwinItem) asTwinItem.focus();
+    const asTwinWords = asTwinItem ? asTwinItem.textContent : null;
+    asTwinOf = null;
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asTwinGone = [!!asTwinItem, asButton().getAttribute("aria-expanded") === "false", document.activeElement === asButton(),
+      asClicks === 0, asItems().length === 0 || !asItems().some((b) => b.textContent === asTwinWords && b.getAttribute("data-key") === "member:hum-twin")];
+    // The focused member leaves: the menu opened again on that member closes onto its button.
+    if (asButton().getAttribute("aria-expanded") !== "true") { asButton().click(); await tick(); }
+    const asBack = asItems().find((b) => b.getAttribute("title") === asNames[1]);
+    if (asBack) asBack.focus();
+    asDrop = asNames[1];
+    await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+    const asGone = [asButton().getAttribute("aria-expanded") === "false", document.activeElement === asButton(), asClicks === 0];
+    win.Maity.api.getAll = asMembers;
+    document.addEventListener = asDocAdd; document.removeEventListener = asDocRemove;
+    byId("board-silent").checked = false; byId("board-silent").dispatch("change"); await tick();
+    expect(!!asId && asSame.every(Boolean) && asKept.every(Boolean) && asTwinGone.every(Boolean) && asGone.every(Boolean),
+      "board: under the Silent filter the assign menu opens again on the same member after an earlier one left and after a member took the same handle, closes when that member left, and leaves one listener "
+      + JSON.stringify([asId, asSame, asKept, asTwinGone, asGone]));
     clProto.focus = clFocus; document.activeElement = undefined;
 
     // The Closed filter gives no "No card matches" while the closed cards are still read.
@@ -6640,9 +6732,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(convs().length === 6 && text(main).includes("Pick a conversation.") && !main.querySelector(".chat-pane"), "chat: the list of own agents and group chats, nothing open yet");
   // Unread first (the group chat with a mention, Agent A), then the newest; without messages last.
   const convOrder = () => convs().map((a) => a.querySelector(".conv-title").textContent + (a.classList.contains("unread") ? "*" : ""));
-  expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
-    "chat: unread first, then the newest, the ones without messages after " + JSON.stringify(convOrder()));
-  // Pins (§9.3): a human pins a chat; the list is read again and keeps the hub's order (quiet pinned after the unread, before the rest).
+  expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Reviewer", "Agent C"]),
+    "chat: unread first, then the newest; no messages by when the agent joined, then id " + JSON.stringify(convOrder()));
+  // Pins (§9.3): a human pins a chat; the list is read again and keeps the hub's order (a quiet pin above every unpinned chat).
   {
     const pinBtn = (name) => conv(name).parentNode.querySelector("button.pin-toggle");
     const pinCalls = [];
@@ -6665,9 +6757,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "pins: each chat has a pin button beside its link, not pressed");
     pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
     expect(JSON.stringify(pinCalls) === JSON.stringify([["PUT", "/projects/maintainer/maity/conversations/agt-b/pin"]])
-      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent B", "Agent D", "Agent C", "Reviewer"])
+      && JSON.stringify(convOrder()) === JSON.stringify(["Agent B", "Release 0.2 go/no-go*", "Agent A*", "Agent D", "Reviewer", "Agent C"])
       && conv("Agent B").querySelector(".pin-mark") && text(conv("Agent B")).includes("pinned") && pinBtn("Agent B").getAttribute("aria-pressed") === "true",
-      "pins: a pinned quiet chat rises above the other quiet ones, never above unread ones, and shows its mark " + JSON.stringify(convOrder()));
+      "pins: a quiet pin stays above every unpinned chat, unread ones included, and shows its mark " + JSON.stringify(convOrder()));
+    // The fixture's cursor carries the band (scope bands=pinned-top): the page
+    // ends on the quiet pin, and the next page starts at the unpinned unread chat.
+    const bandFirst = await win.Maity.api.get("/projects/maintainer/maity/conversations?observed=true&limit=1");
+    const bandNext = await win.Maity.api.get("/projects/maintainer/maity/conversations?observed=true&limit=1&cursor=" + encodeURIComponent(bandFirst.next_cursor));
+    let bandOld = null;
+    try {
+      await win.Maity.api.get("/projects/maintainer/maity/conversations?observed=true&cursor=" + encodeURIComponent(btoa(JSON.stringify(["", "1\u001fagt-b", "bands=true&observed=true"])).replace(/=+$/g, "")));
+    } catch (err) { bandOld = err; }
+    expect(bandFirst.items.length === 1 && bandFirst.items[0].id === "agt-b" && bandFirst.items[0].pinned === true && !bandFirst.items[0].unread
+      && bandNext.items.length === 1 && bandNext.items[0].id === "cnv-0007" && bandNext.items[0].unread > 0 && bandNext.items[0].pinned === false
+      && bandOld && bandOld.status === 400 && bandOld.details && bandOld.details.fields && bandOld.details.fields.cursor === "invalid",
+      "pins: the cursor resumes in the next band, and a cursor from the earlier order is refused " + JSON.stringify([bandFirst.items.map((c) => c.id), bandNext.items.map((c) => c.id), bandOld && bandOld.status]));
+    // An empty list still refuses a cursor (§1.4): guestlab has only a chat read along, so
+    // without observed=true the project list is empty; the cross-project list is emptied for this read.
+    const cursorRefused = async (path) => {
+      try { await win.Maity.api.get(path); return false; } catch (err) {
+        return err.status === 400 && err.details && err.details.fields && err.details.fields.cursor === "invalid";
+      }
+    };
+    const cursorOf = (position, scope) => encodeURIComponent(btoa(JSON.stringify(["", position, scope])).replace(/=+$/g, ""));
+    const emptyProject = "/projects/guest/guestlab/conversations";
+    const projectGarbage = await cursorRefused(emptyProject + "?cursor=" + encodeURIComponent("not-a-cursor"));
+    const projectOld = await cursorRefused(emptyProject + "?cursor=" + cursorOf("1\u001fcnv-x", "bands=true&observed=false"));
+    const projectBand = await cursorRefused(emptyProject + "?cursor=" + cursorOf("1.0\u001fcnv-x", "bands=pinned-top&observed=false"));
+    win.MAITY_FIXTURE_NO_PROJECTS = true;
+    const meGarbage = await cursorRefused("/me/conversations?cursor=" + encodeURIComponent("not-a-cursor"));
+    const meOld = await cursorRefused("/me/conversations?cursor=" + cursorOf("1\u001fmaintainer/maity\u001fcnv-x", "bands=true&observed=false&me=true"));
+    win.MAITY_FIXTURE_NO_PROJECTS = false;
+    expect(projectGarbage && projectOld && projectBand && meGarbage && meOld,
+      "pins: an empty list, in one project and across them, refuses a garbage cursor and the old scope " + JSON.stringify([projectGarbage, projectOld, projectBand, meGarbage, meOld]));
     // The hub's refusal of a 21st pin, in words.
     win.Maity.api.put = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { pin: "too_many" } }));
     pinBtn("Agent C").click(); for (let k = 0; k < 4; k++) await tick();
@@ -6678,7 +6800,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     pcToggle().click(); await tick();
     pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
     expect(pinCalls.slice(-1)[0][0] === "DELETE" && !conv("Agent B").querySelector(".pin-mark")
-      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Agent C", "Reviewer"]),
+      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Reviewer", "Agent C"]),
       "pins: unpinned, the chat goes back to its place");
     pcToggle().click(); await tick();  // back to the default for the cases after
     win.Maity.api.put = pnPut; win.Maity.api.del = pnDel;
@@ -12356,7 +12478,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread with-project") && !chLinks.slice(2).some((a) => a.className.includes("unread"))
     && chLinks[0].getAttribute("href") === "#/chats/maintainer/maity/cnv-0007" && text(chLinks[0]).endsWith("in Maity")
     && chLinks[1].getAttribute("href") === "#/chats/maintainer/maity/agt-a" && text(chLinks[1]).includes("1 unread")
-    && chLinks[6].getAttribute("href") === "#/chats/maintainer/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
+    && chLinks[6].getAttribute("href") === "#/chats/maintainer/maity/agt-r" && text(chLinks[6]).endsWith("in Maity")
+    && Array.from(chLinks).some((a) => a.getAttribute("href") === "#/chats/maintainer/sample/agt-s1")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
   // On a phone the header hides the Lead (tsk-m9ew7v609fq0): the Chats page, where Chat leads, carries it, once.
@@ -12423,7 +12546,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The project as a mark after the who line, its name on hover (no line of its own).
   const chMark = (a) => a.querySelector(".conv-sub .conv-project");
   expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
-    && chMark(chLinks[6]).getAttribute("title") === "Sample shop",
+    && chMark(chLinks[6]).getAttribute("title") === "Maity"
+    && chMark(Array.from(chLinks).find((a) => a.getAttribute("href") === "#/chats/maintainer/sample/agt-s1")).getAttribute("title") === "Sample shop",
     "chats: each row's project is a mark after the who line, its name on hover");
   // One read across projects (§9.3, GET /me/conversations), not one per project; its failure is said.
   const mcReads = [];

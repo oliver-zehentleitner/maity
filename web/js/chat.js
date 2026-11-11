@@ -54,8 +54,8 @@ window.Maity = window.Maity || {};
     }));
   }
 
-  // In the hub's order (§9.3: four bands, pinned with unread, unpinned with
-  // unread, quiet pinned, the rest; `rank` its position in the list read),
+  // In the hub's order (§9.3: four bands, pinned with unread, quietly pinned,
+  // unpinned with unread, the rest; `rank` its position in the list read),
   // which the dashboard never re-sorts; one's own agents without a
   // conversation yet after them, by title.
   function ordered(chats) {

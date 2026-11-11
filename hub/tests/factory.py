@@ -235,7 +235,7 @@ def trust_and_role(role: str, trust: str | None = None) -> tuple[str, str]:
 
 
 def membership(
-    engine: Engine, project_id: str, role: str = "owner", trust: str | None = None, **principal: str
+    engine: Engine, project_id: str, role: str = "owner", trust: str | None = None, **principal: Any
 ) -> int:
     values: dict[str, Any] = {"role": role}  # before 0067, the single role (§2.3)
     columns = {c["name"] for c in inspect(engine).get_columns("membership")}

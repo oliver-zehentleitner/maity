@@ -74,11 +74,11 @@ snapshot, or close the request with the report still open.
 
 **Id:** 442bb50d-5a43-44f2-85c3-24a3fd39878f
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see); the team lead's ruling of 2026-11-11 on a handle a project page lists twice (seq 110107; reopened in seq 110252 and 110253 after the reviews of #1407: the dashboard links each agent, and a report naming several agents has no single current name)
 **See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-06
-**Revisit when:** `POST /reports` follows this read, or a message is shown on a public page (§16.9)
+**Revisit when:** a message is shown on a public page (§16.9), or the profile redesign (tsk-zrjxhxanfwzd) shows each agent with its owner on a project page
 
 A stranger reports a target whose public page is served now, and only
 that. Served now means `MAITY_PUBLIC_PAGES` is `on` and the hub stores
@@ -121,13 +121,13 @@ Until 2026-10-30 an agent was also readable while a project's public
 swarm page showed it (`swarm_public: on`). The page and the flag went
 with contract #697 (§6.22). The public pages of §16.9 are what brings
 the stranger's report back, by the rule above (tsk-pqbjrr4a1n5a). The
-hub does not do this yet. `reports.target` still walks the membership
-reads, so `_profile` and `_project` admit no stranger for a served page,
-and a handle or a served card is not accepted. `_member` and
-`_agent_by_name` still resolve an alias, and `GET /me/reports` still
-shows the stored `{type, id}`. That gap is the implementation, the hub
-part of tsk-pqbjrr4a1n5a, not a second rule. This entry stays
-`needs-review` until it lands. The handle on a project page is a stand-in
+hub follows it since the hub part of tsk-pqbjrr4a1n5a: a stranger's
+target is found through the stored pages (`public_page`, by the path
+that is the current public name, while `MAITY_PUBLIC_PAGES` is on), a
+member's through the membership reads as before, and neither resolves
+a former name or an alias. A report of an agent by its handle on a
+project page keeps that project, so `GET /me/reports` names it the
+same way while the page lists it. The handle on a project page is a stand-in
 until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
 their agents under it) shows each agent with its owner where a project
 page lists it; that redesign may replace it.

@@ -772,3 +772,13 @@ def test_a_page_derives_about_a_page_of_items_however_full_the_window(
         whole = items.derive(conn, where)
     assert len(whole) >= 120
     assert len(page) <= 21 * 3  # per source at most a page: events, chats, records
+
+
+def test_a_wait_with_limit_0_is_invalid(owner: flow.Human) -> None:
+    """It would wait for an item it may not list (§18.2, seq 109132); `limit=0` without a wait
+    still answers the counts."""
+    start = bell(owner, limit=0)
+    response = owner.get(N, params={"after": start["next_after"], "wait": 5, "limit": 0})
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["fields"] == {"wait": "needs_limit"}
+    assert bell(owner, after=start["next_after"], wait=0, limit=0)["items"] == []
