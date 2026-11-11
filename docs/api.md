@@ -142,7 +142,7 @@ segment of a join-host path (above), as `…`. The server's default access log i
   request sends `Accept-Encoding: gzip` is answered gzipped when its body
   is 1024 bytes or more, with `Content-Encoding: gzip` and `Accept-Encoding`
   in `Vary`. Never compressed: any other method, anything under
-  `/api/v1/auth/`, the join and invitation documents a token opens
+  `/api/v1/auth/` and `/api/v1/bootstrap` (the session's answer, which both carry, holds the CSRF token), the join and invitation documents a token opens
   (`/api/v1/join/{token}`, `/api/v1/invitations/{token}`), an attachment's bytes
   (`…/attachments/{attachment_id}/content`), `text/event-stream`, the
   image and archive types, and every address outside those two prefixes
@@ -234,7 +234,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
-| 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`) for `project:admin` only; also an import (§6.14) |
+| 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
@@ -2427,7 +2427,8 @@ own pending status.
   §2.6.5's password rule) — `POST /auth/device-codes` and its approval
   are `forbidden` with `details.reason: account_pending`.
 - **What it may do.** `GET /me` answers `member` with `account_status:
-  "pending"` and `projects: []`; `GET /auth/session`; `POST
+  "pending"` and `projects: []`; `GET /auth/session`; `GET /bootstrap`
+  (§5.4), whose parts answer as these routes do; `POST
   /auth/logout`; its own sessions (`GET /auth/sessions`, `DELETE
   /auth/sessions/{id}`, `POST /auth/sessions/end-others`, under the
   rules §2.6.5 sets for sessions not in good standing); `POST
@@ -2605,6 +2606,7 @@ included:
   (with `retry_after`) or `unavailable` (§2.8.8) and, while the address
   is verified, `address_hint` (§2.8.7), and no member — the verify carries the CSRF token as
   every cookie call),
+  `GET /bootstrap` (§5.4, its other parts carrying their refusals),
   `POST /auth/second-factor/verify`, under `via: email` `POST
   /auth/second-factor/email` (§2.8.8), and `POST /auth/logout`. Every other
   call is `forbidden` with `details.reason: second_factor_required`,
@@ -2774,7 +2776,8 @@ environment winning as there:
   ends in an **enrolment session**: like a second-factor session
   (§2.8.2) it reaches only `GET /auth/session` (`{second_factor:
   "enrolment_required", session_id, csrf_token, expires_at}`, no
-  member), `POST /auth/reauthenticate`, the enrolment calls of §2.8.1
+  member), `GET /bootstrap` (§5.4, as above), `POST
+  /auth/reauthenticate`, the enrolment calls of §2.8.1
   and `POST /auth/logout`, every other call `forbidden` with
   `details.reason: second_factor_enrolment_required`; the confirm completes the sign-in
   as the verify does. Full sessions such a human already holds when
@@ -5053,6 +5056,112 @@ An agent that stops for a provider limit declares `POST /me/limit` rather
 than a self-set `paused`: the limit has an end the hub can schedule
 around.
 
+### 5.4 `GET /bootstrap` — the dashboard's first reads in one call
+
+Scope: anyone, no sign-in, like `GET /maintenance` (§16.12).
+
+The maintainer's decision of 2026-11-11. Before it draws its first view
+the dashboard reads in three waves, each waiting for the one before:
+the maintenance window and the session together, then `GET /me`, then on
+a project view the project, its members and the event head together.
+This route gives the same answers in one round trip: two round trips
+fewer on a project view, one fewer elsewhere; the time that saves is
+expected, not measured. It is a bundle of existing
+answers and nothing more:
+no new field, no new right, no data the single routes do not already
+give the same caller, and every single route stays.
+
+`GET /bootstrap` and `GET /bootstrap?project={owner}/{slug}` answer
+`200` with one key per part:
+
+| Part | The same as | Only with `project` |
+|---|---|---|
+| `maintenance` | `GET /maintenance` (§16.12) | |
+| `session` | `GET /auth/session` (§2.1) | |
+| `me` | `GET /me` (§5.1) | |
+| `head` | `GET /projects/{owner}/{slug}/events?after=latest&wait=0` (§8.3) | yes |
+| `project` | `GET /projects/{owner}/{slug}` (§6.1) | yes |
+| `members` | `GET /projects/{owner}/{slug}/members` (§6.2) | yes |
+
+```json
+{
+  "maintenance": { "status": 200, "body": { "window": null } },
+  "session": { "status": 200, "body": { "member": { "id": "hum-maintainer", "…": "…" }, "csrf_token": "…",
+               "expires_at": "2026-11-25T09:12:00Z", "session_id": "ses-…", "join_url": null } },
+  "me": { "status": 200, "body": { "member": { "…": "…" }, "projects": [ "…" ], "maintenance": null,
+          "server_time": "2026-11-11T09:12:00Z" } },
+  "head": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "project": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "members": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } }
+}
+```
+
+**Each part is `{status, body}`**: the status and the body the single
+route answers the same caller at that moment, errors included in the
+envelope of §1.3. The request has the effects one authenticated call
+has (presence and an agent's lease renewal, §2.4). A part never carries
+the single route's headers: a `503 maintenance` part has its window in
+`details` (`{from, until, text}`), from which a client derives what
+`Retry-After` would have said. The hub reads the parts concurrently:
+`maintenance`, `session`, `me` and `head` together, and `project` and
+`members` together once `head` has been read. The answer then takes
+about as long as its slowest chain, not as the sum of its parts: the
+slowest of `maintenance`, `session` and `me`, or `head` followed by the
+slower of `project` and `members`. `head` comes first so that nothing
+that happens while those two are read is missed: it comes as an event
+past the cursor, as with the dashboard's own reads. The parts are not one
+snapshot, as the single calls are not either. Without `project`, the
+last three keys are absent.
+
+So, for example:
+
+- **Signed out:** `maintenance` is the window; `session` and `me` are
+  their `401`, and with `project` so are the three project parts.
+- **A second-factor or enrolment session** (§2.8.2, §2.8.5):
+  `session` is its `200` with `second_factor`, every other part but
+  `maintenance` its `403` (`second_factor_required`,
+  `second_factor_enrolment_required`).
+- **A pending account** (§2.7.5): `session` and `me` answer as for any
+  pending account, the project parts `403 account_pending`.
+- **A project the caller cannot see**, an unknown one or a `project`
+  that is not `owner/slug`: `404 not_found` in all three project parts.
+- **A running window:** `maintenance`, `session` and `me` answer (all
+  three are open during it, §16.12), the project parts carry
+  `503 maintenance`; the route itself stays open.
+
+**What answers the whole request**, with no parts:
+
+- what the hub answers before any route: a route limit (§1.7,
+  `MAITY_ROUTE_LIMITS` on `GET /api/v1/bootstrap`; the parts do not
+  count against the single routes' limits), a credential in the query
+  (`credential_in_payload`, §2.2);
+- as this route's own rule, the checks of a caller that presents a
+  cookie or a credential: a cookie request whose `Sec-Fetch-Site` is
+  `cross-site` (`csrf_mismatch`, §2.1), a cookie or a bearer credential
+  over plain HTTP (`insecure_transport`, §2.5), a runner credential
+  (`forbidden`, §15.1: the route is neither under `/runner/` nor under
+  `/projects/`). `GET /maintenance` alone would answer such a request,
+  since it reads no caller; the bundle does not split one request into
+  a part that ignores the caller and parts that refuse it;
+- `Maity-For` (`invalid`, `details.fields["Maity-For"]: "route"`,
+  §2.3): the route is no project route, and a bridge reads the served
+  agent's project through the single routes.
+
+The answer carries `Cache-Control: no-store` and
+is never compressed, since the `session` part holds the CSRF token (§1.1).
+
+**Why it repeats shapes.** The project overview (§6.11) repeats no shape
+that has a home elsewhere, so that a view's restricted fields have one
+place to get wrong. This route repeats them, but it builds no shape of
+its own: each part is the single route's answer, built by the same code
+for the same caller, so there is still one place to get each field
+wrong, and the hub's tests compare every part with its single route.
+The saving is round trips, which no other cut gives: two on a project
+view, one elsewhere, each about 30 ms on a good connection and more on a
+slow or mobile one. It holds only because the hub reads the parts
+concurrently (above); parts read one after another would add their
+server time back.
+
 ## 6. Projects, members, tasks, releases
 
 ### 6.1 Project
@@ -5139,16 +5248,112 @@ around.
 namespace owner alone (for a project of an organisation, any of its
 owners, §6.26).
 
-**Repository**: `url` must be on a forge host the operator configured
-(§11), otherwise `invalid`; `forge` is derived from the host,
-`probe_configured` says whether the hub can read the repository, and
-`probe_via` with which grant (`app`, `owner_token`, `instance` for a
-project in the operator's own namespaces only, or
-`null`, §11.4), and `owner_confirmed` whether the namespace owner
+**Repository** (proposed target): `url` is an `https` URL of the shape
+below, on any DNS host; anything else is `invalid`
+(`details.fields["repository.url"]: "not_a_repository_url"`). This
+replaces `not_a_configured_forge`, which named a forge list the
+operator was said to configure and the hub does not have. Until the
+implementation lands, the hub refuses every URL whose host is not
+`github.com` with `invalid`
+(`details.fields["repository.url"]: "not_a_configured_forge"`), and the
+dashboard reports that same reason. `forge` is
+derived from the host, below. `probe_configured` is `true` only when
+`forge` is `github` and §11.4 has a grant that covers the repository;
+otherwise it is `false` and `probe_via` is `null`. When `forge` is
+`github`, `probe_via` names that grant (`app`, `owner_token`,
+`instance` for a project in the operator's own namespaces only, or
+`null`, §11.4). `owner_confirmed` says whether the namespace owner
 confirmed this URL for the owner's grants (§11.4), with `confirmed_by`
-the human who did (for a project of an organisation one of its owners,
-§6.26).
-One repository per project in V1.
+the human who did (for a project of an organisation, one of its
+owners, §6.26). Off GitHub the confirmation is still recorded, and
+still cleared when the URL changes, and it authorises no read and
+sends no token.
+One repository per project in V1. Under this target the hub stores the
+URL. Where `forge` is `github`, `gitlab`, `gitea` or `bitbucket`, the
+dashboard links the forge's merge or pull-request list from it (§6.11);
+`other` has the repository link and no such list. The hub does not clone the
+repository and it does not request the host (§11). An agent and a
+runner still receive the URL and may clone it themselves.
+
+A repository whose `forge` is not `github`:
+
+```json
+"repository": { "url": "https://gitlab.corp.example/acme/platform/api",
+                "default_branch": "main", "required_check": null,
+                "forge": "gitlab", "probe_configured": false, "probe_via": null,
+                "owner_confirmed": false, "confirmed_by": null }
+```
+
+**The shape of `url`.** Checked, then stored, in this order. A failure
+at any step is `not_a_repository_url`.
+
+1. **Lower case.** The scheme and the host are lower-cased before they
+   are checked. The path is not. `HTTPS://GitLab.com/Group/proj` is
+   then `https://gitlab.com/Group/proj`.
+2. **One trailing slash.** If the path ends in a single `/` — the last
+   character is `/` and the character before it is not — that slash is
+   removed. `https://gitlab.com/group/proj.git/` becomes
+   `https://gitlab.com/group/proj.git`. That optional `.git` and
+   optional one `/` are the spelling §11.7 accepts on a GitHub name,
+   and the same spelling is accepted here on any host. A second slash
+   is not removed.
+3. **The clone suffix.** A last segment that ends in the four characters
+   `.git`, lower case only, loses those four characters before the
+   segment is checked. `https://gitlab.com/group/proj.git` becomes
+   `https://gitlab.com/group/proj`. `.GIT` is not removed in this step.
+4. **The checks**, on what those three steps left. No user part, no
+   port, no query, no fragment, no whitespace, no ASCII control
+   character and no percent-encoding. The host is a DNS name as for a
+   person's `website` (§16.9): at least two labels, ASCII, each
+   `[a-z0-9]` or `[a-z0-9][a-z0-9-]{0,61}[a-z0-9]`, the whole host at
+   most 253 characters, the last label not all digits. A Unicode host
+   is refused; an IDN is accepted only in its `xn--` form, as §16.9
+   says for a Mastodon host. No address literal, no `localhost`. The
+   path is segments separated by a single `/`, each segment 1 to 255
+   characters from `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`, and not
+   `.` or `..`. No empty segment. No segment may end in `.git` or
+   `.atom`, compared ignoring case, so `proj.GIT` fails here.
+   `github.com` takes exactly two segments. Any other host takes from
+   two to twenty-two, so a GitLab path of twenty-one group segments
+   plus the project fits. The value step 5 stores is at most 2048
+   characters.
+5. **What is stored**, and it does not keep the suffix. `https://` plus
+   the lower-case host plus the path left after the slash and the clone
+   suffix were removed. `https://GitLab.com/group/proj`,
+   `https://gitlab.com/group/proj.git` and
+   `https://gitlab.com/group/proj.git/` are all stored as
+   `https://gitlab.com/group/proj`. The path's own case is kept
+   (`Group` stays `Group`). The project carries this stored value, and
+   the confirmation of §11.4 compares the URL the owner saw with it.
+
+`github.com` is exactly two segments because the probe reads
+`owner/name` from the first two (§11), and a longer path would name a
+different repository than the one it read. Nested groups exist on
+GitLab, not on GitHub.
+
+**`forge`**, from the stored host alone. No DNS lookup and no
+connection. The leftmost label is the part of the host before the
+first dot.
+
+| Host | `forge` |
+|---|---|
+| `github.com`, the whole host | `github` |
+| leftmost label `gitlab` (`gitlab.com` included) | `gitlab` |
+| leftmost label `bitbucket` (`bitbucket.org` included) | `bitbucket` |
+| `codeberg.org`, or leftmost label `gitea` or `forgejo` | `gitea` |
+| any other host | `other` |
+
+A leftmost label `github` does not make the kind `github`. Only the exact host
+`github.com` selects `github`, the only supported forge kind and the only
+kind the hub probes. That kind's API credential — the instance token, an
+installation token, an owner's token — is sent to `api.github.com` (§11),
+which is a different host from `github.com`. The installation and OAuth
+exchange with `github.com` itself stays the one §11.4 describes, and it
+does not use `repository.url`. `github.example.com` is
+`other`. A self-hosted GitLab whose host is named `gitlab.…` is
+`gitlab` for the link only; one whose host does not say so
+(`git.corp.example`) is `other` and still has the repository link.
+Deriving the kind never requests the host.
 
 `required_check` names the one check that says a commit is good to
 merge or deploy (`ci-ok` in the example, as in Maity's own CI,
@@ -7668,7 +7873,9 @@ URL, no scheme; anything else is `invalid` with
 `details.fields.contract.path: "not_a_path"` on the write that names
 it. A read resolves the default branch to one commit first and reads
 the file at that commit, so `ref`, `text` and `url` agree even while
-someone pushes: `probe_not_configured` without a probe,
+someone pushes: `probe_not_configured` without a probe (when `forge` is
+not `github`, `details.reason: forge_not_github` for `project:admin`,
+§11),
 `probe_unavailable` when the forge does not answer, `not_found` with
 `details.fields.contract.path: "not_found_on_forge"` when the file is
 not there at that commit. The file is decoded as UTF-8 and read whole
@@ -7723,7 +7930,8 @@ keeps no copy:
 - **The read** is the one above: the default branch resolved to one
   commit, the file read at that commit, only from the project's own
   repository, decoded as UTF-8, with the same errors —
-  `probe_not_configured`, `probe_unavailable`, `not_found` with
+  `probe_not_configured` (off GitHub, `details.reason: forge_not_github`
+  for `project:admin`, §11), `probe_unavailable`, `not_found` with
   `details.fields["settings.contract_path"]: "not_found_on_forge"`,
   `invalid` with `"too_large"` or `"not_text"` under the same key — and
   nothing shown on any of them, never an older text. `path` is the
@@ -7823,12 +8031,15 @@ web owner's:
 
 - The overview's project facts (§6.11) have a **Contract** row: a link
   to the view below and, beside it, the forge's page for the file at the
-  default branch, derived as now from `repository` and the setting. No
+  default branch, derived as now from `repository` and the setting. That
+  page exists only when `forge` is `github` (`/blob/<branch>/<file>`) or
+  `gitlab` (`/-/blob/<branch>/<file>`); `gitea`, `bitbucket` and `other`
+  have the view and no forge page for the file. No
   repository: no row.
 - Route `/<owner>/<slug>/contract` (§16.11): the table of contents from
   `toc` beside the rendered `text`, every heading carrying its
-  `anchor` as `id`; the short `ref`, `fetched_at` and the forge's link
-  above it. On an error the path and the hub's reason, nothing else. A
+  `anchor` as `id`; the short `ref`, `fetched_at` and, when §6.11
+  derives one, the forge's link above it. On an error the path and the hub's reason, nothing else. A
   re-read sends `If-None-Match`. It is read when the view opens, and
   again only on **Refresh** — a megabyte is not re-read on a poll.
 - A contract card's section links to `contract#<anchor>` of its section
@@ -8269,9 +8480,9 @@ already read; the page adds no new right and no new stored field.
 | Part | Source | Notes |
 |---|---|---|
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
-| repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
+| repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a repository URL (§6.1); the hub does not fetch it |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
-| contract link | `settings.contract_path` (§6.1, default `docs/api.md`), `repository` | the view of the whole contract inside Maity and the forge's page for the file (§6.8); no repository: no link |
+| contract link | `settings.contract_path` (§6.1, default `docs/api.md`), `repository` | the view of the whole contract inside Maity and, when `forge` is `github` or `gitlab` only, the forge's page for the file (§6.8); `gitea`, `bitbucket`, `other` or no repository: no forge page for the file |
 | pull requests link | `repository.url` and `repository.forge` (§6.1) | derived in the browser: GitHub and Gitea `/pulls`, GitLab `/-/merge_requests`, Bitbucket `/pull-requests`; another forge or no repository: no link |
 | issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
@@ -8875,7 +9086,9 @@ on that route (`tasks:admin`, or `line:lead` within its reach, §2.3). `issue_ur
 another repository, even of the same owner, is `invalid` with
 `details.fields.issue_url: "foreign_repository"` — the import reads the
 forge, and the hub reads only the project's repository (§6.13). The hub
-needs the probe: `probe_not_configured` without it.
+needs the probe: `probe_not_configured` without it. When `forge` is not
+`github`, a reader with `project:admin` gets `details.reason:
+forge_not_github` (§11); any other reader gets `details: {}`.
 
 Unlike every other write, the import reads the forge before it answers,
 because the card cannot exist without its title. The read runs before
@@ -12980,9 +13193,24 @@ the former participant unless it reads along as the owner of an agent
 participant (§9.2);
 the field never names a conversation its reader may not open. Where an
 event lives is then: its conversation when `conversation_id` is set,
-else its `subject` (a card, a request), else the project's messages
-(§8.8) for a message that is not a conversation's, else nowhere but
-the dashboard's page of the event (below).
+else the project's messages (§8.8) for a message that belongs to no
+conversation and is not removed, one about a card (the event's
+`subject`) included, else its `subject` (a card, a request), else
+nowhere but the dashboard's page of the event (below). A project message
+about a card lives in the messages, not on the card, because that is
+where its text is read: the card shows no list of the messages about it,
+and the listing names the card beside the message (`task_id`, §8.8). The
+owner decided so on 2026-11-11 (req-cxyyb2w01s8m, option o2, seq
+109453). A removed project message never lives in the messages: one
+about a card stays on its card, one without a card goes to its
+`subject`, else to the event's page. Its tombstone keeps the event's
+`subject` but has no text and, in the listing, no `task_id` (§8.5,
+§8.8), so the messages would show neither the message nor the card. The
+owner confirmed this on 2026-11-11 (req-5zfznap3s3bj, option o1,
+clarified in chat, seq 110013). A chat message the reader can no longer
+open in its chat (`conversation_id: null`, above) goes to its
+`subject`, else to the event's page: it is a conversation's message,
+which the project's messages never list.
 
 ```json
 { "seq": 68216, "kind": "message", "at": "2026-11-04T09:12:40Z",
@@ -13075,9 +13303,12 @@ the text's project (§16.11), so it opens in a new tab, copies and
 reloads as any dashboard link. That page reads this route and opens the
 event where it lives (above) — the chat, the thread, the card, the
 request or the project's messages — scrolled to and highlighted, the
-address replaced by that place's; an event that lives nowhere else (no
-conversation the reader may open, no subject, no message) is shown on
-the page itself. A `404` shows "not visible" there, the same for an
+address replaced by that place's; a project message about a card opens
+in the project's messages at its `seq`, the card linked beside it, not
+on the card; a removed message never opens in the messages, but on its
+card, else its subject, else this page (above); an event that lives
+nowhere else (no conversation the reader may open, no subject, not a
+project message that is not removed) is shown on the page itself. A `404` shows "not visible" there, the same for an
 event the reader may not see and one that does not exist; a participant
 added to a group chat later sees it too for those of the chat's earlier
 messages the event list does not serve it (above).
@@ -13963,19 +14194,35 @@ GET /projects/{owner}/{slug}/probe?commit=6e3eceee…40 hex
 GET /projects/{owner}/{slug}/probe?pr=3&max_age=0
 ```
 
-Scope `project:read`. The hub's read-only view of the project's forge
-(GitHub in V1). The forge API host and the instance token come from the operator's
-environment only (`MAITY_FORGE_GITHUB_TOKEN`; the host is fixed per forge
-kind, `api.github.com` for GitHub): nothing a project member sets can
-make the hub send its token anywhere else, and `repository.url` must be
-on a configured forge host (§6.1). Which grant reads a project's
-repository — the namespace owner's GitHub App installation, the owner's
-own token, or this instance token for a public repository of the operator's
-own namespaces only — is
+Scope `project:read`. This section is the proposed target, as §6.1 is.
+Until the implementation lands, a non-GitHub URL is refused when the
+project is written (§6.1) and never reaches a probe. The hub's read-only
+view of the project's forge when that forge is GitHub.
+`repository.forge` (§6.1) is `github` only for the exact host
+`github.com`, which selects the only supported forge kind. That kind's
+API credential is sent only to `api.github.com`. The installation and
+OAuth exchange with `github.com` itself is the one §11.4 describes, and
+it does not use `repository.url`. For every other host the hub stores
+the URL and does not read it: `probe_configured` is `false`, `probe_via`
+is `null`, and every probe read answers `probe_not_configured` — this
+call, the contract text (§6.8), an import (§6.14) and the views
+(§11.5), not only `GET …/probe`. A reader with
+`project:admin` gets `details.reason: forge_not_github`; any other
+reader gets `details: {}`, as for the reasons in §11.4. The forge API
+host and the instance token come from the operator's environment only
+(`MAITY_FORGE_GITHUB_TOKEN`; the host is fixed, `api.github.com`):
+nothing a project member sets can make the hub send its token anywhere
+else, and a host a project member sets as `repository.url` is not
+fetched. `repository.url`
+may name any host of the shape in §6.1; that host is not a request
+target. Which grant reads a GitHub repository — the namespace owner's
+GitHub App installation, the owner's own token, or this instance token
+for a public repository of the operator's own namespaces only — is
 §11.4; every grant is read-only, and its permissions are the limit of
 what the project can observe. The hub caches an observation for
 `max_age` seconds (default 60, `0` forces a fresh read) and never writes
-to the forge.
+to the forge. Probes, CI status and merge-request reads for a reachable
+GitLab are not this section.
 
 ```json
 {
@@ -14022,7 +14269,54 @@ hub's own interval; an observation that changes what a card shows emits
 commit link emits `link_observed` (§6.13). With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
-webhook only makes it look sooner.
+webhook only makes it look sooner. That look is a probe read, so it
+runs only when `probe_configured` is true.
+
+**No request to a repository host.** The hub does not take a request
+target from `repository.url`. That URL is stored and linked (§6.1). The
+hub does not resolve its host and does not connect to it. A read whose
+target comes from somewhere else may still name the same host. The
+state URL of §11.3, and the bodies file §11.5 reads beside it, are
+taken from the repository file and are never derived from
+`repository.url`. That file may name `github.com`, or whatever host the
+repository uses; the two hosts being equal is not a refusal, and it is
+not a request to `repository.url`. The reads below run only when
+`forge` is `github`, and, apart from that state URL and its bodies
+file, only against `api.github.com` or the two image hosts of §11.2. A
+token — the instance token, an installation token, an owner's token —
+is sent only to `api.github.com`. The one exchange with `github.com`
+itself is the human linking an installation, including the OAuth
+exchange §11.4 describes; it does not use `repository.url`.
+
+- The probe, and what it feeds: a report's observation, a release, a
+  card's forge link (§6.13), an issue import (§6.14), the contract file
+  (§6.8), the ticker's merge scan and its deployment read (§17.4).
+- The first look at a new repository and the visibility read (§16.9).
+  Neither is made when `forge` is not `github`. That repository is one
+  the hub cannot read: a new project's page starts `off`, and setting
+  the repository turns a page that is `on` to `off`, as §16.9 already
+  says for a repository the hub cannot read. A link on the repository's
+  own host is shown on the public page only while a read found the
+  repository public, which a non-GitHub repository never is, so those
+  links stay off that page.
+- The forge logo and banner (§11.2).
+- The Keep the Why contents read that finds `dashboard-state:` (§11.3)
+  and the views' reads (§11.5). The contents and metadata reads stay on
+  GitHub's fixed hosts. The state download, and the bodies download
+  beside it, use the validated export URL: the target is the one the
+  repository file names and is never derived from `repository.url`.
+  That host may equal the repository host. The fetch is §11.1.
+- The webhook (§17.4). It is a delivery the forge sends to the hub. The
+  hub checks GitHub's `X-Hub-Signature-256` and `X-GitHub-Event` and
+  does not call the sender. A verified delivery queues a probe read;
+  when `probe_configured` is false the delivery is answered `202` and
+  writes nothing, and nothing takes a request target from
+  `repository.url`. Creating or
+  rotating the webhook secret does not cause a request.
+- A human's forge avatar (§6.10). That source is not implemented. When
+  it is, it is read from the GitHub avatar host §11.2 names
+  (`avatars.githubusercontent.com`), from the linked GitHub account, and
+  not from `repository.url`.
 
 ### 11.1 Outbound reads
 
@@ -14051,9 +14345,18 @@ read:
   unique local (`fc00::/7`), multicast, reserved and documentation
   ranges, and the IPv4-mapped, 6to4 and NAT64 forms of any of them — and
   connects to the address it checked, never resolving twice. The forge
-  hosts the operator configures are exempt (a self-hosted forge on a
-  private network is the operator's choice); a host a project member or
-  a repository names never is.
+  hosts the operator configures for a read the hub actually performs are
+  exempt. Today those are the fixed GitHub API host and the image hosts
+  of §11.2, all public names. A request target is never taken from
+  `repository.url` or from a project link, and such a host is never
+  exempt (above, "No request to a repository host"). The export's state
+  URL, and the bodies file beside it, come from the repository file and
+  are still fetched, only after the contents read on `api.github.com`
+  (§11.3). They are never derived from `repository.url`. The file may
+  name the same host as the repository; that equality does not make
+  `repository.url` a target and does not refuse the export URL. The
+  export URL is not exempt from the address rule. A self-hosted forge
+  on a private network is not fetched.
 - 10 seconds per read, connect to last byte. The body is read up to its
   cap and the read is refused at the first byte past it; the cap counts
   the decoded bytes when the answer is compressed.
@@ -14093,16 +14396,24 @@ applies (`logo`, `banner`, §6.1).
 | GitLab | the project's `avatar_url`, else the namespace's | none |
 | Gitea, Forgejo (Codeberg) | the repository's `avatar_url`, else the owner's | none |
 
-GitHub is the one forge of V1 (§11); the other rows apply when the
-operator can configure those forges. Image hosts: for GitHub
-`avatars.githubusercontent.com` (avatars) and
-`repository-images.githubusercontent.com` (social previews); for the
-others the forge's own host. An image URL on any other host (a Gravatar
-fallback, a CDN the hub does not know) is no image. The API reads use
-the grant §11.4 picks for the repository — the instance token only for a
-project in the operator's own namespaces; without a grant the hub reads
-nothing from the forge and has no image (§11.4, `no_grant`). The GraphQL read is a `POST` that
-only queries; the hub still never writes to the forge.
+GitHub is the only forge whose images are read (§11, "No request to a
+repository host"). The GitLab and Gitea rows are the shapes a later
+read would use; they are not used, and the hub does not request the
+forge's own host for an image. An image is requested only from
+`avatars.githubusercontent.com` (the owner's avatar) and
+`repository-images.githubusercontent.com` (the social preview), and
+only for a repository whose `forge` is `github`, after the metadata
+read on `api.github.com`. A repository whose `forge` is not `github`
+has no forge image: `logo` and `banner` stay the upload or none, and
+no host is requested. An image URL on any other host (a Gravatar
+fallback, a CDN the hub does not know, the repository's own host) is
+no image. The API reads use the grant §11.4 picks for the repository —
+the instance token only for a project in the operator's own namespaces;
+without a grant the hub reads nothing from the forge and has no image
+(§11.4, `no_grant`). The GraphQL read is a `POST` that only queries;
+the hub still never writes to the forge. A human's forge avatar
+(§6.10), when that source exists, is the same GitHub avatar host and
+not `repository.url`.
 
 What the hub accepts, whatever the forge said:
 
@@ -14183,13 +14494,21 @@ summary counts, when the hub read them (`observed_at`), each family member's
 name, path and dashboard link, and the attention entries' family member, titles, statuses, topics and links,
 never anything else of an entry.
 
-**Where the URL comes from — the repository only.** The `dashboard-state:`
+**Where the URL comes from — the repository only.** The contents read
+runs only when `repository.forge` is `github` (§11, "No request to a
+repository host"). Otherwise nothing is requested and the export is
+`ktw_not_configured`, as for a project with no repository. When it
+does run, the `dashboard-state:`
 line inside the `keep-the-why:config` block of the repository's root
-`.keep-the-why` on the default branch, read through the forge's contents
+`.keep-the-why` on the default branch is read through the forge's contents
 API (`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with
 the grant §11.4 picks for the repository (the instance token only for a
 project in the operator's own namespaces), at most 64 KiB; without a
-grant nothing is read (§11.4, `no_grant`). There is no project setting that
+grant nothing is read (§11.4, `no_grant`). The state URL is taken from that file and fetched under §11.1. It is
+never derived from `repository.url`. The file may name the same host as
+the repository, `github.com` included; the two hosts being equal is not
+by itself a refusal, and §11.1's address and response checks still
+apply. There is no project setting that
 names or overrides the URL: the repository is the single source of truth,
 as in Keep the Why itself. No repository, no root `.keep-the-why`, or no
 `dashboard-state:` line in it: `ktw_not_configured`. A state URL must be
@@ -14349,6 +14668,9 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 
 The maintainer's decision of 2026-10-28: a project's forge reads use a
 grant from the repository's owner, not only the operator's one token.
+The grants below are considered only when `repository.forge` is
+`github` (§6.1). A URL on any other host is not covered, no token is
+sent, and the first look of §16.9 is not made.
 One instance token cannot read the private repositories of the people
 who host projects on an instance, and a token from the operator's own
 account can read the operator's private repositories, which no other
@@ -14495,8 +14817,12 @@ is private), `installation_suspended` or
 `installation_removed` (the owner's installation covered it and no
 longer does), `token_rejected` (the owner's token was refused by the
 forge), `unconfirmed` (a grant of the owner would cover it, but the
-owner has not confirmed this repository), `repository_moved`. The reason is shown to `project:admin` only; other readers get
-`probe_not_configured` with `details: {}`.
+owner has not confirmed this repository), `repository_moved`,
+`forge_not_github` (the repository's `forge` is not `github`). The
+reason is shown to `project:admin` only; other readers get
+`probe_not_configured` with `details: {}`. `forge_not_github` applies
+to every probe read off GitHub, not only `GET …/probe`: the contract
+text (§6.8), an import (§6.14) and the views (§11.5) use it too.
 
 **What a private repository's data may reach.** What the probe reads
 is project data: it reaches exactly the readers of the record it lands
@@ -14698,6 +15024,11 @@ and by nothing else:
 |---|---|
 | GitHub | `https://github.com/{owner}/{repo}`, optionally followed by `.git`, then optionally by one `/` |
 
+A project's own `repository.url` is a name this section reads only when
+its `forge` is `github` and the URL's `owner/name` is this form (§11,
+"No request to a repository host"). Any other repository URL names
+nothing here, and naming it causes no request.
+
 `{owner}` is 1 to 39 ASCII characters from `A`–`Z`, `a`–`z`, `0`–`9`
 and `-`; `{repo}` 1 to 100 ASCII characters from `A`–`Z`, `a`–`z`,
 `0`–`9`, `.`, `_` and `-`, not `.` or `..`, not ending in `.git`, without
@@ -14873,7 +15204,7 @@ the rule above.
 Errors: `ktw_not_configured` (the project's repository has no
 `.keep-the-why` or no `dashboard-state:` line, as in §11.3);
 `probe_not_configured` (§11.4), `details.reason` (`no_grant`,
-`unconfirmed`, …) for a `project:admin` only, every other reader gets
+`unconfirmed`, `forge_not_github`, …) for a `project:admin` only, every other reader gets
 `details: {}`; `probe_unavailable` with `details.retry_at` while the
 source's forge budget is spent (§11.4, **Rate limits**); `not_found`
 with `details.reason` `not_in_family`, `family_cap`, `no_bodies_file`
@@ -14938,6 +15269,7 @@ and `resolveEntry`, and any write.
 | GET | `/admin/orgs` | `instance:admin`, human only | 16.10 |
 | POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
+| GET | `/bootstrap` | — | 5.4 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent; human | 5.3, 6.24, 16.9 |
 | POST | `/me/limit` | agent / human | 6.12 |
@@ -15259,8 +15591,8 @@ try again then` and exits with 7, its own code, never 1.
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" for a human writer and "Your briefing, written by the agent <handle>" when `by.kind` is `agent` (a text an agent wrote is labelled as written by that agent, never as written by the humans; the same for every other layer that names an agent in `by`), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. A cross-project group chat is not in `conversations`, and the text never prints `maity chat` for it (§9.5). When `cross_chats` has an item with `unread` above 0, a block `Cross-project chats:` follows the unread-chats block: `  <title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`, at most 10, then `  … <k> more: GET /me/cross-chats`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
-| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
-| `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON] [--yes]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); a branch other than the default branch itself whose upstream is its remote's default branch (`refs/remotes/<remote>/HEAD`, else the remote's `HEAD` from `git ls-remote --symref`), as `git switch -c <branch> origin/main` leaves it, gets `branch.<branch>.merge` set to `refs/heads/<branch>` before the facts are read, when the remote has that branch, and says so on stderr; when it has none, nothing is changed and the report is refused with exit 4, naming `git push -u <remote> <branch>`; any other upstream is left as it is; refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card; it names the branch and the pull request with its title first, and a pull request that names the card id in neither its title, its body nor the branch is asked about on a terminal, refused (exit 4) without one, or confirmed with `--yes`, which overrides no other refusal |
+| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; a message with files adds `[<n> attachment(s): <names>]` to its line on stderr, before the author's standing, and has one line per file under it, in that order and without the `maity:` prefix: `  maity files get <id>`, or `  : attachment <k> of <n> has no id the CLI can fetch` (the shell's no-op `:`) for an id that is not 1 to 128 letters, digits, `.`, `_` and `-` (not starting with `-` or `.`) or is missing; these lines carry nothing the sender wrote, so a pasted one runs the fetch or nothing in any shell, while the event line above them quotes the names and is not for pasting; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
+| `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON] [--yes]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed or the remote is not on a GitHub host gh knows; a gh that fails is an error, never `none`, unless a pull request stands in as follows); when gh cannot answer (`unknown`, or failing) and the remote has the branch, the hub's probe (§11, `max_age=0`) is asked about the pull requests the card links (`kind: pr`, the first 5 by repository and number) in that order, and the first one it reads with the remote head as its head stands in for gh's answer as `found`, whatever links before it read; when probing finishes without a match and has read linked pull requests with another head, it refuses with exit 4, naming each; a probe that cannot be asked about one link ends the probing: nothing stands in, and the links it read before refuse nothing; when the remote no longer has the branch, gh cannot answer and tracked files are unchanged, the CLI attempts to read the card and, if it has eligible pull request links (as above), probes them the same way: the first one the probe reads as `merged` with the local head as its head stands in, with the local head as `remote_head`; when probing finishes without such a match and has read linked pull requests in another state or with another head, it refuses with exit 4, naming each; a card that cannot be read, a card without eligible links (no probe is asked) or a probe that cannot be asked about one link (the links it read before refuse nothing) refuses nothing on its own, and the git-fact refusal below stands; a branch other than the default branch itself whose upstream is its remote's default branch (`refs/remotes/<remote>/HEAD`, else the remote's `HEAD` from `git ls-remote --symref`), as `git switch -c <branch> origin/main` leaves it, gets `branch.<branch>.merge` set to `refs/heads/<branch>` before the facts are read, when the remote has that branch, and says so on stderr; when it has none, nothing is changed and the report is refused with exit 4, naming `git push -u <remote> <branch>`; any other upstream is left as it is; git facts that do not match (uncommitted changes to tracked files; a detached HEAD; no upstream; a branch the remote does not have, unless gh finds its pull request merged with the local head; a branch the remote has at another head; a pull request with another head) are refused locally with exit 4 before any hub request, except when the remote no longer has the branch, gh cannot answer and tracked files are unchanged: then the CLI attempts to read the card and, if it has eligible pull request links, probes those links before deciding (above), and without a matching merged pull request the report is refused, by the probe's refusal above, else by the git-fact one; the refusals below come after the card is read; no refusal sends the report; before sending it prints `reporting <branch> at <head>, PR #<n> "<title>" (<state>)` on stderr (the title only when the pull request has one, `(<state>, read by the hub's probe)` when the probe stood in for gh; `…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository) and gh, asked about it now, does not answer `merged` or `closed` (when gh cannot answer, the hub's state stands), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card; it names the branch and the pull request with its title first, and a pull request that the card does not link, that its last report does not name, and that names the card id in neither its title, its body (as gh read it; the probe reads none) nor the branch is asked about on a terminal, refused (exit 4) without one, or confirmed with `--yes`, which overrides no other refusal |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
 | `maity task list [--parent ID] [--status S] [--json]` | `GET /tasks` with `limit=200` and the filters, every page; `status` defaults to the board's open columns (`proposed,open,in_progress,blocked,review`), `--status all` for every card; the board in text: one line per card, a parent's children indented under it, and a child whose parent is not in the list marked `(parent <id>)` |
 | `maity task create "<title>" [--body B] [--area A] [--label L] [--needs ROLE] [--parent ID] [--related ID]... [--status proposed\|open] [--assign ID] [--json]` | `POST /tasks` (§6.4); `--assign` sends `assigned_to`, which needs `tasks:admin`; under `policy.subtasks: proposed` a subtask of a caller without `tasks:admin` starts `proposed` |
@@ -19946,6 +20278,8 @@ Not refused:
 
 - `GET /health`, so an orchestrator does not restart a healthy hub;
 - `GET /maintenance`;
+- `GET /bootstrap` (§5.4): its parts answer as their routes do, so the
+  project parts carry this `503`;
 - the routes of `/admin/maintenance` for an instance admin;
 - the sign-in, so a signed-out admin can sign in and end the window
   early: `POST /auth/login` (§2.1), the sign-in without a password of

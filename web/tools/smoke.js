@@ -5187,6 +5187,80 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: a failed read again of the changed cards is not called a failed closed read " + JSON.stringify(clRecheck));
   }
 
+  // A closed column draws the 50 cards closed last and offers the rest (tsk-a5pxwgkgr73e, the owner's decision,
+  // seq 109362); the count is the column's whole; Show more draws the column whole and focuses the first card it
+  // added; a marked card older than the 50 is drawn. The column's order (rank, then id here) runs against the
+  // closing order, so the first 50 in the column are not the 50 closed last.
+  {
+    const smAll = win.Maity.api.getAll;
+    const smBase = (await smAll("/projects/maintainer/maity/tasks?status=done,cancelled")).items.find((t) => t.status === "done");
+    const smNow = Date.now();
+    const smExtra = Array.from({ length: 60 }, (_, i) => Object.assign({}, smBase, { id: "tsk-m" + String(100 + i), title: "Closed " + i,
+      closed_at: new Date(smNow - (60 - i) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), updated_at: smBase.updated_at, parent: null, depends_on: [], related: [] }));
+    win.Maity.api.getAll = async (p) => {
+      const got = await smAll(p);
+      return /^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p) ? { items: got.items.concat(smExtra), next_cursor: null } : got;
+    };
+    const smColumn = () => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "done");
+    const smCards = () => smColumn().querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
+    const smMore = () => smColumn().querySelectorAll("button").find((b) => b.className.includes("show-more"));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
+    const smFirstCards = smCards();
+    const smNewest = smExtra.slice(10).map((t) => t.id);  // closed last: tsk-m110 … tsk-m159
+    const smFirst = { drawn: smFirstCards.length, count: text(smColumn().querySelector(".count")), button: smMore() && text(smMore()),
+      newest: smNewest.every((id) => smFirstCards.includes(id)), oldest: smFirstCards.includes("tsk-m100") };
+    const smProto = Object.getPrototypeOf(main), smFocus = smProto.focus;
+    smProto.focus = function () { document.activeElement = this; };
+    smMore().dispatch("click"); await tick();
+    const smAfter = smCards();
+    const smFocused = document.activeElement && document.activeElement.className === "card-open"
+      ? document.activeElement.parentNode : null;
+    const smFocusedCard = (() => { for (let x = document.activeElement; x; x = x.parentNode) if (x.attrs && x.attrs["data-card"]) return x.attrs["data-card"]; return null; })();
+    smProto.focus = smFocus; document.activeElement = undefined;
+    const smAdded = smAfter.find((id) => !smFirstCards.includes(id));
+    expect(smFirst.drawn === 50 && smFirst.newest && !smFirst.oldest && smFirst.count === "61" && smFirst.button === "Show 11 more closed cards"
+      && smAfter.length === 61 && !smMore() && !!smAdded && smFocusedCard === smAdded,
+      "board: a closed column draws the 50 closed last and Show more the rest, focusing the first card it added "
+      + JSON.stringify([smFirst, smAfter.length, smFocusedCard, smAdded, !!smFocused]));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board/tsk-m100"); for (let k = 0; k < 8; k++) await tick();
+    expect(smCards().length === 51 && smCards().includes("tsk-m100") && text(smMore()) === "Show 10 more closed cards",
+      "board: a card linked from older than the 50 closed last is drawn with them " + JSON.stringify([smCards().length, smMore() && text(smMore())]));
+    // A subtask folded under a parent, both closed before the 50 (review of #1645): the link to the subtask
+    // draws its parent, unfolds it and marks the subtask's row. The Cancelled column runs the same rule.
+    const smOld = (n) => new Date(smNow - (120 + n) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    smExtra.push(Object.assign({}, smBase, { id: "tsk-mp00", title: "Old parent", closed_at: smOld(2), updated_at: smBase.updated_at,
+      parent: null, depends_on: [], related: [], children: { open: 0, total: 1 } }));
+    smExtra.push(Object.assign({}, smBase, { id: "tsk-mc00", title: "Old child", closed_at: smOld(1), updated_at: smBase.updated_at,
+      parent: "tsk-mp00", depends_on: [], related: [], children: { open: 0, total: 0 } }));
+    smExtra.push(...Array.from({ length: 55 }, (_, i) => Object.assign({}, smBase, { id: "tsk-mx" + String(100 + i), title: "Cancelled " + i,
+      status: "cancelled", closed_at: new Date(smNow - (55 - i) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), updated_at: smBase.updated_at,
+      parent: null, depends_on: [], related: [] })));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board/tsk-mc00"); for (let k = 0; k < 8; k++) await tick();
+    const smRow = smColumn().querySelectorAll("li.subtask").find((li) => li.attrs["data-card"] === "tsk-mc00");
+    const smCancelled = main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "cancelled");
+    const smCancelledMore = smCancelled.querySelectorAll("button").find((b) => b.className.includes("show-more"));
+    const smFold = [smCards().includes("tsk-mp00"), !!smRow && smRow.className.includes("wanted"), smRow && !smRow.parentNode.hidden,
+      smCancelled.querySelectorAll("article.card").length, smCancelledMore && text(smCancelledMore),
+      Number(text(smCancelled.querySelector(".count")))];
+    expect(smFold[0] && smFold[1] && smFold[2] && smFold[3] === 50 && smFold[5] >= 55
+      && smFold[4] === "Show " + (smFold[5] - 50) + " more closed cards",
+      "board: a subtask linked from older than the 50 is drawn under its parent and marked; Cancelled draws its 50 too " + JSON.stringify(smFold));
+    // The same across columns (review of #1645): the parent cancelled, the subtask done, both older than the 50.
+    smExtra.push(Object.assign({}, smBase, { id: "tsk-mp01", title: "Old cancelled parent", status: "cancelled", closed_at: smOld(4),
+      updated_at: smBase.updated_at, parent: null, depends_on: [], related: [], children: { open: 0, total: 1 } }));
+    smExtra.push(Object.assign({}, smBase, { id: "tsk-mc01", title: "Old done child", closed_at: smOld(3), updated_at: smBase.updated_at,
+      parent: "tsk-mp01", depends_on: [], related: [], children: { open: 0, total: 0 } }));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board/tsk-mc01"); for (let k = 0; k < 8; k++) await tick();
+    const smCancelled2 = main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "cancelled");
+    const smRow2 = smCancelled2.querySelectorAll("li.subtask").find((li) => li.attrs["data-card"] === "tsk-mc01");
+    const smCross = [smCancelled2.querySelectorAll("article.card").map((x) => x.attrs["data-card"]).includes("tsk-mp01"),
+      !!smRow2 && smRow2.className.includes("wanted"), smRow2 && !smRow2.parentNode.hidden, smCards().includes("tsk-mc01")];
+    expect(smCross[0] && smCross[1] && smCross[2] && !smCross[3],
+      "board: a done subtask of an old cancelled parent, linked, is drawn under that parent in Cancelled and marked " + JSON.stringify(smCross));
+    win.Maity.api.getAll = smAll;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  }
+
   // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is
   // open, it is moved open → proposed, then the open group answers without it. The read of the cards changed
   // since the reads began puts it on the board, once, in proposed.
@@ -11406,27 +11480,75 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const evMarked = () => main.querySelectorAll("li").filter((li) => li.classList.contains("seq-target")).map((li) => li.getAttribute("data-seq")).join();
   const evReads = [];
   const evGet = win.Maity.api.get;
-  // The one-item listing read that tells a project message's tombstone from a chat's (review of #1629, §8.8).
+  // Every case counts the Messages listing reads it makes: §8.9 places a removed project message and a chat's tombstone
+  // alike (req-5zfznap3s3bj o1), so the page no longer reads the listing to tell them apart (tsk-hpzs907e3xvx).
   const evLists = [];
-  const evList = (p) => { if (/\/messages\?after=\d+&limit=1$/.test(p)) evLists.push(p); };
-  win.Maity.api.get = (p, ...r) => { if (/\/events\/\d/.test(p)) evReads.push(p); evList(p); return evGet(p, ...r); };
+  const evList = (p) => { if (/\/messages\?/.test(p)) evLists.push(p); };
+  // Counts both: each case's own wrapper below calls it, so every case checks its one read of the event too.
+  const evCount = (p) => { if (/\/events\/\d/.test(p)) evReads.push(p); evList(p); };
+  const evOne = (seq) => JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/" + seq]);
+  win.Maity.api.get = (p, ...r) => { evCount(p); return evGet(p, ...r); };
   await evAt(6013);
   expect(win.location.hash === "#/maintainer/maity/messages#seq-6013" && evMarked() === "6013" && main.querySelector("section.view-messages")
-    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6013"]) && evLists.length === 0,
-    "event: a project message opens in Messages, marked there, after one read of the event " + win.location.hash + " " + JSON.stringify(evReads) + " " + JSON.stringify(evLists));
-  // 6001 was removed above: its tombstone has no type, as a chat's has (review of #1629). Its audience (["all"]) stays
-  // and would tell it from a chat's here, but not for a project message to one member, whose audience is member:
-  // tokens alone like a chat's; so the page asks the Messages listing for every typeless tombstone (§8.8, one item
-  // from just below its seq). The listing holds 6001, so it opens there, its tombstone marked, as §8.9 puts a message
-  // that is not a conversation's.
-  await evAt(6001);
-  expect(win.location.hash === "#/maintainer/maity/messages#seq-6001" && evMarked() === "6001" && main.querySelector("li.seq-target.removed")
-    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
-    "event: a removed project message's tombstone (no type) that the Messages listing holds opens there, marked, after one listing read of one item "
-    + win.location.hash + " " + evMarked() + " " + JSON.stringify(evLists));
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6013"]),
+    "event: a project message opens in Messages, marked there, after one read of the event " + win.location.hash + " " + JSON.stringify(evReads));
+  // A project message about a card opens in Messages at its seq, the card linked beside it, not on the card, whose
+  // panel lists no messages (§8.9, the owner's decision of 2026-11-11, req-cxyyb2w01s8m o2, tsk-hpzs907e3xvx).
+  evReads.length = 0;
   await evAt(6005);
-  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-6005" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004"),
-    "event: a message about a card opens that card (its subject) " + win.location.hash);
+  const evCardLi = main.querySelectorAll("li").find((li) => li.classList.contains("seq-target") && li.getAttribute("data-seq") === "6005");
+  expect(win.location.hash === "#/maintainer/maity/messages#seq-6005" && evMarked() === "6005"
+    && !!evCardLi && evCardLi.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004")
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6005"]),
+    "event: a project message about a card opens in Messages at its seq, marked, the card linked beside it, after one read of the event "
+    + win.location.hash + " " + evMarked() + " " + JSON.stringify(evReads));
+  // From here on each case counts its own listing reads, none expected: what Messages reads on its own for the cases
+  // above is not this page's.
+  evLists.length = 0;
+  evReads.length = 0;
+  // 6001 was removed above (its subject null, as the hub gives a message without a card): a removed project message
+  // never opens in Messages, though the listing holds its tombstone; without a card it is drawn on its page, removed.
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/events/6001" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "6001"
+    && main.querySelector("article.event-one p.msg-redacted") && evLists.length === 0 && evOne(6001),
+    "event: a removed project message without a card stays drawn on its page, removed, not sent to Messages, one read of the event, no listing read "
+    + win.location.hash + " " + JSON.stringify(evLists) + " " + JSON.stringify(evReads));
+  // A removed project message about a card (its subject kept through the redaction, §8.5) stays on its card.
+  evLists.length = 0;
+  evReads.length = 0;
+  win.Maity.api.get = (p, ...r) => { evCount(p); return p === "/projects/maintainer/maity/events/6001"
+    ? evGet(p, ...r).then((e) => Object.assign({}, e, { subject: { type: "task", id: "tsk-0004" } }))
+    : evGet(p, ...r); };
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-6001" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004")
+    && evLists.length === 0 && evOne(6001),
+    "event: a removed project message about a card opens its card, not Messages, one read of the event, no listing read " + win.location.hash + " " + JSON.stringify(evLists) + " " + JSON.stringify(evReads));
+  // A former group participant's tombstone (fmzu, #1629): the hub serves the redacted message with no conversation
+  // (the chat is no longer the reader's) and a tombstone payload with no type. About a card it goes to that card
+  // (§8.9: its subject, else the event's page).
+  evLists.length = 0;
+  evReads.length = 0;
+  win.Maity.api.get = (p, ...r) => { evCount(p); return (p === "/projects/maintainer/maity/events/7003"
+    ? Promise.resolve({ seq: 7003, kind: "message", at: "2026-10-22T09:07:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: { type: "task", id: "tsk-0004" },
+      audience: ["member:agt-b", "member:hum-maintainer"], payload: { redacted: true, reason: null, by: "hum-maintainer", at: "2026-10-22T09:08:00Z" }, redacted: true, conversation_id: null })
+    : evGet(p, ...r)); };
+  await evAt(7003);
+  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-7003" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004")
+    && evLists.length === 0 && evOne(7003),
+    "event: a chat's tombstone about a card the reader can no longer open in its chat opens that card, one read of the event, no listing read " + win.location.hash + " " + JSON.stringify(evLists) + " " + JSON.stringify(evReads));
+  // Without a subject it is drawn on its page, not sent to Messages, which lists no chat message and would say "not reached".
+  evLists.length = 0;
+  evReads.length = 0;
+  win.Maity.api.get = (p, ...r) => { evCount(p); return (p === "/projects/maintainer/maity/events/7002"
+    ? Promise.resolve({ seq: 7002, kind: "message", at: "2026-10-22T09:05:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["member:agt-b", "member:hum-maintainer"],
+      payload: { redacted: true, reason: "posted by mistake", by: "hum-maintainer", at: "2026-10-22T09:06:00Z" }, redacted: true, conversation_id: null })
+    : evGet(p, ...r)); };
+  await evAt(7002);
+  expect(win.location.hash === "#/maintainer/maity/events/7002" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7002"
+    && main.querySelector("article.event-one p.msg-redacted") && evLists.length === 0 && evOne(7002),
+    "event: a chat's tombstone the reader can no longer open in its chat, without a subject, stays drawn on its page, one read of the event, no listing read "
+    + win.location.hash + " " + JSON.stringify(evLists) + " " + JSON.stringify(evReads));
+  win.Maity.api.get = (p, ...r) => { evCount(p); return evGet(p, ...r); };
   await evAt(4202);
   expect(win.location.hash === "#/maintainer/maity/chat/agt-a#seq-4202" && evMarked() === "4202",
     "event: a message of one's direct chat opens in that chat, marked " + win.location.hash + " " + evMarked());
@@ -11452,41 +11574,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/maintainer/maity/events/7001" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7001"
     && text(main.querySelector("article.event-one .badge")) === "member_joined",
     "event: an event that lives nowhere else is drawn on its page");
-  // A former group participant's tombstone (fmzu, #1629): the hub serves the redacted message with no conversation
-  // (the chat is no longer the reader's) and a tombstone payload with no type; its audience is member: tokens alone, as
-  // a member-only project message's would be. The Messages listing does not hold it, so it is drawn on its page, not
-  // sent to Messages, which lists no chat message and would say "not reached".
-  evLists.length = 0;
-  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7002"
-    ? Promise.resolve({ seq: 7002, kind: "message", at: "2026-10-22T09:05:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["member:agt-b", "member:hum-maintainer"],
-      payload: { redacted: true, reason: "posted by mistake", by: "hum-maintainer", at: "2026-10-22T09:06:00Z" }, redacted: true, conversation_id: null })
-    : evGet(p, ...r)); };
-  await evAt(7002);
-  expect(win.location.hash === "#/maintainer/maity/events/7002" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7002"
-    && main.querySelector("article.event-one p.msg-redacted") && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=7001&limit=1"]),
-    "event: a chat's tombstone the reader can no longer open in its chat (no conversation, no type), absent from the Messages listing, stays drawn on its page "
-    + win.location.hash + " " + JSON.stringify(evLists));
-  // The listing read fails: nothing is guessed, the project tombstone is drawn on its page, removed.
-  evLists.length = 0;
-  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/messages?after=6000&limit=1"
-    ? Promise.reject(Object.assign(new Error("hub down"), { status: 503, code: "unavailable" }))
-    : evGet(p, ...r)); };
-  await evAt(6001);
-  expect(win.location.hash === "#/maintainer/maity/events/6001" && main.querySelector("article.event-one p.msg-redacted")
-    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
-    "event: a tombstone whose listing read fails stays drawn on its page, not guessed into Messages " + win.location.hash + " " + JSON.stringify(evLists));
-  // The listing's answer comes after the reader left the page: it moves nothing either.
-  let evListRelease = null;
-  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/messages?after=6000&limit=1"
-    ? new Promise((resolve) => { evListRelease = () => resolve(evGet(p, ...r)); })
-    : evGet(p, ...r));
-  await go("#/maintainer/maity/events/6001"); for (let k = 0; k < 6; k++) await tick();
-  const evListPending = typeof evListRelease === "function";
-  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  if (evListRelease) evListRelease();
-  for (let k = 0; k < 6; k++) await tick();
-  expect(evListPending && win.location.hash === "#/account" && main.querySelector("section.view-account"),
-    "event: a listing answer that comes after the reader left the page moves nothing " + win.location.hash);
   // The answer comes after the reader left the page (fmzu, #1629): the event's page is gone, its redirect with it.
   let evRelease = null;
   win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/events/7991"
