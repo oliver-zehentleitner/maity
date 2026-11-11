@@ -175,7 +175,7 @@
       "areas": [],
       "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Codex",
-      "model": "unknown",
+      "model": null,
       "session": null,
       "last_seen_at": "2026-10-20T18:30:00Z",
       "presence": "offline",

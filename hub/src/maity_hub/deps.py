@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -65,14 +66,11 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
     pool for it. What it runs there is the database's work and a few hashes
     (`auth.caller`); nothing in it blocks otherwise (the audit in `hub/context/persistence.md`)."""
     facts = facts_of(request)
-    engine = async_engine_of(request)
-
     slug = request.path_params.get("slug")
     path = request.url.path
     settings = settings_of(request)
 
-    def authenticated(conn: Connection) -> Caller:
-        caller = authenticate(conn, facts, renew_leases=renew_leases)
+    def confine(conn: Connection, caller: Caller) -> Caller:
         # A session that owes the second factor or an enrolment reaches only its
         # few calls (§2.8.2, §2.8.5), decided before any route runs.
         second_factor.gate(conn, settings, caller, request.method, path)
@@ -90,10 +88,25 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
             _confine_pending(conn, caller, request.method, path)
         return caller
 
+    return await authenticated(request, renew_leases, confine)
+
+
+async def authenticated(
+    request: Request, renew_leases: bool, confine: Callable[[Connection, Caller], Caller]
+) -> Caller:
+    """Authenticate the request in one transaction and run `confine` on its caller in the
+    same one, so that a refusal there undoes the call's presence and lease effects; then
+    bind the caller to the request. `GET /bootstrap` confines differently (§5.4)."""
+    facts = facts_of(request)
+    engine = async_engine_of(request)
+
+    def run_in(conn: Connection) -> Caller:
+        return confine(conn, authenticate(conn, facts, renew_leases=renew_leases))
+
     async def run() -> Caller:
         try:
             async with engine.begin() as conn:
-                return await conn.run_sync(authenticated)
+                return await conn.run_sync(run_in)
         except runner_revoke.RevocationDue as due:
             # Written in its own transaction: the refusal rolls the call's back (§15.3);
             # an event one, since a revocation announces.

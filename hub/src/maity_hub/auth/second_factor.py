@@ -58,6 +58,7 @@ _CROCKFORD_READ = str.maketrans({"i": "1", "l": "1", "o": "0"})
 # What a second-factor and an enrolment session may call (§2.8.2, §2.8.5), below
 # `/api/v1`.
 SECOND_STEP_CALLS = {
+    ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/second-factor/verify"),
     ("POST", "/auth/second-factor/email"),  # under `via: email` (§2.8.8)
@@ -72,6 +73,7 @@ MOVED_ENROLMENT_CALLS = {
 }
 MOVED_ENROLMENT_CONFIRM = re.compile(r"/auth/sessions/[^/]+/confirm")
 ENROLMENT_CALLS = {
+    ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/logout"),
     ("POST", "/auth/reauthenticate"),

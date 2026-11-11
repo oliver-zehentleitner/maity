@@ -656,6 +656,7 @@ window.Maity = window.Maity || {};
     "red-team": () => M.t("settings.onboarding.role.red_team"),
     "blue-team": () => M.t("settings.onboarding.role.blue_team"),
     "purple-team": () => M.t("settings.onboarding.role.purple_team"),
+    "expert": () => M.t("settings.onboarding.role.expert"),
   };
   function onboardingForm(ctx) {
     const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
