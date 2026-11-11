@@ -178,3 +178,38 @@ def test_the_reporters_list_shows_the_current_public_name_or_a_neutral_word(
     assert shown[2] == {"type": "profile", "id": None, "label": "agent"}
     assert shown[3] == {"type": "project", "id": None, "label": "project"}
     assert agent["id"] not in str(shown) and world.anna.id not in str(shown)
+
+
+def test_an_agent_its_owners_agents_page_lists_without_a_page_is_reportable(
+    world: World, make_client: ClientFactory
+) -> None:
+    flow.project(world.owner, "secret")  # a private project: the agent has no page of its own
+    flow.agent(
+        pages(make_client),
+        world.owner,
+        "secret",
+        role="reviewer",
+        agent={"handle": "hidden-bot", "display_name": "Hidden Bot"},
+    )
+    zoe = stranger(world, make_client)
+    target = {"type": "profile", "id": "maintainer/hidden-bot"}
+    assert report(zoe, target).status_code == 404  # not listed yet
+    assert world.owner.patch("/me", {"public_agents": "all"}).status_code == 200
+    listed = world.anyone.get("/api/v1/public/pages/maintainer/agents").json()["data"]["agents"]
+    assert {"handle": "hidden-bot", "page": None}.items() <= next(
+        a for a in listed if a["handle"] == "hidden-bot"
+    ).items()
+    assert snapshot(world, report(zoe, target))["handle"] == "hidden-bot"
+    assert {"type": "profile", "id": "maintainer/hidden-bot"} in mine(zoe)
+
+
+def test_a_public_handle_that_looks_like_an_id_is_taken_as_a_handle(
+    world: World, make_client: ClientFactory
+) -> None:
+    zoe = stranger(world, make_client)
+    renamed = world.anna.patch("/me", {"handle": "hum-reader"})
+    assert renamed.status_code == 200, renamed.text
+    shot = snapshot(world, report(zoe, {"type": "profile", "id": "hum-reader"}))
+    assert shot["id"] == world.anna.id
+    # A real account id is still no name a stranger can use.
+    assert report(zoe, {"type": "profile", "id": world.ben.id}).status_code == 404

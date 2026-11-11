@@ -116,7 +116,13 @@ def _agent_shown(conn: Connection, pages: bool, agent: Any, owner: str) -> bool:
     path = f"/{owner}/agents/{agent.handle}"
     if _page(conn, pages, path, "agent") is not None:
         return True
-    if _lists(_page(conn, pages, f"/{owner}/agents", public_people.AGENTS_VIEW), path):
+    # The owner's agents page lists an agent with or without a page of its own (`page`
+    # null): handles are unique per owner, so its handle there names it (§16.8).
+    listing = _page(conn, pages, f"/{owner}/agents", public_people.AGENTS_VIEW)
+    if listing is not None and any(
+        isinstance(a, dict) and a.get("handle") == agent.handle
+        for a in (listing.data or {}).get("agents") or []
+    ):
         return True
     m = t.membership.c
     projects = conn.execute(
@@ -221,6 +227,28 @@ def _reads_member(conn: Connection, caller: Caller, row: Any) -> bool:
     return own or row.id == caller.principal_id or _shares_a_project(conn, caller, row.id)
 
 
+def _profile_by_id(conn: Connection, caller: Caller, profile_id: str) -> dict[str, Any] | None:
+    """A profile named by its account or profile id, for a caller who reads it inside a
+    membership; None otherwise, so a public handle that happens to look like an id is still
+    looked up as a handle (§16.8)."""
+    if profile_id.startswith("agt-"):
+        row = conn.execute(
+            select(t.agent_profile).where(
+                t.agent_profile.c.id == profile_id, t.agent_profile.c.deleted_at.is_(None)
+            )
+        ).first()
+        return _agent_shot(conn, row) if row and _reads_member(conn, caller, row) else None
+    if profile_id.startswith("hum-"):
+        human = conn.execute(
+            select(t.human).where(t.human.c.id == profile_id, t.human.c.deleted_at.is_(None))
+        ).first()
+        if human is not None and (
+            profile_id == caller.principal_id or _shares_a_project(conn, caller, profile_id)
+        ):
+            return _human_shot(conn, human)
+    return None
+
+
 def _profile(
     conn: Connection, caller: Caller, profile_id: str, project: Any, pages: bool
 ) -> dict[str, Any]:
@@ -236,24 +264,9 @@ def _profile(
         row = conn.execute(select(t.agent_profile).where(t.agent_profile.c.id == agent_id)).one()
         # The project it was reported from, so the reporter's list names it the same way.
         return {**_agent_shot(conn, row), "project": project_id}
-    if profile_id.startswith("agt-"):  # a member's read only; a stranger has no such id
-        row = conn.execute(
-            select(t.agent_profile).where(
-                t.agent_profile.c.id == profile_id, t.agent_profile.c.deleted_at.is_(None)
-            )
-        ).first()
-        if row is None or not _reads_member(conn, caller, row):
-            raise not_found()
-        return _agent_shot(conn, row)
-    if profile_id.startswith("hum-"):
-        human = conn.execute(
-            select(t.human).where(t.human.c.id == profile_id, t.human.c.deleted_at.is_(None))
-        ).first()
-        if human is None:
-            raise not_found()
-        if not (profile_id == caller.principal_id or _shares_a_project(conn, caller, profile_id)):
-            raise not_found()
-        return _human_shot(conn, human)
+    by_id = _profile_by_id(conn, caller, profile_id)
+    if by_id is not None:
+        return by_id
     # A person's current handle, as their page shows it at `/{handle}`.
     human = conn.execute(
         select(t.human).where(t.human.c.handle == profile_id, t.human.c.deleted_at.is_(None))
