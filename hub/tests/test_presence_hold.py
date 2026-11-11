@@ -1,4 +1,4 @@
-"""No notification mail while the human is present in the web app (docs/api.md §18.4, §18.5).
+"""No mail of an immediate notification while the human is present in the web app (§18.4, §18.5).
 
 A tab's `POST /me/presence` moves the session's `present_until` two minutes ahead, at most
 once a minute; the mail of an immediate item waits while it is in the future and for
