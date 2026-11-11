@@ -11626,6 +11626,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(humansOnly(aCaps) && humansOnly(aProxy) && humansOnly(aHuman) && humansOnly(aSelf),
     "mock as an admin agent: capabilities, proxy, a human's and its own membership are a human's");
   expect(aLaunch && aLaunch.status === 403 && aLaunch.code === "forbidden", "mock as an admin agent: moving to launch is the owner's go (403)");
+  // An expert's fields from an admin agent (§6.2, §2.3 ᵃ, admin_agents.check_target): another expert with trust
+  // member or guest, never its own membership, an admin's or a human's; the role expert is one it may give.
+  const exAgFixtures = win.MAITY_FIXTURES;
+  const exAgF = JSON.parse(JSON.stringify(exAgFixtures));
+  exAgF["maity/members.json"].items.forEach((x) => {
+    if (["agt-a", "agt-b", "agt-c", "agt-r"].includes(x.id)) Object.assign(x, { role: "expert", expert_for: null, expert_sources: [] });
+    if (x.id === "agt-c") x.trust = "admin";
+    if (x.id === "agt-r") x.trust = "guest";
+  });
+  win.MAITY_FIXTURES = exAgF;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const exAg = (id) => asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/" + id, { expert_for: "the contract" }));
+  const exAgMember = await exAg("agt-b"), exAgGuest = await exAg("agt-r"), exAgAdmin = await exAg("agt-c"), exAgSelf = await exAg("agt-a"), exAgHuman = await exAg("hum-maintainer");
+  const exAgRole = await asAgent(() => win.Maity.api.patch("/projects/maintainer/maity/members/agt-d", { role: "expert" }));
+  win.MAITY_FIXTURES = exAgFixtures;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const exAgBounded = (e) => e && e.status === 403 && e.details.scope === "members:admin" && !e.details.reason;
+  expect(exAgMember.id === "agt-b" && exAgMember.expert_for === "the contract" && exAgGuest.id === "agt-r" && exAgGuest.expert_for === "the contract" && exAgBounded(exAgAdmin) && exAgBounded(exAgSelf) && humansOnly(exAgHuman)
+    && exAgRole.id === "agt-d" && exAgRole.role === "expert",
+    "mock as an admin agent: a member or guest expert's fields apply; an admin expert's and its own are forbidden, a human's is a human's; it may give the role expert "
+    + JSON.stringify([exAgAdmin.details, exAgSelf.details, exAgHuman.details, exAgRole.role || exAgRole.details]));
   // The mock as the hub answers an owner with trust member who changes their agent's role (§3.1 "The owner changes the role"):
   // a project role counts by its base, stored with it; ops and a project role on ops are beyond the limits.
   const owFixtures = win.MAITY_FIXTURES, owSearch = win.location.search;

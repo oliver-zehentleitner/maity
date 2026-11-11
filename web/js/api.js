@@ -726,7 +726,7 @@ window.Maity = window.Maity || {};
   // member or guest, to those trusts and the work roles; capabilities, admin,
   // owner, proxy and manager stay a human's.
   const AGENT_TRUSTS = ["member", "guest"];
-  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team"];
+  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team", "expert"];
   // Every built-in role (§2.3), as the hub's one list; and what a member may
   // give an agent of their own (§3.1: not ops, not proxy).
   const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
@@ -4692,7 +4692,15 @@ window.Maity = window.Maity || {};
         const own = ["expert_for", "expert_sources"].filter((k) => k in body);
         if (given.length !== own.length) fail(400, "invalid", "set them alone", path, { fields: Object.fromEntries(own.map((k) => [k, "alone"])) });
         const target = member(m[1], m[2], path);
-        if (!who.admin && !(who.member.kind === "human" && target.kind === "agent" && target.owner_id === who.member.id)) {
+        if (who.member.kind === "agent") {
+          // An admin agent within §2.3 ᵃ (admin_agents.check_target): another agent with trust
+          // member or guest, never a human's membership and never its own.
+          if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+          if (target.kind !== "agent") fail(403, "forbidden", "an agent never changes a human's membership", path, { reason: "humans_only" });
+          if (target.id === who.member.id || !AGENT_TRUSTS.includes(target.trust)) {
+            fail(403, "forbidden", "an admin agent manages member and guest agents, never itself", path, { scope: "members:admin" });
+          }
+        } else if (!who.admin && !(target.kind === "agent" && target.owner_id === who.member.id)) {
           fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
         }
         if (target.role !== "expert") fail(400, "invalid", "only an expert has these fields", path, { fields: Object.fromEntries(own.map((k) => [k, "expert_only"])) });
