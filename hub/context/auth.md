@@ -380,6 +380,13 @@ nudge toward TOTP over a gate.
   instance.
 - One switch for the sign-in link and the reset together: the reset is the stronger way in, and
   a human may want the link off and the reset on.
+- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails come from
+  it too, so anonymous reset requests could stop them for an hour, and with them the sign-in of
+  every human without TOTP. Reset mails got `password_reset_max_per_hour` instead (review of the
+  contract PR).
+- Wrong TOTP codes at a reset counted only in the per-human limit: whoever holds the mailbox could
+  keep guessing with fresh links unreported. The fifth wrong code on one link voids it and writes
+  `second_factor_failed`, as the sign-in step does (review of the contract PR).
 
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 

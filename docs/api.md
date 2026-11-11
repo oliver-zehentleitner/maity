@@ -193,7 +193,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
-| 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a second-factor or recovery code that is wrong or already used (§2.8) |
+| 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a password reset token that is invalid, expired, used, of a changed password or address, or of an account disabled since (§2.10); a second-factor or recovery code that is wrong or already used (§2.8) |
 | 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 408 | `request_timeout` | the body did not arrive within the time §1.7 gives it from the hub starting to read it (120 seconds; 30 minutes for a replacement's sealed transcript); the hub closes the connection (`Connection: close`) |
@@ -1822,7 +1822,7 @@ HMAC with the signing key, never in clear.
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
 | `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 60 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
 | `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
-| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; its mails count against `sign_in_max_per_hour` |
+| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
 | `POST /auth/password-reset/check`, `…/complete` | 10 per minute per source address, shared with the login limit of §2.1; a wrong TOTP or recovery code counts as §2.8.6 counts |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
@@ -1844,7 +1844,9 @@ address they control) but cannot spend the human's per-address budget
 nor void the human's link (§2.6.3). Whoever controls enough source
 addresses can spend the instance cap and stop sign-in mails for
 everyone until the hour ends — the same accepted kind of denial as the
-device-code breaker above, limited to the mail link. The device code, the legitimate path
+device-code breaker above, limited to the mail link. Reset mails (§2.10)
+have a cap of their own, so spending it stops reset mails and nothing
+else: neither the sign-in link nor the mail factor's mails (§2.8.8). The device code, the legitimate path
 for a human who is signed in anywhere, has no per-address limit at all
 and is never affected by mail limits; the password is not either.
 
@@ -2794,6 +2796,7 @@ environment winning as there:
 |---|---|
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
+| Codes at a password reset (§2.10) | 5 wrong per reset link, then the link is void and `second_factor_failed` (`method: password_reset`) is written; every one also counts in the per-human limit above |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -2803,7 +2806,8 @@ first factor can keep the human's sign-ins at the second step for 15
 minutes at a time. It is accepted, as the device-code breaker in §2.6.4
 is: a limit per source address alone would let a distributed guess at
 six digits run, and the attacker it slows already holds the password or
-the mailbox, which the alerts of §2.8.2 report. The same holds for the
+the mailbox, which the alerts of §2.8.2 report (at a password reset, the
+one of §2.10 after five wrong codes on one link). The same holds for the
 mail factor's hourly limit (§2.8.8): whoever holds the password can use
 up the human's ten mails and keep a human without TOTP out for an hour;
 every one of those mails tells the human that someone has the password.
@@ -3157,9 +3161,13 @@ use.
 **The mail.** Plain text in the human's interface language (§6.2), with
 the rules of §18.5 for headers and content, minus the unsubscribe
 parts. Like the sign-in mail it answers a request, so no mode, digest,
-quiet hours or hourly cap of notifications applies; it counts against
-`sign_in_max_per_hour` (§2.6.4), never against the security or the
-notification budget. Subject `[Maity] Reset your password`. Body:
+quiet hours or hourly cap of notifications applies. It has a budget of
+its own, `password_reset_max_per_hour` (§16.2, default 30): over it the
+request answers `202` as always and nothing is sent. It never counts
+against the sign-in budget, from which the mail factor's mails are sent
+(§2.8.8), nor against the security or the notification budget, so
+anonymous reset requests can stop reset mails for the rest of the hour
+and nothing else. Subject `[Maity] Reset your password`. Body:
 
 - the link `<MAITY_PUBLIC_URL>/sign-in/reset#<token>`, valid
   **30 minutes**. The token stands in the fragment, which no browser
@@ -3171,7 +3179,7 @@ notification budget. Subject `[Maity] Reset your password`. Body:
   as it is";
 - for a human whose second factor is the mail: "This mailbox is your
   second factor too, so whoever reads it can reset your password and
-  sign in. Set up an authenticator app under Profile → Security: then a
+  sign in. Set up an authenticator app under Security in your account: then a
   reset also needs its code."
 
 No code to type: the reset signs no browser in, so the link may be
@@ -3204,7 +3212,15 @@ code used here is consumed and writes `second_factor_changed` with
 An invalid, expired or used token, one of a password that has changed
 since, and a wrong TOTP or recovery code are all `code_invalid`, never
 which reason applies. A wrong code counts as every second-factor code of
-the human does (§2.8.6) and leaves the token usable until it expires.
+the human does (§2.8.6). The fifth wrong code on one token voids it and
+writes the account record `second_factor_failed` `{method:
+password_reset, ip, browser, os}`, a `security` notification with its
+mail sent at once whatever the mode (§2.8.2, §18.4): someone held the
+mailbox but not the app. Each new link starts its own count, so whoever
+keeps guessing with fresh links is reported every five codes, and the
+per-human limit of §2.8.6 still caps the guesses. A token whose account
+was disabled since it was sent is `code_invalid` as well, and changes
+nothing.
 Where the sign-in step would fail closed for TOTP (no instance key,
 §2.8.1), `complete` does too, with the same answer.
 
@@ -3214,13 +3230,18 @@ HMAC-SHA-256 over it under `MAITY_MAIL_SIGNING_KEY`, so a forged token
 is refused before any lookup. The hub stores `sha256(nonce)` with the
 expiry for single use. The password generation moves with every
 password change, a reset or `POST /auth/password` (§2.1), so every
-older reset link dies with it.
+older reset link dies with it. The token also names the address it was
+sent to: a change or removal of the verified address (§18.4) voids every
+open reset link, so a link to a mailbox the human has just left stops
+working.
 
 **What a reset ends.** Every session of the human, however it was made,
 second-factor and enrolment sessions included (`ended_by:
 password_reset`, §2.6.5), and every open device code, sign-in link and
 code, and reset link of the human, as a password change does (§2.6.5,
-"Ended with the password"). Whoever resets either forgot the password or
+"Ended with the password"). It also voids an unconfirmed new address
+(`pending_address` and its verification link, §18.4) and a held address
+change (§2.6.3): whoever held the old password may have started either. Whoever resets either forgot the password or
 fears someone has it, and a session should not outlive the password it
 was made with. Agent credentials stay: they are not derived from the
 password (§2.2), and ending them would stop the team without stopping
@@ -3258,7 +3279,7 @@ with `details.reason: method_disabled` (§2.6.5).
 (`via: email` in `GET /auth/second-factor`, §2.8.1) sees a banner on
 every dashboard page: "Your sign-in rests on your mailbox alone: whoever
 reads it can reset your password and sign in. Set up an authenticator
-app", linking to Profile → Security. "Later" hides it until the next
+app", linking to Security in the account menu. "Later" hides it until the next
 sign-in; enrolling TOTP ends it. The reset mail and the reset page say
 the same (above).
 
@@ -17563,13 +17584,19 @@ can use up another:
   account activity triggers. Over it, a mail is **queued** for the next
   hour, in order, and `security_queued` counts it; a security mail is
   never dropped for budget reasons.
-- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3), the
-  one kind of mail an unauthenticated caller can trigger. It has, in
+- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3) and
+  the mail factor's links and codes (§2.8.8), a kind of mail an
+  unauthenticated caller can trigger. It has, in
   addition, the per-source-address limits of #169 §2.6.4. Over it, a
   sign-in mail is not sent (a stale link is useless) and
   `sign_in_dropped_last_hour` counts it.
+- `password_reset_max_per_hour` — the mails of `POST /auth/password-reset`
+  (§2.10), with the per-source-address limits of §2.6.4. Over it, a reset
+  mail is not sent and `password_reset_dropped_last_hour` counts it. Its
+  own budget keeps anonymous reset requests away from the mail factor's
+  mails, which `sign_in_max_per_hour` sends.
 - `registration_max_per_hour` — the mails of `POST /auth/register`
-  (§2.7.1), the other kind an unauthenticated caller can trigger, with
+  (§2.7.1), another kind an unauthenticated caller can trigger, with
   the limits of §2.7.3. Over it, nothing is sent and
   `registration_dropped_last_hour` counts it. The mails to a person
   after an approval decision (§2.7.5) are security mail.
@@ -17625,7 +17652,8 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
 | `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
-| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3) and the mail factor's (§2.8.8), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR` | `password_reset_max_per_hour` | password reset mails (§2.10), all humans together; default 30. Over it, a reset mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
 | `MAITY_MAIL_SIGNING_KEY` | — | 32 bytes or more, base64; signs the links of §18.6. Without it the hub sends no mail (`complete: false`, `missing: ["signing_key"]`). Never returned |
@@ -17665,6 +17693,7 @@ Scope `instance:admin`, human only (§16.1):
   "max_per_hour": { "value": 500, "source": "default" },
   "security_max_per_hour": { "value": 100, "source": "default" },
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
+  "password_reset_max_per_hour": { "value": 30, "source": "default" },
   "registration_max_per_hour": { "value": 30, "source": "default" },
   "signing_key": { "set": true },
   "secret_key": { "set": false },
@@ -17675,6 +17704,8 @@ Scope `instance:admin`, human only (§16.1):
   "security_queued": 0,
   "sign_in_sent_last_hour": 0,
   "sign_in_dropped_last_hour": 0,
+  "password_reset_sent_last_hour": 0,
+  "password_reset_dropped_last_hour": 0,
   "registration_sent_last_hour": 0,
   "registration_dropped_last_hour": 0,
   "failed_last_hour": 0
@@ -17701,7 +17732,7 @@ PATCH /admin/settings/mail
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
 `max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
-`registration_max_per_hour`; `null` returns a field to its default (for `password`:
+`password_reset_max_per_hour`, `registration_max_per_hour`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -20817,7 +20848,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
+| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`); `Forge access added: <account login> (<source>)` |
 
 The two jour fixe items are ordinary items: read by their read flag,
 mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
