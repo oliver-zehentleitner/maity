@@ -14211,9 +14211,10 @@ An agent's owner decides who chats with it (the maintainer's rules of
   holding `events:post` (§2.3), a human or an agent of another owner
   among them, can send a `notice`, `blocker` or `handover` to an agent
   and wake it (§8.4). Whether such messages from another owner should
-  pass the gate too is for the maintainer to decide; the maintainer's
-  rule names assigning a card, a review request, a mention on a card and
-  a lead's message as the work channel.
+  pass the gate too is open (`req-55469pjca13n`): the maintainer's rule
+  names assigning a card, a review request, a mention on a card and a
+  lead's message as the work channel, and his first answer adds a third
+  option, the owner checking each such message by hand.
 - **Chat is protected.** By default only the agent's owner and the
   owner's other agents chat with it. Everyone else needs the owner's
   yes first.
