@@ -14567,6 +14567,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(failedPage && JSON.stringify(A) === JSON.stringify(["GET /maintenance", "GET /projects/maintainer/maity"]),
       "boot: a boot that ends on the failure page ends its parts; later reads ask their own routes " + JSON.stringify([failedPage, A]));
     await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    // The parts last 15 s at most (spq4 at #1672): read within them, /me comes from the bundle; read later,
+    // from its own route.
+    A.length = 0;
+    const exIn = win.Maity.api.prime("maintainer/maity", () => true);
+    await win.Maity.api.get("/me");
+    const within = A.slice();
+    win.Maity.api.unprime(exIn);
+    A.length = 0;
+    const exOut = win.Maity.api.prime("maintainer/maity", () => true);
+    const exNow = Date.now; Date.now = () => exNow() + 16000;
+    await win.Maity.api.get("/me");
+    Date.now = exNow;
+    const past = A.slice();
+    win.Maity.api.unprime(exOut);
+    expect(JSON.stringify(within) === JSON.stringify(["GET /bootstrap?project=maintainer/maity"])
+      && JSON.stringify(past) === JSON.stringify(["GET /bootstrap?project=maintainer/maity", "GET /me"]),
+      "boot: a part is used within 15 s, and after them the read asks its own route " + JSON.stringify([within, past]));
+    // A part has no headers: a 503 window's wait comes from its end (spq4 at #1672, §5.4). The page is not
+    // told of the window here (onMaintenance held), so the case draws nothing.
+    const raUntil = new Date(Date.now() + 120000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/projects/maintainer/maity"
+      ? Promise.reject(new win.Maity.api.ApiError("in a window", 503, p, "maintenance", { from: new Date(Date.now() - 60000).toISOString(), until: raUntil, text: "x" })) : null);
+    const raTold = win.Maity.onMaintenance; win.Maity.onMaintenance = () => {};
+    const raTok = win.Maity.api.prime("maintainer/maity", () => true);
+    const raErr = await win.Maity.api.get("/projects/maintainer/maity").then(() => null, (e) => e);
+    win.Maity.api.unprime(raTok); win.MAITY_FIXTURE_HOLD = null; win.Maity.onMaintenance = raTold;
+    const raWait = raErr && raErr.details ? raErr.details.retry_after : null;
+    expect(raErr && raErr.status === 503 && raErr.code === "maintenance" && raWait >= 115 && raWait <= 121 && raErr.details.until === raUntil,
+      "boot: a 503 window's part carries retry_after from its end " + JSON.stringify([raErr && raErr.status, raErr && raErr.code, raWait]));
   }
 
   // The invitation and registration pages read the session themselves: the drawing asks it no second
