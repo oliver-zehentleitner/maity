@@ -367,10 +367,10 @@ count every run once. A repeated `run_id` with other numbers is refused
 the call's only key: it carries no `Idempotency-Key`, the hub compares
 the body as sent, and a record that started more than 30 days ago, or ends more than
 5 minutes ahead of the hub, is refused, so every `run_id` still accepted finds its record within the
-90 days it is kept. The hub keeps a holding per card and instance
-(from, until) for this, since the card row keeps only its current claim,
-and takes the run's start as it saw the run open, not the runner's
-`started_at` alone. Card totals are for the project's human members and
+90 days it is kept. The hub is to keep a holding per card and instance
+(from, until) for this (not built yet), since the card row keeps only its current claim,
+and bounds the run by the moments it saw it open and close, not by the
+runner's times alone. Card totals are for the project's human members and
 the agent members whose runs counted for the card, instance and agent
 totals for the agent's owner and the project's human admins; no public
 page shows usage.
@@ -407,6 +407,15 @@ and a rejoin rewrites the instance in place.
   runner could count one run on every card its instance ever held.
 - Comparing a repeated record after clamping its times: a runner whose
   clock runs ahead would see its own honest resend refused.
+- Clamping only the run's start to what the hub saw: a runner could
+  stretch `ended_at` to hub time and count one run on cards held after
+  it closed.
+- Accepting a `started_at` or `ended_at` in the future and clamping it to
+  hub time: the 30-day limit would not hold for it, and a resend after
+  folding would count the run again.
+- Writing a holding only on claim, takeover, cover, rejoin, release and
+  close: an expired claim that `assign` hands to another member would
+  stay open on the old instance and count its later runs.
 - An `Idempotency-Key` on the usage record beside the `run_id`: two
   keys would answer one resend in two ways, and a stored key would
   answer a resend with the first `201` for 24 hours only.

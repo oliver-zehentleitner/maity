@@ -15924,7 +15924,7 @@ Runner credential, signed (§15.1).
 | PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
-| POST | `/runner/placements/{id}/usage` | `{run_id, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same numbers; supervised placements only. No `Idempotency-Key`: the `run_id` is its key; §15.15 |
+| POST | `/runner/placements/{id}/usage` | `{run_id, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same body; supervised placements only. No `Idempotency-Key`: the `run_id` is its key; §15.15 |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable). `Idempotency-Key` required |
 
 ```json
@@ -17304,7 +17304,7 @@ provider's request ids never leave the runner with a record.
 | Field | Values | Meaning |
 |---|---|---|
 | `run_id` | the runner's id for the run, 1–64 printable ASCII characters | identifies the run within the placement |
-| `started_at`, `ended_at` | timestamps | `started_at` after `ended_at`, as sent, is `invalid`; clamped by the hub into [the placement's `created_at`, hub time], and `started_at` not before the run's start as the hub saw it (below, "Which cards a run counts for") |
+| `started_at`, `ended_at` | timestamps | `started_at` after `ended_at`, as sent, is `invalid`; clamped by the hub into [the placement's `created_at`, hub time], and `started_at` both ends bounded by the run as the hub saw it (below, "The run's bounds") |
 | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | integers from 0 to 10^12, or `null` | `null`: the harness did not report it |
 | `cost` | `{amount, currency}` or `null` | the harness's own figure only: `amount` a decimal string from 0 to 10^9 with at most 6 decimals, `currency` an ISO 4217 code in capitals; `null` when the harness gives none |
 
@@ -17362,28 +17362,36 @@ work at once.
 The card row keeps only its current claim, so the hub keeps a
 **holding** per card and instance — `{card, membership, instance, from,
 until}` — for this alone: new hub state, a table of its own, which the
-card's claim columns do not replace. Every claim, move, takeover,
-cover, rejoin with `replaces` (§6.5, §15.14), release, isolation, close
-and cancel writes it: it opens a holding or ends one at that moment. A team claim
-opens none until an instance of the team calls (§6.5); a lease that
-runs out ends nothing, as it releases nothing. Retention: a holding is
+card's claim columns do not replace. Every change of a card's holding
+instance writes it, opening a holding or ending one at that moment:
+claim, takeover, cover, an `assign` that moves an expired claim to the
+assignee (§6.4), a rejoin with `replaces` (§6.5, §15.14), release, the
+removal of the holding member (§6.2), isolation, close and cancel. A
+claim that names no instance opens no holding until an instance holds
+it; a lease that runs out ends nothing, as it releases nothing. Retention: a holding is
 kept while it is open and for 30 days after its own `until`, then
 deleted. No accepted run started more than 30 days before its arrival
 (above, "A late record"), so every holding a record can touch is still
 there. A holding that touches [`started_at`, `ended_at`] at any point
 counts.
 
-**The run's start.** A runner could date `started_at` back and count one
-run for every card its instance ever held. The hub takes the start it
-saw: the latest report (§15.7) that set `run` to `open` at or before
-`ended_at`, by the hub's `reported_at`. `started_at` is clamped to not
-before the latest of that report, the placement's `created_at` and the
-`ended_at` of the placement's previous record; a placement that never
-reported an open run counts the run for no card. So a runner can stretch
-a run back no further than the moment the hub saw it open. A record whose clamped interval overlaps one already stored
-for the placement is `conflict` (`details.reason: run_overlaps`, with the
-stored record in `details.record`): a supervised placement runs one run
-at a time.
+**The run's bounds.** A runner could stretch a run and count it for
+cards its instance held before or after it. The hub bounds both ends by
+what it saw (§15.7, by the hub's `reported_at`). The start: the latest
+report that changed `run` to `open` at or before `ended_at`;
+`started_at` is clamped to not before the latest of that report, the
+placement's `created_at` and the `ended_at` of the previous record — the
+stored record of the placement with the latest `ended_at` at or before
+this one's. The end: the first report after that start that changed
+`run` to `waiting` or ended the run with `state` `stopped`, `exited`
+or `failed`; `ended_at` is clamped to not after it, or to hub time while
+the hub has seen no such report yet. A placement that never reported an open run counts the
+run for no card. So a runner can stretch a run no further than the
+moments the hub saw it open and close. A record whose clamped
+`started_at` comes after its clamped `ended_at`, or whose clamped
+interval overlaps one already stored for the placement, is `conflict`
+(`details.reason: run_overlaps`, with the stored record in
+`details.record`): a supervised placement runs one run at a time.
 - **A card's total** is the usage of the runs recorded for it. A run
   recorded for two cards counts in full for each, and both cards show it
   as shared (`shared_runs`); the hub never splits it, since any split
