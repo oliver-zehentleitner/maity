@@ -18,7 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, event, select, update
 
 from maity_hub import clock, events
 from maity_hub import tables as t
@@ -298,23 +298,37 @@ def test_a_role_change_among_agent_chatter_derives_again(
     assert derived >= 2, derived  # a pass after the change, then the deadline
 
 
+def _per_project_heads(statements: list[str]) -> list[str]:
+    """The statements that read each project's highest `seq` (`listing.stamp`'s heads and
+    `listing.held_stamp`'s positions), the grouped reads only a held call compares."""
+    flat = [" ".join(s.lower().replace('"', "").split()) for s in statements]
+    return [s for s in flat if "max(event.seq)" in s and "group by event.project_id" in s]
+
+
 def test_a_call_that_cannot_hold_reads_no_stamp(
-    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+    owner: flow.Human, migrated: Engine, make_client: ClientFactory
 ) -> None:
-    """The positions of any kind cost a grouped read: an answer without `wait` makes none, a
-    held one does (fmzu, review of #1623)."""
-    calls: list[int] = []
-    real = listing.held_stamp
+    """The positions of any kind cost a grouped read per call: an answer without `wait` reads
+    neither them nor the heads, a held one reads both (fmzu, review of #1623)."""
+    one, two = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    _between(one, two, 2)
+    start = bell(owner, limit=0)["next_after"]  # the key's first use is behind
+    statements: list[str] = []
 
-    def counted(*args: Any, **kwargs: Any) -> Any:
-        calls.append(1)
-        return real(*args, **kwargs)
+    def heard(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
+        statements.append(statement)
 
-    monkeypatch.setattr(listing, "held_stamp", counted)
-    start = bell(owner, limit=0)["next_after"]
-    assert calls == []
-    bell(owner, after=start, wait=1)
-    assert calls, calls
+    event.listen(migrated, "before_cursor_execute", heard)
+    try:
+        bell(owner, limit=0)
+        assert _per_project_heads(statements) == [], statements
+        statements.clear()
+        bell(owner, after=start, wait=1)
+        heads = _per_project_heads(statements)
+        assert any("event.kind in " in s for s in heads), heads  # the stamp's heads
+        assert any("event.kind in " not in s for s in heads), heads  # the positions of any kind
+    finally:
+        event.remove(migrated, "before_cursor_execute", heard)
 
 
 def test_the_quiet_kinds_make_no_item() -> None:
