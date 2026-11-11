@@ -379,7 +379,7 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 /* The project switcher: always visible, one chip per project. At its
    right, behind a separator, the project's state and absence; on a narrow
    screen that block goes under the chips. */
-.switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
+.switcher-row { --switcher-row-gap: 12px; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--switcher-row-gap); }
 /* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
    a project's state keeps the far end of the row. */
 .switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
@@ -393,8 +393,9 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 /* The tabs menu is drawn as the row's last tab (the owner, 2026-11-10, tsk-qa2r972wjsws): the tabs'
    pill, padding, size, colour and gap, on the tabs' line. It stays a menu button (no role=tab, no view
    behind it) and stands outside nav.switcher, so a drag or Alt+Shift+Arrow never moves it and on a phone
-   it keeps the row's right end while the tabs scroll. */
-.switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: -12px; }
+   it keeps the row's right end while the tabs scroll. Its gap to the last tab is the tabs' own: the
+   negative margin cancels the row's column gap, and nav.switcher's end padding (the drop line's room) remains. */
+.switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: calc(-1 * var(--switcher-row-gap)); }
 .tabs-menu-box .menu-button.tabs-menu { min-width: 0; min-height: 0; padding: 8px 10px; border: 1px solid var(--border);
   border-bottom: 2px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); font-size: 0.88rem;
   line-height: inherit; }
