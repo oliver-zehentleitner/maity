@@ -2036,3 +2036,31 @@ could add: the sandbox keeps those paths unwritable.
 - `core.excludesFile` through the session's environment, pointing to a
   file in the runner's state: the sandbox denies reading the runner's
   state, so git inside it could not read the file (inferred, not run).
+
+## A placed Claude Code agent runs `maity` alone
+
+**Id:** 996b6f48-a8d7-4b81-b977-33cef46bc4cc
+**Type:** constraint
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (the runner test of 2026-11-11: after its first `maity resume`, a placed agent ran `maity` in pipes and chains, read "this clone has not joined a project", took the hub for broken and stopped without `maity wait`; its session transcript)
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
+**Revisit when:** Claude Code matches `excludedCommands` per part of a compound command, or the credential becomes readable inside the sandbox
+
+Claude Code's sandbox hides `.git/maity`, and only a command that matches
+`excludedCommands` (`maity *`) runs outside it. A pipe or a chain with
+`;`, `&&` or `||` is one command that does not match, so its `maity`
+runs inside and finds no credential. The start prompt of a Claude Code
+placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
+is set and no credential is readable, `maity` says that instead of "has not
+joined a project".
+
+**Reason:** the old message sent the agent to `maity join`, which it cannot
+do, and hid that the cause was the shape of its own command.
+
+**Rejected alternatives:**
+- Making the credential readable inside the sandbox: repository code an
+  allowed build or test command runs could then read it (ea36c196).
+- Rewriting the agent's command in a hook: hooks are switched off for
+  placements (`--setting-sources user`), and the harness owns the command.
