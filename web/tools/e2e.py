@@ -1135,7 +1135,7 @@ def scenario(run: Run, page: Page) -> None:
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
-    seq_links_step(run, page, alpha, beta, agent_id)
+    seq_links_step(run, page, alpha, beta, agent_id, task["id"])
     attachments_step(run, page, agent_id)
     members_step(run, page)
     dormant_step(run, page)
@@ -1624,9 +1624,10 @@ def direct_removal_step(run: Run, page: Page, agent_id: str) -> None:
     no_problems(run, "direct removal")
 
 
-def seq_links_step(run: Run, page: Page, alpha: Path, beta: Path, agent_id: str) -> None:
+def seq_links_step(run: Run, page: Page, alpha: Path, beta: Path, agent_id: str, card_id: str) -> None:
     """§8.9, tsk-6g2h8dag2fkg: `seq N` in a chat message links to the event's page, which opens the
-    event where it lives, scrolled to and marked; an event this project does not show is "not visible"."""
+    event where it lives, scrolled to and marked; an event this project does not show is "not visible".
+    A project message about a card opens in Messages too, the card linked beside it (tsk-hpzs907e3xvx)."""
     run.step("seq links: a seq in a chat message opens the project message it names, marked in Messages")
     said = run.maity(alpha, "say", "all", "e2e: the notice a seq names", "--type", "notice")
     target = re.search(r"\(seq (\d+)\)", said).group(1)
@@ -1648,6 +1649,19 @@ def seq_links_step(run: Run, page: Page, alpha: Path, beta: Path, agent_id: str)
     run.shot(page, "seq-link-messages")
     run.a11y(page, "messages, opened at a seq")
     # The event's page replaced its own entry: back leaves the place for the chat.
+    page.go_back()
+    expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/chat/{agent_id}$"))
+    run.step("seq links: a seq naming a project message about a card opens Messages at it, the card linked beside it")
+    about = run.maity(alpha, "say", "all", "e2e: a notice about a card", "--type", "notice", "--task", card_id)
+    on_card = re.search(r"\(seq (\d+)\)", about).group(1)
+    run.maity(alpha, "say", "human", f"The card's notice is seq {on_card}.")
+    page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+    page.locator("ol.messages li.msg.in", has_text="The card's notice is").last.locator("a.seq-ref", has_text=f"seq {on_card}").click()
+    expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/messages#seq-{on_card}$"))
+    marked = page.locator(f'ol.project-messages li.pmsg.seq-target[data-seq="{on_card}"]')
+    expect(marked).to_contain_text("e2e: a notice about a card")
+    expect(marked).to_be_in_viewport()
+    expect(marked.locator(f'a[href="/owner/e2e-alpha/tasks/{card_id}"]')).to_have_text(card_id)
     page.go_back()
     expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/chat/{agent_id}$"))
     run.step("seq links: a seq that names an event this project does not show reads \"not visible\"")

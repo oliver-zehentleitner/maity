@@ -1088,6 +1088,36 @@ window.Maity = window.Maity || {};
       const fresh = new Map(controlsOf(part));
       typed.forEach(([k, state]) => { if (fresh.has(k)) setState(fresh.get(k), state); });
     }
+    // A card's open menu (status, assign) and its focused item, for a redraw that no action of the
+    // reader starts: the draw builds every card anew, each with its menus closed, so a menu opened
+    // just before would close under the reader's click (tsk-wp8hsgvha3n6). The old menu is closed
+    // here, without moving the focus, so that its listener for clicks elsewhere goes with it. The
+    // item is found again by its key (data-key: `member:<id>`, `move:<status>`, `sign:<slot>`),
+    // neither by its place nor by its words: a refresh that changed the members shifts the places,
+    // and a handle's words change when another member takes the same short handle (review of #1654).
+    // Returns what opens the same menu of the redrawn card on that item, or null when no keyed item
+    // of an open menu had the focus. An item gone meanwhile leaves the menu closed and the focus on
+    // its button, so that Enter lands on no other item.
+    function openMenuSpot() {
+      const open = Array.from(columnsBox.querySelectorAll(".menu-button"))
+        .find((b) => b.getAttribute("aria-expanded") === "true" && b.getAttribute("data-focus"));
+      if (!open) return null;
+      const key = open.getAttribute("data-focus");
+      const focused = Array.from(open.parentNode.querySelectorAll(".menu-item")).find((e) => e === document.activeElement);
+      const was = M.menuOf(open);
+      if (was) was.close(false);
+      const itemKey = focused ? focused.getAttribute("data-key") : null;
+      if (!itemKey) return null;
+      return () => {
+        const again = Array.from(columnsBox.querySelectorAll(".menu-button")).find((b) => b.getAttribute("data-focus") === key);
+        const menu = again && M.menuOf(again);
+        if (!menu || again.getAttribute("aria-expanded") === "true") return;
+        menu.open("first");
+        const item = Array.from(again.parentNode.querySelectorAll(".menu-item")).find((e) => e.getAttribute("data-key") === itemKey);
+        if (item) item.focus();
+        else menu.close(true);
+      };
+    }
     function focusSpot() {
       const at = document.activeElement;
       if (at && panel && panel.el.contains(at)) {
@@ -1349,6 +1379,7 @@ window.Maity = window.Maity || {};
       if (!apply(1)) return;
       const at = document.activeElement;
       const back = focusSpot();
+      const menuBack = openMenuSpot();
       boardItems = all;
       closedPending = false;
       sayClosed();
@@ -1364,14 +1395,18 @@ window.Maity = window.Maity || {};
         const title = found.querySelector("a.card-open");
         window.setTimeout(() => (title || found).focus(), 0);
       }
+      // After the focus is back: an open menu's item takes it again (null when no item had it).
+      if (menuBack) menuBack();
     }, (err) => {
       if (applied > 1) return;
       const back = focusSpot();
+      const menuBack = openMenuSpot();
       closedPending = false;
       closedError = err;
       sayClosed();
       draw(true);
       if (back) back();
+      if (menuBack) menuBack();
     });
     // The board as it was left: its search too, the hub's one asked again.
     if (kept && kept.search) {
@@ -1393,7 +1428,11 @@ window.Maity = window.Maity || {};
       try {
         const fresh = (await M.api.getAll(ctx.base + "/members")).items;
         M.withMembers(ctx, fresh);
-        if (filter.silent) draw();
+        if (filter.silent) {
+          const menuBack = openMenuSpot();
+          draw();
+          if (menuBack) menuBack();
+        }
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);
         });

@@ -704,15 +704,16 @@ included, else its subject (a card, a request), else only the
 dashboard's page of the event. Until 2026-11-11 the subject came before the
 messages, so a `seq` link to a notice about a card opened the card. The
 dashboard's routing entry (`web/context/routing.md`, "An event's page
-opens the event where it lives", See above) records that older order
-until the web change follows.
+opens the event where it lives", See above) follows this order since the
+web change of 2026-11-11 and records the older one.
 
 A removed project message stays out of the messages, so one about a card
-stays on that card, and one without a card goes to its subject, else the
-event's page: its tombstone keeps the event's `subject` but has no text
-and, in the listing, no `task_id` (§8.5, §8.8), so Messages would show
-neither the message nor the card. Until 2026-11-11 a removed one without
-a card went to Messages; it no longer does.
+stays on that card, and one without a card is shown on the event's page
+(a message's only subject is a card): its tombstone keeps the event's
+`subject` but has no text and, in the listing, no `task_id` (§8.5,
+§8.8), so Messages would show neither the message nor the card. Until
+2026-11-11 a removed one without a card went to Messages; it no longer
+does.
 
 **Reason:** a `seq` link stands for a message someone cites, and the
 reader wants its text. The card panel has no list of the messages about

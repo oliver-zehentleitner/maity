@@ -413,7 +413,7 @@ window.Maity = window.Maity || {};
     },
     {
       name: "expert",
-      description: "learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources is to wake it (§17.3, not built; below)",
+      description: "learns the sources its owner names — the contract, the recorded reasons, the documentation — and answers others' questions about them with the source (file and line, or §): the requests addressed to it or to `role:expert` (§7). It takes no cards, writes no code and does not review; a merge that changes one of its declared sources (`expert_sources`, §6.2) wakes it (§17.3; below)",
       guide: "You answer: learn the sources your owner named for you, answer the questions addressed to you or to the experts from them, and name the source of each answer — file and line, or the contract's §. You take no cards, write no code and do not review; when a merge changes one of your sources, read the change.",
       scopes: ["project:read", "events:post"],
     },
@@ -3207,7 +3207,7 @@ window.Maity = window.Maity || {};
       const empty = { items: [], next_cursor: null };
       data[body.slug + "/project.json"] = created;
       data[body.slug + "/members.json"] = { items: [Object.assign({}, owner, {
-        trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [], last_seen_at: nowIso(),
+        trust: "owner", role: "coder", reports_to: null, areas: ["/"], capabilities: [], expert_for: null, expert_sources: [], last_seen_at: nowIso(),
         presence: "online", paused: null, joined_at: nowIso(),
       })], next_cursor: null };
       ["requests", "tasks", "joins"].forEach((name) => { data[body.slug + "/" + name + ".json"] = Object.assign({}, empty); });
