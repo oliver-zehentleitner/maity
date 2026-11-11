@@ -389,7 +389,7 @@ def create_app(
             engine, settings.mail, settings.secret_key, settings.public_url
         )
         notify_worker.start()
-        stats_reporter = request_stats.Reporter(engine)
+        stats_reporter = request_stats.Reporter(engine, async_engine=async_engine.sync_engine)
         stats_reporter.start()
         load_watch = asyncio.create_task(request_stats.watch_load(request_stats.LOAD))
         pages_worker = public_pages.Worker(engine, settings)

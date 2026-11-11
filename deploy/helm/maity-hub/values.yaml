@@ -81,6 +81,9 @@ database:
   # MAITY_DB_POOL_SIZE and MAITY_DB_MAX_OVERFLOW: each pod's connections to the database,
   # shared by its workers. Unset: the hub's 16 and 16. poolSize is at least 2,
   # and at least 2 × config.workers (each process's sync and async engine).
+  # Each process's share is split between its two engines: the async engine
+  # takes 8 of it, but at most half (a pool of 8 gives 4 + 4), the sync engine
+  # the rest and the whole overflow.
   poolSize: null
   maxOverflow: null
 

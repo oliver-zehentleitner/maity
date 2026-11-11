@@ -66,8 +66,11 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
     settings = _settings(MAITY_WORKERS="4", MAITY_DB_POOL_SIZE="16", MAITY_DB_MAX_OVERFLOW="6")
     share = serving.per_worker(settings)
     assert (share.db_pool_size, share.db_max_overflow) == (4, 1)  # never more than the total
-    # The async engine's part of the share, at least one: 2 // 4 rounds down to 0.
-    assert share.db_async_pool_size == 1 and serving.pool_shares(share) == (3, 1)
+    # The async engine's part of the share: by default half the share of 4.
+    assert share.db_async_pool_size is None and serving.pool_shares(share) == (2, 2)
+    # A value that is set is divided by the workers.
+    named = serving.per_worker(replace(settings, db_async_pool_size=8))
+    assert named.db_async_pool_size == 2 and serving.pool_shares(named) == (2, 2)
     alone = replace(settings, workers=1)
     assert serving.per_worker(alone) is alone
 
@@ -105,6 +108,36 @@ def test_the_async_engine_holds_its_part_of_the_pool_never_all(
     settings = replace(_settings(), db_pool_size=pool, db_async_pool_size=wanted)
     assert serving.pool_shares(settings) == shares
     assert sum(shares) == pool
+
+
+@pytest.mark.parametrize(
+    ("workers", "pool", "overflow", "shares"),
+    [
+        (1, 16, 16, (8, 8)),
+        (1, 8, 0, (4, 4)),
+        (1, 4, 0, (2, 2)),
+        (2, 8, 8, (2, 2)),
+        (1, 32, 0, (24, 8)),
+    ],
+)
+def test_by_default_the_async_engine_holds_8_but_at_most_half_the_share(
+    workers: int, pool: int, overflow: int, shares: tuple[int, int]
+) -> None:
+    """MAITY_DB_ASYNC_POOL_SIZE unset: a pool lowered to stay under the database's connections
+    (the chart's README, deploy/helm/check.sh's pool of 8) keeps half for the sync engine,
+    where every route body still runs; a flat 8 left it 1 of 8 (tsk-v874y63b4z8p)."""
+    settings = _settings(
+        MAITY_WORKERS=str(workers),
+        MAITY_DB_POOL_SIZE=str(pool),
+        MAITY_DB_MAX_OVERFLOW=str(overflow),
+    )
+    assert settings.db_async_pool_size is None
+    assert serving.pool_shares(serving.per_worker(settings)) == shares
+
+
+def test_a_set_async_pool_size_still_takes_up_to_all_but_one() -> None:
+    settings = _settings(MAITY_DB_POOL_SIZE="8", MAITY_DB_ASYNC_POOL_SIZE="8")
+    assert settings.db_async_pool_size == 8 and serving.pool_shares(settings) == (1, 7)
 
 
 def test_one_process_on_a_pool_of_one_is_refused_and_sqlite_is_not() -> None:

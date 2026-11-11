@@ -1049,11 +1049,22 @@ last read always was.
 **Verification:** corroborated
 **Source:** the owner's decision on the asyncio plan (req-hd5k9fprpxp7, 2026-11-09, card
 tsk-v874y63b4z8p and its plan notes); the project lead's decision on the pool split (2026-11-10);
+the project lead's decision on the loop-lag guard's reference (2026-11-11, after `hub-load` on
+main 30d84d15 and 448332b9); the review of #1632 (a computation holding the GIL on an app's loop
+delayed the reference as much and passed the margin) and the project lead's decision on it
+(2026-11-11: the CPU time per callback and a 1000 ms backstop, the reference kept in the process),
+local runs with the garbage collector's time measured per callback;
 `db.make_async_engine`, `db.retrying_async`, `events.async_transaction`, `serving.pool_shares`,
 `hub/tests/test_async_engine.py`, `hub/tests/test_loop_lag.py`
 **Revisit when:** a measurement asks for a native async helper instead of `run_sync`, the series'
 cleanup removes sync paths the routes no longer use, the Docker base and every pinned binary wheel
-support free-threaded Python, or aiomysql falls behind PyMySQL's error numbers
+support free-threaded Python, aiomysql falls behind PyMySQL's error numbers, more route families
+run on the async engine (its pool's share and the loop's average lag measured again), production's
+`async_pool_checked_out` reaches `async_pool_max`, a row lock held by a route makes authentications
+wait on each other (every call of a process then waits for that pool), the loop-lag guard's
+reference stops tracking the runner's lag (a run red with the reference's lag alone), an app loop's
+longest callback nears the CPU limit on a branch that moved no route onto the loop, the hub runs on
+free-threaded Python, or a C extension waits on a loop's thread while holding the GIL
 **See:** replicas.md — 4e24abd8-ab64-4844-897b-629bfa211f6d — as of 2026-11-10
 
 A serving hub has two engines on one database. The sync engine is the one it always had: the routes
@@ -1068,19 +1079,52 @@ connection driven through SQLAlchemy's greenlet bridge. About 1,900 functions th
 
 What the bridge has to keep:
 - **The cursor events.** They hang on `async_engine.sync_engine`, where SQLAlchemy runs them:
-  `write_guard` and `timing` install there (`create_app`), and the statement counts of the
-  tests (`tests/statements.py`) must hang there too once a route moves; none does yet. The
-  two hooks read a context variable the request sets; SQLAlchemy's greenlet runs in the
-  context of the task that awaits `run_sync`, so the request's human and tally reach them as the
-  thread pool's copy of the context did. `hub/tests/test_async_engine.py` checks both.
+  `write_guard` and `timing` install there (`create_app`). The statement counts of the tests
+  (`tests/statements.py`) listen on the `Engine` class for the call and count the async engines on
+  the test's database too, so a count includes the authentication without the test naming the
+  app's async engine. The two hooks read a context variable the request sets; SQLAlchemy's
+  greenlet runs in the context of the task that awaits `run_sync`, so the request's human and
+  tally reach them as the thread pool's copy of the context did. `hub/tests/test_async_engine.py`
+  checks both.
 - **Nothing that blocks on the loop.** The body under `run_sync` runs on the event loop's thread.
   The engine's own waits await: the DNS retry's pause (`_pause_on_the_loop`), `retrying_async`'s
   pause. The steps of a rollback (a rate given back, which may write the shared counter) and those
   after a commit (blobs and files removed) run in a worker thread, shielded from a cancelled
   request. What a route's body does itself is audited when its family moves, and the loop-lag
-  guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) fails when any tick of a test app's
-  loop runs later than its limit (250 ms by default) while concurrent requests of the hot
-  families run.
+  guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) checks the loops while concurrent
+  requests of the hot families run (below).
+- **The loop-lag guard measures against an idle loop.** An app's loop fails when its worst tick runs
+  more than 150 ms later than the worst tick of a bare event loop beside it (a thread of its own,
+  the same 0.1 s tick, nothing else on it), when it is late by more than 20 ms on average, when its
+  worst tick is more than 1000 ms late whatever the reference's (a backstop for a block the
+  reference shared), or when one callback on it (a task step, a timer) spends more than 50 ms of the
+  loop thread's own CPU time. The reference's lag is the machine's and the process's: CPU and the
+  GIL taken by the 16 request threads and the database, the garbage collector, and also anything
+  that holds the GIL on an app's loop, since the reference shares the process. A computation on the
+  owner's loop that held the GIL for 750 ms made the reference 673 ms late and the owner's loop 674,
+  so the margin passed it; the CPU time per callback is what catches it (750 ms against the limit of
+  50). That time leaves out the garbage collector's: a full collection runs in whichever thread
+  allocates when it is due, about 90 ms locally, as often on a loop as on a request thread. Without
+  it the hub's longest callback was about 3 ms in local runs, on main and on the branch that moves
+  authentication onto the loop (#1631) alike. Work that blocks without the CPU shows in the margin,
+  the average and the backstop when it lets go of the GIL (a sleep, a lock); a wait that holds the
+  GIL (a C call that blocks without releasing it) stops the reference too and shows only in the
+  backstop, or in the average when it repeats: a 400 ms `usleep` through `ctypes.PyDLL` on the
+  owner's loop passed locally (reference 360, owner 360, its longest callback 3.6 ms CPU). The first
+  guard (#1626) took a fixed 250 ms from local runs (69–129 ms) and was red on its first GitHub
+  runs: on main 30d84d15 the owner's loop 269 ms and the agent's 247 ms, on 448332b9 237 ms and 251
+  ms, the agent's app serving nothing during the test (`threads_busy` 0). Its maximum measured the
+  runner, not the hub. In two plain local runs the reference was 75 and 78 ms late and the apps'
+  loops at most 16 ms more; on the runners the busy and the idle app's loop differed by 14–22 ms
+  (the runs before the reference had none). The first two runner runs with the reference (on its
+  branch, deb88b2b): the reference 241 and 314 ms late, the apps' loops 259 and 251, 321 and 312 ms,
+  at most 18 ms over it, on average 4–8 ms late. The margin of 150 ms keeps that noise out. Locally
+  it fails a loop blocked once for 400 ms (366 ms against a reference of 89); on the runner, with
+  the reference 241 and 314 ms late, a single block shows only once its tick is about 390–460 ms
+  late. The average catches a loop busy in many slices, which the margin does not see: blocked in
+  random slices of 30–120 ms, an app's loop ran 35 ms late on average (the reference 1 ms) with its
+  worst tick only 40 ms over the reference's. A periodic block of equal slices does not show in the
+  average: the tick takes its next due time from when it ran, so it falls into the gaps.
 - **A cancellation stays a cancellation.** A statement cancelled in the driver invalidates the
   connection, and reading `conn.info` on it again inside the transaction raises
   `PendingRollbackError` in place of the `CancelledError` that must unwind the request.
@@ -1090,6 +1134,46 @@ What the bridge has to keep:
   where `PendingRollbackError` (a 500) took its place before.
 - **SQLite's connection setup.** The pragmas and `BEGIN IMMEDIATE` hang on the async engine's sync
   engine as on the sync one, so tests and single-server hubs run the same path as a server.
+
+**Authentication on the async engine (PR 2).** `deps._resolve` runs the authentication
+transaction (`authenticate`, the second-factor gate, the runner and project confinement, a
+bridge's `carry`, the pending account's confinement) through `run_sync` under `retrying_async`,
+a due revocation inside that retried attempt (`events.async_transaction`), and the session's end
+once, without a retry, as before. Every call thereby loses the
+authentication's thread hop. One hop before the route remains for every `/api/` call: the
+maintenance check in the middleware (`maintenance.window_now`, cached for a few seconds, in
+`run_in_threadpool`); it is a later PR's, as is the pre-check for a large body (`_precheck`).
+The audit of what that code does on the loop: statements on the authentication's own connection;
+SHA-256 and HMAC over a token or a signed request (`auth.caller`); the in-process nonce window's
+lock on SQLite and MariaDB (`credentials.NonceWindow`, held for a dictionary lookup and for dropping
+expired nonces, oldest first from a queue in expiry order, at most 64 per call: the whole window can
+expire together after a burst, and a review measured 200,000 expired nonces dropped in one call at
+77 ms on the loop, so the backlog is spread over the next calls, each adding at most one; before PR
+2 the window walked every live nonce on each call once it held more than 10,000, which on the loop
+would have stalled the process, 20 ms per call at 200,000 live nonces); no password hash (scrypt
+runs in routes only: sign-in, registration, the account's settings), no mail, no forge call and no
+shared counter (`second_factor` counts a wrong code only in `verify`, a route). It writes no project
+event and registers no `on_commit` step (`bridges.carry` included); a gate that completes an
+enrolment writes the account's records and, on PostgreSQL, a `pg_notify`, as statements on the same
+connection. It opens `engine.begin()`, not `events.transaction`, as before. On a server database the
+authentication takes one of the async engine's connections (`MAITY_DB_ASYNC_POOL_SIZE`, no overflow)
+for its few statements, so the `stats` line names that pool too (`async_pool_*`,
+`hub/context/serving.md`).
+
+The cost is the loop's: it does the authentication's work now, so its average lag rose from about
+2 to about 4 ms in the loop-lag guard on PostgreSQL (16 threads × 20 rounds), the worst tick
+staying where the machine puts it. The threads busy fell from about 14.5 to about 3 on average.
+Unset, the async pool takes 8 of each process's pool share but at most half of it (the project
+lead's decisions, 2026-11-11), carved out of `MAITY_DB_POOL_SIZE` as before: the default 16 gives
+8 + 8, a pool of 8 gives 4 + 4, two workers on it 2 + 2 each, and the sync engine keeps the whole
+overflow. A value that is set still holds up to all but one of a share. Rejected: keeping 2, PR
+1's default while no call used the async engine; with 2 the guard's runs took 38–45 s against
+34–39 s on main, with 8 they took 34–35 s, every call's authentication queueing on two
+connections per process otherwise. Rejected too: a flat 8 whatever the pool. Every route body
+still runs on the sync engine, and an operator who lowers the pool to stay under the database's
+connections (the chart's README advises it, deploy/helm/check.sh renders a pool of 8 without
+overflow) would have left it 1 of 8 (async 7), 4 of 12, and with two workers on 8 + 8 one pooled
+connection each, where the old default gave 6 of 8.
 
 **Reason:** the routes paid two thread hops (authentication, then the body) and competed for the
 thread pool's 40 threads, held long-polls and slow reads included. The bridge removes the hops for
@@ -1105,3 +1189,9 @@ aiosqlite keeps SQLite on the same code path as the servers.
 - SQLite sync-only: tests and small hubs would not run the path production runs.
 - Free-threaded Python instead of asyncio: the binary wheels and the Docker base are not there,
   and several processes per pod already give CPU parallelism.
+- The loop-lag guard's reference in a process of its own, so that a computation holding the GIL on
+  an app's loop no longer delays it: with its own GIL it would also no longer see the request
+  threads' GIL contention, the very noise the margin cancels, so that noise would no longer cancel
+  out on the runner, and it would still see such a stall only from 150 ms over its own lag, which
+  no run has measured. The CPU time per callback catches it from 50 ms, with the reference in the
+  process.

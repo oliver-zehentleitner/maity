@@ -325,7 +325,7 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
     from tests.test_db_pool import captured_async_connect_args, captured_connect_args
 
     monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql+psycopg://u:p@localhost/h")
-    monkeypatch.setenv("MAITY_DB_POOL_SIZE", "7")
+    monkeypatch.setenv("MAITY_DB_POOL_SIZE", "12")
     monkeypatch.setenv("MAITY_DB_MAX_OVERFLOW", "3")
     monkeypatch.setenv("MAITY_DB_POOL_RECYCLE", "60")
     monkeypatch.setenv("MAITY_DB_STATEMENT_TIMEOUT", "11")
@@ -337,11 +337,12 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
         cli._Server, "run", lambda self, sockets=None: served.append(self.config.app.state)
     )
     assert main(["serve"]) == 0
-    # The pool of 7 split between the engines (`serving.pool_shares`): 5 sync with the whole
-    # overflow, 2 async without one; the same recycle and timeouts on both.
+    # The pool of 12 split between the engines (`serving.pool_shares`): by default half of it,
+    # 6, async without overflow (8 only from a pool of 16), the rest, 6, sync with the whole
+    # overflow; the same recycle and timeouts on both.
     engines = (served[0].engine, served[0].async_engine.sync_engine)
     pools: list[Any] = [engine.pool for engine in engines]
-    assert [(p.size(), p._max_overflow, p._recycle) for p in pools] == [(5, 3, 60), (2, 0, 60)]
+    assert [(p.size(), p._max_overflow, p._recycle) for p in pools] == [(6, 3, 60), (6, 0, 60)]
     wanted = (
         "-c TimeZone=UTC -c statement_timeout=11000 -c idle_in_transaction_session_timeout=22000"
     )
