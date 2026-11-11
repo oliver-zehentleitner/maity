@@ -15457,8 +15457,8 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/repository/confirm` | the namespace owner, human (for a project of an organisation any of its owners) | 11.4, 6.26 |
 | POST | `/me/notifications/read` | human | 18.3 |
 | GET, PATCH | `/me/notification-settings` | human | 18.4 |
-| POST | `/me/presence` | human, cookie session | 18.4 |
 | POST | `/me/notification-settings/email/verify` | human | 18.4 |
+| POST | `/me/presence` | human (cookie) | 18.4 |
 | GET | `/projects/{owner}/{slug}/jour-fixe` | `project:read`, members only | 20.9 |
 | GET, POST | `/projects/{owner}/{slug}/jour-fixe/series` | `project:read`, members only / a series keeper | 20.1 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/jour-fixe/series/{jfs}` | the series' keepers | 20.1 |
@@ -22012,10 +22012,11 @@ device; the browser's own permission is per browser and is not stored.
   minute per session are `rate_limited` (§1.7). The call writes no
   `last_seen_at` (§2.4). `present_until` serves the mail hold only: no
   endpoint returns it, no presence list or count reads it, and it
-  changes no presence that anyone sees. So a tab left open stops counting
-  at most 10 minutes after the last input, and a tab that goes hidden or
-  idle stops counting within 2 minutes of its last call; then the grace
-  of §18.5 runs.
+  changes no presence that anyone sees. So a tab left open stops calling
+  10 minutes after the last input and stops counting within 2 minutes
+  after its last call, about 12 minutes after the last input; a tab that
+  goes hidden stops counting within 2 minutes of its last call. Then the
+  grace of §18.5 runs.
 - **`content`** on `chat` and `mention` (default `false`): with `true`
   the mail carries the message text for this kind; without it the mail
   never contains a chat body (§18.5).
@@ -22122,9 +22123,11 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   default 5) after that. The next pass after the grace mails what is
   still unread, as one mail and within the cap of 10 immediate mails
   per hour above; an item read meanwhile is not mailed (Freshness,
-  below). A human who leaves a tab is mailed at the earliest about 7
-  minutes after their last call from it: up to 2 minutes until it stops
-  counting, then the 5 minutes of grace.
+  below). A session stops counting 1 to 2 minutes after its last call
+  (a call that moved `present_until` by less than a minute wrote
+  nothing), then the grace runs: with the default grace, mail comes
+  about 6 to 7 minutes after the last call, plus up to one pass of the
+  mailer.
   - It holds the `immediate` items only: a kind whose mode is
     `immediate`, and an immediate item that the cap moved to the hour's
     end. An urgent request (`priority: urgent`, §7) is an `inbox` item

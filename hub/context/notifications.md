@@ -1142,9 +1142,10 @@ the human's live sessions has a `present_until` in the future, and `online_grace
 (default 5, an instance mail setting) after that; the next pass mails what is still unread.
 A dashboard tab calls `POST /me/presence` every 60 seconds while it is visible and had input
 within 10 minutes. The hub moves `present_until` to two minutes ahead only when that moves it
-by at least a minute, so it writes at most once a minute per session, as `last_seen_at` is
-throttled (`seen.SEEN_EVERY`). A tab that goes hidden or idle stops counting within 2 minutes,
-then the grace runs. A signed-out, ended or expired session stops counting at once.
+by at least a minute, so it writes at most once a minute per session: every present tab calls
+the route each minute, and a row write per call would cost the database a write for each of
+them. A tab that goes hidden or idle stops counting within 2 minutes of its last call, then the
+grace runs. A signed-out, ended or expired session stops counting at once.
 
 **Reason:** a human who reads the dashboard sees the items in the bell; a mail two minutes
 later repeats them. "Present" needs input as well as a visible tab, since a visible tab on an
