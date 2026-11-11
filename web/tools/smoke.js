@@ -14528,7 +14528,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const A = win.Maity.api.fixtureAsked;
     const SINGLE = ["GET /maintenance", "GET /auth/session", "GET /me", "GET /projects/maintainer/maity",
       "GET /projects/maintainer/maity/members", "GET /projects/maintainer/maity/events?after=latest&wait=0"];
-    const singles = (list) => list.filter((x) => SINGLE.includes(x));
+    const singles = (list, n) => list.filter((x) => SINGLE.slice(0, n || SINGLE.length).includes(x));
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 10; k++) await tick();
     A.length = 0;
     await go("#/maintainer/maity/board"); for (let k = 0; k < 10; k++) await tick();
     const onProject = A.slice();
@@ -14541,7 +14542,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "boot: the parts end with the boot; a later read asks its own route " + JSON.stringify(A));
     A.length = 0;
     await go("#/all"); for (let k = 0; k < 10; k++) await tick();
-    expect(A[0] === "GET /bootstrap" && !singles(A).length && !!main.querySelector("section.view-inbox"),
+    // Outside a project the bundle is the window, the session and /me; the inbox reads its projects itself.
+    expect(A[0] === "GET /bootstrap" && !singles(A, 3).length && !!main.querySelector("section.view-inbox"),
       "boot: a view outside a project asks GET /bootstrap without a project " + JSON.stringify(A.slice(0, 6)));
     win.MAITY_FIXTURE_NO_BOOTSTRAP = true;
     A.length = 0;
