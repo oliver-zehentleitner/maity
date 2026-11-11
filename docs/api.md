@@ -13223,8 +13223,9 @@ characters, redaction shown as `body: null`) and lies within the
 caller's window. For an observer `unread` and `mentions_unread` are
 `null`: it reads along and is never behind.
 
-**Pinned.** A human pins a conversation it is in or reads along to keep
-it at the top of its own list: `PUT …/conversations/{id}/pin` and
+**Pinned.** A human pins a conversation it is in or reads along so it
+stays above every unpinned conversation in its own list:
+`PUT …/conversations/{id}/pin` and
 `DELETE …/conversations/{id}/pin` under the conversation's project
 (§9.1, §9.2), human only (`forbidden`, `humans_only`), idempotent, `204`.
 A pin is the caller's own: no one else sees it, it emits no event, and it
@@ -13241,11 +13242,13 @@ list; no event carries `pinned`, since a pin is announced to nobody.
 Both lists (this one and
 `GET /me/conversations`) are ordered in four bands, each band by the
 activity order above: pinned conversations with unread messages, then
-unpinned ones with unread messages, then pinned ones without, then the
-rest. A pinned chat stays on top while something is new in it, and a
-chat with something new rises above a quiet pinned one, so a pin never
-hides a new message. `unread` decides the band (an observer's `null`
-counts as none). The cursor (§1.4) follows this order.
+pinned ones without unread messages (quietly pinned), then unpinned
+ones with unread messages, then the rest. A pinned chat stays above
+every unpinned one. A new message a human participant has not read
+stays visible through that conversation's unread count and the header's
+chat badge, which shows `counts.chat` (§18.2, §18.8). `unread` decides
+the band (an observer's `null` counts as none).
+The cursor (§1.4) follows this order.
 
 **Meat proxy per chat.** A human sets the lead part of the meat-proxy
 mode (§5.2, "Meat proxy") for one conversation it is a participant of, a
