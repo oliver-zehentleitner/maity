@@ -1028,20 +1028,23 @@ def _expert_fields(
     conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
 ) -> idempotency.Outcome:
     """An expert's `expert_for` and `expert_sources` (§2.3 "The expert", §6.2): set on their
-    own, by a human member who owns the agent profile or holds `members:admin`, and only on
-    a member whose role is `expert`. They name what the expert answers about; no consent
-    waits for them, as they give the member no right."""
-    if caller.kind != "human":
-        raise humans_only("only a human sets an expert's fields")
+    own, by a human member who owns the agent profile or holds `members:admin`, or by an
+    admin agent within ᵃ, and only on a member whose role is `expert`. They name what the
+    expert answers about; no consent waits for them, as they give the member no right."""
     if not given <= EXPERT_FIELDS:
         raise invalid({key: "alone" for key in sorted(given & EXPERT_FIELDS)}, "set them alone")
     mine = membership(conn, caller, slug)
     target = member_row(conn, mine.project.id, member_id)
-    if not instances.owns_agent(conn, caller, target):
+    agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
+    if mine.kind == "agent" and not agent_admin:
+        raise forbidden("members:admin")
+    if mine.kind == "human" and not instances.owns_agent(conn, caller, target):
         mine.require("members:admin")
     # Under the project lock a role change takes too: the role read here is the one written.
     lock_project(conn, mine.project.id)
     target = member_row(conn, mine.project.id, member_id)
+    if agent_admin:
+        admin_agents.check_target(mine, target)  # an agent member, not itself (ᵃ)
     if target.role != "expert":
         raise invalid(
             {key: "expert_only" for key in sorted(given)}, "only an expert has these fields"

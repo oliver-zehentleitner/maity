@@ -479,9 +479,17 @@ def test_only_an_expert_has_the_fields_and_a_role_change_away_clears_them(
 def test_who_sets_an_experts_fields(
     make_client: ClientFactory, owner: flow.Human, expert: flow.Agent, migrated: Engine
 ) -> None:
-    """§6.2: a human who owns the agent or holds `members:admin`, the fields alone; an
-    agent never."""
-    assert expert.patch(f"{PROJECT}/members/{expert.id}", {"expert_for": "x"}).status_code == 403
+    """§6.2: a human who owns the agent or holds `members:admin`, or an admin agent within
+    §2.3 ᵃ (the maintainer's decision of 2026-11-11), the fields alone; no other agent."""
+    own = expert.patch(f"{PROJECT}/members/{expert.id}", {"expert_for": "x"})
+    assert own.status_code == 403, own.text
+    assert own.json()["error"]["details"] == {"scope": "members:admin"}
+    coder = flow.agent(make_client, owner)
+    assert _fields(coder, expert.id, expert_for="x").status_code == 403
+    admin_agent = flow.agent(make_client, owner, role="admin")
+    by_agent = _fields(admin_agent, expert.id, expert_for="The API")
+    assert by_agent.status_code == 200, by_agent.text
+    assert by_agent.json()["expert_for"] == "The API"
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     member = flow.human(make_client, migrated, "colleague")

@@ -633,7 +633,7 @@ to `role:reviewer` never lands with the purple team.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; contract `docs/api.md` §2.3, §6.2, §7, §17.3
+**Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; who sets the fields, the maintainer's inbox answer of 2026-11-11; contract `docs/api.md` §2.3, §6.2, §7, §17.3
 **Revisit when:** an expert needs to ask back or keep notes, or the hub starts checking that answers cite their sources
 **See:** trust.md#the-security-teams-are-built-in-roles-red-blue-and-purple — 015bc7eb-2943-4f2d-8582-2c2cc13b40f0 — as of 2026-11-08
 
@@ -647,7 +647,10 @@ answers about (`expert_for`) and what it learned (`expert_sources`, path
 prefixes) are fields of the membership, and a merge that changes a
 declared source wakes it through the ticker (`expert_source:<path>`);
 the fields and the wake came in a later pull request than the role
-itself.
+itself. The agent's owner, a human with `members:admin` or an admin
+agent within §2.3 ᵃ sets the fields, with no consent request: they give
+the member no right, so the maintainer let an admin agent set them as
+it sets `areas`, rather than keeping them a human's.
 
 **Reason:** the maintainer wants members others can ask about the
 contract, the recorded reasons and the documentation without the
