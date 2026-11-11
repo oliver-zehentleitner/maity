@@ -1503,11 +1503,12 @@ window.Maity = window.Maity || {};
     try {
       parsed = JSON.parse(atob(String(text).replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (String(text).length % 4)) % 4)));
     } catch (e) { parsed = null; }
-    const band = parsed && typeof parsed[1] === "string" ? Number(parsed[1].split("\u001f")[0]) : NaN;
-    if (!Array.isArray(parsed) || parsed.length !== 3 || parsed[2] !== scope || typeof parsed[0] !== "string" || ![0, 1, 2, 3].includes(band)) {
+    // The band is the characters "0".."3", as the hub reads them: "1.0", " 1" and "01" are not a band.
+    const band = parsed && typeof parsed[1] === "string" ? parsed[1].split("\u001f")[0] : "";
+    if (!Array.isArray(parsed) || parsed.length !== 3 || parsed[2] !== scope || typeof parsed[0] !== "string" || !["0", "1", "2", "3"].includes(band)) {
       fail(400, "invalid", "not a cursor of this list", path, { fields: { cursor: "invalid" } });
     }
-    return { activity: parsed[0], position: parsed[1], band };
+    return { activity: parsed[0], position: parsed[1], band: Number(band) };
   }
   function pageLimit(query, path) {
     const raw = query.get("limit");
@@ -1520,12 +1521,16 @@ window.Maity = window.Maity || {};
   // bands, then, in the same band, older activity, then the tie past the cursor.
   function pageBands(items, query, path, scope, activity, positionOf, comesAfter) {
     const limit = pageLimit(query, path);
+    // Validated before the cut, so an empty list still refuses a bad cursor (§1.4).
     const given = query.get("cursor");
-    const rest = given === null ? items : items.filter((c) => comesAfter(c, cursorParts(given, scope, path)));
+    const cursor = given === null ? null : cursorParts(given, scope, path);
+    const rest = cursor === null ? items : items.filter((c) => comesAfter(c, cursor));
     const page = rest.slice(0, limit);
     const last = page.length ? page[page.length - 1] : null;
     return { items: page, next_cursor: last && rest.length > limit ? cursorText(activity(last) || "", positionOf(last), scope) : null };
   }
+  // `joined_at` is only the sort key for a direct chat with no messages (§9.3). The hub does not send it.
+  const hideJoined = (page) => { page.items.forEach((c) => { delete c.joined_at; }); return page; };
   const idDescending = (a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0);
   const nameThenId = (a, b) => (a.project.full_name < b.project.full_name ? -1 : a.project.full_name > b.project.full_name ? 1 : idDescending(b, a));
   function projectAfter(c, cursor, activity) {
@@ -1566,6 +1571,8 @@ window.Maity = window.Maity || {};
         participants: [withMeat(m[1], agentId, { member_id: me().member.id, kind: "human", handle: me().member.handle }, path),
           { member_id: agentId, kind: "agent", handle: agent ? agent.handle : agentId }],
         last_message_at: last ? last.sent_at : null,
+        // No messages yet: the hub orders by when the agent joined (§9.3).
+        joined_at: agent && agent.joined_at || null,
         unread: items.filter((x) => x.from === agentId && !x.seen_by_human).length,
         mentions_unread: 0,
         // §9: the newest message as a preview, its body cut at 200 code points.
@@ -1589,7 +1596,7 @@ window.Maity = window.Maity || {};
           mentions_unread: g.access === "observer" ? null : theirs.filter((x) => (x.mentions || []).some((mm) => mm.member_id === me().member.id)).length,
         });
       });
-    const at = (c) => c.last_message_at || c.created_at || "";
+    const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
     const human = me().member.kind === "human";
     const items = direct.concat(groups).map((c) => Object.assign(c, { pinned: human && pinsOf().includes(m[1] + "/" + c.id) }));
     return banded(items, at, idDescending);
@@ -5200,9 +5207,9 @@ window.Maity = window.Maity || {};
     // chats read along as an agent's owner. The cursor carries the band.
     ["GET", /^\/projects\/([^/]+)\/conversations$/, (m, body, path, query) => {
       const items = conversationList(m, path, query);
-      const activity = (c) => c.last_message_at || c.created_at || "";
-      return pageBands(items, query, path, bandScope(query, false), activity,
-        (c) => bandOf(c) + "\u001f" + c.id, (c, cursor) => projectAfter(c, cursor, activity));
+      const activity = (c) => c.last_message_at || c.created_at || c.joined_at || "";
+      return hideJoined(pageBands(items, query, path, bandScope(query, false), activity,
+        (c) => bandOf(c) + "\u001f" + c.id, (c, cursor) => projectAfter(c, cursor, activity)));
     }],
     // §9.3 across projects: every project the human is a member of, one list
     // in the same four bands, newest activity first inside each, then the
@@ -5210,11 +5217,14 @@ window.Maity = window.Maity || {};
     // unread totals over all of them, not only the page.
     ["GET", /^\/me\/conversations$/, (m, body, path, query) => {
       const activity = (c) => c.last_message_at || c.created_at || c.joined_at || "";
-      const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).map((c) => Object.assign({}, c, {
+      // The smoke test of an empty list (window.MAITY_FIXTURE_NO_PROJECTS) drops the
+      // projects for this one read, without forgetting them.
+      const projects = window.MAITY_FIXTURE_NO_PROJECTS ? [] : me().projects;
+      const items = projects.flatMap((p) => conversationList([null, p.slug], path, query).map((c) => Object.assign({}, c, {
         project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
       banded(items, activity, nameThenId);
-      const page = pageBands(items, query, path, bandScope(query, true), activity,
-        (c) => bandOf(c) + "\u001f" + c.project.full_name + "\u001f" + c.id, (c, cursor) => acrossAfter(c, cursor, activity));
+      const page = hideJoined(pageBands(items, query, path, bandScope(query, true), activity,
+        (c) => bandOf(c) + "\u001f" + c.project.full_name + "\u001f" + c.id, (c, cursor) => acrossAfter(c, cursor, activity)));
       return { items: page.items, next_cursor: page.next_cursor,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
     }],

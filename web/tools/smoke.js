@@ -6560,8 +6560,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(convs().length === 6 && text(main).includes("Pick a conversation.") && !main.querySelector(".chat-pane"), "chat: the list of own agents and group chats, nothing open yet");
   // Unread first (the group chat with a mention, Agent A), then the newest; without messages last.
   const convOrder = () => convs().map((a) => a.querySelector(".conv-title").textContent + (a.classList.contains("unread") ? "*" : ""));
-  expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Reviewer", "Agent C", "Agent B"]),
-    "chat: unread first, then the newest, the ones without messages after, by id " + JSON.stringify(convOrder()));
+  expect(JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Reviewer", "Agent C"]),
+    "chat: unread first, then the newest; no messages by when the agent joined, then id " + JSON.stringify(convOrder()));
   // Pins (§9.3): a human pins a chat; the list is read again and keeps the hub's order (a quiet pin above every unpinned chat).
   {
     const pinBtn = (name) => conv(name).parentNode.querySelector("button.pin-toggle");
@@ -6600,6 +6600,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && bandNext.items.length === 1 && bandNext.items[0].id === "cnv-0007" && bandNext.items[0].unread > 0 && bandNext.items[0].pinned === false
       && bandOld && bandOld.status === 400 && bandOld.details && bandOld.details.fields && bandOld.details.fields.cursor === "invalid",
       "pins: the cursor resumes in the next band, and a cursor from the earlier order is refused " + JSON.stringify([bandFirst.items.map((c) => c.id), bandNext.items.map((c) => c.id), bandOld && bandOld.status]));
+    // An empty list still refuses a cursor (§1.4): guestlab has only a chat read along, so
+    // without observed=true the project list is empty; the cross-project list is emptied for this read.
+    const cursorRefused = async (path) => {
+      try { await win.Maity.api.get(path); return false; } catch (err) {
+        return err.status === 400 && err.details && err.details.fields && err.details.fields.cursor === "invalid";
+      }
+    };
+    const cursorOf = (position, scope) => encodeURIComponent(btoa(JSON.stringify(["", position, scope])).replace(/=+$/g, ""));
+    const emptyProject = "/projects/guest/guestlab/conversations";
+    const projectGarbage = await cursorRefused(emptyProject + "?cursor=" + encodeURIComponent("not-a-cursor"));
+    const projectOld = await cursorRefused(emptyProject + "?cursor=" + cursorOf("1\u001fcnv-x", "bands=true&observed=false"));
+    const projectBand = await cursorRefused(emptyProject + "?cursor=" + cursorOf("1.0\u001fcnv-x", "bands=pinned-top&observed=false"));
+    win.MAITY_FIXTURE_NO_PROJECTS = true;
+    const meGarbage = await cursorRefused("/me/conversations?cursor=" + encodeURIComponent("not-a-cursor"));
+    const meOld = await cursorRefused("/me/conversations?cursor=" + cursorOf("1\u001fmaintainer/maity\u001fcnv-x", "bands=true&observed=false&me=true"));
+    win.MAITY_FIXTURE_NO_PROJECTS = false;
+    expect(projectGarbage && projectOld && projectBand && meGarbage && meOld,
+      "pins: an empty list, in one project and across them, refuses a garbage cursor and the old scope " + JSON.stringify([projectGarbage, projectOld, projectBand, meGarbage, meOld]));
     // The hub's refusal of a 21st pin, in words.
     win.Maity.api.put = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { pin: "too_many" } }));
     pinBtn("Agent C").click(); for (let k = 0; k < 4; k++) await tick();
@@ -6610,7 +6628,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     pcToggle().click(); await tick();
     pinBtn("Agent B").click(); for (let k = 0; k < 6; k++) await tick();
     expect(pinCalls.slice(-1)[0][0] === "DELETE" && !conv("Agent B").querySelector(".pin-mark")
-      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Reviewer", "Agent C", "Agent B"]),
+      && JSON.stringify(convOrder()) === JSON.stringify(["Release 0.2 go/no-go*", "Agent A*", "Agent D", "Agent B", "Reviewer", "Agent C"]),
       "pins: unpinned, the chat goes back to its place");
     pcToggle().click(); await tick();  // back to the default for the cases after
     win.Maity.api.put = pnPut; win.Maity.api.del = pnDel;
@@ -12252,7 +12270,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks.length === 7 && chLinks.slice(0, 2).every((a) => a.className === "conv unread with-project") && !chLinks.slice(2).some((a) => a.className.includes("unread"))
     && chLinks[0].getAttribute("href") === "#/chats/maintainer/maity/cnv-0007" && text(chLinks[0]).endsWith("in Maity")
     && chLinks[1].getAttribute("href") === "#/chats/maintainer/maity/agt-a" && text(chLinks[1]).includes("1 unread")
-    && chLinks[6].getAttribute("href") === "#/chats/maintainer/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
+    && chLinks[6].getAttribute("href") === "#/chats/maintainer/maity/agt-r" && text(chLinks[6]).endsWith("in Maity")
+    && Array.from(chLinks).some((a) => a.getAttribute("href") === "#/chats/maintainer/sample/agt-s1")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
   // On a phone the header hides the Lead (tsk-m9ew7v609fq0): the Chats page, where Chat leads, carries it, once.
@@ -12319,7 +12338,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The project as a mark after the who line, its name on hover (no line of its own).
   const chMark = (a) => a.querySelector(".conv-sub .conv-project");
   expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
-    && chMark(chLinks[6]).getAttribute("title") === "Sample shop",
+    && chMark(chLinks[6]).getAttribute("title") === "Maity"
+    && chMark(Array.from(chLinks).find((a) => a.getAttribute("href") === "#/chats/maintainer/sample/agt-s1")).getAttribute("title") === "Sample shop",
     "chats: each row's project is a mark after the who line, its name on hover");
   // One read across projects (§9.3, GET /me/conversations), not one per project; its failure is said.
   const mcReads = [];

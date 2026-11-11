@@ -875,7 +875,7 @@ window.MAITY_I18N["ja"] = {
   "chat.with": "{who} とのチャット",
   "chat.with_label": "{name} とのチャット",
   "chats.conversations": "会話",
-  "chats.hint": "すべてのプロジェクトのチャットです。未読を先に表示します。",
+  "chats.hint": "すべてのプロジェクトのチャットです。ピン留めを先に、未読をその次に表示します。",
   "chats.in_project": "{project} 内",
   "chats.no_project": "{project} という名前のあなたのプロジェクトはありません。",
   "chats.none": "あなたのプロジェクトにあなたのエージェントはおらず、グループチャットにも参加していません。",

@@ -893,7 +893,7 @@
   "chat.with": "Chat com {who}",
   "chat.with_label": "Chat com {name}",
   "chats.conversations": "Conversas",
-  "chats.hint": "Seus chats em todos os projetos, os não lidos primeiro.",
+  "chats.hint": "Seus chats em todos os projetos, os fixados primeiro, depois os não lidos.",
   "chats.in_project": "em {project}",
   "chats.no_project": "Nenhum projeto seu chamado {project}.",
   "chats.none": "Você não é proprietário de nenhum agente nos seus projetos e não está em nenhum chat em grupo.",

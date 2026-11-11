@@ -868,7 +868,7 @@
   "chat.with": "与 {who} 聊天",
   "chat.with_label": "与 {name} 聊天",
   "chats.conversations": "对话",
-  "chats.hint": "你在所有项目中的聊天，未读的在前。",
+  "chats.hint": "你在所有项目中的聊天，置顶的在前，然后是未读的。",
   "chats.in_project": "在 {project}",
   "chats.no_project": "你没有名为 {project} 的项目。",
   "chats.none": "你在自己的项目中没有智能体，也不在任何群聊中。",
