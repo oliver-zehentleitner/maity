@@ -4244,6 +4244,39 @@ def board_cards_step(run: Run, page: Page, alpha: Path) -> None:
     overview_step(run, page)
     ticker_step(run, page)
     notifications_step(run, page, alpha)
+    report_step(run, page)
+
+
+def report_step(run: Run, page: Page) -> None:
+    """Report (docs/api.md §16.8, tsk-7ze5w6ymf7bw) against the hub: the project from the end of its
+    Overview, the form's reason first, sent as one POST /reports the hub takes (201); then
+    Your account → Reports lists it as open."""
+    run.step("report: the project from its Overview, then Your account → Reports lists it")
+    page.goto(f"{run.base}/owner/e2e-alpha/overview")
+    open_it = page.get_by_role("button", name="Report this project to the instance's admins", exact=True)
+    open_it.click()
+    form = page.locator("form.report-form")
+    expect(form).to_be_visible()
+    expect(form.locator("select")).to_be_focused()
+    run.a11y(page, "report, the form open")
+    form.get_by_role("button", name="Send report", exact=True).click()
+    expect(form.locator(".field-error").first).to_have_text("Choose a reason first.")
+    form.locator("select").select_option("spam")
+    form.locator("textarea").fill("e2e: a report from the overview")
+    with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/v1/reports")) as sent:
+        form.get_by_role("button", name="Send report", exact=True).click()
+    assert sent.value.status == 201, sent.value.status
+    done = page.locator(".report-sent")
+    expect(done).to_contain_text("Sent.")
+    done.get_by_role("link", name="Your account → Reports", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/reports$"))
+    row = page.locator("li.report-item").first
+    # The hub names the target by its current public name while its page is served, else by its word (§16.8).
+    expect(row).to_contain_text(re.compile(r"owner/e2e-alpha|a project"))
+    expect(row).to_contain_text("Spam")
+    expect(row).to_contain_text("open")
+    run.a11y(page, "account, reports")
+    no_problems(run, "report")
 
 
 def request_action_step(run: Run, page: Page) -> None:
