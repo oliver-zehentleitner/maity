@@ -390,7 +390,10 @@ nudge toward TOTP over a gate.
   across links, voids every open reset link and writes `second_factor_failed`, as the sign-in
   step does (reviews of the contract PR). A code under a dead token is neither compared nor
   counted, so a former reader of an old mailbox cannot void the human's new links, and every
-  further wrong code in the window alarms again rather than restarting the count.
+  further wrong code in the window alarms again rather than restarting the count. Nor are coded
+  resets refused for the rest of the day after the fifth: whoever reads the mailbox could then
+  lock the honest human out of the reset for 24 hours with five wrong codes, while voiding and
+  alarming keeps a right code working (review of the contract PR).
 - Under the instance's `second_factor: off`, a reset that follows the sign-in and asks for no
   TOTP code: the mailbox alone would then set the password of a human who enrolled an
   authenticator app. `off` turns the sign-in step off, not the enrolment the human made, and a

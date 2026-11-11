@@ -2627,8 +2627,8 @@ included:
   the mode (§18.4): someone held the
   password, the mailbox or a device code, but not the app. At step-up
   (§2.8.4) the tenth wrong code in the window of §2.8.6, from whichever
-  session, writes it too, with `method: step_up`, and the fifth wrong
-  code at password resets in a day writes it with `method:
+  session, writes it too, with `method: step_up`, and the fifth and every
+  further wrong code at password resets in a day writes it with `method:
   password_reset` (§2.10).
 - **What the second-factor session carries.** The first factor's
   `method`, its `approved_by` (the device-code session that approved
@@ -2802,7 +2802,7 @@ environment winning as there:
 |---|---|
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
-| Codes at a password reset (§2.10) | 5 wrong per human in 24 hours, across all reset links; the fifth voids every open reset link of the human and writes `second_factor_failed` (`method: password_reset`); every one also counts in the per-human limit above |
+| Codes at a password reset (§2.10) | 5 wrong per human in the 24 hours before each one, across all reset links; the fifth and every further one in that window voids every open reset link of the human and writes `second_factor_failed` (`method: password_reset`), the count never restarts and a right code is never refused for it; every one also counts in the per-human limit above |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -3246,8 +3246,9 @@ used, of an older password or address) answers `code_invalid` without
 comparing the code or counting it, so whoever kept an old link cannot
 void the human's new ones. A wrong code under a live token counts as
 every second-factor code of the human does (§2.8.6). The wrong codes at
-resets are also counted per human over 24 hours, across every link: the
-fifth in that window, and every further one in it, voids
+resets are also counted per human over the 24 hours before each one,
+across every link: the fifth in that window, and every further one in
+it, voids
 every open reset link of the human and writes the account record
 `second_factor_failed` `{method: password_reset, ip, browser, os}`, a
 `security` notification with its mail sent at once whatever the mode
