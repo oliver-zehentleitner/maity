@@ -4,7 +4,7 @@ sitemap and `robots.txt`. A kind of page of the test's own stands in for the rea
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from concurrent.futures import Future
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -23,6 +23,11 @@ from tests.conftest import ClientFactory
 NOTE = "note"
 
 
+def keep(ids: list[str], among: Collection[str] | None) -> list[str]:
+    """`targets`'s `among`: only those of the ids, by the same rule."""
+    return ids if among is None else [i for i in ids if i in among]
+
+
 class Shown:
     """What the test kind renders: target id to (title, public, input time)."""
 
@@ -30,6 +35,7 @@ class Shown:
         self.targets: dict[str, tuple[str, bool, datetime]] = {}
         self.renders = 0
         self.fail = False
+        self.listed = 0  # the target ids every `targets` call returned, summed
 
 
 @pytest.fixture
@@ -55,8 +61,9 @@ def shown(settings: Settings) -> Iterator[Shown]:
             )
         ]
 
-    def targets(conn: Connection) -> list[str]:
-        return sorted(state.targets)
+    def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
+        state.listed += len(found := keep(sorted(state.targets), among))
+        return found
 
     saved = dict(public_pages.KINDS)
     public_pages.KINDS.clear()
@@ -196,6 +203,25 @@ def test_render_all_renders_what_exists_and_deletes_the_rest(
     assert set(rows(migrated)) == {"/a", "/c"}
 
 
+def test_the_cleanup_decides_each_candidate_with_a_keyed_read(
+    migrated: Engine, settings: Settings, shown: Shown
+) -> None:
+    """A page whose target went is decided by a read of that one target, not of every target
+    again (tsk-ay4htr4s4w88): a pass reads the whole list twice, the pass's own and the
+    cleanup's, and then nothing more per candidate, however many targets there are."""
+    config = hub(settings)
+    live = {f"t{n:02}": ("T", True, clock.now()) for n in range(20)}
+    gone = {f"g{n:02}": ("G", True, clock.now()) for n in range(10)}
+    shown.targets.update({**live, **gone})
+    public_pages.render_all(migrated, config)
+    for target_id in gone:
+        del shown.targets[target_id]
+    shown.listed = 0
+    public_pages.render_all(migrated, config)
+    assert set(rows(migrated)) == {f"/{i}" for i in live}
+    assert shown.listed == 2 * len(live), shown.listed
+
+
 def test_render_all_keeps_a_page_whose_target_became_public_during_the_pass(
     migrated: Engine, settings: Settings, shown: Shown, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -233,15 +259,15 @@ def test_render_all_keeps_a_page_whose_target_went_off_and_on_during_the_cleanup
     kind = public_pages.KINDS[NOTE]
     calls = 0
 
-    def targets(conn: Connection) -> list[str]:
+    def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
         nonlocal calls
         calls += 1
         if calls == 2:  # the cleanup's first read: "n" is off right now
             listed = [i for i in sorted(shown.targets) if i != "n"]
             # ... and on again, its page rendered and committed, before the delete
             public_pages.refresh(conn, config, NOTE, "n")
-            return listed
-        return sorted(shown.targets)
+            return keep(listed, among)
+        return keep(sorted(shown.targets), among)
 
     # Straight into the registry: the `shown` fixture restores it, and a monkeypatch undone
     # after that fixture would put the test kind back for the tests that follow.
@@ -271,12 +297,12 @@ def test_on_postgresql_the_cleanup_spares_a_page_rendered_by_another_transaction
         with migrated.begin() as other:
             public_pages.refresh(other, config, NOTE, "n", fresh=True)
 
-    def targets(conn: Connection) -> list[str]:
+    def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
         nonlocal calls
         calls += 1
         if calls == 2:  # off at this read, then on again and rendered by another request
             render_n()
-            return [i for i in sorted(shown.targets) if i != "n"]
+            return keep([i for i in sorted(shown.targets) if i != "n"], among)
         if calls == 3:  # the cleanup holds "n"'s lock: another render of "n" waits for it
             started, future = threading.Event(), Future[None]()
 
@@ -291,7 +317,7 @@ def test_on_postgresql_the_cleanup_spares_a_page_rendered_by_another_transaction
             threading.Thread(target=step, daemon=True).start()
             late.append(Step(future, started, conn))
             assert waiting(late[0])
-        return sorted(shown.targets)
+        return keep(sorted(shown.targets), among)
 
     # Straight into the registry: the `shown` fixture restores it, and a monkeypatch undone
     # after that fixture would put the test kind back for the tests that follow.

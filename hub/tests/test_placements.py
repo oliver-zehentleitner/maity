@@ -504,6 +504,23 @@ def test_an_older_generation_becomes_an_event_only(setup: Setup) -> None:
             {"detail": "not_with_reason"},
         ),
         ({"state": "running", "detail": "nonsense"}, {"detail": "unknown"}),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "Not A Code"},
+            {"detail": "unknown"},
+        ),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "instance_quota\n"},
+            {"detail": "unknown"},
+        ),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "a" * 64 + "\n"},
+            {"detail": "unknown"},
+        ),
+        (
+            {"state": "failed", "reason": "join_failed", "detail": "a" * 65},
+            {"detail": "unknown"},
+        ),
+        ({"state": "failed", "reason": "clone_failed", "detail": "made_up"}, {"detail": "unknown"}),
     ],
 )
 def test_reported_codes_are_closed_lists(
@@ -511,6 +528,24 @@ def test_reported_codes_are_closed_lists(
 ) -> None:
     response = report(setup, placed(setup), 1, **body)
     assert (response.status_code, response.json()["error"]["details"]["fields"]) == (400, fields)
+
+
+@pytest.mark.parametrize(
+    "detail", ["instance_quota", "member_agents_max", "code_invalid", "origin_mismatch", "a" * 64]
+)
+def test_join_failed_takes_any_hub_error_code_as_its_detail(setup: Setup, detail: str) -> None:
+    body = placed(setup)
+    taken = report(setup, body, 1, state="failed", reason="join_failed", detail=detail)
+    assert taken.status_code == 200, taken.text
+    assert get(setup, body["id"])["reported"]["detail"] == detail
+
+
+@pytest.mark.parametrize("detail", ["origin_mismatch", "not_a_plain_clone"])
+def test_workspace_in_use_takes_its_details(setup: Setup, detail: str) -> None:
+    body = placed(setup)
+    taken = report(setup, body, 1, state="failed", reason="workspace_in_use", detail=detail)
+    assert taken.status_code == 200, taken.text
+    assert get(setup, body["id"])["reported"]["detail"] == detail
 
 
 def test_since_is_clamped_to_hub_time(setup: Setup) -> None:
@@ -857,3 +892,22 @@ def test_a_new_profile_cannot_have_a_handle_that_speaks_for_the_hub(setup: Setup
     refused = place(setup, agent={"handle": "hub", "display_name": "Looks official"})
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["details"]["fields"] == {"handle": "reserved"}
+
+
+@pytest.mark.parametrize("caller", ["runner_owner", "proposing_agent"])
+def test_an_existing_member_of_another_owner_is_not_yours(
+    setup: Setup, make_client: ClientFactory, caller: str
+) -> None:
+    # §15.6: with `{"id"}` the calling human owns the profile, and an agent with
+    # `agents:propose` names only a profile its own human owns; otherwise `not_yours` and no
+    # placement. Another human's agent, a member of the project, on the owner's runner.
+    other = flow.human(make_client, setup.engine, "someone")
+    with setup.engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    theirs = factory.agent(setup.engine, project_id, other.id)
+    who = setup.owner if caller == "runner_owner" else admin_agent(make_client, setup)
+    response = place(setup, who, agent={"id": theirs.agent_id}, reason="theirs")
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
+    with setup.engine.connect() as conn:
+        assert conn.execute(select(t.placement.c.id)).first() is None

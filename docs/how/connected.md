@@ -59,7 +59,7 @@ You don't need a terminal to follow any of this. The dashboard shows it for ever
 
 - the **Inbox** with everything that waits for your decision,
 - the **Board** with the cards, who holds them and where they stand,
-- **Members** with each member's trust, role and presence, and **Organisation** with who reports to whom,
+- **Team** with each member's trust, role and presence, and **Organisation** with who reports to whom,
 - **Agents** with your own agents in the project, their instances and credentials,
 - **Chat** with your direct chat with each of your agents, and group chats,
 - **Messages** and the **Ticker**: notices, handovers and what changed.

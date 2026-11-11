@@ -171,6 +171,27 @@
   --ktw-status-needs-review: var(--ktw-warn);
   --ktw-status-pending-confirmation: var(--plan);
   --ktw-status-superseded: var(--muted);
+  /* the library's state text (0.11.45): each state colour above still draws borders, dots and
+     the graph; its -text twin draws the words, on the pills' solid --ktw-surface2 and on
+     --ktw-surface and --ktw-bg, never on a tint. So they take Maity's text-on-plain-ground
+     values: the state colour where it passes there, else its mix a fifth of the way to --text
+     (--accent is 4.53:1 dark on --surface-2). Lowest pair 5.00:1 (--ok on light --surface-2),
+     every other one higher in both themes (WCAG AA). */
+  --ktw-ok-text: var(--ok);
+  --ktw-confirmed-text: var(--ok);
+  --ktw-warn-text: var(--ktw-warn);
+  --ktw-inferred-text: var(--ktw-warn);
+  --ktw-bad-text: var(--bad);
+  --ktw-unknown-text: var(--muted);
+  --ktw-info-text: var(--ktw-accent-text);
+  --ktw-status-needs-review-text: var(--ktw-warn);
+  --ktw-status-open-text: var(--ktw-accent-text);
+  --ktw-status-pending-confirmation-text: var(--ktw-accent2);
+  --ktw-status-superseded-text: var(--muted);
+  /* the library's faint lines and marks (0.11.45: grid, rules, a superseded card's grey); the
+     faint text stays --ktw-fg3. Both were --muted before, so nothing shifts; --seat would be
+     2.5:1, under the 3:1 a mark needs (WCAG 1.4.11) */
+  --ktw-fg3-line: var(--muted);
   --ktw-radius: var(--radius);
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
@@ -358,13 +379,29 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 /* The project switcher: always visible, one chip per project. At its
    right, behind a separator, the project's state and absence; on a narrow
    screen that block goes under the chips. */
-.switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
+.switcher-row { --switcher-row-gap: 12px; display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--switcher-row-gap); }
 /* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
    a project's state keeps the far end of the row. */
 .switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
+/* On a wide screen many tabs scroll before the row wraps, so the tabs menu stays beside the last one
+   instead of falling to a line of its own (tsk-qa2r972wjsws). 40px holds the menu (about 36px; its
+   negative margin cancels the column gap). A phone gives the tabs the room the menu leaves (below). */
+@media (min-width: 601px) { .switcher-row:has(> .tabs-menu-box) .switcher { max-width: calc(100% - 40px); } }
 /* The tabs menu beside the row (js/app.js tabsMenu): which projects are tabs, and the start set. */
 .tabs-menu-box { flex: none; display: inline-flex; align-items: center; }
 .tabs-menu-box .menu-button { min-width: 32px; min-height: 32px; }
+/* The tabs menu is drawn as the row's last tab (the owner, 2026-11-10, tsk-qa2r972wjsws): the tabs'
+   pill, padding, size, colour and gap, on the tabs' line. It stays a menu button (no role=tab, no view
+   behind it) and stands outside nav.switcher, so a drag or Alt+Shift+Arrow never moves it and on a phone
+   it keeps the row's right end while the tabs scroll. Its gap to the last tab is the tabs' own: the
+   negative margin cancels the row's column gap, and nav.switcher's end padding (the drop line's room) remains. */
+.switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: calc(-1 * var(--switcher-row-gap)); }
+.tabs-menu-box .menu-button.tabs-menu { min-width: 0; min-height: 0; padding: 8px 10px; border: 1px solid var(--border);
+  border-bottom: 2px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); font-size: 0.88rem;
+  line-height: inherit; }
+.tabs-menu-box .menu-button.tabs-menu:hover:not(:disabled) { border-color: var(--border); border-bottom-color: transparent; }
+/* Open, it reads like the current tab: the accent edge, the raised ground. */
+.tabs-menu-box .menu-button.tabs-menu[aria-expanded="true"] { border-color: var(--accent); background: var(--surface-2); color: var(--text); }
 .switcher a[draggable="true"] { cursor: grab; }
 /* Where a dragged tab will go: an upright line in the gap before or after the tab under it (js/app.js
    dragTab). Placed absolutely, it moves nothing; the row keeps room for the line after its last tab. */
@@ -737,6 +774,11 @@ a.icon-button:hover { border-color: var(--accent); }
 .briefing { margin-top: 10px; }
 .inline-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 /* Project logos: the image or a monogram, beside the project's name. */
+/* A private project's lock after its name (js/app.js privateMark, tsk-5t3qd0m9rj6r): 12 px, in the
+   muted text colour of either theme, on the name's line. */
+.private-mark { display: inline-flex; align-items: center; margin-inline-start: 4px; color: var(--muted); vertical-align: -1px; }
+.private-mark .icon { width: 12px; height: 12px; }
+.private-mark .icon .icon-fill { fill: currentColor; }
 .project-mark { display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 20px; height: 20px; border-radius: 4px; object-fit: cover; vertical-align: middle; }
 .project-mark.small { width: 16px; height: 16px; border-radius: 3px; }
@@ -853,6 +895,34 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
 }
+/* Team (the members view) and Agents in the refreshed look (design refresh step 6): the table
+   as a panel, quiet head cells, rows with room and a hover ground, Chat and Manage as pills, the
+   runner cards as cards. Styling only: the selectors the checks use stay as they are. */
+:is(.view-team, .view-agents) h3 { font: 700 1.05rem/1.2 var(--display); letter-spacing: -0.01em; }
+:is(.view-team, .view-agents) .table-wrap { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-card); box-shadow: var(--shadow); }
+:is(.view-team, .view-agents) .members th, :is(.view-team, .view-agents) .members td { padding: var(--s3); vertical-align: middle; }
+:is(.view-team, .view-agents) .members thead th { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted); padding-block: var(--s2); }
+:is(.view-team, .view-agents) .members tbody tr:last-child > * { border-bottom: 0; }
+/* A light hover ground, so the warn text in a row keeps AA on it (4.6:1 light, 6.2:1 dark). */
+:is(.view-team, .view-agents) .members :is(tr.member, tr.agent-row):hover > * { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-team, .view-agents) .members :is(td, tbody th) { font-size: 0.88rem; }
+:is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { border-radius: var(--r-pill);
+  border: 1px solid var(--field); background: transparent; padding: 4px 12px; }
+/* The open Manage row (members: .member-manage, Agents: .agent-manage) on the same light ground as the hover. */
+:is(.view-team, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
+:is(.view-team, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
+.view-agents .profile { border-radius: var(--r-card); }
+/* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
+.placement button:not(:disabled):not(.primary) { border-color: var(--field); }
+@media (max-width: 600px) {
+  .view-team .table-wrap { background: none; border: 0; box-shadow: none; }
+  :is(.view-team, .view-agents) .members tr.member { border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); padding: var(--s2) 0; }
+  :is(.view-team, .view-agents) .members tr.member > * { padding: 4px var(--s3); }
+  :is(.view-team, .view-agents) .members tr.member:hover > * { background: none; }
+  :is(.view-team, .view-agents) :is(.member-actions, .agent-actions) :is(button, a.button-link) { min-height: 40px; display: inline-flex; align-items: center; }
+}
 .view-why > h3 { margin: 20px 0 6px; }
 .why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
 .why-entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -878,10 +948,26 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .fleet-dots { display: inline-flex; flex-wrap: wrap; gap: 2px; }
 .fleet-dot { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; }
 .fleet-dot::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); box-sizing: border-box; }
+/* Each state differs in shape or size as well as colour (WCAG 1.4.1, nte-s2dqhn1n4bez): online a filled
+   disc, away a ring half filled, offline a smaller disc, dormant hollow; the lead keeps its ring. */
 .fleet-dot.online::before { background: var(--ok); }
-.fleet-dot.away::before { background: var(--warn); }
+.fleet-dot.away::before { background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); border: 2px solid var(--warn); }
+.fleet-dot.offline::before { width: 6px; height: 6px; }
 .fleet-dot.dormant::before { background: none; border: 2px solid var(--muted); }
 .fleet-dot.lead::before { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+/* In forced colours the browser drops a gradient, a background colour and a shadow, which made away
+   and dormant the same ring and the filled dots vanish (#1598 review). There each state is drawn with
+   borders, size and an outline alone, which forced colours keep in the user's own system colours:
+   online a disc filled by its border, away a ring with a thick left side, offline the smaller disc,
+   dormant the thin ring, and the lead an outline instead of the shadow ring. */
+@media (forced-colors: active) {
+  .fleet-dot::before { background: none; border: 5px solid CanvasText; }
+  .fleet-dot.away::before { border-width: 2px 2px 2px 5px; }
+  .fleet-dot.offline::before { border-width: 3px; }
+  .fleet-dot.dormant::before { border-width: 2px; }
+  .fleet-dot.lead::before { box-shadow: none; outline: 2px solid Highlight; outline-offset: 2px; }
+}
+
 .fleet-stub { margin: 0 0 4px 28px; color: var(--muted); font-size: 0.85rem; }
 .fleet-stub a { color: inherit; }
 .fleet-me { font-size: 1.02rem; }
@@ -994,7 +1080,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .conv .preview { grid-area: prev; font-size: 0.85rem; color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .conv .preview.draft { font-style: italic; }
 .avatars { grid-area: av; position: relative; display: flex; align-self: start; }
-.avatars .avatar-svg + .avatar-svg, .avatars .avatar-img + .avatar-img { margin-inline-start: -10px; }
+/* Every picture after the first overlaps, generated or loaded alike, so a stack keeps its width while
+   pictures load one by one (nte-b3pfhm2bp0vt (b)). */
+.avatars .avatar-svg + .avatar-svg, .avatars .avatar-img + .avatar-img,
+.avatars .avatar-svg + .avatar-img, .avatars .avatar-img + .avatar-svg { margin-inline-start: -10px; }
 .avatars .dot { position: absolute; right: -2px; bottom: -2px; box-shadow: 0 0 0 2px var(--bg); }
 /* The open chat is a column of the screen's height (--chat-h, set by the
    view): its header and the composer stay, only the history scrolls. */
@@ -1015,7 +1104,16 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 @media (max-width: 720px) {
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .chat-layout.open .chat-list-pane, .chat-none { display: none; }
-  .chat-back { display: inline-block; margin-bottom: 8px; }
+  /* The back link's row is the chat head's top row; the full-screen button sits at its right
+     end, under the top bar's last entry, in a direct and a group chat (tsk-2a56j80p3p9h). The
+     button stays where js/chat.js puts it in the document, after the heading, for the keys. */
+  .chat-pane { position: relative; }
+  .chat-back { display: inline-flex; align-self: flex-start; align-items: center; min-height: 40px;
+    margin-bottom: 8px; margin-inline-end: 48px; }
+  .chat-pane .chat-full-toggle { position: absolute; top: 0; inset-inline-end: 0; }
+  html.chat-full .chat-pane.chat-full-pane .chat-full-toggle { top: 8px; inset-inline-end: 12px; }
+  /* The agent's session (`chat.session`) is a detail for a wide screen. */
+  .chat-pane .chat-session { display: none; }
 }
 
 /* Rows as tall as their message: in the open chat the list is given the pane's
@@ -1083,6 +1181,8 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
    here so that selecting the number copies the number alone. */
 .msg-seq { font-variant-numeric: tabular-nums; }
 .msg-seq::before { content: "#"; }
+/* The message an event's link opened (js/event.js, docs/api.md §8.9), marked where it stands. */
+.msg.seq-target .msg-body, .pmsg.seq-target, .event-one.seq-target { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
 .msg-projects .project-mark.small, .conv-project .project-mark.small { width: 14px; height: 14px; border-radius: 3px; }
@@ -1175,6 +1275,9 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 /* The series' settings at the top of the jour fixe view, folded until opened (js/jour-fixe-series.js). */
 .jf-series-settings { margin: 8px 0 16px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .jf-series-settings > summary { cursor: pointer; font-weight: 600; min-height: 24px; }
+/* A round's date link is a 24 px target, so the stacked rows do not crowd each other (WCAG 2.5.8,
+   nte-ynsymv950zq4). */
+.jf-rounds a { display: inline-block; min-height: 24px; line-height: 24px; }
 .jf-series-settings[open] > summary { margin-bottom: 8px; }
 .jf-series-block { margin: 12px 0; }
 .jf-weekly, .jf-monthly, .jfs-owner { display: grid; gap: 6px; }
@@ -1216,6 +1319,9 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { --main-pad: 12px; }
+  /* The row wraps by the tabs' full width, so the tabs menu fell to a line of its own. Here the tabs
+     take the room the menu leaves and scroll; the menu keeps the row's right end (tsk-2a56j80p3p9h). */
+  .switcher-row .switcher { flex: 1 1 0; }
   .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
   /* One row of links that scrolls, never narrower than about one link; the state, the released
      mark and the absence stand beside it and wrap under it where they need more room. */
@@ -1450,6 +1556,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 /* + Add an agent and Join an agent, the same at the head of /agents and of a project's Agents. */
 .agents-head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: auto; }
 .agents-head-actions button { min-height: 40px; }
+/* The project's name in the hint may be one long word (63 characters): it wraps rather than widening
+   the page (nte-fk0fzcsma0e7). */
+.agents-project-hint { overflow-wrap: anywhere; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .agents-count { margin: -6px 0 12px; }
 .join-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
@@ -1642,12 +1751,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* Where the agents run (js/placements.js, §15.5–§15.7): one row per
    placement under the agents' grid; stacked on a phone. */
-.placements { margin-top: 24px; display: grid; gap: 8px; }
+.placements { margin-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .placement-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.placement { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
-.placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.placement { border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--s3) var(--s4); display: grid; gap: 6px; min-width: 0;
+  background: var(--surface); box-shadow: var(--shadow); }
+.placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 600; }
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Start on a runner: a select is as wide as its longest option (a mode's words, a runner's
+   presence and load), so on a phone it is held to the form's width, and the fieldset may shrink. */
+.placement-new select, .placement-new input { max-width: 100%; }
+.placement-new-profile { min-inline-size: 0; }
 .placement-consent, .placement-waiting { color: var(--muted); }
 /* The reported state as a pill with a dot (the designer's pass part 3). */
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
@@ -1659,7 +1773,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A runner command in a box that scrolls, with Copy beside it. */
 .placement-hints { display: grid; gap: 4px; }
 .placement-command { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 0.85rem; }
-.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); }
+.placement-command code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--r-field); background: var(--surface-2); }
 /* The instance's landing page (js/landing.js, §16.7): the face of the
    instance, with room; the large lockup in the theme's pair. */
 .landing { max-width: 44rem; margin: 32px auto 48px; display: grid; gap: 16px; }

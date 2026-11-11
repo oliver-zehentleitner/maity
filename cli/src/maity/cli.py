@@ -1168,6 +1168,13 @@ def cmd_report(args: argparse.Namespace) -> int:
         task = session.client.call("POST", path, body=body)
         status = task.get("status") if isinstance(task, dict) else None
         return _done(args, task, f"reported {args.task} (no code); task is now {status}")
+    retrack = gitfacts.track_own_branch(Path.cwd())  # a branch cut from main (tsk-8qwmbw5xydpw)
+    if retrack.problem:
+        _err("report refused, the code does not match what would be reported:")
+        print(f"  - {retrack.problem}", file=sys.stderr)
+        return EXIT_REFUSED
+    if retrack.note:
+        _err(retrack.note)
     facts = gitfacts.collect(Path.cwd())
     card: Any = None
     probed = False
@@ -2080,9 +2087,9 @@ def cmd_say(args: argparse.Namespace) -> int:
             if names:
                 _err(
                     f"not sent: {len(names)} name(s) in the text are not there (§8.4); "
-                    "write a missing or proposed name without backticks, a command under `## Ran`, "
-                    "and a proposed wording, an output, a mutation or a removed text next to its "
-                    "line in backticks, not in quotes"
+                    "write a missing or proposed name without backticks, a command or a removed "
+                    "id under `## Ran` or in a fenced block, and a proposed wording, an output, "
+                    "a mutation or a removed text next to its line in backticks, not in quotes"
                 )
             for line in [*cites.bad, *names]:
                 _err(line)
@@ -4309,6 +4316,16 @@ def build_parser() -> argparse.ArgumentParser:
         "`git ls-remote`, the pull request from `gh` when it is installed; nothing is typed by "
         f"hand. Refused with exit {EXIT_REFUSED}, before anything is sent, while uncommitted "
         "changes exist, the branch is not pushed, or the pull request's head differs. A branch "
+        "other than the default branch itself whose upstream is the remote's default branch "
+        "(as `git switch -c <branch> origin/main` leaves it) gets its own branch of the same "
+        "name there as its upstream (`branch.<branch>.merge`), and the report says so; while "
+        "the remote has no such "
+        "branch, it is refused with the `git push -u` to run. On a card "
+        "with two stacked pull requests, once the card's last report names the first, the "
+        "second is reported only after the first has merged (or closed): while the card's "
+        "last report names the first and the hub last saw it open, a report from the second's "
+        "branch is refused, unless gh finds it merged or closed now; a card that links the "
+        "first (`maity link`) needs the second linked too. A branch "
         "deleted after its pull request was merged reports with the merged head. A card "
         "whose result is not code (a review, a draft, a decision prepared for a human) is "
         "reported with --no-code: the summary carries the result, and no git fact is read or "
@@ -5518,7 +5535,32 @@ def _utf8_streams() -> None:
             stream.reconfigure(encoding="utf-8", errors=errors)
 
 
+# The code a failed command's machine line names (`hub.error_code`), set where it is caught.
+_FAILED_CODE: list[str | None] = [None]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    """The command, and under `MAITY_ERROR_LINE=<nonce>` its machine line after every failure,
+    unless stderr cannot be written: `maity-error <nonce>: <code>`, or `-` when no code
+    applies. It comes last after a failure this function handles; after a crash it comes
+    before the traceback, so a reader that takes only the last line gets no code."""
+    nonce = os.environ.get(hub.ERROR_LINE_ENV) or ""
+    if not hub.ERROR_LINE_NONCE.fullmatch(nonce):
+        return _main(argv)
+    _FAILED_CODE[0] = None
+    code = 1
+    try:
+        code = _main(argv)
+    except SystemExit as exc:  # argparse: its message is printed already
+        code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+        raise
+    finally:
+        if code != 0:
+            print(f"maity-error {nonce}: {_FAILED_CODE[0] or '-'}", file=sys.stderr, flush=True)
+    return code
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
     if _restricted_argv(sys.argv[1:] if argv is None else argv):
@@ -5561,6 +5603,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         CommandError,
         OSError,
     ) as exc:
+        if isinstance(exc, hub.HubError):
+            _FAILED_CODE[0] = hub.error_code(exc)
         until = hub.maintenance_until(exc) if isinstance(exc, hub.HubError) else None
         if until is not None:
             _err(f"Maintenance until {until} UTC, try again then")

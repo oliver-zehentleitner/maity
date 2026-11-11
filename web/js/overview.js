@@ -179,7 +179,7 @@ window.Maity = window.Maity || {};
     return h("section", { class: "overview-part", "aria-labelledby": "overview-members" },
       head("overview-members", M.t("overview.team.title"),
         list.length ? M.t("overview.team.facts", { humans: M.t("overview.team.humans", { count: humans }), agents: M.t("overview.team.agents", { count: agents }), online }) : null,
-        h("a", { href: ctx.link("members"), "data-key": "members" }, M.t("overview.team.all"))),
+        h("a", { href: ctx.link("team"), "data-key": "members" }, M.t("overview.team.all"))),
       list.length
         // By trust (§2.3); each chip names its role on hover.
         ? h("div", { class: "overview-roles" }, M.trust.TRUSTS.filter((t) => list.some((m) => m.trust === t)).map((t) =>

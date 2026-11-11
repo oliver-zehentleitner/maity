@@ -54,9 +54,20 @@ The Agents page's Organisation tab (`agents/organisation`, the maintainer,
 2026-11-02, tsk-q989pagmk2x9) is the same tree built from one's own agents
 in the project alone, under oneself: a boss or an area owner of someone
 else's places none of them, and an own agent that reports to someone
-else's shows that as a stub with the boss's handle, as text, and nothing
-more of the other side: no name, no link to its page, no tooltip. Its instances are dots in their presence's colour, the lead
-ringed. Built from the same member list, so no second tree and no hub field.
+else's shows that as a stub with the boss's handle, as text (the
+qualified `owner/handle` where another member shares the short one,
+`M.dom.handleOf`, docs/api.md §6.3), and nothing more of the other side:
+no name, no link to its page, no tooltip. Where the member list gives no
+handle, the stub is the neutral sentence "reports to someone who is not
+yours", never an id or a name. Its instances are dots in their presence's
+colour, the lead ringed. Each state also has a shape of its own, so that colour is never the only
+cue (WCAG 1.4.1; a review of #1485, nte-s2dqhn1n4bez; the coordinator chose these shapes, batch 3c of
+tsk-tsb8528rank1, 2026-11-10): online a filled disc, away a ring half filled, offline a smaller
+disc, dormant a hollow ring. In forced colours, where the browser drops gradients, background
+colours and shadows, the same four shapes and the lead ring are drawn with borders, size and an
+outline alone, in the user's system colours (#1598 review). The state stays in each dot's name and
+tooltip as well.
+Built from the same member list, so no second tree and no hub field.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
@@ -129,6 +140,26 @@ a filter that hides personal requests would hide requests with no tab
 to open them from.
 
 **Rejected alternatives:** unknown beyond the contract entry's.
+
+## A private project carries a lock after its name, from the project's own public_page
+
+**Id:** fccd0d35-4bfc-44d8-8083-66765ec5a80f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5t3qd0m9rj6r (the owner in the project chat, 2026-11-10, seq 105399: a private project's tab shows a symbol after its name saying it is private; the proposal approved in seq 105431); the owner's answer on req-tj5y18pc44qz, 2026-11-10 (`public_page` on `GET /me`, the lock following `public_page` alone)
+**Revisit when:** a project gets a visibility other than `on` and `off`, or the tabs read their projects from somewhere other than `/me`
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-10
+
+A project whose `public_page` is `off` (§16.9) shows a small padlock (`M.icons.lock`, 12 px, the muted text colour, either theme) right after its name in these places: its tab, its entry in the tabs menu, the project header, and on All projects the project label of each request to the project and the project's group heading. The name stands without a lock elsewhere: a personal request that names a project keeps its "Personal · <project>" label, as it is the human's own request, not the project's (`inbox.js` `projectBadge`); an open request's Project fact (`inbox.js`, `inbox.fact.project`); the project filter on All projects, whose `<option>` cannot hold an icon; and a conversation's project mark in the chat list, which carries the name only in its title (`chats.js`). The lock is `role="img"` named "Private" (`new_project.private.label`), with the create form's sentence as its tooltip (`new_project.created.private`), so it does not rest on the picture alone. A public project, the default, carries nothing. `GET /me` lists `public_page` with each human's project (§5.1), so the row of tabs marks a project without reading each one.
+
+**Reason:** the owner wants to see at a glance which of their projects only members can read. The lock follows the project's own setting, not whether a page is served: an archived or held project that is `on` stays unmarked, because those states have marks of their own (the state dot, the moderation notices), and the lock says what the owner chose.
+
+**Rejected alternatives:**
+- A "Private" text label in the tab: on a phone it takes too much of the row's width.
+- An emoji: it is drawn by the font, in its own colours, not in the theme's.
+- Reading each project for its visibility, or the lock only where the open project is known: the first is a read per tab, the second would leave the tabs, the menu and All projects without it.
+- The lock when no page is served (archived, held, an owner suspended): it would mark projects the owner made public, for reasons the lock does not name.
 
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 
@@ -778,16 +809,21 @@ Since 2026-10-30 (the maintainer's wish, the card tsk-bt2p3rem8tbj)
 with its id, without opening it, the row marked read in place (its
 button gone, the focus on its link, the pages read so far kept), and
 **Mark all read** stays in place,
-off while nothing it marks is unread, with a line that sign-in and
-address alerts stay unread. **Mark read** is not offered on one of the
+off while nothing it marks is unread. It leaves every security alert
+unread, whatever the session, with the line "Mark all read leaves
+security alerts unread: mark each one read on its own."
+(`waiting.mark_all.hint`). **Mark read** is not offered on one of the
 open matters of §18.3 — `registration_pending`, `mail_disabled`,
 `agents_not_listening`, told by their targets
 (`registration`, `settings`, `agents`, `M.notify.keepsUnread`)
-— which read as read once the matter is closed, nor on a sign-in or
-address alert unless this session may confirm it (`M.sessions.mayConfirm`,
-§2.6.5): the hub skips such an id without saying so, and a button that
-does nothing would look broken. The sessions are read for that only
-when the page shows an unread security item. Until 2026-11-04 a fourth
+— which read as read once the matter is closed, nor on a security
+alert this session may not mark (`M.sessions.mayMark`, as the bell
+does): an address change only from a confirmed session older than it,
+every other security alert from any session (§18.3). A sign-in is no
+item; the box above the list shows the sessions (§2.6.5). An id the hub
+leaves unread anyway is answered as `skipped` (§18.3), which the page
+says, its row staying unread. The sessions are read for that only when
+the page shows an unread security item. Until 2026-11-04 a fourth
 matter, `report_open` (target `report`), stood among them; a new report
 is now the instance admin's personal request instead (entry
 f50ed8ee-5948-43c8-817a-d1b008bf1f5a).
@@ -860,7 +896,7 @@ tell from the request today; the Revisit when names it.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"
+**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"; the maintainer's decision to drop the line on the Chat tab, card tsk-sesdq48m9ewk, 2026-11-10 (chats 102080 and 103539)
 **See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
 
 A project's pill counts its open requests, unread chats and unread mentions (§18.2 `by_project`),
@@ -870,6 +906,13 @@ reads both filters from its address and asks the hub with them (§18.2). Its hea
 ("Mentions in Maity"), a link leads back to all notifications, and Mark all read sends the same
 `kind` and `project` with `up_to` (§18.3), so it marks nothing outside the filter. The line is
 filled again with every count read, so it follows the pill.
+
+The line is left out on the Chat tab, on its list and in an open chat: the maintainer asked for it
+gone there, since the chat list shows a chat with an unread mention as an @, visible at once
+(tsk-sesdq48m9ewk, 2026-11-10, chat 102080). The @ covers chat mentions only: the line also counts
+mentions in project messages and on cards (§18.1), which the Chat tab does not show. Asked about
+those, the maintainer kept the removal because they stay in the bell and on the line of every other
+tab, as on the pill and /notifications (chat 103539).
 
 **Reason:** a count on a project should lead to what it counts in one step, and mentions have no
 place in the project: the inbox is the requests alone (see 2ff6afe9). The hub already filters
@@ -967,7 +1010,7 @@ menu per press would make that slow.
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
-a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
+a link to `/<owner>/<slug>/team/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
 project does not list (removed, outside) and every member in a view read
 from outside the project are plain text. The inbox of all projects
@@ -1329,6 +1372,65 @@ humans too and has no room for the reported state. A modal confirmation
 for restart: one more click inline does the same at phone width. Asking
 the hub for each credential to decide on `rejoin`: the view has them.
 
+## An agent is started on a runner from Agents' Where they run, on one's own live runners only
+
+**Id:** 7baa75e7-2cf3-4cb5-ae41-93e04cdb71d9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
+**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
+**See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
+
+Where they run, on the project's Agents, has **Start an agent on a runner**
+for a human with members:admin. It offers the runners attached here
+(`GET …/runners`) that the human owns, whose credential is live and which
+offer the project's repository: one of the runner's advertised
+`repositories` matches the repository's URL without `https://`, with the
+hub's rule (`check_repository` in `hub/src/maity_hub/placements.py`,
+Python's `fnmatch.fnmatchcase`; `fnmatch` in `web/js/placements.js` is its
+port, a `[…]` set read as Python 3.12's `fnmatch.translate` reads it, so a
+reversed range such as `[z-a]` matches nothing, `[!z-a]` any one character,
+and neither throws and hides the runner's other patterns; the name is read by
+Unicode character, as Python reads it, so `?` takes a character beyond U+FFFF
+whole (an advertised pattern is printable ASCII, `Name` in
+`hub/src/maity_hub/routes/runner.py`; the port reads any pattern the same
+way); and a `*` is matched by going back only to the last `*`,
+not by one RegExp over the pattern, so many stars against a long name take
+time in proportion to the two lengths, not seconds). With none, the section says so and links the project's Runners; with
+attached runners of which none offers the repository, it says that and
+names the repository; a project without a repository offers no form and
+says a runner needs one. The agent is one
+of the human's own agents here without an active placement, or a new
+profile with the join panel's fields (trust, role, reports to, areas,
+briefing). Where, tool, mode and model come from what the chosen runner
+last advertised: reachable targets, installed tools for that target, the
+tool's modes with its default chosen, its models or the runner's default.
+Without a tool, Start is disabled. The call is one `POST …/placements`. A
+refusal shows the hub's message, code and named fields, and the new
+placement is listed by reading the list again. The route asks for no
+second factor, so the call is not wrapped in `M.stepUp.run`.
+
+**Reason:** the placements are already shown and steered here, so the
+form sits beside them. Offering only what the hub accepts keeps the
+choices few: someone else's runner is `forbidden`, a revoked one
+`runner_revoked`, an agent placed already `placement_exists`, a tool
+that is not advertised `harness_not_offered`, and a runner that does not
+offer the project's repository, or a project without one,
+`repository_not_offered` (the last added by tsk-wn6qp27090qy, after a
+re-check of the merged form found such runners offered).
+
+**Rejected alternative:** the form on the instance-level Runners page:
+there the project would be one more choice, and the placements are not
+shown there. Free text for the tool and the model: the runner advertises
+the lists, and a typo would only be refused by the hub (a tool it does not
+know as `invalid`, a model the runner does not offer as
+`harness_not_offered`, `_check_spec` in `hub/src/maity_hub/routes/placements.py`).
+Listing every attached runner and letting the hub refuse: a choice that
+can only fail. Listing a runner that does not offer the repository as
+unavailable instead of leaving it out: the other runners the hub would
+refuse are left out too, and with none left the section says why.
+
 ## Project settings are the project's last tab, not a panel from the gear menu
 
 **Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
@@ -1522,10 +1624,12 @@ writer's draft of that note, so a redraw of the list must not throw it away.
 **Evidence:** inferred
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
 **Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-09
 
 The signed-in header reads Lead, Chat (the maintainer's order, tsk-td5c6z21xg5s, 2026-11-01), "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
-User (`/invite`), for humans only. `/invite` lists the projects where the
+User (`/invite`), for humans only; Runner and Project were added later
+(4ff40142). `/invite` lists the projects where the
 human adds members. The one chosen (`?project=`, as Members' Invite user
 links it) shows the invitation form and its list. The other projects
 show their lists without a form. Members has two blue buttons at the top,
@@ -1562,8 +1666,8 @@ profile (views.md#the-header-gets-a-menu-to-bring-someone-in-invitations-get-the
 `counts.chat` from `/me/notifications`, which the header already reads,
 worded "N unread chat messages". `/chats` reads the conversations
 across projects (§9.3, `GET /me/conversations`) and shows them in the
-hub's order: pinned with unread, unpinned with unread, quiet pinned, the
-rest. On a hub
+hub's order: pinned with unread, quietly pinned (pinned, no unread),
+unpinned with unread, the rest. On a hub
 without notifications both buttons stand without a count, the bell as a
 link to everything waiting.
 
@@ -1616,7 +1720,7 @@ an anchor. Waiting for a hub-made URL: none is in the contract.
 
 The `keep_the_why` item names the agent as `target: {type: "member"}`.
 Where the owner is a member of the project it opens
-`#/p/<slug>/members/<agent id>`; where not, `#/account/picture/<agent
+`#/p/<slug>/team/<agent id>`; where not, `#/account/picture/<agent
 id>`, the list of one's agents on the account, with that agent marked
 and focused.
 
@@ -1728,7 +1832,11 @@ item in every project (a request, a sign-in, a long-poll that only timed
 out), and the counts were read every 15 seconds too, which also nudged
 it. Now it reads only for an answer with a chat or mention item in it, or
 one that moved the chat counts. Everything else waits for the 30-second
-round, which was there already.
+round, which was there already, with one exception: a group chat read
+along as an agent's owner brings no chat item and moves no count (§9.3),
+so while one is open, the 15-second counts read refreshes it as before
+(web roll-up 3, a post-merge review of #1527). One's own message sent from
+another tab comes with the round.
 
 **Reason:** each of these reads costs a round trip and hub statements for
 data that did not change. On the measured hub they added up to the
@@ -1742,6 +1850,110 @@ repeated reads beside every opened card and in the chat.
   but still a full round for an answer that is about no chat at all.
 - Dropping the stream nudge and keeping only the 30-second round: a new
   chat message would wait up to 30 seconds in the open conversation.
+
+## The Agents page reads credentials only for its own agents that are placed
+
+**Id:** a71aebc3-1d25-4e28-90ce-f96f8c716c02
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: 27 credential lists at once, queuing from 95 to 568 ms); the plan on tsk-d61rvjm6gteh (PR C), approved by the coordinator the same day
+**Revisit when:** the placements list carries whether its credential was revoked, or the member list carries the credentials
+
+A project's Agents page read the credentials of every agent of one's own
+in it, at once, before the "Where they run" section could draw. That
+section needs them only to know whether a placement's credential was
+revoked, which decides whether **Restart with a new join** is offered. It
+now reads the placements first and asks for the credentials of one's own
+agents that have a placement, once each; a placement that appears later
+asks for its agent then. It listens for placement events before its first
+read, and reads the list again once it stands if one came meanwhile.
+
+**Reason:** on the measured project those reads were the page's slowest
+part, and most of them served nothing: few agents have a placement.
+
+**Rejected alternatives:**
+- The credentials read when a row is expanded: the rejoin choice stands in
+  the placement row as it is drawn, so the read would only move.
+- The revoked state in the placements or member list: one read less, but a
+  contract change, which this card's boundary excludes.
+
+## The board reads its column groups side by side
+
+**Id:** 145f0bf3-3024-414a-8026-19dad1960ff7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the performance measurement on tsk-a5pxwgkgr73e (step 1, 2026-11-08: six serial pages of 200 for 1,135 cards, 1.37 s, 2.8 s with gaps); the plan on tsk-d61rvjm6gteh (PR B), approved by the coordinator the same day
+**Revisit when:** the contract gains a card status, the hub serves a larger page or the whole board in one answer, or the board reads only the open columns at first
+
+The board asked for every card of its window in one list (`status=all`
+with `closed_after`), page after page, each page waiting for the one
+before. It now asks five groups at once: `proposed`, `open`,
+`in_progress`, `blocked,review`, and `done,cancelled` with the closed
+window. Each group follows its own pages. The board orders every column
+itself, so the groups may answer in any order. Five reads are not one
+snapshot: a card moved from a group not yet answered into one already
+answered would be in neither, and one moved the other way in both. So once
+all five have answered, the board reads the cards changed since a minute
+before the reads began (the start taken on the hub's clock, the minute a
+margin for its skew): `status=all` with the window and `order=updated`,
+newest first, pages of 50, until the first card older than that. Each card
+it returns replaces or adds its card. That read pages by an `updated_at`
+keyset, and a card changed again between two of its pages moves ahead of
+the cursor. So a pass that followed a cursor is followed by another from
+the first page, taking every card at least as new as the newest the pass
+before saw. The comparison includes that time itself: a card changed in
+the same second as the newest one is recovered too. A pass of one page has
+no gap and ends the reading. After three passes that each followed a
+cursor, one list of every status in the window (`status=all` with the
+window, all its pages) is read instead and replaces the cards.
+What is guaranteed: every card that did not change during the reads is
+shown as its group read it, and every card that did is shown once, as the
+last pass, or the one list, has it. The one list has the gaps between its
+own pages that the board always had. A change after the last read is the
+board's usual news, offered as a reload. The reload after a write reads the
+same way; the hub search still asks one list over every status
+(`status=all&q=`).
+When the board falls back to the one list: when all three passes followed
+a cursor, that is, when cards keep changing while the passes read, or when
+the cards at or after a pass's start fill its first page and more cards
+follow in the window (for example many cards changed in the same second).
+The cost: one request per group, each following its own pages, then the
+changed-cards read, whose passes each read pages until a card older than
+their start or the end of the window, and where all three passes followed
+a cursor, the one list with all its pages. At most five requests are in
+flight at once. The wait is the longest group plus the changed-cards
+read's pages, one after the other, not the sum of every page.
+
+**Reason:** the pages were the board's longest wait, and nothing in one
+page depends on another. Side by side, the wait is the longest group,
+not the sum.
+
+**Rejected alternatives:**
+- A larger `limit`: fewer pages, but a contract change, which this card's
+  boundary excludes.
+- The open columns first and the closed window after them: the board
+  would draw twice, and its closed columns and counts would change under
+  the reader. Taken up on 2026-11-10, after prod measured the closed
+  window as the board's longest wait: [the board draws once the open
+  groups have answered](#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow).
+- One request per status: seven instead of five, for groups (`blocked`,
+  `review`; `done`, `cancelled`) that are small next to the rest.
+- Reconciling from the project's event feed (the cards a task event names
+  during the reads): a reader who is neither owner nor admin is in few
+  events' audiences (§6.11), so a move could stay unseen. The changed-cards
+  read depends on no audience.
+- One list again whenever the board fits a page: the first page decides,
+  so every larger board waits for it before its groups start.
+- Falling back to the one list whenever the changed-cards read pages: more
+  than 50 cards changed during the reads is rare, and when it happens the
+  first page read again finds what moved ahead of the cursor for one more
+  request instead of a whole list.
+
+The group lists name the contract's seven statuses (§6.4). A status the
+contract adds would not be read until the board names it; the board's
+column for an unknown status stays for a hub that sends one anyway.
 
 ## Registration is offered where the hub registers or the invitation one comes from admits
 
@@ -1825,7 +2037,7 @@ as before. An id that is not an instance id is not shown. In a chat two
 instances of one agent are two senders: their messages are never grouped
 under one name. The handle leads to the member's page, the `#id` to
 the same page's Sessions with that instance's line marked and focused
-(`…/members/<id>/sessions/<instance>`), where no link is possible (a
+(`…/team/<id>/sessions/<instance>`), where no link is possible (a
 member the project does not list, a view from outside) both stay text.
 A stored mention `@handle#id` in a text reads the same: two links, the
 member and its instance. The @ picker offers, after each agent, its
@@ -2215,6 +2427,38 @@ the hub ship together, the hub's part first. Always sending `via`,
 `"public"` without a join host: the same as sending none, one more
 field to keep right.
 
+## The invite form asks for a person's handle first, the email address after it
+
+**Id:** 0e944b7a-41cf-4b05-8921-dd5de7d21c15
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision quoted on the card tsk-8xsrzjv7f0yr (scope point 3); docs/api.md §3.4 (`handle` excludes `address`, an invitation by handle has no `url`); its web PR
+**See:** views.md#an-invitations-link-via-the-join-host-is-offered-only-where-the-hub-names-one — 35607b9c-4a72-4936-bcf8-63a429436ab9 — as of 2026-11-10
+**See:** views.md#a-handle-fields-hint-is-a-sentence-of-fixed-words-with-no-handle-or-address-filled-in — e9c2136d-efa9-4222-b013-6042a56ec86c — as of 2026-11-10
+**Revisit when:** the hub lets one invitation name both a handle and an address, or gives an invitation by handle a link
+
+The Members → invite form (`js/invite.js` `membersPanel`) has a **Handle** field before the
+**Email address** field, the handle explained under it as for an organisation's invitation
+(`M.handles.explain("person")`). With a handle typed, the address field and **Link via <join host>**
+are disabled and not sent: the hub refuses a handle with an address (`with_address`), and an
+invitation by handle has no link, so neither would do anything. After the issue the form says
+the invitation was sent to the person by name and handle, with nothing to copy, instead of
+the link shown once. The hub's refusals of a handle (`format`, `unknown`, `not_a_person`,
+`member`, `invited`) are said in words and put the focus back on the field.
+
+**Reason:** the maintainer named the handle as the better way in: people know a handle, and
+not everyone wants to hand out their address. The address field was labelled "Address", which
+did not say which address; it is now "Email address" in every language. That much is
+confirmed; disabling the fields that do nothing beside a handle is this change's own reading
+of the contract.
+
+**Rejected alternatives:**
+- One field for a handle or an address, told apart by its `@`: an address holds an `@` too,
+  and `@name` is how a handle is often written, so the form would guess at what was meant.
+- Leaving the address and the join host's link open beside a handle: the hub would refuse
+  the pair, or the link choice would be sent for an invitation that has no link.
+
 ## Registration in the admin area: missing beside the fields, a block lifted by its typed address
 
 **Id:** 9e0abafa-9fb3-41ba-b9b0-648e7e9523c0
@@ -2573,7 +2817,7 @@ slug: §6.25 forbade it, since another project may carry that slug by now.
 
 The agents' heading on Members has **+ Add an agent** (owner and admin),
 which opens the join panel under it: closed by default, open at once in a
-project without agents or at `/<owner>/<slug>/members/join`. The panel is read beside the
+project without agents or at `/<owner>/<slug>/team/join`. The panel is read beside the
 list, never before it, so the rows and a member asked for by the URL do
 not wait for the joins. Open joins stand as seats under the agents'
 table, the placements after it, the earlier joins at the end. A count
@@ -2794,6 +3038,9 @@ reporting line that is not there.
 **Evidence:** confirmed
 **Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); the maintainer's request relayed by the coordinator on the card tsk-ttywzxsaj1ht, 2026-10-31 (Agents right after Members, Jour fixe between Why and Settings); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
 **Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
+
+2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+2026-11-10: the path follows the name: the view and its member pages are at /<owner>/<slug>/team (the maintainer's decision, so that the name and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word, the maintainer's wish, so no slug or later view takes it; /members is a word that is no view, with no redirect. The Members tab keeps its name.
 
 **Members** lists everyone in the project the same way for every
 viewer: trust and role, presence, owner, joined, paused, a link to the
@@ -3016,7 +3263,7 @@ those branches untested.
 **See:** views.md — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-10-29
 **Revisit when:** the maintainer moves the admin's actions out of the Manage row, or a member page of its own takes over what the Agents card does
 
-`/<owner>/<slug>/members/<id>` is a member's page: breadcrumb, header,
+`/<owner>/<slug>/team/<id>` is a member's page: breadcrumb, header,
 and the tabs Activity, Cards, Briefing, Sessions & credentials, all read
 only. Its **Actions ▾** holds only links: **Manage on Members**
 (`?manage=<id>`, the list with that row open) for an admin, **Manage on
@@ -3053,7 +3300,7 @@ when the first such row opens, since the member list carries no
 `avatar_source`. The account still lists, under **Agents in other
 projects**, the owner's agents that are in no project the owner can
 open, and only those. `/account/picture/<agent id>` for an agent that
-Members reaches leads to `/<owner>/<slug>/members/<agent id>/picture`,
+Members reaches leads to `/<owner>/<slug>/team/<agent id>/picture`,
 the row open. The checks before sending and the missing preview stay as
 the entry this one replaces describes them.
 
@@ -3253,6 +3500,46 @@ used to say to sign in again.
 sensitive call: needless right after a sign-in, and wrong for a
 passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
+
+
+## Every route that asks for the factor is called through M.stepUp.run, held by a list the hub test and the check share
+
+**Id:** 4dc6b1f0-bd9d-4110-a961-41e830af134e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6dk86ej9s0fq (the owner, 2026-11-09: pairing a runner on /runners showed only "This needs your second factor first."; the lead's scope: the fix, an audit of every route that calls `require_step_up`, a guard, the fixture refusing); hub/src/maity_hub (the routes), docs/api.md §2.8.4; the guard's form is the implementer's, as the card left it
+**See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-09
+**Revisit when:** the hub publishes which routes ask (in its OpenAPI, say), or the dashboard's calls go through typed per-route functions
+
+`tools/step-up-routes.json` lists the hub's routes that ask for the factor (method and path under the API prefix; `body` where the hub asks only for one field, `when` where it asks only in some cases). Three readers keep it true:
+- `hub/tests/test_step_up_routes.py` reads the hub's source: every route whose handler reaches `second_factor.require_step_up`, directly, in a lambda it hands on, or through the hub's own functions it calls. Each call is resolved through the module's imports, so the gate imported under another name, or called by a module's name or its full dotted path, counts the same. A function handed around under another variable or taken by `getattr` is not followed. The two sets must be equal.
+- `tools/check.py` fails on a call `M.api.<verb>(path, …)` in `js/` whose path it reads as one of those routes and that does not go through `M.stepUp.run`. It is a reading of the text, not of the program. It recognises exactly the forms below; any other form is not checked and can pass.
+  - **Path:** the parts of a `+` chain that are a string literal; `ctx.base`; a name, read from the last `const name =` or `let name =` before the call anywhere in the file (not by blocks); a call of such a name bound to an arrow, whose body is read; or `a ? b : c` and `a || b` of those; three deep. Any other part stands for any run of characters, slashes too (`M.api.projectPath` gives several segments). A path with no part read is left alone.
+  - **Names in a body and of a named arrow (form 2 below):** a name is bound only by a declaration `const name =` or `let name =`. The check walks out from the call through the `{…}` blocks around it to the nearest block that declares the name, and takes there the last such declaration before the call, else the first. Its value is the text after `=` up to its `;` or the end of its block. Nothing else binds a name for the check, in a path either: not a later declarator after a comma (`const a = 1, name = …`), a parameter, a destructuring, `var`, a function declaration or a reassignment.
+  - **Body:** for a route that asks only for one field, the call's body is read with the value of every name in it, three deep. The field counts where its key stands as a word in that text, so a key behind a variable counts.
+  - **Asking first**, in exactly these four forms; in 2 to 4 the arrow's body is the call itself (`=> M.api.…(…)`, in parentheses or not), not a block:
+    1. Inside the function expression that is the whole of `M.stepUp.run`'s first argument; not one called or bound right there.
+    2. In an arrow `const name = (…) =>` or `let name = x =>`, not `async`, where an `M.stepUp.run(name, …)` in the file resolves, by the blocks around it, to this declaration. This shows the binding is handed to the question once, not that every call of it goes through it.
+    3. In an arrow that is a property `key: (…) =>`, not `async`, where every `.key` read in the file (`x.key`, `x[i].key`) is `M.stepUp.run`'s first argument, no `{ … key … } =` destructures it, no `["key"]` reads it, and the file makes no call through brackets (`…](`).
+    4. As an argument of a local function (`function f(…) {` or `const f = (…) => {`) whose parameter in that place is handed to `M.stepUp.run` as its first argument in its body. `f` is found as follows, and only so: the check walks out from the call through the `{…}` blocks around it to the nearest block that declares `f` by a function declaration (a `function`, also `async` or `export`, where a statement starts: at the top or after `;`, `{` or `}`), a `const` or a `let`. There it takes the last function declaration of that block, wherever the call stands; if the block has none, the last `const` or `let` before the call, else the first. Where that declaration is not such a helper, the call does not ask. Any other binding form is not resolved and can pass, for example a named function expression's own name, a parameter, `var`, an import or an assignment.
+  - A call made to work out `M.stepUp.run`'s arguments, or in another of its arguments, is sent before anything is asked, and does not count.
+  - `tools/test_step_up_check.py` holds those readings, some through the whole check on a file of its own (tsk-4zrnkb3gh6mq, after xyfr's post-merge re-check of #1547 found that a name given to `M.stepUp.run` anywhere in the file had counted, and 4hch's review of #1566 the reads and names the first fix still missed).
+- The same check keeps `js/api.js`'s `STEP_UP_ROUTES` equal to the list. With `window.MAITY_FIXTURE_STEP_UP` set (to `Date.now()`, so that a code given earlier in the run does not count), the fixture hub refuses them with `step_up_required` until a code is verified.
+
+A reject of a held address change is never asked by the hub, but it is sent through the question like the approve: the hub's reading includes it, and asking only after a refusal costs nothing there.
+
+Known limits, each a way a new guarded call could go unseen (tsk-4zrnkb3gh6mq records them rather than closing them):
+- The hub test finds routes declared as `@router.<method>("<path>")` on a module-level function with a local `APIRouter`. A route added with `add_api_route` (as `routes/project_images.py` adds its image routes), a class method, or a router built inside a function (as `app.py` builds the one for `/languages` and `/health`) adds nothing to its set; none of those files reaches `require_step_up` today.
+- `tools/check.py` follows only the forms listed above. Any other way to write a binding, a path or a hand-over is not checked and can pass: a parameter of the same name, a reassignment, an alias that keeps the arrow, a direct call beside the wrapped one, a function passed under another name, a value stored and read in another file.
+- The fixture asks for the factor on any `email.address` in `PATCH /me/notification-settings`; the hub asks only when a verified or disabled address changes (`_change_address` in `hub/src/maity_hub/notifications/preferences.py`). Wider than the hub, it never lets through what the hub refuses.
+
+**Reason:** the runner pairing, the mail settings, the password, the address change and its approval, and the answer that moves a project were each written without the helper, and nothing failed until a person met the refusal. A list read from the hub and a check over every call catches the next one when it is written. A test drives only the flows someone thought of.
+
+**Rejected alternatives:**
+- The fixture refusing, with smoke and e2e to catch a missing question: it finds only what a test drives, and none of the eight calls had such a test.
+- A hub contract test against routes named in docs/api.md: §2.8.4 names the calls in prose, not as a list a test reads, and the step-up is decided in the hub's code, which the source reading follows.
+- Every `M.api` write through `M.stepUp.run`: each form would need a slot for a question the hub never asks.
 
 
 ## The second step of a sign-in is a page of its own for both ways; the mail's link is posted from the page
@@ -3835,6 +4122,9 @@ taken, and the rule for what holds is the contract's. The icons as
 **Supersedes:** d7ee1073-1752-4134-9e51-878c5c28f2c2
 **Revisit when:** the GUI round with the maintainer moves a panel, or the Team page gets its Availability tab
 
+2026-11-09: the project tab, the page title and the member page's breadcrumb are named Team (req-77az2zs017fe); its path stays /members. The Team page's own Members tab and its heading keep that name, so the Revisit-when lines on that tab are not triggered by this.
+2026-11-10: the path follows the name: the view and its member pages are at /<owner>/<slug>/team (the maintainer's decision, so that the name and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word, the maintainer's wish, so no slug or later view takes it; /members is a word that is no view, with no redirect. The Members tab keeps its name.
+
 The Overview (`/<owner>/<slug>/overview`) has the tabs **Summary**,
 **Swarm** (`overview/swarm`) and **Project** (`overview/project`), as
 links with the shown one marked. Summary is what needs the reader and
@@ -3846,7 +4136,7 @@ policy, contract, Keep the Why) and the README badge, read from what
 the header already has. A tab the page does not know shows Summary.
 The organisation tree left the Overview: it is the Team page's
 **Organisation** tab at `/<owner>/<slug>/organisation`, a project view
-the contract already lists, beside **Members** at `members`; both
+the contract already lists, beside **Members** at `team`; both
 pages carry the same two links (`M.teamTabs`), and the project's row
 of tabs marks Members for either. The tree is drawn again when a member
 event arrives.
@@ -3976,33 +4266,39 @@ types and still does not give a phone its screen.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); browser measurements at 1280 × 800 and 390 × 844 in the PR
+**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); card tsk-df4tcq83pnf6 (the maintainer, 2026-11-02: the chat input ran past the bottom of the screen and the page had to be scrolled; wanted the input inside the viewport on desktop and phone, light and dark); browser measurements at 1280 × 800, 390 × 844 and 375 × 667 in the PR
 **Revisit when:** the chat stops sizing itself with `--chat-h`, or the product line moves out of the page's flow
-**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-03
+**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-05
 
 The open chat's height (`--chat-h`, `fitToScreen` in `js/chat.js`) is the window's height less where
 the chat layout starts on the page and less what stands below it down to the end of the page
-(main's padding, the product line of §16.13). The page then ends at the window's bottom edge, the
-product line under the composer is in sight, and only the history and the chat list scroll. It is
+(main's padding, the product line of §16.13). Where that leaves room for the pane's fixed chrome
+(heading, composer, and the like) plus about 60 px of history, the page ends at the window's bottom
+edge, the product line under the composer is in sight, and only the history and the chat list scroll.
+When the fixed chrome fits in the window but that comfortable height would run past the bottom edge
+(a short phone, a tall header), the height stops at the window edge so the input stays on screen; the
+product line may then sit just below the fold rather than pushing the composer off. That needs room
+for at least about 24 px of history next to the fixed chrome; only when the fixed chrome with those
+24 px is taller than the window below the layout (a tall sign-in banner on a short phone) does the
+page scroll, and then the product line stays below the composer, never over it. It is
 measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
-body: a banner above, the product line below). It is never less than what the open chat cannot
-shrink (its heading, the composer) plus 60 px of history, about three lines: on a screen too small
-for that, the page scrolls and the product line stays below the composer, never over it. The
-observer measures in the next frame, not in its own round, where a new height would resize the
-body again and the browser would report a ResizeObserver loop. Besides the body it watches the
-pane's fixed parts and the panes the layout holds: folding the composer or making it taller, and on
-Chats a group chat taking a direct chat's place, change the floor without resizing the body; only the
-current pane's parts are watched. A layout not yet in the page,
-as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
-most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
-at all, Chats measures the layout the pane moves into. While a
-message is sent, "Sending…" and a failure stand in the composer's row, after the meat-proxy switch
-and before Send, so no line appears below the row and nothing moves.
+body: a banner above, the product line below), and on the visual viewport so a phone's on-screen
+keyboard is followed. The observer measures in the next frame, not in its own round, where a new
+height would resize the body again and the browser would report a ResizeObserver loop. Besides the
+body it watches the pane's fixed parts and the panes the layout holds: folding the composer or making
+it taller, and on Chats a group chat taking a direct chat's place, change the floor without resizing
+the body; only the current pane's parts are watched. A layout not yet in the page, as Chats builds it
+while its view is still drawn, is measured once it is there, a few tries at most, and then lets go of
+its listeners; the holder a pane is drawn into on Chats is not measured at all, Chats measures the
+layout the pane moves into. While a message is sent, "Sending…" and a failure stand in the composer's
+row, after the meat-proxy switch and before Send, so no line appears below the row and nothing moves.
 
 **Reason:** the earlier measure took the header's bottom and 16 px. It left out what stands between
 the header and the chat and everything below it, so the product line pushed the composer past the
 window's edge. On Chats the first measure came before the layout was in the page and stopped for
-good, leaving the CSS fallback `calc(100dvh - 140px)`.
+good, leaving the CSS fallback `calc(100dvh - 140px)`. A later floor of fixed chrome plus 60 px of
+history kept the product line under the composer on a short phone, but forced `--chat-h` taller than
+the window, so the input sat past the bottom edge and the page had to be scrolled to reach it.
 
 **Rejected alternatives:**
 - No product line on chat views: §16.13 puts it at the end of every page the dashboard draws.
@@ -4015,6 +4311,12 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   more than that, so the composer ran past the pane and under the product line.
 - A floor of 120 px of history: a group chat on a 390 × 844 phone no longer fitted the window
   even without a banner above it.
+- Keeping `max(fixed + 60 px, space to the footer)` on every screen: on a 375 × 667 phone without a
+  banner that floor was taller than the window, so the composer ran past the bottom edge and the
+  page scrolled; the input has to stay in the viewport when the fixed chrome fits there.
+- Stopping at the window edge whenever the fixed chrome alone fits: on Chats at 375 × 667 with the
+  sign-in banner that left 3 px of history, an input in view with no message above it; below about
+  24 px of history the page scrolls instead.
 - A `ResizeObserver` on the body alone: the layout's height is fixed by `--chat-h`, so a change
   inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
   another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
@@ -4029,7 +4331,7 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change
+**Source:** card tsk-fnch2yxp2kk1 (the owner, 2026-11-08, from a phone screenshot: the product line over three rows, the "In it:" line and the composer's hint taking the room, the chat hard to read); lotse#wtwy's go on the plan (nte-ekw1cx4xkxvb), with the §16.13 sentence in the same change; card tsk-2a56j80p3p9h (the owner, 2026-11-09, from a phone screenshot: the full-screen button at the top right, under the top bar's last entry, in a direct and a group chat; no agent session line on a phone)
 **Revisit when:** the phone breakpoint (600 px) changes, the router stops drawing the view again on back, or the product line's parts change
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
@@ -4040,7 +4342,7 @@ At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
 
 Wider than that, nothing changes.
 
-Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
+Any open chat, direct or group, at any width, has a button in its heading row, an icon as the list's actions are (#1483), named "Read in full screen" and pressed while full. Where the chat list and the chat are one pane (`max-width: 720px`, a phone), it stands at the chat head's top right instead, on the row of the back link (← Conversations), and while full 8 px from the window's top and 12 px from its right; in the document it stays after the heading, so Tab still reaches it there. There a direct chat with an agent also shows no session line (`chat.session`) beside its heading. It sets `chat-full` on `<html>`, and the pane becomes `position: fixed` over the whole window at its height, on the page's ground; the page under it does not scroll.
 
 The full screen ends:
 - with the button again;
@@ -4066,20 +4368,57 @@ While full, everything outside the chat is `inert`: no focus reaches the covered
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged
-**Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than three items, or a drop learns a right-to-left order
+**Source:** card tsk-hp9gq9rmrdq2 (the owner, 2026-11-08: no "+ New project" tab, the "…" menu right at the end of the tabs); his word the same day, relayed by lotse#wtwy (seq 94519), that dragging works and he wants to see where a dragged tab lands, a line before or after the tab under it, by the drop's own half, the keyboard move unchanged; card tsk-45fhe2yrwzb7 (the owner, 2026-11-09: the "+" menu gets Runner, in the order Agents, People, Runner, Projects); card tsk-2a56j80p3p9h (the owner, 2026-11-09: on a phone the "…" stays at the right end of the tabs' row, never on a line of its own)
+**Revisit when:** the row of tabs gets groups or pinned tabs, the "+" menu gets more than four items, or a drop learns a right-to-left order
 **See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-08
 
-The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). New project is the first item of the header's "+" menu (Project, then Agent and User), which is named "Add a project, an agent or a person". The empty state's Create a project stays.
+The row of project tabs ends with the last tab; the tabs menu ("…") stands right after it. The tabs take their own width (`flex: 0 1 auto`), and a project's state keeps the far end of the row (`margin-inline-start: auto`). On a phone (600 px) the row wraps by the tabs' full width, which put the menu on a line of its own; there the tabs fill the room the menu leaves (`flex: 1 1 0`) and scroll, the menu keeps the row's right end, and the project's state takes the next row. New project is in the header's "+" menu, its last item since 2026-11-09 (Agent, User, Runner, then Project; Runner leads to `/runners` and its pairing form, tsk-45fhe2yrwzb7), which is named "Add an agent, a person, a runner or a project". The empty state's Create a project stays.
 
 While a tab is dragged, a 3 px upright line in the accent colour stands in the gap beside the tab under the pointer: before it when the pointer is on its first half, after it on its second. The drop puts the tab exactly there; both read the same half (`dragTab.pastMiddle`). Only one tab carries the line at a time, never the dragged tab itself. The line goes on `dragleave`, on the drop and on `dragend`, wherever the drag ends. It is a `::before` or `::after` of the tab, placed absolutely 5 px outside it, so nothing in the row moves; the row keeps 6 px after its last tab, so the line after that tab is not cut off.
 
 **Reason:** the owner's layout. A tab for one action among the projects read as one more project and kept the menu far from the tabs it manages. A line drawn by the drop's own rule is the place the drop takes, so what the eye sees is what happens. A border or a margin would shift the tabs under the pointer and so change the half it is on.
 
 **Rejected alternatives:**
-- New project as an item of the tabs menu: that menu is about the tabs, not about creating.
+- New project as an item of the tabs menu: that menu is about the tabs, not about creating. Reversed by the owner on 2026-11-10: the item is there now, see 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef.
 - The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
 - An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
+
+## The tabs menu offers New project too, beside the projects; the "+" menu keeps its entry
+
+**Id:** 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c4dz5x6rb2h8 (the owner's report in the project chat, 2026-11-10: the "…" menu right of the project tabs lacks the option to create a project)
+**Revisit when:** the tabs menu gets items that are neither about the tabs nor about the projects in them, or the "+" menu loses its New project entry
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-10
+
+The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens. Like the "+" menu it is there for humans only. The "+" entry stays; the row of tabs still has no New project tab of its own.
+
+**Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs.
+
+**Rejected alternatives:**
+- Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
+- Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
+
+## The tabs menu is drawn as the row's last tab, fixed at the end, and stays a menu button
+
+**Id:** dd8eaa01-7117-4ed2-94de-8eee9ee82e57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qa2r972wjsws (the owner in the project chat, 2026-11-10, seq 105570: the "⋯" beside the project tabs should look like a tab; the proposal approved in seq 105578; seq 105588: it cannot be moved, it stays the last tab)
+**Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
+
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 40px)` on `.switcher` in a row with the menu), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+
+**Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
+
+**Rejected alternatives:**
+- Leaving the many-tab wrap as it was and saying so: the owner's rule is that it stays the last tab (seq 105588), and it would not be exactly when there are the most tabs.
+- A real tab (`role="tab"` or a link in `nav.switcher`): a screen reader would announce a view that does not exist, and the drag and keyboard moves would treat it as a project tab.
+- Leaving it as it was, a small button with a gap: it did not read as part of the row.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
@@ -4154,7 +4493,10 @@ editor is drawn from it; a body whose pages, sections or lists are of
 the wrong kind leaves the draft as it was. That kind check covers every
 value the editor binds to an object, not only lists: a button, a group
 and each footer link must be an object, or absent where optional, or the
-editor would break after the draft was replaced. Save asks for the
+editor would break after the draft was replaced. A section's type is
+looked up among the editor's own types only (`Object.hasOwn`), so a
+`constructor` or `__proto__` in an import is drawn as an unknown section,
+never taken for something every object inherits. Save asks for the
 step-up (§2.8.4) the hub requires for this call.
 
 **Reason:** the preview call already validates a draft exactly as a
@@ -4594,12 +4936,12 @@ so it was dropped.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
 **See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
-The header's row shows the repository, then Pull Requests, then the
+The header's row shows the repository, then Actions, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
 with its mark), then the
 Keep the Why dashboard, and after them, at the right end, the state: the
@@ -4608,6 +4950,16 @@ button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
 own links, Pull Requests is derived in the browser from the repository's
 URL and forge, and a forge outside the table gets no button; the hub knows
 only GitHub today, so the other three targets wait for it (tsk-sqpcbndm0tvd).
+Actions, which the maintainer asked for (tsk-kdkdy864q11r, 2026-11-10), is
+derived the same way, but only for the forges that call their workflows
+Actions (GitHub, Gitea): GitLab and Bitbucket call theirs Pipelines, a word
+of its own that no card has asked for yet. Its screen-reader name says the
+forge ("Actions on GitHub"), as the repository's does. A second derived
+button is not the "fifth kind of link" the Revisit condition below means
+(an own link of §6.11, which the hub stores): it follows the forge table,
+and on a phone the row still holds every button in one row that scrolls
+(e2e at 390 and 360 px, light and dark). Neither derived button is on the
+overview's Project tab, which shows the own links only.
 Each link is plain https
 only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
@@ -4631,6 +4983,31 @@ would overwrite another admin's change to a link it did not touch.
 - Sending all four links on every save (#846): it loses another admin's
   change made meanwhile.
 
+
+## The chat lists' pin buttons are a mode for managing pins: hidden on every load, stored nowhere
+
+**Id:** 8d534643-d67c-4da0-b383-075c5cc4e6a0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-4nf344w4c52c; the maintainer's description, relayed by the coordinator: the pin buttons show only while he manages pins, then he hides them again (chat 102521, 2026-11-10)
+**Revisit when:** someone wants the buttons kept shown across reloads or devices, or the hub stores display choices for a human
+
+Pins themselves are the hub's, per human (§9.3), and a pinned chat keeps its 📌 mark in the list
+whatever the mode. The pin/unpin button on each row of the project's chat list and of /chats is
+hidden until the toggle in the list's heading row shows it; pressed again, or after a reload, the
+buttons are hidden again. The choice lives in the page alone (`pinColumn` in `js/chat.js`), shared by
+both lists while the page stands. On /chats the toggle stands after the Lead's slot, so that on a
+phone the heading keeps its row and the Lead its place under it at the left edge.
+
+**Rejected alternatives:**
+- Keeping the choice in the browser (localStorage, as the board's column filter is): the
+  maintainer uses the buttons only to set pins up, so a choice that outlives the page would leave
+  the column shown when he no longer wants it.
+- A field on the account (`PATCH /me`): a contract and hub change for the same unwanted
+  persistence, across devices as well.
+- Hiding the pin mark with the buttons: the mark says which chats are pinned, which the list's
+  order alone does not.
 
 ## The settings form says what an unset agent_owners reads now, from the page's public_page and state
 
@@ -5057,7 +5434,8 @@ on every change of a confirmed address.
 
 **Id:** 444115c8-aaaf-408e-a16c-571aa48f69cf
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 44009d6f-ff99-4f8a-b51e-cb9531702422
 **Evidence:** inferred
 **Source:** docs/api.md §18.4 "Defaults and what was saved", the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02
 **Revisit when:** the hub can reset a kind to its default
@@ -5079,6 +5457,37 @@ would see it changed.
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
 
+## When mail goes out: the page sends only what changed; the time zone is set under Settings, the browser's only offered
+
+**Id:** 44009d6f-ff99-4f8a-b51e-cb9531702422
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4; the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02; the owner's decision on the account time zone (message seq 94723) and the approved plan on card tsk-j8s6n725a06r, 2026-11-08
+**See:** views.md#when-mail-goes-out-the-page-sends-only-what-changed-the-browsers-zone-only-offered — 444115c8-aaaf-408e-a16c-571aa48f69cf — as of 2026-11-08
+**Revisit when:** the hub can reset a kind to its default
+
+The modes and times on `/account/notifications` are compared with the hub's merged answer, and
+the `PATCH` names only what differs: in `email.kinds` only the kinds that changed, each with only
+its changed part (`mode` or `content`). The time zone is no longer a field there: it is the
+account's, chosen in Account → Settings, and the mail page names it with a link there, or says
+the mails follow UTC while none is set. In Settings the browser's zone is offered first, as a
+button and at the top of the list, but the page never sets it unasked.
+
+**Reason:** the hub stores only what the human set, and a kind it was sent counts as set even if
+the value is unchanged; sending the whole form would pin every kind at today's default (unchanged
+from the earlier entry). The zone now decides every time the dashboard shows as well as when
+digests and quiet hours fall, so it belongs with the language under Settings, not under mail
+(the owner's decision, confirmed); a browser on a trip should still not move it.
+
+**Rejected alternatives:** sending the whole `email` object on each save: it pins every default.
+Setting the browser's zone while the account has none: the dashboard already shows times in it
+then, and storing it would turn a guess into a choice the human never made. Keeping a second zone
+field on the mail page: two places for one value.
+
+**Known limit:** a mode changed and later set back to the default stays set; the contract has no
+reset.
+
 ## The frame's stylesheets are switched on only where the sign-in or registration stands signed out, its header and footer beside the app's
 
 **Id:** e9ddc07e-71c0-47c7-bd12-6a7e4d2c35f0
@@ -5090,7 +5499,8 @@ reset.
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
-`GET /site/chrome` in the page's language. While the page stands, the hub's
+`GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
+and take the frame's language from its answer. While the page stands, the hub's
 `/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
@@ -5149,6 +5559,30 @@ than clearing the session on that 401 here was lotse#wtwy's decision (message se
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
 reload the page, or sign out and in again.
 
+The frame's mark (`home()` in `js/site-chrome.js`) is the hub's SVG without its style attributes;
+it keeps the class `mark`, and its colours come from `public-pages.css` (`.site-header .mark
+rect`, …), because the dashboard's policy is `default-src 'self'` with no inline style. **Rejected:** the
+style attributes as the hub inlines them (web-e2e failed on them at `cc402ec1`), classes in
+`app.css` (a second copy of the hub's design, reverted in `7b63d015`), and an `<img>` (it cannot
+take the header's theme tokens). Source: the author's notes on #1287, round 2 (card
+tsk-gsk31zvpfv02).
+
+The footer's languages (`language()`) are this page's own path and query with `lang` set,
+written through `M.route.href`, and a click chooses the language (as the page's picker does) and
+draws the page again at that address. **Rejected:** a bare `?lang=`, which under the shell's
+`<base href="/assets/">` resolves to `/assets/` (a 404) and loses a sign-in's `next`; a page load
+to `/?lang=`, which leaves the sign-in. Source: the same notes on #1287.
+
+Under 960 px, a pitch panel that has none of the pitch's parts (subline, points, note) is hidden
+(`hub/src/maity_hub/landing_assets/public-pages.css`, the narrow-screen rule), so a phone gets no
+empty dark band. Every key of §16.7.4 is optional, so a panel with only a note or only points
+stays. The title is the form's heading, not a part of the panel. A new part that `pitch()` draws
+must be added to that rule. **Rejected:** hiding on subline and points only (it hid a note-only
+pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second source of truth);
+keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
+one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
+notes on #1287, round 3 (card tsk-gsk31zvpfv02).
+
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
 **Id:** 71dc43d7-fef5-4123-83de-841dcc06c2bd
@@ -5199,7 +5633,7 @@ the hub answers with.
 
 The project's Why tab is Keep the Why's own dashboard views, mounted by `js/ktw-host.js` from the vendored library: the overview, graph, timeline, thoughts, family, topics, entries and search, at paths below `/<owner>/<slug>/why`. The library reads through a provider over the hub's §11.5 reads, moves through the dashboard's paths (`js/route.js`), keeps its settings in the browser and takes Maity's colours through its `--ktw-*` tokens. Its scripts and stylesheet are loaded on the first visit to Why, in the manifest's order (checked by `make check`), and stay for the page's life. Its own UI words are English and the mounts carry `translate="no"`: an interim step until the library takes words from its host; entry text is the repository's data either way. The digest view the tab showed before (the hub's §11.3 summary per member) remains on All projects → Why. What the old view did for a failed read stays: when the hub cannot read the export, its last good read is shown with the reason, and Read again drops what the page holds and reads anew. A link from data is used only when plain https, as for every link from data (rendering.md), in two places: the export's link fields (the project's and the config's canonical, dashboard-state, a git remote and the repository it forks, a See or superseded_by into another repository) are checked before the library sees them, and every `href` the library writes into the mounts, entry text included, is checked again as `dom.h` checks Maity's own (a path of the dashboard or plain https); a `ref` place reads nothing for a repository in the address that is not plain https. Since 0.11.44 the library writes a route's `centre` as `centre/public/<canonical>/<root>/<place>`; the host's router drops an empty path segment, so it never reads a repository's root back from that form with certainty. An entry at another repository of the family is therefore written by the host as its own place `at/<uuid>/<canonical>[/<root>]`, which reads that repository's export (at that root) through the family and draws the entry with the library's pages over a scene of that export; `routeOf` also takes the library's `centre/public/…` form when a link arrives from elsewhere (a segment after the canonical is the root unless it names a place of the library's grammar, so a root named like a place, `graph` say, reads as that place: a known limit of links from elsewhere, never of `at/`), and any other place at another repository is the family page. A `ref` place the library resolves goes on to that place, replacing the ref in the history. The repository in the address must be plain https and the root a relative directory, or nothing is read.
 
-Since keep-the-why-dashboard 0.11.44 the library takes contrast tokens: text on its accent is `--ktw-on-accent` over `--ktw-accent-fill`, and accent-coloured text (links, counts, the type pill) is `--ktw-accent-text`. `css/app.css` maps the first pair to Maity's own `--accent-text` on `--accent` (5.32 to 1 light, 6.0 to 1 dark) and drops the eight overrides that wrote `--accent-text` over the library's literal `#fff`; they were a workaround until such a token existed. `--ktw-accent-text` is not `--accent` itself but `--accent` a fifth of the way to `--text`, as `--ktw-warn` already is: plain `--accent` is 4.11 to 1 light and 3.98 to 1 dark on the type pill's 18% accent tint, under AA, while the mix is 4.84 to 1 at least on `--bg`, `--surface` and that tint over either, in both themes. Mapping `--ktw-accent-text` to Maity's `--accent-text` was rejected: in Maity that name is the text *on* the accent (white in light, near-black in dark), not accent-coloured text, so links would turn white or black. `--ktw-status-active-text` is `--ok`, as `--ktw-status-active` is. Likewise, controls the library labels only by `title` (the timeline's playhead and speed) get an `aria-label` from that title in the host, where `sweep` holds its links, and a later title refreshes the name the host set, while a name the page sets afterwards is kept when it differs from the host's (one equal to it cannot be told from the host's and follows the title); dropping axe's `label-title-only` rule for the mounts was rejected, as it would hide the next unlabelled control too.
+Since keep-the-why-dashboard 0.11.44 the library takes contrast tokens: text on its accent is `--ktw-on-accent` over `--ktw-accent-fill`, and accent-coloured text (links, counts, the type pill) is `--ktw-accent-text`. `css/app.css` maps the first pair to Maity's own `--accent-text` on `--accent` (5.32 to 1 light, 6.0 to 1 dark) and drops the eight overrides that wrote `--accent-text` over the library's literal `#fff`; they were a workaround until such a token existed. `--ktw-accent-text` is not `--accent` itself but `--accent` a fifth of the way to `--text`, as `--ktw-warn` already is: plain `--accent` is 4.11 to 1 light and 3.98 to 1 dark on the type pill's 18% accent tint, under AA, while the mix is 4.84 to 1 at least on `--bg`, `--surface` and that tint over either, in both themes. Mapping `--ktw-accent-text` to Maity's `--accent-text` was rejected: in Maity that name is the text *on* the accent (white in light, near-black in dark), not accent-coloured text, so links would turn white or black. `--ktw-status-active-text` is `--ok`, as `--ktw-status-active` is. Since 0.11.45 each of the library's state colours has a `-text` twin for its words (`--ktw-ok-text`, `--ktw-warn-text`, `--ktw-status-open-text` and eight more); the colour keeps drawing borders, dots and the graph. Upstream draws those words on the pills' solid `--ktw-surface2`, and on the surface and the page, never on a tint, so `css/app.css` maps them to Maity's text-on-plain-ground values: the state colour itself where it passes there (`--ok`, `--bad`, `--muted`), else the colour a fifth of the way to `--text` (`--ktw-warn`, `--ktw-accent-text`, `--ktw-accent2`). Plain `--accent` was rejected for the open and info text: it is 4.53 to 1 on dark `--surface-2`, too close to the line. The lowest pair is `--ok` on light `--surface-2`, 5.00 to 1. `--ktw-fg3-line`, the library's faint lines and marks, is `--muted` like `--ktw-fg3`, so nothing shifts; `--seat` was rejected, at 2.5 to 1 it is under the 3 to 1 a mark needs. Likewise, controls the library labels only by `title` (the timeline's playhead and speed) get an `aria-label` from that title in the host, where `sweep` holds its links, and a later title refreshes the name the host set, while a name the page sets afterwards is kept when it differs from the host's (one equal to it cannot be told from the host's and follows the title); dropping axe's `label-title-only` rule for the mounts was rejected, as it would hide the next unlabelled control too.
 
 **Known limits:** what the page has read of a project stays for the page's life, per project and per signed-in reader; a newer export shows after Read again or a reload. The library's own words are English until it takes them from its host. A link in the library's `centre/public/…` form to a repository whose root is named like a place of the library's grammar reads as that place.
 
@@ -5451,3 +5885,183 @@ answers reported; allowing those would have meant a harness exception that could
 failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
 and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
 outside `M.api`: a second client with its own error handling.
+
+## A handle field's hint is a sentence of fixed words, with no handle or address filled in
+
+**Id:** e9c2136d-efa9-4222-b013-6042a56ec86c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-srzrkf2parzt (the owner's decision req-3wdzdcvcbf7s: every field that asks for a handle explains the word); the ChatGPT reviewer's P2 in the review of #1488 (seq 91149) and the Grok reviewer's P3 (seq 91705); web/js/handles.js `explain`; e2e `handle_hints_step`
+**Revisit when:** a hint has to name the reader's own handle or address, or the phone widths the e2e step measures change
+
+Under every field that asks for a handle, `M.handles.explain(kind, input)`
+adds one sentence of fixed words for its kind (your own, an agent's, an
+organisation's, the person invited), which the field names in its
+`aria-describedby`. Nothing is filled in: no handle, no host, no example
+address. e2e `handle_hints_step` measures all seven kinds of field at 390
+and 360 px, light and dark: at most two lines, no overflow.
+
+**Reason:** the first version filled in the instance's host and the
+reader's handle as an example (`maity.team/<handle>`). On the English
+Account page that took three lines at 360 px, and a 31-character handle
+three lines at 390 px, against the card's two lines on a phone. Fixed
+words keep every hint's length known whatever the handle or the host.
+
+**Rejected alternatives:** a filled-in example cut to a length, which
+still varies with the host and reads oddly when cut; a filled-in example
+only on wide screens, which gives two texts to keep true. The example
+`agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
+about the reader's own agent or organisation.
+
+## A message's seq is drawn with its "#" from the stylesheet, so a copy takes the number alone
+
+**Id:** 10d6fda7-c01c-4087-80e5-3c0a8ea4253c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0aadqqwe8jvt and #1311 (the seq beside each chat message); the Grok reviewer's P3 on #1311 (seq 66303), collected on card tsk-gsk31zvpfv02; the code comment in web/js/chat.js at `msg-seq`; web/css/app.css (`.msg-seq::before`)
+**Revisit when:** a seq becomes a link in the chat, or the number is to be read out with a word
+
+Each chat message shows its seq beside its time as `#4202`. The span holds the number alone
+(`.msg-seq`); the `#` is drawn by the stylesheet (`.msg-seq::before { content: "#"; }`), so it is
+no part of a selection.
+
+**Reason:** agents cite a message by its seq ("seq 54246", card tsk-0aadqqwe8jvt), so a copy of
+the visible text should give the number they need, without the sign. The code comment says so;
+the rejected alternatives below are inferred, nobody stated them.
+
+**Rejected alternatives:** `#` as text in the span, which a copy takes along; a word such as
+"seq", which the dashboard's other texts do not use for it; a link, as the join panel's
+"message #seq", since a chat message has no address of its own to link to.
+
+**Known gap:** a screen reader can hear "· #4202" (the stylesheet's `#` is read out too) with no
+word for what the number is, and the list
+is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
+reports nothing).
+
+## Each credential in an agent's list names its instance, so the one to revoke is told apart by name
+
+**Id:** 9bfd0309-9db6-47e1-bc8c-46cbac6def9c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-s0jb9wkdp41j (the maintainer, 2026-11-10: he had to revoke one dead instance of each of two agents and could tell their credentials apart only by their dates); docs/api.md §10 (each credential carries `instance`) and §6.17
+**Revisit when:** an instance can be revoked from its own line on the member's Sessions tab, or the member list carries the credentials
+
+In an agent's credentials list (its row on Team, its Details on Agents) each credential names its
+instance after its id as `<handle>#<id>`: where the member lists that instance, the `#id` links
+to it on the member's Sessions tab, and an active one shows its presence from the member list.
+A revoked credential's instance is usually no longer listed (Sessions shows the active instances,
+docs/api.md §6.2), so its `#id` is plain text: a link would only lead to "not listed". The revoke confirmation
+names the same address, by the same handle rule (owner/handle where two members share the
+short one): "Revoke maity-coder-claude-001#qwju (crd-…)?".
+
+**Reason:** revoking a credential ends that instance's session at once. With two instances of one
+agent the list showed only ids, client, created and last used, so the right one was picked by its
+dates, which is error-prone for a step that cannot be undone. The instance name is what every
+other view uses for an instance (messages, cards, the ticker).
+
+**Rejected alternative:** the list as it was, the instance told apart by its created and last-used
+times: what the maintainer had to do, and what this card is for. Alternatives beyond that were not
+discussed: unknown.
+
+## All projects reads each project's members once per page drawn, shared by the Lead button and the inbox
+
+**Id:** e66cb966-b6f3-417b-bb0a-0bd84ce1899d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f78z1dvbs26a: prod's access log (17fce84f, 2026-11-09) counted `…/members` twice on a page, and the smoke harness found the double read on All projects, not on Settings; the lead's go for one shared per-render read (2026-11-10)
+**Revisit when:** the hub offers one call for the members of several projects, or a page outside a project keeps project data across drawings
+
+`M.membersOnce(ctx, slug)` (web/js/app.js) reads a project's member list once for one ctx,
+which is one page drawn. On All projects the Lead button (`targetsEverywhere`, web/js/lead-chat.js)
+reads every project's list, and the all-projects inbox (web/js/inbox.js) reads the lists of the
+projects its requests come from; both take them from there, so for a project with requests in the
+inbox `GET …/members` runs once instead of twice (one without requests was read once before too).
+The next drawing has a ctx of its own and reads afresh.
+
+**Reason:** All projects is the start page for anyone with two or more projects, and the members
+read takes about 150 ms median on prod, so reading it a second time for each project with
+requests in the inbox costs that page's load directly.
+
+**Rejected alternative:** weighed while building it, a members cache kept across drawings of
+All projects. A switch inside one project already keeps its members for at most a minute
+(`KEPT_MS` in web/js/app.js) and reads them again behind the view; a cache without that re-read
+would show a member list from before a change on the next visit, and adding it was more than the
+card asked for. Alternatives beyond that were not discussed.
+
+## The board draws once the open groups have answered; the closed columns follow
+
+**Id:** e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a5pxwgkgr73e: the owner's feedback on deploy 6 (2026-11-10, the board one of two pages still over 1 s); the operators' per-call measurement of the board on rev 30 (2026-11-10: the five group reads start together and take 83–203 ms each; the closed group then pages serially, 4 pages of 200, about 0.9 s and 550 kB); the coordinator's go for this change the same day
+**See:** views.md#the-board-reads-its-column-groups-side-by-side — 145f0bf3-3024-414a-8026-19dad1960ff7 — as of 2026-11-10
+**Revisit when:** the hub serves the closed window in one page or a smaller shape, the closed window changes, or the board's first draw is measured over 1 s again
+
+The board still asks its five groups at once and reconciles as before
+(the entry above). What changed is when it first draws: once the four open
+groups (`proposed`, `open`, `in_progress`, `blocked,review`) have
+answered, with their cards, while the closed group (`done,cancelled` with
+the 14-day window) is still paging. Until the whole read is in, the Done
+and Cancelled columns hold no count and say that the closed cards are
+being read; if that read fails, those columns say so and the open ones
+stay as drawn. A failure of the read again of the cards changed meanwhile,
+after the groups have answered, is named as that, not as a failed read of
+the closed cards. A live region outside the columns says the same once for a
+screen reader, and the two columns are marked busy while read. A filter
+that shows the closed columns gives no "no card matches" while they are
+unknown. A hub search keeps its own results, closed cards and counts
+included: all of this is the board's own state without one. A closed card
+it finds is marked outside the window by its `closed_at` (at or before the
+cutoff, as the strict `closed_after` reads it), not by whether the board has
+loaded it, since while the closed group is read the loaded cards are the
+open groups' alone; the late draw clears the mark from a card it loaded.
+Then the board draws again with every card (with the search's results
+where one is active). The element in the columns that had the focus, a
+card's title link included, keeps it, after a failed read too, where it
+still stands in a column; a card now folded under a parent that came with
+the closed cards, or gone from the columns, hands the focus to the status
+line. The opened card's panel draws its card part anew in that draw, so
+its subtask list, dependency lines and related and parent lists read the
+closed cards that came with it: what the reader chose or typed in its
+controls and has not saved is carried over, a new subtask's form opened in
+it moves into the new part with its draft where the new part offers one
+(otherwise, on a card now closed, a subtask or a release, it closes), and
+the focus stays on the same
+control where it is drawn again, on the panel otherwise. A reload after a write
+draws the panel anew as before. A board left from a
+closed card finds that card now. A reload after a write
+supersedes the first read: an answer is drawn only if no later read's
+answer has been.
+
+**Reason:** on the maintainer's project the closed window was 783 cards,
+the largest group by far, and its pages follow each other through a
+keyset cursor, so it held the first draw by about a second while the open
+columns, the ones a reader works in, had long answered.
+
+**Rejected alternatives:**
+- Waiting for every group, as before: the reason above. The objection
+  recorded then, that the closed columns and counts change under the
+  reader, is met by showing no count and a loading line in those columns
+  until they are complete (on the board without a hub search, whose
+  results come complete).
+- A leaner card shape for the board, or a shorter closed window by default:
+  each a contract or product change, held until this change and a faster
+  200-card page on the hub have been measured.
+- Holding a hub search until the closed group has answered, so that the
+  loaded cards mean the window again: it brings the wait back for a
+  search. The loaded cards as the test, as before: wrong while the closed
+  group is read (review of #1622).
+- Keeping the panel's card part as it is when its card is unchanged
+  (round 4 of #1622), so that an editor opened in it keeps its draft: the
+  part's subtask list and dependency lines read the cards loaded at the
+  first draw, the open groups' alone, and went on saying that a closed
+  subtask the columns now showed was not loaded. Redrawing the part and
+  moving the open form into it keeps the draft without stale lists, on a
+  changed card as well. Redrawing without moving the form (round 3) lost
+  the draft: the form has no control in the redrawn part to carry it to.
+

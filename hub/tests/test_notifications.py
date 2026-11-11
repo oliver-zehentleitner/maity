@@ -619,6 +619,87 @@ def test_the_bell_costs_the_same_statements_for_more_personal_requests(
     assert bell(owner, limit=0)["counts"]["inbox"] == 3 * 40
 
 
+@pytest.mark.parametrize("limit", [0, 20])
+def test_the_bell_costs_the_same_statements_for_more_traffic_between_agents(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, limit: int
+) -> None:
+    """Agents writing to and asking each other make no item of the human's, so more of that
+    costs the bell no statement: the counts call (`limit=0`, on every dashboard page) and a
+    page alike (tsk-spa1tad26vs1)."""
+    one, other = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    chat = one.post(f"/projects/maintainer/maity/conversations/{one.id}/messages", {"body": "hi"})
+    assert chat.status_code in (200, 201), chat.text
+
+    def talk(n: int) -> None:
+        for i in range(n):
+            sent = one.post(
+                "/projects/maintainer/maity/events",
+                {"kind": "message", "type": "notice", "body": f"m{i}", "to": other.id},
+            )
+            assert sent.status_code == 201, sent.text
+            asked = one.post(
+                "/projects/maintainer/maity/requests",
+                {"class": "decision", "title": f"q{i}", "to": other.id},
+            )
+            assert asked.status_code == 201, asked.text
+
+    def read() -> None:
+        assert owner.get(N, params={"limit": limit}).status_code == 200
+
+    read()  # the first read of a session does one-time work; it is not a cost per row
+    talk(30)
+    few = _statements(migrated, read)
+    talk(120)
+    many = _statements(migrated, read)
+    assert many == few, (few, many)
+    got = bell(owner, limit=limit)
+    assert got["counts"]["chat"] == 1 and got["counts"]["total"] == 1
+    assert [i["kind"] for i in got["items"]] == ([] if limit == 0 else ["chat"])
+
+
+def test_a_filtered_page_costs_the_same_statements_for_more_items_it_does_not_list(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`?kind=mention&project=…` (the link "1 unread mention" opens) reads only what can be
+    such an item: the chats and requests of the human, in that project and in another, cost
+    it nothing however many there are (tsk-p8w1s1zwsx2y)."""
+    flow.project(owner, "lab")
+    here, there = flow.agent(make_client, owner), flow.agent(make_client, owner, "lab")
+    mention = here.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "cc @maintainer"},
+    )
+    assert mention.status_code == 201, mention.text
+
+    def items_for_the_human(n: int) -> None:
+        for agent, slug in ((here, "maity"), (there, "lab")):
+            for i in range(n):
+                chat = agent.post(
+                    f"/projects/maintainer/{slug}/conversations/{agent.id}/messages",
+                    {"body": f"done {i}"},
+                )
+                assert chat.status_code in (200, 201), chat.text
+                asked = agent.post(
+                    f"/projects/maintainer/{slug}/requests",
+                    {"class": "decision", "title": f"q{i}", "to": "owner"},
+                )
+                assert asked.status_code == 201, asked.text
+
+    query = {"kind": "mention", "project": "maintainer/maity", "limit": 50}
+
+    def read() -> None:
+        assert owner.get(N, params=query).status_code == 200
+
+    read()  # the first read of a session does one-time work; it is not a cost per row
+    items_for_the_human(30)
+    few = _statements(migrated, read)
+    items_for_the_human(120)
+    many = _statements(migrated, read)
+    assert many == few, (few, many)
+    listed = bell(owner, **query)["items"]
+    assert [(i["kind"], i["seq"]) for i in listed] == [("mention", mention.json()["seq"])]
+
+
 def _walk(who: flow.Human, **query: Any) -> list[str]:
     """Every item id, page by page through `next_cursor`."""
     ids: list[str] = []

@@ -34,7 +34,7 @@ from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 from maity_hub.ratelimit import Attempt
 
-KINDS = ("inbox", "chat", "mention", "security")
+KINDS = ("inbox", "chat", "mention", "security", "invitation")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
 DIGESTS = ("hourly", "daily", "weekly")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -56,11 +56,19 @@ _HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 DEFAULTS: dict[str, Any] = {
     "browser": {
         "enabled": False,
-        "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
+        "kinds": {
+            "inbox": True,
+            "chat": True,
+            "mention": True,
+            "security": True,
+            "invitation": True,
+        },
     },
     "email": {
         "language": "en",
-        "timezone": "UTC",
+        # The account's time zone, `null` until the human sets one (§18.4): the dashboard then
+        # shows the browser's, and the mails use UTC (`mail_zone`).
+        "timezone": None,
         "kinds": {
             "inbox": {"mode": "immediate"},
             # A digest by default against filled mailboxes; the inbox and security at once
@@ -69,6 +77,9 @@ DEFAULTS: dict[str, Any] = {
             "chat": {"mode": "daily", "content": False},
             "mention": {"mode": "daily", "content": False},
             "security": {"mode": "immediate"},
+            # An invitation by handle at once, like the inbox (tsk-8xsrzjv7f0yr, part 4);
+            # `daily` mails it with the daily digest, `off` keeps it on the platform only.
+            "invitation": {"mode": "immediate"},
         },
         "sign_in_link": True,
         "daily_at": "08:00",
@@ -265,7 +276,7 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
             else:
                 errors[name] = "invalid"
         elif key == "timezone":
-            if _zone(value):
+            if value is None or _zone(value):
                 out[key] = value
             else:
                 errors[name] = "invalid"
@@ -341,6 +352,11 @@ def _check_not_listening(given: Any, errors: dict[str, str]) -> dict[str, Any]:
     if "minutes" in given and not minutes_valid(given["minutes"]):
         errors["not_listening.minutes"] = "invalid"
     return dict(given)
+
+
+def mail_zone(email: dict[str, Any]) -> ZoneInfo:
+    """The zone the mails use: the account's, or UTC while the human has set none (§18.4)."""
+    return ZoneInfo(email.get("timezone") or "UTC")
 
 
 def _zone(value: Any) -> bool:

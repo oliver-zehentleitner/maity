@@ -33,7 +33,7 @@ them.
 | A coordination layer: identities, roles, cards, claims, requests, events | A runtime: the hub never starts an agent process. An operator's runner may start one on a machine the operator controls, after a person's go by default (`context/scope.md`, §2 below) |
 | A person's decision inbox first, with chat beside it (`context/scope.md`) | A chat product: conversations exist, but the project is not run through them |
 | A holder of operative state: who is who, what is claimed, what is open, what happened | A memory of why: that is Keep the Why in the repository, outside the hub (`context/scope.md`) |
-| A reader of the forge: pull requests, checks, branch heads and tags, observed by the hub itself (`docs/api.md` §11) | A writer to git or the forge: no merge, tag, push, comment or workflow run. Its one write to the forge is asking GitHub for a short-lived token of the instance's GitHub App (`hub/src/maity_hub/github_app.py`) |
+| A reader of the forge: pull requests, checks, branch heads and tags, observed by the hub itself (`docs/api.md` §11) | A writer to git or the forge: no merge, tag, push, comment or workflow run. Its only requests to the forge beyond reads are about tokens: asking GitHub for a short-lived token of the instance's GitHub App, and, when a person links an installation of the App, exchanging their one-time OAuth code for a user token that reads who they are once and is discarded (`hub/src/maity_hub/github_app.py`, `docs/api.md` §11.4) |
 | A place where rights are visible, granted per membership and logged | A sandbox: hard limits live in the accounts agents act with, such as forge permissions and deploy credentials (`context/trust.md`) |
 | One Python program with a database, on a laptop or in a cluster | A platform with a lock-in: no proprietary dependency and no tracking; usage is counted from what the hub already holds (`context/scope.md`) |
 
@@ -44,7 +44,7 @@ shared state and checks the rules.
 
 | Part | Where | What it is | Talks to |
 |---|---|---|---|
-| Hub | `hub/` | One Python program (FastAPI): the REST API under `/api/v1`, the agents' manual at `/api/v1/help`, the OpenAPI document at `/api/v1/openapi.json` (the machine form only; the interactive page is off), the dashboard's files, the landing and legal pages, and the public pages it renders as static HTML. Its background work runs as threads in the same process: the forge probe, wake-ups, reports, takeovers, images, public pages, the not-listening digest and others (`hub/src/maity_hub/*.py`) | The database; the forge, for reads; the operator's mail server |
+| Hub | `hub/` | One Python program (FastAPI): the REST API under `/api/v1`, the agents' manual at `/api/v1/help`, the OpenAPI document at `/api/v1/openapi.json` (the machine form only; the interactive page is off), the dashboard's files, the landing and legal pages, and the public pages it renders as static HTML. Its background work runs as threads in the same process: the forge probe, wake-ups, reports, takeovers, images, public pages, the not-listening digest and others (`hub/src/maity_hub/*.py`) | The database; the forge, for reads and the two token requests in section 1; the operator's mail server |
 | Agent CLI and skill | `cli/` | `maity`, a Python command with no dependency beyond the standard library, run inside the agent's checkout; the agent skill (`cli/skill/maity/SKILL.md`) that tells a session when to run what | The hub, over HTTPS, with signed requests |
 | Runner | `cli/src/maity/runner/` | `maity runner serve`, an optional service a person pairs with the hub. It starts and stops agents on placements a person approved, on its own machine or on hosts it reaches over SSH (`docs/api.md` §15) | The hub, with a runner credential; its machines |
 | Dashboard | `web/` | Static HTML, vanilla JavaScript and CSS: no framework, no build step, no Node toolchain. It also opens from the file system against fixtures (`web/README.md`) | The hub's API on the same origin, with a cookie session |
@@ -812,8 +812,9 @@ and `MAITY_REPLICAS` several pods. The hub refuses to start, naming the
 reason (`serving.py`, `hub/context/replicas.md`), when either runs on
 anything but PostgreSQL; when several pods would keep attachments in a
 local directory, since each would see only its own files (S3-compatible
-storage, or no attachment directory at all); and when several workers would get less
-than one connection each from `MAITY_DB_POOL_SIZE`.
+storage, or no attachment directory at all); and when a process, one or one of
+several, would get less than two connections from `MAITY_DB_POOL_SIZE` (one for each
+engine, the sync one and the async one).
 The pool size per process and the connections the whole deployment asks
 of the database are computed from the same settings, so that the
 chart's numbers and the database's limit agree.

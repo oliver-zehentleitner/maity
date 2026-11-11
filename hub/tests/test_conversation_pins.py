@@ -1,5 +1,5 @@
 """docs/api.md §9.3 "Pinned": a human pins the chats it reads, its own and across projects at
-most 20; both lists come in four bands, a pin never hiding a new message."""
+most 20; both lists come in four bands, every pinned chat above every unpinned one."""
 
 from __future__ import annotations
 
@@ -50,9 +50,11 @@ def listed(who: Any, path: str = BASE, **params: Any) -> list[dict[str, Any]]:
 
 
 def band(item: dict[str, Any]) -> int:
-    if item["unread"]:
-        return 0 if item["pinned"] else 1
-    return 2 if item["pinned"] else 3
+    """§9.3 "Pinned": pinned with unread, quietly pinned, unpinned with unread, the rest.
+    An observer's `null` counts as no unread."""
+    if item["pinned"]:
+        return 0 if item["unread"] else 1
+    return 2 if item["unread"] else 3
 
 
 def pin_rows(engine: Engine) -> int:
@@ -137,23 +139,69 @@ def test_the_lists_come_in_four_bands_and_page_across_them(
     for name in ("pinned new", "pinned quiet", "pinned new 2"):
         assert put(owner, chats[name]).status_code == 204
     say(owner, chats["quiet"], "the newest activity, but nothing new for me")
+    order = ["pinned new 2", "pinned new", "pinned quiet", "new", "quiet", "quiet 2"]
     for path in (BASE, ME):
         whole = owner.get(path, params={"limit": 200}).json()["items"]
-        assert [band(i) for i in whole] == sorted(band(i) for i in whole)
-        assert [i["title"] for i in whole][:3] == ["pinned new 2", "pinned new", "new"]
-        assert {i["title"] for i in whole if band(i) == 2} == {"pinned quiet"}
+        assert [i["title"] for i in whole] == order
+        assert [band(i) for i in whole] == [0, 0, 1, 2, 3, 3]
         for limit in (1, 2, 4):
             assert listed(owner, path, limit=limit) == whole
-    # reading a pinned chat moves it below the chats with something new
+        # The page ends on the last pinned chat with unread. The cursor resumes at the
+        # quiet pin, the first chat of the next band, and the one after that at the
+        # unpinned chat with unread.
+        edge = owner.get(path, params={"limit": 2}).json()
+        assert [i["title"] for i in edge["items"]] == ["pinned new 2", "pinned new"]
+        resumed = owner.get(path, params={"limit": 1, "cursor": edge["next_cursor"]}).json()
+        assert (resumed["items"][0]["title"], band(resumed["items"][0])) == ("pinned quiet", 1)
+        after = owner.get(path, params={"limit": 1, "cursor": resumed["next_cursor"]}).json()
+        assert (after["items"][0]["title"], band(after["items"][0])) == ("new", 2)
+    # reading a pinned chat drops it into the quiet pins, still above every unpinned chat
     read(owner, chats["pinned new"])
-    titles = [i["title"] for i in owner.get(BASE).json()["items"]]
-    assert titles.index("pinned new") > titles.index("new")
-    assert titles.index("pinned new") < titles.index("quiet")
+    for path in (BASE, ME):
+        titles = [i["title"] for i in owner.get(path).json()["items"]]
+        assert titles.index("pinned new 2") < titles.index("pinned new") < titles.index("new")
+        assert titles.index("pinned new") < titles.index("quiet")
 
 
 def test_an_old_cursor_from_before_the_bands_is_refused(owner: flow.Human) -> None:
     old = paging.cursor(datetime(2026, 10, 31), "cnv-x", paging.scope(observed=False))
     assert owner.get(BASE, params={"cursor": old}).status_code == 400
+
+
+def test_a_cursor_from_the_previous_band_order_is_refused(owner: flow.Human) -> None:
+    """The earlier order used the same band numbers for different chats (§1.4)."""
+    previous = paging.cursor(
+        datetime(2026, 11, 10), "1\x1fcnv-x", paging.scope(observed=False, bands=True)
+    )
+    refused = owner.get(BASE, params={"cursor": previous})
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"cursor": "invalid"}
+    across = paging.cursor(
+        datetime(2026, 11, 10),
+        "1\x1fmaintainer/maity\x1fcnv-x",
+        paging.scope(me=True, observed=False, bands=True),
+    )
+    assert owner.get(ME, params={"cursor": across}).status_code == 400
+
+
+def test_an_observers_null_unread_counts_as_no_unread(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_human(make_client, migrated, "other-owner", role="admin")
+    their_agent = flow.agent(make_client, other)
+    watched = create(owner, their_agent.id, title="watched").json()["id"]
+    assert say(owner, watched, "along").status_code == 201
+    assert put(other, watched).status_code == 204  # pinned; an observer's unread is null
+    fresh = create(owner, other.id, title="fresh").json()["id"]
+    assert say(owner, fresh, "unread for you").status_code == 201
+    for path in (BASE, ME):
+        items = listed(other, path, observed=True)
+        by_title = {i["title"]: i for i in items}
+        assert (by_title["watched"]["unread"], by_title["watched"]["pinned"]) == (None, True)
+        assert band(by_title["watched"]) == 1
+        assert band(by_title["fresh"]) == 2
+        titles = [i["title"] for i in items]
+        assert titles.index("watched") < titles.index("fresh")
 
 
 def test_at_most_twenty_pins_across_projects(

@@ -12,7 +12,7 @@ window.Maity = window.Maity || {};
   M.views = M.views || {};
 
   // Getters: the words are the catalog's when shown.
-  const KINDS = ["inbox", "chat", "mention", "security"];
+  const KINDS = ["inbox", "chat", "mention", "security", "invitation"];
   // §18.4: the mode of a kind is its interval; chat and mention may carry the message text.
   const MAIL_MODES = ["immediate", "hourly", "daily", "weekly", "off"];
   const MAIL_MODE_LABELS = {
@@ -27,6 +27,7 @@ window.Maity = window.Maity || {};
     get chat() { return M.t("mail.kind.chat"); },
     get mention() { return M.t("mail.kind.mention"); },
     get security() { return M.t("mail.kind.security"); },
+    get invitation() { return M.t("mail.kind.invitation"); },
   };
   const WITH_CONTENT = ["chat", "mention"];
   const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -40,13 +41,12 @@ window.Maity = window.Maity || {};
     get sun() { return M.t("mail.day.sun"); },
   };
   const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-  // The browser's own zone, offered as a button where it differs from the account's; never set unasked.
-  const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; } };
   const KIND_LABELS = {
     get inbox() { return M.t("notify.kind.inbox"); },
     get chat() { return M.t("notify.kind.chat"); },
     get mention() { return M.t("notify.kind.mention"); },
     get security() { return M.t("notify.kind.security"); },
+    get invitation() { return M.t("notify.kind.invitation"); },
   };
   const PERMISSION = {
     get granted() { return M.t("notify.permission.granted"); },
@@ -151,6 +151,8 @@ window.Maity = window.Maity || {};
         (field === "address" ? input : password).setAttribute("aria-invalid", "true");
       };
       const buttons = [];
+      // Changing or removing the verified address is a sensitive call (§2.8.4): the second factor is asked for here.
+      const stepSlot = h("div", { class: "step-up-slot", hidden: true });
       // One PATCH of the address; the page follows the hub's answer, a held change included.
       async function send(address, busy) {
         Object.values(errors).forEach((x) => { x.textContent = ""; });
@@ -160,7 +162,7 @@ window.Maity = window.Maity || {};
         buttons.forEach((b) => { b.disabled = true; });
         status.busy(busy);
         try {
-          settings = await M.api.patch("/me/notification-settings", body);
+          settings = await M.stepUp.run(() => M.api.patch("/me/notification-settings", body), stepSlot, M.t("mail.address.step_up"));
           saved(settings);
           // Held is this change waiting (202), not an older one the hub still holds.
           const held = settings.email.address_change && settings.email.address_change.address === address;
@@ -169,6 +171,7 @@ window.Maity = window.Maity || {};
           else if (address === null) say(M.t("mail.address.removed"));
           else say(M.t("mail.address.sent", { address }));
         } catch (err) {
+          if (err.code === "cancelled") { status.done(); buttons.forEach((b) => { b.disabled = false; }); return; }
           const fields = err.code === "invalid" && err.details && err.details.fields;
           if (fields && fields["email.address"]) fail("address", M.t("mail.address.invalid"));
           if (fields && fields.current_password === "required") fail("password", M.t("mail.address.password_required"));
@@ -233,7 +236,7 @@ window.Maity = window.Maity || {};
           h("label", { for: "mail-address-password" }, M.t("mail.address.password")), password,
           h("p", { class: "hint", id: "mail-address-password-hint" }, M.t("mail.address.password_hint")), errors.password,
         ] : null,
-        h("div", { class: "actions" }, save, again, remove)),
+        stepSlot, h("div", { class: "actions" }, save, again, remove)),
         status.el);
     }
     draw();
@@ -271,13 +274,6 @@ window.Maity = window.Maity || {};
       dailyAt.value = email.daily_at || "";
       const weeklyOn = h("select", { id: "mail-weekly-on" }, WEEKDAYS.map((d) => h("option", { value: d }, WEEKDAY_LABELS[d])));
       weeklyOn.value = email.weekly_on || "mon";
-      const zone = h("input", { id: "mail-timezone", type: "text", autocomplete: "off", spellcheck: "false",
-        "aria-describedby": "mail-timezone-hint mail-timezone-error" });
-      zone.value = email.timezone || "";
-      const own = browserZone();
-      const useOwn = own && own !== email.timezone
-        ? h("button", { type: "button", class: "small secondary", onclick: () => { zone.value = own; } }, M.t("mail.timezone.use", { zone: own }))
-        : null;
       const quiet = h("input", { type: "checkbox", id: "mail-quiet" });
       quiet.checked = !!email.quiet_hours;
       const quietFrom = h("input", { id: "mail-quiet-from", type: "time", "aria-describedby": "mail-quiet-error" });
@@ -291,10 +287,9 @@ window.Maity = window.Maity || {};
       signIn.checked = email.sign_in_link !== false;
       const errors = {
         daily_at: h("p", { class: "field-error", id: "mail-daily-at-error", role: "alert" }),
-        timezone: h("p", { class: "field-error", id: "mail-timezone-error", role: "alert" }),
         quiet_hours: h("p", { class: "field-error", id: "mail-quiet-error", role: "alert" }),
       };
-      const fieldOf = { daily_at: dailyAt, timezone: zone, quiet_hours: quietFrom };
+      const fieldOf = { daily_at: dailyAt, quiet_hours: quietFrom };
       const fail = (field, text) => { errors[field].textContent = text; fieldOf[field].setAttribute("aria-invalid", "true"); };
       const button = h("button", { type: "submit" }, M.t("notify.save"));
       const form = h("form", {
@@ -307,7 +302,6 @@ window.Maity = window.Maity || {};
           Object.values(fieldOf).forEach((x) => x.removeAttribute("aria-invalid"));
           box.querySelectorAll(".mail-kind .field-error").forEach((x) => { x.textContent = ""; });
           if (!HHMM.test(dailyAt.value)) { fail("daily_at", M.t("mail.time.invalid")); dailyAt.focus(); return; }
-          if (!zone.value.trim()) { fail("timezone", M.t("mail.timezone.empty")); zone.focus(); return; }
           if (quiet.checked && !(HHMM.test(quietFrom.value) && HHMM.test(quietTo.value))) { fail("quiet_hours", M.t("mail.time.invalid")); quietFrom.focus(); return; }
           // Only what differs from the hub's answer; a kind only with the parts that changed.
           const patch = {};
@@ -321,7 +315,6 @@ window.Maity = window.Maity || {};
           if (Object.keys(changedKinds).length) patch.kinds = changedKinds;
           if (dailyAt.value !== email.daily_at) patch.daily_at = dailyAt.value;
           if (weeklyOn.value !== email.weekly_on) patch.weekly_on = weeklyOn.value;
-          if (zone.value.trim() !== email.timezone) patch.timezone = zone.value.trim();
           const hours = quiet.checked ? { from: quietFrom.value, to: quietTo.value } : null;
           if (JSON.stringify(hours) !== JSON.stringify(email.quiet_hours || null)) patch.quiet_hours = hours;
           if (signIn.checked !== (email.sign_in_link !== false)) patch.sign_in_link = signIn.checked;
@@ -340,7 +333,6 @@ window.Maity = window.Maity || {};
               const kind = /^email\.kinds\.(\w+)/.exec(name);
               if (kind && byKind(kind[1])) byKind(kind[1]).textContent = M.t("mail.mode.unknown");
               if (name === "email.daily_at") fail("daily_at", M.t("mail.time.invalid"));
-              if (name === "email.timezone") fail("timezone", M.t("mail.timezone.unknown"));
               if (name === "email.quiet_hours") fail("quiet_hours", M.t("mail.time.invalid"));
             });
             status.fail(M.t("notify.not_saved"), err);
@@ -352,8 +344,10 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("mail.kinds.hint")),
       h("label", { for: "mail-daily-at" }, M.t("mail.daily_at")), dailyAt, errors.daily_at,
       h("label", { for: "mail-weekly-on" }, M.t("mail.weekly_on")), weeklyOn,
-      h("label", { for: "mail-timezone" }, M.t("mail.timezone")), zone,
-      h("p", { class: "hint", id: "mail-timezone-hint" }, M.t("mail.timezone.hint"), useOwn ? " " : null, useOwn), errors.timezone,
+      // The time zone is the account's, set under Settings (docs/api.md §18.4).
+      h("p", { class: "hint mail-timezone-link" }, email.timezone
+        ? M.tn("mail.timezone.elsewhere", { zone: email.timezone, link: h("a", { href: "/account/settings" }, M.t("menu.settings")) })
+        : M.tn("mail.timezone.none", { link: h("a", { href: "/account/settings" }, M.t("menu.settings")) })),
       h("fieldset", { class: "mail-quiet" }, h("legend", null, M.t("mail.quiet.legend")),
         h("label", { class: "check", for: "mail-quiet" }, quiet, " " + M.t("mail.quiet.on")),
         h("label", { for: "mail-quiet-from" }, M.t("mail.quiet.from")), quietFrom,
@@ -369,6 +363,59 @@ window.Maity = window.Maity || {};
     }
     draw();
     return box;
+  }
+
+  // The account's time zone (docs/api.md §18.4, §5.1): every absolute time on the dashboard is
+  // shown in it, and in the browser's while none is set. A field with the zones this browser
+  // knows to choose from, the browser's own first; buttons for the browser's zone and for none.
+  function zoneForm(settings, saved) {
+    const status = M.statusLine();
+    const own = M.i18n.browserZone();
+    let zones = [];
+    try { zones = Intl.supportedValuesOf("timeZone"); } catch { zones = []; }
+    const list = h("datalist", { id: "account-timezone-list" },
+      [own].concat(zones.filter((z) => z !== own)).map((z) => h("option", { value: z })));
+    const field = h("input", { id: "account-timezone", type: "text", autocomplete: "off", spellcheck: "false",
+      list: "account-timezone-list", "aria-describedby": "account-timezone-state account-timezone-error" });
+    const state = h("p", { class: "hint", id: "account-timezone-state" });
+    const error = h("p", { class: "field-error", id: "account-timezone-error", role: "alert" });
+    const button = h("button", { type: "submit" }, M.t("zone.save"));
+    const useOwn = h("button", { type: "button", class: "small secondary" }, M.t("mail.timezone.use", { zone: own }));
+    const none = h("button", { type: "button", class: "small secondary" }, M.t("zone.clear"));
+    function show() {
+      const chosen = settings.email.timezone;
+      field.value = chosen || "";
+      state.textContent = chosen ? "" : M.t("zone.unset", { zone: own });
+      useOwn.hidden = chosen === own;
+      none.hidden = !chosen;
+    }
+    const refuse = () => { error.textContent = M.t("mail.timezone.unknown"); field.setAttribute("aria-invalid", "true"); };
+    async function send(value) {
+      if (button.disabled) return;
+      error.textContent = "";
+      field.removeAttribute("aria-invalid");
+      if (value !== null && !M.i18n.knownZone(value)) { refuse(); field.focus(); return; }
+      button.disabled = true;
+      status.busy(M.t("notify.saving"));
+      try {
+        settings = await M.api.patch("/me/notification-settings", { email: { timezone: value } });
+        saved(settings);  // M.api has set the zone from the answer
+        show();
+        status.done();
+        append(status.el, h("span", { class: "ok" }, M.t("zone.saved")));
+      } catch (err) {
+        if (err.code === "invalid") refuse();
+        status.fail(M.t("zone.failed"), err);
+      }
+      button.disabled = false;
+    }
+    useOwn.addEventListener("click", () => send(own));
+    none.addEventListener("click", () => send(null));
+    show();
+    return h("form", { class: "inline-form account-timezone", novalidate: true,
+      onsubmit: (e) => { e.preventDefault(); send(field.value.trim() || null); } },
+      h("h3", null, M.t("mail.timezone")), h("label", { for: field.id }, M.t("zone.label")), field, list, state,
+      h("p", { class: "hint" }, M.t("zone.hint")), error, button, useOwn, none, status.el);
   }
 
   // The language of the dashboard and of the hub's own texts (§6.2), apart from the one agents
@@ -444,6 +491,8 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("notify.language.hint")),
       button, languageStatus.el));
     }
+    // The time zone belongs to the account as the language does, with or without mail.
+    if (languagePart && settings.email && "timezone" in settings.email) append(box, zoneForm(settings, (now) => { settings = now; }));
     if (part === "language") return { el: box, heading };
     // Mail only where the instance sends it (`mail_available`); the language above stays without it.
     if (settings.mail_available && settings.email) {

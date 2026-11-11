@@ -138,6 +138,9 @@ only the runner's own process may be signalled.
   upgrade would end every agent mid-work.
 - `PrivateTmp` in the unit: with the agents outliving the service, the
   next start would replace their `/tmp` under them.
+- A `TMPDIR` under `/var/lib/maity-runner` instead of `/tmp` in
+  `ReadWritePaths`: tools that hardcode `/tmp` would fail, and in the
+  `agent_user` layout the agents' user cannot write there.
 
 ## Capabilities say `sandbox: off` until an adapter switches a sandbox on
 
@@ -623,14 +626,15 @@ runner that refuses the harness by configuration.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04
+**Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04; the first sandboxed placements on a runner, whose `git fetch` failed on a read-only `.git/FETCH_HEAD`, and the lead's card for the narrower list, 2026-11-10; Claude Code 2.1.321 with bubblewrap, 2026-11-10 (`claude -p` in a scratch clone of a local bare repository with the runner's settings shape, the model running only `touch`, `git fetch`, `git commit` and `cat` probes, no hub): with the blanket deny, `fetch` and `commit` failed on a read-only `.git`; with the list below both worked, and every listed path and `.git/maity` stayed refused; a reviewer's reproduction of a `commondir` written from inside the sandbox, and the maintainer's choice of option (c), the start check with its detail code, req-2adhtsb3ct75, 2026-11-10; the maintainer's choice of the docs over a start refusal of a rebase or sequencer state, with a section on the runner page, req-ynqaa1dkt1pe, 2026-11-10
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
-**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration, or a harness version other than the one in `capabilities.CHECKED` is in use
+**Revisit when:** Claude Code's `allowRead` precedence over a more specific `denyRead` is verified, a harness runs git in the clone with an environment the runner does not set, git learns another file in `.git` that redirects where it reads configuration or runs a program, Claude Code stops turning `Edit(…)` denies into sandbox write denies, or a harness version other than the one in `capabilities.CHECKED` is in use
 
 Every agent session gets `GIT_COMMON_DIR=<clone>/.git` in the
 environment the runner gives the harness, and through `GIT_CONFIG_COUNT`
-`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. Git then ignores
-a `.git/commondir` the agent wrote from inside its sandbox, and does not
+`core.fsmonitor=false` and `diff.ignoreSubmodules=all`. The session's
+git then ignores a `.git/commondir` the agent wrote from inside its
+sandbox, and does not
 run a program from a nested repository the agent registered as a
 submodule (whose configuration the pin does not reach). That covers the
 harness's own git calls, which run outside the sandbox, and any other git
@@ -649,6 +653,30 @@ against the pattern typed, not the path searched. maity and the runner
 run git only through `proc.GIT`, a clone into a missing directory, and
 `gc`'s pinned read; a test pins that.
 
+The pin covers the session's git and maity's own, not a person's plain
+`git` in the clone later: that git follows a `commondir` or `worktrees/`
+the agent wrote, and neither can be denied (below). So the runner reads
+every existing clone at its start the way `gc` does, before the join and
+the harness. A clone whose `.git` is not a plain clone's (a `commondir`,
+`worktrees/`, a `config.worktree` with content, a configuration key a
+plain clone has not) is not started: it is reported `failed`,
+`workspace_in_use` with `not_a_plain_clone` (§15.7), the finding goes to
+the runner's log, and the runner deletes nothing in it and does not try
+again. The sandbox's empty placeholders pass. A person runs git in a
+runner's clone only through `maity` or after the clone passed the
+runner's check with no session since (the check of a start that then
+stopped; `gc --revoked` checks only a clone whose credential is revoked
+and that no placement uses), and then only git that reads; in a clone
+the check refused, no git at all. Only reading, because the check does
+not look inside `rebase-merge/`,
+`rebase-apply/` or `sequencer/`, which the agent may write, so a
+`rebase --continue` or `--skip` would run an `exec` line planted
+there. A session that runs on after the
+check can plant again, so the check covers the clone as it was then;
+otherwise the work is read from the pushed branch. A person works in a
+clone of their own; the runner page (`docs/runners.md`, "Working in an
+agent's clone") says so for operators.
+
 A repository's grant may only add plain commands, a grammar rather
 than a list of bad spellings: a program name or path, then arguments of
 plain characters (the CLI README names them), `*` only in an argument.
@@ -658,9 +686,16 @@ other separators) is `maity`. Assignments, quotes, variables, escapes,
 shell operators and a `:` in the program (Claude Code's `prog:*` form)
 are refused when the configuration is read, and an adapter skips such a
 rule as well.
-`maity` stays the runner's own rule. Claude Code's `.git` write deny is
-one `Edit(…)` rule, which covers its file-editing tools; it does not
-check a `Write(…)` deny rule. That a call with something in front of
+`maity` stays the runner's own rule. Claude Code's `.git` write denies
+are `Edit(…)` rules, which cover its file-editing tools; it does not
+check a `Write(…)` deny rule. They name what redirects git's
+configuration, hooks and object sources: `config`,
+`config.worktree`, `hooks/`, `info/` and `objects/info/alternates`, the
+same paths as sandbox write denies, plus `.git/maity`. The rest of `.git`
+stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
+into a write deny for every command, and commit, fetch and push need
+refs, the index, objects, logs and `FETCH_HEAD` between them (a commit
+writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). That a call with something in front of
 `maity` stays inside Claude Code's sandbox was checked with one version,
 2.1.318 (`capabilities.CHECKED`); with another version the runner still
 starts the agent, and `runner check` and the supervisor log say that it
@@ -690,13 +725,34 @@ hardening task asked: what was checked is the harness's behaviour with
 one version, not a contract.
 
 **Rejected alternatives:**
+- Denying `Edit(…)` on all of `.git`: the sandbox made the whole
+  directory read-only for every command, so no agent could fetch, commit
+  or push (the first sandboxed placements, 2026-11-10).
+- `commondir` in the list: for a file that does not exist, the sandbox
+  leaves something git cannot read, and every git call in the session
+  failed on it. `GIT_COMMON_DIR` makes the session's and maity's git
+  ignore it, and the start check keeps the runner from starting in a
+  clone that has one.
 - A read-only `.git` with write access to `objects`, `refs` and the
   index only: git creates its lock files and `ORIG_HEAD` in `.git`
   itself, so commits fail.
 - Denying writes to each redirecting file (`commondir`,
-  `config.worktree`, `info/attributes`): files that do not exist yet
-  cannot be bound read-only reliably, and it is the enumeration the gc
-  fix already moved away from.
+  `config.worktree`, `info/attributes`) as the boundary: files that do
+  not exist yet cannot be bound read-only reliably, and it is the
+  enumeration the gc fix already moved away from. The list above is a
+  second layer over the `GIT_COMMON_DIR` pin and clonecheck, not instead
+  of them.
+- Relying on the pin alone for a clone a session ran in: a person's plain
+  `git` there has no pin and would follow the plant. Checking at the
+  start costs one read of `.git` per start, the read `gc` already does.
+- Refusing a rebase or sequencer state (`rebase-merge/`, `rebase-apply/`,
+  `sequencer/`) at the start: an agent's own interrupted rebase would
+  then keep its placement from restarting. Only git that continues such
+  a state runs what it holds, and the docs tell a person not to. The
+  maintainer chose the docs over the refusal (req-ynqaa1dkt1pe).
+- Removing a planted `commondir` or `worktrees/` at the start: the runner
+  deletes nothing in an agent's clone, so what was planted stays there
+  for someone to look at.
 - Hiding the whole home from Codex: the agent's `maity`, `git` and
   toolchains are often installed there.
 - `--ignore-submodules=all` on `maity`'s own `git status`: it also hides
@@ -937,6 +993,90 @@ the agents' side.
 - Falling back to `dd` when the host's `maity` lacks `limitread`: on
   macOS that is the read that fails anyway, and elsewhere it would keep
   two ways of reading alive. No exit code is the safe answer.
+
+## The runner records Claude Code's folder trust for the clone before an interactive start
+
+**Id:** 71f94925-ab96-4e3e-81e6-3ea0cbaf9356
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-2ekq5dsy8anz (the first live runner test, 2026-11-09: Claude Code 2.1.319 in a fresh clone waited at "Is this a project you created or one you trust?" and the agent never came online); the team lead's card; the key, file, lock and lookup checked against the installed 2.1.319 and by starting it with and without the entry; the maintainer's decision req-bebf2krde3pp (2026-11-09) to accept the scope as a known limit
+**Revisit when:** Claude Code changes where or how it records an accepted trust dialog, gains a flag that trusts a folder for an interactive start, or the runner starts sessions with `CLAUDE_CODE_IGNORE_PERSISTED_TRUST` or `CLAUDE_CONFIG_DIR` set
+**See:** runner.md#the-limit-file-is-read-on-the-agents-side-by-the-runners-own-module-not-by-dd — aa29acab-65eb-4f60-a8da-ee284877266f — as of 2026-11-09
+
+Before an `interactive` Claude Code session starts, the runner sets
+`projects[<the clone's real path>].hasTrustDialogAccepted: true` in the
+agents' Claude Code configuration: `~/.claude/.config.json` when that is
+a non-empty file, or an empty one with a write bit while
+`~/.claude.json` is missing; otherwise `~/.claude.json`. It writes under
+`<file>.lock`, the directory Claude Code's own saves take, the way
+proper-lockfile takes it: by `mkdir`, with the lock's mtime renewed
+while it is held, and a lock not renewed for 10 s taken as given up and
+removed. Right before it replaces the file it checks that the mtime is
+still its own; a runner that finds it lost the lock writes nothing and
+fails. Nothing is put inside the lock directory, which must stay
+removable with `rmdir`. In the `agent_user` and `ssh` layouts the
+runner's own module (`maity.runner.trust`) does this on the agents'
+side, as for the limit file. When the entry cannot be written (a file
+that is not UTF-8 text holding a JSON object or whose text cannot be
+written back as UTF-8, a lock held past 15 s, a stale lock that
+cannot be removed, a lost lock, a failed read or write, any other
+`Exception` on the way), the start fails with the cause in the log. `supervised` sets nothing: headless (`-p`),
+Claude Code asks for no trust and records none.
+
+Apart from the clone's entry nothing in the file changes, with one
+accepted exception. The lock is advisory, as proper-lockfile's is, and
+the check and the replace are two steps. A runner stopped between them
+for longer than the stale time (SIGSTOP, a suspended machine) can
+replace a write another process made after taking the lock over. That
+newer write is then lost. If it was another clone's trust entry, that
+agent meets the trust question again on its next start.
+
+The entry is Claude Code's own trust record, so it outlives the
+placement and is not limited to the runner's session. The runner never
+removes it. The runner's own session loads no project configuration
+either way (`--setting-sources user`, an MCP configuration of the
+runner's). An unrestricted `claude` that someone starts later in the
+same clone asks no question, though, and loads the clone's
+`.claude/settings.json` hooks and `.mcp.json`, including ones an agent
+wrote into the clone. In the `single` layout the file is the operator's
+own Claude Code configuration, chosen by the rule above. A Claude Code
+configuration directory per placement would avoid this (the rejected
+alternative below). The maintainer accepted the scope as a known limit on
+2026-11-09, with one rule: do not start your own `claude` in a runner
+workspace.
+
+**Reason:** the placement is the owner's trust decision, made before the
+runner starts anything. Without the entry, every placement in a fresh
+clone sat at the question while the runner reported `running`. A start
+that fails with a cause is better than that.
+
+**Rejected alternatives:**
+- Answering the question in the pane with tmux keys: it reads a screen
+  whose wording can change, and types into a session the agent then owns.
+- A Claude Code configuration directory per placement
+  (`CLAUDE_CONFIG_DIR`, as Codex gets its own home): the operator's
+  login and the session history live there, so it is a larger change
+  than the trust record the card asks for. It is also the alternative
+  that would keep the trust inside the placement: an unrestricted
+  `claude` in the clone would still ask.
+- One entry for the workspaces root: in 2.1.319 the lookup walks up from
+  the working directory only as far as the git root, so a parent entry
+  is not read for a clone, and it would trust every later clone too.
+- Writing the file without the lock: a session saving at the same time
+  could drop the entry, or lose its own change.
+- A mechanism that also closes the window between the ownership check
+  and the replace: the lock has to work with Claude Code's own saves,
+  which use proper-lockfile (`mkdir`, mtime, `rmdir`), so a kernel lock
+  would not exclude them, and proper-lockfile has the same window. The
+  window needs a writer frozen past the stale time, a scheduling fault
+  rather than normal operation; the project lead accepted it (#1560 R2).
+- A token file inside the lock directory to mark the owner: a runner
+  that died while holding it would leave a directory `rmdir` cannot
+  remove, and Claude Code's saves would then never get the lock again.
+  The renewed mtime is how proper-lockfile itself tells its own lock.
+- Starting anyway when the entry cannot be written: the session waits at
+  the question and passes for `running`, the failure this fixes.
 
 ## The runner tells the agent's resume it is supervised through `MAITY_SUPERVISOR`
 
@@ -1454,10 +1594,10 @@ message says are no boundary.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them)
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
-**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity itself starts first checks the clone the same way `gc` does
@@ -1524,6 +1664,26 @@ cached, since the clone may change between two runs, and the cap keeps
 it bounded. git that gh starts
 is not maity's and is not checked. Outside a placement nothing changes.
 
+A clone Claude Code's sandbox ran in holds entries a plain clone has
+not: an empty `config.worktree` and `objects/info/alternates`, an empty
+`remotes/`, and empty `.claude-sandbox-noreplace/` directories (in
+`info/`, `objects/info/` and `objects/info/commit-graphs/`). The
+sandbox leaves them to guard the paths it protects; no command of the
+session wrote them. The check accepts, while empty, a little more than
+those six: an empty `config.worktree`, `objects/info/alternates` or
+`objects/info/http-alternates` file, an empty `remotes/`, and an empty
+`.claude-sandbox-noreplace/` directory wherever it appears in `.git`,
+not only in the three places observed. Empty means an empty regular
+file or directory: a link, a FIFO, a socket or a device anywhere in
+`.git` is refused, under any name, and so is a directory in `.git` that
+cannot be listed, since unlisted it would look empty. Any of them with
+something in it is refused as before. This
+holds for every maity user, not only the runner. Empty, they change
+nothing git does: an empty `config.worktree` is not even read without
+an `extensions.worktreeConfig` the configuration check refuses, an
+empty `alternates` names no object store, and an empty `remotes/` names
+no remote.
+
 **Reason:** under the runner, maity's git runs outside the agent's
 sandbox for Claude Code (inside it for Codex), in a clone whose
 configuration the agent writes. The pinned
@@ -1541,6 +1701,12 @@ a program it starts. maity's own git under the runner only reads, so
 every call can run that way.
 
 **Rejected alternatives:**
+- The runner deleting the sandbox's placeholders before a start: the
+  runner changes nothing in an agent's clone, and the sandbox makes them
+  again on the next session.
+- Accepting those names whatever they hold: a `config.worktree` or an
+  `alternates` with content changes what git reads. Only the empty ones
+  are known to be the sandbox's.
 - Passing maity's own environment on to git: a variable set on the
   command line that starts maity names programs for git as well as the
   configuration does.
@@ -1570,3 +1736,209 @@ every call can run that way.
   missing: that is the directory the check cannot vouch for.
 - A copy of the check in the CLI beside the runner's: two lists of
   allowed keys drift apart.
+
+## A headless placement is offered no tool for asking a person
+
+**Id:** e71f0da3-46ed-4276-b88a-3fcd6af905bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-1pxc2shwk43p (the maintainer, 2026-11-10: agents work autonomously, so a headless placement must not be able to ask an interactive question nobody can answer); `cli/src/maity/runner/adapters.py`; Claude Code's permission documentation (`dontAsk` denies `AskUserQuestion` even when an allow rule matches; a bare tool name in a deny rule removes the tool from the model's context); Codex's configuration source (`[tools.experimental_request_user_input] enabled`, on by default; `codex exec` rejects the tool's request)
+**Revisit when:** a supervised placement gets a way to put a question to a person and wake with the answer, or a harness renames its question tool or the switch that turns it off
+
+For a supervised placement, where the harness runs headless on each event,
+the runner's generated configuration takes away the harness's tool for
+asking the person at the terminal:
+
+- Claude Code: `AskUserQuestion` as a bare name in `permissions.deny`.
+  `--permission-mode dontAsk` already denies the call, but leaves the tool
+  in the model's context; the bare deny removes it.
+- Codex: `[tools.experimental_request_user_input] enabled = false` in the
+  placement's `config.toml`. The tool is registered by default, and
+  `codex exec` rejects its request.
+- opencode: nothing to add; its configuration denies every tool it does not
+  name.
+
+Interactive placements, where a person is at the pane, keep what they had.
+
+**Reason:** agents in Maity work autonomously, and nobody sits at a headless
+run. Both harnesses refuse the question tool's call there, so a question
+put through it reaches no one. A harness that answered it empty instead
+would be worse: the run would go on as if a person had chosen. A person's
+decision is asked for through Maity (`maity ask`), which reaches the human's
+inbox and wakes the agent with the answer. With the tool not offered, that
+is the way left to put a question to a person.
+
+**Rejected alternatives:**
+- Relying on `dontAsk` alone for Claude Code: the call is refused, but the
+  tool stays in the model's context and offered.
+- Taking the tool away from interactive placements too: their
+  configuration is left as it was. For Claude Code, interactive placements
+  run with `dontAsk` as well, which already refuses the call, so a person
+  at the pane is not asked through this tool either; letting them ask would
+  mean changing `dontAsk` for every other prompt there, a decision of its
+  own. Codex keeps its question tool in an interactive placement.
+
+## `maity runner install` sets up the system service; an incomplete configuration is enabled, not started
+
+**Id:** 84732ea1-d314-465d-939c-fd274b2f8b0d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-sxpjwek61bhv (the maintainer agreed the scope on 2026-11-10: a system service only, the shipped unit's manual steps done by one command, `uninstall` keeping state unless `--purge`); the team lead narrowed it on 2026-11-10 to fixed paths, refusing instead of repairing, a root-owned creation record, and no removal while agents may run; `cli/src/maity/runner/install.py`. The choices below are the implementer's within that scope, not confirmed by the maintainer.
+**Revisit when:** a per-user (`systemctl --user`) variant is wanted, the shipped unit's `ExecStart` line changes, or `install` learns to write `[limits]` and a harness itself
+
+`sudo maity runner install <pairing url> --code-file -` does the steps the
+unit's header lists:
+1. It checks for Linux, root, systemd, tmux and runuser.
+2. It creates the `maity-runner` system user, records it in
+   `/var/lib/maity-runner-install.json`, and makes `/var/lib/maity-runner`
+   (state, workspaces; 0700, owned by that user).
+3. It writes `/etc/maity-runner/runner.toml` and checks the service user can
+   read it.
+4. It writes the unit.
+5. It pairs as that user.
+6. It runs `systemctl daemon-reload` and `enable`.
+7. It runs `maity runner check`.
+
+A second run is safe. It creates only what is missing, pairs only an
+unpaired runner, and keeps a file that differs unless `--force`.
+`uninstall` stops and disables the service, ends its agents and removes the
+unit. `--purge` also removes state, workspaces, the configuration and the
+account install made. The paths are fixed; other paths are the manual steps
+of `maity runner unit`.
+
+1. **`ExecStart` names the interpreter of the `maity` that runs `install`**
+   (`<python> -I -m maity runner serve …`), the way the agents' side already
+   starts it. Every word is quoted for systemd: `%` and `$` are doubled, and
+   control characters are refused.
+   - Rejected: keeping `/usr/local/bin/maity`. A pipx install lives
+     elsewhere.
+   - Rejected: looking `maity` up on PATH. `sudo` resets PATH to its
+     secure path, so the lookup would find another copy, or none.
+2. **Before pairing, `install` checks that the service user can run that
+   interpreter and read the configuration.** A pipx install under a home
+   the service user cannot enter would otherwise only fail when the service
+   starts, after the single-use code is spent. The same goes for a
+   configuration directory a restrictive umask made 0700.
+   `/etc/maity-runner` is install's own and is always set to 0755.
+3. **A configuration `serve` would refuse gets the service enabled, not
+   started, with the reasons listed.** That covers missing `[limits]` or a
+   harness, and a key this version does not support. `serve` exits 78 on
+   such a configuration, and the unit does not restart 78, so a started
+   service would sit failed until someone restarted it by hand.
+   - Rejected: refusing `install` until the configuration is complete. The
+     person would then write the file `install` exists to write.
+   - Rejected: guessing projects, repositories or a harness. Those are the
+     operator's choices.
+4. **`uninstall` ends the agents (`stop-all`) after stopping the service,
+   and removes nothing unless it knows they stopped, or `--force`.** Not
+   knowing counts as failing: no configuration, one that does not load
+   (install's own starter does not), or no account of install's to run
+   `stop-all` as. The
+   unit's `KillMode=process` keeps agents running across a service stop.
+   Once the unit is gone nothing would supervise them, and once `--purge`
+   has removed the state their workspaces would be gone from under them.
+   - Rejected: leaving them running. Agents would go on working with a
+     credential whose runner is gone.
+   - Rejected: warning and going on. A purge would then delete what running
+     agents still use.
+   - What it can know without stopping anything (the account, whether the
+     configuration is there and loads) is checked before the service is
+     disabled, so a refusal leaves the service as it was. `--purge` removes
+     the account before the trees: a `userdel` that fails then leaves the
+     account, its trees, the configuration and the record for the next
+     `--purge` (the service is stopped and its unit removed by then), and
+     one that stopped after the
+     account was gone finishes on the record that names it. The
+     directories then keep the gone account's uid, so they are checked
+     against the uid in that record, before anything changes: owned by
+     it, no link, and not writable by group or others, since nothing
+     sets their modes back on the way to removing them. A record without
+     a usable uid names no account, and its home is refused like any
+     other.
+   - Rejected: the trees first, then the account. A failed `userdel` left a
+     record without a configuration, and the next `--purge` refused until
+     `--force`.
+5. **Fixed paths, and root refuses rather than repairs.**
+   - `install` and `uninstall` take no `--config`; they use
+     `/etc/maity-runner/runner.toml`, the unit under
+     `/etc/systemd/system` and `/var/lib/maity-runner`. Other paths are the
+     manual steps of `maity runner unit`.
+   - Every directory on the way to a file root writes or removes is opened
+     from `/` one component at a time with `O_NOFOLLOW`, and each must be a
+     directory of root's that group and others cannot write. Files are made
+     and renamed, or removed, through the last descriptor. Nobody but root
+     can then swap anything on the way between the check and the change.
+   - The service user's directories (writable by that user, and in the
+     `single` layout by every agent) must be real directories of that
+     user's; they are opened the same way and changed through their
+     descriptor.
+   - Anything not as install would have made it — a link, another owner, a
+     directory or a file of root's that others can write, a kept configuration whose `state_dir` is
+     not the fixed one as `serve` resolves it, or whose `hub.url` names
+     another hub than the pairing URL — stops the command before
+     the first change. `--force` writes install's own configuration
+     instead, but not over a credential paired under one for another
+     hub: that credential is the other hub's, and `serve` would refuse
+     it. A pairing URL that is not valid UTF-8 is refused before the
+     account is made, since no file can hold it. A file of root's is checked on the descriptor it
+     is read from, so what is read is what was checked. The `workspaces`
+     of a kept configuration are not checked: that directory is the
+     service user's to write, so no root write depends on it. Whether the
+     runner is paired is read the same way:
+     the credential must be a regular file of the service user's, reached
+     without following a link, so root never answers for a file a link
+     points to.
+   - Root's record `/var/lib/maity-runner-install.json` (uid, home, time)
+     says install made the account. `install` does not take over, and
+     `--purge` does not delete, an account the record does not name.
+     Without that account or its record, `--purge` refuses before any
+     change when `/var/lib/maity-runner` or `/etc/maity-runner` exists:
+     nothing shows install made them. The account's comment is only a
+     label.
+   - Rejected: a custom `--config`. Its directories can sit under paths the
+     service user can rename, and checking each such tree is more than the
+     manual steps cost.
+   - Rejected: repairing owners, links and writable files or directories of
+     root's. Each is a sign someone else has been there, or could have been;
+     root fixing it would act on their setup. Modes that only differ from
+     install's (0755 for `/etc/maity-runner`, 0700 for the service user's
+     directories, 0644 for a file with install's own text) are set back:
+     nobody else could have written through them.
+   - Rejected: a marker in the account's comment field. Where users may
+     change their own full name, an account's owner can set it.
+   - Rejected: adopting any existing `maity-runner` account. An account of
+     the same name made for something else would be taken over, and later
+     deleted.
+
+Every call that touches the system goes through one `Host` seam, so the tests
+run without root or systemd.
+
+## A failed clone says why in the runner's log, not in the report
+
+**Id:** e814c00b-fde7-4c0a-a3ca-f7b3510900df
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-3w09my9zkrez (two placements on a fresh runner reported `clone_failed` with no exit code and no detail, and nothing showed why); `cli/src/maity/runner/workspace.py`, `supervisor.py`
+**Revisit when:** §15.7 gets detail codes for `clone_failed`
+
+When the clone fails, the runner's log gets one line with the reason:
+`<placement>: clone_failed: <why>`. The reason is maity's own message when
+git could not run (not found, refused by maity's clone check, timed out),
+or git's last line of output when it exited with an error. The report to
+the hub is unchanged: `clone_failed`, the exit code, no detail.
+- The text stays out of the report. `detail` is a closed list of codes
+  (§15.7), and a tool's message is no code. The log line for a new state
+  carries codes and numbers only for the same reason.
+- The reason is printable, capped at 300 characters (the line adds the
+  placement and the reason code), and every URL in it loses its userinfo,
+  through the same redactor as the rest of the CLI (`redact.without_userinfo`).
+  An https repository URL the runner accepts carries none, and an ssh one
+  at most a user name. A redirect or a helper's message could carry a
+  password.
+- Rejected: free text in `detail`. The hub would then store and show a
+  tool's message, which is outside the contract.
+- Rejected: logging nothing, as before. `clone_failed` without an exit code
+  covers several unrelated causes, so nobody could tell which one it was.

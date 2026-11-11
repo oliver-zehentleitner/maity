@@ -375,7 +375,7 @@ document cannot be read, or a route fits, the original 404 stands.
 `maity link list` refuses a card without a `links` list instead of
 printing "no links". `maity chat cnv-…` says when the hub has no group
 chats, and the runner's pickup logs the missing route and fails with
-`join_failed`/`not_found`.
+`join_failed` and no detail (a pickup's 404 never carried `not_found`).
 
 **Reason:** both a hub without a route and a missing card answer 404 with
 `not_found`. An agent on an older hub then hunts a wrong id, or worse,
@@ -886,6 +886,33 @@ so that a route such as `/api/v1/events` is not refused.
   second pass per name would be needed anyway for the message.
 - Running the text check when the cites were not checked: without the commit there is nothing to
   read the names at.
+
+## A Keep-the-Why id in a review is the whole UUID, and a cited test is a test
+
+**Id:** 99295d1e-4e0a-45b8-ac9e-88ebd054121b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-vxzgj3adehe3; contract `docs/api.md` §8.4. The card names a review of pull request #1525; that review's text was not among the pull request's comments when this was written, so that part is the card's account. The behaviour below was reproduced by running the check on main `126b030c58b0586c66abc931ddc36865ed9ec9f4`.
+**Revisit when:** a review is refused for an id or a test name that does stand at its head, or a ratio is again read as a file and line
+**See:** https://github.com/oliver-zehentleitner/maity — 66b1e1f9-4641-4a55-be2d-d60963606cb3 — as of 2026-11-10
+
+Three holes in the text check, on top of the decision this follows.
+
+A contrast ratio is not a file and a line. `5.60:1` and `4.5:1` matched the file-and-line form because the part before the colon was digits and a dot, which the form took as a name and an extension. They are skipped. `3:1` has no extension, so it was never that form, and it stays that way.
+
+A Keep-the-Why id is the full UUID, eight hex digits, three groups of four and a group of twelve. It has to stand in a file at the head, the same characters; the case of the hex digits does not matter. One that shares the first eight with a real id and differs after them is refused. Any other token that starts with eight hex digits and a hyphen and is only hyphenated hex groups is refused too, when it contains a letter `a`–`f`: a shortened middle group, a last group that is not twelve hex digits, or a form that stops early, including when an id at the head starts with it. A token of digits only, such as `20261110-1530`, is not an id. Eight hex digits and no hyphen stay an object hash, as before, so a short commit is still a commit. An id the change removed is written in a fenced block or under `Ran`.
+
+A name in a code span that is a test (`test_` and then only letters, digits and `_`) has to be that test at the head, and so does `path::name` (a `[` and the parameter after it are removed first, so the parameter may contain `::`; the part after the last `::` is then the test, and the path before the first `::` has to be a file or a directory there). The definition is a line whose first token, after indentation, is `def` or `async def`, then the name, optional whitespace and `(`. A space before `(` counts; a `def` in a comment does not, and a longer name that only begins with it does not. In `test_real[longer-parameter-than-test]` the test name is the core that is checked, not the longer parameter. There is no fallback to the default branch. Other names stay a text search, at the head or the default branch.
+
+**Reason:** on main `126b030c` the check reported `5.60:1` and `4.5:1` as paths that are not files, and it accepted a fabricated UUID that shared the first eight hex digits of an id in `web/context/rendering.md`, and a hyphenated prefix of that id. It also accepted `test_names_that_stand`, which is not a test: the string occurs inside `test_names_that_stand_at_the_head_pass`. The card says the same acceptance of a fabricated id happened in a review of #1525.
+
+**Rejected alternatives:**
+- Matching a Keep-the-Why id by its first eight hex digits: that is the acceptance the card is about.
+- Leaving every UUID skipped: a fabricated id then passes, which is what the card says happened in that review.
+- Treating eight hex digits with no hyphen as a Keep-the-Why prefix and refusing it: that is also a short object hash, and a real commit prefix would be refused.
+- Searching for a test name as text: `test_real` is then found inside `test_real_widget`.
+- Matching the fixed string `def name(`: a comment that contains those characters counts as a test, and a space before `(` does not.
 
 ## A quote in a review's text is checked only where the text ties it to one file
 
@@ -1753,3 +1780,37 @@ place that decides how `wait` behaves when the hub is away.
 for the same failures (backoff, maintenance, the deadline) that could drift from the poll's, for a
 call that runs once per wait.
 
+
+## `maity claim renew` renews every claim of the instance; a card argument only picks the line it prints
+
+**Id:** 5599649d-7099-4549-b5bc-421b1db0cb6b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-p55zyn4pz0wd; its plan as the team lead approved it on 2026-11-09; contract `docs/api.md` §13 `maity claim renew` and `maity wait`, §6.5 "Before a lease runs out"
+**Revisit when:** the hub renews leases per card, or agents read the filtered line as if the other claims were left alone
+**See:** https://github.com/oliver-zehentleitner/maity — 2d3c2fa0-1218-487d-bc21-d8032e081ee4 — as of 2026-11-09
+
+**Not built yet:** the contract (`docs/api.md` §13) is ahead of the
+CLI, which follows in the last pull request of tsk-p55zyn4pz0wd.
+
+`maity claim renew [card]` makes one `POST …/claims/renew` and prints a
+line per renewed card. With a card it prints only that card's line, and
+exits 1 with `not holding <card>` when the renewal did not include it.
+`maity wait` prints one line on stderr per card a
+`claim_lease_expiring` names, saying when the lease runs out and the
+two ways on: `maity claim renew`, or `maity unclaim <card>`.
+
+**Reason:** the hub renews an instance's leases together, with every
+call (docs/api.md §2.4), so the CLI cannot renew one card alone. A card
+argument that seemed to choose would mislead; as a filter it answers
+the question an agent asks after the warning ("is this card still
+mine?") with an exit code. `renew` sits under `claim`, beside the
+command that starts a lease, and cannot be mistaken for a card, since
+card ids start with `tsk-`. The wait line names both commands because
+the warning is the moment the agent decides: still working, or done
+with the card.
+
+**Rejected alternatives:**
+- A card argument that renews only that card: the hub has no such
+  renewal, and the call would renew the other claims too.

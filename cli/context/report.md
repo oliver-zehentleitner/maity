@@ -227,7 +227,7 @@ before PATH for a bare program name.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-grk7tg5temyc, from two Claude Code cloud sessions whose `gh` was missing or got HTTP 403 on GraphQL, so their reports were refused on linked cards (2026-11-07); the lead's go on the plan (Maity message, 2026-11-07); docs/api.md §11 (`GET /probe?pr=N&max_age=0`)
+**Source:** card tsk-grk7tg5temyc, from two Claude Code cloud sessions whose `gh` was missing or got HTTP 403 on GraphQL, so their reports were refused on linked cards (2026-11-07); the lead's go on the plan (Maity message, 2026-11-07); docs/api.md §11 (`GET /probe?pr=N&max_age=0`); PR #1635 and its reviews (Maity messages 108607 and 108620; 108816, 2026-11-11), read against `_probed_pr`, corrected this entry's sentences on which linked pull requests refuse
 **See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-07
 **See:** report.md#a-report-is-checked-against-the-cards-pull-request-without-a-flag-to-name-one — 8c58cebb-b7e1-4947-8776-8f5bcb6c566c — as of 2026-11-07
 **See:** report.md#a-merged-pull-requests-head-stands-in-for-a-deleted-branch — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-11-07
@@ -235,25 +235,31 @@ before PATH for a bare program name.
 
 When gh is missing, or is installed and fails (`gitfacts.collect` keeps that
 failure as `forge_error` instead of raising it), `maity report` reads the card
-and asks the hub's probe about each pull request the card links in the
-project's repository, at most five (more are named in one line and not read),
-with `max_age=0`; the hub may still answer from a read up to 30 seconds old
-(`FORCED_FLOOR`, §11.4), and a head that is that stale refuses, never files
-another commit. A pull request whose
-`head_sha` equals what `git ls-remote` answered for the branch, compared whole,
-is reported as `pr_status: found` with number, URL, head and state from the
-probe, and the terminal line says it was read by the hub's probe. Linked pull
-requests with another head refuse (exit 4), naming each head and the branch's.
-A probe that is not configured, unavailable or finds nothing changes nothing:
-the report goes on as before, refused on a linked card as 8c58cebb says, and a
-gh that failed is raised as the error it was, as 66da7721 says.
+and asks the hub's probe about each pull request the card links, at most five
+by repository and number (more are named in one line and not read), with
+`max_age=0`; a link to another repository is asked too and counts toward the
+five, but the probe reads only the project's repository, so such a link neither
+stands in nor refuses; the hub may still answer from a read up to 30 seconds
+old (`FORCED_FLOOR`, §11.4), and a head that is that stale refuses, never files
+another commit. A pull request whose `head_sha` equals what `git ls-remote`
+answered for the branch, compared whole, is reported as `pr_status: found` with
+number, URL, head and state from the probe, and the terminal line says it was
+read by the hub's probe. The links are asked in order and the first match is
+the one reported, whatever the links before it read; only when none matches do
+the linked pull requests the probe read with another head refuse (exit 4),
+naming each head and the branch's. A probe that cannot be asked about one link
+ends the asking: nothing stands in, and the links it read before refuse
+nothing. A probe that is not configured, unavailable or finds nothing changes
+nothing: the report goes on as before, refused on a linked card as 8c58cebb
+says, and a gh that failed is raised as the error it was, as 66da7721 says.
 
 A branch deleted after its merge is the same case without a remote head: where
 f720dd3c asks gh for the merged pull request by the branch's name, the report
-asks the probe about the card's linked pull requests and takes one that is
-`merged` with `head_sha` equal to the local HEAD as the branch's stand-in
-(`remote_head` the merged head). A linked pull request in another state or with
-another head refuses; without a linked pull request the branch counts as
+asks the probe about the card's linked pull requests the same way and takes
+the first one that is `merged` with `head_sha` equal to the local HEAD as the
+branch's stand-in (`remote_head` the merged head). Only when none is do the
+linked pull requests it read in another state or with another head refuse;
+without a linked pull request no probe is asked and the branch counts as
 missing, as before. This runs only when the local check would refuse, and a
 card that cannot be read leaves that refusal as it is.
 
@@ -318,3 +324,86 @@ contradict: the refusals that rest on facts keep no override.
 - Checking whether the branch already belongs to another card: the hub has no lookup of cards by
   branch or pull request before a merge (linked cards are computed at the merge, §17.4); a
   client-side half check would read as a guarantee it is not. Left as a known gap.
+
+## A branch that tracks main is set to track its own branch before the report
+
+**Id:** f841de3c-127b-486d-96b2-46b2599f3252
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8qwmbw5xydpw from the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg): `report` refused with exit 4 and the fix was two `git config` lines, which agents hit repeatedly; the lead's assignment (Maity notice 104980, "contract first" where a contract line is needed); reproduced on main 126b030c with a branch cut by `git switch -c <b> --track origin/main` and pushed without `-u` ("origin/main is at …, local HEAD is at …; push or pull until they agree"); the boundaries (default branch only, only when the remote has the branch) are the author's, put to review in PR for tsk-8qwmbw5xydpw; `cli/src/maity/gitfacts.py` `track_own_branch`; review of PR #1608 (Maity review results 105408 and 105493, the lead's notices 105413 and 105495; round 2: review result 105659, the lead's notice 105664; round 3: review results 105854 and 105876, the lead's notices 105860, 105878 and 105887, lotse's notice 105886): the exact ref match of `ls-remote`, the read of the branch name, the push-configuration sentence, the two gaps not covered, and that the earlier refusal held only when the heads differed
+**See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-10
+**See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-10
+**Revisit when:** agents report from branches that deliberately track another branch than their own and want it kept, or a refusal shows that the default branch could not be told (no `origin/HEAD` and a remote whose `HEAD` is not readable), or agents push to another remote than the one the branch tracks (a fork with `remote.pushDefault`) and the named `git push -u` misleads them, or agents hit the refusal on a merged and deleted branch
+
+A branch cut from main (`git switch -c <b> origin/main`, a worktree made
+with `-b <b> origin/main`) has `branch.<b>.merge` set to
+`refs/heads/main`. Pushed with a plain `git push origin <b>`, it keeps
+that upstream, and `report` compared the local head with main's and
+refused when they differed. Now, before it reads the facts, `report` sets
+`branch.<b>.merge` to `refs/heads/<b>` (the remote stays) when the
+upstream is the remote's default branch, the branch is not that branch
+itself, and the remote has a branch `<b>`; it says so on standard error.
+The default branch is what `refs/remotes/<remote>/HEAD` names, else what
+the remote's `HEAD` names (`ls-remote --symref`). When the remote has no
+`<b>`, nothing changes and the report is refused (exit 4) naming
+`git push -u <remote> <b>`. The remote has `<b>` when `ls-remote` lists
+`refs/heads/<b>` exactly: git matches the pattern against the end of each
+ref, so `refs/heads/x/refs/heads/<b>` is listed too and is not `<b>`; the
+facts read the remote head the same way. Any other upstream is left as
+it is. The
+upstream is checked as before (4f4e8ada) before git is asked about the
+remote or its refs.
+`--no-code` reads no git and changes nothing. The branch is read as the
+full ref (`symbolic-ref HEAD`, `refs/heads/` cut off), here and when the
+facts are read: `--short` gives `heads/<b>` when a tag `<b>` exists as
+well, and `branch.heads/<b>.merge` would be another branch's key.
+
+No hub contract change: the report's body and the hub's checks are the
+same; the CLI mapping row of §13 says what `report` now does locally.
+
+Not covered: the refusal names `git push -u <remote> <b>` with the
+branch's configured remote. In a fork whose branches track the upstream
+repository and are pushed elsewhere (`remote.pushDefault`), that is the
+wrong remote to push to; before, such a branch was compared with
+main's head instead and refused when the two differed, naming no remote
+to push to (`push or pull until they agree`).
+A branch that tracks main and was deleted on the remote after its merge
+is refused naming `git push -u` too, not with the advice to report from
+the merged head; before, that branch was compared with main's head
+instead and refused when the two differed (not when main had been
+fast-forwarded to it).
+
+**Reason:** a branch's upstream on the default branch is git's default
+for a branch cut from it, not a choice the agent made, and it is never
+the branch a report is about: the report names the branch and its pull
+request, and the pull request's head is that branch's. Setting the merge
+ref is the fix every agent typed by hand; doing it here keeps every fact
+read from git (66da7721 holds: nothing is overridden, the remote head of
+the branch itself is still compared with the local one), and leaves
+the configured upstream, which `git pull` uses, pointing where the
+report looked. Only the
+default branch is retracked because that is the case the card names and
+the one that is never meant: a branch tracking another branch, as a
+stacked one tracking the branch below it, may be meant, and maity cannot
+tell. Only a branch the remote has is set, so an upstream never points
+at a branch that does not exist when it is set.
+
+**Rejected alternatives:**
+- A better refusal that prints the two `git config` lines: the card's
+  reject case; agents already knew the fix and still hit the refusal.
+- Reading the remote branch of the same name without writing the
+  configuration: the report would then describe another branch than
+  the configured upstream. That upstream would stay main and a later
+  `git pull` would keep using it; what a later `git push` does would
+  depend on git's push configuration (with `push.default=simple` a
+  plain `git push` refuses, the names differ).
+- Retracking any upstream whose name differs from the branch: changes
+  a stacked branch's deliberate upstream.
+- Setting the merge ref before the branch is pushed: the upstream would
+  name a branch the remote does not have, and the report would refuse
+  anyway, with the fix (`git push -u`) less visible.
+- Taking any line `ls-remote --heads -- <remote> refs/heads/<b>` prints
+  as the branch, and naming the suffix match as not covered: a remote
+  with only `x/refs/heads/<b>` would get `<b>` retracked and its head
+  read as `<b>`'s, so "the remote has that branch" would be false.

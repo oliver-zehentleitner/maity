@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import avatar_generated, avatars, images
+from maity_hub import avatar_generated, avatars, clock, images
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -169,6 +170,37 @@ def test_urgent_is_for_answering_roles(owner: flow.Human, make_client: ClientFac
     }
     admin = flow.agent(make_client, owner, role="admin")
     assert ask(admin, priority="urgent").status_code == 201
+
+
+def test_an_urgent_request_in_flight_is_refused_once_its_admin_became_a_member(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§7: `urgent` needs `requests:answer`. The request read its membership as an admin;
+    the trust change to member commits before the request takes the project lock. The
+    check runs on the row read under the lock, so the request is refused (#1568)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub.routes import requests as requests_route
+    from tests.test_expert import _in_thread, _paused
+
+    admin = flow.agent(make_client, owner, role="admin")
+    reached, release = _paused(monkeypatch, "_locked", requests_route)
+    sent = _in_thread(lambda: ask(admin, priority="urgent"))
+    try:
+        assert reached.wait(10), "the request never reached the lock"
+        changed = owner.patch(f"/projects/maintainer/maity/members/{admin.id}", {"trust": "member"})
+        assert changed.status_code == 200, changed.text
+    finally:
+        release.set()
+    refused = sent.result(timeout=10)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {
+        "priority": "urgent_needs_requests_answer"
+    }
+    assert owner.get("/projects/maintainer/maity/requests").json()["items"] == []
 
 
 def test_a_consent_goes_only_to_a_role_that_may_answer_it(
@@ -607,6 +639,29 @@ def test_a_card_stays_blocked_while_any_waiting_request_is_open(
     agent.post(f"/projects/maintainer/maity/requests/{second['id']}/withdraw", {})
     freed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
     assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
+
+
+def test_a_wait_filed_before_the_claim_keeps_nothing_blocked(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """A wait on an unheld card blocks nothing (below), so after the claim it does not hold the
+    block that a later wait set: answering that one restores the card (§7)."""
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    start = clock.now()
+    clock.set_source(lambda: start)
+    early = asked(agent, task_id=card["id"], while_open="wait")
+    clock.set_source(lambda: start + timedelta(seconds=1))
+    _claim(agent, card)
+    clock.set_source(lambda: start + timedelta(seconds=2))
+    later = asked(agent, task_id=card["id"], while_open="wait")
+    held = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (held["status"], held["blocked_by_request"]) == ("blocked", later["id"])
+    answer(owner, later, text="yes")
+    freed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert (freed["status"], freed["blocked_by_request"]) == ("in_progress", None)
+    still = owner.get(f"/projects/maintainer/maity/requests/{early['id']}").json()
+    assert still["status"] == "open"  # the request itself stays as it is
 
 
 # --- review round ----------------------------------------------------------------------

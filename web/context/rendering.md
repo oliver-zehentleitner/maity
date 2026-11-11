@@ -368,6 +368,44 @@ button: it is the entry's name for the keyboard and for the list. Keeping
 for `/` after a reference: it matches `issues/#5/#6`'s `#6` too, since it
 cannot know whether `#5` was itself accepted, so the check sits in the loop.
 
+## An event's number in text links to its page by shape alone, into the text's own project
+
+**Id:** eeb4c3ab-d5c0-45e1-b888-25a3c4de046b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's ask that "seq 68216" in a text link to that message (tsk-6g2h8dag2fkg), 2026-11-04; docs/api.md §8.9 "The dashboard's links" (#1599, reviewed and merged before this); the dashboard's implementation (PR 3 of the card), 2026-11-11
+**Revisit when:** agents cite events in another form, the hub gives a cross-project chat's messages a page of their own, or readers report a `seq` linked where they meant a word
+
+`js/ids.js` links `seq 68216` (lowercase `seq`, one space) and
+`seq-68216` (one hyphen), 1 to 19 digits without a leading zero and at
+most 2⁶³ − 1, wherever it links ids (3274d199, with the same lone-code-span
+exception, 50234f88), to `/<owner>/<slug>/events/<n>` in the text's own
+project. It is not linked inside a word or a longer number, nor in a path,
+URL or query: never after `/`, `+`, `%`, `:` or `~`, never before `/` or a
+`.` that goes on as a word (`seq-5.json`). A full stop that ends the
+sentence still links. `?seq=5` never matches, and `#…` stays a forge
+number. A text with no project of its own (read along from outside,
+`/observe`, and a cross-project chat once the dashboard shows one, whose
+`seq` is the chat's own counter, §9.5) links none. The bound is checked
+with `BigInt` after the match, since a regular expression cannot compare
+numbers. The link is a plain dashboard route (`a.id-ref.seq-ref`) that
+opens in the same tab, copies and reloads like any route.
+
+**Reason:** §8.9 is the contract for exactly these forms, and agents write
+both. Nothing is looked up while the text is drawn, as for ids: the page
+behind the link reads the event once and says "not visible" when there
+is none (routing.md, the event's page). Linking only into the text's own
+project keeps the link's target a project where that `seq` means
+something.
+
+**Rejected alternative:** linking `#68216` as well. `#n` is a pull request
+or issue number (§6.13), and both readings would collide. Linking any
+digits after `seq` (any case, any spacing): "Seq 5" in prose and `seq  5`
+are not what agents write, and §8.9 names the two forms. Checking the
+bound in the regular expression: a 19-digit alternation is unreadable,
+and `BigInt` is exact.
+
 ## Nested lists nest by indentation: further in than the item before opens a list inside it
 
 **Id:** bc7078b0-df41-4068-a4e5-2fb2efeae898
@@ -1263,7 +1301,9 @@ An imprint is `운영자 정보` everywhere, the word the hub's footer had first
 terms are `이용약관`, without a space. Changing a password and resetting someone's second factor (`password.*`,
 `users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
 a profile are 합니다 like those on deleting the account. A particle after a placeholder whose value may end in a vowel
-or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과)`).
+or a consonant gives both forms (`이(가)`, `(으)로`, `은(는)`, `와(과)`). The copula has no such pair: `(이)에요` reads as
+`에요` after a vowel, where `예요` is right, so no copula follows such a placeholder; the sentence takes a colon or is
+rephrased (`{name}의 역할이 바뀌었어요: {role}`).
 A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
 page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
 switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
@@ -1350,12 +1390,38 @@ single character `您`, which a pattern finds; neither Chinese catalog holds `�
 **Rejected alternatives:**
 - Checking `resume` with the other fixed terms: the glossary translates it as an ordinary verb, so the check would flag
   correct sentences; it stays a reviewer's call (`GLOSSARY_NOT_CHECKED`).
-- Flagging French `ton` beside `tu`, `toi` and `tes`: `ton` is also a noun, and the French catalog uses it so
-  (« Le ton, la longueur … »), which the check would flag. `ta` and `te` were dropped together with `ton`, with no
-  reason of their own; neither occurs in a French catalog today.
+- Flagging French `ton` beside `tu`, `toi` and `tes` with no guard: `ton` is also a noun, and the French catalog uses
+  it so (« Le ton, la longueur … »), which the check would flag. `ta` and `te` were dropped together with `ton`, with
+  no reason of their own; neither occurs in a French catalog today. `ton` and `ta` are checked since with a guard:
+  see rendering.md#french-ton-and-ta-count-only-before-a-word-the-catalog-writes-after-votre — 4d23c5af-13e4-44f8-a836-424b857854fc.
 - A word list for Japanese and Korean: their address is a register (です・ます, 해요체), not a set of words a pattern
   can find; nothing is checked there and reviewers keep it.
 - Leaving both rules to review alone: the same findings came back on #1451 after the glossary named them.
+
+## French `ton` and `ta` count only before a word the catalog writes after `votre`
+
+**Id:** 4d23c5af-13e4-44f8-a836-424b857854fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** note nte-fvbb75pa1ym8 (a review of #1457); the batch 3b plan on tsk-tsb8528rank1, approved by the lead and the review lead, who asked for a narrow guard with a test where `ton` is the tone, 2026-11-10
+**Revisit when:** the French catalog writes "ton" or "ta" as a possessive after an article, or the check misses an informal possessive before a word the catalog never writes after `votre`
+
+See: rendering.md#make-check-holds-every-translation-to-the-glossarys-fixed-terms-and-form-of-address — 7d49c1e3-32a6-4a9e-af9e-c385ee719ee0 — as of 2026-11-10
+
+The French address check (`GLOSSARY_OTHER_ADDRESS`, `vous`) found `tu`, `toi` and `tes` but not the possessives `ton`
+and `ta`, because `ton` is also "tone". `web/tools/check.py` now flags `ton` or `ta` only right before a word that the
+French catalog itself writes after `votre`, learnt from the catalog on every run (`GLOSSARY_OTHER_POSSESSIVE`), and
+never after an article (`le`, `un`, `ce`, `du`, `au`, `cet`, `quel`), whatever whitespace stands between them: a
+possessive does not follow one. So « ton compte » is a finding, while « Le ton, la longueur » and « le ton compte »
+are not. The learnt words are tokens, not a grammar: « votre nouvelle session » teaches « nouvelle », and « ta
+nouvelle » is the informal address as much. A catalog without `votre` teaches no word, and nothing is flagged.
+
+**Rejected alternatives:**
+- A noun list kept in `check.py`: it would go stale as the catalog grows; the words the catalog writes after `votre`
+  are the ones its texts speak of.
+- Flagging every `ton` and `ta`: « Le ton, la longueur … » in the catalog would be a false finding.
+- The learnt word alone as the guard: « le ton compte » (the tone counts) would be flagged; the article guard keeps it out.
 
 ## A list drawn as a grid holds its rows in one column of `minmax(0, 1fr)`, so a long line cannot widen it
 
@@ -1402,3 +1468,39 @@ of on `.md`: the same, for every view that shows written text.
 Wrapping code lines (`white-space: pre-wrap` in `.md-code`): a shell
 line or a path broken across lines reads as several, and the block's
 scrolling stays as it was.
+
+## Every absolute time is formatted in the account's time zone by one helper, and in the browser's while none is set
+
+**Id:** 89d0260c-1827-40a7-b67d-84c91568772a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision that a human sets their time zone in Account → Settings and sees times in it (message seq 94723), the approved plan on card tsk-j8s6n725a06r, 2026-11-08; docs/api.md §5.1; `js/i18n.js` (`when`, `M.fmt.day`, `toWall`, `fromWall`)
+**See:** https://github.com/oliver-zehentleitner/maity — c9d8b583-94c6-4599-90a6-325e1c03c984 — as of 2026-11-08
+**Revisit when:** the dashboard shows a time that is not an instant (a date without a time, a wall time of a schedule), or the hub starts rendering times itself
+
+`M.fmt` formats every absolute time with `timeZone` set to the account's zone, which `M.api`
+takes from each `GET /me` (`member.timezone`) that passed the session check and set out after the
+last saved change of the zone, and from the settings `PATCH` that saves it; while that is `null`,
+or a name the browser's Intl does not know, it is the browser's zone. A session that ends
+(signing out, expiry, a 401 on the newest session check of the current session) drops it, so the next person in the tab does
+not see the last account's zone. The places that worked on the browser's local clock
+(`getDate`, `toDateString`, `toLocaleDateString`) go through the same helper: chat's day
+separators compare `M.fmt.day`, the maintenance banner's "same day" test too, and the
+`datetime-local` fields (the instance admin's maintenance window, the owner's absence) read and
+write the account's zone with `M.fmt.toWall` / `fromWall`
+(a time a clock change skips moves forward by the gap's length, so 02:30 in a one-hour gap is
+03:30; one it repeats is the first). Relative
+times ("5 min ago") do not use the zone. Timestamps in the API stay UTC.
+
+**Reason:** the owner decided that every time shown follows the zone the human set (confirmed).
+One helper is the only way that stays true: a view that formats on its own would show the
+browser's zone beside the account's, and a datetime-local field in the browser's zone would let
+an admin enter a window in another zone than the one it is then shown in. Taking the zone from
+`/me` costs no request, since every page reads it before the first view.
+
+**Rejected alternatives:** reading `GET /me/notification-settings` at load: a second request on
+every page for one value `/me` can carry. Rendering times on the hub: the contract keeps UTC in the
+API and leaves display to the dashboard. Keeping the browser's local clock for day boundaries
+while formatting in the account's zone: a message at 23:50 in the account's zone could then sit
+under the next day's separator.
