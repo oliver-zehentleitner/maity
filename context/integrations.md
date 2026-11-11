@@ -306,24 +306,21 @@ so whoever runs it is the operator who also sets the list.
   their own listed account or organisation only after taking the name
   off the list and restarting.
 
-## A repository on any https host is stored and linked; the hub reads GitHub only
+## A repository on any https host is stored and linked; forge reads stay on GitHub
 
 **Id:** 8830ddef-89dc-4359-ac22-b74b77e6ee74
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-rzhydxnsav4m, the contract in `docs/api.md` §6.1 and §11
-**Verification:** corroborated — the reads a repository URL can start were checked against the hub: `forge.py` maps only `github.com`. The forge contents and metadata reads (`images.py`, `forge_access.py`, `probe.py`, `forge_webhook.py`, and the contents reads in `ktw.py` and `ktw_reads.py`) use GitHub's fixed hosts. The state and bodies downloads use the validated URL from the repository contents: `ktw.read_state` and `ktw_reads._read` call `outbound.read` with that URL
+**Verification:** corroborated — re-checked 2026-11-11: `forge.stored_repository_url` accepts an https URL on any DNS host and `kind_of` derives the forge; `forge_access` refuses a non-GitHub repository with `forge_not_github` and no token. The forge contents and metadata reads (`images.py`, `forge_access.py`, `probe.py`, `forge_webhook.py`, and the contents reads in `ktw.py` and `ktw_reads.py`) use GitHub's fixed hosts. The state download uses the validated URL from the repository contents, and the bodies download the file the export names beside it: `ktw.read_state` and `ktw_reads._read` call `outbound.read` with those URLs
 **Revisit when:** a forge other than GitHub is actually read (card tsk-sqpcbndm0tvd), or a self-hosted host whose name does not say its product needs a merge-request link before that read exists
 **See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-11-10
 **See:** integrations.md#the-hub-reads-a-repository-with-its-owners-grant-a-github-app-installation-first-the-owners-token-second-the-instance-token-only-for-an-operators-project-with-a-public-repository — 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3 — as of 2026-11-10
 
-This is the proposed target, not what the hub does today.
-`repository.url` is to accept `https://<host>/<segment>/…` on any DNS
-host, including a nested GitLab group, and the hub is to store it and
-link it. Today the hub refuses every URL whose host is not
-`github.com`, with `not_a_configured_forge`, and the dashboard reports
-that same reason. `forge` is `github` only for the exact host
+The hub stores a repository URL on any DNS host and links it.
+`repository.url` is `https://<host>/<segment>/…`, including a nested
+GitLab group. `forge` is `github` only for the exact host
 `github.com`, which selects the only supported forge kind; that kind's
 API credential goes to `api.github.com`, and the installation exchange
 with `github.com` stays separate. A host whose leftmost label is
@@ -333,22 +330,23 @@ the hub probes nothing (`probe_configured: false`), sends no token,
 and makes no request to a host taken from `repository.url`. The probe,
 the first look at visibility, the forge logo and banner, and the Keep
 the Why contents and metadata reads stay on GitHub's fixed hosts. The
-state and bodies downloads of §11.5 use the validated export URL,
-which is taken from the repository file and is never derived from
-`repository.url`; that file may name the same host. The webhook
+state URL is taken from the repository file; the bodies file is the
+one the export names, beside that URL (§11.5). Neither is derived from
+`repository.url`; the file may name the same host. The webhook
 checks a GitHub signature and does not call the sender; a delivery
 does not start a read when the probe is not configured. Real probes,
 CI status and merge-request reads for a reachable GitLab stay out of
-this decision. What waits is Oliver's release of this contract, and
-the implementation card that lands the target in the hub and the
-dashboard.
+this decision. The dashboard already derives a merge-request link from
+`forge`. Its project-settings field still refuses a path that is not
+exactly two segments before it asks the hub; that check is the web
+change.
 
 **Reason:** a person has to be able to create a project and point
 agents at the repository when it lives on a forge the operator does
 not run, including a private GitLab behind a firewall. The contract
 used to require "a forge host the operator configured", and the hub
-has no such list: `HOSTS` is `github.com` alone, so every other URL
-is refused. Accepting the URL without reading it is what makes the
+had no such list: the probe's host map was `github.com` alone, so every
+other URL was refused. Accepting the URL without reading it is what makes the
 project usable. Reading it would send the hub at a host a member
 chose, which is the request a private address and a stolen token both
 come from. `github` is therefore an exact host and never a label: a
@@ -408,9 +406,8 @@ segment and a deep path cannot both be maximal.
   2048-character maximum on the stored URL remains the bound on the
   whole value.
 
-**Consequence:** the stored `repository_url` column is 255 characters
-today. Widening it is needed for the contract's new maximum of 2048
-characters, not because every nested group path overflows 255: the
-example `https://gitlab.corp.example/acme/platform/api` is 45
-characters. The change that implements this contract widens the
-column; this decision does not.
+**Consequence:** the stored `repository_url` column is 2048 characters,
+the contract's maximum. It was 255. Widening it is not because every
+nested group path overflows 255: the example
+`https://gitlab.corp.example/acme/platform/api` is 45 characters. A URL
+the previous column cannot hold is what the wider column is for.
