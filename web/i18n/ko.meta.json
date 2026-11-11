@@ -1543,6 +1543,18 @@
     "en": "89fa136908846c6b",
     "text": "eb244f9e91cbe32c"
   },
+  "board.closed.failed": {
+    "en": "76ff07448abbd4a4",
+    "text": "ac5696345b44d849"
+  },
+  "board.closed.loading": {
+    "en": "2ed9637177518fe0",
+    "text": "cf0a02a340b05061"
+  },
+  "board.closed.recheck_failed": {
+    "en": "a778f95d9908435e",
+    "text": "ead190ae5a44909f"
+  },
   "board.column.other": {
     "en": "1f1260ddd48575a9",
     "text": "ee6f16ea1c0cf881"
