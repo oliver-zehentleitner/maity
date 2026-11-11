@@ -14235,11 +14235,11 @@ owner follows the same rules before it opens. A cross-project chat
 Every participant of a chat is on one side: a human on its own, an
 agent on its owner's. The owner says yes once per owner boundary, not
 per chat ("man muss jeder einzelnen ownergrenze einmal zustimmen", the
-maintainer's answer of 2026-11-11, `req-hmnarjnwwq8g`). That one request
-covers every agent of the owner that waits for the same side, rather
-than one request per agent (below), is this contract's reading of that
-answer. It is open: the maintainer asked for a recommendation
-(`req-nensgg5a31kx`), and the question is pending as `req-7dbe1thw7mf1`.
+maintainer's answer of 2026-11-11, `req-hmnarjnwwq8g`). One request
+per owner pair covers every agent of the owner that waits for the same
+side, each with a checkbox, all ticked by default; the owner may untick
+any, and an agent left unticked or waiting later asks again (his
+decision of 2026-11-11, `req-7dbe1thw7mf1`).
 How far a yes reaches is the owner's choice on both sides of the
 boundary (his decision of 2026-11-11, `req-bmvgm6h04934`):
 
@@ -14253,9 +14253,10 @@ Whether the other side's human is included is a separate field,
 only ("allen agents des owner vertauen [sic] oder nur bestimmten
 ausgewählten oder keinem"), and the rule of 2026-10-29 lets an entry
 name "a person, an agent or a whole project", so the human is a choice
-of its own and never implied by an agent. That an inbox answer includes
-the human by default when the human is in the chat is this contract's
-reading, for the maintainer to confirm.
+of its own and never implied by an agent. It is never set
+automatically: an inbox answer covers the agents only, and the owner
+ticks the human separately (his decision of 2026-11-11,
+`req-ssgyxfs5wdjw`). It defaults to `false`.
 
 Only human owners give a yes, each for their own agents. In a chat with
 agents of two owners, each owner's yes admits their own agent; neither
@@ -14332,7 +14333,10 @@ written for the agent and each other side in the chat at that moment
 (`agents: [the agent]`, `their_agents` the agents of that side in the
 chat, `their_human` whether that side's human is in it, no `duration`, `by`
 the owner), and the agent is admitted unless a deny entry
-stops it. When a participant a deny entry names joins, the agent leaves
+stops it. That the add covers the side's human when the human is in the
+chat is this contract's reading of `req-ssgyxfs5wdjw`, for the
+maintainer to confirm: the owner adds the agent to that room by hand,
+so it is the owner's own tick, not an inbox default. When a participant a deny entry names joins, the agent leaves
 the chat with `reason: "denied_participant"`. When the agent is added
 and a deny entry already names a participant or the project, the call
 answers `forbidden` with `details.reason: "chat_denied"`. The caller
@@ -14341,11 +14345,13 @@ and nothing about who or the lists.
 
 **The request.** For each owner and each side their agents wait for,
 the hub files one personal `consent` request (§7, "Personal requests")
-to that owner, once per owner boundary (the reading above): `to:
+to that owner, once per owner pair (`req-7dbe1thw7mf1`, above): `to:
 "human:<owner id>"`, `filed_by: "hub"`, `project: null`, title `<handle
 of the side's human> and their agents want to chat with your agents`.
 Its `summary` names each waiting agent with its chats, their projects,
-who added whom and which of that side's participants are in them. While
+who added whom and which of that side's participants are in them; the
+inbox shows a checkbox per waiting agent, all ticked, and one for that
+side's human, not ticked. While
 it is open, a further agent or chat waiting for the same side joins it:
 the hub updates its `summary` and files no second request. Its replies:
 
@@ -14356,15 +14362,18 @@ the hub updates its `summary` and files no second request. Its replies:
 | `no` | the waiting agents leave every chat in which they wait for that side, with `reason: "declined"`; nothing is kept, so a later chat asks again |
 | `block` | a deny entry `{agents: the waiting agents, owner_id: that side}`, and they leave those chats with `reason: "denied_participant"` |
 
-An allow reply writes one entry. By default it covers every agent
-waiting for that side at the time of the answer (`agents`) and the
-participants of that side in their chats: their agents as
-`their_agents`, and `their_human: true` when the human is one of them.
-The answer may set the reach and the rules beside the `reply_id`, on
+An allow reply writes one entry per ticked agent: the hub keeps each
+allow per agent (`req-7dbe1thw7mf1`). By default every agent waiting
+for that side at the time of the answer is ticked, and each entry
+covers the agents of that side in its chats as `their_agents`, with
+`their_human: false`; the human is covered only when the owner ticks
+it (`chat_access.their_human: true`, `req-ssgyxfs5wdjw`). An unticked
+agent goes on waiting. The answer may set the reach and the rules beside the `reply_id`, on
 this request only: `chat_access: {agents?, their_agents?, their_human?,
 allowed?, denied?}` in `POST /requests/{id}/answer` (§7). When an agent
-still waits for that side after the answer, because the reach left a
-participant or an agent out, the hub files a new request at once. When
+still waits for that side after the answer, because it was unticked or
+the reach left a participant out (the side's human included), the hub
+files a new request at once. When
 an entry's `until` passes, the agents it admitted wait again in each
 open chat that needs it, and the hub files a new request. The request
 is withdrawn by the hub (reason `withdrawn`) when nothing waits for it

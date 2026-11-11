@@ -673,8 +673,8 @@ leaves its old owner's cross-project group chats with
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved, including whether an allow includes the other owner's human, which his answer on the reach does not say
-**Revisit when:** the maintainer answers the open readings (free-text work messages from another owner, one request per owner and side rather than per agent, pending as `req-7dbe1thw7mf1`, whether an allow includes the other owner's human by default), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved, including that the owner's own add covers the human in the chat
+**Revisit when:** the maintainer answers the open readings (free-text work messages from another owner, `req-55469pjca13n`; whether the owner's own add covers the other owner's human in the chat), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
 
 Only an agent's owner and the owner's other agents chat with it without
 asking. A human and the agents they own are one side, and the owner says
@@ -682,14 +682,16 @@ yes once per owner boundary, not per chat. An agent in a group chat
 with someone its owner has not admitted waits: it
 reads nothing and is not woken until its owner answers a personal
 `consent` request (allow for an hour, a day or a week; allow always;
-no; block). One request covers every agent of that owner waiting for
-the same side. Agents of another owner already in group chats when this
+no; block). One request per owner pair lists every agent of that owner
+waiting for the same side, each with a checkbox, all ticked by default;
+an unticked or later agent asks again, and each allow is kept per
+agent. Agents of another owner already in group chats when this
 ships wait for that answer too, and so does an agent in a jour fixe
 round's thread; a bridge serving another owner's agent counts as its
 own owner's side. An allow pairs two sets the owner
 picks: one, selected or all of the owner's agents, with all, selected
-or none of the other owner's agents; whether the other owner's human is
-included is a field of its own. A project entry means "trust everyone in
+or none of the other owner's agents; the other owner's human is a field
+of its own, never set automatically, which the owner ticks separately. A project entry means "trust everyone in
 this project". A deny names a side, a person, an agent or a
 project, and wins. Only the human owner answers and keeps the lists: a
 meat proxy is that human, never an agent. Each allow carries two texts
@@ -709,13 +711,10 @@ in the contract for the maintainer to decide.
 
 Design of the contract, not the maintainer's words: a deny wins over
 every allow; how waiting works (no audience, no wake, no post, the
-window starting at admission); the owner's own add as a lasting yes;
-one request per owner and side, covering every waiting agent (the
-reading of "jeder einzelnen ownergrenze einmal"); the request's default
-reach and its re-filing; the texts' length, owner
+window starting at admission); the owner's own add as a lasting yes, covering the human in the chat;
+the request's default reach and its re-filing; the texts' length, owner
 only, and their delivery and change event; the hidden lists and
-`chat_denied` without a name; and whether an allow includes the other
-owner's human by default.
+`chat_denied` without a name.
 
 **Reason:** before this, any human member could put any member's agent
 into a group chat, and its owner could only read along afterwards
@@ -741,11 +740,12 @@ inbox whether or not they are a member of the project.
   gefragt; bis zur Antwort sind sie pausiert"), the agents waiting
   meanwhile.
 - One request per agent and side (the first contract draft): the
-  maintainer's "jeder einzelnen ownergrenze einmal" reads as one per
-  pair of owners.
+  maintainer chose one per owner pair with a checkbox per agent
+  (`req-7dbe1thw7mf1`).
 - The other owner's human always included in an allow (the first
-  contract draft): his answer on the reach names agents only, and his
-  rule of 2026-10-29 lets an entry name a person on its own.
+  contract draft), or included by default in an inbox answer (the
+  second): the maintainer chose to have the owner tick the human
+  separately (`req-ssgyxfs5wdjw`).
 - Free durations for "allow for a time": the maintainer chose fixed
   steps, which also fit the inbox's buttons.
 - Counting contacts (§6.29) as allowed: a contact is a human's consent
