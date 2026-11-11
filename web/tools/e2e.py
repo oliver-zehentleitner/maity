@@ -1133,6 +1133,7 @@ def scenario(run: Run, page: Page) -> None:
     wide_lines_step(run, page, alpha, task["id"])
     note_edit_survives_redraw_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
+    pinned_list_order(run, page)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
     seq_links_step(run, page, alpha, beta, agent_id, task["id"])
@@ -1673,6 +1674,145 @@ def seq_links_step(run: Run, page: Page, alpha: Path, beta: Path, agent_id: str,
     # The 404 asked for, the hub's one answer for hidden and missing.
     run.problems = [p for p in run.problems if p != f"GET /api/v1/projects/owner/e2e-alpha/events/{hidden} answered 404"]
     no_problems(run, "seq links")
+
+
+def _csrf(page: Page) -> dict[str, str]:
+    token = page.evaluate(
+        """() => {
+          const row = document.cookie.split('; ').find((part) => part.startsWith('maity_csrf='));
+          return row ? decodeURIComponent(row.slice('maity_csrf='.length)) : '';
+        }"""
+    )
+    assert token, "the session has no CSRF cookie"
+    return {"X-CSRF-Token": token}
+
+
+def _chat_titles(page: Page) -> list[str]:
+    return page.locator(".chat-list a.conv .conv-title").all_inner_texts()
+
+
+def _bands_hold(titles: list[str], where: str) -> None:
+    """Pinned with unread, quiet pins, unpinned with unread, then a chat with none."""
+    positions = [titles.index(name) for name in ("Pinned new", "Pinned quiet", "Open new")]
+    assert positions == sorted(positions) and titles.index("Open new") < titles.index("E2E Agent"), (
+        where, titles,
+    )
+
+
+def pinned_list_order(run: Run, page: Page) -> None:
+    """Both chat lists, rendered (§9.3 "Pinned", decision 1820f379-0c1f-47c1-9352-672d62cdaf62).
+
+    Four bands: pinned with unread, quietly pinned, unpinned with unread, the rest.
+    Reading a pinned chat drops it into the quiet pins and keeps it above every
+    unpinned chat, including one that still has unread messages.
+    """
+    run.step("chat list: pinned chats stay above unpinned ones, a read pinned chat included")
+    # One more of the owner's agents, so three group chats can exist beside the direct
+    # one (a group of the owner and only their own agent is the direct chat). Removed
+    # again at the end: the later steps count this project's agents as the first one.
+    # The Agents tab follows whichever project is open, so start on this one's page.
+    page.goto(f"{run.base}/owner/e2e-alpha/agents")
+    groups: list[str] = []
+    extra: tuple[str, str] | None = None
+    try:
+        url, code = join_line(run, page, "e2e-alpha", "room-mate", display="Room mate")
+        clone = run.clone("clone-room-mate")
+        out = run.maity(
+            clone, "join", url, "--code", code, "--harness", "e2e", "--model", "none",
+            "--no-pointer", "--json",
+        )
+        found = re.search(r"agt-[0-9a-z]+", out)
+        assert found, out
+        extra_id = found.group(0)
+        profiles = page.request.get(f"{run.base}/api/v1/agents").json()["items"]
+        extra = ("room-mate", next(item["id"] for item in profiles if item["handle"] == "room-mate"))
+        members = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+        agent_id = next(item["id"] for item in members if item.get("handle") == "e2e-agent")
+        owner_id = page.request.get(f"{run.base}/api/v1/me").json()["member"]["id"]
+        headers = {**_csrf(page), "Content-Type": "application/json"}
+
+        def create_group(title: str) -> str:
+            made = page.request.post(
+                f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations",
+                headers=headers,
+                data=json.dumps({"title": title, "participants": [agent_id, extra_id]}),
+            )
+            assert made.status == 201, (title, made.status, made.text())
+            chat_id = made.json()["id"]
+            groups.append(chat_id)
+            return chat_id
+
+        pinned = create_group("Pinned new")
+        create_group("Pinned quiet")
+        open_id = create_group("Open new")
+        # The unpinned unread message first, so the pinned one's is the newer activity.
+        run.maity(clone, "say", "--chat", open_id, "Unread, and not pinned.")
+        run.maity(clone, "say", "--chat", pinned, "Unread, and pinned.")
+        page.goto(f"{run.base}/owner/e2e-alpha/chat")
+        expect(page.locator(".chat-list .conv-title", has_text="Pinned new")).to_be_visible()
+        page.locator(".chat-list-pane button.pin-column-toggle").click()
+
+        def pin(title: str) -> None:
+            row = page.locator(".chat-list li").filter(has=page.locator(".conv-title", has_text=title))
+            row.locator("button.pin-toggle").click()
+            expect(row.locator("button.pin-toggle")).to_have_attribute("aria-pressed", "true")
+
+        pin("Pinned new")
+        pin("Pinned quiet")
+        _bands_hold(_chat_titles(page), "before reading")
+
+        # The open chat is drawn with no unread count before the list is read again,
+        # so wait for the list the hub serves after the messages were read.
+        def read_back(response) -> bool:
+            if response.request.method != "GET" or response.status != 200:
+                return False
+            if "/projects/owner/e2e-alpha/conversations" not in response.url:
+                return False
+            try:
+                items = response.json().get("items") or []
+            except (ValueError, TypeError):
+                return False
+            return any(item.get("id") == pinned and not item.get("unread") for item in items)
+
+        with page.expect_response(read_back):
+            page.locator(".chat-list a.conv").filter(
+                has=page.locator(".conv-title", has_text="Pinned new")
+            ).click()
+        expect(page.locator("h2.group-title")).to_have_text("Pinned new")
+        expect(page.locator("ol.messages")).to_contain_text("Unread, and pinned.")
+        # Quiet pins, the one just read included, stay above the unpinned chat that still has unread.
+        _bands_hold(_chat_titles(page), "after reading the pinned chat")
+        expect(page.locator(".chat-list a.conv").filter(
+            has=page.locator(".conv-title", has_text="Pinned new")
+        )).not_to_have_class(re.compile(r"\bunread\b"))
+        expect(page.locator(".chat-list a.conv").filter(
+            has=page.locator(".conv-title", has_text="Open new")
+        )).to_have_class(re.compile(r"\bunread\b"))
+        page.goto(f"{run.base}/chats")
+        expect(page.locator(".chat-list-pane h2")).to_have_text("Chats")
+        _bands_hold(_chat_titles(page), "across projects")
+        run.shot(page, "chats-pinned-on-top")
+        no_problems(run, "pinned list order")
+    finally:
+        toggle = page.locator(".chat-list-pane button.pin-column-toggle")
+        if toggle.count() and toggle.get_attribute("aria-pressed") == "true":
+            toggle.click()
+        if groups or extra:
+            headers = _csrf(page)
+            # The owner leaves each room after the first agent does, so none stays
+            # to be read along, and the helper's profile goes with its membership.
+            for chat_id in groups:
+                for member in (agent_id, owner_id):
+                    left = page.request.delete(
+                        f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations/{chat_id}/participants/{member}",
+                        headers=headers,
+                    )
+                    assert left.status == 200, (chat_id, member, left.status, left.text())
+            if extra:
+                gone = page.request.delete(
+                    f"{run.base}/api/v1/agents/{extra[1]}?cascade=true", headers=headers
+                )
+                assert gone.status == 200, (extra[0], gone.status, gone.text())
 
 
 def group_chat_form_step(run: Run, page: Page) -> None:

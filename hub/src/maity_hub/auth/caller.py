@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, and_, select, update
+from sqlalchemy import Connection, and_, or_, select, update
 
 from maity_hub import availability, clock, timing
 from maity_hub import tables as t
@@ -31,6 +31,7 @@ from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.events import Actor
 from maity_hub.net import Origin
+from maity_hub.seen import SEEN_EVERY, latest_call
 
 SESSION_COOKIE = "maity_session"
 CSRF_COOKIE = "maity_csrf"
@@ -209,6 +210,9 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     # sees what the gate's and the pending check's own reads used to see after these writes,
     # under READ COMMITTED too (#1540 review), and it runs once instead of three times
     # (tsk-6srccd2r1h62). A refusal below rolls the writes back with the transaction.
+    # They run at most once every `SEEN_EVERY` (§2.4): within it the session's update matches
+    # nothing, writes nothing and takes no lock, and the human's and the memberships' are not
+    # sent; the read below then tells a live session from an ended one.
     owner = (
         select(t.human_session.c.human_id)
         .where(t.human_session.c.id_hash == id_hash)
@@ -219,20 +223,20 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .where(
             t.human_session.c.id_hash == id_hash,
             t.human_session.c.ended_at.is_(None),
-            # session_alive(): before its end and within the idle time
+            # session_alive(): before its end and within the idle time of the latest call
             t.human_session.c.expires_at > now,
-            t.human_session.c.last_seen_at > now - SESSION_IDLE,
+            t.human_session.c.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,
+            t.human_session.c.last_seen_at <= now - SEEN_EVERY,
         )
         .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
     )
-    if touched.rowcount != 1:
-        raise unauthenticated("the session has ended or expired")
-    conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
-        .values(last_seen_at=now)
-    )
+    if touched.rowcount == 1:
+        conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
+            .values(last_seen_at=now)
+        )
     # Whether this is the instance admin, for `Server-Timing` (`timing.admit`): in this same
     # read rather than one more on every cookie call, as a join that finds the human only
     # when it is the earliest account.
@@ -247,7 +251,11 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .join(t.human, t.human.c.id == t.human_session.c.human_id)
         .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
         .where(t.human_session.c.id_hash == id_hash)
-    ).one()
+    ).first()
+    if row is None or (
+        touched.rowcount != 1 and (row.ended_at is not None or not session_alive(row, now))
+    ):
+        raise unauthenticated("the session has ended or expired")
     if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
         raise unauthenticated("the session has ended or expired")
     if facts.method in UNSAFE_METHODS:
@@ -304,13 +312,15 @@ def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:
 def session_alive(row: Any, now: datetime) -> bool:
     last_seen: datetime = row.last_seen_at
     expires: datetime = row.expires_at
-    return now < expires and now < last_seen + SESSION_IDLE
+    # The idle time runs from the latest call the stored time may stand for (`seen`), so a
+    # session in use never expires early.
+    return now < expires and now < latest_call(last_seen) + SESSION_IDLE
 
 
 def session_expires_at(row: Any) -> datetime:
     last_seen: datetime = row.last_seen_at
     expires: datetime = row.expires_at
-    return min(expires, last_seen + SESSION_IDLE)
+    return min(expires, latest_call(last_seen) + SESSION_IDLE)
 
 
 # --- agents ------------------------------------------------------------------------
@@ -537,13 +547,26 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
         .where(t.credential.c.id == credential_id)
         .values(last_used_at=now, last_used_via=via)
     )
+    # Presence at most once every `SEEN_EVERY` (§2.4): within it these match nothing and write
+    # nothing.
     conn.execute(
-        update(t.membership).where(t.membership.c.id == membership_id).values(last_seen_at=now)
+        update(t.membership)
+        .where(
+            t.membership.c.id == membership_id,
+            or_(
+                t.membership.c.last_seen_at.is_(None),
+                t.membership.c.last_seen_at <= now - SEEN_EVERY,
+            ),
+        )
+        .values(last_seen_at=now)
     )
     if session is not None:
         conn.execute(
             update(t.agent_session)
-            .where(t.agent_session.c.id == session.id)
+            .where(
+                t.agent_session.c.id == session.id,
+                t.agent_session.c.last_seen_at <= now - SEEN_EVERY,
+            )
             .values(last_seen_at=now)
         )
     instance: str = row.instance

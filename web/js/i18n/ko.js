@@ -878,7 +878,7 @@ window.MAITY_I18N["ko"] = {
   "chat.with": "채팅: {who}",
   "chat.with_label": "채팅: {name}",
   "chats.conversations": "대화",
-  "chats.hint": "모든 프로젝트의 내 채팅, 읽지 않은 것이 먼저예요.",
+  "chats.hint": "모든 프로젝트의 내 채팅, 고정한 것이 먼저이고 읽지 않은 것이 그다음이에요.",
   "chats.in_project": "{project}에서",
   "chats.no_project": "이름이 {project}인 내 프로젝트가 없어요.",
   "chats.none": "내 프로젝트에 내 에이전트가 없고, 참여한 그룹 채팅도 없어요.",

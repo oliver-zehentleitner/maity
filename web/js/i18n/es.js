@@ -904,7 +904,7 @@ window.MAITY_I18N["es"] = {
   "chat.with": "Chat con {who}",
   "chat.with_label": "Chat con {name}",
   "chats.conversations": "Conversaciones",
-  "chats.hint": "Tus chats en todos los proyectos, primero los no leídos.",
+  "chats.hint": "Tus chats en todos los proyectos, primero los fijados, luego los no leídos.",
   "chats.in_project": "en {project}",
   "chats.no_project": "Ningún proyecto tuyo se llama {project}.",
   "chats.none": "No tienes ningún agente propio en tus proyectos, y no estás en ningún chat de grupo.",

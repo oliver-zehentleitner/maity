@@ -262,13 +262,15 @@ def test_who_is_online_is_counted_and_named_as_the_board_names_them(world: World
 
 
 def test_an_away_or_paused_member_is_not_counted_online(world: World, hub: Any) -> None:
+    from maity_hub.seen import SEEN_EVERY
     from maity_hub.views import ONLINE
 
     worker = public_snapshot.Worker(world.migrated, hub)
     seen(world, world.anna_member, clock.now())
     worker.run_once()
     before = snapshot(world)["online"]["humans"]
-    seen(world, world.anna_member, clock.now() - ONLINE - timedelta(seconds=5))  # away
+    # Away: past ONLINE from the latest call the stored time stands for (§2.4).
+    seen(world, world.anna_member, clock.now() - ONLINE - SEEN_EVERY - timedelta(seconds=5))
     worker.run_once()
     assert snapshot(world)["online"]["humans"] == before - 1
     seen(world, world.anna_member, clock.now())
