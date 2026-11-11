@@ -5942,12 +5942,12 @@ where one is active). The element in the columns that had the focus, a
 card's title link included, keeps it, after a failed read too, where it
 still stands in a column; a card now folded under a parent that came with
 the closed cards, or gone from the columns, hands the focus to the status
-line. The opened card's panel keeps its card part as it is across that
-draw when the card itself is unchanged: the focus, what the reader chose or
-typed there and has not saved, and an editor opened in it (a new subtask's
-form) with its draft. A card the read brings changed is drawn anew in the
-panel: the choices in its controls are carried over and the focus stays on
-the same control, but an editor opened in it closes. A reload after a write
+line. The opened card's panel draws its card part anew in that draw, so
+its subtask list, dependency lines and related and parent lists read the
+closed cards that came with it: what the reader chose or typed in its
+controls and has not saved is carried over, a new subtask's form opened in
+it moves into the new part with its draft, and the focus stays on the same
+control where it is drawn again, on the panel otherwise. A reload after a write
 draws the panel anew as before. A board left from a
 closed card finds that card now. A reload after a write
 supersedes the first read: an answer is drawn only if no later read's
@@ -5971,12 +5971,12 @@ columns, the ones a reader works in, had long answered.
   loaded cards mean the window again: it brings the wait back for a
   search. The loaded cards as the test, as before: wrong while the closed
   group is read (review of #1622).
-- Always redrawing the panel's card part in the late draw and carrying the
-  reader's choices over (round 3 of #1622): an editor the reader opened
-  after the panel was drawn (a new subtask's form) has no control in the
-  redrawn part to carry its draft to, and it closed. The part is now kept
-  when its card is unchanged; its related and parent lists then lack the
-  closed cards that came with the late draw until the next draw, a smaller
-  loss than a draft. A card the reconcile pass changed is still drawn anew,
-  since stale data in the panel would be worse.
+- Keeping the panel's card part as it is when its card is unchanged
+  (round 4 of #1622), so that an editor opened in it keeps its draft: the
+  part's subtask list and dependency lines read the cards loaded at the
+  first draw, the open groups' alone, and went on saying that a closed
+  subtask the columns now showed was not loaded. Redrawing the part and
+  moving the open form into it keeps the draft without stale lists, on a
+  changed card as well. Redrawing without moving the form (round 3) lost
+  the draft: the form has no control in the redrawn part to carry it to.
 

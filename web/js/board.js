@@ -1011,14 +1011,14 @@ window.Maity = window.Maity || {};
       const all = Array.from(root.querySelectorAll(FOCUSABLE));
       return all.find((e) => controlKey(e, all) === key) || null;
     };
-    // The late draw, the one redraw no action of the reader starts, leaves the panel's card part as
-    // it is when its card is unchanged (panelData), an editor opened in it and its draft included.
-    // A card the reconcile pass changed is drawn anew: what the reader chose or typed in its controls
-    // and has not saved, each control's state against how it was drawn (panelDrawn), is carried onto
-    // the controls drawn anew; an editor opened later in it closes (review of #1622).
+    // The late draw, the one redraw no action of the reader starts, draws the panel's card part
+    // anew, since its subtask list and dependency lines read the closed cards that came with it
+    // (review of #1622). What the reader chose or typed in its controls and has not saved, each
+    // control's state against how it was drawn (panelDrawn), is carried onto the controls drawn
+    // anew, and an open New subtask form is moved into the new part as it is, its draft and the
+    // focus in it included, where the new part offers one.
     let panelDrawn = null;
     let panelPart = null;
-    let panelData = null;
     const CONTROLS = "input, select, textarea";
     const controlsOf = (root) => {
       const all = Array.from(root.querySelectorAll(CONTROLS));
@@ -1036,11 +1036,18 @@ window.Maity = window.Maity || {};
       else if (el.tagName !== "SELECT" || Array.from(el.querySelectorAll("option")).some((o) => o.getAttribute("value") === state)) el.value = state;
     };
     const drawnState = (part) => new Map(controlsOf(part).map(([k, e]) => [k, stateOf(e)]));
+    // The open New subtask form of a part (its button and box), found by the button's key.
+    const openEditor = (part, id) => {
+      const start = Array.from(part.querySelectorAll("button")).find((b) => b.getAttribute("data-focus") === "subtask:" + id);
+      return start ? { start, open: start.getAttribute("aria-expanded") === "true" } : null;
+    };
     function showPanelPart(part, keepTyped, data) {
-      panelData = JSON.stringify(data);
       const typed = keepTyped && panelPart && panelDrawn
         ? controlsOf(panelPart).filter(([k, e]) => panelDrawn.has(k) && panelDrawn.get(k) !== stateOf(e)).map(([k, e]) => [k, stateOf(e)])
         : [];
+      const was = keepTyped && panelPart ? openEditor(panelPart, data.id) : null;
+      const spot = was && was.open ? openEditor(part, data.id) : null;
+      if (spot) spot.start.parentNode.parentNode.replaceChild(was.start.parentNode, spot.start.parentNode);
       if (panelPart) panel.update(part);
       panelPart = part;
       panelDrawn = drawnState(part);
@@ -1109,7 +1116,6 @@ window.Maity = window.Maity || {};
       panelCard = null;
       panelPart = null;
       panelDrawn = null;
-      panelData = null;
     }
 
     function shown(c) {
@@ -1155,9 +1161,7 @@ window.Maity = window.Maity || {};
           : null);
       if (panel) {
         const data = byId[panel.id] || panelCard;
-        if (!(keepTyped && panelPart && JSON.stringify(data) === panelData)) {
-          showPanelPart(card(ctx, data, byId, manage, true), !!keepTyped, data);
-        }
+        showPanelPart(card(ctx, data, byId, manage, true), !!keepTyped, data);
       }
       if (marked) {
         let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
