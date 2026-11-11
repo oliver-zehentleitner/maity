@@ -11499,7 +11499,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6005"]),
     "event: a project message about a card opens in Messages at its seq, marked, the card linked beside it, after one read of the event "
     + win.location.hash + " " + evMarked() + " " + JSON.stringify(evReads));
-  // From here on no listing read: what Messages renders on its own for the cases above is not this page's.
+  // From here on each case counts its own listing reads, none expected: what Messages reads on its own for the cases
+  // above is not this page's.
   evLists.length = 0;
   // 6001 was removed above (its subject null, as the hub gives a message without a card): a removed project message
   // never opens in Messages, though the listing holds its tombstone; without a card it is drawn on its page, removed.
@@ -11509,6 +11510,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "event: a removed project message without a card stays drawn on its page, removed, not sent to Messages, no listing read "
     + win.location.hash + " " + JSON.stringify(evLists));
   // A removed project message about a card (its subject kept through the redaction, §8.5) stays on its card.
+  evLists.length = 0;
   win.Maity.api.get = (p, ...r) => { evList(p); return p === "/projects/maintainer/maity/events/6001"
     ? evGet(p, ...r).then((e) => Object.assign({}, e, { subject: { type: "task", id: "tsk-0004" } }))
     : evGet(p, ...r); };
@@ -11519,6 +11521,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A former group participant's tombstone (fmzu, #1629): the hub serves the redacted message with no conversation
   // (the chat is no longer the reader's) and a tombstone payload with no type. About a card it goes to that card
   // (§8.9: its subject, else the event's page).
+  evLists.length = 0;
   win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7003"
     ? Promise.resolve({ seq: 7003, kind: "message", at: "2026-10-22T09:07:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: { type: "task", id: "tsk-0004" },
       audience: ["member:agt-b", "member:hum-maintainer"], payload: { redacted: true, reason: null, by: "hum-maintainer", at: "2026-10-22T09:08:00Z" }, redacted: true, conversation_id: null })
@@ -11528,6 +11531,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && evLists.length === 0,
     "event: a chat's tombstone about a card the reader can no longer open in its chat opens that card, no listing read " + win.location.hash + " " + JSON.stringify(evLists));
   // Without a subject it is drawn on its page, not sent to Messages, which lists no chat message and would say "not reached".
+  evLists.length = 0;
   win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7002"
     ? Promise.resolve({ seq: 7002, kind: "message", at: "2026-10-22T09:05:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["member:agt-b", "member:hum-maintainer"],
       payload: { redacted: true, reason: "posted by mistake", by: "hum-maintainer", at: "2026-10-22T09:06:00Z" }, redacted: true, conversation_id: null })
