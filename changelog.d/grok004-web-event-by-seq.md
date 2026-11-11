@@ -10,6 +10,7 @@
   scrolled to and marked, a chat or Messages reading at most ten older
   pages for it. An event with no such place, such as a removed message
   whose tombstone has no type and no conversation for the reader, is shown
-  on the page.
+  on the page, and an answer that arrives after the reader left the page
+  moves nothing.
   A hidden event and a missing one both show "not visible"
   (tsk-6g2h8dag2fkg).

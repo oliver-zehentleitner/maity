@@ -54,14 +54,23 @@ window.Maity = window.Maity || {};
     const heading = h("h2", null, M.t("event.title", { seq: raw || "" }));
     const notVisible = () => append(root, heading, h("p", { class: "event-not-visible" }, M.t("event.not_visible")));
     if (!seq || (args && args.length > 1)) { notVisible(); return; }
+    // The page is left while its read is on its way (another link, back): the answer then
+    // changes nothing, above all not the address, which is no longer this page's. The app
+    // drops a left view's drawing only after the view returns, too late for a redirect.
+    const at = M.route.current().path;
+    let disposed = false;
+    if (ctx.onDispose) ctx.onDispose(() => { disposed = true; });
+    const left = () => disposed || M.route.current().path !== at;
     let e;
     try {
       e = await M.api.get(ctx.base + "/events/" + seq);
     } catch (err) {
+      if (left()) return;
       // §8.9: hidden and missing are one answer, and so are they here.
       if (err.status === 404 || (err.status === 400 && err.code === "invalid")) { notVisible(); return; }
       throw err;
     }
+    if (left()) return;
     const place = placeOf(ctx, e);
     if (place && M.route.isRoute(place)) { M.route.go(place + "#seq-" + seq, { replace: true }); return; }
     append(root, heading, h("p", { class: "muted" }, M.t("event.here")), drawn(ctx, e));

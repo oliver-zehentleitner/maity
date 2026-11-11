@@ -11203,6 +11203,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/maintainer/maity/events/7002" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7002"
     && main.querySelector("article.event-one p.msg-redacted"),
     "event: a chat's tombstone the reader can no longer open in its chat (no conversation, no type) stays drawn on its page, not sent to Messages " + win.location.hash);
+  // The answer comes after the reader left the page (fmzu, #1629): the event's page is gone, its redirect with it.
+  let evRelease = null;
+  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/events/7991"
+    ? new Promise((resolve) => { evRelease = () => resolve({ seq: 7991, kind: "message", at: "2026-10-22T09:10:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null,
+      audience: ["all"], payload: { type: "notice", to: "all", body: "late" }, redacted: false, conversation_id: null }); })
+    : evGet(p, ...r));
+  await go("#/maintainer/maity/events/7991"); for (let k = 0; k < 4; k++) await tick();
+  const evPending = typeof evRelease === "function";
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  if (evRelease) evRelease();
+  for (let k = 0; k < 6; k++) await tick();
+  expect(evPending && win.location.hash === "#/account" && main.querySelector("section.view-account"),
+    "event: an answer that comes after the reader left for another page moves nothing, the address stays where the reader went " + win.location.hash);
   win.Maity.api.get = evGet;
   await go("#/maintainer/maity/inbox");
   // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).

@@ -285,7 +285,7 @@ The page's link to `/explore` is a page load, as every link there is
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11; its review (a chat's tombstone without a conversation), 2026-11-11
+**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11; its review (a chat's tombstone without a conversation, an answer after the page was left), 2026-11-11
 **Revisit when:** the hub serves a chat's messages around a given `seq` (then a chat can open at it in one read), the card panel lists the messages about a card, or readers report links that stop short of an old message
 
 `/<owner>/<slug>/events/<seq>` (`js/event.js`, no tab) reads
@@ -302,7 +302,10 @@ other mark), so it too is drawn on the event's page, as removed, and not
 marked in Messages: the price of never guessing a project message.
 `#seq-<n>` follows the place's address (a place on the page,
 `M.route.seqTarget()`). An event with none of these places, that tombstone
-among them, is drawn on the page itself. The place marks the message (`.seq-target`) and scrolls to
+among them, is drawn on the page itself. An answer that arrives after the
+reader left the page (another link, back) changes nothing: the view checks
+before it redirects that it is still the page shown, as the app's own check
+of a render comes only after the view returns. The place marks the message (`.seq-target`) and scrolls to
 it. A direct or group chat reads older pages one at a time, as Show
 earlier does, only while the message could still be in them, and at most
 ten (`REVEAL_PAGES`, `js/chat.js` `reveal`). Messages does the same with
