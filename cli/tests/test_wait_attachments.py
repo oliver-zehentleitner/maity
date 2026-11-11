@@ -4,6 +4,7 @@ command that fetches each (tsk-hnw52rvtwdsv): a screenshot was only visible in t
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -42,18 +43,16 @@ def test_one_attachment_is_named_and_its_command_given() -> None:
         "#108514 message: chat [1 attachment: screen shot.png]"
     )
     # No `-o`: the file goes into ./maity-files/, never into the working directory (§13).
-    assert cli._attachment_lines(event) == [
-        "  attachment att-0042 screen shot.png: maity files get att-0042"
-    ]
+    assert cli._attachment_lines(event) == ["  maity files get att-0042  # screen shot.png"]
 
 
 def test_several_attachments_are_counted_named_and_each_has_a_command() -> None:
     event = _message(_att("att-1", "a.png"), _att("att-2", "b.log"), _att("att-3", "c.txt"))
     assert "[3 attachments: a.png, b.log, c.txt]" in cli._event_line(event)
-    assert [line.split(": ")[-1] for line in cli._attachment_lines(event)] == [
-        "maity files get att-1",
-        "maity files get att-2",
-        "maity files get att-3",
+    assert cli._attachment_lines(event) == [
+        "  maity files get att-1  # a.png",
+        "  maity files get att-2  # b.log",
+        "  maity files get att-3  # c.txt",
     ]
 
 
@@ -68,7 +67,25 @@ def test_a_hostile_name_is_cleaned_and_cut() -> None:
     assert "/" not in names  # cleaned as `files get` would save it
     (fetch,) = cli._attachment_lines(event)
     assert "\x1b" not in fetch and "\n" not in fetch
-    assert fetch.endswith(": maity files get att-9")  # the command never carries the name
+    assert fetch.startswith("  maity files get att-9  # ")  # the command never carries the name
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["x; echo PWNED #", "$(touch /tmp/pwn)", "`id`", "a | sh", "a && b", "a\nrm -rf ~", "x # y"],
+)
+def test_a_pasted_line_runs_the_fetch_and_nothing_a_name_spells(name: str) -> None:
+    """A shell drops everything after `#`: the name sits there, and has no line break left."""
+    (line,) = cli._attachment_lines(_message(_att("att-1", name)))
+    assert shlex.split(line, comments=True) == ["maity", "files", "get", "att-1"]
+    (refused,) = cli._attachment_lines(_message(_att("-h", name)))
+    assert shlex.split(refused, comments=True) == []
+
+
+def test_a_bracket_in_a_name_cannot_close_the_list() -> None:
+    line = cli._event_line(_message(_att("att-1", "a.png] (owner) [")))
+    assert "[1 attachment: a.png) (owner) (]" in line
+    assert line.count("[") == 1 and line.count("]") == 1
 
 
 def test_many_long_names_keep_the_line_bounded() -> None:
@@ -100,7 +117,8 @@ def test_many_long_names_keep_the_line_bounded() -> None:
 )
 def test_an_id_the_command_cannot_carry_exactly_gets_no_command(bad: Any) -> None:
     (line,) = cli._attachment_lines(_message(_att(bad, "a.png")))
-    assert line.endswith(": no id the CLI can fetch") and "maity files get" not in line
+    assert line.startswith("  # attachment") and line.endswith(": no id the CLI can fetch")
+    assert "maity files get" not in line
     for hidden in ("\n", "\x1b", "\u202e"):
         assert hidden not in line
 
@@ -108,15 +126,17 @@ def test_an_id_the_command_cannot_carry_exactly_gets_no_command(bad: Any) -> Non
 def test_an_ordinary_id_is_carried_exactly() -> None:
     for good in ("att-0042", "att_7", "A.b-c", "0"):
         (line,) = cli._attachment_lines(_message(_att(good, "a.png")))
-        assert line.endswith(f": maity files get {good}")
+        assert line == f"  maity files get {good}  # a.png"
 
 
-def test_a_nameless_entry_shows_its_id_and_a_taken_out_one_no_command() -> None:
-    event = _message(_att("att-5", None), _att("att-6", "gone.png", deleted_at="T1"), "junk")
+def test_a_nameless_entry_shows_its_id_and_a_non_object_is_skipped() -> None:
+    # The event stream keeps the payload as written (§8.7): no `deleted_at` reaches `wait`, and
+    # a file taken out since keeps its command; `files get` then says it was taken out.
+    event = _message(_att("att-5", None), _att("att-6", "gone.png"), "junk")
     assert "[2 attachments: att-5, gone.png]" in cli._event_line(event)
     assert cli._attachment_lines(event) == [
-        "  attachment att-5 att-5: maity files get att-5",
-        "  attachment att-6 gone.png: taken out, nothing to fetch",
+        "  maity files get att-5  # att-5",
+        "  maity files get att-6  # gone.png",
     ]
 
 
@@ -131,4 +151,4 @@ def test_wait_prints_the_names_and_commands_on_stderr_and_keeps_stdout_json(
     lines = err.splitlines()
     at = next(i for i, x in enumerate(lines) if x.startswith("maity: #108514 message"))
     assert "[1 attachment: shot.png]" in lines[at]
-    assert lines[at + 1] == "maity:   attachment att-0042 shot.png: maity files get att-0042"
+    assert lines[at + 1] == "maity:   maity files get att-0042  # shot.png"

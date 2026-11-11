@@ -692,11 +692,13 @@ def _event_attachments(event: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _attachment_label(att: dict[str, Any]) -> str:
     """One attachment as the event line names it: the name it would be saved under
-    (`file_name`), cleaned for a line and cut, or its id when it has no name."""
+    (`file_name`), cleaned for a line and cut, or its id when it has no name. Square brackets
+    become round ones, so a name cannot close the list early and fake what follows it."""
     name = att.get("name")
     label = onboarding.inline(file_name(name)) if isinstance(name, str) and name else ""
     if not label:
         label = onboarding.inline(att.get("id") or "?")
+    label = label.replace("[", "(").replace("]", ")")
     return label if len(label) <= ATTACHMENT_NAME_MAX else label[: ATTACHMENT_NAME_MAX - 1] + "…"
 
 
@@ -722,20 +724,20 @@ def _attachment_lines(event: dict[str, Any]) -> list[str]:
     """Under the event line, one line per attachment with the command that fetches it. No
     `-o`: without it `files get` saves into ./maity-files/ under the cleaned name, never into
     the working directory, where a sender's `conftest.py` would be picked up (§13). Only an id
-    FETCHABLE_ID takes gets a command; any other is named, escaped, as one it cannot fetch."""
+    FETCHABLE_ID takes gets a command; any other is named, escaped, as one it cannot fetch.
+    The command comes first and the sender's name after it as a shell comment, and a line
+    without a command is a comment whole: pasted into a shell, a line runs `files get` or
+    nothing, never what a name spells (`x; echo …`). The event stream keeps the payload as it
+    was written (§8.7), so a file taken out since still has its command; `files get` says so."""
     lines = []
     for att in _event_attachments(event):
         raw = att.get("id")
         label = _attachment_label(att)
-        if not isinstance(raw, str) or not FETCHABLE_ID.fullmatch(raw):
-            shown = f" {onboarding.inline(raw)}" if isinstance(raw, str) and raw else ""
-            lines.append(f"  attachment{shown} {label}: no id the CLI can fetch")
-        elif att.get("deleted_at") is not None:
-            lines.append(
-                f"  attachment {onboarding.inline(raw)} {label}: taken out, nothing to fetch"
-            )
+        if isinstance(raw, str) and FETCHABLE_ID.fullmatch(raw):
+            lines.append(f"  maity files get {raw}  # {label}")
         else:
-            lines.append(f"  attachment {raw} {label}: maity files get {raw}")
+            shown = f" {onboarding.inline(raw)}" if isinstance(raw, str) and raw else ""
+            lines.append(f"  # attachment{shown} {label}: no id the CLI can fetch")
     return lines
 
 
@@ -4336,7 +4338,8 @@ def build_parser() -> argparse.ArgumentParser:
         "a human isolated this agent (do not re-arm it then). Meant to run as a "
         "background command on harnesses that wake the agent when one exits. Never run two. "
         "A message's files are part of it: its line on standard error names them, the lines "
-        "under it give the `maity files get` command for each; open them before you answer.",
+        "under it give the `maity files get` command for each it can fetch; open them before "
+        "you answer.",
     )
     p.add_argument(
         "--timeout",
