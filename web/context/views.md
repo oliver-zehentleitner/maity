@@ -5911,7 +5911,8 @@ inferred, the card did not discuss them.
 
 **Id:** 63c48583-5f47-4beb-93be-d4426d45f57b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
 **Evidence:** confirmed
 **Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
 **Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
@@ -5935,6 +5936,50 @@ answers reported; allowing those would have meant a harness exception that could
 failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
 and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
 outside `M.api`: a second client with its own error handling.
+
+## The boot reads one GET /bootstrap and answers its own reads from the parts; an older hub's 404 leaves them to their routes
+
+**Id:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-j591fzgnmspf (the web part of tsk-x4z69ff785y6, the owner's decision of 2026-11-11); the route `GET /bootstrap`, docs/api.md §5.4, on main since #1656; context/performance.md b77c193d, which named this entry's Revisit when as come; web/js/api.js `prime`, web/js/app.js `render`; the boot cases in web/tools/smoke.js and e2e `bootstrap_boot`
+**Revisit when:** the route is measured against the waves (b77c193d), a boot read is added that the bundle does not carry, or every hub the dashboard talks to answers `/bootstrap` (then the fallback can go)
+**See:** views.md#the-boot-reads-the-window-and-the-session-together-me-still-after-the-session — 63c48583-5f47-4beb-93be-d4426d45f57b — as of 2026-11-11
+
+The hub now answers the window, the session and `/me` in one read, and on a project view also the
+project, its members and the event head (63c48583's trigger). A cold drawing (no kept session, not
+the invitation or registration page) first asks `GET /bootstrap`, with `?project=<owner>/<slug>` on
+a project view. `M.api.prime` keeps its parts as one-shot answers for exactly the boot's own reads.
+Those reads stay where they were, in the same order (the window, the session, `/me`, then
+`loadContext`). Each takes its answer from its part, through `requestOnce`'s usual handling:
+the session's language and CSRF token, a 401 that ends the session, the 503 window (its
+`retry_after` taken from `details.until`, since a part has no headers), and `/me`'s time zone.
+An error part becomes the ApiError the single call would have thrown. The parts end once the boot
+has read its context (`unprime`), and at the latest when the drawing returns, whichever way it
+ends (a failure page, the second factor's step, the setup, a window's full page, a visitor's page, a
+pending account): `render` is a small wrapper that calls the drawing and unprimes in a `finally`.
+They serve no read once a newer drawing has started (the `live` check `prime` is given), are
+replaced by a newer drawing's, and last 15 seconds at most. So a poll never gets an old one, and a
+part nobody asked for (the window read a minute ago, a visitor's page) is dropped. The wrapper,
+not a `try/finally` inside the drawing, because that would re-indent the whole drawing, which
+other pull requests touch (review of #1672). An answer
+without parts (an older hub's 404, a limit, a refusal, no answer) keeps nothing, and every read
+goes to its own route as before. `/bootstrap` is a public path: it needs no session.
+
+**Reason:** the order of handling is what 63c48583 kept, because each answer decides whether the
+next matters. Answering the same calls from the bundle keeps that order and all the handling that
+hangs on those calls, while the round trips become one. The fallback keeps a newer dashboard
+working against a hub from before #1656.
+
+**Rejected alternatives:**
+- A boot path of its own that reads the bundle and sets the session, language, window and
+  context itself: a second client beside `M.api`, with the error handling 63c48583 already
+  rejected for a separate `/me` fetch.
+- Keeping the parts until they are asked, without an end: a later poll of `/me` or of the members
+  would get the boot's answer instead of a fresh one.
+- Asking `/bootstrap` on a switch inside the project too: such a switch reuses the kept session,
+  `/me` and project, and reads only the head; the bundle would read more than it saves.
 
 ## A handle field's hint is a sentence of fixed words, with no handle or address filled in
 
