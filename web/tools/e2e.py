@@ -1824,7 +1824,7 @@ def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: st
     title", the Card row and the body; the project's inbox and all projects) the project's name wraps
     inside the box, the bubble and the entry within the screen; the id after the name, and a bare id,
     still stand on one line. 390 and 360 px, light and dark, and 1280 px; a message that arrives in
-    the open chat, a fresh load, and the inbox entry closed and opened again."""
+    the open chat, a fresh load, and the inbox entry closed (another one opened) and opened again."""
     run.step("a long linked reference wraps inside a chat bubble and the inbox detail on a phone")
     long_req = "oliver-zehentleitner/maity/req-jvg545kp0es2"
     long_tsk = f"oliver-zehentleitner/maity/{card_id}"
@@ -1834,6 +1834,7 @@ def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: st
         alpha, "ask", f"Which order for {long_req} and {long_tsk}?\nIt follows {long_req}, see `{long_tsk}`.",
         "--to", "human", "--class", "info", "--task", card_id,
     )).group(0)
+    other = re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", "A short one beside it", "--to", "human", "--class", "info")).group(0)
 
     def fits(where: str, box: str) -> None:
         """The page no wider than the window, the box inside it, every id link of the box inside the box."""
@@ -1893,12 +1894,13 @@ def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: st
                 expect(entry.locator(".title-refs a.id-ref", has_text=long_req)).to_be_visible()
                 expect(entry.locator(".entry-body .summary a.id-ref", has_text=long_req)).to_be_visible()
                 fits(f"{label} at {where}", f"li.entry[data-request='{asked}']")
-                # Closed and opened again: the entry fits either way.
-                entry.locator(".entry-head").first.click()
+                # Closed by opening the other request, then opened again: the entry fits either way.
+                page.locator(f"li.entry[data-request='{other}'] .entry-head").first.click()
                 expect(entry).not_to_have_class(re.compile(r"\bcurrent\b"))
                 fits(f"{label} at {where}, the entry closed", f"li.entry[data-request='{asked}']")
                 entry.locator(".entry-head").first.click()
                 expect(entry).to_have_class(re.compile(r"\bcurrent\b"))
+                fits(f"{label} at {where}, the entry opened again", f"li.entry[data-request='{asked}']")
                 for row in (".title-refs", ".entry-body .facts", ".entry-body .summary"):
                     wide = entry.locator(row).first.evaluate("(e) => [e.clientWidth, e.scrollWidth]")
                     assert wide[1] <= wide[0], f"{label} at {where}: {row} is wider than its box {wide}"
@@ -1907,11 +1909,12 @@ def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: st
     finally:
         page.set_viewport_size({"width": 1280, "height": 900})
         page.emulate_media(color_scheme="light")
-    page.goto(f"{run.base}/owner/e2e-alpha/inbox/{asked}")
-    current = page.locator("li.entry.current")
-    current.locator("textarea").fill("Seen.")
-    current.get_by_role("button", name="Send", exact=True).click()
-    expect(page.locator(f"li.entry[data-request='{asked}']")).to_have_count(0)
+    for request_id in (asked, other):
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        current.locator("textarea").fill("Seen.")
+        current.get_by_role("button", name="Send", exact=True).click()
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
     expect_inbox_empty(page)
     no_problems(run, "long references")
 
