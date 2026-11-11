@@ -5984,6 +5984,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "ids: an id that links nowhere still reads as one (span.id-ref) beside the links");
   expect(thCss.includes(".id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }") && thCss.includes("a.id-ref { text-decoration: none; }"),
     "ids: never broken across lines, underlined only on hover");
+  // With a project's full name before it, wider than a phone's line (`owner/slug/req-…`, tsk-e9d52pfhvk3v):
+  // the name wraps, the id after it stays whole; the text, the link and its copy as written. Every view
+  // draws an id through js/ids.js, so the chat's bubbles and the inbox's title, rows and body all get it.
+  expect(thCss.includes(".id-ref-full { white-space: normal; overflow-wrap: anywhere; }") && thCss.includes(".id-ref-id { white-space: nowrap; }"),
+    "ids: a reference with its project's full name wraps in the name, never in the id");
+  const idWrapIn = (box) => box.querySelectorAll(".id-ref").filter((a) => (a.getAttribute("class") || "").split(" ").includes("id-ref"))
+    .map((a) => [(a.getAttribute("class") || "").split(" ").includes("id-ref-full") ? "full" : "bare", text(a),
+      a.querySelectorAll(".id-ref-id").map((x) => text(x)).join()].join(":")).join(" ");
+  const idWrap = idWrapIn(idBox(IDS.link("see oliver-zehentleitner/maity/req-abcdefghjkmn, tsk-0123456789ab and api/v1/tsk-0123456789ab", idAt)));
+  const idWrapOut = idWrapIn(idBox(IDS.link("see tsk-0123456789ab", { ...idAt, outside: true })));
+  const idWrapCode = idBox(win.Maity.markdown("the card `oliver-zehentleitner/maity/tsk-0123456789ab`", idAt));
+  expect(idWrap === "full:oliver-zehentleitner/maity/req-abcdefghjkmn:req-abcdefghjkmn bare:tsk-0123456789ab: full:api/v1/tsk-0123456789ab:tsk-0123456789ab"
+    && idWrapOut === "full:maintainer/maity/tsk-0123456789ab:tsk-0123456789ab"
+    && idWrapIn(idWrapCode) === "full:oliver-zehentleitner/maity/tsk-0123456789ab:tsk-0123456789ab"
+    && idWrapCode.querySelector("a.id-ref-full code span.id-ref-id"),
+    "ids: a reference with a full name, written or added outside its project, linked or not, in text or a code span, keeps its id in one piece: " + [idWrap, idWrapOut, idWrapIn(idWrapCode)].join(" | "));
   const mdIds = idBox(win.Maity.markdown("Do tsk-0123456789ab **after #12**, not `tsk-0123456789ab`; [tsk-0123456789ab](https://example.org/x)\n\n```\nreq-abcdefghjkmn\n```", idAt));
   expect(idHrefs(mdIds) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab #12=https://github.com/oliver-zehentleitner/maity/issues/12 tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab"
     && mdIds.querySelector("strong a.id-ref") && mdIds.querySelector("a.id-ref code").textContent === "tsk-0123456789ab" && !mdIds.querySelector("code.md-inline-copy") && !mdIds.querySelector("pre a"),

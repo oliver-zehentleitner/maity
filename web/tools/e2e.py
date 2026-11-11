@@ -1137,6 +1137,7 @@ def scenario(run: Run, page: Page) -> None:
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
     seq_links_step(run, page, alpha, beta, agent_id, task["id"])
+    long_refs_step(run, page, alpha, agent_id, task["id"])
     attachments_step(run, page, agent_id)
     members_step(run, page)
     dormant_step(run, page)
@@ -1813,6 +1814,106 @@ def pinned_list_order(run: Run, page: Page) -> None:
                     f"{run.base}/api/v1/agents/{extra[1]}?cascade=true", headers=headers
                 )
                 assert gone.status == 200, (extra[0], gone.status, gone.text())
+
+
+def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: str) -> None:
+    """A long linked reference stays inside a phone's screen (tsk-e9d52pfhvk3v). A card or request
+    written with a project's full name links as written (`owner/slug/req-…`, docs/api.md §6.25): 43
+    characters in the code face, never broken while they were one unit. In a chat bubble (the
+    project's chat and the global chat) and in the inbox detail (the title's links under "In the
+    title", the Card row and the body; the project's inbox and all projects) the project's name wraps
+    inside the box, the bubble and the entry within the screen; the id after the name, and a bare id,
+    still stand on one line. 390 and 360 px, light and dark, and 1280 px; a message that arrives in
+    the open chat, a fresh load, and the inbox entry closed and opened again."""
+    run.step("a long linked reference wraps inside a chat bubble and the inbox detail on a phone")
+    long_req = "oliver-zehentleitner/maity/req-jvg545kp0es2"
+    long_tsk = f"oliver-zehentleitner/maity/{card_id}"
+    said = f"Oliver asked in {long_req}; the card is `{long_tsk}`, and {card_id} is ours."
+    run.maity(alpha, "say", "human", said)
+    asked = re.search(r"req-[0-9a-z]+", run.maity(
+        alpha, "ask", f"Which order for {long_req} and {long_tsk}?\nIt follows {long_req}, see `{long_tsk}`.",
+        "--to", "human", "--class", "info", "--task", card_id,
+    )).group(0)
+
+    def fits(where: str, box: str) -> None:
+        """The page no wider than the window, the box inside it, every id link of the box inside the box."""
+        sw, iw = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert sw <= iw, f"{where}: the page is {sw} px wide in a {iw} px window"
+        got = page.locator(box).evaluate(
+            "(b) => { const r = b.getBoundingClientRect();"
+            " return [r.left, r.right, Array.from(b.querySelectorAll('.id-ref')).map((a) => a.getBoundingClientRect())"
+            ".filter((a) => a.left < r.left - 0.5 || a.right > r.right + 0.5).map((a) => [a.left, a.right])]; }"
+        )
+        assert got[0] >= 0 and got[1] <= iw, f"{where}: the box runs from {got[0]} to {got[1]} px in {iw}"
+        assert not got[2], f"{where}: an id link leaves its box ({got[0]}–{got[1]}): {got[2]}"
+
+    try:
+        for width, height, scheme in ((390, 844, "light"), (390, 844, "dark"), (360, 780, "light"), (1280, 900, "light")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            suffix = f"-{scheme}" + ("" if width == 390 else f"-{width}")
+
+            page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+            expect(page.locator("ol.messages li.msg.in", has_text="Oliver asked in").last).to_be_visible()
+            # The state changes once after loading: one more such message arrives in the open chat,
+            # fitted as it is drawn, then once more on a fresh load.
+            run.maity(alpha, "say", "human", f"Again at {width} {scheme}: {long_req}.")
+            arrived = page.locator("ol.messages li.msg.in", has_text=f"Again at {width} {scheme}").last
+            expect(arrived.locator("a.id-ref-full")).to_have_text(long_req)
+            fits(f"the project's chat at {where}, a message arrived", "ol.messages li.msg.in >> nth=-1")
+            page.reload()
+            expect(page.locator("ol.messages li.msg.in", has_text=f"Again at {width} {scheme}").last).to_be_visible()
+            fits(f"the project's chat at {where}, loaded afresh", "ol.messages li.msg.in >> nth=-1")
+            bubble = page.locator("ol.messages li.msg.in", has_text="Oliver asked in").last
+            expect(bubble.locator("a.id-ref", has_text=long_req)).to_have_attribute(
+                "href", "/oliver-zehentleitner/maity/inbox/req-jvg545kp0es2")
+            bubble.scroll_into_view_if_needed()
+            fits(f"the project's chat at {where}", "ol.messages li.msg.in >> nth=-1")
+            # Short enough for its line, a bare id moves on whole: one line, never broken at its hyphen.
+            bare = bubble.locator("a.id-ref", has_text=re.compile(rf"^{card_id}$"))
+            lines = bare.evaluate("(a) => a.getBoundingClientRect().height / parseFloat(getComputedStyle(a).fontSize)")
+            assert lines < 2, f"the project's chat at {where}: the bare id {card_id} stands on more than one line ({lines})"
+            # The full name wraps; the id after it stays in one piece.
+            for whole in bubble.locator("a.id-ref-full .id-ref-id").all():
+                lines = whole.evaluate("(a) => a.getBoundingClientRect().height / parseFloat(getComputedStyle(a).fontSize)")
+                assert lines < 2, f"the project's chat at {where}: the id of a long reference is broken across lines ({lines})"
+            run.shot(page, "long-ref-chat" + suffix)
+
+            page.goto(f"{run.base}/chats/owner/e2e-alpha/{agent_id}")
+            expect(page.locator("ol.messages li.msg.in", has_text="Oliver asked in").last).to_be_visible()
+            fits(f"the global chat at {where}", "ol.messages li.msg.in >> nth=-1")
+
+            for inbox, label in ((f"/owner/e2e-alpha/inbox/{asked}", "the project's inbox"), ("/all", "all projects")):
+                page.goto(run.base + inbox)
+                entry = page.locator(f"li.entry[data-request='{asked}']")
+                expect(entry).to_be_visible()
+                if "current" not in (entry.get_attribute("class") or "").split():
+                    entry.locator(".entry-head").first.click()
+                expect(entry.locator(".title-refs a.id-ref", has_text=long_req)).to_be_visible()
+                expect(entry.locator(".entry-body .summary a.id-ref", has_text=long_req)).to_be_visible()
+                fits(f"{label} at {where}", f"li.entry[data-request='{asked}']")
+                # Closed and opened again: the entry fits either way.
+                entry.locator(".entry-head").first.click()
+                expect(entry).not_to_have_class(re.compile(r"\bcurrent\b"))
+                fits(f"{label} at {where}, the entry closed", f"li.entry[data-request='{asked}']")
+                entry.locator(".entry-head").first.click()
+                expect(entry).to_have_class(re.compile(r"\bcurrent\b"))
+                for row in (".title-refs", ".entry-body .facts", ".entry-body .summary"):
+                    wide = entry.locator(row).first.evaluate("(e) => [e.clientWidth, e.scrollWidth]")
+                    assert wide[1] <= wide[0], f"{label} at {where}: {row} is wider than its box {wide}"
+                run.shot(page, "long-ref-inbox" + ("-all" if inbox == "/all" else "") + suffix)
+        run.a11y(page, "inbox, a long linked reference on a phone")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox/{asked}")
+    current = page.locator("li.entry.current")
+    current.locator("textarea").fill("Seen.")
+    current.get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator(f"li.entry[data-request='{asked}']")).to_have_count(0)
+    expect_inbox_empty(page)
+    no_problems(run, "long references")
 
 
 def group_chat_form_step(run: Run, page: Page) -> None:
