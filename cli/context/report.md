@@ -424,7 +424,10 @@ at a branch that does not exist when it is set.
 A branch with neither key set is now compared with the branch of its own
 name on the remote a plain `git push` chooses: `branch.<b>.pushRemote`,
 else `remote.pushDefault`, else `origin`, when that remote has a URL
-configured. The same checks then apply as to an upstream: the remote and
+configured, and has no `pushurl`, no `push` refspec, and no
+`pushInsteadOf` is set: each of them could send the push to another
+repository or name than the one read, and the branch then reads as having
+no upstream. The same checks then apply as to an upstream: the remote and
 the ref are checked before git is asked, and the remote's head must equal
 the local one.
 
@@ -438,3 +441,10 @@ reads what was pushed.
   keeps unwritable.
 - Reading only the pull request by the branch name: the report then no
   longer checks that the remote has the local head.
+- Ignoring `pushurl`, `push` refspecs and `pushInsteadOf` (the first
+  version of #1663): the report then confirmed a head on the fetch
+  repository or under the local name while the push had gone elsewhere
+  (review of #1663).
+- Resolving the effective push URL and ref: it repeats git's push logic
+  (refspec matching, URL rewriting) in maity for configurations a runner's
+  clone never has; refusing them is the smaller and safer rule.

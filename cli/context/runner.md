@@ -1987,13 +1987,17 @@ its turn, stopped listening, and never saw the next message.
 **Revisit when:** the sandbox lets git write `.git/config` again, or git changes what `switch -c` or `push` store there
 
 The sandbox keeps `.git/config` unwritable on purpose: what it sets can
-run a program outside the sandbox. So the runner gives every session, by
-`GIT_CONFIG_COUNT`, `branch.autoSetupMerge=false` (a branch cut from a
+run a program outside the sandbox. So the runner gives a session under
+Claude Code's or Codex's sandbox, by `GIT_CONFIG_COUNT`,
+`branch.autoSetupMerge=false` (a branch cut from a
 remote one stores no upstream), `push.default=current` (a plain `git push`
 pushes the branch to its own name) and `fetch.recurseSubmodules=false`
 (fetch does not read `.gitmodules`, which the sandbox replaces with an
-unreadable placeholder in a repository that has none). The start prompt of
-Claude Code and Codex names what still fails: `push -u`,
+unreadable placeholder in a repository that has none). They override the
+clone's own values, which in a runner's clone are a plain clone's: the
+clone check refuses a key a plain clone has not. Without a sandbox none of
+this is set and the clone's configuration stands. The start prompt of a
+sandboxed Claude Code or Codex session names what still fails: `push -u`,
 `--set-upstream`, `--track` and `branch -m`. `maity report` reads a
 branch without an upstream as its own branch on the push remote
 (report.md).
@@ -2007,6 +2011,9 @@ without the agent having to remember a flag in every session.
 - Only telling the agent the flags (`--no-track`, an explicit refspec): an
   agent that forgets one fails, and a compaction loses the prompt's
   details.
+- The three settings in every session, sandboxed or not (the first
+  version of #1663): without a sandbox they overrode a repository's own
+  tracking, push and submodule settings for no reason (review of #1663).
 - Deny rules for `push -u` and `--track`: the push itself happens before
   the configuration write fails, so a deny would refuse a push that
   works; the prompt names them instead.
@@ -2024,13 +2031,18 @@ Claude Code's sandbox puts an empty placeholder in the work tree's root
 for each protected path that is missing (`.bashrc`, `.gitconfig`,
 `.gitmodules`, `.mcp.json`, `.claude/skills` and others), and `git status`
 listed all 22 as untracked. Before a sandboxed Claude Code start the
-runner writes them, root-anchored, into the clone's `.git/info/exclude`
-between two marker lines (`adapters.CLAUDE_PLACEHOLDERS`); a block from
-an earlier start is replaced, every other line stays. The agent cannot
-write `info/` itself (GIT_PROTECTED). Hiding them hides nothing the agent
-could add: the sandbox keeps those paths unwritable.
+runner writes those of them (`adapters.CLAUDE_PLACEHOLDERS`) that are
+missing or an empty directory, root-anchored, into the clone's
+`.git/info/exclude` between two marker lines; the block is rebuilt at
+every start, every other line stays. The agent cannot write `info/` itself
+(GIT_PROTECTED), and inside the sandbox it cannot create those paths. A
+path with content (a file, a link, a directory with entries) is not
+listed: it is real, untracked work that `git status` must keep showing.
 
 **Rejected alternatives:**
+- Listing every path, whatever is there (the first version of #1663): a
+  real untracked `.gitmodules`, `.mcp.json` or `.claude/skills/…` then
+  vanished from `git status` (review of #1663).
 - An entry in the repository's `.gitignore`: it would be every project's
   business, for files only this runner's sandbox creates.
 - `core.excludesFile` through the session's environment, pointing to a
