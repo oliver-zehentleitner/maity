@@ -147,7 +147,12 @@ def session_id_hash(session_id: str) -> str:
     return hashlib.sha256(session_id.encode("ascii")).hexdigest()
 
 
-def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = True) -> Caller:
+def authenticate(
+    conn: Connection, facts: RequestFacts, *, renew_leases: bool = True, seen: bool = True
+) -> Caller:
+    """The caller of the request. `seen=False` (a dashboard tab's presence, §18.4) checks a
+    cookie session as any call does but writes no `last_seen_at`: that call shows nobody as
+    online and keeps no session alive (§2.4)."""
     authorization = facts.headers.get("authorization")
     if authorization:  # the header authenticates; a cookie alongside is ignored
         scheme, _, value = authorization.partition(" ")
@@ -157,7 +162,7 @@ def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = 
             return _signed(conn, facts, value.strip(), renew_leases)
         raise unauthenticated("unsupported authorization scheme")
     if SESSION_COOKIE in facts.cookies:
-        return _cookie(conn, facts, renew_leases)
+        return _cookie(conn, facts, renew_leases, seen)
     raise unauthenticated()
 
 
@@ -200,7 +205,7 @@ def _cookie_headers(facts: RequestFacts) -> None:
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
 
 
-def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
+def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
@@ -214,25 +219,31 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .where(t.human_session.c.id_hash == id_hash)
         .scalar_subquery()
     )
-    touched = conn.execute(
-        update(t.human_session)
-        .where(
-            t.human_session.c.id_hash == id_hash,
-            t.human_session.c.ended_at.is_(None),
-            # session_alive(): before its end and within the idle time
-            t.human_session.c.expires_at > now,
-            t.human_session.c.last_seen_at > now - SESSION_IDLE,
+    live = (
+        t.human_session.c.id_hash == id_hash,
+        t.human_session.c.ended_at.is_(None),
+        # session_alive(): before its end and within the idle time
+        t.human_session.c.expires_at > now,
+        t.human_session.c.last_seen_at > now - SESSION_IDLE,
+    )
+    if not seen:
+        # The same test, read only: a presence call writes no presence (§2.4).
+        if conn.execute(select(t.human_session.c.id_hash).where(*live)).first() is None:
+            raise unauthenticated("the session has ended or expired")
+    else:
+        touched = conn.execute(
+            update(t.human_session)
+            .where(*live)
+            .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
         )
-        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
-    )
-    if touched.rowcount != 1:
-        raise unauthenticated("the session has ended or expired")
-    conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
-        .values(last_seen_at=now)
-    )
+        if touched.rowcount != 1:
+            raise unauthenticated("the session has ended or expired")
+        conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
+            .values(last_seen_at=now)
+        )
     # Whether this is the instance admin, for `Server-Timing` (`timing.admit`): in this same
     # read rather than one more on every cookie call, as a join that finds the human only
     # when it is the earliest account.

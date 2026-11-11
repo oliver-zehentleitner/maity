@@ -14,7 +14,7 @@ from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
 from maity_hub.config import Settings
 from maity_hub.db import retrying_async
-from maity_hub.errors import ApiError, forbidden, invalid, not_found, unauthenticated
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.forge import Forge
 from maity_hub.net import Origin
 
@@ -59,7 +59,7 @@ def facts_of(request: Request) -> RequestFacts:
     )
 
 
-async def _resolve(request: Request, renew_leases: bool) -> Caller:
+async def _resolve(request: Request, renew_leases: bool, seen: bool = True) -> Caller:
     """The caller, authenticated on the async engine (tsk-v874y63b4z8p, PR 2): the transaction's
     sync code runs through `run_sync` on the event loop, so no call waits for a thread of the
     pool for it. What it runs there is the database's work and a few hashes
@@ -72,7 +72,7 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
     settings = settings_of(request)
 
     def authenticated(conn: Connection) -> Caller:
-        caller = authenticate(conn, facts, renew_leases=renew_leases)
+        caller = authenticate(conn, facts, renew_leases=renew_leases, seen=seen)
         # A session that owes the second factor or an enrolment reaches only its
         # few calls (§2.8.2, §2.8.5), decided before any route runs.
         second_factor.gate(conn, settings, caller, request.method, path)
@@ -204,6 +204,20 @@ async def events_caller(request: Request) -> Caller:
     raw = request.query_params.get("wait", "0")
     waiting = raw.isascii() and raw.isdigit() and int(raw) > 0
     return await _resolve(request, renew_leases=not waiting)
+
+
+async def presence_caller(request: Request) -> Caller:
+    """`POST /me/presence` (§18.4): a human's cookie session only, checked as any call but
+    writing no `last_seen_at` and renewing no lease (§2.4). An `Authorization` header (an
+    agent, a runner, a bridge) or `Maity-For` is refused before any credential is looked
+    up, so no presence of theirs is written either."""
+    headers = request.headers
+    if "authorization" in headers or "maity-for" in headers:
+        raise humans_only("this endpoint is for a human's dashboard session")
+    caller = await _resolve(request, renew_leases=False, seen=False)
+    if caller.kind != "human" or caller.via != "cookie":
+        raise humans_only("this endpoint is for a human's dashboard session")
+    return caller
 
 
 async def human_caller(request: Request) -> Caller:

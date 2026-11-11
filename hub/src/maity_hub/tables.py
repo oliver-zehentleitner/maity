@@ -434,6 +434,9 @@ human_session = Table(
     Column("mail_sent", Integer, nullable=False, server_default="0"),
     Column("mail_sent_at", UtcDateTime),  # when the newest mail went: its code lives 15 minutes
     Column("next", String(512)),
+    # Until when a dashboard tab of this session said the human is present (`POST
+    # /me/presence`, §18.4): the mail hold's input only, never shown as presence (§18.5).
+    Column("present_until", UtcDateTime),
     **MYSQL_TABLE,
 )
 
