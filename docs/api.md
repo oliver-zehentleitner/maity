@@ -5120,10 +5120,15 @@ the single route's headers: a `503 maintenance` part has its window in
 `details` (`{from, until, text}`), from which a client derives what
 `Retry-After` would have said. The hub reads the parts concurrently:
 `maintenance`, `session`, `me` and `head` together, and `project` and
-`members` together once `head` has been read. The answer then takes
-about as long as its slowest chain, not as the sum of its parts: the
-slowest of `maintenance`, `session` and `me`, or `head` followed by the
-slower of `project` and `members`. `head` comes first so that nothing
+`members` together once `head` has been read. On PostgreSQL the answer
+then takes about as long as its slowest chain, not as the sum of its
+parts: the slowest of `maintenance`, `session` and `me`, or `head`
+followed by the slower of `project` and `members`. MariaDB behaves the
+same: a server with a pool and no lock taken at a transaction's start. On
+SQLite, where every
+transaction takes the one write lock at its start, the parts' reads run
+one after another; what the bundle saves there is the round trips and
+the repeated authentication. `head` comes first so that nothing
 that happens while those two are read is missed: it comes as an event
 past the cursor, as with the dashboard's own reads. The parts are not one
 snapshot, as the single calls are not either. Without `project`, the

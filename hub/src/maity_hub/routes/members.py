@@ -349,28 +349,34 @@ def _owners(conn: Connection, project_id: str) -> int:
 @router.get("/projects/{owner}/{slug}/members")
 def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        mine.require("project:read")
-        rows = conn.execute(
-            select(t.membership).where(
-                t.membership.c.project_id == mine.project.id, t.membership.c.active.is_(True)
-            )
-        ).all()
-        admin = mine.may("members:admin")
-        owned = _owned_agents(conn, mine)
-        views = member_views(
-            conn,
-            rows,
-            briefing=lambda r: admin or r.id == mine.id,
-            details=lambda r: admin or r.agent_id in owned,
-            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+        return JSONResponse(members_body(conn, caller, slug))
+
+
+def members_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
+    """`GET /projects/{owner}/{slug}/members`' answer (§6.2), also the `members` part of
+    `GET /bootstrap` (§5.4)."""
+    mine = membership(conn, caller, slug)
+    mine.require("project:read")
+    rows = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == mine.project.id, t.membership.c.active.is_(True)
         )
-        by_id = {r.id: v for r, v in zip(rows, views, strict=True)}
-        counted = instance_counts.manages(rows, by_id, by_id)
-        for member_id, view in by_id.items():
-            view["manages"] = counted[member_id]
-        views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
-        return JSONResponse({"items": views, "next_cursor": None})
+    ).all()
+    admin = mine.may("members:admin")
+    owned = _owned_agents(conn, mine)
+    views = member_views(
+        conn,
+        rows,
+        briefing=lambda r: admin or r.id == mine.id,
+        details=lambda r: admin or r.agent_id in owned,
+        links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+    )
+    by_id = {r.id: v for r, v in zip(rows, views, strict=True)}
+    counted = instance_counts.manages(rows, by_id, by_id)
+    for member_id, view in by_id.items():
+        view["manages"] = counted[member_id]
+    views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
+    return {"items": views, "next_cursor": None}
 
 
 @router.get("/projects/{owner}/{slug}/members/{member_id}/briefings")
