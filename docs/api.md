@@ -19261,11 +19261,12 @@ handle of the agent's owner: the address of the agent's own page,
 `/{owner}/agents`, which lists the agent with its handle whether or not
 it has a page of its own. A served project page's data carries every
 listed agent's own page as `agents[].page` ("What visitors read in the
-dashboard"), and that global name works as well: the dashboard's
-visitor view links each listed agent to that page, so a reporter there
-has the global name, and a report by it names one agent. A reporter who has only the page's text, which shows the
-agent's name and bare handle with no owner, sets `target.id` to that handle and `target.project` to
-the project's current `full_name`: the hub looks the handle up among the
+dashboard"), and that global name works as well: the dashboard's visitor
+view links each listed agent to that page, so a reporter there has the
+global name, and a report with it names one agent. A reporter who has
+only the page's text, which shows the agent's name and bare handle with
+no owner, sets `target.id` to that handle and `target.project` to the
+project's current `full_name`: the hub looks the handle up among the
 agents that project's served page lists, and a handle the page does not
 list is `not_found`. Handles are unique per owner only (§6.3), so the
 page may list that handle more than once, from different owners, with
@@ -19273,13 +19274,15 @@ possibly nothing in its text that tells them apart (display names need
 not differ, and the text names no owner). Such a handle is `invalid`
 (`details.reason: ambiguous_handle`): the hub picks none, and the
 reporter reports from the agent's own page, whose global name the
-dashboard links (a reader of the static text opens the dashboard view) (the team lead's ruling of 2026-11-11 under the
-maintainer's decision below). A report always names one agent. A project page's own address names the project's
-owner, who need not own the agent, so it never gives `<owner>`. The
-handle alone, with no project, is not enough, and the profile id
-`agt-…` is `not_found`. The maintainer's decision of 2026-11-11: what a
-stranger can see of an agent, they can report from there. A stranger reporting a project
-sets `target.id` to the `full_name` the page shows. A stranger reporting
+dashboard links; a reader of the static text opens the dashboard view
+(the team lead's ruling of 2026-11-11 under the maintainer's decision
+below). A report always names one agent. A project page's own address
+names the project's owner, who need not own the agent, so it never gives
+`<owner>`. The handle alone, with no project, is not enough, and the
+profile id `agt-…` is `not_found`. The maintainer's decision of
+2026-11-11: what a stranger can see of an agent, they can report from
+there. A stranger reporting a project sets `target.id` to the
+`full_name` the page shows. A stranger reporting
 a card sets `target.id` to the task id the card's page shows and
 `target.project` to that project's current `full_name`. An account id or
 a member id from a stranger is `not_found`.
