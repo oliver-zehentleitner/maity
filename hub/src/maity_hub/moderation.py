@@ -340,10 +340,12 @@ def _reset_profile(conn: Connection, report: Any) -> None:
 
     owner = report.target_id
     table = t.agent_profile if owner.startswith("agt-") else t.human
+    # The lock first: the name and the handle are read under it, so a name committed
+    # after this reset started is reset too, and the hold is written after that.
+    avatars.lock_owner(conn, owner)
     row = conn.execute(select(table).where(table.c.id == owner)).first()
     if row is None:
         return
-    avatars.lock_owner(conn, owner)
     before = avatars.state(conn, owner)
     avatars.remove_upload(conn, owner)
     if owner.startswith("agt-"):  # its motif goes too: the generated picture shows (§16.8)

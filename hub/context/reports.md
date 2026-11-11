@@ -349,9 +349,12 @@ revoked all the others.
 Every writer that asks `moderation.refuse_held` for a profile takes the
 owner's row lock first (`avatars.lock_owner`, or `owned(..., lock=True)`
 on the same `agent_profile` row). A `remove` (`_reset_profile`) and a
-`hide` of a profile take that same lock before the hold is written. A
-writer that read "no hold" and then waited on the lock therefore reads
-the hold the reset or the hide committed, and is refused.
+`hide` of a profile take that same lock before the hold is written. The
+reset also reads the profile row (its display name and handle) only
+after that lock, so a name a writer committed before the reset got the
+row is reset too. A writer that read "no hold" and then waited on the
+lock therefore reads the hold the reset or the hide committed, and is
+refused.
 
 The order is the suspension's: the account lock, then a project row,
 then the human's row or the agent profile's row. A request already holds
@@ -384,10 +387,17 @@ suspended organisation may still change it).
 writer that looked before taking the row the reset holds can commit
 after the reset, and undo it.
 
+**Reason:** a read before the lock can see the name from before a
+writer's commit and skip the reset, which leaves the new name under the
+hold.
+
 **Rejected alternative:** only locking in the writers. A `hide` of a
 profile took no row lock, so `public_profile: true` could read "no hold"
 and commit after the hide had written one. The hide takes the same lock
 the writer waits on.
+
+**Rejected alternative:** re-reading only the display name after the
+update. One read under the lock is simpler and also covers the handle.
 
 **Rejected alternative:** a lock of its own for the hold, apart from the
 owner's row. The picture, the motif and the display name already

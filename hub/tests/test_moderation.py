@@ -246,6 +246,43 @@ def test_a_display_name_set_while_a_reset_holds_the_lock_is_refused_by_its_hold(
     assert again["display_name"] == again["handle"]
 
 
+def test_a_name_committed_before_the_reset_locks_is_reset_to_the_handle(
+    team: dict[str, Any],
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§16.8: the reset reads the name after the owner's lock, so a name committed
+    between the reset's start and that lock is reset to the handle too."""
+    from maity_hub import avatars, forge, reports
+    from tests.concurrency import race
+
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    profile = owner.get(f"/agents/{agent.id}").json()
+    # The read before the lock must already see the handle, or it would write the handle
+    # from that read and the name committed in between would not survive.
+    named = owner.patch(f"/agents/{agent.id}", {"display_name": profile["handle"]})
+    assert named.status_code == 200, named.text
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+    real_lock = avatars.lock_owner
+    state = {"done": False}
+
+    def lock(conn: Any, owner_id: str) -> None:
+        if owner_id == agent.id and not state["done"]:
+            state["done"] = True
+            sent = owner.patch(f"/agents/{agent.id}", {"display_name": "Totally Legit Bank"})
+            assert sent.status_code == 200, sent.text
+        real_lock(conn, owner_id)
+
+    monkeypatch.setattr(avatars, "lock_owner", lock)
+    with race(migrated) as r:
+        reports.resolve(r.first, owner.id, made["id"], "remove", None, forge.Forge())
+        r.first.commit()
+    again = owner.get(f"/agents/{agent.id}").json()
+    assert again["display_name"] == again["handle"]
+
+
 def test_a_public_profile_while_a_reset_holds_the_lock_is_refused_by_its_hold(
     team: dict[str, Any], migrated: Engine
 ) -> None:
