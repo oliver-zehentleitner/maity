@@ -322,7 +322,7 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
     """The pool and the PostgreSQL timeouts of the environment reach the engine the served app
     runs on: `serve` once built its own engine from the URL alone and ignored all of them."""
     from maity_hub import cli
-    from tests.test_db_pool import captured_connect_args
+    from tests.test_db_pool import captured_async_connect_args, captured_connect_args
 
     monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql+psycopg://u:p@localhost/h")
     monkeypatch.setenv("MAITY_DB_POOL_SIZE", "7")
@@ -334,14 +334,19 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
     monkeypatch.setattr(cli, "warn_on_connection_budget", lambda engine, settings: None)
     served: list[Any] = []
     monkeypatch.setattr(
-        cli._Server, "run", lambda self, sockets=None: served.append(self.config.app.state.engine)
+        cli._Server, "run", lambda self, sockets=None: served.append(self.config.app.state)
     )
     assert main(["serve"]) == 0
-    pool: Any = served[0].pool
-    assert (pool.size(), pool._max_overflow, pool._recycle) == (7, 3, 60)
-    assert captured_connect_args(served[0])["options"] == (
+    # The pool of 7 split between the engines (`serving.pool_shares`): 5 sync with the whole
+    # overflow, 2 async without one; the same recycle and timeouts on both.
+    engines = (served[0].engine, served[0].async_engine.sync_engine)
+    pools: list[Any] = [engine.pool for engine in engines]
+    assert [(p.size(), p._max_overflow, p._recycle) for p in pools] == [(5, 3, 60), (2, 0, 60)]
+    wanted = (
         "-c TimeZone=UTC -c statement_timeout=11000 -c idle_in_transaction_session_timeout=22000"
     )
+    assert captured_connect_args(served[0].engine)["options"] == wanted
+    assert captured_async_connect_args(served[0].async_engine)["options"] == wanted
 
 
 def _stdin(monkeypatch: pytest.MonkeyPatch, text: str) -> None:

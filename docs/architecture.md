@@ -812,8 +812,9 @@ and `MAITY_REPLICAS` several pods. The hub refuses to start, naming the
 reason (`serving.py`, `hub/context/replicas.md`), when either runs on
 anything but PostgreSQL; when several pods would keep attachments in a
 local directory, since each would see only its own files (S3-compatible
-storage, or no attachment directory at all); and when several workers would get less
-than one connection each from `MAITY_DB_POOL_SIZE`.
+storage, or no attachment directory at all); and when a process, one or one of
+several, would get less than two connections from `MAITY_DB_POOL_SIZE` (one for each
+engine, the sync one and the async one).
 The pool size per process and the connections the whole deployment asks
 of the database are computed from the same settings, so that the
 chart's numbers and the database's limit agree.
