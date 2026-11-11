@@ -50,7 +50,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | tsk-d61rvjm6gteh |
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
-| 10 | One boot read: `/me`, the session, the project and its members in one answer | −0.3–0.6 s per full load | M, contract | with the owner |
+| 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | decided, tsk-x4z69ff785y6 (below) |
 | 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
@@ -111,3 +111,48 @@ instance admin, who measures and may read the instance's metadata anyway, gets i
   where the slow pages are, and there it would have to stay off.
 - Durations only, no count: a duration leaks the same, only noisier, and it loses the N+1
   signal.
+
+## One boot read bundles the single routes' answers, each with its own status
+
+**Id:** b77c193d-6561-4f9a-8af6-7e072780b49e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision of 2026-11-11 on measure 10 of the list above, and his second answer the same day, after the saving was found to be two round trips and not five to eight: build it for slow and mobile connections, with the hub reading the parts concurrently; the shape agreed with the lead on card tsk-x4z69ff785y6; `GET /bootstrap`, §5.4 of `docs/api.md`
+**Revisit when:** the route is measured against the dashboard's waves (the saving is expected until then), a part needs a field or a right its single route does not give, or the dashboard's boot no longer reads these routes in waves
+
+`GET /bootstrap` gives the dashboard's first reads (the maintenance window, the session,
+`GET /me`, and for a project view the event head, the project and its members) in one
+round trip. Each part is `{status, body}`: what the single route answers the same caller,
+errors included. The route needs no sign-in. The whole request is answered with no parts only
+for what the hub answers before any route (a route limit, a credential in the query) and, as
+the route's own rule, for a caller it would refuse (a cross-site cookie, plain HTTP, a runner
+credential, `Maity-For`), §5.4. Every single
+route stays.
+
+**Reason:** the dashboard's boot reads them in three waves, each waiting for the one before
+(the window and the session together, decision 63c48583 in `web/context/views.md`; then
+`/me`; then the project, its members and the head together). The bundle saves two round
+trips on a project view and one elsewhere. One round trip from a development machine to the
+hub measured about 30 ms on a kept connection (2026-11-11, `GET /api/v1/maintenance`, ten
+runs, 29–45 ms), more on a slow or mobile connection, which is what the route is for. The
+server time of each call is not measured, so the time the route saves is expected, not
+measured, until the route exists and is measured against the waves. The saving holds only
+because the hub reads the parts concurrently, the head before the project and its members:
+read one after another, their server time would eat it. Once the hub answers the
+route, 63c48583's Revisit when ("the hub answers /auth/session and /me in one read") has
+come, and that entry is checked again with the web change. A part
+built by the single route's own code for the same caller has one place to get each field
+wrong, and a test can compare each part with its route. Per-part statuses keep the pages
+that are drawn before or without a full session (signed out, the second-factor step, a
+pending account, a running maintenance window) on the same call: each of them needs the
+window and the session even when the rest is refused.
+
+**Rejected alternatives:**
+- A shape of its own that picks fields from each source, as the project overview (§6.11)
+  does for counts: the overview repeats no shape that has a home elsewhere so that a view's
+  restricted fields have one place to get wrong; a picked copy of the member view would be
+  a second place.
+- One status for the whole answer, failing as soon as one part fails: a signed-out reader
+  or a second-factor session would then lose the maintenance window and the session, which
+  are the parts its page is drawn from.

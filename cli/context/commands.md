@@ -1011,6 +1011,46 @@ to check, and the rule in `docs/agents.md` carries the weight.
   dangerous (`U+200B`, `U+FEFF`, `U+00AD`) now come out raw there too.
 - Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
 
+## `wait` names a message's attachments and gives `files get` without `-o`
+
+**Id:** 9468d8cc-cd19-4583-88d0-b9d1a327a490
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hnw52rvtwdsv (agents missed screenshots the owner attached to chat messages; the owner approved the fix, seq 109092); `docs/api.md` §8.7 (a message event carries its attachments as metadata); decision 3a8f1852 above
+**Revisit when:** a message event stops carrying attachment names, `files get` without `-o` stops saving into `./maity-files/`, agents still answer without opening a file the line names, or hub ids take a character outside letters, digits, `.`, `_` and `-`
+
+The event line `wait` prints on stderr gets, for a message with files, `[N attachment(s): name, …]` before the author's standing: each name as `files get` would
+save it (`file_name`), cleaned for a line, its square brackets made round so it cannot close the list, cut at 60 characters, and
+the whole list at 200. Under it, without the `maity:` prefix and in the same order, one line per file: `  maity files get <id>`,
+or `  : attachment <k> of <n> has no id the CLI can fetch`, which starts with the shell's no-op `:`. Only an id inside a conservative policy gets one: 1 to 128 letters,
+digits, `.`, `_` and `-`, not starting with `-` or `.` (the hub's are a prefix and 12 Crockford characters). Outside it lie the
+real hazards, an option such as `-h`, `.` and `..`, shell characters, line breaks, escape and bidi characters, which would change
+when shown, quoted or parsed and fetch another id or none; also some ids that would pass unharmed, such as `.abc` or 129 letters,
+which the CLI does not support either. These lines carry nothing the sender wrote, neither the name nor an
+id the CLI cannot fetch, so a pasted one runs the fetch or nothing in any shell. The event line above them quotes the names and is
+not for pasting: in an interactive zsh a name's `;` there would run, as a task title's always could. The event stream keeps a message's payload as it
+was written (`docs/api.md` §8.7), so a file taken out since still has its command; `files get` then says it was taken out. The names
+come from the event's own `payload.attachments`, so no hub call is made per event. The `wait` help says the files are part of the
+message and are opened before answering. Standard output stays the JSON.
+
+**Reason:** a screenshot showed only in the JSON under the line, which an agent skims, so the agent answered without it. The printed
+command has no `-o <file>`: without it `files get` saves into `./maity-files/` under the cleaned name (3a8f1852). A command with
+`-o <the sender's name>` would put a file the sender named `conftest.py` or `Makefile` into the working directory of whoever
+copies the line.
+
+**Rejected alternatives:**
+- `maity files get <id> -o <name>`, as the card first proposed: it undoes 3a8f1852 for anyone who copies it.
+- Shell-quoting any id (the first version): the line is also escaped for display, so an id with a newline or an escape was
+  shown as a different id, and one starting with `-` reached argparse as an option (review of #1641).
+- The name before the command on the same line (the first version): a whole pasted line ran the shell syntax in a sender's name
+  (review of #1641).
+- `attachment <k> of <n>: no id …` for an id the CLI cannot fetch (the third version): pasted, it ran a command named
+  `attachment`, which a user's own function or program of that name would answer (review of #1641).
+- The name after the command as a shell comment (`maity files get <id>  # <name>`, the second version): an interactive zsh
+  reads `#` as a word unless `interactive_comments` is set, which it is not by default, so the name's `;`, `|` or `$( )` still ran (review of #1641).
+- Fetching each file's metadata or bytes during `wait`: a hub call per event on the long-poll path, for what the event already carries.
+
 ## Text from the forge and one-line fields name who wrote them
 
 **Id:** 802fa999-a539-48e1-a814-eb2bd71e8b7d
