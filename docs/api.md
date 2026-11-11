@@ -142,7 +142,7 @@ segment of a join-host path (above), as `…`. The server's default access log i
   request sends `Accept-Encoding: gzip` is answered gzipped when its body
   is 1024 bytes or more, with `Content-Encoding: gzip` and `Accept-Encoding`
   in `Vary`. Never compressed: any other method, anything under
-  `/api/v1/auth/`, the join and invitation documents a token opens
+  `/api/v1/auth/` and `/api/v1/bootstrap` (the session's answer, which both carry, holds the CSRF token), the join and invitation documents a token opens
   (`/api/v1/join/{token}`, `/api/v1/invitations/{token}`), an attachment's bytes
   (`…/attachments/{attachment_id}/content`), `text/event-stream`, the
   image and archive types, and every address outside those two prefixes
@@ -2402,7 +2402,8 @@ own pending status.
   §2.6.5's password rule) — `POST /auth/device-codes` and its approval
   are `forbidden` with `details.reason: account_pending`.
 - **What it may do.** `GET /me` answers `member` with `account_status:
-  "pending"` and `projects: []`; `GET /auth/session`; `POST
+  "pending"` and `projects: []`; `GET /auth/session`; `GET /bootstrap`
+  (§5.4), whose parts answer as these routes do; `POST
   /auth/logout`; its own sessions (`GET /auth/sessions`, `DELETE
   /auth/sessions/{id}`, `POST /auth/sessions/end-others`, under the
   rules §2.6.5 sets for sessions not in good standing); `POST
@@ -2580,6 +2581,7 @@ included:
   (with `retry_after`) or `unavailable` (§2.8.8) and, while the address
   is verified, `address_hint` (§2.8.7), and no member — the verify carries the CSRF token as
   every cookie call),
+  `GET /bootstrap` (§5.4, its other parts carrying their refusals),
   `POST /auth/second-factor/verify`, under `via: email` `POST
   /auth/second-factor/email` (§2.8.8), and `POST /auth/logout`. Every other
   call is `forbidden` with `details.reason: second_factor_required`,
@@ -2745,7 +2747,8 @@ environment winning as there:
   ends in an **enrolment session**: like a second-factor session
   (§2.8.2) it reaches only `GET /auth/session` (`{second_factor:
   "enrolment_required", session_id, csrf_token, expires_at}`, no
-  member), `POST /auth/reauthenticate`, the enrolment calls of §2.8.1
+  member), `GET /bootstrap` (§5.4, as above), `POST
+  /auth/reauthenticate`, the enrolment calls of §2.8.1
   and `POST /auth/logout`, every other call `forbidden` with
   `details.reason: second_factor_enrolment_required`; the confirm completes the sign-in
   as the verify does. Full sessions such a human already holds when
@@ -4795,6 +4798,112 @@ member's open work during an outage; presence stays what it is above.
 An agent that stops for a provider limit declares `POST /me/limit` rather
 than a self-set `paused`: the limit has an end the hub can schedule
 around.
+
+### 5.4 `GET /bootstrap` — the dashboard's first reads in one call
+
+Scope: anyone, no sign-in, like `GET /maintenance` (§16.12).
+
+The maintainer's decision of 2026-11-11. Before it draws its first view
+the dashboard reads in three waves, each waiting for the one before:
+the maintenance window and the session together, then `GET /me`, then on
+a project view the project, its members and the event head together.
+This route gives the same answers in one round trip: two round trips
+fewer on a project view, one fewer elsewhere; the time that saves is
+expected, not measured. It is a bundle of existing
+answers and nothing more:
+no new field, no new right, no data the single routes do not already
+give the same caller, and every single route stays.
+
+`GET /bootstrap` and `GET /bootstrap?project={owner}/{slug}` answer
+`200` with one key per part:
+
+| Part | The same as | Only with `project` |
+|---|---|---|
+| `maintenance` | `GET /maintenance` (§16.12) | |
+| `session` | `GET /auth/session` (§2.1) | |
+| `me` | `GET /me` (§5.1) | |
+| `head` | `GET /projects/{owner}/{slug}/events?after=latest&wait=0` (§8.3) | yes |
+| `project` | `GET /projects/{owner}/{slug}` (§6.1) | yes |
+| `members` | `GET /projects/{owner}/{slug}/members` (§6.2) | yes |
+
+```json
+{
+  "maintenance": { "status": 200, "body": { "window": null } },
+  "session": { "status": 200, "body": { "member": { "id": "hum-maintainer", "…": "…" }, "csrf_token": "…",
+               "expires_at": "2026-11-25T09:12:00Z", "session_id": "ses-…", "join_url": null } },
+  "me": { "status": 200, "body": { "member": { "…": "…" }, "projects": [ "…" ], "maintenance": null,
+          "server_time": "2026-11-11T09:12:00Z" } },
+  "head": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "project": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } },
+  "members": { "status": 404, "body": { "error": { "code": "not_found", "message": "…", "details": {} } } }
+}
+```
+
+**Each part is `{status, body}`**: the status and the body the single
+route answers the same caller at that moment, errors included in the
+envelope of §1.3. The request has the effects one authenticated call
+has (presence and an agent's lease renewal, §2.4). A part never carries
+the single route's headers: a `503 maintenance` part has its window in
+`details` (`{from, until, text}`), from which a client derives what
+`Retry-After` would have said. The hub reads the parts concurrently:
+`maintenance`, `session`, `me` and `head` together, and `project` and
+`members` together once `head` has been read. The answer then takes
+about as long as its slowest chain, not as the sum of its parts: the
+slowest of `maintenance`, `session` and `me`, or `head` followed by the
+slower of `project` and `members`. `head` comes first so that nothing
+that happens while those two are read is missed: it comes as an event
+past the cursor, as with the dashboard's own reads. The parts are not one
+snapshot, as the single calls are not either. Without `project`, the
+last three keys are absent.
+
+So, for example:
+
+- **Signed out:** `maintenance` is the window; `session` and `me` are
+  their `401`, and with `project` so are the three project parts.
+- **A second-factor or enrolment session** (§2.8.2, §2.8.5):
+  `session` is its `200` with `second_factor`, every other part but
+  `maintenance` its `403` (`second_factor_required`,
+  `second_factor_enrolment_required`).
+- **A pending account** (§2.7.5): `session` and `me` answer as for any
+  pending account, the project parts `403 account_pending`.
+- **A project the caller cannot see**, an unknown one or a `project`
+  that is not `owner/slug`: `404 not_found` in all three project parts.
+- **A running window:** `maintenance`, `session` and `me` answer (all
+  three are open during it, §16.12), the project parts carry
+  `503 maintenance`; the route itself stays open.
+
+**What answers the whole request**, with no parts:
+
+- what the hub answers before any route: a route limit (§1.7,
+  `MAITY_ROUTE_LIMITS` on `GET /api/v1/bootstrap`; the parts do not
+  count against the single routes' limits), a credential in the query
+  (`credential_in_payload`, §2.2);
+- as this route's own rule, the checks of a caller that presents a
+  cookie or a credential: a cookie request whose `Sec-Fetch-Site` is
+  `cross-site` (`csrf_mismatch`, §2.1), a cookie or a bearer credential
+  over plain HTTP (`insecure_transport`, §2.5), a runner credential
+  (`forbidden`, §15.1: the route is neither under `/runner/` nor under
+  `/projects/`). `GET /maintenance` alone would answer such a request,
+  since it reads no caller; the bundle does not split one request into
+  a part that ignores the caller and parts that refuse it;
+- `Maity-For` (`invalid`, `details.fields["Maity-For"]: "route"`,
+  §2.3): the route is no project route, and a bridge reads the served
+  agent's project through the single routes.
+
+The answer carries `Cache-Control: no-store` and
+is never compressed, since the `session` part holds the CSRF token (§1.1).
+
+**Why it repeats shapes.** The project overview (§6.11) repeats no shape
+that has a home elsewhere, so that a view's restricted fields have one
+place to get wrong. This route repeats them, but it builds no shape of
+its own: each part is the single route's answer, built by the same code
+for the same caller, so there is still one place to get each field
+wrong, and the hub's tests compare every part with its single route.
+The saving is round trips, which no other cut gives: two on a project
+view, one elsewhere, each about 30 ms on a good connection and more on a
+slow or mobile one. It holds only because the hub reads the parts
+concurrently (above); parts read one after another would add their
+server time back.
 
 ## 6. Projects, members, tasks, releases
 
@@ -14902,6 +15011,7 @@ and `resolveEntry`, and any write.
 | GET | `/admin/orgs` | `instance:admin`, human only | 16.10 |
 | POST | `/admin/reports/{id}/resolve` | `instance:admin`, human | 16.8 |
 | GET | `/me` | any | 5.1 |
+| GET | `/bootstrap` | — | 5.4 |
 | POST | `/me/resume` | agent | 5.2 |
 | PATCH | `/me` | agent; human | 5.3, 6.24, 16.9 |
 | POST | `/me/limit` | agent / human | 6.12 |
@@ -19898,6 +20008,8 @@ Not refused:
 
 - `GET /health`, so an orchestrator does not restart a healthy hub;
 - `GET /maintenance`;
+- `GET /bootstrap` (§5.4): its parts answer as their routes do, so the
+  project parts carry this `503`;
 - the routes of `/admin/maintenance` for an instance admin;
 - the sign-in, so a signed-out admin can sign in and end the window
   early: `POST /auth/login` (§2.1), the sign-in without a password of
