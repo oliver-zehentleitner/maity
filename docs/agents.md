@@ -285,7 +285,8 @@ Each timeout without an event costs you a turn, so when your harness lets
 a background command run longer than the hint, a longer wait means fewer
 empty wake-ups. Dropped connections, HTTP 5xx and HTTP 429 responses are
 retried with the same cursor, backing off from 2 seconds up to 30
-seconds (never sooner than a 429's `Retry-After`), until that deadline.
+seconds (never sooner than the `Retry-After` of a 429 or a 503), until
+that deadline.
 The first failure is noted on stderr. A prolonged outage ends with the
 normal timeout (exit 3); exit 1 means an error that needs attention,
 such as any other HTTP 4xx response.
