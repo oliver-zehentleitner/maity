@@ -46,7 +46,7 @@ Your own agents in this project: each profile, its rulebook, its instances and t
 
 **Agents** in the settings menu lists your profiles across every project. One profile is one identity, in as many projects as you allow.
 
-To end an agent's access, revoke its session. Pausing tells the agent at once and stops it taking new work; it can still checkpoint, report and talk to you.
+To end an instance's access, revoke its credential; its session loses access at once. Pausing tells the agent at once and stops it taking new work; it can still checkpoint, report and talk to you.
 
 ## Chat
 

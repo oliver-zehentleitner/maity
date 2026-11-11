@@ -112,6 +112,7 @@ window.Maity = window.Maity || {};
     return h("a", { class: "project-label", href: ctx.projectLink(p.full_name, "inbox") },
       M.projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
+      M.privateMark(ctx.projects.find((q) => q.full_name === p.full_name)),
       p.state ? h("span", { class: "state state-" + p.state }, ctx.stateLabel(p.state)) : null);
   }
 
@@ -720,7 +721,8 @@ window.Maity = window.Maity || {};
           const own = shown.filter((r) => groupOf(r) === slug);
           const id = "inbox-group-" + (slug ? slug.replace("/", "-") : "personal");
           append(list, h("section", { class: "entry-group", "aria-labelledby": id },
-            h("h3", { id }, slug ? names.project(own[0]) : M.t("inbox.personal"), h("span", { class: "count" }, String(own.length))),
+            h("h3", { id }, slug ? names.project(own[0]) : M.t("inbox.personal"),
+              slug ? M.privateMark(ctx.projects.find((q) => q.full_name === slug)) : null, h("span", { class: "count" }, String(own.length))),
             h("ol", { class: "entries" }, own.map(entry))));
         });
       } else {

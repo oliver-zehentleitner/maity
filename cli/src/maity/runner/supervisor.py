@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import __version__, hub, onboarding, state
+from .. import __version__, clonecheck, hub, onboarding, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
@@ -718,6 +718,12 @@ class Supervisor:
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"), as_user,
             )  # fmt: skip
+            # An earlier session of the agent may have planted what git follows elsewhere (a
+            # `commondir`, `worktrees/`): nothing starts in such a clone, so neither the agent
+            # nor a person's later git in it lands where the plant points (§15.7).
+            finding = clonecheck.not_inspectable(place.path, as_user)
+            if finding is not None:
+                raise workspace.Refused("workspace_in_use", "not_a_plain_clone", why=finding)
             if join:
                 self._join(p, place, owner, rejoin, target)
                 with self.lock:

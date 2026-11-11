@@ -417,6 +417,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(tabIds() === MA + "," + SA && kept() && kept().open.join() === MA + "," + SA && kept().known.join() === MA + "," + SA,
       "tabs: a fresh browser without a start set opens every project in /me's order, and keeps that");
     expect(tabChip(MA).attrs.draggable === "true" && tabChip(MA).getAttribute("title") === "Drag to move, or Alt+Shift+Arrow", "tabs: each tab is draggable and says how to move it");
+    // A private project (public_page "off" in /me, §5.1) carries a lock named "Private" after its name, with
+    // the create form's sentence as its tooltip; a public one carries none (tsk-5t3qd0m9rj6r).
+    const lockOf = (id) => tabChip(id).querySelector(".private-mark");
+    expect(lockOf(SA) && lockOf(SA).getAttribute("role") === "img" && lockOf(SA).getAttribute("aria-label") === "Private"
+      && lockOf(SA).getAttribute("title") === "This project is private: only its members can read it." && !lockOf(MA),
+      "tabs: the private project's tab carries a lock named Private, the public one none");
     // The keyboard: Alt+Shift+Arrow moves the focused tab and says where it went.
     tabChip(SA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
     expect(tabIds() === SA + "," + MA && kept().open.join() === SA + "," + MA && said() === "Sample shop moved to place 1 of 2",
@@ -464,7 +470,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     M_.api.patch = (path, body) => { patchesTabs.push([path, body]); return realPatchTabs(path, body); };
     tabsButton().click(); await tick();
     expect(tabsButton().getAttribute("aria-label") === "Project tabs" && tabsItems().map((i) => i.getAttribute("role") + ":" + (i.getAttribute("aria-checked") || "-") + ":" + i.textContent).join("|")
-      === "menuitemcheckbox:true:Maity|menuitemcheckbox:true:Sample shop|menuitem:-:Keep these tabs at start", "tabs: the menu lists each project as a switch, then the start set");
+      === "menuitemcheckbox:true:Maity|menuitemcheckbox:true:Sample shop|menuitem:-:Keep these tabs at start|menuitem:-:New project",
+      "tabs: the menu lists each project as a switch, then the start set, then a new project (tsk-c4dz5x6rb2h8)");
     tabsItems()[1].click(); await tick();
     expect(tabIds() === MA && kept().open.join() === MA && !header.querySelector(".tabs-menu-box").querySelector("ul").hidden
       && tabsItems()[1].getAttribute("aria-checked") === "false" && said() === "Sample shop is no longer a tab" && !patchesTabs.length,

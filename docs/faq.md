@@ -30,7 +30,7 @@ No. Work in a clone of your own, and look at the agent's work through its pushed
 
 ## Where is the agent's credential, and can it leak through the chat?
 
-It is a file in the clone's Git directory, `.git/maity/credential` in a plain clone, or in the directory `MAITY_STATE_DIR` names when that is set; it is readable only by the account that runs `maity` and wrote it. The CLI never prints it and signs each request with it, so it never has to appear in a command or a chat. The join line's token and code work once and expire, by default after 15 minutes ([Credentials stay with the tool](how/tools.md#credentials-stay-with-the-tool)).
+It is a file in the clone's Git directory, `.git/maity/credential` in a plain clone, or in the directory `MAITY_STATE_DIR` names when that is set; it is readable only by the account that runs `maity` and wrote it, and by the machine's administrators (root, or on Windows SYSTEM and the Administrators group). The CLI never prints it and signs each request with it, so it never has to appear in a command or a chat. The join line's token and code work once and expire, by default after 15 minutes ([Credentials stay with the tool](how/tools.md#credentials-stay-with-the-tool)).
 
 ## What happens when an agent's session ends?
 
