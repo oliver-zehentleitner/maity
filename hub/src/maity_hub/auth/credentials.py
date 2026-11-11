@@ -14,6 +14,7 @@ import re
 import secrets
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 
@@ -119,27 +120,57 @@ def signature_matches(verifier_hex: str, canonical: str, signature: str) -> bool
     return hmac.compare_digest(expected, signature.lower().encode("ascii", "replace"))
 
 
+# The expired nonces one call of `NonceWindow.first_use` drops at most.
+FORGET_PER_CALL = 64
+
+
 class NonceWindow:
     """Nonces seen per credential within the window, in the process: the window of SQLite
     and MariaDB, where the hub runs one replica (docs/api.md §8.3). PostgreSQL keeps them in
-    the database, shared by every replica (`auth.nonces`)."""
+    the database, shared by every replica (`auth.nonces`).
+
+    A nonce is kept until its window ends. The window is the same for every nonce, so the order
+    in which nonces are spent is the order in which they expire: `_expiring` holds them in that
+    order (the clock is read under the lock, so two threads append in the order of their
+    deadlines), and each call drops expired ones from its front, at most `FORGET_PER_CALL`. A
+    call never visits a live nonce, and when a whole burst expires together (the window of every
+    nonce of it ends within a moment) its backlog is dropped over the next calls, each taking its
+    bounded share: authentication runs on the event loop (`deps._resolve`, tsk-v874y63b4z8p PR
+    2), where a pass over every nonce, live or expired, would hold every other request of the
+    process. An expired nonce still in the dict is not a spent one: `first_use` compares its
+    deadline, not its presence."""
 
     def __init__(self, seconds: int = NONCE_WINDOW_SECONDS) -> None:
         self._seconds = seconds
         self._seen: dict[tuple[str, str], tuple[float, object]] = {}
+        self._expiring: deque[tuple[float, tuple[str, str]]] = deque()
         self._lock = threading.Lock()
 
     def first_use(self, credential_id: str, nonce: str, spender: object) -> bool:
         """Spend the nonce; False when another `spender` did within the window. A transaction
         that is run again does not take this window back, so its request, the same `spender`,
         still counts as the first."""
-        now = time.monotonic()
         with self._lock:
-            if len(self._seen) > 10_000:
-                self._seen = {k: seen for k, seen in self._seen.items() if seen[0] > now}
+            now = time.monotonic()
+            self._forget_expired(now)
             key = (credential_id, nonce)
             seen = self._seen.get(key)
             if seen is not None and seen[0] > now:
                 return seen[1] is spender
-            self._seen[key] = (now + self._seconds, spender)
+            until = now + self._seconds
+            self._seen[key] = (until, spender)
+            self._expiring.append((until, key))
             return True
+
+    def _forget_expired(self, now: float) -> None:
+        """Drop at most `FORGET_PER_CALL` nonces whose window ended, the oldest first; a nonce
+        spent again after its window keeps its newer entry (its older place in the queue no
+        longer matches it). A call adds at most one nonce and drops up to that many, so a
+        backlog shrinks with every call."""
+        for _ in range(FORGET_PER_CALL):
+            if not self._expiring or self._expiring[0][0] > now:
+                return
+            until, key = self._expiring.popleft()
+            seen = self._seen.get(key)
+            if seen is not None and seen[0] == until:
+                del self._seen[key]
