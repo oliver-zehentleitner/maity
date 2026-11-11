@@ -353,7 +353,7 @@ child older than this writes no line, so the detail is `null` with it.
 **Evidence:** confirmed
 **Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf for who sees it); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); contract `docs/api.md` §15.15
 **Revisit when:** the hub is asked for a price list, a budget or a limit; or a run's work can be tied to one card
-**See:** ../../cli/context/runner.md#model-access-stays-the-operators-a-runs-usage-counts-reach-the-hub — 5f6c87ce-132d-4f7e-921d-d74741f369fe — as of 2026-11-11
+**See:** https://github.com/oliver-zehentleitner/maity — 5f6c87ce-132d-4f7e-921d-d74741f369fe — as of 2026-11-11
 
 The hub never turns tokens into money: it shows a cost only where the
 harness reported one, summed per currency, and says how many runs had
