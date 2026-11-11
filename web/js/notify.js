@@ -224,7 +224,7 @@ window.Maity = window.Maity || {};
     }
     // One pinned alert, with Mark read where this session may mark it (§18.8);
     // a sign-in is no alert, its "This was me" is on the banner and in
-    // Profile → Sessions (§2.6.5).
+    // Security → Sessions (§2.6.5).
     function pinnedRow(x) {
       const cur = sessions.find((y) => y.current) || null;
       const mark = M.sessions && M.sessions.mayMark(cur, x, null);

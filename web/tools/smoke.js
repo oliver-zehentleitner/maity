@@ -12772,7 +12772,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(bellLinks) === JSON.stringify(["#/admin/registration", "#/maintainer/maity/tasks/tsk-0004", "#/maintainer/maity/chat/agt-a", "#/all", "#/maintainer/sample/inbox/req-s001"])
     && bellPanel().querySelectorAll(".bell-items li.unread").length === 4 && text(bellPanel()).includes("Mentions 1"),
     "notifications: the bell lists the latest, each linking to where it happened by its target, unread ones marked " + JSON.stringify(bellLinks));
-  // A sign-in is no bell item and nothing is pinned for it (§2.6.5): the waiting page and Profile → Sessions show it.
+  // A sign-in is no bell item and nothing is pinned for it (§2.6.5): the waiting page and Security → Sessions show it.
   const bellPinned = () => bellPanel().querySelector(".bell-pinned");
   expect(!bellPinned() && !text(bellPanel()).includes("New sign-in") && !btn(bellPanel(), "This was me"),
     "notifications: a sign-in is no bell item; with no security alert nothing stands pinned");

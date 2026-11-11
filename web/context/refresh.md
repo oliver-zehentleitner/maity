@@ -222,7 +222,7 @@ Each gets **Mark read** where this session may mark it, and Mark all read asks f
 sends `include_security: true`. A sign-in is in none of it: the pinned block has no
 **This was me**, and nothing in the bell links to a session. The Notifications page shows
 a small "Current sessions" box instead: the active sessions, newest first, five and a
-count of the rest, this session and the unconfirmed ones marked, a link to Profile →
+count of the rest, this session and the unconfirmed ones marked, a link to Security →
 Sessions, no buttons. It reads `GET /auth/sessions` when the page opens and again only
 when the `sessions_rev` the bell knows (from a counts answer or the long-poll) differs from
 the value it last read with; a failed read is tried again on the bell's next change. The
@@ -238,7 +238,7 @@ rarely changes.
 **Rejected alternatives:** reading the sessions on every counts round: it works without
 `sessions_rev`, at one more request per round per tab. Keeping **This was me** in the
 box: the maintainer asked for a small field that shows, not one that acts; confirming
-stays in Profile → Sessions and on the banner.
+stays in Security → Sessions and on the banner.
 
 ## A device code is followed with wait=0 every 2 seconds on both devices, not with its long-poll
 
