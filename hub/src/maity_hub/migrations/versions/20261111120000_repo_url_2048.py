@@ -1,8 +1,12 @@
 """A stored repository URL is at most 2048 characters (docs/api.md §6.1).
 
 The column was 255. A nested GitLab path can pass that, and the value the
-contract stores is 2048 characters. The downgrade refuses while any stored URL
-is longer than the old column: shortening one would name a different repository.
+contract stores is 2048 characters. Existing rows are not normalised: a URL
+stored before this change keeps its spelling, including a capital host or a
+`.git` suffix. A later PATCH that sends that same URL stores the normalised
+form, which is a different value, so the owner's confirmation is cleared.
+The downgrade refuses while any stored URL is longer than the old column:
+shortening one would name a different repository.
 
 Revision ID: 20261111120000_repo_url_2048
 Revises: 20261109200000_invite_by_handle

@@ -98,6 +98,7 @@ def test_what_the_checks_refuse() -> None:
     "url",
     [
         "https://\u212a.example/a/b",  # U+212A KELVIN SIGN, whose lower case is ASCII "k"
+        "https://bitbuc\u212aet.org/a/b",  # U+212A inside the label: would store bitbucket.org
         "https://\u0130.example/a/b",  # U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE
     ],
 )
@@ -109,6 +110,9 @@ def test_forge_comes_from_the_host_alone() -> None:
     kinds = {
         "https://github.com/a/b": "github",
         "https://github.example.com/a/b": "other",
+        "https://notgithub.com/a/b": "other",
+        "https://www.github.com/a/b": "other",
+        "https://github.com.evil.example/a/b": "other",
         "https://gitlab.com/a/b": "gitlab",
         "https://gitlab.corp.example/a/b/c": "gitlab",
         "https://bitbucket.org/a/b": "bitbucket",
@@ -230,6 +234,11 @@ def test_the_hub_stores_a_non_github_url_and_never_fetches_it(
     )
     assert imported.status_code == 409
     assert imported.json()["error"]["details"] == {"reason": "forge_not_github"}
+    # The owner may turn the page on again. Visibility is then asked directly,
+    # so removing the off-GitHub return in observe_visibility would call the forge.
+    turned = owner.patch("/projects/maintainer/lab", {"public_page": "on"})
+    assert turned.status_code == 200, turned.text
+    assert turned.json()["public_page"] == "on"
     confirmed = owner.post(
         "/projects/maintainer/lab/repository/confirm",
         {"url": "https://gitlab.corp.example/Acme/api"},
@@ -238,7 +247,22 @@ def test_the_hub_stores_a_non_github_url_and_never_fetches_it(
     assert confirmed.json()["repository"]["owner_confirmed"] is True
     again = owner.get("/projects/maintainer/lab/probe?pr=3")
     assert again.json()["error"]["details"] == {"reason": "forge_not_github"}
-    # The worker's paths, asked directly, still do not connect.
+    # The worker's paths, asked directly, still do not connect. observe and
+    # observe_commit are the reads the route refuses first; calling them here
+    # is what makes a no-op of their GitHub guard fail.
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    for read in (
+        lambda: probe.observe(migrated, forge.Forge(TOKEN), project, "pr", "3"),
+        lambda: probe.observe_commit(migrated, forge.Forge(TOKEN), project, "d" * 40),
+    ):
+        with pytest.raises(forge.NotCoveredError) as caught:
+            read()
+        assert caught.value.reason == "forge_not_github"
     probe.observe_visibility(migrated, forge.Forge(TOKEN), project_id)
     images.refresh(migrated, forge.Forge(TOKEN), project_id, "logo")
     assert calls == []
@@ -293,6 +317,22 @@ def test_the_column_holds_2048_characters(migrated: Engine) -> None:
     column_type = column["type"]
     assert isinstance(column_type, String)
     assert column_type.length == 2048
+
+
+def test_an_empty_or_overlong_url_is_not_a_repository_url(owner: flow.Human) -> None:
+    empty = owner.post(
+        "/projects", {"slug": "empty", "name": "E", "repository": {"url": ""}, "public_page": "off"}
+    )
+    assert empty.status_code == 400
+    assert empty.json()["error"]["details"]["fields"] == {"repository.url": "not_a_repository_url"}
+    url = "https://zz.example/" + ("a" * 4078)
+    assert len(url) == 4097
+    over = owner.post(
+        "/projects",
+        {"slug": "over", "name": "O", "repository": {"url": url}, "public_page": "off"},
+    )
+    assert over.status_code == 400
+    assert over.json()["error"]["details"]["fields"] == {"repository.url": "not_a_repository_url"}
 
 
 def test_a_refused_url_names_not_a_repository_url(owner: flow.Human) -> None:

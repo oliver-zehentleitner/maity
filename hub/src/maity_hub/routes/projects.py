@@ -70,16 +70,17 @@ ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover o
 
 
 class RepositoryIn(Strict):
-    # The stored URL is at most 2048 characters (§6.1). The request may also carry
-    # one trailing slash and a `.git` suffix; past this bound it is refused first.
-    url: str = Field(min_length=1, max_length=forge.REQUEST_URL_MAX)
+    # No length here: an empty or over-long URL is `not_a_repository_url` (§6.1).
+    # The request body cap is the outer bound.
+    url: str
     default_branch: str = Field(default="main", min_length=1, max_length=255)
     # §6.1: left out, it keeps the current value on the same `url` (`_repository_columns`).
     required_check: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class RepositoryConfirmIn(Strict):
-    url: str = Field(min_length=1, max_length=forge.REQUEST_URL_MAX)
+    # The owner sends the URL they saw. Length is the body cap's, not this field's.
+    url: str
 
 
 class PolicyIn(Strict):

@@ -42,8 +42,9 @@ TIMEOUT = 10.0
 
 # docs/api.md §6.1. The stored URL is at most 2048 characters. A request may also
 # carry one trailing slash and a lower-case `.git`, which the check removes.
+# An empty or longer value fails here as `not_a_repository_url`; the request
+# body cap is the outer bound, not a field length.
 STORED_URL_MAX = 2048
-REQUEST_URL_MAX = 4096
 _HOST_MAX = 253  # a DNS name, as for a person's website (person_links._dns, §16.9)
 _LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 _DNS_HOST = re.compile(rf"{_LABEL}(?:\.{_LABEL})+")
