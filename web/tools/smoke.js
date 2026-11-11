@@ -14555,6 +14555,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.MAITY_FIXTURE_NO_BOOTSTRAP = false;
     expect(older[0] === "GET /bootstrap?project=maintainer/maity" && SINGLE.slice(1).every((x) => older.includes(x)) && olderDrawn,
       "boot: an older hub's 404 for /bootstrap leaves the reads to their own routes, and the page draws " + JSON.stringify(older.slice(0, 8)));
+    // A boot that stops early ends its parts too (4hv7 at #1672): /me answers 500 inside the bundle, the
+    // failure page stands, and a later read of the window or the project asks its own route.
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/me" ? Promise.reject(new win.Maity.api.ApiError("broken", 500, p, "internal")) : null);
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 10; k++) await tick();
+    win.MAITY_FIXTURE_HOLD = null;
+    const failedPage = !main.querySelector("section.view-board") && /broken/.test(text(main));
+    A.length = 0;
+    await win.Maity.api.get("/maintenance"); await win.Maity.api.get("/projects/maintainer/maity");
+    expect(failedPage && JSON.stringify(A) === JSON.stringify(["GET /maintenance", "GET /projects/maintainer/maity"]),
+      "boot: a boot that ends on the failure page ends its parts; later reads ask their own routes " + JSON.stringify([failedPage, A]));
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
   }
 
   // The invitation and registration pages read the session themselves: the drawing asks it no second

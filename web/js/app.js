@@ -2168,7 +2168,19 @@ window.Maity = window.Maity || {};
     }
   }
 
+  // A drawing, and the end of its boot's bundle on every way out (review of #1672): a failure
+  // page, the second factor's step, the setup, a window's full page, a visitor's page and a pending
+  // account all return early; their parts end with the drawing, not 15 s later.
   async function render(how) {
+    const boot = { primed: null };
+    try {
+      return await drawing(how, boot);
+    } finally {
+      if (boot.primed) M.api.unprime(boot.primed);
+    }
+  }
+
+  async function drawing(how, boot) {
     const seq = ++renderSeq;
     const wrote = writes;
     const reuse = how === SWITCH && kept && !sessionEnded && kept.epoch === (M.sessionEpoch || 0)
@@ -2231,9 +2243,10 @@ window.Maity = window.Maity || {};
     // The three waves (the window and the session, then /me, then the project's head, project and
     // members) come in one GET /bootstrap (§5.4, tsk-j591fzgnmspf): the reads below take their
     // answers from its parts, in the same order and with the same handling; an older hub's 404
-    // leaves them to their own routes. They end once the context is read (below), and serve no
-    // read once a newer drawing has started.
+    // leaves them to their own routes. They end once the context is read (below), at the latest
+    // when the drawing returns (render), and serve no read once a newer drawing has started.
     const primed = reuse || ownRead ? null : M.api.prime(first === "project" ? firstWhere.slug : null, () => seq === renderSeq);
+    boot.primed = primed;
     const early = reuse || ownRead ? null : M.api.get("/auth/session");
     if (early) early.catch(() => {});
     await M.maintenance.fresh();

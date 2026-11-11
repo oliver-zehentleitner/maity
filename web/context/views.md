@@ -5906,11 +5906,14 @@ Those reads stay where they were, in the same order (the window, the session, `/
 the session's language and CSRF token, a 401 that ends the session, the 503 window (its
 `retry_after` taken from `details.until`, since a part has no headers), and `/me`'s time zone.
 An error part becomes the ApiError the single call would have thrown. The parts end once the boot
-has read its context (`unprime`), serve no read once a newer drawing has started (the `live` check
-`prime` is given), are replaced by a newer drawing's, and last 15 seconds at most. So a poll never
-gets an old one, and a part nobody asked for (the window read a minute ago, a visitor's page) is
-dropped. No `try/finally` around the boot: it would re-indent the whole drawing, which other
-pull requests touch. An answer
+has read its context (`unprime`), and at the latest when the drawing returns, whichever way it
+ends (a failure page, the second factor's step, the setup, a window's full page, a visitor's page, a
+pending account): `render` is a small wrapper that calls the drawing and unprimes in a `finally`.
+They serve no read once a newer drawing has started (the `live` check `prime` is given), are
+replaced by a newer drawing's, and last 15 seconds at most. So a poll never gets an old one, and a
+part nobody asked for (the window read a minute ago, a visitor's page) is dropped. The wrapper,
+not a `try/finally` inside the drawing, because that would re-indent the whole drawing, which
+other pull requests touch (review of #1672). An answer
 without parts (an older hub's 404, a limit, a refusal, no answer) keeps nothing, and every read
 goes to its own route as before. `/bootstrap` is a public path: it needs no session.
 
