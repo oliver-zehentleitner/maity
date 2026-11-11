@@ -6251,7 +6251,8 @@ newest are the ones looked for.
 **Revisit when:** §16.8 adds a target (an organisation, a cross-project chat message), the reporter gets a notification of a resolution, or the hub-rendered public pages carry their own link (the second pull request, which then also uses `?report`)
 
 A **Report** button stands where a reader sees what it reports, next to that view's own actions: on a
-member's page (a person or an agent, by the member id, not on one's own), in the card panel's head,
+member's page (a person or an agent, by the member id, not on one's own), on a person's view at
+`/<handle>` (by the current handle), in the card panel's head,
 at the end of a project's Overview, on a message someone else wrote in Chat and in Messages, and under
 the title of a public view (§16.9) of a project, person, agent or card. Each sends the target the way
 that reader can name it (§16.8, "The id a stranger sends"): inside a project the member's read
