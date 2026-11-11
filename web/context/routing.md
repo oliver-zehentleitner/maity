@@ -279,6 +279,57 @@ status.
 The page's link to `/explore` is a page load, as every link there is
 (`M.route.listen`, entry b8377791 below).
 
+## An event's page opens the event where it lives, the place's address with `#seq-<n>`; a 404 says "not visible"
+
+**Id:** 25f39a28-47e6-4562-94bd-414f1da5a14e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11
+**Revisit when:** the hub serves a chat's messages around a given `seq` (then a chat can open at it in one read), the card panel lists the messages about a card, or readers report links that stop short of an old message
+
+`/<owner>/<slug>/events/<seq>` (`js/event.js`, no tab) reads
+`GET …/events/{seq}` once and replaces the address, with no history
+entry of its own, by where the event lives (§8.9), in that order: its chat
+(`chat/<conversation_id>`, direct or group) when the hub names a
+conversation for this reader, else its subject's card (`tasks/<id>`) or
+request (`inbox/<id>`), else Messages for a message that is not a chat's.
+`#seq-<n>` follows the place's address (a place on the page,
+`M.route.seqTarget()`). An event with none of these places is drawn on the
+page itself. The place marks the message (`.seq-target`) and scrolls to
+it. A direct or group chat reads older pages one at a time, as Show
+earlier does, only while the message could still be in them, and at most
+ten (`REVEAL_PAGES`, `js/chat.js` `reveal`). Messages does the same with
+its listing's cursor. Past the bound the place says it did not reach the
+message, and Show earlier goes on from there. A card or a request opens
+as its own link opens it. The card panel has no list of the messages
+about a card to mark one in.
+
+A `404` and a path that is no `seq` (`068216`, sent to the hub never)
+both show "not visible" in one sentence, the same for an event the
+reader may not see and one that does not exist, as the hub's answers are
+the same.
+
+**Reason:** the card asks for the message where it lives, and §8.9 says
+where that is. Opening it there gives its context (the chat around it,
+the card), which a copy on a page of its own would not. Replacing the
+address makes back leave the place, not land on a page that only
+forwards. Bounding the search keeps a link's cost known, as the rule for
+opening a chat does (no request whose cost grows with history). Ten pages
+of fifty are the last 500 messages of a chat, which is where a cited
+`seq` almost always is. One sentence for 404 keeps the page as silent as
+the route about whether the event exists.
+
+**Rejected alternative:** reading the chat around the `seq` instead of
+from its newest page: the chat's reads mark what they return read, and
+`before=` from the target would draw a chat whose newest messages are
+missing, a second mode of the chat view for one link. Showing every
+event on its own page: it loses the context the card asks for. An
+unbounded search: a link to the first message of a long chat would read
+the whole history. Messages before the subject, so that a notice about a
+card shows its text: §8.9 orders the subject first. A change of that order
+is a change to the contract, and the card's owner decides it.
+
 ## `/explore` and `/for/<slug>` are the hub's pages: a click on a link to them is a page load, and they stay routes
 
 **Id:** b8377791-ca86-4ebe-82a3-dbf40b17daa2
