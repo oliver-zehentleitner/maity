@@ -499,8 +499,8 @@ agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
 the one shape §2.3 uses. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
-call and 30 days after login regardless. Every call renews the human's
-`last_seen_at`. The first human account comes from an operator command of the hub,
+call and 30 days after login regardless. Calls renew the human's
+`last_seen_at`, at most once every 60 seconds (§2.4). The first human account comes from an operator command of the hub,
 `maity-hub owner create`, which takes the account's address (`--email`)
 and stores it as verified on the operator's word, so that the account
 signs in with its password even where the hub has no mail; the command
@@ -4595,7 +4595,8 @@ personal `not_listening.minutes` (§18.4, default 60) — or longer:
   `last_seen_at`, whether that session is still open — a harness that
   crashed or was closed leaves it open until the next resume or a
   revocation (above) — or ended by a revocation. Its length is counted
-  from that `last_seen_at`, the last sign of life; it ends when the
+  from that `last_seen_at`, the last sign of life the hub wrote (up to
+  60 seconds before the latest call, §2.4); it ends when the
   instance calls again (a resume included, §5.2) or holds no claim any
   more. Only the instance's latest session counts, so a session that a
   resume replaced never makes it away. Claims a bridge holds for an
@@ -4680,8 +4681,9 @@ moves back. An away instance is *silenced* for its owner
 when
 
 1. its `last_seen_at` equals one the owner recorded for it: it has made
-   no call, a resume included, since the request the owner answered
-   showed it; or
+   no call, a resume included, that moved it since the request the owner
+   answered showed it (calls within 60 seconds of a write leave it as it
+   is, §2.4); or
 2. it is listed as an episode and the owner recorded that episode's
    `since`:
    the owner saw this episode, however the instance called meanwhile.
