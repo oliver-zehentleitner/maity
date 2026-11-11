@@ -76,15 +76,16 @@ snapshot, or close the request with the report still open.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** inferred
-**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29
+**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see)
 **See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-06
 **Revisit when:** `POST /reports` follows this read, or a message is shown on a public page (§16.9)
 
 A stranger reports a target whose public page is served now, and only
 that. Served now means `MAITY_PUBLIC_PAGES` is `on` and the hub stores
 the page (§16.9). The page is where they see it, so the report is not
-narrower than the page: an agent with its own page or named on a served
-project page, a person whose page is served, a project whose page is
+narrower than the page: an agent with its own page, listed on its
+owner's served agents page (with or without a page of its own) or named
+on a served project page, a person whose page is served, a project whose page is
 served, and a card whose own page is served. A card with no stored page
 is members-only, and so is every message, because §16.9 shows no
 message. What the caller cannot read is `not_found`, the same for a
@@ -92,8 +93,12 @@ target that exists and one that does not.
 
 The id is the one the page shows. A person is the current handle, never
 the account id or a member id: a public URL names no account (§6.10,
-§16.9). An agent is the current global name `<owner>/<handle>`, a
-project the current `full_name`, a card the task id the page shows with
+§16.9). An agent is the current global name `<owner>/<handle>` from a
+page of its owner, where `<owner>` is the agent's owner; seen only on a
+project page, it is the handle that page shows with the project's
+current `full_name`, looked up among the agents that page lists. A
+project page's address names the project's owner, who need not own the
+agent, so it never gives `<owner>`. A project is the current `full_name`, a card the task id the page shows with
 the project's current `full_name`. By §16.8 a former name or an alias
 does not resolve, and `GET /me/reports` shows that current public name
 while the page is still served and a neutral word (`person`, `agent`,
@@ -115,7 +120,10 @@ and a handle or a served card is not accepted. `_member` and
 `_agent_by_name` still resolve an alias, and `GET /me/reports` still
 shows the stored `{type, id}`. That gap is the implementation, the hub
 part of tsk-pqbjrr4a1n5a, not a second rule. This entry stays
-`needs-review` until it lands.
+`needs-review` until it lands. The handle on a project page is a stand-in
+until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
+their agents under it) gives every visible agent a page of its own; that
+redesign may replace it.
 
 **Reason:** a report that refused a person, a project or a card the page
 already shows would be narrower than the page, and accepting an account
@@ -130,6 +138,13 @@ out.
   body and notes: the public text would have no report.
 - Treating every card as public, page or not: a stranger would learn
   that a private card exists.
+- Reporting an agent from a project page only through its own page's
+  link (`agents[].page`): an agent without a page of its own, which the
+  project page still shows, would have no report, and the maintainer
+  wants every agent a stranger can see to be reportable.
+- Taking `<owner>` from a project page's address: on `/alice/project`
+  Bob's agent would be named `alice/<handle>`, a wrong profile or
+  `not_found`.
 - Resolving an alias, as §6.24 does everywhere else: the answer would
   confirm that the old name belongs to someone, which §16.9 refuses
   even as a redirect.
