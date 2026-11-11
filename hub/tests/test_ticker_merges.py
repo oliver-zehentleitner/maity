@@ -481,8 +481,10 @@ def moved_during_a_cut_scan(
     clock.set_source(lambda: epoch + timedelta(hours=3))
     old = {
         "number": 13,
-        "title": "merged before the round began",
-        "merged_at": clock.rfc3339(epoch + timedelta(minutes=1)),
+        "title": "moved up from an unread page",
+        # Inside the hour of the hub clock (epoch + 3 h). The scan under test
+        # admits by updated_at, not by how old the merge is (§17.4).
+        "merged_at": clock.rfc3339(epoch + timedelta(hours=2, minutes=30)),
         "updated_at": clock.rfc3339(epoch + timedelta(minutes=1)),
         "merge_commit_sha": MERGE_SHA,
         "base": {"ref": "main", "sha": BASE_SHA},
@@ -520,7 +522,7 @@ def moved_during_a_cut_scan(
     return found
 
 
-def test_an_old_merge_that_moves_up_during_a_cut_scan_is_still_announced(
+def test_a_merge_that_moves_up_during_a_cut_scan_is_still_announced(
     owner: flow.Human, github: FakeGitHub, migrated: Engine
 ) -> None:
     found = moved_during_a_cut_scan(owner, github, migrated, timedelta(hours=1), timedelta(hours=2))
@@ -575,7 +577,9 @@ def test_a_page_in_the_bound_s_second_does_not_stop_the_scan(
             {
                 "number": 14,
                 "title": "in the bound's second",
-                "merged_at": clock.rfc3339(epoch + timedelta(minutes=5)),
+                # Inside the hour of the hub clock. The page is kept because its
+                # updated_at is the bound's second, not because of merged_at.
+                "merged_at": clock.rfc3339(epoch + timedelta(hours=2, minutes=30)),
                 "updated_at": second,
                 "merge_commit_sha": MERGE_SHA,
                 "base": {"ref": "main", "sha": BASE_SHA},
@@ -608,6 +612,109 @@ def test_the_switch_on_second_counts(
         )
     merged(github, 15, [], at=clock.rfc3339(epoch + offset))
     assert probe.announce_merges(migrated, READER, pid) == announced
+
+
+# --- a missed merge older than one hour (§17.4) ---------------------------------------
+
+
+def test_a_catch_up_after_a_gap_announces_only_a_merge_inside_the_hour(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    """Forge access returns three hours after the ticker was switched on. A merge
+    two hours old is discarded; one ten minutes old is announced. The cursor moves,
+    and the next round writes nothing."""
+    enable(owner)
+    pid = project_id(migrated)
+    with migrated.connect() as conn:
+        switched = ticker.merges_since(conn, pid)
+    moment = switched.replace(microsecond=0) + timedelta(hours=3)
+    clock.set_source(lambda: moment)
+    old_at = clock.rfc3339(moment - timedelta(hours=2))
+    young_at = clock.rfc3339(moment - timedelta(minutes=10))
+
+    def pull(number: int, at: str) -> dict[str, Any]:
+        return {
+            "number": number,
+            "title": f"PR {number}",
+            "html_url": f"https://github.com/acme/maity/pull/{number}",
+            "merged_at": at,
+            "updated_at": at,
+            "merge_commit_sha": MERGE_SHA,
+            "base": {"ref": "main", "sha": BASE_SHA, "repo": {"private": False}},
+            "head": {"ref": "agent-b/x"},
+            "user": {"login": "agent-b"},
+        }
+
+    closed(github, 1, [pull(21, old_at), pull(22, young_at)])
+    github.answers["/repos/acme/maity/pulls/22/files?per_page=100&page=1"] = [
+        {"filename": "hub/a.py", "patch": ""}
+    ]
+    assert probe.announce_merges(migrated, READER, pid) == 1
+    assert [i["payload"]["merge"]["pr"] for i in items(owner)] == [22]
+    assert not any("/pulls/21/files" in call for call in github.calls)
+    with migrated.connect() as conn:
+        scan = ticker.merge_scan(conn, pid)
+    assert scan.scanned_until == moment and scan.resume_page is None
+    assert probe.announce_merges(migrated, READER, pid) == 0
+    assert [i["payload"]["merge"]["pr"] for i in items(owner)] == [22]
+
+
+def test_a_merge_one_hour_old_is_announced_and_one_second_older_is_not(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    """Exactly one hour before delivery is still announced; one hour and one second is not."""
+    enable(owner)
+    pid = project_id(migrated)
+    with migrated.connect() as conn:
+        switched = ticker.merges_since(conn, pid)
+    moment = switched.replace(microsecond=0) + timedelta(hours=3)
+    clock.set_source(lambda: moment)
+    merged(
+        github,
+        31,
+        [{"filename": "hub/a.py", "patch": ""}],
+        at=clock.rfc3339(moment - timedelta(hours=1)),
+    )
+    merged(
+        github,
+        32,
+        [{"filename": "hub/a.py", "patch": ""}],
+        at=clock.rfc3339(moment - timedelta(hours=1, seconds=1)),
+    )
+    assert probe.announce_merges(migrated, READER, pid) == 1
+    assert [i["payload"]["merge"]["pr"] for i in items(owner)] == [31]
+    with migrated.connect() as conn:
+        assert ticker.merge_scan(conn, pid).scanned_until == moment
+
+
+def test_a_merge_that_ages_past_the_hour_during_the_forge_read_is_not_delivered(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inside the hour when the forge is asked, past it when the item would be written."""
+    enable(owner)
+    pid = project_id(migrated)
+    with migrated.connect() as conn:
+        switched = ticker.merges_since(conn, pid)
+    start = switched.replace(microsecond=0) + timedelta(hours=2)
+    clock.set_source(lambda: start)
+    merged(
+        github,
+        41,
+        [{"filename": "hub/a.py", "patch": ""}],
+        at=clock.rfc3339(start - timedelta(minutes=50)),
+    )
+    real = forge.Forge.pull_files
+
+    def slow(self: forge.Forge, repository: str, number: int, cap: int = 300) -> Any:
+        clock.set_source(lambda: start + timedelta(minutes=20))
+        return real(self, repository, number, cap)
+
+    monkeypatch.setattr(forge.Forge, "pull_files", slow)
+    assert probe.announce_merges(migrated, READER, pid) == 0
+    assert items(owner) == []
+    assert any("/pulls/41/files" in call for call in github.calls)
+    with migrated.connect() as conn:
+        assert ticker.merge_scan(conn, pid).scanned_until == start
 
 
 def test_a_merge_names_the_holding_instance_of_a_member_held_only_as_holder(

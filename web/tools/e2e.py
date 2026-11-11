@@ -4764,8 +4764,20 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
     the runner's with it among its repositories: the paired runner allowed here is offered; it has
     not reported what it can do, so there is no tool to choose and nothing to send."""
-    run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
+    run.step("placements: the Agents page's tab Where they run (§16.11), at /<owner>/<slug>/placements")
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
+    expect(page.locator("main section.placements")).to_have_count(0)
+    tabs = page.locator("main nav.agents-tabs")
+    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Organisation"])
+    tabs.get_by_role("link", name="Where they run", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/placements$"))
+    expect(tabs.get_by_role("link", name="Where they run", exact=True)).to_have_attribute("aria-current", "page")
+    expect(page.locator("header nav.views a[aria-current='page']")).to_have_text(re.compile(r"^Agents"))
+    # The section is the page: its heading is the h2 under the page's h1 (review of #1667).
+    expect(page.get_by_role("heading", name="Where they run", exact=True, level=2)).to_be_visible()
+    agents_page_tabs(run, page)
+    run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
+    page.goto(f"{run.base}/owner/e2e-alpha/placements")
     section = page.locator("main section.placements")
     expect(section.locator(".placement-new-none")).to_have_text(
         "A runner starts an agent in a clone of the project's repository, and this project has none.")
@@ -4801,6 +4813,27 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
         page.unroute(runners_read, offering_it)
         page.unroute(BOOTSTRAP, in_bundle)
     no_problems(run, "start on a runner")
+
+
+def agents_page_tabs(run: Run, page: Page) -> None:
+    """/agents's tabs (§16.11, tsk-3s3eb6bsp15n): the list, Where they run across one's projects, and
+    Maintenance notices, which stood under the list before."""
+    run.step("agents: /agents has the tabs Agents, Where they run and Maintenance notices")
+    page.goto(f"{run.base}/agents")
+    tabs = page.locator("main nav.agents-tabs")
+    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Maintenance notices"])
+    expect(page.locator("main section.broadcasts")).to_have_count(0)
+    tabs.get_by_role("link", name="Where they run", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/agents/placements$"))
+    expect(page.get_by_role("heading", name="Where they run", exact=True, level=2)).to_be_visible()
+    expect(page.locator("main section.placements").first).to_be_visible()
+    expect(page.locator("main button.placement-new-open")).to_have_count(0)
+    run.a11y(page, "agents, where they run")
+    tabs.get_by_role("link", name="Maintenance notices", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/agents/maintenance$"))
+    expect(page.get_by_role("heading", name="Maintenance notices", exact=True, level=2)).to_be_visible()
+    expect(page.locator("#broadcasts-mode")).to_be_visible()
+    run.a11y(page, "agents, maintenance notices")
 
 
 def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:
@@ -5049,6 +5082,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     tabs = page.locator("main nav.agents-tabs")
     expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
+    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Organisation"])
     tabs.get_by_role("link", name="Organisation", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/agents/organisation$"))
     expect(page.get_by_role("heading", name="Organisation of your agents", exact=True)).to_be_visible()

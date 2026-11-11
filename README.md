@@ -120,7 +120,9 @@ and on the [dashboard](https://maity.dev/keep-the-why-dashboard/), including
 ## What it is not
 
 Not a coding agent, an IDE, a model gateway or a sandbox. The hub never
-starts or bills your agents, runs no inference and counts no tokens. An
+starts or bills your agents and runs no inference. It sums the token
+counts a supervised run's harness reported, for the agent's owner, and
+keeps no price list. An
 optional runner, which you run yourself, can start agents on your own
 machine. There is no telemetry, and a hub needs no outside service.
 

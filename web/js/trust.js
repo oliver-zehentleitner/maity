@@ -24,13 +24,14 @@ window.Maity = window.Maity || {};
     "red-team": () => [M.t("role.red_team"), M.t("role.red_team.help")],
     "blue-team": () => [M.t("role.blue_team"), M.t("role.blue_team.help")],
     "purple-team": () => [M.t("role.purple_team"), M.t("role.purple_team.help")],
+    expert: () => [M.t("role.expert"), M.t("role.expert.help")],
   };
   const ROLES = Object.keys(ROLE_WORDS);
   // What an agent's own human may give it when bringing it (§3.1): not ops, not proxy.
   const MEMBER_TRUSTS = ["member", "guest"];
   const MEMBER_ROLES = ROLES.filter((r) => r !== "ops" && r !== "proxy");
-  // What a card's needs may name, beside a project role (§6.4).
-  const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager");
+  // What a card's needs may name, beside a project role (§6.4): an expert takes no cards (§2.3).
+  const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager" && r !== "expert");
   // A trust or a role as a word in a line ("member · coder"), where roleLabel is the choice's name.
   // Words outside the contract's sets stay as they come: a project may name its own roles.
   const TRUST_WORDS = {
@@ -49,6 +50,7 @@ window.Maity = window.Maity || {};
     "red-team": () => M.t("trust.role_word.red_team"),
     "blue-team": () => M.t("trust.role_word.blue_team"),
     "purple-team": () => M.t("trust.role_word.purple_team"),
+    "expert": () => M.t("trust.role_word.expert"),
   };
   const trustWord = (t) => (Object.hasOwn(TRUST_WORDS, t) ? TRUST_WORDS[t]() : t);
   const roleWord = (r) => (Object.hasOwn(ROLE_LINE_WORDS, r) ? ROLE_LINE_WORDS[r]() : r);
@@ -115,6 +117,7 @@ window.Maity = window.Maity || {};
     "role:red-team": () => M.t("trust.every.role.red_team"),
     "role:blue-team": () => M.t("trust.every.role.blue_team"),
     "role:purple-team": () => M.t("trust.every.role.purple_team"),
+    "role:expert": () => M.t("trust.every.role.expert"),
   };
   function tokenWords(token) {
     if (Object.hasOwn(EVERY, token)) return EVERY[token]();

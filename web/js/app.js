@@ -37,6 +37,10 @@ window.Maity = window.Maity || {};
     // One's own agents in the project (js/agents-page.js), the component of
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
+    // Where they run (js/agents-page.js, §16.11's `placements`, tsk-3s3eb6bsp15n): the Agents
+    // page's second tab, so no tab of its own in this row; its list reads itself again on a
+    // placement event (js/placements.js).
+    { route: "placements", view: "projectPlacements", get label() { return M.t("placements.title"); }, tab: false, current: "agents" },
     { route: "chat", get label() { return M.t("nav.chat"); } },
     // The hub's listing (§8.8), new messages from the feed, in place (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
@@ -656,6 +660,7 @@ window.Maity = window.Maity || {};
     "red-team": () => M.t("settings.onboarding.role.red_team"),
     "blue-team": () => M.t("settings.onboarding.role.blue_team"),
     "purple-team": () => M.t("settings.onboarding.role.purple_team"),
+    "expert": () => M.t("settings.onboarding.role.expert"),
   };
   function onboardingForm(ctx) {
     const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
