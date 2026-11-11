@@ -150,7 +150,6 @@ def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
 # What an account that waits for approval may call (§2.7.5): its own account and
 # sessions. `/auth/methods` needs no caller and is everyone's.
 PENDING_MAY = {
-    ("GET", "/api/v1/bootstrap"),  # its parts are confined one by one (§5.4)
     ("GET", "/api/v1/me"),
     ("GET", "/api/v1/auth/session"),
     ("POST", "/api/v1/auth/logout"),
