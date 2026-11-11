@@ -29,6 +29,15 @@ START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
     "comes first. Then work as `docs/agents.md` and the rules in the packet say."
 )
+# The clone's `.git/config` is not writable from Claude Code's or Codex's sandbox
+# (GIT_PROTECTED, codex_config), so git's commands that store a setting there fail. The
+# session's git needs none of them for the usual flow (SESSION_GIT_CONFIG); the prompt names
+# the ones that still fail.
+GIT_PROMPT = (
+    " Git here cannot write `.git/config`: cut a branch with `git switch -c <branch> "
+    "origin/<default branch>` and push it with `git push origin <branch>`; never `push -u`, "
+    "`--set-upstream`, `--track` or `branch -m`. `maity report` needs no upstream."
+)
 # Supervised runs end with the turn: the loop starts the next one on the next event.
 SUPERVISED_PROMPT = (
     START_PROMPT + " Handle what is waiting for you, checkpoint what you hold, then end your "
@@ -65,11 +74,35 @@ GIT_DENIED = (
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
 READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
+# The session's git settings, through the environment: the clone's `.git/config` is not
+# writable from the sandbox. `branch.autoSetupMerge=false` cuts a branch from a remote one
+# without storing an upstream there (which fails), and `push.default=current` pushes the
+# branch to its own name without one. `fetch.recurseSubmodules=false` keeps fetch from reading
+# `.gitmodules`, which Claude Code's sandbox replaces with an unreadable placeholder when the
+# repository has none (cli/context/runner.md).
 SESSION_GIT_CONFIG = {
-    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_COUNT": "5",
     "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
     "GIT_CONFIG_KEY_1": "diff.ignoreSubmodules", "GIT_CONFIG_VALUE_1": "all",
+    "GIT_CONFIG_KEY_2": "branch.autoSetupMerge", "GIT_CONFIG_VALUE_2": "false",
+    "GIT_CONFIG_KEY_3": "push.default", "GIT_CONFIG_VALUE_3": "current",
+    "GIT_CONFIG_KEY_4": "fetch.recurseSubmodules", "GIT_CONFIG_VALUE_4": "false",
 }  # fmt: skip
+
+# What Claude Code's sandbox puts into the work tree's root where the path is missing, so that
+# nothing can create it there: an empty placeholder each, which `git status` lists as
+# untracked. Read from `git status` in a sandboxed run of 2.1.322. The runner hides them in
+# `.git/info/exclude`, which the agent cannot write (GIT_PROTECTED); the sandbox keeps those
+# paths unwritable anyway, so hiding them hides nothing the agent could add.
+CLAUDE_PLACEHOLDERS = (
+    ".bash_profile", ".bashrc", ".claude/agents", ".claude/commands", ".claude/hooks",
+    ".claude/launch.json", ".claude/loop.md", ".claude/output-styles", ".claude/routines",
+    ".claude/scheduled_tasks.json", ".claude/settings.local.json", ".claude/skills",
+    ".claude/workflows", ".gitconfig", ".gitmodules", ".idea", ".mcp.json", ".profile",
+    ".ripgreprc", ".vscode", ".zprofile", ".zshrc",
+)  # fmt: skip
+EXCLUDE_BEGIN = "# maity-runner: the sandbox's placeholders (begin)"
+EXCLUDE_END = "# maity-runner: the sandbox's placeholders (end)"
 
 # Exit codes that are a harness's provider limit, per harness: only what a real run verified.
 LIMIT_EXITS: dict[str, tuple[int, ...]] = {}
@@ -111,8 +144,9 @@ def launch(ctx: Context) -> Launch:
     env = {
         "MAITY_PLACEMENT": ctx.placement["id"],
         # The agent's `maity resume` sends it, and the hub answers a supervised session
-        # (§15.11): no `maity wait`, a narrower wake set.
-        "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
+        # (§15.11): no `maity wait`, a narrower wake set. Only where the loop wakes the
+        # harness: an interactive session told not to wait would miss every later event.
+        **({"MAITY_SUPERVISOR": f"maity-runner/{__version__}"} if headless(ctx) else {}),
         "GIT_COMMON_DIR": str(ctx.clone / ".git"),
         # A nested repository the agent registers as a submodule keeps its own configuration,
         # which the pin does not reach; git passes these settings on to it.
@@ -242,8 +276,28 @@ def trust_clone(ctx: Context) -> None:
         )
 
 
+def hide_placeholders(ctx: Context) -> None:
+    """Write CLAUDE_PLACEHOLDERS into the clone's `.git/info/exclude`, as the agents' user,
+    between markers: a block from an earlier start is replaced, every other line stays."""
+    path = ctx.clone / ".git" / "info" / "exclude"
+    kept: list[str] = []
+    if ctx.as_user.exists(path, "-f"):
+        inside = False
+        for line in ctx.as_user.read(path).decode("utf-8", "replace").splitlines():
+            if line == EXCLUDE_BEGIN:
+                inside = True
+            elif line == EXCLUDE_END:
+                inside = False
+            elif not inside:
+                kept.append(line)
+    block = [EXCLUDE_BEGIN, *(f"/{name}" for name in CLAUDE_PLACEHOLDERS), EXCLUDE_END]
+    ctx.as_user.write(path, "\n".join([*kept, *block]) + "\n")
+
+
 def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
+    if ctx.sandbox:
+        hide_placeholders(ctx)
     settings = _write(ctx, ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
     mcp = _write(ctx, ctx.agent_dir / "claude-mcp.json", {"mcpServers": {}})
     base = [
@@ -260,14 +314,14 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
-        return Launch([*base, START_PROMPT], env)
+        return Launch([*base, START_PROMPT + GIT_PROMPT], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).
     quiet = {**env, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
     return _supervised(
         ctx,
-        [*base, "-p", SUPERVISED_PROMPT],
-        [*base, "-p", SUPERVISED_PROMPT, "--continue"],
+        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT],
+        [*base, "-p", SUPERVISED_PROMPT + GIT_PROMPT, "--continue"],
         quiet,
     )
 
@@ -326,11 +380,12 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     env = {**env, "CODEX_HOME": str(home)}
     model = ctx.placement.get("model")
     chosen = ["-m", model] if model else []
+    prompt = START_PROMPT + GIT_PROMPT
     if ctx.placement.get("mode") == "interactive":
-        return Launch([ctx.binary, "-C", str(ctx.clone), *chosen, START_PROMPT], env)
-    first = [ctx.binary, "exec", "-C", str(ctx.clone), *chosen, START_PROMPT]
+        return Launch([ctx.binary, "-C", str(ctx.clone), *chosen, prompt], env)
+    first = [ctx.binary, "exec", "-C", str(ctx.clone), *chosen, prompt]
     # `--last` is per working directory, and CODEX_HOME is per placement: never another's.
-    again = [ctx.binary, "exec", "-C", str(ctx.clone), *chosen, "resume", "--last", START_PROMPT]
+    again = [ctx.binary, "exec", "-C", str(ctx.clone), *chosen, "resume", "--last", prompt]
     return _supervised(ctx, first, again, env)
 
 

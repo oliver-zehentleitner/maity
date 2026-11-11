@@ -48,9 +48,48 @@ def test_untracked_file_is_not_a_mismatch(clone: Path) -> None:
     assert gitfacts.mismatches(gitfacts.collect(clone)) == []
 
 
-def test_branch_without_upstream_is_refused(clone: Path) -> None:
+def test_branch_without_upstream_is_refused_until_pushed(clone: Path) -> None:
     git(clone, "switch", "--quiet", "-c", "local-only")
-    assert any("no upstream" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+    assert any("does not exist" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+
+
+def test_a_branch_pushed_without_an_upstream_reads_as_its_own_branch_on_origin(
+    clone: Path,
+) -> None:
+    """Under the runner's sandbox `.git/config` cannot be written, so an agent pushes without
+    `-u` and its branch never gets an upstream (the first runner test of 0.1.0a8): the report
+    reads the branch of the same name on the remote a plain `git push` chooses."""
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    (clone / "a.txt").write_text("two\n")
+    git(clone, "commit", "--quiet", "-am", "two")
+    git(clone, "push", "--quiet", "origin", "local-only")
+    assert "branch.local-only." not in git(clone, "config", "--list")
+    lock = clone / ".git" / "config.lock"
+    lock.write_text("")  # what the sandbox leaves: nothing can write the configuration
+    try:
+        facts = gitfacts.collect(clone)
+    finally:
+        lock.unlink()
+    assert (facts.remote, facts.remote_branch) == ("origin", "local-only")
+    assert facts.remote_head == facts.head
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_a_branch_without_an_upstream_uses_the_push_remote(clone: Path) -> None:
+    origin = git(clone, "config", "--get", "remote.origin.url")
+    git(clone, "remote", "add", "fork", origin)
+    git(clone, "config", "remote.pushDefault", "fork")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    facts = gitfacts.collect(clone)
+    assert (facts.remote, facts.remote_branch) == ("fork", "local-only")
+
+
+def test_a_branch_without_an_upstream_and_without_origin_has_no_upstream(clone: Path) -> None:
+    git(clone, "remote", "rename", "origin", "elsewhere")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None
+    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
 
 
 def test_branch_deleted_on_remote_is_refused(clone: Path) -> None:

@@ -4,6 +4,7 @@ import dataclasses
 import json
 import os
 import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -34,7 +35,8 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     launch = adapters.launch(ctx)
     argv = launch.argv
-    assert argv[0] == "/usr/bin/claude" and argv[-1] == adapters.START_PROMPT
+    assert argv[0] == "/usr/bin/claude"
+    assert argv[-1] == adapters.START_PROMPT + adapters.GIT_PROMPT
     assert argv[argv.index("--setting-sources") + 1] == "user"
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -43,9 +45,10 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     mcp = [a for a in argv if a.startswith("--mcp-config")]
     assert len(mcp) == 1 and mcp[0].startswith("--mcp-config=")
     assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
+    # No MAITY_SUPERVISOR: nothing wakes an interactive session, so the hub must not tell it
+    # to stop waiting (the first runner test of 0.1.0a8: the agents went away after each turn).
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
-        "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
 
@@ -58,7 +61,7 @@ def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_
     and Claude Code exited 1 at once (2.1.319, the first runner test)."""
     ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "interactive"})
     argv = adapters.launch(ctx).argv
-    assert argv[-1] == adapters.START_PROMPT and "--model" not in argv
+    assert argv[-1] == adapters.START_PROMPT + adapters.GIT_PROMPT and "--model" not in argv
     assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
 
 
@@ -174,10 +177,63 @@ def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
-    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT]
+    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT + adapters.GIT_PROMPT]
+    assert spec["env"]["MAITY_SUPERVISOR"] == f"maity-runner/{__version__}"
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert spec["restart"]["crash_cap"] == 5
+
+
+def test_the_session_git_needs_no_configuration_write(tmp_path: Path) -> None:
+    """The sandbox keeps `.git/config` unwritable (config.lock is held), so tracking a remote
+    branch on `switch -c` failed and an upstream could not be stored (the first runner test of
+    0.1.0a8). With the session's settings a branch is cut, committed and pushed without one."""
+    remote, clone = tmp_path / "remote.git", tmp_path / "clone"
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@b", "GIT_COMMITTER_NAME": "a",
+           "GIT_COMMITTER_EMAIL": "a@b"}  # fmt: skip
+
+    def git(*args: str, cwd: Path = clone, session: bool = True) -> None:
+        extra = adapters.SESSION_GIT_CONFIG if session else {}
+        subprocess.run(["git", *args], cwd=cwd, env={**env, **extra}, check=True,
+                       capture_output=True)  # fmt: skip
+
+    git("init", "-q", "--bare", str(remote), cwd=tmp_path, session=False)
+    git("clone", "-q", str(remote), str(clone), cwd=tmp_path, session=False)
+    git("commit", "-q", "--allow-empty", "-m", "one", session=False)
+    git("push", "-q", "origin", "HEAD:refs/heads/main", session=False)
+    git("fetch", "-q", "origin", session=False)
+    before = (clone / ".git" / "config").read_text()
+    (clone / ".git" / "config.lock").write_text("")
+    git("fetch", "-q", "origin")
+    git("switch", "-q", "-c", "work", "origin/main")
+    git("commit", "-q", "--allow-empty", "-m", "two")
+    git("push", "-q")
+    assert (clone / ".git" / "config").read_text() == before
+    assert (remote / "refs" / "heads" / "work").is_file()
+
+
+def test_the_sandbox_placeholders_are_hidden_and_other_lines_kept(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text("# git's own comment\n*.tmp\n")
+    adapters.launch(ctx)
+    adapters.launch(ctx)  # a second start replaces the block, it does not add another
+    lines = exclude.read_text().splitlines()
+    assert lines[:2] == ["# git's own comment", "*.tmp"]
+    assert lines.count(adapters.EXCLUDE_BEGIN) == 1
+    assert lines[3:-1] == [f"/{name}" for name in adapters.CLAUDE_PLACEHOLDERS]
+    assert "/.gitmodules" in lines and "/.claude/skills" in lines
+
+
+def test_without_a_sandbox_the_exclude_file_is_left_alone(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text("*.tmp\n")
+    adapters.launch(ctx)
+    assert exclude.read_text() == "*.tmp\n"
 
 
 def test_extra_environment_reaches_the_session(tmp_path: Path) -> None:

@@ -65,6 +65,10 @@ maity placement stop <agent> --grace 60
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
+## Git in an agent's session
+
+The sandbox keeps an agent's `.git/config` read-only, because what it sets could run a program outside the sandbox. The runner gives each session `branch.autoSetupMerge=false`, `push.default=current` and `fetch.recurseSubmodules=false` through the environment, so `git switch -c <branch> origin/main`, `git push` and `maity report` work without an upstream. `git push -u`, `--set-upstream`, `--track` and `git branch -m` fail; `git branch -D` deletes the branch and warns that it could not update the configuration. Before a sandboxed Claude Code start, the runner lists the empty placeholders the sandbox puts into the work tree in the clone's `.git/info/exclude`, so `git status` does not show them.
+
 ## Working in an agent's clone
 
 An agent's clone on the runner belongs to the agent. You look there, you don't work there.

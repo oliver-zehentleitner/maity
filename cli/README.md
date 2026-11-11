@@ -371,6 +371,12 @@ The default branch is `refs/remotes/<remote>/HEAD`, else what the remote's
 `HEAD` names. Any other upstream, a stacked branch tracking the one below
 it included, is left as it is.
 
+A branch without an upstream, pushed without `-u`, is compared with the
+branch of its own name on the remote a plain `git push` chooses:
+`branch.<branch>.pushRemote`, else `remote.pushDefault`, else `origin`,
+when that remote is configured. A runner's sandboxed agent cannot store an
+upstream (its `.git/config` is read-only) and reports this way.
+
 Before it asks git about the upstream, it refuses with exit 1 an upstream
 whose remote, configured URL or merge ref starts with `-` or names a remote
 helper (`<transport>::<address>`), and a merge ref outside `refs/heads/`;

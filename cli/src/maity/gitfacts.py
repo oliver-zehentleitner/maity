@@ -281,6 +281,22 @@ def track_own_branch(cwd: Path) -> Retrack:
     )
 
 
+def _push_target(cwd: Path, branch: str) -> tuple[str | None, str | None]:
+    """For a branch without an upstream: the branch of its own name on the remote a plain
+    `git push` would choose (`branch.<b>.pushRemote`, `remote.pushDefault`, else `origin`),
+    when that remote is configured. A clone whose `.git/config` cannot be written, as under
+    the runner's sandbox, pushes without `-u` and so never has an upstream
+    (cli/context/report.md)."""
+    remote = (
+        _git(cwd, "config", "--get", f"branch.{branch}.pushRemote")
+        or _git(cwd, "config", "--get", "remote.pushDefault")
+        or "origin"
+    )
+    if remote.startswith("-") or not _git(cwd, "config", "--get", f"remote.{remote}.url"):
+        return None, None
+    return remote, f"refs/heads/{branch}"
+
+
 def collect(cwd: Path) -> Facts:
     head = _git(cwd, "rev-parse", "--verify", "HEAD")
     if head is None:
@@ -292,9 +308,11 @@ def collect(cwd: Path) -> Facts:
     remote = remote_branch = remote_head = None
     if branch:
         remote = _git(cwd, "config", "--get", f"branch.{branch}.remote")
+        merge_ref = _git(cwd, "config", "--get", f"branch.{branch}.merge")
+        if remote is None and merge_ref is None:
+            remote, merge_ref = _push_target(cwd, branch)
         if remote == ".":  # tracks a local branch: ls-remote would answer from this clone
             remote = None
-        merge_ref = _git(cwd, "config", "--get", f"branch.{branch}.merge")
         if remote and merge_ref:
             _check_upstream(cwd, branch, remote, merge_ref)
             remote_branch = merge_ref.removeprefix("refs/heads/")
@@ -343,7 +361,10 @@ def mismatches(facts: Facts) -> list[str]:
         problems.append("HEAD is detached; check out the branch the work is on")
         return problems
     if facts.remote is None or facts.remote_branch is None:
-        problems.append(f"branch {facts.branch} has no upstream; push it with `git push -u`")
+        problems.append(
+            f"branch {facts.branch} has no upstream on a remote; push it "
+            f"(`git push origin {facts.branch}`)"
+        )
     elif facts.remote_head is None:
         problems.append(
             f"branch {facts.remote_branch} does not exist on {facts.remote}; push it. If it was "
