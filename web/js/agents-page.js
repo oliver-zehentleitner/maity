@@ -532,8 +532,10 @@ window.Maity = window.Maity || {};
     const slot = h("div", { class: "placements-slot" });
     append(root, ctx.me.kind === "human" ? agentsTabs(ctx, "placements") : null, slot);
     if (!M.placements) return;
-    const placed = await M.placements.section(ctx, M.agentParts && ctx.me.kind === "human" ? ownCredentials(ctx) : null);
-    if (placed) append(slot, placed);
+    // Not awaited: the view returns at once, so the project's feed starts and an event that comes
+    // while the placements or their credentials are read reaches the section (review of #1533).
+    M.placements.section(ctx, M.agentParts && ctx.me.kind === "human" ? ownCredentials(ctx) : null)
+      .then((placed) => { if (placed) append(slot, placed); }, () => {});
   };
 
   // One's own agents here as a tree under oneself, drawn again when a member changes.
