@@ -1,4 +1,4 @@
-"""The public views of a project (docs/api.md §16.9): Board, Members and Organisation, each a
+"""The public views of a project (docs/api.md §16.9): Board, Team and Organisation, each a
 page of its own at `/{owner}/{slug}/<view>` while the project's page is served.
 
 Who is named follows the project page: every active member and every agent that is not
@@ -437,7 +437,7 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     why = why_data(conn, project, f"/{full}/why", by_instance)
     views = (
         ("board", "Board", board_html(columns, who, gone, full), board_data(columns, who, gone)),
-        ("members", "Members", members_html(who), members_data(who)),
+        ("team", "Team", members_html(who), members_data(who)),
         ("organisation", "Organisation", organisation_html(who), organisation_data(who)),
         ("why", "Why", why_html(why), why),
     )
@@ -467,10 +467,12 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     return pages
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     return list(
         conn.execute(
-            select(t.project.c.id).where(t.project.c.public_page == "on").order_by(t.project.c.id)
+            select(t.project.c.id)
+            .where(t.project.c.public_page == "on", *public_pages.only(t.project.c.id, among))
+            .order_by(t.project.c.id)
         ).scalars()
     )
 

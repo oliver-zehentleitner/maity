@@ -31,9 +31,9 @@ window.Maity = window.Maity || {};
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", get label() { return M.t("nav.board"); }, tab: false, current: "board", watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
-    { route: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
+    { route: "team", view: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
     // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
-    { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "members" },
+    { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "team" },
     // One's own agents in the project (js/agents-page.js), the component of
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
@@ -226,9 +226,7 @@ window.Maity = window.Maity || {};
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
   function releasedDay(project) {
-    const d = new Date(project.released_at);
-    return Number.isNaN(d.getTime()) ? project.released_at
-      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return M.fmt.date(project.released_at);
   }
   // The selected project's two places one goes to often, beside its state
   // (the maintainer, tsk-n161gf6h8feb): its repository, with its forge's
@@ -259,6 +257,11 @@ window.Maity = window.Maity || {};
   const PULL_PATHS = { github: "/pulls", gitea: "/pulls", gitlab: "/-/merge_requests", bitbucket: "/pull-requests" };
   const PULLS_MARK = "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z";
   const pullsUrl = (repo, forge) => (repo && Object.hasOwn(PULL_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + PULL_PATHS[forge] : null);
+  // Where a forge runs its workflows, derived the same way (tsk-kdkdy864q11r). Only the forges that
+  // call them Actions: GitLab and Bitbucket call theirs Pipelines, a word of its own.
+  const ACTIONS_PATHS = { github: "/actions", gitea: "/actions" };
+  const ACTIONS_MARK = "M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm4.879-2.773 4.264 2.559a.25.25 0 0 1 0 .428l-4.264 2.559A.25.25 0 0 1 6 10.559V5.442a.25.25 0 0 1 .379-.215Z";
+  const actionsUrl = (repo, forge) => (repo && Object.hasOwn(ACTIONS_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + ACTIONS_PATHS[forge] : null);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -279,12 +282,14 @@ window.Maity = window.Maity || {};
     // and the project's own links stand beside it.
     const name = M.t("project.link.repository");
     const pulls = pullsUrl(repo, forge);
+    const actions = actionsUrl(repo, forge);
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
-      [pulls ? { label: M.t("project.link.pull_requests"), d: PULLS_MARK, url: pulls } : null, ...ownLinks(project)].filter(Boolean).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
+      [actions ? { label: M.t("project.link.actions"), said: M.t("project.link.actions_on", { forge: FORGES[forge] }), d: ACTIONS_MARK, url: actions } : null,
+        pulls ? { label: M.t("project.link.pull_requests"), d: PULLS_MARK, url: pulls } : null, ...ownLinks(project)].filter(Boolean).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+        "aria-label": M.t("project.link.opens", { what: x.said || x.label }), title: x.url },
       mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: M.t("project.link.ktw_dashboard") }), title: why },
@@ -797,8 +802,9 @@ window.Maity = window.Maity || {};
         class: "inline-form",
         onsubmit: (e) => {
           e.preventDefault();
-          const when = new Date(until.value);
-          if (!until.value || Number.isNaN(when.getTime())) { until.focus(); return; }
+          // The field holds the account's time zone, the one the absence is shown in (§5.1).
+          const when = M.fmt.fromWall(until.value);
+          if (!when) { until.focus(); return; }
           if (!scope.value.trim()) { scope.focus(); return; }
           save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
         },
@@ -1283,6 +1289,16 @@ window.Maity = window.Maity || {};
   }
   M.projectMark = projectMark;
 
+  // A private project (public_page "off", §16.9) carries a lock after its name wherever the name
+  // stands for the project (tsk-5t3qd0m9rj6r): not the picture alone, it says "Private" to a screen
+  // reader and explains itself on hover. A public project, the default, carries nothing.
+  function privateMark(p) {
+    if (!p || p.public_page !== "off") return null;
+    return h("span", { class: "private-mark", role: "img", "aria-label": M.t("new_project.private.label"),
+      title: M.t("new_project.created.private") }, M.icons.lock(12));
+  }
+  M.privateMark = privateMark;
+
   // The tab's icon: the project's logo where it has one, else the browser's default.
   function setFavicon(slug, view) {
     const url = slug && view && M.api.imageUrl(slug, "logo", view.logo);
@@ -1335,6 +1351,7 @@ window.Maity = window.Maity || {};
       },
       projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
+      privateMark(p),
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
       pill(p))));
     // Runners belong to the person, not to a project (the maintainer's
@@ -1442,7 +1459,7 @@ window.Maity = window.Maity || {};
         const at = current ? open.indexOf(current) : -1;
         return [
           ...open.concat(closed).map((p) => ({
-            label: p.name,
+            label: [p.name, privateMark(p)],
             checkbox: true,
             checked: open.includes(p),
             onSelect: () => {
@@ -1460,6 +1477,10 @@ window.Maity = window.Maity || {};
           { label: M.t("tabs.keep_at_start"), onSelect: () => {
             M.tabs.keepAsStart(ctx).then(() => tabsSaid(M.t("tabs.kept")), (err) => tabsSaid(M.t("tabs.keep_failed", { reason: err.message })));
           } },
+          // A new project here too, beside the projects, where one looks for it (the owner,
+          // 2026-11-10, tsk-c4dz5x6rb2h8); the "+" menu keeps its entry. Humans only, as there.
+          ctx.me.kind === "human" ? { separator: true } : null,
+          ctx.me.kind === "human" ? { label: M.t("view.new_project"), href: "/new", current: ctx.scope === "new" } : null,
         ].filter(Boolean);
       },
     });
@@ -1647,17 +1668,19 @@ window.Maity = window.Maity || {};
         ctx.me.instance_admin ? { label: M.t("menu.instance_admin"), href: "/admin", current: ctx.scope === "instance-admin" } : null,
       ].filter(Boolean),
     });
-    // "+": a new project, or bring someone in, an agent or a person (the maintainer, 2026-10-31):
-    // the create form, the agents page with its join, the invitations page. Humans only.
+    // "+": bring someone in, an agent or a person, pair a runner, or a new project (the maintainer,
+    // 2026-10-31; the order and the runner, tsk-45fhe2yrwzb7): the agents page with its join, the
+    // invitations page, the runners page with its pairing form, the create form. Humans only.
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
       face: M.icons.plus(18),
       items: () => [
-        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
-        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
+        { label: M.t("menu.add.runner"), href: "/runners", current: ctx.scope === "runners" },
+        // A new project too, since the row of tabs no longer has its own (tsk-hp9gq9rmrdq2).
+        { label: M.t("menu.add.project"), href: "/new", current: ctx.scope === "new" },
       ],
     }) : null;
     // The human: their picture, the account, signing out.
@@ -1676,7 +1699,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "bar" },
         brandTitle(true),
         ctx.scope === "project"
-          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name)]
+          ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name, privateMark(ctx.project))]
           : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
             "instance-admin": M.t("header.instance_admin"), observe: M.t("header.observe"), person: M.t("header.person") })[ctx.scope] || M.t("header.all")),
         M.api.source === "fixtures"
@@ -1714,7 +1737,10 @@ window.Maity = window.Maity || {};
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null,
-      ctx.scope === "project" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
+      // Not on the Chat tab, the maintainer's choice (tsk-sesdq48m9ewk): its list shows each chat's unread mention as an @
+      // at a glance. The @ covers chat mentions only; those in project messages and on cards stay in the bell and on the
+      // other tabs' line, which is why the maintainer kept the removal (chat 103539).
+      ctx.scope === "project" && current !== "chat" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
@@ -1827,11 +1853,16 @@ window.Maity = window.Maity || {};
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
         // A window announced, changed or started meanwhile: the banner, or the full page (§16.12).
         if ("maintenance" in fresh) M.maintenance.know(fresh.maintenance);
+        // A project joined or left elsewhere: the views that follow the tabs (the inbox filtered to
+        // open tabs or grouped) draw again too, not only the switcher (web roll-up 3).
+        const names = (list) => (list || []).map((p) => p.full_name).join(" ");
+        const moved = names(fresh.projects) !== names(ctx.projects);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
         renderChat(ctx);
         renderBell(ctx);
         renderTabCounts(ctx);
+        if (moved) tabsChanged(ctx);
         document.title = M.notify.title(baseTitle);
         // While the banner stands, or when `sessions_rev` moved (a sign-in,
         // an end elsewhere): the banner is built again, so an approved
@@ -1876,6 +1907,18 @@ window.Maity = window.Maity || {};
   // listeners and no events feed of its own. chatLink builds the links of
   // its chats, so that they stay in that view.
   M.withMembers = (ctx, members) => withMembers(ctx, members);
+  // A project's member list read once per page drawn (per ctx) for the views outside a project
+  // that need several projects' members: on All projects the Lead button (js/lead-chat.js) reads
+  // every project's members and the inbox (js/inbox.js) those of the projects its requests come
+  // from, so a project with requests was read twice before (tsk-f78z1dvbs26a). The next drawing
+  // has a ctx of its own and reads afresh.
+  const membersDrawn = new WeakMap();
+  M.membersOnce = (ctx, slug) => {
+    let bySlug = membersDrawn.get(ctx);
+    if (!bySlug) { bySlug = new Map(); membersDrawn.set(ctx, bySlug); }
+    if (!bySlug.has(slug)) bySlug.set(slug, M.api.getAll("/projects/" + M.api.projectPath(slug) + "/members"));
+    return bySlug.get(slug);
+  };
   M.projectContext = async (ctx, slug, chatLink) => {
     const mine = ctx.projects.find((p) => p.full_name === slug);
     if (!mine) throw new M.api.ApiError(M.t("error.not_member", { slug }), 404, "/me", "not_found");
@@ -2154,7 +2197,13 @@ window.Maity = window.Maity || {};
     // The invitation's token is in its path: no referrer before this drawing asks anything
     // (GET /maintenance below), also when the tab came here from another view, whose shell had
     // no header for it, and while a maintenance window stands (§16.13).
-    try { if (M.invite && parseRoute().scope === "invite") M.invite.noReferrer(); } catch { /* the drawing below says why */ }
+    // The first segment is decoded on its own, as parseRoute() decodes it, so /%69nvite/<token> is an
+    // invitation here too (#1574 review); a token with a broken escape, which parseRoute() refuses
+    // as a whole, still gets the policy (web roll-up 3, nte-2e1kq5r85vaj).
+    const rawParts = M.route.current().path.split("/").filter(Boolean);
+    let firstWord = rawParts[0] || "";
+    try { firstWord = decodeURIComponent(firstWord); } catch { /* a broken first segment is no invitation */ }
+    if (M.invite && firstWord === "invite" && rawParts.length > 1) M.invite.noReferrer();
     await M.i18n.ready;
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page

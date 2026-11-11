@@ -1,6 +1,6 @@
 """Notification mail (docs/api.md §18.4, §18.5): which items a human gets by mail, when,
-and what the mail says. The kinds are `inbox`, `chat` and `mention`; `security` is a mail
-of its own for a new sign-in.
+and what the mail says. The kinds are `inbox`, `chat`, `mention` and `invitation`; `security`
+is a mail of its own for a new sign-in.
 
 Per kind the human chose `immediate` (within about two minutes, every item that fell due
 in that window in one mail, at most ten such mails an hour), `hourly` (at the full hour),
@@ -45,7 +45,7 @@ IMMEDIATE_PER_HOUR = 10
 DIGEST_MAX = 50
 SUBJECT_MAX = 120
 CONTENT_MAX = 500
-MAILED_KINDS = ("inbox", "chat", "mention")
+MAILED_KINDS = ("inbox", "chat", "mention", "invitation")
 # An open matter the dashboard shows and no mail carries (§18.5).
 NEVER_MAILED = ("registration_pending", "mail_disabled")
 # The alert of a new sign-in: a security mail of its own while `security` is immediate, an
@@ -164,7 +164,7 @@ def for_human(
     moved = json.dumps([listing.stamp(conn, human_id), prefs, row.verified_at], default=str)
     if state.stamp == moved and not state.waiting and state.held_since is None:
         return 0
-    zone = ZoneInfo(prefs["timezone"])
+    zone = preferences.mail_zone(prefs)
     now = clock.now()
     local = now.astimezone(zone)
     where = items.scope(conn, human_id, public_url)

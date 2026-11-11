@@ -10,11 +10,14 @@ name: release-hub
 # token, so no PyPI token is stored in this repository. The PyPI project names
 # this repository, this file and the `pypi` environment as its publisher; the
 # environment is where a required approval can be set.
-# The checks run in a job of their own with the hashed dev lock, as the
-# hub-sqlite job of ci.yml; the sdist and wheel come from a separate job that
-# installs only hub/requirements/release.txt, pinned with hashes, and builds
-# without isolation, so nothing the checks installed and no unpinned package
-# reaches what is uploaded. That job also proves the files before the upload
+# The tests are not run again here: `check` lets the tag through only when
+# ci already passed on its commit (ci-ok of the push to main) and hub-mariadb
+# passed on a commit of main with the same hub files (tools/release_gate.py,
+# read-only); it waits while those are still running. publish-image.yml asks
+# the same before it builds the image. The sdist and wheel come from a
+# separate job that installs only hub/requirements/release.txt, pinned with
+# hashes, and builds without isolation, so no unpinned package reaches what is
+# uploaded. That job also proves the files before the upload
 # (scripts/check_dist.py, as the hub-dist job of ci.yml): the dashboard and the
 # join page in the wheel, a wheel rebuilt from the sdist, and an install outside
 # the checkout that serves the dashboard. The interpreter setup-python provides,
@@ -35,24 +38,34 @@ defaults:
     working-directory: hub
 
 jobs:
-  # The same checks as the hub-sqlite job of ci.yml, on the tagged commit.
-  # Nothing from this job is uploaded.
+  # ci's result on the tagged commit instead of the suites again: ci-ok of the
+  # push to main, and hub-mariadb on the same hub files (tools/release_gate.py).
+  # A tag on a commit without them stops here, before `publish`. Nothing from
+  # this job is uploaded.
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # ci takes about an hour, hub-mariadb about 40 minutes and may queue behind
+    # another run: the wait covers a tag pushed right after its merge.
+    timeout-minutes: 240
     permissions:
+      actions: read # the runs of ci and hub-mariadb
       contents: read
+    defaults:
+      run:
+        working-directory: .
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # the commits hub-mariadb tested, to compare their hub files
           persist-credentials: false
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
-      - run: make install
-      - run: make check
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/release_gate.py --sha "$GITHUB_SHA" --mariadb --wait-minutes 230
 
   build:
     runs-on: ubuntu-latest

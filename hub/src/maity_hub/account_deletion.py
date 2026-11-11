@@ -439,6 +439,9 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
 
     # An organisation's invitations to the human first: they have no project to lock (§6.26).
     org_invitations.withdraw_for_human(conn, human_id, "invitee_deleted")
+    # A project's invitations by handle to the human are voided, their requests with them
+    # (§3.4), before the requests left over are withdrawn below.
+    invitations.invitee_deleted(conn, human_id)
     for request_id in _ids(
         conn,
         select(t.request.c.id)

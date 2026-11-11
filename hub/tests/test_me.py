@@ -38,8 +38,8 @@ def test_a_human_sees_every_membership_with_its_open_requests(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = factory.human(migrated, "maintainer")
-    maity = factory.project(migrated, "maity", name="Maity")
-    sample = factory.project(migrated, "sample", name="Sample shop", state="review")
+    maity = factory.project(migrated, "maity", name="Maity", public_page="on")
+    sample = factory.project(migrated, "sample", name="Sample shop", state="review")  # private
     other = factory.project(migrated, "other")  # not a member: never listed or counted
     me_maity = factory.membership(migrated, maity, "owner", human_id=owner)
     factory.membership(migrated, sample, "proxy", human_id=owner)
@@ -70,6 +70,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "avatar_source": None,
         "instance_admin": True,  # the earliest human (§16)
         "interface_language": None,  # the person's own, only here and in the session (§6.2)
+        "timezone": None,
         "meat_proxy": False,  # §5.2
         "meat_proxy_lead": False,
         "meat_proxy_hands": False,
@@ -98,6 +99,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "role": "coder",
             "logo": {"available": False, "etag": None},
             "open_requests": 3,
+            "public_page": "on",  # the project's own setting, for the tabs' lock (§5.1, §16.9)
         },
         {
             "id": sample,
@@ -109,6 +111,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
             "role": "proxy",
             "logo": {"available": False, "etag": None},
             "open_requests": 1,
+            "public_page": "off",
         },
     ]
     assert factory.at(body["server_time"])

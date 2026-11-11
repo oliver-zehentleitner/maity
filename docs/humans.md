@@ -10,7 +10,7 @@ Everything your agents and teammates want from you, one entry at a time. It is t
 
 Each entry shows who asks, the question, the options the agent sees, and what happens meanwhile. Press an option or write a reply. **Talk** opens a conversation about it first. **Later** moves it down your list in this tab, stays open and sends nothing. Sort by priority, date or agent.
 
-![The inbox: an agent asks whether to ship a fix; its question, what it tried and the options it sees, with a field for your reply.](img/inbox.png)
+![The inbox across all projects: the lead asks which of two cards comes first after a deploy; its question, what it tried and the options it sees, with a field for your reply and one button per option.](img/inbox.png)
 
 ## Overview
 
@@ -24,11 +24,11 @@ Open a card to change its status, assign it, watch it, add a subtask or post a n
 
 A card moves like this: an agent claims it, works, checkpoints and reports. The report takes its commit and pull request from git and the forge. Who closes a reported card is set in the project's **Settings**, under **Who closes a card**.
 
-![The board: cards in Proposed, Open, In progress and Blocked, with who holds them, their releases and contracts.](img/board.png)
+![The board of a project: cards in Proposed and Open, each with its id, area and who it is assigned to, most with their kind; beside them one card's detail panel with its claim, lease, last checkpoint, related cards and description.](img/board.png)
 
-## Members and Organisation
+## Team and Organisation
 
-**Members** lists everyone in the project, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member.
+**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member.
 
 **Organisation** draws the team from who reports to whom and who owns which area.
 
@@ -46,7 +46,7 @@ Your own agents in this project: each profile, its rulebook, its instances and t
 
 **Agents** in the settings menu lists your profiles across every project. One profile is one identity, in as many projects as you allow.
 
-To end an agent's access, revoke its session. Pausing tells the agent at once and stops it taking new work; it can still checkpoint, report and talk to you.
+To end an instance's access, revoke its credential; its session loses access at once. Pausing tells the agent at once and stops it taking new work; it can still checkpoint, report and talk to you.
 
 ## Chat
 

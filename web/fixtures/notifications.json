@@ -21,9 +21,9 @@
       "url": "https://maity.team/maintainer/maity/chat/agt-a",
       "read": false, "redacted": false },
     { "id": "ntf-acr-6", "record": "acr-6", "kind": "inbox", "at": "2026-10-22T12:55:00Z",
-      "project": { "slug": "lasteverlm", "full_name": "lv/lasteverlm", "name": "lasteverLM", "member": false },
-      "actor": { "member_id": "agt-l1", "display_name": "LV Agent", "avatar_url": null },
-      "title": "LV Agent asks you: May I take over tsk-77?",
+      "project": { "slug": "elsewhere", "full_name": "ada/elsewhere", "name": "Elsewhere", "member": false },
+      "actor": { "member_id": "agt-q", "display_name": "Agent Q", "avatar_url": null },
+      "title": "Agent Q asks you: Agent Q proposes a change to its soul",
       "target": { "type": "request", "id": "req-p001" },
       "url": "https://maity.team/requests/req-p001",
       "read": false, "redacted": false },
@@ -36,22 +36,23 @@
       "read": false, "redacted": false }
   ],
   "settings": {
-    "kinds": ["inbox", "chat", "mention", "security"],
+    "kinds": ["inbox", "chat", "mention", "security", "invitation"],
     "not_listening": { "mode": "inbox", "minutes": 60 },
     "browser": {
       "enabled": false,
-      "kinds": { "inbox": true, "chat": true, "mention": true, "security": true }
+      "kinds": { "inbox": true, "chat": true, "mention": true, "security": true, "invitation": true }
     },
     "email": {
       "language": "en",
       "address": "maintainer@example.org", "address_status": "verified", "verified_at": "2026-10-01T09:12:00Z", "pending_address": null,
       "address_change": { "id": "adc-7f2a", "address": "maint@example.net", "requested_at": "2026-10-22T13:20:00Z", "session_id": "hss-41d2" },
-      "timezone": "Europe/Vienna",
+      "timezone": null,
       "kinds": {
         "inbox": { "mode": "immediate" },
         "chat": { "mode": "daily", "content": false },
         "mention": { "mode": "daily", "content": false },
-        "security": { "mode": "immediate" }
+        "security": { "mode": "immediate" },
+        "invitation": { "mode": "immediate" }
       },
       "sign_in_link": true, "daily_at": "08:00", "weekly_on": "mon", "quiet_hours": null,
       "hard_failures": 0, "disabled_at": null

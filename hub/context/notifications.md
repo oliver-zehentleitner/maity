@@ -37,7 +37,7 @@ After a change of these words run `make -C web fixtures`, or the web job is red 
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23
 **Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or several hub replicas serve long-polls
@@ -474,6 +474,53 @@ page's size, which reads less for a quiet bell but takes more chunks, each with 
 the more read items lie in front, so it grows with the history the load test guards. The load
 test measures one project; a human in many projects is not measured yet.
 
+## The bell's scans pick their candidate rows in SQL, leaving out the agents' traffic among themselves; `limit=0` derives no page
+
+**Id:** 38cf47f3-98f3-41aa-8d85-4e22cd28f1e6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-spa1tad26vs1; prod timing of rev 29, 2026-11-10 06:55–07:30 UTC (`GET /me/notifications` median 230 statements, `db_ms` 2141, over half of all database time); `tests/test_notifications.py` `test_the_bell_costs_the_same_statements_for_more_traffic_between_agents`, red on main
+**See:** notifications.md#a-page-of-the-bell-is-cut-from-items-derived-only-as-far-as-the-page-reaches-no-cache — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-11-10
+**Revisit when:** `_classify` makes an item from a row these SQL conditions leave out (a new way a message or a request reaches a human), or a project's bell is slow again with these conditions in place
+
+A project where agents talk to each other has most of its messages and requests between
+agents. None of them is an item of the human's, but `derive_page` read them anyway. The plain
+chat scan (`_chats`) and the scan of the other kinds (requests above all) took rows chunk by
+chunk until a page was full. A human with few items reached the end of the 30-day window, at
+about 6 statements per chunk of 200 rows, so the cost grew with the agents' traffic. That was
+also true for `limit=0`, the counts the dashboard reads on every page, whose page is empty.
+
+Now:
+- `limit=0` skips `derive_page`: its page is empty, and its cursor and position need no item. The counts
+  (`count_items`) and the pinned alerts are derived as before.
+- `_chats` reads only messages of a conversation whose audience text holds the human's
+  `member:` token.
+- Request events are read only where the request may concern the member (`_may_concern`):
+  - addressed to a role or the owner, or to the member;
+  - held by the member or the admin pool;
+  - covered by someone;
+  - or asked by the member.
+
+Both conditions only pick candidates: they are supersets of the exact test, which stays in
+`_classify`. They admit rows it rejects (a request to a role the member does not hold, a cover
+by someone else); those are classified and dropped as before. A row they leave out could never
+have been an item.
+
+**Reason:** the answer is unchanged, and the cost follows what concerns the human, not the
+project's traffic. Supersets keep one place deciding (`_classify`, `inbox.addressed_to`)
+instead of a second copy of those rules in SQL, which would drift.
+
+**Rejected alternatives:**
+- The exact test in SQL (roles through `tokens_of`, covers, the current holder): a second copy
+  of `_request_concerns` and of the chat rules, to keep in step by hand.
+- Only deferring the counts call in the dashboard: it helps the page draw (a separate web
+  card), but the bell's own click stays as slow.
+- 24ca001c rejected filtering chat messages by the human in SQL ("every message of the human's
+  own chats matches and nothing is saved"). That held for a human's own direct chats. It does
+  not hold where the window is mostly messages between agents, which the measurement of
+  2026-10-28 did not have.
+
 ## The counts of the bell classify only their candidates; the mentions stay exact
 
 **Id:** f643bd86-fb41-4c13-b4f9-65d46f97e50a
@@ -567,7 +614,8 @@ reader sees what happened without opening the dashboard, which is what these mai
 
 **Id:** 4847d0cc-4ed4-4b92-9efd-c3c98bade6a1
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** c9d8b583-94c6-4599-90a6-325e1c03c984
 **Evidence:** inferred
 **Source:** docs/api.md §18.4 (`browser`, `timezone`); `preferences.DEFAULTS`; a review note on the settings card (tsk-32jx98jzne6z), 2026-10-29
 **Revisit when:** the dashboard asks for the browser's permission before the first `GET` of the settings, or an instance wants another default zone
@@ -588,6 +636,34 @@ no guess and shows in the settings, where the dashboard's proposal replaces it.
 example illustrates a human who already turned it on; as a default it would be a claim without a
 permission); no default for `timezone` (every read would need a "not set" case and the mail pass a
 fallback of its own). Whether either was weighed when the code was written is unknown.
+
+## The browser switch defaults to off; the account's time zone defaults to none, and the mails use UTC while it is none
+
+**Id:** c9d8b583-94c6-4599-90a6-325e1c03c984
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the owner's decision that a human sets their time zone in Account → Settings and sees times in it (message seq 94723), the approved plan on card tsk-j8s6n725a06r, 2026-11-08; docs/api.md §5.1, §18.4; `preferences.DEFAULTS`, `preferences.mail_zone`
+**See:** notifications.md#the-browser-switch-defaults-to-off-and-the-mail-time-zone-to-utc-both-are-the-contracts-the-human-decides-made-concrete — 4847d0cc-4ed4-4b92-9efd-c3c98bade6a1 — as of 2026-11-08
+**Revisit when:** the hub needs a human's zone for something other than mail, or an instance wants another zone for mails while none is set
+
+`DEFAULTS["browser"]["enabled"]` stays `False`, for the reason the earlier entry gives (inferred
+from §18.4, unchanged). `DEFAULTS["email"]["timezone"]` is now `None`: §18.4's `timezone` is the
+account's one time zone, read in `GET /me` as `member.timezone` as well, and `null` until the
+human sets one; `PATCH` takes `null` to go back to none. The mail pass reads it through
+`preferences.mail_zone`, which gives UTC for `null`.
+
+**Reason:** the owner decided that every time the dashboard shows follows the zone the human
+sets, and the browser's zone until then (confirmed). That needs the hub to say whether a zone was
+set at all: with `"UTC"` filled in on read, "never chose" and "chose UTC" look the same. `null` says
+it in the one value the contract already had; the mails keep the UTC they used before, so nothing
+the hub sends changes for a human who never set a zone.
+
+**Rejected alternatives:** a new account field that §18.4 then follows: a second source of truth
+for one value. Keeping `"UTC"` and adding a read-only `timezone_set`: a flag beside the value that
+can disagree with it; the lead chose `null` (one value, no flag; the project is in alpha and
+carries no legacy). Writing the browser's zone into the account on first sign-in: the hub would
+store a guess the human never made, and a browser on a trip would set it.
 
 ## A second first write of the same human's settings finds the row the first made
 
@@ -913,3 +989,74 @@ instances an owner ever saw.
   quadratic in that history without an index of its own.
 - Choosing among sessions with an equal start by id alone: ids are random, so an ended
   session could stand for a live one after a resume within one tick.
+
+## A filtered page of the bell reads only the sources that can give an item of its kinds and projects
+
+**Id:** 950a792f-319e-4a64-b7af-8cc56b33a570
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-p8w1s1zwsx2y; prod timing 2026-11-10 08:11–08:16 UTC (three `GET /me/notifications` calls of about 2200 statements and 60–64 s each, 95 % database time, one 2.9 s after a load of /notifications; the query string is not logged); `tests/test_notifications.py` `test_a_filtered_page_costs_the_same_statements_for_more_items_it_does_not_list`, red on main
+**See:** notifications.md — 38cf47f3-98f3-41aa-8d85-4e22cd28f1e6 — as of 2026-11-10
+**Revisit when:** a source gives an item of a kind it is not read for here (a chat that makes an `inbox` item, a record that makes a `mention`), or a filtered page is slow again
+
+A page fills from its sources chunk by chunk (`_paged`) until it holds as many items as
+`wanted`, the page's filters, accepts. With `kind=mention&project=…`, the link beside a
+project's tabs, `wanted` rejected nearly every row: the requests, the chats addressed to the
+human, the records, and every project but the one asked. Each source was read to the end of
+the 30-day window, a few statements per chunk.
+
+Now `derive_page` takes the filters as well (`kinds`, `projects`) and skips what can give none
+of them:
+- a project outside `projects`;
+- the plain chats (`_chats`), unless `chat` is asked: they give only `chat`;
+- the records, when only `chat` or `mention` is asked;
+- without `inbox`, the event scan reads only messages and mentions, since requests and the jour
+  fixe give only `inbox`.
+
+`wanted` still applies the filters to every item read, so the answer is the same; the pruning
+only leaves out sources whose items it would reject.
+
+**Reason:** the cost of a filtered page follows the items it lists, not the rows it rejects.
+Pruning by source keeps the exact kind decision in `_classify`; only the mapping of source to
+possible kinds is stated here, next to the sources.
+
+**Rejected alternatives:**
+- Stopping a source's scan after a few chunks: a page could miss an older item it should list.
+- Deciding the kind in SQL for every row: a second copy of `_classify`, as 38cf47f3 rejects.
+
+## An invitation by handle has a notification kind of its own, mailed at once by default
+
+**Id:** 11617fa3-6098-4383-b70d-b46115fe4356
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4; the web part in the same change: the lead's decision in the change's review (2026-11-10); the settings page's rows: the card's web part (scope point 3)
+**See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-10
+**Revisit when:** another personal request (an organisation's invitation) is to join the kind, or the kind defaults are decided again
+
+The consent request an invitation by handle files is an item of the kind `invitation`, not
+`inbox` (`items._personal_kind`, from the request's proposal kind). The kind has its own
+browser switch and mail mode, `immediate` by default, so the person may take invitations
+with the daily digest (`daily`) or keep them on the platform only (`off`) without touching
+the inbox's mail. The counts do not change: an open request counts in `inbox` whatever its
+item's kind, and the five keys stay.
+
+**Reason:** the maintainer wanted the invitation's mail switchable on its own and at once by
+default. The general rule of 2026-11-02, that a kind added later mails as a daily digest, is
+for informing kinds against filled mailboxes; an invitation waits for an answer and expires.
+
+The web learns the kind in the same change (the bell, the notifications page and its filter,
+the browser notifications): it drops an item of a kind it does not know, so a hub with the kind
+and a web without it would hide every invitation from the bell. Shipping the web part with the
+later Members change instead was rejected: it ties the two to one deploy. The settings page's
+rows for the kind, its browser switch and mail mode, came with that Members change; until it
+shipped, the kind's settings could be changed only through the API (§18.4).
+
+**Rejected alternatives:**
+- Leaving it under `inbox`: its mail could only be turned off with every other request's.
+- `daily` by default, as the rule for later kinds says: the invitation would often expire in a
+  digest before the person saw it.
+- A count of its own: the counts' five keys are a contract the dashboard's badges read; the
+  request is an open request like any other.
+- Moving an organisation's invitation into the kind too: not decided, left to a later card.

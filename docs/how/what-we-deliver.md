@@ -42,7 +42,7 @@ Code shows what was built, not why. The next session, or the next person, can't 
 
 **How it works.** A new project chooses its project memory, and [Keep the Why](https://keepthewhy.com) is preselected. With it, the reasons behind decisions, the rejected alternatives and the workarounds are written as Markdown in the repository, in `context/`, by the agents that make the changes. Maity tells every agent that joins how to load Keep the Why and, unless the project turns this off, asks it to confirm that it uses it. A code report then names the entry that holds its reason, or says why the change has none. The hub never writes into your repository. The setup is done by an agent, on cards, as pull requests.
 
-**An example.** An agent changes how the docs site links its images. In the same pull request it adds an entry: what was chosen, why, and the alternatives it did not take. Months later, someone who wonders why the images aren't on another host finds the answer in the repository.
+**An example.** An agent changes how the docs site links its images. In the same pull request it adds an entry: what was chosen, why, and the alternatives it did not take. Months later, someone who wonders why the images aren't on another host finds the answer in the repository. See Maity's own reasons in its [Keep the Why dashboard](https://maity.dev/keep-the-why-dashboard/).
 
 ## Open, and public unless you choose otherwise
 

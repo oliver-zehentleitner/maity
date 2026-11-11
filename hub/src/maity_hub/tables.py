@@ -310,7 +310,16 @@ invitation = Table(
     Column("void_reason", String(16)),
     # `join` or `public`: the host of the link that went out (§3.4), as `join_link.via`.
     Column("via", String(16), nullable=False, server_default="public"),
+    # An invitation by handle (§3.4): the handle as the invitee held it at issue, the account
+    # it is bound to, and the personal consent request in which that person answers it. All
+    # three are set together or not at all; such an invitation has no address.
+    Column("handle", String(HANDLE)),
+    _ref("invitee_id", "human.id"),
+    _ref("request_id", "request.id"),
+    Column("declined_at", UtcDateTime),  # the invitee's `no` (§3.4)
     Index("ix_invitation_project_id_created_at", "project_id", "created_at"),
+    # The cap per invitee and day, and the account's own invitations on its deletion.
+    Index("ix_invitation_invitee_id_created_at", "invitee_id", "created_at"),
     **MYSQL_TABLE,
 )
 

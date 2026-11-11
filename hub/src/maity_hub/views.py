@@ -584,17 +584,25 @@ def member_views(
         if agent_ids
         else {}
     )
-    humans = (
-        {h.id: h for h in conn.execute(select(t.human).where(t.human.c.id.in_(human_ids)))}
-        if human_ids
+    # The member humans and the agents' owners in one read, and their pictures in one
+    # (tsk-6srccd2r1h62): the owners' rows give `_owners` and `owned_by` too.
+    owner_ids = {a.owner_id for a in agents.values()}
+    # The humans who last changed an agent's team rulebook, for its `team.updated_by`
+    # (tsk-xrtxsvv6f974): prod's member list read each one on its own, once per agent.
+    editors = {r.team_updated_by for r in rows if r.agent_id is not None and r.team_updated_by}
+    wanted = human_ids | owner_ids | editors
+    people = (
+        {h.id: h for h in conn.execute(select(t.human).where(t.human.c.id.in_(wanted)))}
+        if wanted
         else {}
     )
+    humans = {i: h for i, h in people.items() if i in human_ids}
     from maity_hub import bridges  # it builds member views itself
 
     bridged = bridges.views(conn, [r.id for r in rows if r.agent_id is not None])
     principals = principal_ids(conn, (r.reports_to for r in rows))
     boss_owners = _owners_of(conn, {r.reports_to for r in rows if r.reports_to is not None})
-    pictures = avatars.urls(conn, [*agent_ids, *human_ids])
+    pictures = avatars.urls(conn, [*agent_ids, *human_ids, *owner_ids])
     aliased = handle_book.aliases(conn, [*agent_ids, *human_ids])  # §6.24
     live, latest_of = _sessions(conn, {r.id for r in rows if r.agent_id is not None})
     carried = _carried_presence(
@@ -605,32 +613,44 @@ def member_views(
     detailed = [
         r for r in rows if r.agent_id is not None and (details(r) if callable(details) else details)
     ]
-    owners = _owners(conn, {r.agent_id: agents[r.agent_id] for r in detailed})
+    owners = _owners(
+        conn, {r.agent_id: agents[r.agent_id] for r in detailed}, rows=people, pictures=pictures
+    )
     from maity_hub import instances  # instances reads the tables views also reads
 
     handles = {a.id: a.handle for a in agents.values()}
-    owned_by = owner_handles(conn, (a.owner_id for a in agents.values()))
+    owned_by = {i: people[i].handle for i in owner_ids if i in people}
     names = {a.id: mentions.global_name(owned_by[a.owner_id], a.handle) for a in agents.values()}
-    team_of = instances.views(conn, [r for r in rows if r not in detailed], handles, names=names)
-    team_of.update(instances.views(conn, detailed, handles, details=True, names=names))
-    counted = _credential_counts(conn, {r.id for r in detailed})
-    sharing = _sharing(conn, detailed)
-    covered_by, covering = _covers(conn, rows)
     project_ids = {r.project_id for r in rows}
     projects = (
         {p.id: p for p in conn.execute(select(t.project).where(t.project.c.id.in_(project_ids)))}
         if project_ids
         else {}
     )
+    # One pass over every agent membership; `details` names those that get `credential_id`.
+    team_of = instances.views(
+        conn,
+        rows,
+        handles,
+        details={r.id for r in detailed},
+        names=names,
+        projects=projects,
+    )
+    counted = _credential_counts(conn, {r.id for r in detailed})
+    sharing = _sharing(conn, detailed)
+    covered_by, covering = _covers(conn, rows)
     names = namespace.full_names(conn, project_ids)
     org_owners = _org_owners(conn, projects.values())
     from maity_hub import briefings  # briefings formats with this module's helpers
 
     briefed = {r.id: r for r in rows if (briefing(r) if callable(briefing) else briefing)}
-    writers = briefings.writers(conn, {r.briefing_by for r in briefed.values() if r.briefing_by})
-    subagent_writers = briefings.writers(
-        conn, {r.subagents_by for r in rows if r.agent_id is not None and r.subagents_by}
+    # The briefings' and the subagent settings' writers in one read; both look up by id.
+    writers = briefings.writers(
+        conn,
+        {r.briefing_by for r in briefed.values() if r.briefing_by}
+        | {r.subagents_by for r in rows if r.agent_id is not None and r.subagents_by},
     )
+    subagent_writers = writers
     languages = human_languages(conn, human_ids)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
@@ -750,7 +770,7 @@ def member_views(
             # Whose work this agent continues and where the hand-over is, never a text (§3.1).
             view["takes_over"] = row.takes_over
             view["handover"] = row.handover
-            view["team"] = instances.team(conn, row)
+            view["team"] = instances.team(conn, row, people)
             view["instances"] = team_of.get(row.id, [])
             unconfirmed = commitment.unconfirmed(projects[row.project_id], view["instances"])
             if unconfirmed is not None:
@@ -865,12 +885,26 @@ NO_CREDENTIALS = {
 REVOKED_LISTED = timedelta(days=30)  # how long §10 keeps listing a revoked credential
 
 
-def _owners(conn: Connection, agents: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Per agent profile its human as `{id, handle, display_name}` (§6.2)."""
+def _owners(
+    conn: Connection,
+    agents: dict[str, Any],
+    *,
+    rows: dict[str, Any] | None = None,
+    pictures: dict[str, str | None] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Per agent profile its human as `{id, handle, display_name}` (§6.2). `rows` (human id ->
+    human row) and `pictures` (id -> avatar URL) are the caller's reads, when it has made
+    them for these owners already."""
     owner_ids = {a.owner_id for a in agents.values()}
     if not owner_ids:
         return {}
-    pictures = avatars.urls(conn, owner_ids)
+    if pictures is None:
+        pictures = avatars.urls(conn, owner_ids)
+    found = (
+        rows.values()
+        if rows is not None
+        else conn.execute(select(t.human).where(t.human.c.id.in_(owner_ids)))
+    )
     humans = {
         h.id: (
             {"id": h.id, **deleted_person()}
@@ -882,7 +916,8 @@ def _owners(conn: Connection, agents: dict[str, Any]) -> dict[str, dict[str, Any
                 "avatar_url": pictures[h.id],
             }
         )
-        for h in conn.execute(select(t.human).where(t.human.c.id.in_(owner_ids)))
+        for h in found
+        if h.id in owner_ids
     }
     return {agent_id: humans[a.owner_id] for agent_id, a in agents.items()}
 

@@ -280,14 +280,18 @@ registry alone.
 **See:** https://github.com/oliver-zehentleitner/maity — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-05
 **See:** https://github.com/oliver-zehentleitner/maity — a8dd1473-5aff-4f32-a3fe-89c0498a208d — as of 2026-11-05
 **See:** packaging.md#the-sdist-carries-the-dashboard-and-the-join-page-under-bundled — c36f4a54-432f-4fe2-82ab-377690759268 — as of 2026-11-05
+**See:** https://github.com/oliver-zehentleitner/maity — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-09
 
 A tag `v<version>` runs `release-hub.yml` beside `publish-image.yml`, so
 one tag gives the package and the image the same version. The workflow
 stops unless the tag names the version in `hub/pyproject.toml`, which
 is the only place it is written (`__version__` reads the package
 metadata). Versions are pre-releases (`0.1.0a1`, …) before the beta, as
-the CLI's are. As in the CLI's release, a `check` job runs the hub's
-checks with the hashed dev lock, a `build` job installs only
+the CLI's are. As in the CLI's release, a `check` job (which ran the
+hub's checks with the hashed dev lock until 2026-11-09 and now holds the
+tag to ci's result on its commit and to a green hub-mariadb run on a
+commit of main with the same hub files, the entry
+ea58fdd2-6e3f-45df-ae48-4ce6825cafde in the root context), a `build` job installs only
 `hub/requirements/release.txt` (build, twine and hatchling, compiled
 with the `build.txt` pins as constraints) into a fresh environment and
 builds without isolation (`make release-build`), and `publish` uploads
@@ -322,6 +326,21 @@ placeholder, which has no `maity-hub` command (the review of this change).
 The quickstart switches to `pipx install maity-hub` in a pull request of
 its own once the release is verified.
 
+**Since 2026-11-09:** `0.1.0a1` is on PyPI, the maintainer removed the
+`0.0.0` placeholder the same day (deleted rather than yanked, so the
+simple index lists only `0.1.0a1`), and the quickstart installs with the
+plain `pipx install maity-hub`, as `pipx install maity` for the CLI.
+(Source: card tsk-g5me3qzet9dp. Before the removal, the index listed
+`0.0.0` with `yanked: false`, and in a throwaway pipx home the plain line
+failed building the placeholder's sdist, while `--pip-args=--pre` and
+`==0.1.0a1` installed `0.1.0a1`. After it, the plain line installed
+`0.1.0a1` without pip's cache.) Rejected: `--pip-args=--pre` as the
+documented line (it worked with the placeholder, but it is a flag every
+reader has to carry, and pip would then also prefer later pre-releases
+to finals); a pinned `==0.1.0a1` as the main line (stale with the next
+release, and kept only as the way to pin); and keeping the Git URL (no
+version to name, and the package path stays untested).
+
 **Rejected alternatives:**
 - A tag prefix of its own, `hub-v*`, as the CLI has `cli-v*`: two tags
   for one hub version, and the image and the package could name the
@@ -332,6 +351,66 @@ its own once the release is verified.
   platform without the wheel uses; it is kept and proven instead.
 - An API token stored as a repository secret: a long-lived credential;
   trusted publishing needs none.
+
+## Every deploy of maity.team is a release: a version bump as the last merge, then the maintainer's `v*` tag
+
+**Id:** 1555765c-85df-41a5-9929-2ee3479ce1fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump and redoing the fold before the final MERGE-READY set by the team lead); the maintainer's answer to req-k3acfg3wva0g, 2026-11-10 (fold the changelog at every release); the log of the `v0.1.0a1` run of publish-image (job 129086565903); `.github/workflows/publish-image.yml`; `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
+**Revisit when:** a deploy runs an image no tag built, the deploy stops being a manual step on the maintainer's command, or the hub reaches its beta and leaves the `0.1.0aN` pre-releases
+**See:** packaging.md#the-hub-is-published-to-pypi-as-maity-hub-from-the-same-v-tag-as-the-image-built-from-a-hashed-lock — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-10
+
+Until deploy 5, maity.team ran images built from main by commit, and
+only `0.1.0a1` was ever tagged. From deploy 6 on, every deploy also
+publishes `maity-hub` on PyPI, with the image's version. Each deploy goes
+through the same steps:
+
+1. A pull request raises `version` in `hub/pyproject.toml` to the next
+   pre-release. It also raises `appVersion` in the Helm chart to match,
+   together with the chart's own `version`, and folds `changelog.d/` into
+   `CHANGELOG.md` with `tools/changelog.py release <version>` in a commit of
+   its own. That pull request is the last merge before the deploy, and the
+   fold is redone on the newest main right before its final MERGE-READY.
+2. ci passes on the push of that merge.
+3. The maintainer pushes `v<version>` on that commit, and nobody else
+   pushes a `v*` tag. The tag builds the package and the image, gated as
+   in 843b8d35.
+4. Ops deploys the image that tag built.
+
+The deployment itself (manual approvals, the maintainer's command) does
+not change. The chart's `appVersion` follows the bump so that its default
+image tag names the image the release tag builds. It had stayed at
+`0.1.0.dev0`, which was never published. For that image to exist,
+`publish-image.yml` tags the image with `type=pep440` rather than
+`type=semver`. The pinned metadata-action drops a PEP 440 pre-release such
+as `0.1.0a1` as invalid SemVer, so the
+`v0.1.0a1` run logged `v0.1.0a1 is not a valid semver` and pushed only
+the commit-SHA tag (found in the review of this change). The deploy of
+maity.team pins the image by digest, so the default tag only matters to a
+chart install that sets neither `image.tag` nor `image.digest`. The labels
+`app.kubernetes.io/version` show `appVersion` either way.
+
+**Reason:** this is the maintainer's decision; no reason beyond it was
+stated.
+
+**Rejected alternatives:**
+- Deploying images built from main by commit and tagging releases
+  separately: the status quo until deploy 5. What maity.team runs then
+  has no version a person could install.
+
+Every hub release folds the changelog (the maintainer, 2026-11-10,
+req-k3acfg3wva0g: the tidiest way). `v0.1.0a1` was tagged without a fold,
+so the fold for `0.1.0a2` takes in every fragment since the start. The
+fold has to be redone on the newest main because fragments of pull
+requests merged after it would otherwise stay in `changelog.d/` and miss
+the release they shipped in. The fold is a commit of its own, with the
+command in its message, so a reviewer can rerun the tool and compare.
+
+The fold had a rejected alternative: leaving the fragments unfolded, as
+at `v0.1.0a1`. The maintainer chose the fold as the tidier way, and no
+further reason was stated.
 
 ## The sdist carries the dashboard and the join page under `bundled/`
 

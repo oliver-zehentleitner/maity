@@ -40,12 +40,62 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
     settings = Path(argv[argv.index("--settings") + 1])
     assert settings.parent == ctx.agent_dir  # the runner's, outside the clone
-    assert json.loads(Path(argv[argv.index("--mcp-config") + 1]).read_text()) == {"mcpServers": {}}
+    mcp = [a for a in argv if a.startswith("--mcp-config")]
+    assert len(mcp) == 1 and mcp[0].startswith("--mcp-config=")
+    assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
+
+
+def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_prompt(
+    tmp_path: Path,
+) -> None:
+    """Claude Code's `--mcp-config` takes several values. Given as a separate argument, the
+    start prompt right after it (no `--model` between) was read as a second configuration file,
+    and Claude Code exited 1 at once (2.1.319, the first runner test)."""
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "interactive"})
+    argv = adapters.launch(ctx).argv
+    assert argv[-1] == adapters.START_PROMPT and "--model" not in argv
+    assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
+
+
+def test_claude_code_interactive_records_the_clone_as_trusted_and_nothing_else(
+    tmp_path: Path,
+) -> None:
+    """Claude Code 2.1.319 asked "Is this a project you created or one you trust?" on its first
+    start in a fresh clone and waited, so the agent never ran `maity resume` (the first runner
+    test, 2026-11-09). The placement is the trust decision: the clone's entry is recorded in
+    the agents' Claude Code configuration, the rest of the file stays as it was."""
+    home = Path.home()  # the test's own (conftest)
+    before = {"numStartups": 3, "projects": {"/other": {"hasTrustDialogAccepted": False}}}
+    (home / ".claude.json").write_text(json.dumps(before))
+    ctx = context(tmp_path)
+    ctx.clone.mkdir(parents=True)
+    adapters.launch(ctx)
+    after = json.loads((home / ".claude.json").read_text())
+    assert after == {**before, "projects": {
+        "/other": {"hasTrustDialogAccepted": False},
+        str(ctx.clone.resolve()): {"hasTrustDialogAccepted": True},
+    }}  # fmt: skip
+
+
+def test_claude_code_supervised_records_no_trust(tmp_path: Path) -> None:
+    """Headless (`-p`), Claude Code 2.1.319 asks for no folder trust and records none."""
+    ctx = context(tmp_path, placement={**PLACEMENT, "mode": "supervised"})
+    adapters.launch(ctx)
+    assert not (Path.home() / ".claude.json").exists()
+
+
+def test_claude_code_does_not_start_when_the_trust_cannot_be_recorded(tmp_path: Path) -> None:
+    """A session waiting at the trust question would pass for `running`: the start fails
+    instead, with the cause in the runner's log, and the file is left as it was."""
+    (Path.home() / ".claude.json").write_text("not json")
+    with pytest.raises(OSError, match="not JSON"):
+        adapters.launch(context(tmp_path))
+    assert (Path.home() / ".claude.json").read_text() == "not json"
 
 
 def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) -> None:
@@ -77,7 +127,17 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
     assert f"Read(/{ws}/.git/maity/**)" in deny
-    assert f"Edit(/{ws}/.git/**)" in deny  # config, hooks; Edit covers every file tool
+    # What makes git run something, never all of .git: the sandbox makes an Edit deny a write
+    # deny, and git could no longer fetch or commit (tsk-2zz5tjpbt28n).
+    assert [rule for rule in deny if "/.git/" in rule] == [
+        f"Edit(/{ws}/.git/config)",
+        f"Edit(/{ws}/.git/config.worktree)",
+        f"Edit(/{ws}/.git/hooks/**)",
+        f"Edit(/{ws}/.git/info/**)",
+        f"Edit(/{ws}/.git/objects/info/alternates)",
+        f"Edit(/{ws}/.git/maity/**)",
+        f"Read(/{ws}/.git/maity/**)",
+    ]
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
@@ -89,7 +149,19 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert strict["allowUnsandboxedCommands"] is False
     assert strict["autoAllowBashIfSandboxed"] is False  # the allowlist still decides
     assert strict["filesystem"]["denyRead"][0].endswith("/.git/maity")
-    assert strict["filesystem"]["denyWrite"] == strict["filesystem"]["denyRead"]
+    sandboxed = str(tmp_path / "s" / "ws" / "maity" / "agent-3" / ".git")
+    assert strict["filesystem"]["denyWrite"] == [
+        f"{sandboxed}/{name}"
+        for name in (
+            "maity",
+            "config",
+            "config.worktree",
+            "hooks",
+            "info",
+            "objects/info/alternates",
+        )
+    ]
+    assert not any(path.endswith("commondir") for path in strict["filesystem"]["denyWrite"])
     assert strict["excludedCommands"] == ["maity *"]  # it alone reads the credential
     assert strict["network"] == {
         "allowedDomains": ["github.com", "maity.team"],
@@ -250,6 +322,24 @@ def test_codex_config(tmp_path: Path) -> None:
     }
     domains = found["permissions"]["maity"]["network"]["domains"]
     assert set(domains) == {"maity.team", "github.com", "pypi.org", *adapters.CODEX_PROVIDER_HOSTS}
+
+
+def test_a_headless_placement_is_offered_no_question_tool(tmp_path: Path) -> None:
+    supervised = {**PLACEMENT, "mode": "supervised"}
+    claude = adapters.claude_settings(context(tmp_path / "c", placement=supervised))
+    assert "AskUserQuestion" in claude["permissions"]["deny"]  # bare: out of the context
+    codex = tomllib.loads(
+        adapters.codex_config(context(tmp_path / "x", harness_id="codex", placement=supervised))
+    )
+    assert codex["tools"]["experimental_request_user_input"] == {"enabled": False}
+
+
+def test_an_interactive_placement_keeps_the_question_tool(tmp_path: Path) -> None:
+    # A person is at the pane; what the permission mode does with the tool stays as it was.
+    claude = adapters.claude_settings(context(tmp_path / "c"))
+    assert "AskUserQuestion" not in claude["permissions"]["deny"]
+    codex = tomllib.loads(adapters.codex_config(context(tmp_path / "x", harness_id="codex")))
+    assert "tools" not in codex
 
 
 def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

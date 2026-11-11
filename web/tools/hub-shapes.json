@@ -205,6 +205,7 @@
      },
      "start_tabs": "null",
      "terms": "null",
+     "timezone": "null",
      "website": "null"
     }
    },
@@ -221,6 +222,7 @@
       },
       "name": "string",
       "open_requests": "number",
+      "public_page": "string",
       "role": "string",
       "slug": "string",
       "state": "string",
@@ -948,6 +950,25 @@
     }
    },
    "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/roles": {
+  "object": {
+   "builtin": {
+    "array": {
+     "object": {
+      "description": "string",
+      "guide": "string",
+      "name": "string",
+      "scopes": {
+       "array": "string"
+      }
+     }
+    }
+   },
+   "custom": {
+    "array": null
+   }
   }
  },
  "GET /projects/{project}/tasks": {

@@ -1,4 +1,4 @@
-// (4) Members (/<owner>/<slug>/members): everyone in the project, humans and
+// (4) Team (/<owner>/<slug>/team): everyone in the project, humans and
 // agents, as a neutral list: role, owner, presence, when they joined and
 // whether they are paused (docs/api.md §6.2), a link to each profile and a
 // Chat button. With members:admin each row can be managed: the role, an
@@ -662,13 +662,13 @@ window.Maity = window.Maity || {};
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
 
-  // args[0]: a member (/<owner>/<slug>/members/<id>[/<tab>], a mention's link):
+  // args[0]: a member (/<owner>/<slug>/team/<id>[/<tab>], a mention's link):
   // that member's page (js/member-page.js). ?manage=<id> (its Actions menu):
   // the list with that member's Manage row open, for an admin.
   // The Team page's tabs (context/members.md f0ca2279): Members, this
   // list, and Organisation (js/org.js), each at its own project view.
   M.teamTabs = (ctx, chosen) => h("nav", { class: "view-tabs team-tabs", "aria-label": M.t("team.tabs.label") },
-    [["members", M.t("team.tab.members")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
+    [["team", M.t("team.tab.members")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
       h("a", { href: ctx.link(k), class: "view-tab", "aria-current": k === chosen ? "page" : null }, label)));
 
   M.views.members = async function (ctx, root, args) {
@@ -995,7 +995,7 @@ window.Maity = window.Maity || {};
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
     const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
       ? h("a", { class: "button primary members-join-agent", href: "/" + M.api.projectPath(ctx.slug) + "/agents/join" }, M.t("members.join_agent")) : null;
-    append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
+    append(root, M.teamTabs(ctx, "team"), h("h2", null, M.t("members.heading")),
       inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),
         ctx.canAdmin ? [" ", M.t("members.hint.admin")] : null,

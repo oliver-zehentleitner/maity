@@ -29,6 +29,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, humans_only, rate_limited, unauthenticated
 from maity_hub.models import Strict
+from maity_hub.notifications import preferences
 from maity_hub.ratelimit import Limiter
 from maity_hub.views import agent_member, human_member, isolated, meat_proxy_member, owner_handles
 
@@ -92,6 +93,8 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             "links_visible": human.links_visible,
             "account_status": human.account_status,
             "interface_language": human.interface_language,
+            # The account's time zone, the one value of §18.4; `null` until set (§5.1).
+            "timezone": preferences.preferences(conn, human.id)["email"]["timezone"],
             "start_tabs": start_tabs.visible(human.start_tabs, (p["id"] for p in projects)),
             "terms": (
                 {
@@ -185,6 +188,7 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
             t.project.c.slug,
             t.project.c.name,
             t.project.c.state,
+            t.project.c.public_page,
         )
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.human_id == human_id, t.membership.c.removed_at.is_(None))
@@ -203,6 +207,9 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
                 names[row.project_id],
             ),
             "open_requests": open_requests(conn, row.id),
+            # The project's own setting (§16.9), so the tabs mark a private project without a read
+            # per project (§5.1); whether a page is served is the public read's business.
+            "public_page": row.public_page,
         }
         for row in rows
     ]

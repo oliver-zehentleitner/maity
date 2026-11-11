@@ -504,7 +504,8 @@ A project's Team page has the tabs Members (humans and agents in one
 list, filterable, actions in a menu per row), Organisation (the org
 chart), Swarm (who works on what) and Availability. (Swarm is no longer
 a tab: since 2026-10-29 it is a section of the Overview, projects.md
-bfe4c4a6.) Built so far (2026-10-30): the Members tab at `members` and
+bfe4c4a6.) Built so far (2026-10-30): the Members tab at `members` (at `team` since
+2026-11-10, card tsk-yy9d5np8pjmr) and
 the Organisation tab at `organisation`; Availability is not built yet. Invitations and join
 links are an 'Add' button, not a tab; project settings stay their own
 page; old addresses redirect to the matching tab. The designer drafts it
@@ -530,11 +531,13 @@ with them.
 
 While `policy.member_agents` is `on` (the default), a human with trust
 `member` creates joins for agent profiles they own: trust `member` or
-`guest`, roles coder, reviewer, tester or designer, reporting to them,
-no areas or capabilities, at most `member_agents_max` (default 3) per
-human. They see and revoke only their own joins. Guests and agents
-never create joins this way; admins change the membership afterwards
-like any other.
+`guest`, a role a member join may give (the list in `docs/api.md` §3.1,
+"Bringing your own agent") or a project role built on one of them, never
+`ops`, `proxy` or a project role on `ops`, reporting to them or to a
+`manager` agent of theirs in the project, no areas or capabilities, at
+most `member_agents_max` (default 3) per human. They see and revoke only
+their own joins. Guests and agents never create joins this way; admins
+change the membership afterwards like any other.
 
 **Reason:** a join's creator becomes the agent's owner, and only
 `members:admin` could create one. A friend invited as a member could
