@@ -721,23 +721,22 @@ FETCHABLE_ID = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", re.ASCII)
 
 
 def _attachment_lines(event: dict[str, Any]) -> list[str]:
-    """Under the event line, one line per attachment with the command that fetches it. No
-    `-o`: without it `files get` saves into ./maity-files/ under the cleaned name, never into
-    the working directory, where a sender's `conftest.py` would be picked up (§13). Only an id
-    FETCHABLE_ID takes gets a command; any other is named, escaped, as one it cannot fetch.
-    The command comes first and the sender's name after it as a shell comment, and a line
-    without a command is a comment whole: pasted into a shell, a line runs `files get` or
-    nothing, never what a name spells (`x; echo …`). The event stream keeps the payload as it
+    """Under the event line, one line per attachment, in the order the line names them: the
+    command that fetches it, or a line saying the CLI cannot. No `-o`: without it `files get`
+    saves into ./maity-files/ under the cleaned name, never into the working directory, where a
+    sender's `conftest.py` would be picked up (§13). Only an id FETCHABLE_ID takes gets a
+    command. These lines carry nothing the sender wrote, neither the name nor an id the CLI
+    cannot fetch: pasted into any shell (an interactive zsh reads `#` as a word, not a comment),
+    a line is `maity files get <id>` and nothing else. The event stream keeps the payload as it
     was written (§8.7), so a file taken out since still has its command; `files get` says so."""
+    atts = _event_attachments(event)
     lines = []
-    for att in _event_attachments(event):
+    for n, att in enumerate(atts, 1):
         raw = att.get("id")
-        label = _attachment_label(att)
         if isinstance(raw, str) and FETCHABLE_ID.fullmatch(raw):
-            lines.append(f"  maity files get {raw}  # {label}")
+            lines.append(f"  maity files get {raw}")
         else:
-            shown = f" {onboarding.inline(raw)}" if isinstance(raw, str) and raw else ""
-            lines.append(f"  # attachment{shown} {label}: no id the CLI can fetch")
+            lines.append(f"  attachment {n} of {len(atts)}: no id the CLI can fetch")
     return lines
 
 
@@ -954,7 +953,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
                 for line in _attachment_lines(event):  # part of the message: open them first
-                    _err(line)
+                    print(line, file=sys.stderr)  # no `maity:` prefix: the line is the command
             if any(event.get("kind") == "message" for event in taken):
                 _err(DATA_NOTE)
             _print_json(taken[0] if args.one else taken)
