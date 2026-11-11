@@ -2024,6 +2024,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   srOpen().click(); await tick();
   srProto.focus = srFocus;
   expect(srForm() && srOpen().hidden && byId("placement-new-agent") === document.activeElement
+    && byId("placement-new-title") && byId("placement-new-title").tagName === "H3"
     && JSON.stringify(srOpts("placement-new-agent")) === JSON.stringify(["A new agent", "Agent A (@agent-a)"])
     && JSON.stringify(srOpts("placement-new-runner")) === JSON.stringify(["home-laptop · online · 2 of 4 agents running"])
     && JSON.stringify(srOpts("placement-new-target")) === JSON.stringify(["Wherever the runner chooses", "local"])

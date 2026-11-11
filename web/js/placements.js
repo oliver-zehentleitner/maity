@@ -194,7 +194,8 @@ window.Maity = window.Maity || {};
 
     const cancel = h("button", { type: "button", onclick: () => hooks.cancel() }, M.t("placements.cancel"));
     const form = h("form", { class: "placement-new", "aria-labelledby": id("title") },
-      h("h4", { id: id("title") }, M.t("placements.new.title")),
+      // Under the project tab's h2 (the only section that offers the form), one level down.
+      h("h3", { id: id("title") }, M.t("placements.new.title")),
       h("p", { class: "hint" }, M.t("placements.new.hint")),
       field("agent", M.t("join.field.agent"), agent), fresh,
       field("runner", M.t("placements.new.runner"), runner),
