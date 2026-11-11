@@ -1022,8 +1022,10 @@ to check, and the rule in `docs/agents.md` carries the weight.
 
 The event line `wait` prints on stderr ends, for a message with files, in `[N attachment(s): name, …]`: each name as `files get` would
 save it (`file_name`), cleaned for a line, cut at 60 characters, and the whole list at 200. Under it, one line per file gives the
-command that fetches it, `maity files get <id>`, with the id shell-quoted. A file already taken out says so and gives no command. An
-entry without a usable id gives no command either. The names come from the event's own `payload.attachments`, so no hub call is made
+command that fetches it, `maity files get <id>`. Only an id the command carries exactly gets one: letters, digits, `.`, `_` and `-`,
+not starting with `-` or `.`, at most 128 characters (the hub's are a prefix and 12 Crockford characters). Any other id (a newline,
+an escape or bidi character, a space, an option such as `-h` or `--force`) would change when shown, quoted or parsed and fetch
+another id or none, so it is named, escaped, as one the CLI cannot fetch. A file already taken out says so and gives no command. The names come from the event's own `payload.attachments`, so no hub call is made
 per event. The `wait` help says the files are part of the message and are opened before answering. Standard output stays the JSON.
 
 **Reason:** a screenshot showed only in the JSON under the line, which an agent skims, so the agent answered without it. The printed
@@ -1033,6 +1035,8 @@ copies the line.
 
 **Rejected alternatives:**
 - `maity files get <id> -o <name>`, as the card first proposed: it undoes 3a8f1852 for anyone who copies it.
+- Shell-quoting any id (the first version): the line is also escaped for display, so an id with a newline or an escape was
+  shown as a different id, and one starting with `-` reached argparse as an option (review of #1641).
 - Fetching each file's metadata or bytes during `wait`: a hub call per event on the long-poll path, for what the event already carries.
 
 ## Text from the forge and one-line fields name who wrote them

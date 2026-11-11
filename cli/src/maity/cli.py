@@ -712,23 +712,30 @@ def _attachments_suffix(event: dict[str, Any]) -> str:
     return f" [{len(atts)} attachment{'s' if len(atts) != 1 else ''}: {names}]"
 
 
+# An id the printed command carries exactly as the hub sent it: letters, digits, `.`, `_`, `-`,
+# not starting with `-` (an option to argparse) or `.` (`.` and `..`). Anything else would change
+# when shown, quoted or parsed, and the command would fetch another id or none.
+FETCHABLE_ID = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", re.ASCII)
+
+
 def _attachment_lines(event: dict[str, Any]) -> list[str]:
     """Under the event line, one line per attachment with the command that fetches it. No
     `-o`: without it `files get` saves into ./maity-files/ under the cleaned name, never into
-    the working directory, where a sender's `conftest.py` would be picked up (§13)."""
+    the working directory, where a sender's `conftest.py` would be picked up (§13). Only an id
+    FETCHABLE_ID takes gets a command; any other is named, escaped, as one it cannot fetch."""
     lines = []
     for att in _event_attachments(event):
         raw = att.get("id")
         label = _attachment_label(att)
-        if not isinstance(raw, str) or not raw.strip() or raw in (".", ".."):
-            lines.append(f"  attachment {label}: no id the CLI can fetch")
+        if not isinstance(raw, str) or not FETCHABLE_ID.fullmatch(raw):
+            shown = f" {onboarding.inline(raw)}" if isinstance(raw, str) and raw else ""
+            lines.append(f"  attachment{shown} {label}: no id the CLI can fetch")
         elif att.get("deleted_at") is not None:
             lines.append(
                 f"  attachment {onboarding.inline(raw)} {label}: taken out, nothing to fetch"
             )
         else:
-            command = f"maity files get {onboarding.inline(shlex.quote(raw))}"
-            lines.append(f"  attachment {onboarding.inline(raw)} {label}: {command}")
+            lines.append(f"  attachment {raw} {label}: maity files get {raw}")
     return lines
 
 

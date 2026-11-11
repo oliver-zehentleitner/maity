@@ -79,12 +79,36 @@ def test_many_long_names_keep_the_line_bounded() -> None:
     assert len(cli._attachment_lines(event)) == 10  # every file keeps its own command
 
 
-def test_an_id_is_quoted_for_the_shell_and_a_missing_one_gives_no_command() -> None:
-    odd = _message(_att("att 7;x", "a.png"))
-    assert cli._attachment_lines(odd) == ["  attachment att 7;x a.png: maity files get 'att 7;x'"]
-    for bad in (None, "", " ", ".", ".."):
-        (line,) = cli._attachment_lines(_message(_att(bad, "a.png")))  # type: ignore[arg-type]
-        assert line.endswith(": no id the CLI can fetch") and "maity files get" not in line
+@pytest.mark.parametrize(
+    "bad",
+    [
+        None,
+        "",
+        " ",
+        ".",
+        "..",
+        "att 7;x",  # a space and a shell metacharacter
+        "att-1\nNext",  # a newline: shown as `\n`, it would name another id
+        "att-1\x1b[31m",  # an escape sequence
+        "att-\u202eevil",  # a bidi override
+        "-h",  # an option to argparse, not an id
+        "--force",
+        "-o/tmp/unused",
+        "att/../x",
+        "x" * 129,
+    ],
+)
+def test_an_id_the_command_cannot_carry_exactly_gets_no_command(bad: Any) -> None:
+    (line,) = cli._attachment_lines(_message(_att(bad, "a.png")))
+    assert line.endswith(": no id the CLI can fetch") and "maity files get" not in line
+    for hidden in ("\n", "\x1b", "\u202e"):
+        assert hidden not in line
+
+
+def test_an_ordinary_id_is_carried_exactly() -> None:
+    for good in ("att-0042", "att_7", "A.b-c", "0"):
+        (line,) = cli._attachment_lines(_message(_att(good, "a.png")))
+        assert line.endswith(f": maity files get {good}")
 
 
 def test_a_nameless_entry_shows_its_id_and_a_taken_out_one_no_command() -> None:
