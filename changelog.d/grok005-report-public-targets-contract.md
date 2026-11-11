@@ -17,10 +17,11 @@
   handle a served project page shows with that project's `full_name`,
   because the maintainer wants whatever a stranger can see reportable
   and a project's address does not name the agent's owner.
-- docs: §16.8, a handle a project page lists more than once names every
-  such agent in one report, and the admin's action names the one it acts
-  on (`profile` in the resolve body), because handles are unique per
-  owner only and the page shows no owner to tell them apart.
+- docs: §16.8, a handle a project page lists more than once is `invalid`
+  (`ambiguous_handle`), and the reporter reports from the agent's own
+  page, whose global name the dashboard links, because handles are
+  unique per owner only and the page's text may show nothing that tells
+  them apart, and a report names one agent.
 - docs: §16.8, served now means `MAITY_PUBLIC_PAGES=on` and a stored
   page, because the flag and the row together are what a visitor gets.
 - hub: report-read entry 442bb50d matches §16.8, because public pages

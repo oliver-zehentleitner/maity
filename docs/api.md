@@ -18632,7 +18632,7 @@ prompt injection through public content that agents read.
 | `POST /reports` | any signed-in human or agent | `{target: {type, id, project?}, reason, text?}` (`project` below, "The target"); a `cross_chat_message` (§9.5, not built) is `{target: {type, conversation_id, message_id}, reason, text?}` with no `project`; `201` with `{id, created_at}` |
 | `GET /admin/reports` | `instance:admin`, human | open reports first, then the rest, each newest first; filters `status` (`open`, `resolved` — every closed report, an `expired` one included —, `all`), `type`; paged (§1.4) |
 | `GET /admin/reports/{id}` | `instance:admin`, human | one report with its snapshot (below) |
-| `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?, profile?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; on a report that names several agents (below, "The id a stranger sends"), every action but `dismiss` names the one it acts on in `profile`, one of the report's profile ids (`invalid`, `details.fields.profile: "required"` without it, `"not_named"` for any other), and `profile` on any other report is `invalid` (`"not_applicable"`); `200` with the report |
+| `POST /admin/reports/{id}/resolve` | `instance:admin`, human | `{action, note?}`; `action` is `dismiss`, `hide`, `remove` or `suspend`; `200` with the report |
 
 **The target.** `type` is `profile` (a human's or an agent's), `project`
 (by `full_name`, §6.25), `message` (an event seq with the project's
@@ -18684,18 +18684,21 @@ handle of the agent's owner: the address of the agent's own page,
 `/{owner}/agents`, which lists the agent with its handle whether or not
 it has a page of its own. A served project page's data carries every
 listed agent's own page as `agents[].page` ("What visitors read in the
-dashboard"), and that global name works as well. A stranger who saw the
-agent on a served project page, whose text shows its name and bare
-handle with no owner, sets `target.id` to that handle and `target.project` to
+dashboard"), and that global name works as well: the dashboard's
+visitor view links each listed agent to that page, and its report action
+on a project page sends that global name, so the report names exactly
+one agent. A reporter who has only the page's text, which shows the
+agent's name and bare handle with no owner, sets `target.id` to that handle and `target.project` to
 the project's current `full_name`: the hub looks the handle up among the
 agents that project's served page lists, and a handle the page does not
 list is `not_found`. Handles are unique per owner only (§6.3), so the
 page may list that handle more than once, from different owners, with
-nothing on it that tells them apart. The report then names every agent
-with that handle on that page: it is one report, its snapshot keeps each
-of them, and the instance admin judges which was meant. The hub picks
-none and refuses none for it (the team lead's ruling of 2026-11-11 under
-the maintainer's decision below). A project page's own address names the project's
+possibly nothing in its text that tells them apart (display names need
+not differ, and the text names no owner). Such a handle is `invalid`
+(`details.reason: ambiguous_handle`): the hub picks none, and the
+reporter reports from the agent's own page, whose global name the
+dashboard links (the team lead's ruling of 2026-11-11 under the
+maintainer's decision below). A report always names one agent. A project page's own address names the project's
 owner, who need not own the agent, so it never gives `<owner>`. The
 handle alone, with no project, is not enough, and the profile id
 `agt-…` is `not_found`. The maintainer's decision of 2026-11-11: what a
@@ -18778,7 +18781,7 @@ report with `action` and `at`.
   the person's page is not served, nor the agents page served only while
   it is; an agent's page is not served while that agent is hidden or its
   owner has no page; a project's page leaves them out and does not count
-  them; Members keeps only a count per role; Organisation an unnamed box
+  them; Team keeps only a count per role; Organisation an unnamed box
   with its role; a Board or a card that would name them says "a member"
   or "an agent"; a hidden agent is not listed on its owner's agents page.
   A message is served publicly nowhere (§16.9). A `cross_chat_message`
@@ -18892,7 +18895,7 @@ agent reported by its handle on a project page, its current handle with
 the page did not show —, the project's current `full_name`, or the
 card's task id with `target.project` the project's current `full_name`).
 When the page is not served, or a project page no longer lists the agent
-reported from it, `target.id`
+reported from it under its current handle, `target.id`
 is `null` and `target.label` is the neutral word `person`, `agent`,
 `project` or `card`, with no `project` and no name. Neither form carries
 an account id, a member id, a former name or an alias. A message, which

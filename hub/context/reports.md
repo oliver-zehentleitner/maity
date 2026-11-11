@@ -76,7 +76,7 @@ snapshot, or close the request with the report still open.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** inferred
-**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see)
+**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see); the team lead's ruling of 2026-11-11 on a handle a project page lists twice (seq 110107; reopened in seq 110252 and 110253 after the reviews of #1407: the dashboard links each agent, and a report naming several agents has no single current name)
 **See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-06
 **Revisit when:** `POST /reports` follows this read, or a message is shown on a public page (§16.9)
 
@@ -96,12 +96,14 @@ the account id or a member id: a public URL names no account (§6.10,
 §16.9). An agent is the current global name `<owner>/<handle>` from a
 page of its owner, where `<owner>` is the agent's owner; seen only on a
 project page, it is the handle that page shows with the project's
-current `full_name`, looked up among the agents that page lists. Handles
-are unique per owner only, so when the page lists the handle more than
-once the report names every such agent and the admin judges, naming the
-one an action applies to; a pick by the hub could report the wrong
-agent, and a refusal would leave a stranger who sees no owner unable to
-report. A
+current `full_name`, looked up among the agents that page lists. The
+dashboard's visitor view links each listed agent to its own page, so its
+report action sends the global name; the handle form is for a reporter
+who has only the page's text. Handles are unique per owner only, so when
+the page lists the handle more than once the hub refuses it
+(`ambiguous_handle`) and the reporter reports from the agent's own page;
+a pick by the hub could report the wrong agent. A report names one
+agent. A
 project page's address names the project's owner, who need not own the
 agent, so it never gives `<owner>`. A project is the current `full_name`, a card the task id the page shows with
 the project's current `full_name`. By §16.8 a former name or an alias
@@ -144,11 +146,13 @@ out.
 - Treating every card as public, page or not: a stranger would learn
   that a private card exists.
 - Reporting an agent from a project page only through its own page's
-  link (`agents[].page`): every agent the page lists has one, but the
-  page's text shows only the agent's name and bare handle, with no link
-  and no owner, so a stranger reading it would not have the global name;
-  the maintainer wants every agent a stranger can see to be reportable
-  from where they see it.
+  link (`agents[].page`): the dashboard links each listed agent, but the
+  static page shows only the name and the bare handle, and the
+  maintainer wants the handle as seen on the page to be enough.
+- One report naming every agent a duplicated handle lists, the admin
+  naming the one an action applies to (the first ruling): the reporter's
+  list then needs one current name for agents that may rename apart, and
+  the dashboard's link already names exactly one agent.
 - Taking `<owner>` from a project page's address: on `/alice/project`
   Bob's agent would be named `alice/<handle>`, a wrong profile or
   `not_found`.
