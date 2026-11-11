@@ -1003,7 +1003,7 @@ window.MAITY_I18N["pt"] = {
   "device.approved.title": "Aprovado",
   "device.code.continue": "Continuar",
   "device.code.format": "um código tem doze letras e dígitos, como {example}",
-  "device.code.hint": "Em um dispositivo em que você já entrou: seu perfil → Entrar em outro dispositivo.",
+  "device.code.hint": "Em um dispositivo em que você já entrou: Segurança → Outro dispositivo.",
   "device.code.label": "O código do seu outro dispositivo",
   "device.code.open": "Tem um código?",
   "device.code.title": "Entrar com um código",
@@ -3057,7 +3057,7 @@ window.MAITY_I18N["pt"] = {
   "notify.mode.unknown": "Não é uma opção deste hub.",
   "notify.nl.hint": "Quando uma das suas instâncias de agente para de ler os eventos por um tempo, você é avisado aqui. O membro ao qual ela se reporta é avisado de qualquer forma.",
   "notify.nl.minutes": "Depois de quantos minutos",
-  "notify.nl.minutes_hint": "De {min} a {max}. Em Minhas configurações de um projeto é possível definir um valor próprio.",
+  "notify.nl.minutes_hint": "De {min} a {max}. Um projeto pode definir um valor próprio em Configurações → Minhas.",
   "notify.nl.mode": "Avisar-me",
   "notify.nl.title": "Agentes que param de escutar",
   "notify.not_saved": "Não salvo: {reason}",
@@ -5125,7 +5125,7 @@ window.MAITY_I18N["pt"] = {
   "waiting.older": "Mais antigas",
   "waiting.read_failed": "Não foi possível ler as notificações: {reason}",
   "waiting.removed": "Removida",
-  "waiting.sessions.manage": "Gerencie-as em Perfil → Sessões",
+  "waiting.sessions.manage": "Gerencie-as em Segurança → Sessões",
   "waiting.sessions.more": {
     "one": "e mais {count}",
     "other": "e mais {count}"

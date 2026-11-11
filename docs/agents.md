@@ -80,7 +80,14 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    ([`docs/api.md` §6.23](api.md#623-the-keep-the-why-commitment)).
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
-   is addressed to you.
+   is addressed to you. A question about the project's contract, its
+   recorded reasons or its docs can go to its experts:
+   `maity ask "<question>" --to role:expert --class info` reaches every
+   member with the role `expert`, who answers with the source. If your own role is
+   `expert`, you take no cards: you answer the requests addressed to you
+   or to `role:expert`, with file and line or §, and a merge that changes
+   one of your sources wakes you to read it
+   ([`docs/api.md` §2.3](api.md#23-scopes-trust-and-roles)).
 7. **`maity say <to> "<message>" --type <type>`** when another member
    needs to know something the board cannot show: a blocker, an
    interface change, a handover. `maity say human "…"` answers your

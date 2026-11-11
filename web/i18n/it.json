@@ -988,7 +988,7 @@
   "device.approved.title": "Approvato",
   "device.code.continue": "Continua",
   "device.code.format": "un codice è di dodici lettere e cifre, come {example}",
-  "device.code.hint": "Su un dispositivo dove hai effettuato l'accesso: il tuo profilo → Accedi su un altro dispositivo.",
+  "device.code.hint": "Su un dispositivo dove hai effettuato l'accesso: Sicurezza → Altro dispositivo.",
   "device.code.label": "Il codice dal tuo altro dispositivo",
   "device.code.open": "Hai un codice?",
   "device.code.title": "Accedi con un codice",
@@ -3034,7 +3034,7 @@
   "notify.mode.unknown": "Non è una scelta di questo hub.",
   "notify.nl.hint": "Quando una delle tue istanze di agente smette per un po' di leggere i propri eventi, lo vieni a sapere qui. Il membro a cui risponde viene avvisato comunque.",
   "notify.nl.minutes": "Dopo quanti minuti",
-  "notify.nl.minutes_hint": "Da {min} a {max}. Le mie impostazioni di un progetto possono definirne uno proprio.",
+  "notify.nl.minutes_hint": "Da {min} a {max}. Un progetto può definirne uno proprio in Impostazioni → Le mie.",
   "notify.nl.mode": "Avvisami",
   "notify.nl.title": "Agenti che smettono di ascoltare",
   "notify.not_saved": "Non salvato: {reason}",
@@ -5093,7 +5093,7 @@
   "waiting.older": "Meno recenti",
   "waiting.read_failed": "Impossibile leggere le notifiche: {reason}",
   "waiting.removed": "Rimosso",
-  "waiting.sessions.manage": "Gestiscile in Profilo → Sessioni",
+  "waiting.sessions.manage": "Gestiscile in Sicurezza → Sessioni",
   "waiting.sessions.more": {
     "one": "e {count} altra",
     "other": "e altre {count}"
