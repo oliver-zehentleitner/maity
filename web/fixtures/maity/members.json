@@ -11,7 +11,7 @@
       "areas": [
         "/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "last_seen_at": "2026-10-21T13:40:00Z",
       "presence": "online",
       "paused": null,
@@ -34,7 +34,7 @@
       ],
       "capabilities": [
         "tag"
-      ],
+      ], "expert_for": null, "expert_sources": [],
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
       "session": {
@@ -78,7 +78,7 @@
       "areas": [
         "hub/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Claude Code",
       "model": "claude-opus-5-5",
       "session": {
@@ -114,7 +114,7 @@
       "areas": [
         "cli/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Pi",
       "model": "claude-sonnet-5-5",
       "session": null,
@@ -142,7 +142,7 @@
       "areas": [
         "web/"
       ],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "takes_over": { "member_id": "agt-c", "handle": "agent-c", "name": "maintainer/agent-c" },
       "handover": { "kind": "message", "id": 6001 },
       "harness": "Claude Code",
@@ -173,7 +173,7 @@
       "trust": "member", "role": "reviewer",
       "reports_to": "agt-a",
       "areas": [],
-      "capabilities": [],
+      "capabilities": [], "expert_for": null, "expert_sources": [],
       "harness": "Codex",
       "model": "unknown",
       "session": null,
