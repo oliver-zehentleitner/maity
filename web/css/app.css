@@ -386,6 +386,17 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 /* The tabs menu beside the row (js/app.js tabsMenu): which projects are tabs, and the start set. */
 .tabs-menu-box { flex: none; display: inline-flex; align-items: center; }
 .tabs-menu-box .menu-button { min-width: 32px; min-height: 32px; }
+/* The tabs menu is drawn as the row's last tab (the owner, 2026-11-10, tsk-qa2r972wjsws): the tabs'
+   pill, padding, size, colour and gap, on the tabs' line. It stays a menu button (no role=tab, no view
+   behind it) and stands outside nav.switcher, so a drag or Alt+Shift+Arrow never moves it and on a phone
+   it keeps the row's right end while the tabs scroll. */
+.switcher-row .tabs-menu-box { align-self: flex-start; margin-top: 8px; padding-bottom: 2px; margin-inline-start: -12px; }
+.tabs-menu-box .menu-button.tabs-menu { min-width: 0; min-height: 0; padding: 8px 10px; border: 1px solid var(--border);
+  border-bottom: 2px solid transparent; border-radius: 999px; background: transparent; color: var(--muted); font-size: 0.88rem;
+  line-height: inherit; }
+.tabs-menu-box .menu-button.tabs-menu:hover:not(:disabled) { border-color: var(--border); border-bottom-color: transparent; }
+/* Open, it reads like the current tab: the accent edge, the raised ground. */
+.tabs-menu-box .menu-button.tabs-menu[aria-expanded="true"] { border-color: var(--accent); background: var(--surface-2); color: var(--text); }
 .switcher a[draggable="true"] { cursor: grab; }
 /* Where a dragged tab will go: an upright line in the gap before or after the tab under it (js/app.js
    dragTab). Placed absolutely, it moves nothing; the row keeps room for the line after its last tab. */
