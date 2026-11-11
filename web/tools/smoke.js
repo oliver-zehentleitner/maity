@@ -2688,9 +2688,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "trust: a proxy never governs; an admin reviewer does; a guest reviewer reviews nothing");
   // Every role of §2.3, once, with its label and help; a security team holds the scopes of its base.
   const rlT = win.Maity.trust;
-  expect(rlT.ROLES.join() === "coder,reviewer,tester,designer,writer,ops,proxy,manager,red-team,blue-team,purple-team"
+  expect(rlT.ROLES.join() === "coder,reviewer,tester,designer,writer,ops,proxy,manager,red-team,blue-team,purple-team,expert"
     && rlT.roleLabel("red-team") === "Red team" && rlT.roleLabel("manager") === "Manager" && rlT.ROLES.every((r) => rlT.roleHelp(r).length > 10)
-    && rlT.MEMBER_ROLES.join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team",
+    && rlT.MEMBER_ROLES.join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert"
+    && !rlT.NEEDS_ROLES.includes("expert") && rlT.tokenWords("role:expert") === "every expert",
     "roles: the dashboard's one list holds every role of §2.3 with a label and a help text; a member's own agent gets all but ops and proxy");
   expect(rlT.tests({ trust: "member", role: "red-team" }) && !rlT.reviews({ trust: "member", role: "red-team" })
     && rlT.reviews({ trust: "member", role: "purple-team" }) && rlT.releases({ trust: "member", role: "purple-team" })
@@ -3962,7 +3963,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byoButton() && !byoButton().disabled && /^\d+ of 10 agents of yours$/.test(text(byoNote())), "own agents: below the limit, Add my agent is on");
   byoButton().click(); await tick();
   expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
-    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team"
+    && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert"
     && byId("join-reports") && byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-maintainer"
     && byId("join-reports").value === "hum-maintainer" && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
     "own agents: the panel offers only member or guest, every role but ops and proxy, reports to oneself or one's own managers (§3.1), no areas");
@@ -12072,7 +12073,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(ivItems()) === JSON.stringify(["inv-0003:open", "inv-0004:voided", "inv-0002:used", "inv-0001:revoked"])
     && !text(ivBox()).includes("#/invite/"), "invite: Members offers inviting, every trust for an owner; the list with each state, never a link");
   const ivRoles = byId("invite-role").querySelectorAll("option");
-  expect(ivRoles.map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,ops,manager,red-team,blue-team,purple-team"
+  expect(ivRoles.map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,ops,manager,red-team,blue-team,purple-team,expert"
     && ivRoles.find((o) => o.getAttribute("value") === "purple-team").textContent === "Purple team"
     && text(byId("invite-role-help")) === win.Maity.trust.roleHelp("coder") && byId("invite-role").getAttribute("aria-describedby") === "invite-role-help",
     "invite: every role but proxy (trust member), by its label, the chosen role's help under the picker");
@@ -13886,7 +13887,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.owner-role").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { role: "reviewer" }]),
     "owner role: only role is sent " + JSON.stringify(orPatches[orPatches.length - 1]));
+  // An expert's fields (§6.2 "An expert's fields", tsk-cwtw22tta8y8): its owner sets them in a
+  // form of their own, sent alone; the list shows what it answers about next to the role.
+  expect(!main.querySelector("form.member-expert"), "expert: no expert form while the role is not expert");
+  owRole().value = "expert";
+  main.querySelector("form.owner-role").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const exFor = () => byId("member-expert-for-agt-b"), exSources = () => byId("member-expert-sources-agt-b");
+  expect(exFor() && exSources() && exFor().value === "" && exSources().value === "",
+    "expert: with the role expert its owner gets the two fields, empty");
+  exFor().value = "  Maity contract,\n recorded reasons "; exSources().value = "docs/api.md, context/, ../up";
+  main.querySelector("form.member-expert").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1][1]) === JSON.stringify({ role: "expert" })
+    && exSources().getAttribute("aria-invalid") === "true" && text(byId("member-expert-sources-agt-b-error")).includes("repository path"),
+    "expert: a source that is no repository path is said at the field and nothing is sent");
+  exSources().value = "docs/api.md, context/, docs/api.md";
+  main.querySelector("form.member-expert").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(orPatches[orPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b",
+    { expert_for: "Maity contract, recorded reasons", expert_sources: ["docs/api.md", "context/"] }]),
+    "expert: the two fields are sent alone, whitespace folded and duplicates dropped " + JSON.stringify(orPatches[orPatches.length - 1]));
+  const exRow = () => main.querySelectorAll("tr.member").find((r) => r.getAttribute("data-member") === "agt-b");
+  expect(text(exRow()).includes("Expert for: Maity contract, recorded reasons") && exFor().value === "Maity contract, recorded reasons"
+    && exSources().value === "docs/api.md, context/",
+    "expert: the list names what it answers about next to its role; the form shows what the hub holds");
+  main.querySelector("form.member-expert").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(orPatches[orPatches.length - 1][1].expert_for && text(main).includes("Nothing changed."), "expert: an unchanged save sends nothing");
+  await go("#/maintainer/maity/team/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("Expert for: Maity contract, recorded reasons") && text(main).includes("sources docs/api.md, context/"),
+    "expert: the member's page shows what it answers about and its sources");
   await orPatch("/projects/maintainer/maity/members/agt-b", { role: "coder" });
+  const exHeld = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-b");
+  expect(exHeld && exHeld.role === "coder" && exHeld.expert_for === null && exHeld.expert_sources.length === 0,
+    "expert: a role change away from expert clears both fields");
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
   orManage("Agent A").click(); for (let k = 0; k < 4; k++) await tick();
   expect(!byId("owner-role-agt-a") && text(main.querySelector(".owner-role-fixed")).includes("The project's admins change it"),

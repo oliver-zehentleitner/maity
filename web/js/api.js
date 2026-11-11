@@ -729,7 +729,7 @@ window.Maity = window.Maity || {};
   const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team"];
   // Every built-in role (§2.3), as the hub's one list; and what a member may
   // give an agent of their own (§3.1: not ops, not proxy).
-  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team"];
+  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
   const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
   function agentLimits(who, target, body, path) {
     const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
@@ -4685,6 +4685,28 @@ window.Maity = window.Maity || {};
           return target;
         }
       }
+      // §6.2 "An expert's fields": alone in their PATCH, by the agent's human owner or
+      // members:admin, only on an expert, at once (hub/routes/members.py _expert_fields).
+      if ("expert_for" in body || "expert_sources" in body) {
+        const given = Object.keys(body);
+        const own = ["expert_for", "expert_sources"].filter((k) => k in body);
+        if (given.length !== own.length) fail(400, "invalid", "set them alone", path, { fields: Object.fromEntries(own.map((k) => [k, "alone"])) });
+        const target = member(m[1], m[2], path);
+        if (!who.admin && !(who.member.kind === "human" && target.kind === "agent" && target.owner_id === who.member.id)) {
+          fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        }
+        if (target.role !== "expert") fail(400, "invalid", "only an expert has these fields", path, { fields: Object.fromEntries(own.map((k) => [k, "expert_only"])) });
+        const errors = {};
+        if ("expert_for" in body && body.expert_for !== null && [...body.expert_for].length > 120) errors.expert_for = "string_too_long";
+        if ("expert_sources" in body) {
+          if ((body.expert_sources || []).length > 20) errors.expert_sources = "too_long";
+          else if ((body.expert_sources || []).some((a) => !/^[A-Za-z0-9._/-]{1,255}$/.test(a) || a.startsWith("..") || ("/" + a + "/").includes("/../"))) errors.expert_sources = "invalid_path";
+        }
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if ("expert_for" in body) target.expert_for = (body.expert_for || "").split(/\s+/).filter(Boolean).join(" ") || null;
+        if ("expert_sources" in body) target.expert_sources = [...new Set(body.expert_sources || [])];
+        return target;
+      }
       // §3.1 "The owner changes the role": the human who owns the agent, without
       // members:admin, sets its role alone while they could let it join now
       // (hub/routes/members.py _owner_sets_role), to a role a member join may give.
@@ -4705,6 +4727,7 @@ window.Maity = window.Maity || {};
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
           if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
+          if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
           target.role = body.role;
           target.role_base = base;
           return target;
@@ -4764,7 +4787,11 @@ window.Maity = window.Maity || {};
       const foreign = held.length ? foreignConsent(m[1], who.member, target, who.member.handle + " asks to change " + held.join(", ") + " of " + target.handle + ".") : null;
       const applies = (k) => k in body && !held.includes(k);
       if (applies("trust")) target.trust = body.trust;
-      if (applies("role")) target.role = body.role;
+      if (applies("role")) {
+        // A role change away from expert clears its fields (§6.2 "An expert's fields").
+        if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
+        target.role = body.role;
+      }
       if ("reports_to" in body) target.reports_to = body.reports_to;
       if (applies("areas")) target.areas = [...new Set(body.areas)];
       if (applies("capabilities")) target.capabilities = [...new Set(body.capabilities)];
