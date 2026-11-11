@@ -82,8 +82,8 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    is not yours. **`maity answer <request> --reply <id>`** when a request
    is addressed to you. A question about the project's contract, its
    recorded reasons or its docs can go to its experts:
-   `maity ask "<question>" --to role:expert` reaches every member with
-   the role `expert`, who answers with the source. If your own role is
+   `maity ask "<question>" --to role:expert --class info` reaches every
+   member with the role `expert`, who answers with the source. If your own role is
    `expert`, you take no cards: you answer the requests addressed to you
    or to `role:expert`, with file and line or §, and a merge that changes
    one of your sources wakes you to read it
