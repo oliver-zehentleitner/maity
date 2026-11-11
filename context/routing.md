@@ -113,7 +113,7 @@ segment, so the path costs nothing.
 **Evidence:** confirmed
 **Source:** the maintainer in chat (2026-11-11, card tsk-3s3eb6bsp15n: the section becomes a tab between Agents and Organisation); the coordinator's choice of the word the same day; contract `docs/api.md` §16.11, §15.6
 **See:** routing.md#the-dashboard-is-addressed-by-paths-public-pages-sit-at-the-same-canonical-address-and-nothing-old-is-kept — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-11
-**Revisit when:** the tab is renamed to something a path can say, or a second view of placements needs the word
+**Revisit when:** the tab is renamed to something a path can say, a second view of placements needs the word, or the `/agents` tab is found slow for a human with many projects (then `GET /me/placements`, below)
 
 "Where they run", the list of where the project's agents run (§15.6:
 the wanted and reported state, Stop, Restart, Logs, the start on a
@@ -122,6 +122,14 @@ its own between Agents and Organisation, at `/<owner>/<slug>/placements`.
 Every member who reads the project sees it, as they saw the section;
 the actions on it stay as §15.6 grants them. `placements` joins the
 project views of §16.11, so no project slug may take it (`PROJECT_VIEWS`).
+The global agents page `/agents` gets the same treatment (the maintainer,
+2026-11-11): "Where they run" at `/agents/placements` and "Maintenance
+notices", which was at its bottom, at `/agents/maintenance`, each a tab
+beside the list. §16.11 states that the hub never issues either word as
+an id, since ids are otherwise opaque; neither is a first segment, so no
+reserved word changes. The `/agents` "Where they run" tab reads
+`GET …/placements` (§15.6) in each project where the human has an agent,
+grouped by project, only when the tab is opened.
 
 **Reason:** the Team view moved to `team` so that the path says what
 the tab says (§16.11, 2026-11-10). "Where they run" is no path word, so
@@ -135,3 +143,7 @@ log or the CLI names the same thing.
 - `running`, closer to the tab's words: one letter from the project view
   `runners` (the machines), which a link or a log would confuse.
 - Keeping the section on the Agents page: the maintainer asked for a tab.
+- `GET /me/placements` for the `/agents` tab, one call across projects:
+  a new route with its own rights and paging, where one read per project,
+  made only when the tab opens, gives the same list (the coordinator's
+  choice, 2026-11-11). Revisited if a human with many projects finds it slow.

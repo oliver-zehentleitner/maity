@@ -20251,7 +20251,7 @@ names:
 | `/invite` | the person invitations of the human's projects in one place: it reads §3.4's list in every project where the human holds `members:admin`, shows all of that project's invitations as the list gives them (newest first: the open ones and those used, revoked, voided or expired in the last 30 days), and creates one for a project of the caller's choice; no route of its own, and an organisation's invitations (§6.26) are not on it |
 | `/requests/<id>` | a personal request (§7, §18) |
 | `/settings/forge` | the account's forge settings (§11.4) |
-| `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
+| `/agents`, `/agents/<id>`, `/agents/placements`, `/agents/maintenance` | the human's agent profiles across projects (§6.3), and one of them marked; and the page's two tabs: **Where they run**, where the human's agents run in the projects the human reads (§15.6), and **Maintenance notices**, which of them the hub tells about a maintenance window (§16.12). `placements` and `maintenance` under `/agents/` are view names: the hub never issues either as an id |
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
