@@ -212,7 +212,8 @@ def test_the_printed_lines_run_only_the_fetch_in_a_real_shell(
     stub = 'maity() { echo "$*" >> calls; }\nattachment() { touch CALLED; }\n'
     script = stub + "\n".join(lines) + "\nexit\n"
     # No user rc file: HOME is the empty test directory and ZDOTDIR, BASH_ENV and ENV are unset.
-    # The shell build's own global rc files (/etc/zsh/zshrc, /etc/bash.bashrc) may still be read.
+    # Only zsh's global files (/etc/zsh/zshenv, /etc/zsh/zshrc, where the build has them) may still
+    # be read; bash --norc and a non-interactive sh read none.
     startup = ("ZDOTDIR", "BASH_ENV", "ENV")
     env = {k: v for k, v in os.environ.items() if k not in startup}
     env.update(HOME=str(tmp_path), PS1="")
