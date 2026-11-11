@@ -193,6 +193,7 @@ def test_the_head_is_read_before_the_project(
     )
 
     ran = threading.local()
+    head_returned = threading.Event()
 
     def head(*args: Any) -> Any:
         order.append("head")
@@ -200,7 +201,9 @@ def test_the_head_is_read_before_the_project(
         return real_head(*args)
 
     def project(*args: Any) -> Any:
-        order.append("project")
+        # Read in the head's wave, the project's thread would begin before the head's read
+        # has returned, whenever the database lets its read go on.
+        order.append("project in the head's wave" if ran.early else "project")
         return real_project(*args)
 
     def rename() -> None:
@@ -209,11 +212,12 @@ def test_the_head_is_read_before_the_project(
 
     async def thread(fn: Any) -> Any:
         def run() -> tuple[Any, bool]:
-            ran.head = False
+            ran.head, ran.early = False, not head_returned.is_set()
             return fn(), ran.head
 
         found, was_head = await real_thread(run)
         if was_head:  # the head's transaction has ended; the project's has not begun
+            head_returned.set()
             await real_thread(rename)
         return found
 
