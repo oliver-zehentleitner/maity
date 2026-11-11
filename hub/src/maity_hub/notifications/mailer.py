@@ -231,10 +231,17 @@ def for_human(
     else:
         immediate = [i for i in mailable if _mode(i, modes) == "immediate" and not held(i)]
         capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
+        hour = now.replace(minute=0, second=0, microsecond=0)
         if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
             due += immediate
             immediate = []
-        hour = now.replace(minute=0, second=0, microsecond=0)
+        elif capped:
+            # A capped item from an hour that ended while the human was present missed that
+            # hour's mail: it goes with the first pass after the grace, as the hour's mail
+            # would have, not at a later hour's end (§18.5, "Held while present").
+            late = [i for i in immediate if i.at < hour]
+            due += late
+            immediate = [i for i in immediate if i.at >= hour]
         if state.hourly_at is None:
             clocks["hourly_at"] = hour
         elif state.hourly_at < hour:

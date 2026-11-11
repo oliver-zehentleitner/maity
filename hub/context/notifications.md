@@ -1139,7 +1139,8 @@ shipped, the kind's settings could be changed only through the API (§18.4).
 
 `email.hold_while_online` (default `true`) holds the mail of `immediate` items while one of
 the human's live sessions has a `present_until` in the future, and `online_grace_minutes`
-(default 5, an instance mail setting) after that; the next pass mails what is still unread.
+(default 5, an instance mail setting) after that; the next pass mails what is still unread,
+an item the hourly cap held over an hour's end included.
 A dashboard tab calls `POST /me/presence` every 60 seconds while it is visible and had input
 within 10 minutes. The hub moves `present_until` to two minutes ahead only when that moves it
 by at least a minute, so it writes at most once a minute per session: every present tab calls

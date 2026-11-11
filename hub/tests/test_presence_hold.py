@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -110,6 +110,41 @@ def test_a_digest_is_built_at_its_moment_while_present(
     present(owner)
     run(migrated)
     assert len(notifications(migrated)) == 1
+
+
+def test_a_capped_item_whose_hour_ends_while_present_goes_after_the_grace(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """The hour's end is the cap's one overflow mail; held across it, the item goes with the
+    first pass after the grace, not at a later hour (§18.5)."""
+    owner, agent = setup(make_client, migrated)
+    run(migrated)  # the hour's clock starts
+    sent_at = at(minutes=44, seconds=30)  # 12:54:30
+    with migrated.begin() as conn:  # the hour's ten immediate mails are spent
+        for n in range(10):
+            conn.execute(
+                insert(t.mail_outbox).values(
+                    kind="notification",
+                    human_id=owner.id,
+                    recipient="me@example.org",
+                    subject=f"earlier {n}",
+                    body="",
+                    headers={},
+                    created_at=sent_at,
+                    not_before=sent_at,
+                    attempts=1,
+                    status="sent",
+                )
+            )
+    present(owner)  # until 12:56:30
+    ask(agent)
+    at(minutes=50, seconds=30)  # 13:00:30, inside the grace: held at the hour's end
+    run(migrated)
+    assert notifications(migrated) == []
+    at(minutes=51, seconds=31)  # 13:01:31, the grace is over; the cap is still full
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.subject.endswith("asks: Which?")
 
 
 def test_the_suspension_mail_is_never_held(
