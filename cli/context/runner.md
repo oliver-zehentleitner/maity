@@ -525,7 +525,8 @@ How agents pay for their model is still up to the operator, and nothing
 about model **access** reaches the hub: no key, no account, no login
 method. What does reach it now is a supervised run's usage **counts**:
 input, output and prompt-cache tokens, and the cost figure the harness
-computed itself, sent by the runner after each run. The model name, the
+computed itself, sent by the runner when a run's work ends and before it
+reports the run's end (a later record is lost). The model name, the
 prompts, replies, tool calls and the provider's request ids never leave
 the runner. Interactive placements report nothing for now: the runner
 reads no stream from them, and the harness's session log is a format it

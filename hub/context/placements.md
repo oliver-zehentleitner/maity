@@ -345,50 +345,58 @@ child older than this writes no line, so the detail is `null` with it.
   ending in a forged marker came last. The random value per call closes
   that, and the line comes after a failure the CLI handles itself.
 
-## Usage: no price list, and a run shared by two cards counts for both
+## Usage: no price list, cards by hub time, and a shared run counts for both
 
 **Id:** f9f61db3-b03b-4730-b092-4bbcea1bb7c8
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf for who sees it); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); the contract review of 2026-11-11 on #1650 (two retry protocols on one call, a replay after the records are deleted); contract `docs/api.md` §15.15
+**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf for who sees it); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); the contract reviews of 2026-11-11 on #1650 (two retry protocols on one call, a replay after the records are deleted, runner times stretched across runs and cards) and the team lead's decision of the same day to attribute by hub time only; contract `docs/api.md` §15.15
 **Revisit when:** the hub is asked for a price list, a budget or a limit; or a run's work can be tied to one card
 **See:** https://github.com/oliver-zehentleitner/maity — 5f6c87ce-132d-4f7e-921d-d74741f369fe — as of 2026-11-11
 
 The hub never turns tokens into money: it shows a cost only where the
 harness reported one, summed per currency, and says how many runs had
-one. A run counts for every card the placement's instance held at any
-time during the run, not only those held when its record arrives: a
-report with `done` or a release during the run would otherwise drop the
-card the run finished. A run during which the instance held two cards
-counts in full for each and is marked as shared; instance and agent totals
-count every run once. A repeated `run_id` with other numbers is refused
-(`conflict`, `run_id_reused`), not answered as a repeat. The `run_id` is
-the call's only key: it carries no `Idempotency-Key`, the hub compares
-the body as sent, and a record that started more than 30 days ago, or ends more than
-5 minutes ahead of the hub, is refused, so a resend of an accepted body
-finds its record within the 90 days it is kept; a runner never reuses a
-`run_id`, and one reused after its record is gone counts as a new run.
-A record spanning two runs the hub saw is refused, so it cannot move
-onto the later run's cards. The hub is to keep a holding per card and instance
-(from, until) for this (not built yet), since the card row keeps only its current claim,
-and bounds the run by the moments it saw it open and close, not by the
-runner's times alone. Card totals are for the project's human members and
-the agent members whose runs counted for the card, instance and agent
-totals for the agent's owner and the project's human admins; no public
-page shows usage.
+one. Which cards a run counts for is decided by hub time alone: the
+placement keeps `run_opened_at`, the time of the report that last set
+`run` to `open`, and a record counts for every card the placement's
+instance held at any time between that and the record's `received_at`,
+not only those held when it arrives: a report with `done` or a release
+during the run would otherwise drop the card the run finished. A record
+is taken only while the run is open; one arriving after `waiting`, any
+state other than `running` or the next `open` is `conflict`
+(`run_closed`) and is lost from every total. The runner's `started_at`
+and `ended_at` are shown as sent and pick nothing. A run during which
+the instance held two cards counts in full for each and is marked as
+shared; instance and agent totals count every run once. A repeated
+`run_id` with other numbers is refused (`conflict`, `run_id_reused`),
+not answered as a repeat. The `run_id` is the call's only key while the
+record is kept: it carries no `Idempotency-Key`, the hub compares the
+body as sent, a runner never reuses a `run_id`, and one reused after its
+record is gone counts as a new record. The hub is to keep a holding per
+card and instance (from, until) for this (not built yet), since the card
+row keeps only its current claim. Card totals are for the project's
+human members and the agent members whose runs counted for the card,
+instance and agent totals for the agent's owner and the project's human
+admins; no public page shows usage.
 
 **Reason:** a price list in the hub would make it a pricing and billing
 system, which the maintainer keeps out, and prices change faster than
 the hub. The runner cannot know which card a run worked on, and the hub
 can only see which cards were held; any split between two held cards
-would be a guess presented as a fact. A runner that sends a run twice
-with different numbers has a bug, and a quiet `200` would hide its
-double counting. Two keys on one call would answer the same resend in
-two ways (the key's replay, the `run_id`'s `200` or `conflict`), and a
-key lives 24 hours while a runner may resend later. A card row and the
-event log cannot say who held a card when: a release names no instance
-and a rejoin rewrites the instance in place.
+would be a guess presented as a fact. The runner's clock is the one
+input the hub cannot check: every rule built on `started_at` and
+`ended_at` (limits, clamps to the runs the hub saw, overlap checks) left
+a new way to stretch a run onto cards it never touched, round after
+round of review. Two hub times the runner cannot move bound the run
+instead, and the price is plain: a record that arrives after its run
+ended is lost. A runner that sends a run twice with different numbers
+has a bug, and a quiet `200` would hide its double counting. Two keys on
+one call would answer the same resend in two ways (the key's replay, the
+`run_id`'s `200` or `conflict`), and a key lives 24 hours while a runner
+may resend later. A card row and the event log cannot say who held a
+card when: a release names no instance and a rejoin rewrites the
+instance in place.
 
 **Rejected alternatives:**
 - A price table per model in the hub: pricing, and the model name the
@@ -398,33 +406,27 @@ and a rejoin rewrites the instance in place.
 - The cards held when the record is stored (the first draft): `done`
   closes a card and a release ends its claim, often within the run that
   did the work, so a card's total would miss the run that finished it.
+- Picking the cards by the runner's `started_at` and `ended_at`, bounded
+  by a 30-day and a 5-minute limit, clamped into the runs the hub saw,
+  and refused when spanning two runs, outside its run or overlapping a
+  stored one (the drafts up to the round-3 review): each rule closed one
+  stretch and the next review found another, and the runner's clock
+  stayed the input that picked the cards.
+- Accepting a record after its run ended and counting it by the run it
+  names: the hub would need a log of every run's open and close, and a
+  late record could still land on the cards of a run it did not belong
+  to.
 - Answering every repeated `run_id` with the stored record: a runner's
   double count would stay invisible.
-- Keeping every `run_id` after its record is folded, to recognise a late
-  resend: a table that only grows, for a resend the 30-day limit already
-  refuses.
-- Deriving the cards of a run from the card rows or the event log: a
-  card keeps only its current claim, a release names no instance and a
-  rejoin rewrites the instance in place, so past holdings would be lost.
-- Taking `started_at` as sent, clamped only to the placement's start: a
-  runner could count one run on every card its instance ever held.
-- Comparing a repeated record after clamping its times: a runner whose
-  clock runs ahead would see its own honest resend refused.
-- Clamping only the run's start to what the hub saw: a runner could
-  stretch `ended_at` to hub time and count one run on cards held after
-  it closed.
-- Accepting a `started_at` or `ended_at` in the future and clamping it to
-  hub time: the 30-day limit would not hold for it, and a resend after
-  folding would count the run again.
-- Writing a holding only on claim, takeover, cover, rejoin, release and
-  close: an expired claim that `assign` hands to another member would
-  stay open on the old instance and count its later runs.
-- Taking the run whose open is the latest before the record's end,
-  whatever its start: a record stretched into the next run would count
-  for that run's cards.
 - Keeping every `run_id` for the placement's life to report a reuse
   after 90 days: a table that only grows, for a runner bug the 90-day
   window already shows while the record is kept.
+- Deriving the cards of a run from the card rows or the event log: a
+  card keeps only its current claim, a release names no instance and a
+  rejoin rewrites the instance in place, so past holdings would be lost.
+- Writing a holding only on claim, takeover, cover, rejoin, release and
+  close: an expired claim that `assign` hands to another member would
+  stay open on the old instance and count its later runs.
 - An `Idempotency-Key` on the usage record beside the `run_id`: two
   keys would answer one resend in two ways, and a stored key would
   answer a resend with the first `201` for 24 hours only.
