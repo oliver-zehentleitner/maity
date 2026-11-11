@@ -15730,7 +15730,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `restarts` | integer | restarts in this generation |
 | `sessions` | integer | fresh sessions started in this generation; every other start resumes the placement's session (§15.14) |
 | `last_activity_at` | timestamp or `null` | the latest harness output or loop call the runner saw; clamped like `since`; a report changing only this field is sent at most once a minute and writes no event (§15.14) |
-| `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14). A report whose `state` is not `running` carries no `run` and ends an open run. A run opens only when an accepted report of the placement's current generation changes `run` to `open` while none is open: the hub then issues the run an id and keeps that report's `reported_at`, both on the placement as `open_run` (§15.5, §15.15), which the answer carries. A repeat (a `seq` not above the stored one, answered with the stored placement and its `open_run`), a report changing only `last_activity_at` and a report for an older generation open nothing and keep the open run's id and time; any accepted report that does not keep a run open ends it, whatever its generation |
+| `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14). A report whose `state` is not `running` carries no `run` and ends an open run. A run opens only when an accepted report of the placement's current generation changes `run` to `open` while none is open: the hub then issues the run an id and keeps that report's `reported_at`, both on the placement as `open_run` (§15.5, §15.15), which the answer carries. A repeat (a `seq` not above the stored one, answered with the stored placement and its `open_run`) and a report changing only `last_activity_at` keep the open run's id and time, and a report for an older generation opens nothing. After a new generation, the first report of that generation with `run: open` opens a run, whatever `run` the stored report holds. Any accepted report that does not keep a run open ends it, whatever its generation |
 | `nudge` | `{id, outcome}` or absent | the outcome of the placement's latest nudge, `woken`, `resumed` or `left_running` (§15.14); a different `id` from the placement's current nudge is ignored |
 | `handover` | `{transcript: "received"}` or absent | on the new placement of a `full` replacement: the transcript is in the clone (§15.14); anywhere else `invalid` |
 | `retry_at` | timestamp or `null` | when the runner starts it again; `null` when it will not |
@@ -17364,8 +17364,8 @@ becomes `null`, and the old generation's run takes no record
 (`run_closed`). A report of an older generation ends an open run like
 any other but never opens one (§15.7), so a run the old process opens
 before the runner acts on the new generation has no `open_run` either
-and its record is `run_closed`; the first change of `run`
-to `open` under the new generation opens the next run.
+and its record is `run_closed`. The new generation's first report with
+`run: open` opens a run, whatever `run` the stored report still holds.
 
 **When the hub starts keeping usage.** The hub release that builds this
 section opens a holding, from the moment of its migration, for every

@@ -369,7 +369,9 @@ only while that run is open, at most once; one for a run that ended
 opened is `conflict` (`run_closed`) and is lost from every total. Only
 a real change to `open` opens a run, so a repeat or an activity-only
 report never restarts its interval. Any accepted report that does not
-keep a run open ends it, whatever its generation. The runner's `started_at` and
+keep a run open ends it, whatever its generation. A new generation (a
+spec change, a restart, a rejoin) ends an open run at once, and the old
+generation's run takes no record. The runner's `started_at` and
 `ended_at` are shown as sent and pick nothing. A run during which the
 instance held two cards counts in full for each and is marked as
 shared; instance and agent totals count every run once. A second
