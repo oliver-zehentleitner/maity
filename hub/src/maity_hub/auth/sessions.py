@@ -316,7 +316,17 @@ def _signed_in(conn: Connection, human_id: str, public_id: str, now: datetime) -
     row = conn.execute(
         select(t.human_session).where(t.human_session.c.public_id == public_id)
     ).one()
-    conn.execute(update(t.human).where(t.human.c.id == human_id).values(last_login_at=now))
+    conn.execute(
+        update(t.human).where(t.human.c.id == human_id).values(last_login_at=now, last_seen_at=now)
+    )
+    # A sign-in is a call (§2.4): the session's `last_seen_at` starts now, and a call within the
+    # next 60 s writes no presence (`caller.SEEN_EVERY`), so the human and their memberships
+    # are seen here.
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.human_id == human_id, t.membership.c.removed_at.is_(None))
+        .values(last_seen_at=now)
+    )
     known_sources.remember(conn, human_id, row.source)  # a known source from now on (§2.1)
     # Every new session tells its human, whichever the method (§2.6.5).
     data: dict[str, Any] = {

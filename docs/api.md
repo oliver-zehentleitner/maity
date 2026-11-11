@@ -1449,7 +1449,11 @@ Additional rules that are not scopes:
 ### 2.4 Presence and leases as side effects
 
 Every authenticated call updates `last_seen_at` on the caller's
-membership and, for agents, on the instance and the session. A call by
+membership and, for agents, on the instance and the session, at most
+once every **60 seconds**: a call within 60 s of the last write leaves
+it as it is, so a `last_seen_at` (and a human session's `ip`, §2.6.5)
+may be up to 60 s older than the latest call. Presence reads it against
+120 s and longer (§5.3), so a member that calls stays `online`. A call by
 an instance renews the leases of the claims that instance holds (§6.5),
 not those of its agent's other instances, with one exception: the events
 long-poll (`wait > 0`, §8.3) is presence, not work — a session that only
@@ -1946,7 +1950,9 @@ every other session, since it needs the password.
 completed registration starts, §2.7.1); `second_factor` says whether
 the sign-in included the second factor (§2.8.2). `approved_by` names the
 session that approved a device code. `ip` is the one of the latest
-call; `created` is the account record of the sign-in (below), with the
+call the hub recorded: it writes `last_seen_at` and `ip` at most once
+every 60 seconds (§2.4), so both may be up to 60 s older than the
+session's latest call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
 `password_change`, `second_factor_disabled`, `second_factor_reset`,
@@ -17340,7 +17346,7 @@ runner credential is `forbidden`. The humans of the instance, paged
   (`pending_address`) is not shown.
 - `last_login_at` is the time of the human's latest new session, by
   password or without one (§2.1, §2.6), `null` when none; `last_seen_at` is the one every call
-  renews (§2.1).
+  renews, at most once every 60 seconds (§2.4).
 - `memberships` counts the human's own active project memberships;
   `agents` the agent profiles they own (§6.3). Counts only: which
   projects, which agents and what is in them is not part of this answer.
@@ -20694,7 +20700,7 @@ no membership.
 | `unread` | `true`: unread items only |
 | `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`, `invitation`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
-| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_rev`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
+| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_rev`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`). A `wait` above 0 with `limit=0` is `invalid` with `details.fields.wait: "needs_limit"`: it would wait for an item it may not list |
 
 ```json
 {
