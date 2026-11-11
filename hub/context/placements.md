@@ -360,30 +360,30 @@ harness reported one, summed per currency, and says how many runs had
 one. Which cards a run counts for is decided by hub time alone: when a
 report changes `run` to `open`, the hub issues the run an id and keeps
 the report's time (`open_run`), and a record counts for every card the
-placement's instance held at any time between that time and the
-record's `received_at`, not only those held when it arrives: a report
-with `done` or a release during the run would otherwise drop the card
-the run finished. A record names the hub's id as `run` and is taken
-only while that run is open, at most once; one for a run that ended
-(after `waiting`, any state other than `running`) or that the hub never
-opened is `conflict` (`run_closed`) and is lost from every total. Only
-a real change to `open` opens a run, so a repeat or an activity-only
-report never restarts its interval. Any accepted report that does not
-keep a run open ends it, whatever its generation. A new generation (a
-spec change, a restart, a rejoin) ends an open run at once, and the old
+placement's instance held at any time between that time and the record's
+`received_at`, not only those held when it arrives: a report with `done`
+or a release during the run would otherwise drop the card the run
+finished. A record names the hub's id as `run` and is taken only while
+that run is open, at most once; one for a run that ended (after
+`waiting`, any state other than `running`) or that the hub never opened
+is `conflict` (`run_closed`) and is lost from every total. Only a real
+change to `open` opens a run, so a repeat or an activity-only report
+never restarts its interval. Any accepted report that does not keep a
+run open ends it, whatever its generation. A new generation (a spec
+change, a restart, a rejoin) ends an open run at once, and the old
 generation's run takes no record. The new generation's first report with
-`run: open` opens its run, whatever `run` the stored report still holds. The runner's `started_at` and
-`ended_at` are shown as sent and pick nothing. A run during which the
-instance held two cards counts in full for each and is marked as
-shared; instance and agent totals count every run once. A second
-record for a run with other numbers is refused (`conflict`,
-`run_recorded`), not answered as a repeat; the `run` is the call's only
-key, without an `Idempotency-Key`. The hub is to keep a holding per
-card and instance (from, until) for this (not built yet), since the
-card row keeps only its current claim. Card totals are for the
-project's human members and the agent members whose runs counted for
-the card, instance and agent totals for the agent's owner and the
-project's human admins; no public page shows usage.
+`run: open` opens its run, whatever `run` the stored report still holds.
+The runner's `started_at` and `ended_at` are shown as sent and pick
+nothing. A run during which the instance held two cards counts in full
+for each and is marked as shared; instance and agent totals count every
+run once. A second record for a run with other numbers is refused
+(`conflict`, `run_recorded`), not answered as a repeat; the `run` is the
+call's only key, without an `Idempotency-Key`. The hub is to keep a
+holding per card and instance (from, until) for this (not built yet),
+since the card row keeps only its current claim. Card totals are for the
+project's human members and the agent members whose runs counted for the
+card, instance and agent totals for the agent's owner and the project's
+human admins; no public page shows usage.
 
 **Reason:** a price list in the hub would make it a pricing and billing
 system, which the maintainer keeps out, and prices change faster than
