@@ -44,6 +44,9 @@ window.Maity = window.Maity || {};
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", get label() { return M.t("nav.message"); }, tab: false },
+    // One event by its number (js/event.js, §8.9), the target of a `seq 68216` link: it opens
+    // the event where it lives, so it has no tab of its own.
+    { route: "events", view: "event", get label() { return M.t("nav.event"); }, tab: false },
     // The account-level view is views.runners; this one is the project's,
     // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
     { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },

@@ -9,7 +9,9 @@
 // dashboard reads it as a link); nothing else of
 // the text changes, and no mention is made (§8.6 is the hub's). Code stays
 // plain, except a code span that is one id alone (only()); fenced blocks
-// are never passed here.
+// are never passed here. An event's number, `seq 68216` or `seq-68216`,
+// links to the dashboard's page of that event (docs/api.md §8.9,
+// tsk-6g2h8dag2fkg), which opens it where it lives.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -24,8 +26,17 @@ window.Maity = window.Maity || {};
   // (§6.25, models.py's handle and slug shapes): it links into that project.
   // A match right after a slash is kept or dropped in link(): a regular
   // expression cannot tell `#909/#911` from `issues/#5/#6`.
-  const ID = /(?<![\w\-#&?=.])(?:(?:([a-z0-9][a-z0-9-]{1,30})\/([a-z0-9][a-z0-9-]{1,62})\/)?(tsk|req)-([0-9a-hjkmnp-tv-z]{12})|(agt|hum)-([0-9a-hjkmnp-tv-z]{12})|#([1-9][0-9]{0,6}))(?![\w\-])/g;
+  const ID = /(?<![\w\-#&?=.])(?:(?:([a-z0-9][a-z0-9-]{1,30})\/([a-z0-9][a-z0-9-]{1,62})\/)?(tsk|req)-([0-9a-hjkmnp-tv-z]{12})|(agt|hum)-([0-9a-hjkmnp-tv-z]{12})|#([1-9][0-9]{0,6})|seq[ -]([1-9][0-9]{0,18}))(?![\w\-])/g;
   const PAGE = { tsk: "tasks", req: "inbox", agt: "team", hum: "team" };
+  // An event's number (§8.9, "The dashboard's links"): lowercase `seq`, one
+  // space or one hyphen, 1 to 19 digits without a leading zero, at most
+  // 2⁶³ − 1 (the regular expression above holds all but the bound). Not in
+  // a path or a URL: never after a slash, a `+`, `%`, `:` or `~`, never
+  // before a slash or a `.` that goes on as a word (`seq-5.json`); `?seq=5`
+  // never matches at all. `#…` stays a forge number.
+  const SEQ_MAX = BigInt("9223372036854775807");
+  const seqIn = (s, m) => !/[/+%:~]/.test(s[m.index - 1] || "")
+    && !/^(?:\/|\.\w)/.test(s.slice(m.index + m[0].length)) && BigInt(m[8]) <= SEQ_MAX;
 
   // The forge numbers resolve on: GitHub only (§6.13, the one forge of V1),
   // read as the hub reads a repository (hub/src/maity_hub/forge.py): the
@@ -67,6 +78,18 @@ window.Maity = window.Maity || {};
       // After a slash only as the next of a list of references (#909/#911);
       // otherwise the slash belongs to a path or a URL.
       if (s[m.index - 1] === "/" && lastEnd !== m.index - 1) continue;
+      // An event's number links into the text's own project only (§8.9:
+      // a text with no project of its own links none).
+      if (m[8] !== undefined) {
+        if (!seqIn(s, m)) continue;
+        const route = slug ? "/" + M.api.projectPath(slug) + "/events/" + m[8] : null;
+        if (!route || !M.route.isRoute(route)) continue;
+        lastEnd = m.index + m[0].length;
+        if (m.index > from) out.push(s.slice(from, m.index));
+        out.push(h("a", { class: "id-ref seq-ref", href: route }, m[0]));
+        from = lastEnd;
+        continue;
+      }
       lastEnd = m.index + m[0].length;
       const kind = m[3] || m[5];
       const id = kind && kind + "-" + (m[4] || m[6]);

@@ -167,7 +167,7 @@ window.Maity = window.Maity || {};
       text.focus();
     }
     // A human in the chat deletes a file of it, as it removes a message (§8.7).
-    const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed };
+    const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed, target: M.route.seqTarget() };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // At the newest unless the reader scrolled up; then a pill counts what came (js/chat.js).
     // Newest leaves the focus in the composer, or on the title where there is none.
@@ -488,6 +488,13 @@ window.Maity = window.Maity || {};
       parts.fitToScreen(layout);
       follow.open(messages.querySelector(".new-line"));
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
+      // Opened for one message (js/event.js): older pages until it is drawn (js/chat.js).
+      if (opts.target) {
+        parts.reveal(messages, opts.target, {
+          can: () => earlier !== null && (!all.length || Number(opts.target) < all[0].seq),
+          read: () => older(false),
+        }, follow);
+      }
     }, 0);
     // An observer is in no audience (§9.2): its view re-reads what is new.
     // From outside the project no event says a message was removed, so the

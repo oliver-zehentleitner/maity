@@ -360,7 +360,9 @@ window.Maity = window.Maity || {};
     const removed = isRemoved(msg);
     const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx),
       { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("team", id) : null), ctx }));
-    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
+    // The message an event's link opened the chat at stays marked (o.target, reveal() below).
+    const target = o.target && String(msg.seq) === o.target ? " seq-target" : "";
+    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "") + target, "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
         M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
@@ -697,10 +699,33 @@ window.Maity = window.Maity || {};
     };
   }
 
+  // The chat opened for one message (`#seq-<n>`, js/event.js, docs/api.md §8.9): older pages
+  // are read as Show earlier reads them, one at a time, until the message is drawn, then it is
+  // scrolled to; the timeline marks it (opts.target). At most REVEAL_PAGES pages, so a link to
+  // a message far back costs a known number of requests, as opening a chat does
+  // (tsk-r1adgwp0a5dr); past them, or for a seq above the chat's newest, the chat says it did
+  // not reach the message, and Show earlier goes on from where it stopped.
+  // more: { can() — an older page is there and the message would be in it, read() }.
+  const REVEAL_PAGES = 10;
+  async function reveal(messages, seq, more, follow) {
+    const find = () => Array.from(messages.querySelectorAll("li.msg")).find((li) => li.getAttribute("data-seq") === seq);
+    let li = find();
+    for (let n = 0; !li && n < REVEAL_PAGES && more.can(); n += 1) {
+      await more.read();
+      li = find();
+    }
+    if (!li) {
+      if (messages.parentNode) messages.parentNode.insertBefore(h("p", { class: "muted seq-missed", role: "status" }, M.t("event.not_reached", { seq })), messages);
+      return null;
+    }
+    follow.open(li);
+    return li;
+  }
+
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
   M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
-    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC };
+    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC, reveal };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -771,7 +796,7 @@ window.Maity = window.Maity || {};
     // The human party removes a message of the chat, the agent's or their own (§8.5).
     // §8.5: it needs events:admin too, which owner and admin hold.
     // The human party deletes a file of the chat (§8.7), whoever sent it.
-    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true };
+    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true, target: M.route.seqTarget() };
     let draw = timeline(ctx, pending, firstUnread, quote, drawOpts);
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // Everything loaded drawn again as one timeline (days, groups): after
@@ -1053,6 +1078,12 @@ window.Maity = window.Maity || {};
       follow.open(messages.querySelector(".new-line"));
       // On a phone the chat replaced the list: take the focus to its heading.
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
+      if (drawOpts.target) {
+        reveal(messages, drawOpts.target, {
+          can: () => earlier !== null && (!loaded.length || Number(drawOpts.target) < loaded[0].seq),
+          read: older,
+        }, follow);
+      }
     }, 0);
   };
 })(window.Maity);

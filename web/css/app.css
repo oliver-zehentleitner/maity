@@ -1165,6 +1165,8 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
    here so that selecting the number copies the number alone. */
 .msg-seq { font-variant-numeric: tabular-nums; }
 .msg-seq::before { content: "#"; }
+/* The message an event's link opened (js/event.js, docs/api.md §8.9), marked where it stands. */
+.msg.seq-target .msg-body, .pmsg.seq-target, .event-one.seq-target { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* The global chat: the projects an agent is in, as logos after its name. */
 .msg-projects { display: inline-flex; gap: 3px; margin-inline-start: 4px; vertical-align: -2px; }
 .msg-projects .project-mark.small, .conv-project .project-mark.small { width: 14px; height: 14px; border-radius: 3px; }

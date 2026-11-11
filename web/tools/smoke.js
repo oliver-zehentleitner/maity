@@ -5610,6 +5610,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "body", (id) => "/m/" + id, idAt));
   expect(wmIds.querySelector("a.mention").getAttribute("href") === "#/m/agt-b" && idHrefs(wmIds) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab",
     "ids: between mentions the text's ids are links, the mention stays the hub's");
+  // An event's number links to its page (§8.9, tsk-6g2h8dag2fkg): `seq 68216` and `seq-68216`, lowercase, the
+  // number without a leading zero and at most 2⁶³ − 1, not in a word, a path, a URL or a query; #… stays a forge number.
+  const seqHrefs = (box) => box.querySelectorAll("a.seq-ref").map((a) => text(a) + "=" + a.getAttribute("href")).join(" ");
+  const seqAll = idBox(IDS.link("See seq 68216, (seq-7) and seq 9223372036854775807; #12 is a PR.", idAt));
+  expect(seqHrefs(seqAll) === "seq 68216=#/maintainer/maity/events/68216 seq-7=#/maintainer/maity/events/7 seq 9223372036854775807=#/maintainer/maity/events/9223372036854775807"
+    && text(seqAll) === "See seq 68216, (seq-7) and seq 9223372036854775807; #12 is a PR."
+    && idHrefs(seqAll).endsWith("#12=https://github.com/oliver-zehentleitner/maity/issues/12") && !seqAll.querySelectorAll("a.seq-ref").some((a) => a.getAttribute("target")),
+    "seq: `seq N` and `seq-N` link to the event's page in the text's project, in this tab; #12 stays the forge's " + seqHrefs(seqAll));
+  const seqNone = idBox(IDS.link("Seq 5 SEQ-5 seq 0 seq 068216 seq  5 seq_5 seq--5 xseq 5 seq 5x seq 5-1 seq 9223372036854775808 seq 12345678901234567890 "
+    + "?seq=5 a/seq-5 /seq-5 seq-5/x seq-5.json a.seq-5 a+seq-5 %20seq-5 x:seq-5 ~seq-5 #seq-5", idAt));
+  expect(!seqNone.querySelector("a.seq-ref"), "seq: another case, a leading zero, past 2⁶³ − 1, part of a word or number, a path, a URL or a query: plain text " + seqHrefs(seqNone));
+  expect(seqHrefs(idBox(IDS.link("the end: seq-68216.", idAt))) === "seq-68216=#/maintainer/maity/events/68216", "seq: a full stop after the number ends a sentence, not a file name");
+  expect(!idBox(IDS.link("seq 68216", { slug: null, repository: "https://github.com/o/r" })).querySelector("a")
+    && !idBox(win.Maity.markdown("seq 68216 and `seq 68216`", idOut)).querySelector("a"),
+    "seq: a text with no project of its own, or read along from outside, links no seq");
+  const seqMd = idBox(win.Maity.markdown("Read `seq 68216` and `maity messages --after seq 5`, **seq-9** and [seq 3](https://example.org/x)\n\n```\nseq 4\n```", idAt));
+  expect(seqHrefs(seqMd) === "seq 68216=#/maintainer/maity/events/68216 seq-9=#/maintainer/maity/events/9" && seqMd.querySelector("a.seq-ref code")
+    && text(seqMd.querySelector("code.md-inline-copy")) === "maity messages --after seq 5" && !seqMd.querySelector("pre a"),
+    "seq: in Markdown linked in text and emphasis, a code span of one seq form alone linked as code; more in the span, a link's text and a code block stay as they are " + seqHrefs(seqMd));
+  // The chat's search for the message a link opened it at (js/chat.js reveal): older pages one at a time, at most ten.
+  const rvList = (seqs) => { const ol = document.createElement("ol"); const box = document.createElement("div"); box.appendChild(ol);
+    seqs.forEach((n) => { const li = document.createElement("li"); li.className = "msg"; li.setAttribute("data-seq", String(n)); ol.appendChild(li); }); return ol; };
+  const rvFollow = () => ({ opened: null, open(li) { this.opened = li; } });
+  let rvReads = 0;
+  const rvOl = rvList([900]), rvF = rvFollow();
+  const rvFound = await win.Maity.chatParts.reveal(rvOl, "897", { can: () => true, read: async () => { rvReads += 1; const li = document.createElement("li"); li.className = "msg"; li.setAttribute("data-seq", String(900 - rvReads)); rvOl.insertBefore(li, rvOl.firstChild); } }, rvF);
+  expect(rvFound && rvFound.getAttribute("data-seq") === "897" && rvF.opened === rvFound && rvReads === 3, "seq: a chat reads older pages until the linked message is drawn, then scrolls to it (" + rvReads + " reads)");
+  rvReads = 0;
+  const rvFar = rvList([900]), rvF2 = rvFollow();
+  const rvMissed = await win.Maity.chatParts.reveal(rvFar, "5", { can: () => true, read: async () => { rvReads += 1; } }, rvF2);
+  expect(rvMissed === null && rvReads === 10 && rvF2.opened === null && text(rvFar.parentNode.querySelector("p.seq-missed")).startsWith("seq 5 was not reached"),
+    "seq: at most ten older pages, then the chat says it did not reach the message (" + rvReads + " reads)");
+  rvReads = 0;
+  const rvNone = await win.Maity.chatParts.reveal(rvList([900]), "950", { can: () => false, read: async () => { rvReads += 1; } }, rvFollow());
+  expect(rvNone === null && rvReads === 0, "seq: nothing is read where the chat holds no older page that could have the message");
   // An id's pages: #/<owner>/<slug>/tasks/<id> is the board with the card marked and focused, its tab the
   // board's; #/<owner>/<slug>/inbox/<id> opens the request. An id neither holds is said.
   const idProto = Object.getPrototypeOf(main);
@@ -11110,6 +11145,50 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(allTime.board.closed_after === null && recent.board.counts.done === 0 && recent.board.counts.open === allTime.board.counts.open
     && badLimit && badLimit.details.fields.limit, "overview: the mock counts closed cards in the window, open ones in full, and refuses a bad limit");
 
+  // An event's page (js/event.js, §8.9) as the owner, here since the next case reloads the fixtures (opening a chat
+  // marks it read, which the chat cases above count): the event opens where it lives, the address that place's with
+  // #seq-<n> (replaced, no entry of its own), the message marked there; a 404 is "not visible", hidden and missing alike.
+  const evAt = async (seq) => { await go("#/maintainer/maity/events/" + seq); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5)); for (let k = 0; k < 6; k++) await tick(); };
+  const evMarked = () => main.querySelectorAll("li").filter((li) => li.classList.contains("seq-target")).map((li) => li.getAttribute("data-seq")).join();
+  const evReads = [];
+  const evGet = win.Maity.api.get;
+  win.Maity.api.get = (p, ...r) => { if (/\/events\/\d/.test(p)) evReads.push(p); return evGet(p, ...r); };
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/messages#seq-6001" && evMarked() === "6001" && main.querySelector("section.view-messages")
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6001"]),
+    "event: a project message opens in Messages, marked there, after one read of the event " + win.location.hash + " " + JSON.stringify(evReads));
+  await evAt(6005);
+  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-6005" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004"),
+    "event: a message about a card opens that card (its subject) " + win.location.hash);
+  await evAt(4202);
+  expect(win.location.hash === "#/maintainer/maity/chat/agt-a#seq-4202" && evMarked() === "4202",
+    "event: a message of one's direct chat opens in that chat, marked " + win.location.hash + " " + evMarked());
+  await evAt(5015);
+  expect(win.location.hash === "#/maintainer/maity/chat/cnv-0007#seq-5015" && evMarked() === "5015" && main.querySelector("section.group-chat"),
+    "event: a group chat's message opens in that chat, marked " + win.location.hash + " " + evMarked());
+  await evAt(6003);
+  expect(win.location.hash === "#/maintainer/maity/chat/agt-b#seq-6003", "event: a removed direct chat message still opens in its chat (conversation_id survives) " + win.location.hash);
+  const evNotVisible = () => text(main.querySelector("p.event-not-visible") || main);
+  evReads.length = 0;
+  await evAt(4990);
+  const evHidden = evNotVisible();
+  await evAt(99999);
+  const evMissing = evNotVisible();
+  await evAt("068216");
+  expect(evHidden === "Not visible: there is no event with this number in this project, or you may not see it." && evMissing === evHidden && evNotVisible() === evHidden
+    && win.location.hash === "#/maintainer/maity/events/068216"
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/4990", "/projects/maintainer/maity/events/99999"]),
+    "event: a chat one may not read, a seq nobody has and a malformed one all say \"not visible\" in the same words; the malformed one is never sent " + JSON.stringify(evReads));
+  // An event with no place the reader may open (a kind that is no message, no subject) is shown on the page itself.
+  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/events/7001"
+    ? Promise.resolve({ seq: 7001, kind: "member_joined", at: "2026-10-22T09:00:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["all"], payload: {}, redacted: false, conversation_id: null })
+    : evGet(p, ...r));
+  await evAt(7001);
+  expect(win.location.hash === "#/maintainer/maity/events/7001" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7001"
+    && text(main.querySelector("article.event-one .badge")) === "member_joined",
+    "event: an event that lives nowhere else is drawn on its page");
+  win.Maity.api.get = evGet;
+  await go("#/maintainer/maity/inbox");
   // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).
   win.location.search = "?as=agt-a";
   vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
@@ -11148,6 +11227,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const owNotOwn = await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "reviewer" }).catch((err) => err);
   win.MAITY_FIXTURES = owFixtures; win.location.search = owSearch;
   vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  // The fixture as the hub answers a member with trust member (the mock of #1472): a message to everyone 200,
+  // one to the owners and another's direct chat 404, a malformed seq 400.
+  const evFixtures = win.MAITY_FIXTURES, evSearch = win.location.search;
+  const evF = JSON.parse(JSON.stringify(evFixtures));
+  evF["maity/members.json"].items.push({ ...evF["maity/members.json"].items.find((x) => x.id === "hum-maintainer"), id: "hum-friend", handle: "friend", display_name: "Friend", trust: "member", role: "coder", role_base: "coder" });
+  win.MAITY_FIXTURES = evF; win.location.search = "?as=hum-friend";
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const evTry = (seq) => win.Maity.api.get("/projects/maintainer/maity/events/" + seq).then((e) => e.seq + ":" + e.conversation_id, (err) => err.status + " " + err.code);
+  const evMember = [await evTry(6001), await evTry(6009), await evTry(4202), await evTry(5015), await evTry("068216")];
+  win.MAITY_FIXTURES = evFixtures; win.location.search = evSearch;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  expect(JSON.stringify(evMember) === JSON.stringify(["6001:null", "404 not_found", "404 not_found", "404 not_found", "400 invalid"]),
+    "event: as a member with trust member the fixture serves what GET /events would, nothing else " + JSON.stringify(evMember));
   const owLimit = (e) => e && e.status === 403 && e.details.reason === "member_join_limit" && e.details.field === "role";
   expect(owReviewer.role === "reviewer" && owReviewer.role_base === "reviewer" && owDocs.role === "docs" && owDocs.role_base === "writer"
     && owLimit(owOps) && owLimit(owDeployer) && owNone.status === 400 && owNone.details.fields.role === "unknown"
