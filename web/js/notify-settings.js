@@ -500,7 +500,7 @@ window.Maity = window.Maity || {};
       append(box, mailModesForm(settings, (now) => { settings = now; }));
     }
     // Agent instances that stop listening (§5.3, §18.4): how one hears of
-    // them and after how long; a project may override the minutes (My settings).
+    // them and after how long; a project may override the minutes (Settings → Mine).
     append(box, notListeningForm(settings, (now) => { settings = now; }));
     if (!("Notification" in window)) {
       append(box, h("p", { class: "muted" }, M.t("notify.browser.unsupported")));

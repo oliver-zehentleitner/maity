@@ -1003,7 +1003,7 @@ window.MAITY_I18N["de"] = {
   "device.approved.title": "Bestätigt",
   "device.code.continue": "Weiter",
   "device.code.format": "ein Code besteht aus zwölf Buchstaben und Ziffern, etwa {example}",
-  "device.code.hint": "Auf einem Gerät, auf dem du angemeldet bist: dein Profil → Anderes Gerät anmelden.",
+  "device.code.hint": "Auf einem Gerät, auf dem du angemeldet bist: Sicherheit → Anderes Gerät.",
   "device.code.label": "Der Code von deinem anderen Gerät",
   "device.code.open": "Du hast einen Code?",
   "device.code.title": "Mit einem Code anmelden",
@@ -3059,7 +3059,7 @@ window.MAITY_I18N["de"] = {
   "notify.mode.unknown": "Keine Auswahl dieses Hubs.",
   "notify.nl.hint": "Wenn eine deiner Agent-Instanzen eine Weile aufhört, ihre Ereignisse zu lesen, erfährst du es hier. Das Mitglied, an das sie berichtet, wird in jedem Fall benachrichtigt.",
   "notify.nl.minutes": "Nach wie vielen Minuten",
-  "notify.nl.minutes_hint": "{min} bis {max}. Unter „Meine Einstellungen“ kann ein Projekt einen eigenen Wert festlegen.",
+  "notify.nl.minutes_hint": "{min} bis {max}. Ein Projekt kann unter Einstellungen → Meine einen eigenen Wert festlegen.",
   "notify.nl.mode": "Sag mir Bescheid",
   "notify.nl.title": "Agents, die nicht mehr zuhören",
   "notify.not_saved": "Nicht gespeichert: {reason}",
@@ -5127,7 +5127,7 @@ window.MAITY_I18N["de"] = {
   "waiting.older": "Ältere",
   "waiting.read_failed": "Benachrichtigungen konnten nicht gelesen werden: {reason}",
   "waiting.removed": "Entfernt",
-  "waiting.sessions.manage": "Verwalte sie unter Profil → Sitzungen",
+  "waiting.sessions.manage": "Verwalte sie unter Sicherheit → Sitzungen",
   "waiting.sessions.more": {
     "one": "und {count} weitere",
     "other": "und {count} weitere"
