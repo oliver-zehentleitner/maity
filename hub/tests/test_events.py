@@ -136,6 +136,8 @@ def test_a_connection_lost_in_a_transaction_ends_as_the_drivers_error(migrated: 
             conn.execute(text(LOSE[dialect]))
             conn.execute(text("SELECT 1"))
     assert ended.value.connection_invalidated
+    if dialect != "sqlite":  # what `errors.py` answers with 503 `database_unavailable`
+        assert isinstance(ended.value, exc.OperationalError)
     assert undone == [1]
     with migrated.begin() as conn:  # the pool hands out a working connection again
         assert conn.execute(text("SELECT 1")).scalar() == 1
