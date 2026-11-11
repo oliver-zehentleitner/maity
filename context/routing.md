@@ -140,8 +140,8 @@ events) already use for this list, so an address read from the API, a
 log or the CLI names the same thing.
 
 **Rejected alternatives:**
-- `running`, closer to the tab's words: one letter from the project view
-  `runners` (the machines), which a link or a log would confuse.
+- `running`, closer to the tab's words: too close to the project view
+  `runners` (the machines), easy to confuse in a link or a log.
 - Keeping the section on the Agents page: the maintainer asked for a tab.
 - `GET /me/placements` for the `/agents` tab, one call across projects:
   a new route with its own rights and paging, where one read per project,
