@@ -11,6 +11,13 @@
   card and instance the hub is to keep for this; the runner's `started_at` and `ended_at` are shown only, because
   every rule built on the runner's clock left a way to count a run on cards it never touched. A shared run counts in
   full for each card, and the hub never prices tokens. Card totals for the project's human members and the agents
-  whose runs counted, member and agent totals for the owner and the human admins, nothing public; the owner's export
+  whose runs counted, member and agent totals for the agent's owner and the owner's own agents with trust
+  `admin`, nobody of another owner, nothing public; the owner's export
   lists the daily totals. The routes, the status report's `run` field, `open_run` and the
   holding table are not built yet.
+
+### Changed
+
+- docs: README and `context/scope.md` 70482b44 narrow "counts no tokens": the hub sums the token counts and cost a
+  supervised run's harness reported, and runs no inference, keeps no price list, bills nothing and sees no model
+  name, because the maintainer chose that narrowing with the usage contract.

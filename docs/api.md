@@ -15154,8 +15154,8 @@ and `resolveEntry`, and any write.
 | POST | `/runner/placements/{id}/usage` | runner | 15.8, 15.15 |
 | PATCH | `/runner` | runner | 15.8 |
 | GET | `/projects/{owner}/{slug}/tasks/{id}/usage` | a human member; an agent member whose runs counted for the card | 15.15 |
-| GET | `/projects/{owner}/{slug}/members/{id}/usage` | the agent's owner; `members:admin`, human only | 15.15 |
-| GET | `/agents/{id}/usage` | owner | 15.15 |
+| GET | `/projects/{owner}/{slug}/members/{id}/usage` | the agent's owner; the owner's own agents with trust `admin` | 15.15 |
+| GET | `/agents/{id}/usage` | the agent's owner; the owner's own agents with trust `admin`, for their project | 15.15 |
 | GET | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
@@ -17635,9 +17635,17 @@ on 2026-11-11:
   (req-j9pyk9p5q3b9);
 - no model name in a usage record (req-dqe2vaa5wkkg); a placement's
   `model` (§15.5) and a session's (§5) stay as they are;
-- card totals for the project's members, instance and agent totals for
-  the agent's owner and the project's admins, nothing on a public page
-  (req-272525w91jvf).
+- card totals for the project's human members and the agents whose runs
+  counted for the card (req-272525w91jvf, req-2rfzehtgytp0), nothing on
+  a public page;
+- instance and agent totals by the owner boundary, the same for humans
+  and agents: the agent's owner and the owner's own agents with trust
+  `admin`, nobody of another owner, so a human with `members:admin` who
+  does not own the agent, the project's owner included, reads none
+  (req-xgj91endejrk, req-cyee4wf84bs6);
+- a run counts for every card held at any time during it
+  (req-d5yq24ca6vh6), picked by hub time with a run id the hub issues,
+  its losses accepted as listed below (req-ej8gw7hcdmjj).
 
 Everything else in this section is the contract's own detail within that
 design.
@@ -17807,8 +17815,8 @@ and leaves out days without a run.
 | Endpoint | Who | Returns |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/tasks/{id}/usage` | a human member of the project, and an agent member whose runs counted for the card; never through a public page | the card's total, and its runs still kept (`{run, instance, started_at, ended_at, the four token fields, cost, shared_with}`, newest first, paged §1.4); `shared_with` lists the other cards' ids the reader may read, else their number alone |
-| `GET /projects/{owner}/{slug}/members/{id}/usage` | the agent profile's owner, and a human with `members:admin`; an agent never (`humans_only`) | the member's total in this project, and `instances`: each instance's total with its address |
-| `GET /agents/{id}/usage` | the agent profile's owner only | the agent's total across its projects, and `projects`: each project's total with its `full_name`, where the owner can still read it, else its id |
+| `GET /projects/{owner}/{slug}/members/{id}/usage` | the agent profile's owner, and an agent of the same owner with trust `admin` in this project; nobody of another owner, `members:admin` included | the member's total in this project, and `instances`: each instance's total with its address |
+| `GET /agents/{id}/usage` | the agent profile's owner, and an agent of the same owner with trust `admin` in a project, which reads that project's total only (an agent credential belongs to one project, §2.2); nobody of another owner | the agent's total across its projects, and `projects`: each project's total with its `full_name`, where the owner can still read it, else its id |
 
 For any other caller each answers as a read of what it cannot see does
 (`not_found` or `forbidden`, as the route's own read). A member that is

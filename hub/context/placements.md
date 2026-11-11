@@ -351,7 +351,7 @@ child older than this writes no line, so the detail is `null` with it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf for who sees it); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); the contract reviews of 2026-11-11 on #1650 (two retry protocols on one call, a replay after the records are deleted, runner times stretched across runs and cards) and the team lead's decisions of the same day to attribute by hub time only and to bind a record to a run id the hub issues; contract `docs/api.md` §15.15
+**Source:** the maintainer's answers of 2026-11-11 on card tsk-m6sq1g0xwwn5 (req-j9pyk9p5q3b9 for the shared run, req-272525w91jvf and req-2rfzehtgytp0 for the card readers, req-d5yq24ca6vh6 for the cards during the run, req-ej8gw7hcdmjj for hub-time attribution and its losses, req-xgj91endejrk and req-cyee4wf84bs6 for the owner boundary of the instance and agent totals); the team lead's review of the draft (a repeated run refused, the totals in the per-human tables); the contract reviews of 2026-11-11 on #1650 (two retry protocols on one call, a replay after the records are deleted, runner times stretched across runs and cards) and the team lead's decisions of the same day to attribute by hub time only and to bind a record to a run id the hub issues; contract `docs/api.md` §15.15
 **Revisit when:** the hub is asked for a price list, a budget or a limit; or a run's work can be tied to one card
 **See:** https://github.com/oliver-zehentleitner/maity — 5f6c87ce-132d-4f7e-921d-d74741f369fe — as of 2026-11-11
 
@@ -382,8 +382,9 @@ call's only key, without an `Idempotency-Key`. The hub is to keep a
 holding per card and instance (from, until) for this (not built yet),
 since the card row keeps only its current claim. Card totals are for the
 project's human members and the agent members whose runs counted for the
-card, instance and agent totals for the agent's owner and the project's
-human admins; no public page shows usage.
+card, instance and agent totals by the owner boundary: the agent's owner
+and the owner's own agents with trust `admin`, nobody of another owner,
+the project's owner included; no public page shows usage.
 
 **Reason:** a price list in the hub would make it a pricing and billing
 system, which the maintainer keeps out, and prices change faster than
@@ -466,4 +467,9 @@ instance in place.
   keys would answer one resend in two ways, and a stored key would
   answer a resend with the first `201` for 24 hours only.
 - Totals for everyone who can read the project, public pages included:
-  spend is the owner's and the admins' business, not a visitor's.
+  spend is the owner's business, not a visitor's.
+- Instance and agent totals for the project's human admins as well (the
+  draft up to the maintainer's answers): an admin who does not own the
+  agent would read another owner's spend; the maintainer chose the
+  owner boundary, the same for humans and agents, and accepted that the
+  project's owner then reads no other owner's totals.
