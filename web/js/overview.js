@@ -314,7 +314,11 @@ window.Maity = window.Maity || {};
         draw(null, err);
       }
     }
-    append(root, h("h2", null, M.t("overview.title")), tabsNav(ctx, tab), status.el, box);
+    // Report the project to the instance's admins (§16.8, tsk-7ze5w6ymf7bw), by its full name: at the
+    // end of the overview, out of the way of its summary.
+    const reporting = M.report && ctx.me.kind === "human" ? M.report.control({ type: "project", id: ctx.slug }, "project") : null;
+    append(root, h("h2", null, M.t("overview.title")), tabsNav(ctx, tab), status.el, box,
+      reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null);
     // A summary is not read line by line: it is drawn again in place. A
     // trigger during a read runs one more read after it, so none is lost.
     let reading = false;
