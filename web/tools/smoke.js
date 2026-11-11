@@ -4979,6 +4979,209 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
   }
 
+  // The board is drawn once the four open groups have answered (tsk-a5pxwgkgr73e): the closed group's pages
+  // follow, its columns say they are being read and hold no count, then fill in; a closed read that fails says
+  // so in those columns and leaves the open ones as drawn.
+  {
+    const clAll = win.Maity.api.getAll;
+    let clHeld = null;
+    const clColumn = (st) => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === st);
+    const clCards = (st) => clColumn(st).querySelectorAll("article.card").length;
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p)
+      ? new Promise((res, rej) => { clHeld = { go: () => clAll(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) }; }) : clAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clEarly = { open: clCards("open"), done: clCards("done"), doneText: text(clColumn("done")), cancelledText: text(clColumn("cancelled")),
+      count: !!clColumn("done").querySelector(".count"), empty: !!main.querySelector(".first-hint") };
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clLate = { done: clCards("done"), reading: !!main.querySelector(".closed-read"), count: !!clColumn("done").querySelector(".count") };
+    expect(clEarly.open > 0 && clEarly.done === 0 && clEarly.doneText.includes("Reading the closed cards…") && clEarly.cancelledText.includes("Reading the closed cards…")
+      && !clEarly.count && !clEarly.empty,
+      "board: drawn once the open groups answer; the closed columns say they are being read, without a count " + JSON.stringify(clEarly));
+    expect(clLate.done > 0 && !clLate.reading && clLate.count,
+      "board: the closed columns fill in when the closed group has answered " + JSON.stringify(clLate));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clOpen = clCards("open");
+    clHeld.fail(); for (let k = 0; k < 6; k++) await tick();
+    expect(clOpen > 0 && clCards("open") === clOpen && text(clColumn("done")).includes("The closed cards could not be read: hub unreachable")
+      && !main.querySelector(".columns .error"),
+      "board: a failed closed read says so in the closed columns and keeps the open ones " + JSON.stringify([clOpen, text(clColumn("done"))]));
+    // One live region outside the redrawn columns says it, from pending to failed; the columns are busy while read.
+    const clLive = () => main.querySelectorAll("p.visually-hidden").find((x) => x.getAttribute("role") === "status");
+    expect(clLive() && text(clLive()) === "The closed cards could not be read: hub unreachable",
+      "board: the closed read's failure is said in a live region that outlives the redraw " + JSON.stringify(clLive() && text(clLive())));
+
+    // The focus stays where it was when the closed cards come in, on a card's title link (no data-focus key)
+    // and on a keyed control, and when their read fails.
+    const clProto = Object.getPrototypeOf(main), clFocus = clProto.focus;
+    clProto.focus = function () { document.activeElement = this; };
+    const clTitle = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0006").querySelector("a.card-open");
+    const clKeyed = () => main.querySelector(".columns").querySelectorAll("button, select").find((x) => x.getAttribute("data-focus"));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clBusy = clColumn("done").getAttribute("aria-busy") === "true" && text(clLive()) === "Reading the closed cards…";
+    clTitle().focus();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clTitleKept = document.activeElement === clTitle() && clColumn("done").getAttribute("aria-busy") !== "true" && text(clLive()) === "";
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clKey = clKeyed().getAttribute("data-focus");
+    clKeyed().focus();
+    clHeld.fail(); for (let k = 0; k < 6; k++) await tick();
+    const clKeyKept = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("data-focus") === clKey
+      && main.contains(document.activeElement);
+    expect(clBusy && clTitleKept && clKeyKept,
+      "board: the focus stays on a title link when the closed cards come in and on a keyed control when their read fails "
+      + JSON.stringify([clBusy, clTitleKept, clKey, clKeyKept]));
+    clProto.focus = clFocus; document.activeElement = undefined;
+
+    // The Closed filter gives no "No card matches" while the closed cards are still read.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    byId("board-column").value = "closed"; byId("board-column").dispatch("change"); await tick();
+    const clNoVerdict = !text(main).includes("No card matches the filter.") && text(clColumn("done")).includes("Reading the closed cards…");
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clFilled = clCards("done") > 0;
+    byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+    win.Maity.api.getAll = clAll;
+    expect(clNoVerdict && clFilled, "board: a filter on the closed columns says no verdict while they are read " + JSON.stringify([clNoVerdict, clFilled]));
+
+    // The closed group held again, for the checks below; each says whether it was held when it looked.
+    const clHold = win.Maity.api.getAll;
+    // The hub search's tsk-0003 closed an hour ago, inside the window whatever the fixture says.
+    let clClosedAt = new Date(Date.now() - 3600000).toISOString();
+    let clSince = null;
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p)
+      ? new Promise((res, rej) => {
+        clSince = decodeURIComponent(p.split("closed_after=")[1].split("&")[0]);
+        clHeld = { go: () => clAll(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) };
+      })
+      : /[?&]q=tsk-0003/.test(p) ? clAll(p).then((r) => ({ ...r, items: r.items.map((t) => (t.id === "tsk-0003" ? { ...t, closed_at: clClosedAt } : t)) }))
+        : clAll(p));
+    const clReading = () => text(clColumn("done")).includes("Reading the closed cards…");
+    // A hub search while the closed cards are still read marks a closed card outside the window by its
+    // closed_at, not by the cards loaded so far (review of #1622): tsk-0003, done inside the window, has no
+    // "outside board window" badge, before the closed group answers or after.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clSearchHeld = clReading();
+    byId("board-search").value = "tsk-0003"; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const clHit = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0003");
+    const clBadge = () => !!clHit() && text(clHit()).includes("Closed · outside board window");
+    const clSearchEarly = [!!clHit(), clBadge(), clSearchHeld];
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clSearchLate = [!!clHit(), clBadge()];
+    byId("board-search").value = ""; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(clSearchEarly[0] && !clSearchEarly[1] && clSearchEarly[2] && clSearchLate[0] && !clSearchLate[1],
+      "board: a hub search during the closed read marks no card in the window as outside it " + JSON.stringify([clSearchEarly, clSearchLate]));
+    // closed_after is strict: a card closed at the window's cutoff itself is outside it.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    clClosedAt = clSince;
+    byId("board-search").value = "tsk-0003"; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const clAtCutoff = [!!clSince, !!clHit(), clBadge()];
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    byId("board-search").value = ""; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    clClosedAt = new Date(Date.now() - 3600000).toISOString();
+    expect(clAtCutoff.every(Boolean), "board: a card closed at the window's cutoff is outside it, as closed_after reads " + JSON.stringify(clAtCutoff));
+
+    // A card opened by its link while the closed cards are read, and unchanged by them: the late draw draws its
+    // panel's card part anew and carries the focused control and a parent chosen there and not saved (review of #1622).
+    clProto.focus = function () { document.activeElement = this; };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+    const clPanel = () => main.querySelector("aside.card-panel");
+    const clParent = () => clPanel() && clPanel().querySelector(".card-panel-card").querySelectorAll("select")
+      .find((x) => (x.getAttribute("id") || "").startsWith("card-parent-"));
+    const clChoice = clParent() && clParent().querySelectorAll("option").map((o) => o.getAttribute("value")).find((v) => v && v !== clParent().value);
+    if (clChoice) { clParent().value = clChoice; clParent().dispatch("change"); }
+    clParent().focus();
+    const clBefore = clParent();
+    const clPanelHeld = clReading();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clAt = document.activeElement;
+    const clPanelKept = [clPanelHeld, !!clChoice, !!clBefore, clAt === clParent(), !!clAt && clPanel().contains(clAt), clParent().value === clChoice];
+    expect(clPanelKept.every(Boolean),
+      "board: the late draw keeps the focus and a chosen parent in the opened card's panel " + JSON.stringify(clPanelKept));
+
+    // A New subtask form opened in the panel after it was drawn keeps its draft and the focus through the late
+    // draw, after a success and after a failure (review of #1622, round 3).
+    const clDraft = [];
+    for (const outcome of ["go", "fail"]) {
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+      const start = clPanel().querySelectorAll("button").find((b) => b.getAttribute("data-focus") === "subtask:tsk-0006");
+      start.click(); for (let k = 0; k < 2; k++) await tick();
+      byId("new-subtask-title").value = "Unsaved subtask"; byId("new-subtask-title").dispatch("input");
+      byId("new-subtask-title").focus();
+      const held = clReading();
+      clHeld[outcome](); for (let k = 0; k < 8; k++) await tick();
+      const title = byId("new-subtask-title");
+      clDraft.push([outcome, held, !!title && title.value === "Unsaved subtask", document.activeElement === title,
+        start.getAttribute("aria-expanded") === "true" && clPanel().contains(start)]);
+    }
+    expect(clDraft.every((r) => r.slice(1).every(Boolean)),
+      "board: a subtask draft opened in the panel outlives the late draw, its read in or failed " + JSON.stringify(clDraft));
+
+    // A parent opened by its link while its closed child is read: the late draw draws the subtask list anew with
+    // the child, where the first draw said it was not loaded, and an open New subtask form moves into the new part
+    // with its draft and the focus (review of #1622, round 4).
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0010"); for (let k = 0; k < 8; k++) await tick();
+    const clPart = () => clPanel().querySelector(".card-panel-card");
+    const clChildEarly = [clReading(), text(clPart()).includes("not loaded on the board"), text(clPart()).includes("tsk-0012")];
+    const clStart10 = clPanel().querySelectorAll("button").find((b) => b.getAttribute("data-focus") === "subtask:tsk-0010");
+    clStart10.click(); for (let k = 0; k < 2; k++) await tick();
+    byId("new-subtask-title").value = "Unsaved child"; byId("new-subtask-title").dispatch("input");
+    byId("new-subtask-title").focus();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clTitle10 = byId("new-subtask-title");
+    const clChild = [clChildEarly[0], clChildEarly[1], !clChildEarly[2], text(clPart()).includes("tsk-0012"),
+      !text(clPart()).includes("not loaded on the board"), !!clTitle10 && clTitle10.value === "Unsaved child",
+      document.activeElement === clTitle10, clStart10.getAttribute("aria-expanded") === "true" && clPart().contains(clStart10)];
+    expect(clChild.every(Boolean),
+      "board: the late draw draws an opened parent's subtask list anew with its closed child, an open subtask draft moved along " + JSON.stringify(clChild));
+
+    // A card the read again of the changed cards brings anew is drawn anew in its panel: the parent chosen there
+    // and not saved is carried onto the new picker, which keeps the focus; then, with a New subtask form open in it,
+    // the form moves into the new part with its draft and the focus.
+    const clGet0 = win.Maity.api.get;
+    const clT6 = await clGet0("/projects/maintainer/maity/tasks/tsk-0006");
+    win.Maity.api.get = (p) => (/order=updated/.test(p)
+      ? clGet0(p).then((r) => ({ ...r, items: [{ ...clT6, title: "Changed while read", updated_at: new Date(Date.now() + 60000).toISOString() }]
+        .concat(r.items.filter((t) => t.id !== "tsk-0006")) }))
+      : clGet0(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+    const clChoice2 = clParent() && clParent().querySelectorAll("option").map((o) => o.getAttribute("value")).find((v) => v && v !== clParent().value);
+    if (clChoice2) { clParent().value = clChoice2; clParent().dispatch("change"); }
+    clParent().focus();
+    const clBefore2 = clParent();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clRedrawn = [!!clChoice2, clParent() !== clBefore2, text(clPanel()).includes("Changed while read"),
+      clParent().value === clChoice2, document.activeElement === clParent()];
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+    const clStart6 = clPanel().querySelectorAll("button").find((b) => b.getAttribute("data-focus") === "subtask:tsk-0006");
+    clStart6.click(); for (let k = 0; k < 2; k++) await tick();
+    byId("new-subtask-title").value = "Unsaved on a changed card"; byId("new-subtask-title").dispatch("input");
+    byId("new-subtask-title").focus();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.get = clGet0;
+    const clTitle6 = byId("new-subtask-title");
+    clRedrawn.push(text(clPanel()).includes("Changed while read"), !!clTitle6 && clTitle6.value === "Unsaved on a changed card",
+      document.activeElement === clTitle6, clStart6.getAttribute("aria-expanded") === "true" && clPanel().contains(clStart6));
+    clProto.focus = clFocus; document.activeElement = undefined;
+    expect(clRedrawn.every(Boolean),
+      "board: a card changed while read is drawn anew in its panel, the chosen parent, a subtask draft and the focus carried " + JSON.stringify(clRedrawn));
+
+    // A failure of the read again of the cards changed meanwhile is said as such, not as a failed closed read.
+    const clGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (/order=updated/.test(p) ? Promise.reject(new Error("hub unreachable")) : clGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clRecheckHeld = clReading();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.get = clGet;
+    win.Maity.api.getAll = clHold;
+    const clRecheck = text(clColumn("done"));
+    expect(clRecheckHeld && clRecheck.includes("The closed cards could not be checked for changes made while they were read: hub unreachable")
+      && !clRecheck.includes("The closed cards could not be read"),
+      "board: a failed read again of the changed cards is not called a failed closed read " + JSON.stringify(clRecheck));
+  }
+
   // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is
   // open, it is moved open → proposed, then the open group answers without it. The read of the cards changed
   // since the reads began puts it on the board, once, in proposed.
