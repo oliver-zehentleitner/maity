@@ -4,8 +4,10 @@ tools/check.py reads some files outside web/ (the hub's words, docs/api.md, the 
 script). The `changes` job of .github/workflows/ci.yml starts the web job only for the paths its
 `web:` patterns match; a read path no pattern matches lets a pull request change that file with
 the web job skipped, and main goes red after the merge (tsk-fffx19yteh4x, context/process.md).
-This test collects every path check.py builds from the repository root and fails unless a `web:`
-pattern matches it. Python standard library only: python3 web/tools/test_ci_paths.py
+This test collects every path check.py builds with os.path.join(os.path.dirname(ROOT), ...) and
+fails unless a `web:` pattern matches it, or when os.path.dirname(ROOT) is used some other way. A
+read that does not start from os.path.dirname(ROOT) (ROOT with a ".." part, os.pardir, pathlib,
+a subprocess) is not seen. Python standard library only: python3 web/tools/test_ci_paths.py
 """
 import ast
 import fnmatch

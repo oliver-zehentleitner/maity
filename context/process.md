@@ -226,9 +226,12 @@ run names.
   record a deploy is decided on.
 
 (2026-11-11, needs-review: the revisit condition above has fired. `make -C web check` reads `docs/api.md` and
-`hub/src/maity_hub/landing_assets/landing.js`, and neither started the web job; #1593, which changed only `docs/api.md`,
-merged green and left main's web check red (tsk-fffx19yteh4x). The entry below closes that gap for the web part; whether
-this entry stands as it is, with the hub tests' known gap of 5b0f7a42 still open, is the re-check.)
+`hub/src/maity_hub/landing_assets/landing.js`, and neither started the web job; #1593, which changed `docs/api.md` and no
+file under `web/`, merged green and left main's web check red (tsk-fffx19yteh4x). The entry "The web part runs for every
+file `make -C web check` reads, and a test holds the filter to the reads" closes that gap for the web part; whether this
+entry stands as it is, with the hub tests' known gap of 5b0f7a42 still open, is the re-check. For that re-check: the web
+job's `make smoke` also runs `tools/run_slot.sh` (web/Makefile's `SLOT`), which no `web:` pattern matches;
+`tools/test_run_slot.py` runs in the changelog job, which always runs.)
 
 ## A change to the contract alone runs a light `hub-contract` part, not the database jobs
 
@@ -280,16 +283,17 @@ with its line instead of being skipped. A new outside read changes `web/tools/`,
 the missing pattern in the same pull request. The first version matched the join with a regular expression and missed
 single quotes and a trailing comma (review of #1630).
 
-**Reason:** the web job is `make check` and `make smoke`, standard library and node, about a minute; running all of it for a
-contract change costs less than keeping a second place that knows which part of the check reads which file.
+**Reason:** the web job is `make check` and `make smoke`, standard library and node, about five minutes (306 to 310 s on
+#1630's two heads and on main 30d84d15); running all of it for a contract change costs a few minutes of a runner, less
+than keeping a second place that knows which part of the check reads which file.
 
 **Rejected alternatives:**
 - The error-code check as its own job on `docs/api.md` (the card's second option): one more checkout and one more `ci-ok`
-  need, and a second list of what reads the contract, to save under a minute; the landing script would still need the web
-  part.
+  need, and a second list of what reads the contract, to save a few minutes per contract-only pull request; the landing
+  script would still need the web part.
 - Only the two patterns, with no test: the gap came from a read nobody added to the filter, and the next one would too.
-- A regular expression over `check.py`'s text: it matches one spelling of the join, and every other spelling passed
-  unseen.
+- A regular expression over `check.py`'s text: it matched only double-quoted parts without a trailing comma, and single
+  quotes, mixed quotes or a trailing comma passed unseen.
 
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
