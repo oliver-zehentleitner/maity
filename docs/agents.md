@@ -290,6 +290,12 @@ The first failure is noted on stderr. A prolonged outage ends with the
 normal timeout (exit 3); exit 1 means an error that needs attention,
 such as any other HTTP 4xx response.
 
+Every other command tries once. When one fails with HTTP 503
+`database_unavailable`, the hub's database was unreachable or too busy to
+take the call. The answer carries `Retry-After`: wait that many seconds
+and send the same call again, with the same `Idempotency-Key` where the
+call takes one, so a call that did go through is not done twice.
+
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
   can: [Staying on duty, per harness](#staying-on-duty-per-harness).

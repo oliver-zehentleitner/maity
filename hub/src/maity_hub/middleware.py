@@ -20,6 +20,7 @@ from urllib.parse import unquote_to_bytes
 
 from sqlalchemy import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import Response
@@ -42,7 +43,7 @@ from maity_hub.auth import caller, credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import ApiError, error_response, rate_limited
+from maity_hub.errors import ApiError, database_unavailable, error_response, rate_limited
 
 log = logging.getLogger(__name__)
 # The hub's own request log; the server's access log is off (§1.1).
@@ -179,6 +180,11 @@ class HubMiddleware:
                 status = await forge_webhook.handle(
                     scope, receive, send, self.engine, self.settings.secret_key
                 )
+            except PoolTimeout:
+                # A used-up pool is load: the retryable 503 of any other call (§1.3).
+                log.error("database unavailable: no pooled connection was free in time")
+                status = 503
+                await database_unavailable()(scope, receive, send)
             except Exception:
                 # In the envelope like any other route (§1.3); the body is not logged.
                 log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
@@ -305,6 +311,10 @@ class HubMiddleware:
             )
         except (OperationalError, InterfaceError):
             return None
+        except PoolTimeout:
+            # Not handed on to the route: it would wait the pool's timeout a second time.
+            log.error("database unavailable: no pooled connection was free in time")
+            return database_unavailable()
         return None
 
     async def _maintenance_refused(
@@ -323,6 +333,12 @@ class HubMiddleware:
             found = await run_in_threadpool(maintenance.window_now, self.engine)
         except (OperationalError, InterfaceError):
             return False  # the database's own answer follows on the route
+        except PoolTimeout:
+            # Answered here: the route would wait the pool's timeout a second time (§1.3).
+            log.error("database unavailable: no pooled connection was free in time")
+            await database_unavailable()(scope, receive, send)
+            _access(scope, 503)
+            return True
         if found is None or found["state"] != "running":
             return False
         headers = {"Retry-After": str(maintenance.retry_after(found))}
@@ -346,7 +362,7 @@ class HubMiddleware:
     ) -> None:
         # Refused all the same when the database is down; a verified leak is
         # revoked on its next sighting.
-        with contextlib.suppress(OperationalError, InterfaceError):
+        with contextlib.suppress(OperationalError, InterfaceError, PoolTimeout):
             await run_in_threadpool(self._revoke, found)
         response = error_response(
             400,

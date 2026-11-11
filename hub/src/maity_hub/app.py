@@ -78,7 +78,7 @@ from maity_hub.db import (
     make_health_engine,
     make_shared_engine,
 )
-from maity_hub.errors import error_response
+from maity_hub.errors import database_unavailable, error_response
 from maity_hub.events import transaction
 from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
@@ -604,7 +604,7 @@ def _api_router() -> APIRouter:
             current = current_revision(engine)
         except SQLAlchemyError:
             log.exception("health: database unreachable")
-            return error_response(503, "database_unavailable", "the database is unreachable")
+            return database_unavailable()
         head = request.app.state.schema_head
         if current != head:
             return error_response(

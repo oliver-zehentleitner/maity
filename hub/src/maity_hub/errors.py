@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 ERROR_HEADER = "Maity-Error"
@@ -181,6 +182,20 @@ def driver_reason(error: Exception) -> str:
     return f"{kind.__module__}.{kind.__qualname__} {connection_cause(original)}"
 
 
+DATABASE_RETRY_AFTER_SECONDS = 5
+"""The `Retry-After` of every 503 `database_unavailable` (§1.3), one value whatever the cause, so
+a client never has to tell an unreachable database from a busy pool."""
+
+
+def database_unavailable() -> JSONResponse:
+    return error_response(
+        503,
+        "database_unavailable",
+        "the database is unreachable",
+        headers={"Retry-After": str(DATABASE_RETRY_AFTER_SECONDS)},
+    )
+
+
 def install(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_request: Request, error: ApiError) -> JSONResponse:
@@ -206,7 +221,14 @@ def install(app: FastAPI) -> None:
             driver_fields(error),
             driver_reason(error),
         )
-        return error_response(503, "database_unavailable", "the database is unreachable")
+        return database_unavailable()
+
+    @app.exception_handler(PoolTimeout)
+    async def _pool(_request: Request, _error: Exception) -> JSONResponse:
+        # Every pooled connection was taken for the whole pool timeout: load, not a fault. The
+        # same retryable 503 as an unreachable database, never a 500 (hub/context/replicas.md).
+        log.error("database unavailable: no pooled connection was free in time")
+        return database_unavailable()
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(_request: Request, error: StarletteHTTPException) -> JSONResponse:
