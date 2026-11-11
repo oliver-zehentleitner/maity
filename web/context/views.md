@@ -5905,9 +5905,12 @@ Those reads stay where they were, in the same order (the window, the session, `/
 `loadContext`). Each takes its answer from its part, through `requestOnce`'s usual handling:
 the session's language and CSRF token, a 401 that ends the session, the 503 window (its
 `retry_after` taken from `details.until`, since a part has no headers), and `/me`'s time zone.
-An error part becomes the ApiError the single call would have thrown. The parts end when the boot
-ends (`finally`), when a newer drawing primes, or after 15 seconds, so a poll never gets an old one,
-and a part nobody asked for (the window read a minute ago, a visitor's page) is dropped. An answer
+An error part becomes the ApiError the single call would have thrown. The parts end once the boot
+has read its context (`unprime`), serve no read once a newer drawing has started (the `live` check
+`prime` is given), are replaced by a newer drawing's, and last 15 seconds at most. So a poll never
+gets an old one, and a part nobody asked for (the window read a minute ago, a visitor's page) is
+dropped. No `try/finally` around the boot: it would re-indent the whole drawing, which other
+pull requests touch. An answer
 without parts (an older hub's 404, a limit, a refusal, no answer) keeps nothing, and every read
 goes to its own route as before. `/bootstrap` is a public path: it needs no session.
 

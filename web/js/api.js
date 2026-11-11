@@ -5658,13 +5658,14 @@ window.Maity = window.Maity || {};
   // they are and take their answer from the part, through requestOnce's usual handling (the
   // session's language, a 401, the 503 window, the time zone). An answer without parts (an older
   // hub's 404, a limit, a refusal, no answer) keeps nothing: every read goes to its own route.
-  // unprime(token) ends them when that boot is done; a newer prime replaces them; 15 s at most.
+  // unprime(token) ends them when that boot is done; they serve no read once `live()` says the
+  // drawing that asked is over; a newer prime replaces them; 15 s at most.
   let primed = null;
   let primes = 0;
   const PRIMED_MS = 15000;
   // What the fixture hub was asked from the page, in order (smoke counts the boot's calls).
   const fixtureAsked = [];
-  function prime(project) {
+  function prime(project, live) {
     const base = project ? "/projects/" + projectPath(project) : null;
     const path = "/bootstrap" + (project ? "?project=" + projectPath(project) : "");
     if (source === "fixtures") fixtureAsked.push("GET " + path);
@@ -5676,7 +5677,7 @@ window.Maity = window.Maity || {};
       paths.set(base + "/members", "members");
       paths.set(base + "/events?after=latest&wait=0", "head");
     }
-    primed = { token: ++primes, at: Date.now(), answer, paths };
+    primed = { token: ++primes, at: Date.now(), answer, paths, live: live || (() => true) };
     return primed.token;
   }
   function unprime(token) {
@@ -5686,7 +5687,7 @@ window.Maity = window.Maity || {};
   // when none is kept for it. `single` asks the route itself when the bundle brought no parts.
   function fromPrimed(method, path, single) {
     if (method !== "GET" || !primed || !primed.paths.has(path)) return null;
-    if (Date.now() - primed.at > PRIMED_MS) { primed = null; return null; }
+    if (Date.now() - primed.at > PRIMED_MS || !primed.live()) { primed = null; return null; }
     const key = primed.paths.get(path);
     primed.paths.delete(path);
     return primed.answer.then((parts) => {
@@ -5815,7 +5816,7 @@ window.Maity = window.Maity || {};
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
     getAll,
-    // The boot's bundle (§5.4, above): prime(project or null) gives a token for unprime.
+    // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
     prime,
     unprime,
     fixtureAsked,
