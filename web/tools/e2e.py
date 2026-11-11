@@ -1849,7 +1849,7 @@ def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: st
         assert not got[2], f"{where}: an id link leaves its box ({got[0]}–{got[1]}): {got[2]}"
 
     try:
-        for width, height, scheme in ((390, 844, "light"), (390, 844, "dark"), (360, 780, "light"), (1280, 900, "light")):
+        for width, height, scheme in ((390, 844, "light"), (390, 844, "dark"), (360, 780, "light"), (360, 780, "dark"), (1280, 900, "light"), (1280, 900, "dark")):
             page.set_viewport_size({"width": width, "height": height})
             page.emulate_media(color_scheme=scheme)
             where = f"{width} px {scheme}"
@@ -1901,11 +1901,17 @@ def long_refs_step(run: Run, page: Page, alpha: Path, agent_id: str, card_id: st
                 entry.locator(".entry-head").first.click()
                 expect(entry).to_have_class(re.compile(r"\bcurrent\b"))
                 fits(f"{label} at {where}, the entry opened again", f"li.entry[data-request='{asked}']")
-                # The Card row's reference too: its id after the name stays on one line.
-                for whole in entry.locator(".entry-body .facts .id-ref-full .id-ref-id").all():
+                # The Card row's reference too (its own dd, not the "In the title" row): its id stays on one line.
+                card = entry.locator(".entry-body .facts dd.card-ref")
+                expect(card).to_have_count(1)
+                shown = card.locator(".id-ref-full .id-ref-id") if inbox == "/all" else card.locator(".id-ref")
+                if inbox == "/all":
+                    assert shown.count() == 1, f"{label} at {where}: the Card row has {shown.count()} wrapped references, not one"
+                else:
+                    assert shown.count() == 1 and card.locator(".id-ref-full").count() == 0, f"{label} at {where}: the Card row's reference is not a bare id"
+                for whole in shown.all():
                     lines = whole.evaluate("(a) => a.getBoundingClientRect().height / parseFloat(getComputedStyle(a).fontSize)")
                     assert lines < 2, f"{label} at {where}: the id of the Card row's reference is broken across lines ({lines})"
-                assert entry.locator(".entry-body .facts .id-ref-full .id-ref-id").count() >= 1, f"{label} at {where}: the Card row has no wrapped reference"
                 for row in (".title-refs", ".entry-body .facts", ".entry-body .summary"):
                     wide = entry.locator(row).first.evaluate("(e) => [e.clientWidth, e.scrollWidth]")
                     assert wide[1] <= wide[0], f"{label} at {where}: {row} is wider than its box {wide}"

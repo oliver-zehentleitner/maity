@@ -489,10 +489,12 @@ nowrap. A code span that is the reference alone keeps the same split inside
 its `code`. Text, link and copy stay as written. Every view that draws an
 id draws it through `js/ids.js`, so the chat's bubbles, the inbox's title
 links, rows, Card row and body, card bodies and notes all take it from
-these two rules. The inbox detail's Card row sits inside a link already,
-so it draws its reference with `M.ids.plain` (the same markup, no
-second link) and the e2e step checks that its `.id-ref-id` stays on one
-line.
+these two rules. The inbox detail's Card row sits inside a link for a project's
+request, so it draws its reference with `M.ids.plain` (the same markup, no
+second link; a personal request's Card row has no link either way). The e2e
+step checks the Card row's own `dd.card-ref`: across projects its one
+`.id-ref-id` stays on one line, in the project's inbox the bare id does,
+at 390, 360 and 1280 px, light and dark.
 
 **Reason:** `white-space: nowrap` on the whole reference made
 `oliver-zehentleitner/maity/req-…` (43 characters, about 340 px in the
