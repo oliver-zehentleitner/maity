@@ -281,7 +281,7 @@ card tsk-m6sq1g0xwwn5. The maintainer narrowed "counts no tokens" to
 the sentence above: the hub sums what the harness reported, and runs no
 inference, keeps no price list, bills nothing and sees no model name.
 A hub that priced or billed usage would still be a party to the agent's
-provider. The README's opening and `projects.md` follow.)
+provider. The README's "What it is not" and `projects.md` follow.)
 
 ## Maity is not a project memory: persistent project knowledge lives with an external provider, Keep the Why being the first
 
