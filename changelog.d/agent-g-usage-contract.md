@@ -2,7 +2,8 @@
 
 - contract: §15.15, tokens and cost per run, card, instance and agent. A runner sends one record per supervised run
   (`POST /runner/placements/{id}/usage`: the four token counts and the harness's own cost figure, never the model,
-  prompts or keys) while the run is open; one that arrives after the run ended is `conflict` (`run_closed`) and is lost
+  prompts or keys) while the run is open, naming the `run_id` that the status report opening the run carried (§15.7), so a
+  record cannot land on a later run's cards; one that arrives after the run ended is `conflict` (`run_closed`) and is lost
   from the totals. The `run_id` is its key instead of an `Idempotency-Key`; a repeated `run_id` with other numbers is
   `conflict` (`run_id_reused`) while the record is kept. The cards are picked by hub time alone: every card the
   instance held between `run_opened_at`, the time the placement's run last opened, and the record's arrival, from a
