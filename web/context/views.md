@@ -5919,6 +5919,32 @@ word for what the number is, and the list
 is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
 reports nothing).
 
+## Each credential in an agent's list names its instance, so the one to revoke is told apart by name
+
+**Id:** 9bfd0309-9db6-47e1-bc8c-46cbac6def9c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-s0jb9wkdp41j (the maintainer, 2026-11-10: he had to revoke one dead instance of each of two agents and could tell their credentials apart only by their dates); docs/api.md §10 (each credential carries `instance`) and §6.17
+**Revisit when:** an instance can be revoked from its own line on the member's Sessions tab, or the member list carries the credentials
+
+In an agent's credentials list (its row on Team, its Details on Agents) each credential names its
+instance after its id as `<handle>#<id>`: where the member lists that instance, the `#id` links
+to it on the member's Sessions tab, and an active one shows its presence from the member list.
+A revoked credential's instance is usually no longer listed (Sessions shows the active instances,
+docs/api.md §6.2), so its `#id` is plain text: a link would only lead to "not listed". The revoke confirmation
+names the same address, by the same handle rule (owner/handle where two members share the
+short one): "Revoke maity-coder-claude-001#qwju (crd-…)?".
+
+**Reason:** revoking a credential ends that instance's session at once. With two instances of one
+agent the list showed only ids, client, created and last used, so the right one was picked by its
+dates, which is error-prone for a step that cannot be undone. The instance name is what every
+other view uses for an instance (messages, cards, the ticker).
+
+**Rejected alternative:** the list as it was, the instance told apart by its created and last-used
+times: what the maintainer had to do, and what this card is for. Alternatives beyond that were not
+discussed: unknown.
+
 ## All projects reads each project's members once per page drawn, shared by the Lead button and the inbox
 
 **Id:** e66cb966-b6f3-417b-bb0a-0bd84ce1899d

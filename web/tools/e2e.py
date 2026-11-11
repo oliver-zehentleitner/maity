@@ -114,45 +114,74 @@ class Run:
         self.recent: collections.deque = collections.deque(maxlen=TRACE_ANSWERS)
 
     def a11y(self, page: Page, view: str) -> None:
-        """axe-core on the page as it stands, in each pass; back to 1280 px, light, after."""
-        for width, height, scheme in PASSES:
-            page.set_viewport_size({"width": width, "height": height})
-            page.emulate_media(color_scheme=scheme)
-            # From the page's top: content scrolled under the sticky header by an
-            # earlier step would be measured against the header's links.
-            page.evaluate("window.scrollTo(0, 0)")
-            # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
-            if not page.evaluate("typeof window.axe === 'object'"):
-                page.evaluate(self.axe)
-            result = page.evaluate(
-                "tags => axe.run(document, {runOnly: {type: 'tag', values: tags},"
-                " resultTypes: ['violations']})",
-                AXE_TAGS,
-            )
-            for v in result["violations"]:
-                self.a11y_findings.append(
-                    {
-                        "view": view,
-                        "width": width,
-                        "scheme": scheme,
-                        "id": v["id"],
-                        "impact": v["impact"],
-                        "help": v["help"],
-                        "url": v["helpUrl"],
-                        "nodes": [n["target"] for n in v["nodes"]][:10],
-                        "count": len(v["nodes"]),
-                        # axe's own words for the first node: which check failed and against what.
-                        "why": v["nodes"][0].get("failureSummary", "") if v["nodes"] else "",
-                        # ...and the elements it was measured against (a neighbour, an overlap).
-                        "related": [
-                            r["target"]
-                            for c in (v["nodes"][0].get("any", []) + v["nodes"][0].get("all", []) if v["nodes"] else [])
-                            for r in c.get("relatedNodes", [])
-                        ][:5],
-                    }
+        """axe-core on the page as it stands, in each pass; after them the page is back at the
+        viewport and colour scheme the step had (tsk-7eq8y3gymek2: it went to 1280 px, light, so a
+        phone check after an a11y pass measured the desktop)."""
+        size = page.viewport_size or {"width": 1280, "height": 900}
+        dark = page.evaluate("matchMedia('(prefers-color-scheme: dark)').matches")
+        # The restore is in a finally, so a pass that fails (axe throwing) still asks for the page as it
+        # was, and that error is the one that goes on (#1614 review). Each of the two restores is tried
+        # on its own; one the browser refuses cannot be undone here. With no pass error the first
+        # refusal is raised and any other printed; with one, every refusal is printed, so the pass
+        # error is never replaced.
+        failed: BaseException | None = None
+        try:
+            for width, height, scheme in PASSES:
+                page.set_viewport_size({"width": width, "height": height})
+                page.emulate_media(color_scheme=scheme)
+                # From the page's top: content scrolled under the sticky header by an
+                # earlier step would be measured against the header's links.
+                page.evaluate("window.scrollTo(0, 0)")
+                # Evaluated through the DevTools protocol, so the hub's CSP stays as it is.
+                if not page.evaluate("typeof window.axe === 'object'"):
+                    page.evaluate(self.axe)
+                result = page.evaluate(
+                    "tags => axe.run(document, {runOnly: {type: 'tag', values: tags},"
+                    " resultTypes: ['violations']})",
+                    AXE_TAGS,
                 )
-        page.set_viewport_size({"width": 1280, "height": 900})
-        page.emulate_media(color_scheme="light")
+                for v in result["violations"]:
+                    self.a11y_findings.append(
+                        {
+                            "view": view,
+                            "width": width,
+                            "scheme": scheme,
+                            "id": v["id"],
+                            "impact": v["impact"],
+                            "help": v["help"],
+                            "url": v["helpUrl"],
+                            "nodes": [n["target"] for n in v["nodes"]][:10],
+                            "count": len(v["nodes"]),
+                            # axe's own words for the first node: which check failed and against what.
+                            "why": v["nodes"][0].get("failureSummary", "") if v["nodes"] else "",
+                            # ...and the elements it was measured against (a neighbour, an overlap).
+                            "related": [
+                                r["target"]
+                                for c in (v["nodes"][0].get("any", []) + v["nodes"][0].get("all", []) if v["nodes"] else [])
+                                for r in c.get("relatedNodes", [])
+                            ][:5],
+                        }
+                    )
+        except BaseException as err:
+            failed = err
+            raise
+        finally:
+            refused: list[Exception] = []
+            for restore in (
+                lambda: page.set_viewport_size({"width": size["width"], "height": size["height"]}),
+                lambda: page.emulate_media(color_scheme="dark" if dark else "light"),
+            ):
+                try:
+                    restore()
+                except Exception as err:  # noqa: BLE001 - every refusal is said or raised below
+                    refused.append(err)
+            # Without a pass error the first refusal is raised and any further one printed; with one,
+            # every refusal is printed, so none goes unsaid (#1614 review).
+            said = refused[1:] if failed is None else refused
+            for err in said:
+                print(f"   a11y {view}: the page could not be restored: {err!r}", flush=True)
+            if refused and failed is None:
+                raise refused[0]
         print(f"   a11y {view}: 1280 and 390 px light, 1280 px dark", flush=True)
 
     def a11y_report(self) -> list[dict]:
@@ -1181,7 +1210,7 @@ def scenario(run: Run, page: Page) -> None:
         run.shot(page, f"phone-new{suffix}")
         if phone == 390:
             run.a11y(page, "create a project")
-            page.set_viewport_size({"width": phone, "height": tall})  # a11y ends at 1280x900; Runners is measured at phone width
+            page.set_viewport_size({"width": phone, "height": tall})  # Runners is measured at phone width (a11y keeps it too)
         # The Runners view: the pairing form and its long install line; reached from the gear menu.
         page.locator("header").get_by_role("button", name="Settings", exact=True).click()
         page.get_by_role("menuitem", name="Runners", exact=True).click()
@@ -1189,7 +1218,7 @@ def scenario(run: Run, page: Page) -> None:
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"/runners is {width[0]} px wide at {width[1]} px"
         run.shot(page, f"phone-runners{suffix}")
-    page.set_viewport_size({"width": 1280, "height": 900})  # where the a11y pass above left the steps below before 360 px was added
+    page.set_viewport_size({"width": 1280, "height": 900})  # back to the desktop for the steps below
     no_problems(run, "phone width")
 
     users_step(run, page)
@@ -1749,7 +1778,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
             assert grown >= reading * 1.5, f"hiding the composer left the history at {grown} px from {reading} px"
             run.shot(page, "phone-390-chat-composer-hidden")
             run.a11y(page, "chat, the composer hidden")
-            # The check ends at its last width: back to the phone, where the button is.
+            # Set to the phone explicitly, where the button is (a11y has kept that size already).
             page.set_viewport_size({"width": phone, "height": 780})
             compose.get_by_role("button", name="Write a message", exact=True).click()
             expect(page.locator("#chat-text")).to_be_focused()
@@ -2543,11 +2572,11 @@ def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
     code = section.locator("#admin-sign-in-code")
     expect(code).to_be_visible()
     run.shot(page, "admin-sign-in-code")
-    mailed = re.search(r"(\d{3} \d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+    mailed = re.search(r"(?<![\w-])(\d{6})(?![\w-])", newest_mail(catcher, MAIL_ADDRESS, seen))
     assert mailed, "no code in the mail"
     # Nothing has changed until the code is typed, and a wrong one is said.
     assert page.evaluate("""() => window.Maity.api.get("/admin/settings/sign-in")""")["second_factor"]["value"] == "optional"
-    wrong = "000 001" if mailed.group(1) != "000 001" else "000 002"
+    wrong = "000 001" if mailed.group(1) != "000001" else "000 002"
     code.fill(wrong)
     section.get_by_role("button", name="Turn on", exact=True).click()
     expect(section.locator("#admin-sign-in-code-error")).to_have_text("That code is wrong or was used.")
@@ -3192,7 +3221,7 @@ def chat_phone_views(run: Run, browser) -> None:
                 if width == 390:
                     run.shot(page, f"chat-full-{scheme}")
                     run.a11y(page, f"chat full screen, {scheme} system theme")
-                    page.set_viewport_size({"width": width, "height": height})  # a11y ends at 1280x900
+                    page.set_viewport_size({"width": width, "height": height})  # this pass's size (a11y keeps it too)
                 page.keyboard.press("Escape")
                 expect(pane.get_by_role("button", name="Read in full screen", exact=True)).to_have_attribute("aria-pressed", "false")
                 expect(page.locator("html.chat-full")).to_have_count(0)
@@ -5172,6 +5201,18 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/team")
     page.locator("main .members-agents").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
+    # Each credential names its instance as <handle>#<id> (tsk-s0jb9wkdp41j), read here with the
+    # owner's session, so the agent's bearer use stays as the signing check below reads it.
+    listed = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/members").json()["items"]
+    agent = next(m for m in listed if m["id"] == agent_id)
+    credentials = page.request.get(
+        f"{run.base}/api/v1/projects/owner/e2e-alpha/members/{agent_id}/credentials"
+    ).json()["items"]
+    active = [c for c in credentials if not c["revoked_at"]]
+    assert active and all(c.get("instance") for c in active), credentials
+    for c in active:
+        row = page.locator("main tr.member-manage .credentials li", has=page.locator("code", has_text=c["id"]))
+        expect(row.locator(".credential-instance")).to_contain_text(f"{agent['handle']}#{c['instance']}")
     # Its bridges (§2.3, tsk-x0krjnw8p78t): the owner connects the reviewer (one owner behind
     # both, so at once), the hub's member views carry it on both sides, then End ends it. Read
     # with the owner's session: a CLI call would sign with the agent's credential and change

@@ -99,9 +99,9 @@ def last_mail(engine: Engine) -> tuple[str | None, str, str]:
     """The newest mail's token (None when it has no link), its code and its text."""
     row = mails(engine)[-1]
     token = re.search(r"/sign-in/second-factor/email#(\S+)", row.body)
-    code = re.search(r"(\d{3}) (\d{3})", row.body)
+    code = re.search(r"(?<![\w-])(\d{6})(?![\w-])", row.body)
     assert code
-    return (token[1] if token else None), code[1] + code[2], row.body
+    return (token[1] if token else None), code[1], row.body
 
 
 def verify(client: TestClient, **body: str) -> Any:
