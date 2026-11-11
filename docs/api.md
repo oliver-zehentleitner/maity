@@ -234,7 +234,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
-| 409 | `probe_not_configured` | no grant covers the project's repository (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`) for `project:admin` only; also an import (§6.14) |
+| 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
 | 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
@@ -4882,16 +4882,112 @@ around.
 namespace owner alone (for a project of an organisation, any of its
 owners, §6.26).
 
-**Repository**: `url` must be on a forge host the operator configured
-(§11), otherwise `invalid`; `forge` is derived from the host,
-`probe_configured` says whether the hub can read the repository, and
-`probe_via` with which grant (`app`, `owner_token`, `instance` for a
-project in the operator's own namespaces only, or
-`null`, §11.4), and `owner_confirmed` whether the namespace owner
+**Repository** (proposed target): `url` is an `https` URL of the shape
+below, on any DNS host; anything else is `invalid`
+(`details.fields["repository.url"]: "not_a_repository_url"`). This
+replaces `not_a_configured_forge`, which named a forge list the
+operator was said to configure and the hub does not have. Until the
+implementation lands, the hub refuses every URL whose host is not
+`github.com` with `invalid`
+(`details.fields["repository.url"]: "not_a_configured_forge"`), and the
+dashboard reports that same reason. `forge` is
+derived from the host, below. `probe_configured` is `true` only when
+`forge` is `github` and §11.4 has a grant that covers the repository;
+otherwise it is `false` and `probe_via` is `null`. When `forge` is
+`github`, `probe_via` names that grant (`app`, `owner_token`,
+`instance` for a project in the operator's own namespaces only, or
+`null`, §11.4). `owner_confirmed` says whether the namespace owner
 confirmed this URL for the owner's grants (§11.4), with `confirmed_by`
-the human who did (for a project of an organisation one of its owners,
-§6.26).
-One repository per project in V1.
+the human who did (for a project of an organisation, one of its
+owners, §6.26). Off GitHub the confirmation is still recorded, and
+still cleared when the URL changes, and it authorises no read and
+sends no token.
+One repository per project in V1. Under this target the hub stores the
+URL. Where `forge` is `github`, `gitlab`, `gitea` or `bitbucket`, the
+dashboard links the forge's merge or pull-request list from it (§6.11);
+`other` has the repository link and no such list. The hub does not clone the
+repository and it does not request the host (§11). An agent and a
+runner still receive the URL and may clone it themselves.
+
+A repository whose `forge` is not `github`:
+
+```json
+"repository": { "url": "https://gitlab.corp.example/acme/platform/api",
+                "default_branch": "main", "required_check": null,
+                "forge": "gitlab", "probe_configured": false, "probe_via": null,
+                "owner_confirmed": false, "confirmed_by": null }
+```
+
+**The shape of `url`.** Checked, then stored, in this order. A failure
+at any step is `not_a_repository_url`.
+
+1. **Lower case.** The scheme and the host are lower-cased before they
+   are checked. The path is not. `HTTPS://GitLab.com/Group/proj` is
+   then `https://gitlab.com/Group/proj`.
+2. **One trailing slash.** If the path ends in a single `/` — the last
+   character is `/` and the character before it is not — that slash is
+   removed. `https://gitlab.com/group/proj.git/` becomes
+   `https://gitlab.com/group/proj.git`. That optional `.git` and
+   optional one `/` are the spelling §11.7 accepts on a GitHub name,
+   and the same spelling is accepted here on any host. A second slash
+   is not removed.
+3. **The clone suffix.** A last segment that ends in the four characters
+   `.git`, lower case only, loses those four characters before the
+   segment is checked. `https://gitlab.com/group/proj.git` becomes
+   `https://gitlab.com/group/proj`. `.GIT` is not removed in this step.
+4. **The checks**, on what those three steps left. No user part, no
+   port, no query, no fragment, no whitespace, no ASCII control
+   character and no percent-encoding. The host is a DNS name as for a
+   person's `website` (§16.9): at least two labels, ASCII, each
+   `[a-z0-9]` or `[a-z0-9][a-z0-9-]{0,61}[a-z0-9]`, the whole host at
+   most 253 characters, the last label not all digits. A Unicode host
+   is refused; an IDN is accepted only in its `xn--` form, as §16.9
+   says for a Mastodon host. No address literal, no `localhost`. The
+   path is segments separated by a single `/`, each segment 1 to 255
+   characters from `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_` and `-`, and not
+   `.` or `..`. No empty segment. No segment may end in `.git` or
+   `.atom`, compared ignoring case, so `proj.GIT` fails here.
+   `github.com` takes exactly two segments. Any other host takes from
+   two to twenty-two, so a GitLab path of twenty-one group segments
+   plus the project fits. The value step 5 stores is at most 2048
+   characters.
+5. **What is stored**, and it does not keep the suffix. `https://` plus
+   the lower-case host plus the path left after the slash and the clone
+   suffix were removed. `https://GitLab.com/group/proj`,
+   `https://gitlab.com/group/proj.git` and
+   `https://gitlab.com/group/proj.git/` are all stored as
+   `https://gitlab.com/group/proj`. The path's own case is kept
+   (`Group` stays `Group`). The project carries this stored value, and
+   the confirmation of §11.4 compares the URL the owner saw with it.
+
+`github.com` is exactly two segments because the probe reads
+`owner/name` from the first two (§11), and a longer path would name a
+different repository than the one it read. Nested groups exist on
+GitLab, not on GitHub.
+
+**`forge`**, from the stored host alone. No DNS lookup and no
+connection. The leftmost label is the part of the host before the
+first dot.
+
+| Host | `forge` |
+|---|---|
+| `github.com`, the whole host | `github` |
+| leftmost label `gitlab` (`gitlab.com` included) | `gitlab` |
+| leftmost label `bitbucket` (`bitbucket.org` included) | `bitbucket` |
+| `codeberg.org`, or leftmost label `gitea` or `forgejo` | `gitea` |
+| any other host | `other` |
+
+A leftmost label `github` does not make the kind `github`. Only the exact host
+`github.com` selects `github`, the only supported forge kind and the only
+kind the hub probes. That kind's API credential — the instance token, an
+installation token, an owner's token — is sent to `api.github.com` (§11),
+which is a different host from `github.com`. The installation and OAuth
+exchange with `github.com` itself stays the one §11.4 describes, and it
+does not use `repository.url`. `github.example.com` is
+`other`. A self-hosted GitLab whose host is named `gitlab.…` is
+`gitlab` for the link only; one whose host does not say so
+(`git.corp.example`) is `other` and still has the repository link.
+Deriving the kind never requests the host.
 
 `required_check` names the one check that says a commit is good to
 merge or deploy (`ci-ok` in the example, as in Maity's own CI,
@@ -7411,7 +7507,9 @@ URL, no scheme; anything else is `invalid` with
 `details.fields.contract.path: "not_a_path"` on the write that names
 it. A read resolves the default branch to one commit first and reads
 the file at that commit, so `ref`, `text` and `url` agree even while
-someone pushes: `probe_not_configured` without a probe,
+someone pushes: `probe_not_configured` without a probe (when `forge` is
+not `github`, `details.reason: forge_not_github` for `project:admin`,
+§11),
 `probe_unavailable` when the forge does not answer, `not_found` with
 `details.fields.contract.path: "not_found_on_forge"` when the file is
 not there at that commit. The file is decoded as UTF-8 and read whole
@@ -7466,7 +7564,8 @@ keeps no copy:
 - **The read** is the one above: the default branch resolved to one
   commit, the file read at that commit, only from the project's own
   repository, decoded as UTF-8, with the same errors —
-  `probe_not_configured`, `probe_unavailable`, `not_found` with
+  `probe_not_configured` (off GitHub, `details.reason: forge_not_github`
+  for `project:admin`, §11), `probe_unavailable`, `not_found` with
   `details.fields["settings.contract_path"]: "not_found_on_forge"`,
   `invalid` with `"too_large"` or `"not_text"` under the same key — and
   nothing shown on any of them, never an older text. `path` is the
@@ -7566,12 +7665,15 @@ web owner's:
 
 - The overview's project facts (§6.11) have a **Contract** row: a link
   to the view below and, beside it, the forge's page for the file at the
-  default branch, derived as now from `repository` and the setting. No
+  default branch, derived as now from `repository` and the setting. That
+  page exists only when `forge` is `github` (`/blob/<branch>/<file>`) or
+  `gitlab` (`/-/blob/<branch>/<file>`); `gitea`, `bitbucket` and `other`
+  have the view and no forge page for the file. No
   repository: no row.
 - Route `/<owner>/<slug>/contract` (§16.11): the table of contents from
   `toc` beside the rendered `text`, every heading carrying its
-  `anchor` as `id`; the short `ref`, `fetched_at` and the forge's link
-  above it. On an error the path and the hub's reason, nothing else. A
+  `anchor` as `id`; the short `ref`, `fetched_at` and, when §6.11
+  derives one, the forge's link above it. On an error the path and the hub's reason, nothing else. A
   re-read sends `If-None-Match`. It is read when the view opens, and
   again only on **Refresh** — a megabyte is not re-read on a poll.
 - A contract card's section links to `contract#<anchor>` of its section
@@ -8012,9 +8114,9 @@ already read; the page adds no new right and no new stored field.
 | Part | Source | Notes |
 |---|---|---|
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
-| repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
+| repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a repository URL (§6.1); the hub does not fetch it |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
-| contract link | `settings.contract_path` (§6.1, default `docs/api.md`), `repository` | the view of the whole contract inside Maity and the forge's page for the file (§6.8); no repository: no link |
+| contract link | `settings.contract_path` (§6.1, default `docs/api.md`), `repository` | the view of the whole contract inside Maity and, when `forge` is `github` or `gitlab` only, the forge's page for the file (§6.8); `gitea`, `bitbucket`, `other` or no repository: no forge page for the file |
 | pull requests link | `repository.url` and `repository.forge` (§6.1) | derived in the browser: GitHub and Gitea `/pulls`, GitLab `/-/merge_requests`, Bitbucket `/pull-requests`; another forge or no repository: no link |
 | issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
@@ -8618,7 +8720,9 @@ on that route (`tasks:admin`, or `line:lead` within its reach, §2.3). `issue_ur
 another repository, even of the same owner, is `invalid` with
 `details.fields.issue_url: "foreign_repository"` — the import reads the
 forge, and the hub reads only the project's repository (§6.13). The hub
-needs the probe: `probe_not_configured` without it.
+needs the probe: `probe_not_configured` without it. When `forge` is not
+`github`, a reader with `project:admin` gets `details.reason:
+forge_not_github` (§11); any other reader gets `details: {}`.
 
 Unlike every other write, the import reads the forge before it answers,
 because the card cannot exist without its title. The read runs before
@@ -12723,9 +12827,24 @@ the former participant unless it reads along as the owner of an agent
 participant (§9.2);
 the field never names a conversation its reader may not open. Where an
 event lives is then: its conversation when `conversation_id` is set,
-else its `subject` (a card, a request), else the project's messages
-(§8.8) for a message that is not a conversation's, else nowhere but
-the dashboard's page of the event (below).
+else the project's messages (§8.8) for a message that belongs to no
+conversation and is not removed, one about a card (the event's
+`subject`) included, else its `subject` (a card, a request), else
+nowhere but the dashboard's page of the event (below). A project message
+about a card lives in the messages, not on the card, because that is
+where its text is read: the card shows no list of the messages about it,
+and the listing names the card beside the message (`task_id`, §8.8). The
+owner decided so on 2026-11-11 (req-cxyyb2w01s8m, option o2, seq
+109453). A removed project message never lives in the messages: one
+about a card stays on its card, one without a card goes to its
+`subject`, else to the event's page. Its tombstone keeps the event's
+`subject` but has no text and, in the listing, no `task_id` (§8.5,
+§8.8), so the messages would show neither the message nor the card. The
+owner confirmed this on 2026-11-11 (req-5zfznap3s3bj, option o1,
+clarified in chat, seq 110013). A chat message the reader can no longer
+open in its chat (`conversation_id: null`, above) goes to its
+`subject`, else to the event's page: it is a conversation's message,
+which the project's messages never list.
 
 ```json
 { "seq": 68216, "kind": "message", "at": "2026-11-04T09:12:40Z",
@@ -12818,9 +12937,12 @@ the text's project (§16.11), so it opens in a new tab, copies and
 reloads as any dashboard link. That page reads this route and opens the
 event where it lives (above) — the chat, the thread, the card, the
 request or the project's messages — scrolled to and highlighted, the
-address replaced by that place's; an event that lives nowhere else (no
-conversation the reader may open, no subject, no message) is shown on
-the page itself. A `404` shows "not visible" there, the same for an
+address replaced by that place's; a project message about a card opens
+in the project's messages at its `seq`, the card linked beside it, not
+on the card; a removed message never opens in the messages, but on its
+card, else its subject, else this page (above); an event that lives
+nowhere else (no conversation the reader may open, no subject, not a
+project message that is not removed) is shown on the page itself. A `404` shows "not visible" there, the same for an
 event the reader may not see and one that does not exist; a participant
 added to a group chat later sees it too for those of the chat's earlier
 messages the event list does not serve it (above).
@@ -13706,19 +13828,35 @@ GET /projects/{owner}/{slug}/probe?commit=6e3eceee…40 hex
 GET /projects/{owner}/{slug}/probe?pr=3&max_age=0
 ```
 
-Scope `project:read`. The hub's read-only view of the project's forge
-(GitHub in V1). The forge API host and the instance token come from the operator's
-environment only (`MAITY_FORGE_GITHUB_TOKEN`; the host is fixed per forge
-kind, `api.github.com` for GitHub): nothing a project member sets can
-make the hub send its token anywhere else, and `repository.url` must be
-on a configured forge host (§6.1). Which grant reads a project's
-repository — the namespace owner's GitHub App installation, the owner's
-own token, or this instance token for a public repository of the operator's
-own namespaces only — is
+Scope `project:read`. This section is the proposed target, as §6.1 is.
+Until the implementation lands, a non-GitHub URL is refused when the
+project is written (§6.1) and never reaches a probe. The hub's read-only
+view of the project's forge when that forge is GitHub.
+`repository.forge` (§6.1) is `github` only for the exact host
+`github.com`, which selects the only supported forge kind. That kind's
+API credential is sent only to `api.github.com`. The installation and
+OAuth exchange with `github.com` itself is the one §11.4 describes, and
+it does not use `repository.url`. For every other host the hub stores
+the URL and does not read it: `probe_configured` is `false`, `probe_via`
+is `null`, and every probe read answers `probe_not_configured` — this
+call, the contract text (§6.8), an import (§6.14) and the views
+(§11.5), not only `GET …/probe`. A reader with
+`project:admin` gets `details.reason: forge_not_github`; any other
+reader gets `details: {}`, as for the reasons in §11.4. The forge API
+host and the instance token come from the operator's environment only
+(`MAITY_FORGE_GITHUB_TOKEN`; the host is fixed, `api.github.com`):
+nothing a project member sets can make the hub send its token anywhere
+else, and a host a project member sets as `repository.url` is not
+fetched. `repository.url`
+may name any host of the shape in §6.1; that host is not a request
+target. Which grant reads a GitHub repository — the namespace owner's
+GitHub App installation, the owner's own token, or this instance token
+for a public repository of the operator's own namespaces only — is
 §11.4; every grant is read-only, and its permissions are the limit of
 what the project can observe. The hub caches an observation for
 `max_age` seconds (default 60, `0` forces a fresh read) and never writes
-to the forge.
+to the forge. Probes, CI status and merge-request reads for a reachable
+GitLab are not this section.
 
 ```json
 {
@@ -13765,7 +13903,54 @@ hub's own interval; an observation that changes what a card shows emits
 commit link emits `link_observed` (§6.13). With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
-webhook only makes it look sooner.
+webhook only makes it look sooner. That look is a probe read, so it
+runs only when `probe_configured` is true.
+
+**No request to a repository host.** The hub does not take a request
+target from `repository.url`. That URL is stored and linked (§6.1). The
+hub does not resolve its host and does not connect to it. A read whose
+target comes from somewhere else may still name the same host. The
+state URL of §11.3, and the bodies file §11.5 reads beside it, are
+taken from the repository file and are never derived from
+`repository.url`. That file may name `github.com`, or whatever host the
+repository uses; the two hosts being equal is not a refusal, and it is
+not a request to `repository.url`. The reads below run only when
+`forge` is `github`, and, apart from that state URL and its bodies
+file, only against `api.github.com` or the two image hosts of §11.2. A
+token — the instance token, an installation token, an owner's token —
+is sent only to `api.github.com`. The one exchange with `github.com`
+itself is the human linking an installation, including the OAuth
+exchange §11.4 describes; it does not use `repository.url`.
+
+- The probe, and what it feeds: a report's observation, a release, a
+  card's forge link (§6.13), an issue import (§6.14), the contract file
+  (§6.8), the ticker's merge scan and its deployment read (§17.4).
+- The first look at a new repository and the visibility read (§16.9).
+  Neither is made when `forge` is not `github`. That repository is one
+  the hub cannot read: a new project's page starts `off`, and setting
+  the repository turns a page that is `on` to `off`, as §16.9 already
+  says for a repository the hub cannot read. A link on the repository's
+  own host is shown on the public page only while a read found the
+  repository public, which a non-GitHub repository never is, so those
+  links stay off that page.
+- The forge logo and banner (§11.2).
+- The Keep the Why contents read that finds `dashboard-state:` (§11.3)
+  and the views' reads (§11.5). The contents and metadata reads stay on
+  GitHub's fixed hosts. The state download, and the bodies download
+  beside it, use the validated export URL: the target is the one the
+  repository file names and is never derived from `repository.url`.
+  That host may equal the repository host. The fetch is §11.1.
+- The webhook (§17.4). It is a delivery the forge sends to the hub. The
+  hub checks GitHub's `X-Hub-Signature-256` and `X-GitHub-Event` and
+  does not call the sender. A verified delivery queues a probe read;
+  when `probe_configured` is false the delivery is answered `202` and
+  writes nothing, and nothing takes a request target from
+  `repository.url`. Creating or
+  rotating the webhook secret does not cause a request.
+- A human's forge avatar (§6.10). That source is not implemented. When
+  it is, it is read from the GitHub avatar host §11.2 names
+  (`avatars.githubusercontent.com`), from the linked GitHub account, and
+  not from `repository.url`.
 
 ### 11.1 Outbound reads
 
@@ -13794,9 +13979,18 @@ read:
   unique local (`fc00::/7`), multicast, reserved and documentation
   ranges, and the IPv4-mapped, 6to4 and NAT64 forms of any of them — and
   connects to the address it checked, never resolving twice. The forge
-  hosts the operator configures are exempt (a self-hosted forge on a
-  private network is the operator's choice); a host a project member or
-  a repository names never is.
+  hosts the operator configures for a read the hub actually performs are
+  exempt. Today those are the fixed GitHub API host and the image hosts
+  of §11.2, all public names. A request target is never taken from
+  `repository.url` or from a project link, and such a host is never
+  exempt (above, "No request to a repository host"). The export's state
+  URL, and the bodies file beside it, come from the repository file and
+  are still fetched, only after the contents read on `api.github.com`
+  (§11.3). They are never derived from `repository.url`. The file may
+  name the same host as the repository; that equality does not make
+  `repository.url` a target and does not refuse the export URL. The
+  export URL is not exempt from the address rule. A self-hosted forge
+  on a private network is not fetched.
 - 10 seconds per read, connect to last byte. The body is read up to its
   cap and the read is refused at the first byte past it; the cap counts
   the decoded bytes when the answer is compressed.
@@ -13836,16 +14030,24 @@ applies (`logo`, `banner`, §6.1).
 | GitLab | the project's `avatar_url`, else the namespace's | none |
 | Gitea, Forgejo (Codeberg) | the repository's `avatar_url`, else the owner's | none |
 
-GitHub is the one forge of V1 (§11); the other rows apply when the
-operator can configure those forges. Image hosts: for GitHub
-`avatars.githubusercontent.com` (avatars) and
-`repository-images.githubusercontent.com` (social previews); for the
-others the forge's own host. An image URL on any other host (a Gravatar
-fallback, a CDN the hub does not know) is no image. The API reads use
-the grant §11.4 picks for the repository — the instance token only for a
-project in the operator's own namespaces; without a grant the hub reads
-nothing from the forge and has no image (§11.4, `no_grant`). The GraphQL read is a `POST` that
-only queries; the hub still never writes to the forge.
+GitHub is the only forge whose images are read (§11, "No request to a
+repository host"). The GitLab and Gitea rows are the shapes a later
+read would use; they are not used, and the hub does not request the
+forge's own host for an image. An image is requested only from
+`avatars.githubusercontent.com` (the owner's avatar) and
+`repository-images.githubusercontent.com` (the social preview), and
+only for a repository whose `forge` is `github`, after the metadata
+read on `api.github.com`. A repository whose `forge` is not `github`
+has no forge image: `logo` and `banner` stay the upload or none, and
+no host is requested. An image URL on any other host (a Gravatar
+fallback, a CDN the hub does not know, the repository's own host) is
+no image. The API reads use the grant §11.4 picks for the repository —
+the instance token only for a project in the operator's own namespaces;
+without a grant the hub reads nothing from the forge and has no image
+(§11.4, `no_grant`). The GraphQL read is a `POST` that only queries;
+the hub still never writes to the forge. A human's forge avatar
+(§6.10), when that source exists, is the same GitHub avatar host and
+not `repository.url`.
 
 What the hub accepts, whatever the forge said:
 
@@ -13926,13 +14128,21 @@ summary counts, when the hub read them (`observed_at`), each family member's
 name, path and dashboard link, and the attention entries' family member, titles, statuses, topics and links,
 never anything else of an entry.
 
-**Where the URL comes from — the repository only.** The `dashboard-state:`
+**Where the URL comes from — the repository only.** The contents read
+runs only when `repository.forge` is `github` (§11, "No request to a
+repository host"). Otherwise nothing is requested and the export is
+`ktw_not_configured`, as for a project with no repository. When it
+does run, the `dashboard-state:`
 line inside the `keep-the-why:config` block of the repository's root
-`.keep-the-why` on the default branch, read through the forge's contents
+`.keep-the-why` on the default branch is read through the forge's contents
 API (`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with
 the grant §11.4 picks for the repository (the instance token only for a
 project in the operator's own namespaces), at most 64 KiB; without a
-grant nothing is read (§11.4, `no_grant`). There is no project setting that
+grant nothing is read (§11.4, `no_grant`). The state URL is taken from that file and fetched under §11.1. It is
+never derived from `repository.url`. The file may name the same host as
+the repository, `github.com` included; the two hosts being equal is not
+by itself a refusal, and §11.1's address and response checks still
+apply. There is no project setting that
 names or overrides the URL: the repository is the single source of truth,
 as in Keep the Why itself. No repository, no root `.keep-the-why`, or no
 `dashboard-state:` line in it: `ktw_not_configured`. A state URL must be
@@ -14092,6 +14302,9 @@ or TLS refused), `timeout`, `http_status` (with `status`),
 
 The maintainer's decision of 2026-10-28: a project's forge reads use a
 grant from the repository's owner, not only the operator's one token.
+The grants below are considered only when `repository.forge` is
+`github` (§6.1). A URL on any other host is not covered, no token is
+sent, and the first look of §16.9 is not made.
 One instance token cannot read the private repositories of the people
 who host projects on an instance, and a token from the operator's own
 account can read the operator's private repositories, which no other
@@ -14238,8 +14451,12 @@ is private), `installation_suspended` or
 `installation_removed` (the owner's installation covered it and no
 longer does), `token_rejected` (the owner's token was refused by the
 forge), `unconfirmed` (a grant of the owner would cover it, but the
-owner has not confirmed this repository), `repository_moved`. The reason is shown to `project:admin` only; other readers get
-`probe_not_configured` with `details: {}`.
+owner has not confirmed this repository), `repository_moved`,
+`forge_not_github` (the repository's `forge` is not `github`). The
+reason is shown to `project:admin` only; other readers get
+`probe_not_configured` with `details: {}`. `forge_not_github` applies
+to every probe read off GitHub, not only `GET …/probe`: the contract
+text (§6.8), an import (§6.14) and the views (§11.5) use it too.
 
 **What a private repository's data may reach.** What the probe reads
 is project data: it reaches exactly the readers of the record it lands
@@ -14441,6 +14658,11 @@ and by nothing else:
 |---|---|
 | GitHub | `https://github.com/{owner}/{repo}`, optionally followed by `.git`, then optionally by one `/` |
 
+A project's own `repository.url` is a name this section reads only when
+its `forge` is `github` and the URL's `owner/name` is this form (§11,
+"No request to a repository host"). Any other repository URL names
+nothing here, and naming it causes no request.
+
 `{owner}` is 1 to 39 ASCII characters from `A`–`Z`, `a`–`z`, `0`–`9`
 and `-`; `{repo}` 1 to 100 ASCII characters from `A`–`Z`, `a`–`z`,
 `0`–`9`, `.`, `_` and `-`, not `.` or `..`, not ending in `.git`, without
@@ -14616,7 +14838,7 @@ the rule above.
 Errors: `ktw_not_configured` (the project's repository has no
 `.keep-the-why` or no `dashboard-state:` line, as in §11.3);
 `probe_not_configured` (§11.4), `details.reason` (`no_grant`,
-`unconfirmed`, …) for a `project:admin` only, every other reader gets
+`unconfirmed`, `forge_not_github`, …) for a `project:admin` only, every other reader gets
 `details: {}`; `probe_unavailable` with `details.retry_at` while the
 source's forge budget is spent (§11.4, **Rate limits**); `not_found`
 with `details.reason` `not_in_family`, `family_cap`, `no_bodies_file`
