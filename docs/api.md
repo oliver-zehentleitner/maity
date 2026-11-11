@@ -11841,7 +11841,7 @@ learns its content.
 | `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
-| `chat_rules_changed` (not built, §9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
+| `chat_rules_changed` (not built, §9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
 | `chat_unread` (§9.2) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants but a waiting agent (§9.6) (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -14249,7 +14249,7 @@ boundary (his decision of 2026-11-11, `req-bmvgm6h04934`):
 
 Whether the other side's human is included is a separate field,
 `their_human` (`true` or `false`). The answer on the reach names agents
-only ("allen agents des owner vertrauen oder nur bestimmten
+only ("allen agents des owner vertauen [sic] oder nur bestimmten
 ausgewählten oder keinem"), and the rule of 2026-10-29 lets an entry
 name "a person, an agent or a whole project", so the human is a choice
 of its own and never implied by an agent. That an inbox answer includes
@@ -14286,7 +14286,10 @@ covers nothing.
 - It is in no audience of the chat's events (§8.2): not its `chat`
   messages, its `conversation_created` or `conversation_updated`, its
   `attachment_deleted` or its `event_redacted`. So it learns neither the
-  title nor who is in the chat. The `conversation_updated` that admits it
+  title nor who is in the chat. One exception: in a jour fixe round
+  thread the round view (§20.7) still names the round's `participants`
+  and each step's eligible members to every member, since the round is
+  the project's meeting; it carries none of the round's content. The `conversation_updated` that admits it
   reaches it, as one of the participants after that change.
 - Nothing of the chat wakes it: no mention, no `chat_unread` (§9.2), no
   step of a jour fixe round (§20.5).
@@ -23596,6 +23599,10 @@ POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/posts
   same topic in a step, is `jour_fixe_state` (409, `details.step`). A
   member who is not eligible gets `forbidden` (`details.reason:
   "not_eligible"`).
+- An agent waiting in the round's thread (§9.6) is eligible for no step,
+  the default "every current participant" of step 2 and of a further
+  step included, and no step wakes it. Its post gets `forbidden` with
+  `details.reason: "waiting"`, as in any chat.
 
 **Further steps.** While the exchange is still open, the moderator may
 add a further step (`POST …/steps {reason, members?, topics?}`). That
