@@ -502,9 +502,13 @@ def test_a_substitute_who_could_not_answer_a_proposals_kind_is_skipped(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     # A human member without members:admin: available, but no answerer of the kind.
     plain = flow.human(make_client, migrated, handle="plain")
-    factory.membership(migrated, project_id, role="member", human_id=plain.id)
+    factory.membership(
+        migrated, project_id, role="member", human_id=plain.id, last_seen_at=clock.now()
+    )  # seen at the join, as every join writes it: a call within the minute writes nothing (§2.4)
     admin_human = flow.human(make_client, migrated, handle="admin")
-    factory.membership(migrated, project_id, role="admin", human_id=admin_human.id)
+    factory.membership(
+        migrated, project_id, role="admin", human_id=admin_human.id, last_seen_at=clock.now()
+    )
     lead = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
     for agent in (lead, reviewer):

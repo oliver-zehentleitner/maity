@@ -1127,7 +1127,9 @@ What the bridge has to keep:
   the reference 241 and 314 ms late, a single block shows only once its tick is about 390–460 ms
   late. The average catches a loop busy in many slices, which the margin does not see: blocked in
   random slices of 30–120 ms, an app's loop ran 35 ms late on average (the reference 1 ms) with its
-  worst tick only 40 ms over the reference's. A periodic block of equal slices does not show in the
+  worst tick only 40 ms over the reference's. Those 35 ms were measured on main before presence
+  stopped writing on every call, against the limit of 20 then, and pass today's `<=` 35; the
+  evidence for the limit now is the same block on the throttled code, 55 and 58 ms (below). A periodic block of equal slices does not show in the
   average: the tick takes its next due time from when it ran, so it falls into the gaps.
 - **The average went from 20 to 35 ms when presence stopped writing on every call.** The guard's
   test is closed-loop: 16 threads × 20 rounds × 5 calls (the bell and four project reads) on the

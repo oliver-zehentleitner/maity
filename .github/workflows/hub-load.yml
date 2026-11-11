@@ -5,7 +5,7 @@ name: hub-load
 # 30-day window and fails when a call sends more statements, or takes much longer, with four
 # times the history. hub/tests/test_loop_lag.py fails when, while concurrent requests run, a
 # test app's event loop runs its worst tick more than 150 ms later than an idle reference loop
-# beside it or more than 1000 ms late at all, is late by more than 20 ms on average, or runs one
+# beside it or more than 1000 ms late at all, is late by more than 35 ms on average, or runs one
 # callback for more than 50 ms of its thread's CPU time (tsk-v874y63b4z8p); `-rP` prints the
 # windows of a passing run too, the numbers a PR of the series names. PostgreSQL only, one
 # process (a timing is measured on a quiet machine).

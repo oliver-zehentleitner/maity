@@ -396,7 +396,7 @@ def test_minutes_online_count_working_calls_not_only_long_polls(
     assert counted & agents == {member_of[working.id]}  # humans online count too (§20.2)
 
 
-def test_an_instance_that_called_within_the_minute_after_a_write_is_online_and_ordered_by_it(
+def test_an_instance_that_called_within_the_minute_after_a_write_is_online_from_its_credential(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:
     """The session's `last_seen_at` is written at most once a minute (§2.4); the minutes online
