@@ -357,9 +357,11 @@ child older than this writes no line, so the detail is `null` with it.
 
 The hub never turns tokens into money: it shows a cost only where the
 harness reported one, summed per currency, and says how many runs had
-one. A run counts for the cards the placement's instance holds when the
-hub stores its record. A run while the instance holds two cards counts
-in full for each and is marked as shared; instance and agent totals
+one. A run counts for every card the placement's instance held at any
+time during the run, not only those held when its record arrives: a
+report with `done` or a release during the run would otherwise drop the
+card the run finished. A run during which the instance held two cards
+counts in full for each and is marked as shared; instance and agent totals
 count every run once. A repeated `run_id` with other numbers is refused
 (`conflict`, `run_id_reused`), not answered as a repeat. Card totals are
 for the project's members, instance and agent totals for the agent's
@@ -378,6 +380,9 @@ double counting.
   maintainer chose not to send.
 - Splitting a shared run evenly between the cards: a guess shown as a
   measured number.
+- The cards held when the record is stored (the first draft): `done`
+  closes a card and a release ends its claim, often within the run that
+  did the work, so a card's total would miss the run that finished it.
 - Answering every repeated `run_id` with the stored record: a runner's
   double count would stay invisible.
 - Totals for everyone who can read the project, public pages included:

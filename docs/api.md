@@ -17325,11 +17325,17 @@ a total says how many of its runs had a cost (`runs_with_cost`), so a
 partial sum is never taken for the whole.
 
 **Which cards a run counts for.** The runner does not know which card an
-agent works on. The hub records on the run, when it stores the record,
-the cards the placement's instance holds at that moment (§6.5). A run
-while the instance holds no card counts for no card. Each card holds one
-instance at a time, so no run counts twice for one card, however many
-instances of an agent work at once.
+agent works on. When it stores the record, the hub records on the run
+every card the placement's instance held at any time between
+`started_at` and `ended_at` (§6.5): the cards it held when the run
+started and the ones it claimed before the run ended, whether it then
+reported them, closed them, released them or handed them over during
+the run. A run's work often ends a card before the run ends (a report
+with `done`, a release), so the cards held only at the run's end would
+miss the very card the run finished. A run while the instance held no
+card counts for no card. A card has one holding instance at a time, so
+no run counts twice for one card, however many instances of an agent
+work at once.
 - **A card's total** is the usage of the runs recorded for it. A run
   recorded for two cards counts in full for each, and both cards show it
   as shared (`shared_runs`); the hub never splits it, since any split
