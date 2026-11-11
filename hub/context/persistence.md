@@ -1097,40 +1097,41 @@ What the bridge has to keep:
   request. What a route's body does itself is audited when its family moves, and the loop-lag
   guard (`hub/tests/test_loop_lag.py`, CI's `hub-load` job) checks the loops while concurrent
   requests of the hot families run (below).
-- **The loop-lag guard measures against an idle loop.** An app's loop fails when its worst tick runs
-  more than 150 ms later than the worst tick of a bare event loop beside it (a thread of its own,
-  the same 0.1 s tick, nothing else on it), when it is late by more than 35 ms on average, when its
-  worst tick is more than 1000 ms late whatever the reference's (a backstop for a block the
-  reference shared), or when one callback on it (a task step, a timer) spends more than 50 ms of the
-  loop thread's own CPU time. The reference's lag is the machine's and the process's: CPU and the
-  GIL taken by the 16 request threads and the database, the garbage collector, and also anything
-  that holds the GIL on an app's loop, since the reference shares the process. A computation on the
-  owner's loop that held the GIL for 750 ms made the reference 673 ms late and the owner's loop 674,
-  so the margin passed it; the CPU time per callback is what catches it (750 ms against the limit of
-  50). That time leaves out the garbage collector's: a full collection runs in whichever thread
-  allocates when it is due, about 90 ms locally, as often on a loop as on a request thread. Without
-  it the hub's longest callback was about 3 ms in local runs, on main and on the branch that moves
-  authentication onto the loop (#1631) alike. Work that blocks without the CPU shows in the margin,
-  the average and the backstop when it lets go of the GIL (a sleep, a lock); a wait that holds the
-  GIL (a C call that blocks without releasing it) stops the reference too and shows only in the
-  backstop, or in the average when it repeats: a 400 ms `usleep` through `ctypes.PyDLL` on the
-  owner's loop passed locally (reference 360, owner 360, its longest callback 3.6 ms CPU). The first
-  guard (#1626) took a fixed 250 ms from local runs (69–129 ms) and was red on its first GitHub
-  runs: on main 30d84d15 the owner's loop 269 ms and the agent's 247 ms, on 448332b9 237 ms and 251
-  ms, the agent's app serving nothing during the test (`threads_busy` 0). Its maximum measured the
-  runner, not the hub. In two plain local runs the reference was 75 and 78 ms late and the apps'
-  loops at most 16 ms more; on the runners the busy and the idle app's loop differed by 14–22 ms
-  (the runs before the reference had none). The first two runner runs with the reference (on its
-  branch, deb88b2b): the reference 241 and 314 ms late, the apps' loops 259 and 251, 321 and 312 ms,
-  at most 18 ms over it, on average 4–8 ms late. The margin of 150 ms keeps that noise out. Locally
-  it fails a loop blocked once for 400 ms (366 ms against a reference of 89); on the runner, with
-  the reference 241 and 314 ms late, a single block shows only once its tick is about 390–460 ms
-  late. The average catches a loop busy in many slices, which the margin does not see: blocked in
-  random slices of 30–120 ms, an app's loop ran 35 ms late on average (the reference 1 ms) with its
-  worst tick only 40 ms over the reference's. Those 35 ms were measured on main before presence
-  stopped writing on every call, against the limit of 20 then, and pass today's `<=` 35; the
-  evidence for the limit now is the same block on the throttled code, 55 and 58 ms (below). A periodic block of equal slices does not show in the
-  average: the tick takes its next due time from when it ran, so it falls into the gaps.
+- **The loop-lag guard measures against an idle loop.** An app's loop fails when its worst tick
+  runs more than 150 ms later than the worst tick of a bare event loop beside it (a thread of its
+  own, the same 0.1 s tick, nothing else on it), when it is late by more than 35 ms on average,
+  when its worst tick is more than 1000 ms late whatever the reference's (a backstop for a block
+  the reference shared), or when one callback on it (a task step, a timer) spends more than 50 ms
+  of the loop thread's own CPU time. The reference's lag is the machine's and the process's: CPU
+  and the GIL taken by the 16 request threads and the database, the garbage collector, and also
+  anything that holds the GIL on an app's loop, since the reference shares the process. A
+  computation on the owner's loop that held the GIL for 750 ms made the reference 673 ms late and
+  the owner's loop 674, so the margin passed it; the CPU time per callback is what catches it (750
+  ms against the limit of 50). That time leaves out the garbage collector's: a full collection runs
+  in whichever thread allocates when it is due, about 90 ms locally, as often on a loop as on a
+  request thread. Without it the hub's longest callback was about 3 ms in local runs, on main and
+  on the branch that moves authentication onto the loop (#1631) alike. Work that blocks without the
+  CPU shows in the margin, the average and the backstop when it lets go of the GIL (a sleep, a
+  lock); a wait that holds the GIL (a C call that blocks without releasing it) stops the reference
+  too and shows only in the backstop, or in the average when it repeats: a 400 ms `usleep` through
+  `ctypes.PyDLL` on the owner's loop passed locally (reference 360, owner 360, its longest callback
+  3.6 ms CPU). The first guard (#1626) took a fixed 250 ms from local runs (69–129 ms) and was red
+  on its first GitHub runs: on main 30d84d15 the owner's loop 269 ms and the agent's 247 ms, on
+  448332b9 237 ms and 251 ms, the agent's app serving nothing during the test (`threads_busy` 0).
+  Its maximum measured the runner, not the hub. In two plain local runs the reference was 75 and 78
+  ms late and the apps' loops at most 16 ms more; on the runners the busy and the idle app's loop
+  differed by 14–22 ms (the runs before the reference had none). The first two runner runs with the
+  reference (on its branch, deb88b2b): the reference 241 and 314 ms late, the apps' loops 259 and
+  251, 321 and 312 ms, at most 18 ms over it, on average 4–8 ms late. The margin of 150 ms keeps
+  that noise out. Locally it fails a loop blocked once for 400 ms (366 ms against a reference of
+  89); on the runner, with the reference 241 and 314 ms late, a single block shows only once its
+  tick is about 390–460 ms late. The average catches a loop busy in many slices, which the margin
+  does not see: blocked in random slices of 30–120 ms, an app's loop ran 35 ms late on average (the
+  reference 1 ms) with its worst tick only 40 ms over the reference's. Those 35 ms were measured on
+  main before presence stopped writing on every call, against the limit of 20 then, and pass
+  today's `<=` 35; the evidence for the limit now is the same block on the throttled code, 55 and
+  58 ms (below). A periodic block of equal slices does not show in the average: the tick takes its
+  next due time from when it ran, so it falls into the gaps.
 - **The average went from 20 to 35 ms when presence stopped writing on every call.** The guard's
   test is closed-loop: 16 threads × 20 rounds × 5 calls (the bell and four project reads) on the
   owner's one session, as fast as they go. With `last_seen_at` written at most once a minute
@@ -1143,24 +1144,22 @@ What the bridge has to keep:
   | main | 53.9, 55.3 | 5, 4 ms | 3.1, 3.1 |
   | writes at most once a minute | 57.5, 56.4 | 16, 16 ms | 5.4, 5.4 |
 
-  p50 / p95 in ms, main's two runs and then the throttled two: the bell 331/616, 324/588 →
-  327/490, 339/569; members 291/539, 276/517 → 290/390, 295/405; the project 246/494, 234/490 →
-  251/357, 246/354; tasks 218/510, 216/461 → 227/324, 231/346; requests 247/513, 233/454 →
-  247/341, 243/351. As means of the two runs: p95 lower on every route (the bell 602 → 529.5, −12
-  %; the others −25 to −31 %), p50 up 1.7–5.5 % (the bell 327.5 → 333, members 283.5 → 292.5, the
-  project 240 → 248.5, tasks 217 → 229, requests 240 → 245); n=2 runs each, not
-  significance-tested. The cause is the missing write, not the code around it: the same code
-  writing on every call (`SEEN_EVERY` 0) is back at 4 ms. Not the row lock either: 16 sessions of
-  the owner give main 4 ms, main without its human and membership writes 5. A call no longer waits
-  for its write and commit, so more request threads run Python at the same time and the owner's
-  loop waits for the GIL more often; its longest callback stays about 3 ms of CPU. The guard
-  watches the loop's ticks, and the requests it serves gained about 4 % throughput and a lower p95
-  for a p50 up to 5.5 % higher, so the limit went up rather than the throttle back. Not further:
-  35 leaves 8–11 ms over the
-  runner's 24–27, and the block in random slices of 30–120 ms still fails it on the throttled
-  branch (55 and 58 ms locally, the reference 1). The average stays absolute rather than relative
-  to the reference: the reference shares the GIL, so blocks that hold it move the reference too
-  (#1632).
+  p50 / p95 in ms, main's two runs and then the throttled two: the bell 331/616, 324/588 → 327/490,
+  339/569; members 291/539, 276/517 → 290/390, 295/405; the project 246/494, 234/490 → 251/357,
+  246/354; tasks 218/510, 216/461 → 227/324, 231/346; requests 247/513, 233/454 → 247/341, 243/351.
+  As means of the two runs: p95 lower on every route (the bell 602 → 529.5, −12 %; the others −25
+  to −31 %), p50 up 1.7–5.5 % (the bell 327.5 → 333, members 283.5 → 292.5, the project 240 →
+  248.5, tasks 217 → 229, requests 240 → 245); n=2 runs each, not significance-tested. The cause is
+  the missing write, not the code around it: the same code writing on every call (`SEEN_EVERY` 0)
+  is back at 4 ms. Not the row lock either: 16 sessions of the owner give main 4 ms, main without
+  its human and membership writes 5. A call no longer waits for its write and commit, so more
+  request threads run Python at the same time and the owner's loop waits for the GIL more often;
+  its longest callback stays about 3 ms of CPU. The guard watches the loop's ticks, and the
+  requests it serves gained about 4 % throughput and a lower p95 for a p50 up to 5.5 % higher, so
+  the limit went up rather than the throttle back. Not further: 35 leaves 8–11 ms over the runner's
+  24–27, and the block in random slices of 30–120 ms still fails it on the throttled branch (55 and
+  58 ms locally, the reference 1). The average stays absolute rather than relative to the
+  reference: the reference shares the GIL, so blocks that hold it move the reference too (#1632).
 - **A cancellation stays a cancellation.** A statement cancelled in the driver invalidates the
   connection, and reading `conn.info` on it again inside the transaction raises
   `PendingRollbackError` in place of the `CancelledError` that must unwind the request.
