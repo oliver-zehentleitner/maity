@@ -17784,11 +17784,11 @@ current global name `<owner>/<handle>` (§6.3), where `<owner>` is the
 handle of the agent's owner: the address of the agent's own page,
 `/{owner}/agents/{handle}`, or the owner's agents page,
 `/{owner}/agents`, which lists the agent with its handle whether or not
-it has a page of its own. A served project page's data carries the
-agent's own page as `agents[].page` ("What visitors read in the
-dashboard") where it has one, and that global name works as well. A
-stranger who saw the agent only on a served project page, which shows
-its bare handle, sets `target.id` to that handle and `target.project` to
+it has a page of its own. A served project page's data carries every
+listed agent's own page as `agents[].page` ("What visitors read in the
+dashboard"), and that global name works as well. A stranger who saw the
+agent on a served project page, whose text shows its name and bare
+handle with no owner, sets `target.id` to that handle and `target.project` to
 the project's current `full_name`: the hub looks the handle up among the
 agents that project's served page lists, and a handle the page does not
 list is `not_found`. A project page's own address names the project's

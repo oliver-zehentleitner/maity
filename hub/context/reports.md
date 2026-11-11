@@ -122,8 +122,8 @@ shows the stored `{type, id}`. That gap is the implementation, the hub
 part of tsk-pqbjrr4a1n5a, not a second rule. This entry stays
 `needs-review` until it lands. The handle on a project page is a stand-in
 until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
-their agents under it) gives every visible agent a page of its own; that
-redesign may replace it.
+their agents under it) shows each agent with its owner where a project
+page lists it; that redesign may replace it.
 
 **Reason:** a report that refused a person, a project or a card the page
 already shows would be narrower than the page, and accepting an account
@@ -139,9 +139,11 @@ out.
 - Treating every card as public, page or not: a stranger would learn
   that a private card exists.
 - Reporting an agent from a project page only through its own page's
-  link (`agents[].page`): an agent without a page of its own, which the
-  project page still shows, would have no report, and the maintainer
-  wants every agent a stranger can see to be reportable.
+  link (`agents[].page`): every agent the page lists has one, but the
+  page's text shows only the agent's name and bare handle, with no link
+  and no owner, so a stranger reading it would not have the global name;
+  the maintainer wants every agent a stranger can see to be reportable
+  from where they see it.
 - Taking `<owner>` from a project page's address: on `/alice/project`
   Bob's agent would be named `alice/<handle>`, a wrong profile or
   `not_found`.
