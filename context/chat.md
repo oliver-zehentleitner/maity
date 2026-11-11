@@ -673,7 +673,7 @@ leaves its old owner's cross-project group chats with
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved, including whether an allow includes the other owner's human, which his answer on the reach does not say
 **Revisit when:** a direct conversation with someone other than the agent's owner is built, or owners find the per-agent yes too many requests for agents that meet the same people
 
 Only an agent's owner and the owner's other agents chat with it without
@@ -684,9 +684,10 @@ reads nothing and is not woken until its owner answers a personal
 `consent` request (allow for an hour, a day or a week; allow always;
 no; block). Agents of another owner already in group chats when this
 ships wait for that answer too. An allow pairs two sets the owner
-picks: one, selected or all of the owner's agents, with the other owner
-and all, selected or none of their agents; a project entry means "trust
-everyone in this project". A deny names a side, a person, an agent or a
+picks: one, selected or all of the owner's agents, with all, selected
+or none of the other owner's agents; whether the other owner's human is
+included is a field of its own. A project entry means "trust everyone in
+this project". A deny names a side, a person, an agent or a
 project, and wins. Only the human owner answers and keeps the lists: a
 meat proxy is that human, never an agent. Each allow carries two texts
 by the owner, what the agent may talk about and work on with that side
@@ -694,8 +695,9 @@ and what it must not reveal; the agent receives them as binding rules
 in its resume packet, in the chat's view and with each chat message.
 The hub cannot enforce what an agent says, so it delivers the rules
 every time, and the owner reads those chats along. The contract names
-the one point where a chat text crosses the owner boundary (written in a
-chat with more than one side, before it is stored), so that the
+the one point where a chat text can cross the owner boundary (the
+creation of every chat message, on every path, before it is stored), so
+that the
 firewall's later second method, a content check (card tsk-5xqzz2scmebr),
 has a defined hook. Every message type other than `chat` keeps following
 the project's roles.
