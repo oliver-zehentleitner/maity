@@ -8,7 +8,8 @@
   `.git/config`: the session gets `branch.autoSetupMerge=false`,
   `push.default=current` and `fetch.recurseSubmodules=false`, and the start
   prompt of Claude Code and Codex names the commands that still fail
-  (`push -u`, `--set-upstream`, `--track`, `branch -m`).
+  (`push -u` and `--set-upstream`, which push but cannot store an upstream,
+  `--track`, and `branch -m`, which renames and then fails).
 - cli: `maity report` reads a branch without an upstream as its own branch on
   the push remote (`branch.<b>.pushRemote`, `remote.pushDefault`, else
   `origin`) instead of refusing it, unless a `pushurl`, a `push` refspec or a

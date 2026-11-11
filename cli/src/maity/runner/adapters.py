@@ -35,8 +35,9 @@ START_PROMPT = (
 # the ones that still fail.
 GIT_PROMPT = (
     " Git here cannot write `.git/config`: cut a branch with `git switch -c <branch> "
-    "origin/<default branch>` and push it with `git push origin <branch>`; never `push -u`, "
-    "`--set-upstream`, `--track` or `branch -m`. `maity report` needs no upstream."
+    "origin/<default branch>`, push it with `git push origin <branch>` and pull with `git pull "
+    "origin <branch>`; never `push -u`, `--set-upstream`, `--track` or `branch -m`, which "
+    "store an upstream or rename one and fail. `maity report` needs no upstream."
 )
 # Claude Code's sandbox hides the clone's credential; only a command that is a `maity` call
 # alone matches `excludedCommands` and runs outside it (cli/context/runner.md).
@@ -324,22 +325,31 @@ def hide_placeholders(ctx: Context) -> None:
     directory with entries) is left out, so real untracked content stays visible. The block is
     rebuilt at every start; a block from an earlier start is replaced, every other line stays."""
     path = ctx.clone / ".git" / "info" / "exclude"
-    kept: list[str] = []
-    had_block = False
+    lines: list[str] = []
     if ctx.as_user.exists(path, "-f"):
-        inside = False
-        for line in ctx.as_user.read(path).decode("utf-8", "replace").splitlines():
-            if line == EXCLUDE_BEGIN:
-                inside = had_block = True
-            elif line == EXCLUDE_END:
-                inside = False
-            elif not inside:
-                kept.append(line)
+        try:
+            lines = ctx.as_user.read(path).decode("utf-8").splitlines()
+        except UnicodeDecodeError:  # rewriting it could change bytes that are not ours
+            return
+    kept, had_block = _without_block(lines)
     hidden = [name for name in CLAUDE_PLACEHOLDERS if _placeholder_only(ctx, ctx.clone / name)]
     if not hidden and not had_block:
         return
     block = [EXCLUDE_BEGIN, *(f"/{name}" for name in hidden), EXCLUDE_END] if hidden else []
     ctx.as_user.write(path, "\n".join([*kept, *block]) + "\n")
+
+
+def _without_block(lines: list[str]) -> tuple[list[str], bool]:
+    """`lines` without the runner's block, and whether there was one. A begin marker with no
+    end marker after it is dropped alone, so the lines after it stay."""
+    if EXCLUDE_BEGIN not in lines:
+        return lines, False
+    start = lines.index(EXCLUDE_BEGIN)
+    if EXCLUDE_END not in lines[start:]:
+        return lines[:start] + lines[start + 1 :], True
+    end = lines.index(EXCLUDE_END, start)
+    rest, _ = _without_block(lines[end + 1 :])
+    return lines[:start] + rest, True
 
 
 def _placeholder_only(ctx: Context, path: Path) -> bool:

@@ -16727,7 +16727,7 @@ The kinds are in §8.2. Rules that apply to all of them:
 
 ### 15.11 Changes to existing endpoints
 
-- **Resume** (§5.2) accepts `"supervisor": "maity-runner/<version>"`. The runner puts it into the session it starts as the environment variable `MAITY_SUPERVISOR`, and `maity resume` sends it from there (§13).
+- **Resume** (§5.2) accepts `"supervisor": "maity-runner/<version>"`. The runner puts it into a supervised (headless) session it starts as the environment variable `MAITY_SUPERVISOR`, and `maity resume` sends it from there (§13). An interactive session gets no such variable: nothing wakes it on an event, so it keeps the ordinary duty and waits with `maity wait`.
   With it, `hints.duty` is `"supervised"`, `hints.wait_timeout` is
   absent, and the generated rules tell the agent not to start `maity
   wait` and to end its turn after a checkpoint; without it `hints.duty`

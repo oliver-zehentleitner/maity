@@ -239,7 +239,13 @@ def test_the_session_git_needs_no_configuration_write(tmp_path: Path) -> None:
     git("fetch", "-q", "origin", session=False)
     before = (clone / ".git" / "config").read_text()
     (clone / ".git" / "config.lock").write_text("")
-    git("fetch", "-q", "origin")
+    if os.name != "nt":  # the sandbox's unreadable placeholder; fetch must not read it
+        (clone / ".gitmodules").write_text("")
+        (clone / ".gitmodules").chmod(0)
+    done = subprocess.run(["git", "fetch", "origin"], cwd=clone,
+                          env={**env, **adapters.git_config(sandboxed)},
+                          capture_output=True, text=True, check=True)  # fmt: skip
+    assert ".gitmodules" not in done.stderr
     git("switch", "-q", "-c", "work", "origin/main")
     git("commit", "-q", "--allow-empty", "-m", "two")
     git("push", "-q")
@@ -625,3 +631,26 @@ def test_a_granted_gh_stays_on_the_clones_own_repository(tmp_path: Path) -> None
     assert "api.github.com" in settings["sandbox"]["network"]["allowedDomains"]
     bash = adapters.opencode_config(context(tmp_path / "o", "opencode", grant=grant))["permission"]
     assert all(bash["bash"][rule] == "deny" for rule in adapters.GH_DENIED)
+
+
+def test_an_unclosed_block_drops_only_its_marker_and_a_foreign_encoding_is_left(
+    tmp_path: Path,
+) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text(f"a\n{adapters.EXCLUDE_BEGIN}\nb\n")
+    adapters.launch(ctx)
+    lines = exclude.read_text().splitlines()
+    assert lines[:2] == ["a", "b"] and lines.count(adapters.EXCLUDE_BEGIN) == 1
+    exclude.write_bytes(b"caf\xe9\n")  # not UTF-8: rewriting could change it
+    adapters.launch(ctx)
+    assert exclude.read_bytes() == b"caf\xe9\n"
+
+
+def test_codex_under_its_sandbox_gets_the_git_line_and_not_the_maity_line(tmp_path: Path) -> None:
+    ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex", sandbox=True)
+    prompt = adapters.launch(ctx).argv[-1]
+    assert adapters.GIT_PROMPT in prompt and adapters.CLAUDE_MAITY_PROMPT not in prompt
+    bare = context(tmp_path / "b", harness_id="codex", binary="/usr/bin/codex")
+    assert adapters.launch(bare).argv[-1] == adapters.START_PROMPT

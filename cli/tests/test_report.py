@@ -234,8 +234,49 @@ def test_an_upstream_on_a_local_branch_is_no_upstream(clone: Path) -> None:
     git(clone, "branch", "--quiet", "base")
     git(clone, "switch", "--quiet", "-c", "feature", "--track", "base")
     facts = gitfacts.collect(clone)
-    assert facts.remote is None
-    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
+    assert facts.remote is None and facts.upstream_set
+    # A stacked branch is not read as its own branch on origin, and the advice is not a plain
+    # push, which would leave it tracking the local branch (review of #1663).
+    (problem,) = gitfacts.mismatches(facts)
+    assert "not a branch on a remote" in problem and "git push" not in problem
+
+
+def test_one_upstream_key_alone_is_an_upstream_and_no_fallback(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "push", "--quiet", "origin", "local-only")
+    git(clone, "config", "branch.local-only.remote", "origin")  # no .merge
+    facts = gitfacts.collect(clone)
+    assert facts.remote_branch is None and facts.upstream_set
+    assert any("not a branch on a remote" in p for p in gitfacts.mismatches(facts))
+
+
+def test_the_branch_push_remote_wins_over_the_push_default(clone: Path) -> None:
+    origin = git(clone, "config", "--get", "remote.origin.url")
+    git(clone, "remote", "add", "fork", origin)
+    git(clone, "remote", "add", "other", origin)
+    git(clone, "config", "remote.pushDefault", "other")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "fork")
+    assert gitfacts.collect(clone).remote == "fork"
+
+
+def test_a_push_remote_without_a_url_is_no_upstream(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "nowhere")
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None and not facts.upstream_set
+    (problem,) = gitfacts.mismatches(facts)
+    assert "push remote nowhere has no URL" in problem and "git push origin" not in problem
+
+
+def test_a_derived_push_remote_git_would_read_as_an_option_is_refused(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "-x")
+    assert gitfacts.collect(clone).remote is None  # a dash is never asked about
+    git(clone, "config", "branch.local-only.pushRemote", "origin")
+    git(clone, "config", "--add", "remote.origin.url", "ext::sh -c touch% /tmp/x")
+    with pytest.raises(gitfacts.FactsError, match="plain `git push` sends it"):
+        gitfacts.collect(clone)
 
 
 def test_detached_and_dirty_are_both_reported(clone: Path) -> None:

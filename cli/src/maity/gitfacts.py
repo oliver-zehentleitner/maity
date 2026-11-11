@@ -50,6 +50,10 @@ class Facts:
     # an error, never "no pull request" (66da7721); `report` raises it unless the card's linked
     # pull request, read through the hub's probe, stands in (cli/context/report.md).
     forge_error: str | None = None
+    # branch.<b>.remote or .merge is set (an upstream, maybe a local or incomplete one); else
+    # the remote was the push target's (`_push_target`), or there was none.
+    upstream_set: bool = False
+    push_remote: str | None = None  # by name, for the advice when there is no upstream
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -183,7 +187,9 @@ def position(cwd: Path) -> tuple[str, str | None]:
 _HEAD_REF = re.compile(r"^refs/heads/[^\s~^:?*\[\\]+$")
 
 
-def _check_upstream(cwd: Path, branch: str, remote: str, merge_ref: str) -> None:
+def _check_upstream(
+    cwd: Path, branch: str, remote: str, merge_ref: str, derived: bool = False
+) -> None:
     """Refuse an upstream maity would not hand to git as it stands: a remote, its configured
     URL or the merge ref that reads as an option or names a remote helper
     (`<transport>::<address>`), or a merge ref outside refs/heads/. Any other remote
@@ -195,10 +201,16 @@ def _check_upstream(cwd: Path, branch: str, remote: str, merge_ref: str) -> None
     )
     values = [remote, merge_ref] + (urls.splitlines() if urls else [])
     if any(v.startswith("-") or "::" in v for v in values) or not _HEAD_REF.match(merge_ref):
-        raise FactsError(_unreadable(branch))
+        raise FactsError(_unreadable(branch, derived))
 
 
-def _unreadable(branch: str) -> str:
+def _unreadable(branch: str, derived: bool = False) -> str:
+    if derived:  # no upstream: the remote came from pushRemote, pushDefault or origin
+        return (
+            f"branch {branch} has no upstream, and the remote a plain `git push` sends it to "
+            f"(branch.{branch}.pushRemote, remote.pushDefault or origin) is not one maity "
+            "asks git about"
+        )
     return (
         f"branch {branch}'s upstream (branch.{branch}.remote / .merge) is not a remote and a "
         f"branch maity asks git about; set it with `git push -u origin {branch}`"
@@ -281,6 +293,16 @@ def track_own_branch(cwd: Path) -> Retrack:
     )
 
 
+def _push_remote(cwd: Path, branch: str) -> str:
+    """The remote a plain `git push` of `branch` goes to, by name: `branch.<b>.pushRemote`,
+    else `remote.pushDefault`, else `origin`."""
+    return (
+        _git(cwd, "config", "--get", f"branch.{branch}.pushRemote")
+        or _git(cwd, "config", "--get", "remote.pushDefault")
+        or "origin"
+    )
+
+
 def _push_target(cwd: Path, branch: str) -> tuple[str | None, str | None]:
     """For a branch without an upstream: the branch of its own name on the remote a plain
     `git push` would choose (`branch.<b>.pushRemote`, `remote.pushDefault`, else `origin`),
@@ -289,11 +311,7 @@ def _push_target(cwd: Path, branch: str) -> tuple[str | None, str | None]:
     (cli/context/report.md). None when the push could go elsewhere than what is read: the
     remote has a `pushurl` or a `pushInsteadOf` applies (the report reads the fetch URL), or it
     has `push` refspecs (the branch may land under another name)."""
-    remote = (
-        _git(cwd, "config", "--get", f"branch.{branch}.pushRemote")
-        or _git(cwd, "config", "--get", "remote.pushDefault")
-        or "origin"
-    )
+    remote = _push_remote(cwd, branch)
     if remote.startswith("-") or not _git(cwd, "config", "--get", f"remote.{remote}.url"):
         return None, None
     for key in ("pushurl", "push"):
@@ -313,15 +331,18 @@ def collect(cwd: Path) -> Facts:
     dirty = bool(_git_required(cwd, "status", "--porcelain", "--untracked-files=no"))
 
     remote = remote_branch = remote_head = None
+    upstream = False
     if branch:
         remote = _git(cwd, "config", "--get", f"branch.{branch}.remote")
         merge_ref = _git(cwd, "config", "--get", f"branch.{branch}.merge")
-        if remote is None and merge_ref is None:
+        # Either key set is an upstream of its own, complete or not: no fallback then.
+        upstream = remote is not None or merge_ref is not None
+        if not upstream:
             remote, merge_ref = _push_target(cwd, branch)
         if remote == ".":  # tracks a local branch: ls-remote would answer from this clone
             remote = None
         if remote and merge_ref:
-            _check_upstream(cwd, branch, remote, merge_ref)
+            _check_upstream(cwd, branch, remote, merge_ref, derived=not upstream)
             remote_branch = merge_ref.removeprefix("refs/heads/")
             remote_head = _remote_head(cwd, remote, merge_ref)
 
@@ -356,6 +377,8 @@ def collect(cwd: Path) -> Facts:
         pr_unknown_reason=unknown,
         branch_merged=merged,
         forge_error=forge_error,
+        upstream_set=upstream,
+        push_remote=_push_remote(cwd, branch) if branch and not upstream else None,
     )
 
 
@@ -368,11 +391,21 @@ def mismatches(facts: Facts) -> list[str]:
         problems.append("HEAD is detached; check out the branch the work is on")
         return problems
     if facts.remote is None or facts.remote_branch is None:
-        problems.append(
-            f"branch {facts.branch} has no upstream on a remote, and its push remote is not "
-            "one maity reads without one (none, or a pushurl or push refspec of its own); "
-            f"push it to `origin` (`git push origin {facts.branch}`) or set an upstream"
-        )
+        if facts.upstream_set:
+            problems.append(
+                f"branch {facts.branch}'s upstream is not a branch on a remote (a local branch, "
+                f"or branch.{facts.branch}.remote / .merge incomplete); set it to the branch on "
+                f"the remote it is pushed to (`git branch --set-upstream-to <remote>/"
+                f"{facts.branch}`)"
+            )
+        else:
+            target = without_userinfo(facts.push_remote or "origin")
+            problems.append(
+                f"branch {facts.branch} has no upstream, and maity cannot tell where a plain "
+                f"`git push` sends it: its push remote {target} has no URL, or a pushurl, push "
+                "refspec or pushInsteadOf of its own; give it an upstream on the remote it is "
+                f"pushed to (`git branch --set-upstream-to <remote>/{facts.branch}`)"
+            )
     elif facts.remote_head is None:
         problems.append(
             f"branch {facts.remote_branch} does not exist on {facts.remote}; push it. If it was "
