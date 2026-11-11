@@ -227,7 +227,7 @@ before PATH for a bare program name.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-grk7tg5temyc, from two Claude Code cloud sessions whose `gh` was missing or got HTTP 403 on GraphQL, so their reports were refused on linked cards (2026-11-07); the lead's go on the plan (Maity message, 2026-11-07); docs/api.md §11 (`GET /probe?pr=N&max_age=0`); the reviews of the pull request for card tsk-0nhgzdsek8dx (2026-11-11), read against `_probed_pr`, corrected this entry's sentences on which linked pull requests refuse
+**Source:** card tsk-grk7tg5temyc, from two Claude Code cloud sessions whose `gh` was missing or got HTTP 403 on GraphQL, so their reports were refused on linked cards (2026-11-07); the lead's go on the plan (Maity message, 2026-11-07); docs/api.md §11 (`GET /probe?pr=N&max_age=0`); PR #1635 and its reviews (Maity messages 108607 and 108620; 108816, 2026-11-11), read against `_probed_pr`, corrected this entry's sentences on which linked pull requests refuse
 **See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-07
 **See:** report.md#a-report-is-checked-against-the-cards-pull-request-without-a-flag-to-name-one — 8c58cebb-b7e1-4947-8776-8f5bcb6c566c — as of 2026-11-07
 **See:** report.md#a-merged-pull-requests-head-stands-in-for-a-deleted-branch — f720dd3c-3d21-4e4f-9eb2-3cdb248203ae — as of 2026-11-07
@@ -235,22 +235,23 @@ before PATH for a bare program name.
 
 When gh is missing, or is installed and fails (`gitfacts.collect` keeps that
 failure as `forge_error` instead of raising it), `maity report` reads the card
-and asks the hub's probe about each pull request the card links in the
-project's repository, at most five (more are named in one line and not read),
-with `max_age=0`; the hub may still answer from a read up to 30 seconds old
-(`FORCED_FLOOR`, §11.4), and a head that is that stale refuses, never files
-another commit. A pull request whose
-`head_sha` equals what `git ls-remote` answered for the branch, compared whole,
-is reported as `pr_status: found` with number, URL, head and state from the
-probe, and the terminal line says it was read by the hub's probe. The links are
-asked in order and the first match is the one reported, whatever the links
-before it read; only when none matches do the linked pull requests the probe
-read with another head refuse (exit 4), naming each head and the branch's. A
-probe that cannot be asked on any link ends the asking: nothing stands in and
-nothing refuses on its account. A probe that is not configured, unavailable or
-finds nothing changes nothing:
-the report goes on as before, refused on a linked card as 8c58cebb says, and a
-gh that failed is raised as the error it was, as 66da7721 says.
+and asks the hub's probe about each pull request the card links, at most five
+by repository and number (more are named in one line and not read), with
+`max_age=0`; a link to another repository is asked too and counts toward the
+five, but the probe reads only the project's repository, so such a link neither
+stands in nor refuses; the hub may still answer from a read up to 30 seconds
+old (`FORCED_FLOOR`, §11.4), and a head that is that stale refuses, never files
+another commit. A pull request whose `head_sha` equals what `git ls-remote`
+answered for the branch, compared whole, is reported as `pr_status: found` with
+number, URL, head and state from the probe, and the terminal line says it was
+read by the hub's probe. The links are asked in order and the first match is
+the one reported, whatever the links before it read; only when none matches do
+the linked pull requests the probe read with another head refuse (exit 4),
+naming each head and the branch's. A probe that cannot be asked about one link
+ends the asking: nothing stands in, and the links it read before refuse
+nothing. A probe that is not configured, unavailable or finds nothing changes
+nothing: the report goes on as before, refused on a linked card as 8c58cebb
+says, and a gh that failed is raised as the error it was, as 66da7721 says.
 
 A branch deleted after its merge is the same case without a remote head: where
 f720dd3c asks gh for the merged pull request by the branch's name, the report
