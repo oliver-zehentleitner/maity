@@ -904,7 +904,7 @@ window.MAITY_I18N["nl"] = {
   "chat.with": "Chat met {who}",
   "chat.with_label": "Chat met {name}",
   "chats.conversations": "Gesprekken",
-  "chats.hint": "Je chats in elk project, ongelezen eerst.",
+  "chats.hint": "Je chats in elk project, vastgezette eerst, dan de ongelezen.",
   "chats.in_project": "in {project}",
   "chats.no_project": "Geen project van jou met de naam {project}.",
   "chats.none": "Je beheert geen agents in je projecten en zit in geen groepschat.",

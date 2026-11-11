@@ -122,6 +122,10 @@ async def list_notifications(
     wait = wait_of(request)
     if wait and after is None:
         raise invalid({"wait": "needs_after"})
+    if wait and limit == 0:
+        # A wait with `limit=0` would hold for an item it may not list (§18.2, the
+        # maintainer's decision, seq 109132).
+        raise invalid({"wait": "needs_limit"})
     kinds = _kinds(_filters(kind, None, "kind"))
     slugs = _filters(project, None, "project")
     older = None

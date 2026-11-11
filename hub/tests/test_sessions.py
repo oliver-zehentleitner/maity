@@ -64,11 +64,53 @@ def test_a_login_records_what_the_list_shows(
     assert row.public_id == item["id"] and row.id_hash not in str(listed)
 
 
-def test_the_latest_call_moves_the_address(make_client: ClientFactory, human: str) -> None:
+def test_the_latest_call_moves_the_address_at_most_once_a_minute(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    """`last_seen_at` and `ip` are written at most once every 60 s (§2.4, §2.6.5)."""
+    now = [clock.now()]
+    clock.set_source(lambda: now[0])
     me = sign_in(make_client)
+    signed_in = me.get("/auth/sessions").json()["items"][0]
     elsewhere = make_client(peer="198.51.100.9")
     elsewhere.cookies.update(me.client.cookies)
-    assert elsewhere.get("/api/v1/auth/sessions").json()["items"][0]["ip"] == "198.51.100.9"
+
+    def seen() -> tuple[Any, Any]:
+        listed = elsewhere.get("/api/v1/auth/sessions").json()["items"][0]
+        with migrated.connect() as conn:
+            human_seen = conn.execute(
+                select(t.human.c.last_seen_at).where(t.human.c.handle == "maintainer")
+            ).scalar_one()
+        return listed, human_seen
+
+    now[0] += timedelta(seconds=59)
+    within, human_within = seen()
+    assert (within["ip"], within["last_seen_at"]) == (signed_in["ip"], signed_in["last_seen_at"])
+    now[0] += timedelta(seconds=1)
+    later, human_later = seen()
+    assert later["ip"] == "198.51.100.9"
+    assert later["last_seen_at"] != signed_in["last_seen_at"]
+    assert human_later > human_within  # the human's moves with the session's write
+
+
+def test_a_session_ended_within_the_minute_is_refused(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    """Within the minute the presence write matches nothing; the read still refuses a session
+    that ended or idled out since."""
+    me = sign_in(make_client)
+    assert me.get("/auth/session").status_code == 200
+    with migrated.begin() as conn:
+        conn.execute(update(t.human_session).values(ended_at=clock.now()))
+    assert me.get("/auth/session").status_code == 401
+    other = sign_in(make_client)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(t.human_session.c.ended_at.is_(None))
+            .values(expires_at=clock.now() - timedelta(seconds=1))
+        )
+    assert other.get("/auth/session").status_code == 401
 
 
 def test_the_list_is_the_callers_own_newest_first(
