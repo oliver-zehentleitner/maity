@@ -1145,6 +1145,6 @@ aiosqlite keeps SQLite on the same code path as the servers.
 - The loop-lag guard's reference in a process of its own, so that a computation holding the GIL on
   an app's loop no longer delays it: with its own GIL it would also no longer see the request
   threads' GIL contention, the very noise the margin cancels, so that noise would no longer cancel
-  out on the runner, and it would still see such a stall only from 150 ms over its lag (about
-  390–460 ms on the runner). The CPU time per callback catches it from 50 ms, with the reference in
-  the process.
+  out on the runner, and it would still see such a stall only from 150 ms over its own lag, which
+  no run has measured. The CPU time per callback catches it from 50 ms, with the reference in the
+  process.

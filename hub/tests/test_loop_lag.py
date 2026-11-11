@@ -152,8 +152,9 @@ def callback_cpu(monkeypatch: pytest.MonkeyPatch) -> Iterator[CallbackCpu]:
 
 @pytest.fixture
 def reference() -> Iterator[request_stats.LoadWindow]:
-    """An idle event loop beside the apps' for the length of the test: its window shows how late
-    the machine alone makes a loop's tick, with nothing of the hub's on it."""
+    """An idle event loop beside the apps' for the length of the test, with nothing of the hub's
+    on it: its window shows how late the machine and the process make a loop's tick (CPU, the
+    GIL, the garbage collector, and also a GIL held on an app's loop; see the module docstring)."""
     window = request_stats.LoadWindow()
     started = threading.Event()
     held: dict[str, Any] = {}
