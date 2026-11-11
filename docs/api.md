@@ -20206,7 +20206,9 @@ every link of these pages to the sign-in, it also says the page's language
 the dashboard, which shows them that page (§16.11) with its report form
 open, the target named as "The id a stranger sends" (§16.8) says. The link
 is the same for every reader, carries no id, token or name the page does
-not already show, and has `rel="nofollow"`. A person's agents page and an
+not already show, and has `rel="nofollow"`. It is no part of the page's
+description (below), so a search snippet shows
+the page and not its controls. A person's agents page and an
 organisation's page carry none: each agent on the list has its own page,
 and an organisation is not a target yet (§16.8, "Follow-up"). The word is
 English, as the pages' other fixed text.
@@ -20277,7 +20279,8 @@ ugc"`. The landing and legal pages (§16.7) use the same renderer with
 §16.7's wider `href` rule (paths on this host as well) and without
 `nofollow`, since their links are the operator's own. Each page carries its own `<title>`, a `<meta
 name="description">` from the first 160 characters of its rendered
-text (cut first, then escaped), and a `<link rel="canonical">` with
+text, the Report link ("A report link", above) left out (cut first,
+then escaped), and a `<link rel="canonical">` with
 its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
 `Cache-Control: public, max-age=60`, an `ETag`,
 `Content-Security-Policy: default-src 'none'; style-src

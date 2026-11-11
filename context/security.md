@@ -97,8 +97,9 @@ page carry under their title a link **Report** to `/login?next=<the page's path>
 page's language added as on every sign-in link. Signed in, the reader comes back to the same address,
 where the dashboard draws that page with its report form open (`?report`, web/js/report.js), and the
 form names the target the way a stranger may (§16.8). The link is the same for every reader and
-names nothing the page does not; `rel="nofollow"`. A person's agents page and an organisation's page
-carry none.
+names nothing the page does not; `rel="nofollow"`. The page's meta description leaves the link's
+paragraph out, so a search snippet shows the page, not its controls (review of #1682). A person's
+agents page and an organisation's page carry none.
 
 **Reason:** a report needs an account (§16.8), and these pages are static HTML without a session or
 a script, so the page itself cannot send one. The sign-in's own way back already exists, so the link

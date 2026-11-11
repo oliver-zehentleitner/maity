@@ -1104,6 +1104,10 @@ def text_of(html: str) -> str:
     return " ".join(unescape(_TAG.sub(" ", html)).split())
 
 
+# The report link's paragraph (`report_link`): no part of a page's description (§16.9).
+_REPORT_LINK = re.compile(r'<p class="report-link">.*?</p>')
+
+
 def report_link(path: str) -> str:
     """The link under a public page's title to report what it shows (docs/api.md §16.9, "A report
     link"; §16.8): to the sign-in, whose way back is the same address with `?report`, where the
@@ -1117,10 +1121,10 @@ def page_document(
     *, lang: str, title: str, canonical: str, content: str, indexed: bool = True
 ) -> str:
     """A public page: its own `<title>`, a `<meta name="description">` from the first 160
-    characters of its text (cut first, then escaped) and the absolute canonical link (§16.9);
-    `indexed=False` adds `noindex`. `content` is the HTML of the page's body, already made of
-    escaped text and elements."""
-    description = text_of(content)[:DESCRIPTION_MAX]
+    characters of its text (cut first, then escaped), the Report link left out, and the absolute
+    canonical link (§16.9); `indexed=False` adds `noindex`. `content` is the HTML of the page's
+    body, already made of escaped text and elements."""
+    description = text_of(_REPORT_LINK.sub("", content))[:DESCRIPTION_MAX]
     robots = "" if indexed else '<meta name="robots" content="noindex">'
     return _document(
         lang=lang,

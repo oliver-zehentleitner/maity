@@ -62,3 +62,15 @@ def test_a_person_and_an_agent_carry_it_and_the_agents_page_does_not(world: Worl
     path = f"/maintainer/agents/{handle}"
     assert link(path) in page(world, path)
     assert "report-link" not in page(world, "/maintainer/agents")
+
+
+def test_the_link_is_no_part_of_the_page_description(world: World) -> None:
+    """A search snippet shows the page, not its controls (§16.9; review of #1682)."""
+    for path in (BASE, f"{BASE}/board", "/maintainer"):
+        text = page(world, path)
+        start = text.index('<meta name="description" content="') + len(
+            '<meta name="description" content="'
+        )
+        description = text[start : text.index('"', start)]
+        assert "Report" not in description, (path, description)
+        assert description, path
