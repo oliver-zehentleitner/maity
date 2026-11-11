@@ -919,7 +919,9 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 raise invalid({"public_profile": "required"})
             values["public_profile"] = body.public_profile
             if body.public_profile:
-                # A hidden or removed profile stays so until an admin lifts the hold (§16.8).
+                # The owner's row first: a hide or a reset holds it until its hold is written,
+                # so this read waits and then sees that hold (§16.8).
+                avatars.lock_owner(conn, caller.human_id)
                 moderation.refuse_held(conn, "profile", caller.human_id)
         if "public_presence" in given:
             if body.public_presence is None:

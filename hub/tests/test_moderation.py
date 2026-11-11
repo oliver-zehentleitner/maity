@@ -162,10 +162,10 @@ def test_remove_drops_an_agents_motif_and_the_hold_refuses_a_new_one(
 
 
 @contextmanager
-def reset_waiting(migrated: Engine, agent_id: str, report_id: str) -> Iterator[Any]:
-    """A `remove` of the agent's profile in progress, as `moderation.apply` leaves it after
-    `_reset_profile` and its own insert of the hold, in the same transaction: the picture's
-    lock held, the hold written, nothing committed yet.
+def reset_waiting(migrated: Engine, owner_id: str, report_id: str) -> Iterator[Any]:
+    """A `remove` of `owner_id`'s profile in progress, as `moderation.apply` leaves it after
+    `_reset_profile` and its own insert of the hold, in the same transaction: the owner's
+    row lock held, the hold written, nothing committed yet. An agent's or a human's row.
     Yields a function that runs a change in the other transaction and then commits the
     reset (PostgreSQL, MariaDB)."""
     from maity_hub import avatars, clock
@@ -173,12 +173,12 @@ def reset_waiting(migrated: Engine, agent_id: str, report_id: str) -> Iterator[A
 
     with race(migrated) as r:
         reset = r.first
-        avatars.lock_owner(reset, agent_id)
+        avatars.lock_owner(reset, owner_id)
         reset.execute(
             t.moderation_hold.insert().values(
                 report_id=report_id,
                 target_type="profile",
-                target_id=agent_id,
+                target_id=owner_id,
                 action="remove",
                 at=clock.now(),
             )
@@ -222,6 +222,63 @@ def test_an_upload_while_a_reset_holds_the_lock_is_refused_by_its_hold(
     with reset_waiting(migrated, agent.id, made["id"]) as change:
         held(change(lambda: put_agent(agent, image())))
     assert owner.get(f"/agents/{agent.id}").json()["avatar_source"] == "generated"
+
+
+def test_a_display_name_set_while_a_reset_holds_the_lock_is_refused_by_its_hold(
+    team: dict[str, Any], make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.8: the display name reads the hold after the profile's row lock, so a change
+    that waited for a reset sees the hold it wrote and the name stays the handle."""
+    owner = team["owner"]
+    agent = flow.agent(make_client, owner)
+    profile = owner.get(f"/agents/{agent.id}").json()
+    # A reset leaves the name as the handle; the change under test tries to put another on it.
+    named = owner.patch(f"/agents/{agent.id}", {"display_name": profile["handle"]})
+    assert named.status_code == 200, named.text
+    made = report(team["pat"], {"type": "profile", "id": agent.id}, "impersonation").json()
+
+    def send() -> Any:
+        return owner.patch(f"/agents/{agent.id}", {"display_name": "Totally Legit Bank"})
+
+    with reset_waiting(migrated, agent.id, made["id"]) as change:
+        held(change(send))
+    again = owner.get(f"/agents/{agent.id}").json()
+    assert again["display_name"] == again["handle"]
+
+
+def test_a_public_profile_while_a_reset_holds_the_lock_is_refused_by_its_hold(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    """§16.8: turning a person's page on reads the hold after their row lock, so a change
+    that waited for a reset of that profile sees the hold and the page stays off."""
+    owner = team["owner"]
+    off = owner.patch("/me", {"public_profile": False})
+    assert off.status_code == 200, off.text
+    made = report(team["pat"], {"type": "profile", "id": owner.id}, "spam").json()
+    with reset_waiting(migrated, owner.id, made["id"]) as change:
+        held(change(lambda: owner.patch("/me", {"public_profile": True})))
+    assert owner.get("/me").json()["member"]["public_profile"] is False
+
+
+def test_a_public_profile_while_a_hide_holds_the_lock_is_refused_by_its_hold(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    """§16.8: `hide` on a profile locks the owner's row before it writes the hold, so
+    turning the page on waits for that hide and then reads the hold."""
+    from maity_hub import forge, reports
+    from tests.concurrency import finished, race, waiting
+
+    owner = team["owner"]
+    off = owner.patch("/me", {"public_profile": False})
+    assert off.status_code == 200, off.text
+    made = report(team["pat"], {"type": "profile", "id": owner.id}, "impersonation").json()
+    with race(migrated) as r:
+        reports.resolve(r.first, owner.id, made["id"], "hide", None, forge.Forge())
+        step = r.run(r.second, lambda: owner.patch("/me", {"public_profile": True}))
+        assert waiting(step)  # on the owner's row, which the hide holds
+        r.first.commit()
+        held(finished(step))
+    assert owner.get("/me").json()["member"]["public_profile"] is False
 
 
 def test_the_affected_account_is_told_never_who_reported(
