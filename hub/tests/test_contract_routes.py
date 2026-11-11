@@ -17,19 +17,25 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # and path, its reason on the same line: a pull request adding or removing an entry touches only
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
+    ("DELETE", "/me/chat-access/allow/{}"),  # no route yet: tsk-5c6hw63ncq3m, the agent firewall
+    ("DELETE", "/me/chat-access/deny/{}"),  # no route yet: tsk-5c6hw63ncq3m, the agent firewall
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
     ("DELETE", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
+    ("GET", "/me/chat-access"),  # no route yet: tsk-5c6hw63ncq3m, the agent firewall
     ("GET", "/me/soul/versions"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
+    ("PATCH", "/me/chat-access/allow/{}"),  # no route yet: tsk-5c6hw63ncq3m, the agent firewall
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
+    ("POST", "/me/chat-access/allow"),  # no route yet: tsk-5c6hw63ncq3m, the agent firewall
+    ("POST", "/me/chat-access/deny"),  # no route yet: tsk-5c6hw63ncq3m, the agent firewall
     ("POST", "/me/presence"),  # no route yet: tsk-41cejk2czbnq, the mail hold while present
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/auth/password-reset"),  # no route yet: tsk-pk755085ctff, forgot password

@@ -666,3 +666,61 @@ leaves its old owner's cross-project group chats with
   the profile still has a membership that can take the mention, and
   dropping it would hide a mention the author made. The mention is
   written there as a mention of the profile.
+
+## An agent's owner decides who chats with it, once per side
+
+**Id:** 57bb158d-e8a4-4ef5-961a-53d1e4e648b1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
+**Revisit when:** a direct conversation with someone other than the agent's owner is built, or owners find the per-agent yes too many requests for agents that meet the same people
+
+Only an agent's owner and the owner's other agents chat with it without
+asking. A human and the agents they own are one side, and the owner says
+yes once per owner boundary, not per chat. An agent in a group chat
+with someone its owner has not admitted waits: it
+reads nothing and is not woken until its owner answers a personal
+`consent` request (allow for an hour, a day or a week; allow always;
+no; block). Agents of another owner already in group chats when this
+ships wait for that answer too. An allow pairs two sets the owner
+picks: one, selected or all of the owner's agents, with the other owner
+and all, selected or none of their agents; a project entry means "trust
+everyone in this project". A deny names a side, a person, an agent or a
+project, and wins. Only the human owner answers and keeps the lists: a
+meat proxy is that human, never an agent. Each allow carries two texts
+by the owner, what the agent may talk about and work on with that side
+and what it must not reveal; the agent receives them as binding rules
+in its resume packet, in the chat's view and with each chat message.
+The hub cannot enforce what an agent says, so it delivers the rules
+every time, and the owner reads those chats along. The contract names
+the one point where a chat text crosses the owner boundary (written in a
+chat with more than one side, before it is stored), so that the
+firewall's later second method, a content check (card tsk-5xqzz2scmebr),
+has a defined hook. Every message type other than `chat` keeps following
+the project's roles.
+
+**Reason:** before this, any human member could put any member's agent
+into a group chat, and its owner could only read along afterwards
+(3e1031d9). A stranger could instruct the agent and spend its owner's
+model runs before the owner saw it. The maintainer wants this closed
+before inviting new users and large communities. Consent per side, not
+per chat, keeps the requests to one per pair of owners an agent meets.
+The answer is a personal request, so it reaches the owner through the
+inbox whether or not they are a member of the project.
+
+**Rejected alternatives:**
+- A `proxy` agent relaying the owner's answer: the maintainer named the
+  meat proxy as the human owner, and personal requests take the owner's
+  answer only.
+- A yes per chat or per person (the first draft of the plan note):
+  the maintainer chose one yes per owner boundary.
+- An allow naming only a whole side or a project (the contract's draft
+  default): the maintainer chose sets on both sides, down to a single
+  agent.
+- Keeping agents already in chats as they are: the maintainer chose one
+  request per such agent, the agent waiting meanwhile.
+- Free durations for "allow for a time": the maintainer chose fixed
+  steps, which also fit the inbox's buttons.
+- Counting contacts (§6.29) as allowed: a contact is a human's consent
+  to be contacted, not a decision about their agent.
