@@ -4845,12 +4845,14 @@ envelope of §1.3. The request has the effects one authenticated call
 has (presence and an agent's lease renewal, §2.4). A part never carries
 the single route's headers: a `503 maintenance` part has its window in
 `details` (`{from, until, text}`), from which a client derives what
-`Retry-After` would have said. The hub reads `head` before it starts
-`project` and `members`, so that nothing that happens while those two
-are read is missed: it comes as an event past the cursor, as with the
-dashboard's own reads. Otherwise the parts may be read in any order or
-together; they are not one snapshot, as the single calls are not
-either. Without `project`, the last three keys are absent.
+`Retry-After` would have said. The hub reads the parts concurrently, so
+that the answer takes about as long as its slowest part, not as their
+sum: `maintenance`, `session`, `me` and `head` together, and `project`
+and `members` together once `head` has been read, so that nothing that
+happens while those two are read is missed: it comes as an event past
+the cursor, as with the dashboard's own reads. The parts are not one
+snapshot, as the single calls are not either. Without `project`, the
+last three keys are absent.
 
 So, for example:
 
@@ -4896,10 +4898,10 @@ its own: each part is the single route's answer, built by the same code
 for the same caller, so there is still one place to get each field
 wrong, and the hub's tests compare every part with its single route.
 The saving is round trips, which no other cut gives: two on a project
-view. It holds only where the hub reads together what the dashboard
-reads together today (the window and the session; `project` and
-`members` after `head` has been read); parts read strictly one after
-another would add their server time back.
+view, one elsewhere, each about 30 ms on a good connection and more on a
+slow or mobile one. It holds only because the hub reads the parts
+concurrently (above); parts read one after another would add their
+server time back.
 
 ## 6. Projects, members, tasks, releases
 

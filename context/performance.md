@@ -118,7 +118,7 @@ instance admin, who measures and may read the instance's metadata anyway, gets i
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's decision of 2026-11-11 on measure 10 of the list above; the shape agreed with the lead on card tsk-x4z69ff785y6; `GET /bootstrap`, §5.4 of `docs/api.md`
+**Source:** the owner's decision of 2026-11-11 on measure 10 of the list above, and his second answer the same day, after the saving was found to be two round trips and not five to eight: build it for slow and mobile connections, with the hub reading the parts concurrently; the shape agreed with the lead on card tsk-x4z69ff785y6; `GET /bootstrap`, §5.4 of `docs/api.md`
 **Revisit when:** the route is measured against the dashboard's waves (the saving is expected until then), a part needs a field or a right its single route does not give, or the dashboard's boot no longer reads these routes in waves
 
 `GET /bootstrap` gives the dashboard's first reads (the maintenance window, the session,
@@ -133,9 +133,11 @@ route stays.
 `/me`; then the project, its members and the head together). The bundle saves two round
 trips on a project view and one elsewhere. One round trip from a development machine to the
 hub measured about 30 ms on a kept connection (2026-11-11, `GET /api/v1/maintenance`, ten
-runs, 29–45 ms); the server time of each call is not measured, so the time the route saves
-is expected, not measured, until the route exists and is measured against the waves. The saving holds only where
-the hub reads together what the dashboard reads together today. Once the hub answers the
+runs, 29–45 ms), more on a slow or mobile connection, which is what the route is for. The
+server time of each call is not measured, so the time the route saves is expected, not
+measured, until the route exists and is measured against the waves. The saving holds only
+because the hub reads the parts concurrently, the head before the project and its members:
+read one after another, their server time would eat it. Once the hub answers the
 route, 63c48583's Revisit when ("the hub answers /auth/session and /me in one read") has
 come, and that entry is checked again with the web change. A part
 built by the single route's own code for the same caller has one place to get each field
