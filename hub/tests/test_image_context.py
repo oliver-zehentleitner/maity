@@ -40,7 +40,7 @@ def compile_pattern(pattern: str) -> Matcher:
     is compared whole, one ending in `**` (and nothing else wild) by prefix, and one starting with
     `**` by suffix, the way patternmatcher sorts them before it falls back to a regular expression.
     """
-    out, kind, i = "^", "exact", 0
+    out, kind, i = "", "exact", 0
     while i < len(pattern):
         ch = pattern[i]
         i += 1
@@ -86,8 +86,8 @@ def compile_pattern(pattern: str) -> Matcher:
     if kind == "suffix":
         suffix = pattern[2:]
         return lambda path: path.endswith(suffix) or (suffix[:1] == "/" and path == suffix[1:])
-    regex = re.compile(out + "$")
-    return lambda path: regex.match(path) is not None
+    regex = re.compile(out)
+    return lambda path: regex.fullmatch(path) is not None
 
 
 def read_ignore(text: str) -> list[tuple[bool, Matcher]]:
@@ -146,6 +146,7 @@ def unread_keys(project: dict[str, Any]) -> list[str]:
     if "license-files" in project.get("project", {}):
         unread.append("project.license-files")
     hatch = project.get("tool", {}).get("hatch", {})
+    unread += [f"tool.hatch.metadata.hooks.{k}" for k in hatch.get("metadata", {}).get("hooks", {})]
     if "path" in hatch.get("version", {}):
         unread.append("tool.hatch.version.path")
     build = hatch.get("build", {})
@@ -174,11 +175,13 @@ def build_inputs() -> list[str]:
         "teach build_inputs() to collect them: " + ", ".join(unread)
     )
     inputs.append("hub/pyproject.toml")
-    readme = project["project"].get("readme")
-    if isinstance(readme, str):
-        inputs.append(f"hub/{readme}")
-    elif isinstance(readme, dict) and "file" in readme:
-        inputs.append(f"hub/{readme['file']}")
+    # The readme and a license given as a file are read for the wheel's metadata.
+    for key in ("readme", "license"):
+        value = project["project"].get(key)
+        if key == "readme" and isinstance(value, str):
+            inputs.append(posixpath.normpath(f"hub/{value}"))
+        elif isinstance(value, dict) and "file" in value:
+            inputs.append(posixpath.normpath(f"hub/{value['file']}"))
     hatch = project.get("tool", {}).get("hatch", {}).get("build", {})
     packages = hatch.get("targets", {}).get("wheel", {}).get("packages")
     assert packages, "hub/pyproject.toml names no wheel packages (tool.hatch.build.targets.wheel)"
@@ -266,6 +269,9 @@ def test_every_wheel_build_input_passes_the_image_allowlist() -> None:
         (["*", "!web/j**"], "web/js/app.js", False),
         (["*", "!web/j?"], "web/js", False),
         (["*", "!web/j?"], "web/j/s", True),
+        # The whole name must match: a newline after `.py` is not the end of the name.
+        (["*", "!hub/*.py"], "hub/hatch_build.py", False),
+        (["*", "!hub/*.py"], "hub/hatch_build.py\n", True),
     ],
 )
 def test_the_matcher_follows_dockers_rules(lines: list[str], path: str, out: bool) -> None:
@@ -289,6 +295,7 @@ def test_unread_pyproject_keys_are_named() -> None:
         "project": {"license-files": ["LICENSE"]},
         "tool": {
             "hatch": {
+                "metadata": {"hooks": {"custom": {}}},
                 "version": {"path": "src/maity_hub/__init__.py"},
                 "build": {
                     "include": ["x"],
@@ -301,6 +308,7 @@ def test_unread_pyproject_keys_are_named() -> None:
     }
     assert unread_keys(project) == [
         "project.license-files",
+        "tool.hatch.metadata.hooks.custom",
         "tool.hatch.version.path",
         "tool.hatch.build.include",
         "tool.hatch.build.hooks.vcs",

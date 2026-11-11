@@ -217,19 +217,21 @@ them at one version.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the jour fixe of 2026-11-06 (round jfx-nerr4n29p2ce), card tsk-4x5fmke93m1r: `hub/hatch_build.py` became a build input in #1424 and was missing from the image's context until the image job failed; `hub/tests/test_image_context.py`
-**Revisit when:** the image's build stage reads a file the test does not collect (a new `COPY`, a requirements file named outside the Dockerfile), `hub/pyproject.toml` takes up a key the test refuses as unread (`force-include`, `include`, `shared-data`, another build hook, `license-files`, a version `path`), Docker's patternmatcher changes how `.dockerignore` patterns match, or the build stops using `deploy/Dockerfile.dockerignore`
+**Revisit when:** the image's build stage reads a file the test does not collect (a new `COPY`, a requirements file named outside the Dockerfile), `hub/pyproject.toml` takes up a key the test refuses as unread (`force-include`, `include`, `shared-data`, another build or metadata hook, `license-files`, a version `path`) or reads files through a key the test neither collects nor refuses, Docker's patternmatcher changes how `.dockerignore` patterns match, or the build stops using `deploy/Dockerfile.dockerignore`
 
 `deploy/Dockerfile.dockerignore` is an allowlist: `*`, then a `!` line for each thing the build needs. A new
 build input nobody adds there is missing from the context, and only the image job noticed: in #1424 it failed
 about ten seconds after it started, but only once the pull request was pushed.
 `hub/tests/test_image_context.py` collects what the build stage reads from the files the build reads it from:
-the `hub/requirements/*.txt` that `deploy/Dockerfile` names, `hub/pyproject.toml` with its `readme`, wheel
-`packages` and custom build hook, and the keys of `hatch_build.py`'s `BUNDLED` (read from its syntax tree, as the
-hook imports hatchling). A key of `hub/pyproject.toml` through which hatchling would read further files, and
-which the test does not follow, fails it by name. It runs every git-tracked file of those through a port of moby's
+the `hub/requirements/*.txt` that `deploy/Dockerfile` names, `hub/pyproject.toml` with its `readme`, a `license`
+given as a file, its wheel `packages` and custom build hook, and the keys of `hatch_build.py`'s `BUNDLED` (read from its syntax tree, as the
+hook imports hatchling). These keys of `hub/pyproject.toml`, through which hatchling would read further files and
+which the test does not follow, fail it by name: `project.license-files`, `tool.hatch.version.path`, any
+`tool.hatch.build` key but `targets`, `hooks` and `exclude`, any build hook but `custom`, any wheel-target key but
+`packages` and `exclude`, and any metadata hook. It runs every git-tracked file of those through a port of moby's
 `ignorefile` and `patternmatcher` (v0.6): a BOM dropped, `#` a comment in the first column only, each pattern
 cleaned (`.` and `..` resolved); `*` and `?` stop at `/`, `**/` matches zero or more directories, a leading `**`
-with nothing wild after it is a suffix, a trailing one a prefix; a match on a parent directory counts and the last
+with nothing wild after it is a suffix, a trailing one a prefix, and a regular expression matches the whole name; a match on a parent directory counts and the last
 matching line decides; a lone `!` and a trailing `\` are refused, as Docker refuses them. It names each excluded
 file; an input with no tracked file fails too, and so does a checkout without `deploy/Dockerfile` or the ignore
 file (only a tree without git, an sdist, skips it). When it was written, the port picked exactly the files a real
