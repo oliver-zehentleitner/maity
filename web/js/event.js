@@ -47,8 +47,10 @@ window.Maity = window.Maity || {};
   // tells the two tombstones apart in every case, the member-only one included. One page of one item, oldest
   // first from just below the seq, without a type (a tombstone is listed only unfiltered):
   // the seq is the first event that page examines, so the scan budget cannot pass it by, and
-  // `after` stays valid at 2⁶³ − 1 where `before` = seq + 1 would not. seq ≥ 1 here (0 is
-  // always a 404). Any failure is "not listed": the tombstone is then drawn on this page.
+  // `after` stays valid at 2⁶³ − 1 where `before` = seq + 1 would not. The listed seq arrives
+  // as a JSON number, so String(first.seq) === seq is exact only up to 2⁵³, the same limit as
+  // Messages' own mark (js/messages.js); no project is near it (spq4, #1629 R3). seq ≥ 1 here
+  // (0 is always a 404). Any failure is "not listed": the tombstone is then drawn on this page.
   async function listedTombstone(ctx, seq) {
     try {
       const page = await M.api.get(ctx.base + "/messages?after=" + (BigInt(seq) - BigInt(1)).toString() + "&limit=1");

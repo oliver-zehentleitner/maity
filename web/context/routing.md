@@ -285,7 +285,7 @@ The page's link to `/explore` is a page load, as every link there is
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11; its review (a chat's tombstone without a conversation, an answer after the page was left), 2026-11-11; its second review (a removed project message belongs in Messages per §8.9: the listing tells it from a chat's tombstone, fmzu 108227, vuur 108230; its audience stays and tells most but not all of them apart, spq4 108278, vuur 108281), 2026-11-11
+**Source:** card tsk-6g2h8dag2fkg (step 3: the link opens the message where it lives, scrolls to it and highlights it, and without access shows "not visible"); docs/api.md §8.9 "The answer" (where an event lives) and "The dashboard's links", §16.11 (`events/<seq>`); the rule that opening a chat costs a known number of requests (tsk-r1adgwp0a5dr); the dashboard's implementation (PR 3 of the card), 2026-11-11; its review (a chat's tombstone without a conversation, an answer after the page was left), 2026-11-11; its second review (a removed project message belongs in Messages per §8.9: the listing tells it from a chat's tombstone, fmzu 108227, vuur 108230; its audience stays and tells most but not all of them apart, spq4 108278, vuur 108281), 2026-11-11; its third review (the seq compared exactly only up to 2⁵³, a removed message about a card or request opening that, spq4 108392, vuur 108395), 2026-11-11
 **Revisit when:** the event answer itself tells a project tombstone from a chat's (then the listing read goes), the hub serves a chat's messages around a given `seq` (then a chat can open at it in one read), the card panel lists the messages about a card, or readers report links that stop short of an old message
 
 `/<owner>/<slug>/events/<seq>` (`js/event.js`, no tab) reads
@@ -305,13 +305,18 @@ trust or watchers has one more. A project message to one member has
 every case. §8.9 puts the project tombstone in Messages and the chat's
 nowhere but the page, so the page asks the one place that tells them
 apart in every case instead of guessing: for
-a message with no place and no type it reads the Messages listing (§8.8)
+a message with no type, no conversation for this reader and no card or
+request it is about (a removed one about a card or request opens that
+card or request, its subject kept) it reads the Messages listing (§8.8)
 once, `…/messages?after=<seq − 1>&limit=1` without a type (a tombstone is
 listed only unfiltered). The hub keeps a message's conversation through
 its redaction and never lists a chat's, so the project tombstone is that
 page's one item and the chat's is not; the seq is the first event the page
 examines, so the scan budget cannot pass it by, and `after` stays valid at
-2⁶³ − 1 where `before = seq + 1` would not. Listed, it opens in Messages,
+2⁶³ − 1 where `before = seq + 1` would not. The listed seq is compared as
+the JSON number the hub sends, so above 2⁵³ the match is not exact, as in
+Messages' own mark (`js/messages.js`); no project is near it (review of
+#1629 R3). Listed, it opens in Messages,
 marked; not listed, or the read fails in any way, the tombstone is drawn
 on the event's page, as removed. The extra read is only for that
 tombstone; every other event is placed from its one read. `#seq-<n>`
@@ -362,7 +367,9 @@ Routing a typeless tombstone by its audience (one token that is not
 places most of them, but a member-only project message cannot be told
 apart from a chat by audience, so a removed project message to one member
 would still be drawn on the page, a deviation from §8.9's place for it
-(spq4 108278, vuur 108281).
+(spq4 108278, vuur 108281). Parsing the listing with a BigInt-aware JSON
+reader for the seq above 2⁵³: the whole app reads seqs as numbers, and
+Messages could not mark such a message anyway (spq4 108392).
 
 ## `/explore` and `/for/<slug>` are the hub's pages: a click on a link to them is a page load, and they stay routes
 
