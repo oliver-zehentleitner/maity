@@ -432,8 +432,12 @@ instance in place.
   hub takes one record per open run.
 - Letting a report of an older generation open or end a run: the
   runner's old process is about to be replaced, and an opening the
-  current generation never made would start a window for it; a run
-  opened then loses its record, which is rare and stated.
+  current generation never made would start a window for it. A new
+  generation ends the open run instead, so the old generation's run
+  loses its record, which is rare and stated.
+- Keeping an open run across a new generation: the new generation
+  could not open its own run while the old one stayed open, and nothing
+  in the protocol makes the runner close the old one first.
 - An id the runner chooses and sends with the opening report: it
   works, but leaves two ids for one run and a runner bug that reuses
   one; the hub's own id cannot repeat.

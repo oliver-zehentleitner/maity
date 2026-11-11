@@ -15525,7 +15525,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`, `replaced`, `replace_failed` (§15.14) |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
-| `open_run` | supervised only: `{id, opened_at}` of the run the hub saw open, else `null`. `id` is opaque, issued by the hub, unique within the placement and never issued again; `opened_at` is the `reported_at` of the report that opened it (§15.7). The runner names `id` in the run's usage record (§15.15) |
+| `open_run` | supervised only: `{id, opened_at}` of the run the hub saw open, else `null`. `id` is opaque, issued by the hub, unique within the placement and never issued again; `opened_at` is the `reported_at` of the report that opened it (§15.7). The runner names `id` in the run's usage record (§15.15). A new `generation` sets it to `null` |
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
 | `session_hint` | from the runner's report: what the operator types to look at the session; never a secret by construction |
 | `logs_hint` | set by the hub: `maity runner logs <placement id>` |
@@ -17350,13 +17350,18 @@ arrives after its run ended, or names a run the hub never opened — is
 `conflict` (`details.reason: run_closed`). The check and the store are
 one step, so a run has at most one record. The runner sends the report
 that ends a run only after its usage call has answered, or after it
-has given the call up following retries for at most 5 minutes; a record
-given up is lost. While it retries, the run stays open and silent, and
+has given the call up following retries for at most 5 minutes. A record
+the hub never accepted is lost; after unanswered retries the runner
+cannot know whether its first send was stored, and a stored record
+stays in the totals. While it retries, the run stays open and silent, and
 the hub counts that silence as for any open run (§15.14). A record never lands on another run's cards, and a
-record refused as `run_closed` is lost from every total. A report of an
-older generation neither opens nor ends a run (§15.7): while the runner
-still runs the old generation, a run it opens then has no `open_run`
-and its record is lost.
+record refused as `run_closed` is lost from every total. A new generation (§15.5: a change of the
+spec, a restart, a rejoin) ends an open run at that moment: `open_run`
+becomes `null`, and the old generation's run takes no record
+(`run_closed`). A report of an older generation neither opens nor ends
+a run (§15.7), so a run the old process opens before the runner acts on
+the new generation has no `open_run` either; the first change of `run`
+to `open` under the new generation opens the next run.
 
 **When the hub starts keeping usage.** The hub release that builds this
 section opens a holding, from the moment of its migration, for every
