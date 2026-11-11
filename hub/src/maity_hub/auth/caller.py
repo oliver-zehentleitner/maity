@@ -261,9 +261,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
         .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
         .where(t.human_session.c.id_hash == id_hash)
     ).first()
-    if row is None or (
-        touched != 1 and (row.ended_at is not None or not session_alive(row, now))
-    ):
+    if row is None or (touched != 1 and (row.ended_at is not None or not session_alive(row, now))):
         raise unauthenticated("the session has ended or expired")
     if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
         raise unauthenticated("the session has ended or expired")
