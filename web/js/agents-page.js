@@ -665,7 +665,7 @@ window.Maity = window.Maity || {};
     const placementsSlot = h("div", { class: "placements-slot" });
     append(root, M.org ? agentsTabs(ctx, "list") : null, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, M.t("agents.project.title")), memberAdds ? limitNote : null,
       h("div", { class: "agents-head-actions" }, addProfile.button, mayAdd ? addButton : null)),
-      h("p", { class: "hint" }, (() => {
+      h("p", { class: "hint agents-project-hint" }, (() => {
         const values = { name: ctx.project.name || ctx.slug, link: h("a", { href: "/agents" }, M.t("agents.title")) };
         return ctx.canAdmin ? M.tn("agents.project.hint_admin", values) : M.tn("agents.project.hint", values);
       })()),

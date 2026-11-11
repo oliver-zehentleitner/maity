@@ -521,6 +521,65 @@ def test_a_failed_clone_logs_why_and_reports_only_the_code(
     assert "maity runs no git" not in repr(reports)
 
 
+# What a session of the agent could leave behind for the next one, or for a person's git: each
+# points git at another repository. The sandbox keeps `config.worktree` from it, not the others.
+PLANTED = {
+    "commondir": ("commondir", "../../other/.git\n"),
+    "worktrees": ("worktrees/elsewhere/gitdir", "/somewhere/else/.git\n"),
+    "config.worktree": ("config.worktree", "[core]\n\thooksPath = /tmp/h\n"),
+}
+
+
+@pytest.mark.parametrize("planted", sorted(PLANTED))
+def test_a_clone_with_a_planted_redirect_does_not_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch, planted: str
+) -> None:
+    """End to end: the start reads the existing clone as maity's own git and `gc` do, and
+    refuses it before the join and the harness; the report carries the codes, the log why.
+    Nothing tries again: the clone stays as it is until someone looks at it."""
+    sup, backend, reports, _, logs = world
+    sup.client = Pickups(PICKUP)
+    calls = joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    entry, text = PLANTED[planted]
+    (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
+    (place.path / ".git" / entry).write_text(text)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
+        "failed", "workspace_in_use", "not_a_plain_clone", None
+    )  # fmt: skip
+    assert calls == [] and backend.started == []
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    assert any(line.startswith("plc-0003: workspace_in_use: .git/") for line in lines), lines
+    assert "plc-0003: failed workspace_in_use not_a_plain_clone (generation 1)" in lines
+    assert ".git/" not in repr(reports)
+    assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
+
+
+def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What Claude Code's sandbox leaves in a clone it ran in (empty) is no plant."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    for entry in ("config.worktree", "objects/info/alternates"):
+        (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
+        (place.path / ".git" / entry).write_text("")
+    for entry in ("remotes", "info/.claude-sandbox-noreplace",
+                  "objects/info/.claude-sandbox-noreplace",
+                  "objects/info/commit-graphs/.claude-sandbox-noreplace"):  # fmt: skip
+        (place.path / ".git" / entry).mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+
+
 def test_a_pickup_not_found_fails_the_join_without_a_detail(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
