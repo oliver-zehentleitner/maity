@@ -17,6 +17,7 @@ from sqlalchemy import Connection, exists, or_, select, update
 from maity_hub import tables as t
 from maity_hub.auth.caller import SESSION_IDLE
 from maity_hub.ratelimit import Limiter
+from maity_hub.seen import SEEN_EVERY
 
 PRESENT_FOR = timedelta(minutes=2)
 MOVE = timedelta(minutes=1)
@@ -51,7 +52,8 @@ def held(conn: Connection, human_id: str, now: datetime, grace: timedelta) -> bo
                     session.human_id == human_id,
                     session.ended_at.is_(None),
                     session.expires_at > now,
-                    session.last_seen_at > now - SESSION_IDLE,
+                    # session_alive(): the idle time runs from the latest call (§2.4)
+                    session.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,
                     session.present_until > now - grace,
                 )
             )

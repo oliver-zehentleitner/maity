@@ -386,14 +386,37 @@ def test_minutes_online_count_working_calls_not_only_long_polls(
     with migrated.begin() as conn:
         member_of = dict(conn.execute(select(t.membership.c.agent_id, t.membership.c.id)).all())
         conn.execute(
-            update(t.agent_session)
-            .where(t.agent_session.c.membership_id == member_of[idle.id])
-            .values(last_seen_at=now[0] - timedelta(minutes=5))
+            update(t.credential)
+            .where(t.credential.c.membership_id == member_of[idle.id])
+            .values(last_used_at=now[0] - timedelta(minutes=5))
         )
         rounds.record_presence(conn, now[0])
         counted = set(conn.execute(select(t.presence_minute.c.membership_id)).scalars())
     agents = {member_of[a.id] for a in (working, idle)}
     assert counted & agents == {member_of[working.id]}  # humans online count too (§20.2)
+
+
+def test_an_instance_that_called_within_the_minute_after_a_write_is_online_from_its_credential(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """The session's `last_seen_at` is written at most once a minute (§2.4); the minutes online
+    and the instance choice read each instance's latest call from its credential, written on
+    every call."""
+    agent = flow.agent(make_client, owner, role="admin")
+    start = now[0]
+    agent.resume()  # T: the session's last_seen_at
+    now[0] = start + timedelta(seconds=59)
+    assert agent.get("/me").status_code == 200  # T + 59: the session's last_seen_at stays
+    now[0] = start + timedelta(seconds=121)
+    with migrated.begin() as conn:
+        membership = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent.id)
+        ).scalar_one()
+        [instance] = rounds._instances(conn, [membership])[membership]
+        rounds.record_presence(conn, now[0])
+        counted = set(conn.execute(select(t.presence_minute.c.membership_id)).scalars())
+    assert instance["last_seen_at"].replace(tzinfo=UTC) == start + timedelta(seconds=59)
+    assert membership in counted  # its latest call was 62 s ago
 
 
 def test_two_pods_counting_one_minute_both_commit(

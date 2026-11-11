@@ -215,7 +215,8 @@ def test_a_report_replay_answers_only_a_member(
     other = flow.human(make_client, migrated, "other")
     with migrated.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
-    factory.membership(migrated, project_id, "admin", human_id=other.id)
+    # Seen at the join, as every join writes it: a call within the minute writes nothing (§2.4).
+    factory.membership(migrated, project_id, "admin", human_id=other.id, last_seen_at=clock.now())
     from tests.test_jour_fixe import ensure_series, grant, start
 
     sid = ensure_series(owner)
