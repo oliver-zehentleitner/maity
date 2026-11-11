@@ -265,7 +265,12 @@ window.Maity = window.Maity || {};
   // ({agentId: [credential]}), or a function asked for the agents placed here only, once each
   // ((ids) => that map): a project with many agents and few placements reads few lists
   // (tsk-d61rvjm6gteh).
-  async function section(ctx, credentials) {
+  // opts (all optional): `own` lists only the placements of one's own agents and offers no start
+  // (the /agents tab, one section per project); `title` replaces the heading's words; `id` makes
+  // the heading's id unique where one page holds several sections.
+  async function section(ctx, credentials, opts) {
+    opts = opts || {};
+    const titleId = "placements-title" + (opts.id ? "-" + opts.id : "");
     const loads = typeof credentials === "function";
     const creds = loads ? {} : (credentials || {});
     const asked = new Set();
@@ -276,7 +281,7 @@ window.Maity = window.Maity || {};
       ids.forEach((id) => asked.add(id));
       try { Object.assign(creds, await credentials(ids)); } catch (err) { /* no rejoin offered where they are unknown */ }
     };
-    const box = h("section", { class: "placements", "aria-labelledby": "placements-title" });
+    const box = h("section", { class: "placements", "aria-labelledby": titleId });
     const list = h("ul", { class: "placement-list" });
     const status = M.statusLine();
     let items = [];
@@ -291,6 +296,7 @@ window.Maity = window.Maity || {};
       const m = p.agent && p.agent.id && ctx.memberById ? ctx.memberById[p.agent.id] : null;
       return !!m && m.owner_id === ctx.me.id;
     };
+    const listed = (list) => (opts.own ? list.filter(owns) : list);
     const runnerOwner = (p) => ctx.canAdmin && ctx.me.kind === "human" && mine.has(p.runner.id);
     // Waiting for consent, the inbox answers: a stop here would withdraw
     // the request and a restart approve it, unasked (§15.6, settling).
@@ -359,7 +365,7 @@ window.Maity = window.Maity || {};
 
     function draw() {
       if (!items.length) {
-        append(clear(list), h("li", { class: "empty muted" }, M.t("placements.empty")));
+        append(clear(list), h("li", { class: "empty muted" }, opts.own ? M.t("placements.own.empty") : M.t("placements.empty")));
         return;
       }
       append(clear(list), items.map((p) => h("li", { class: "placement", "data-placement": p.id },
@@ -393,7 +399,7 @@ window.Maity = window.Maity || {};
         try {
           do {
             again = false;
-            items = (await M.api.getAll(ctx.base + "/placements")).items;
+            items = listed((await M.api.getAll(ctx.base + "/placements")).items);
             await credentialsFor(items);
           } while (again);
           if (!busy.size) draw();
@@ -416,19 +422,20 @@ window.Maity = window.Maity || {};
       if (!events.some((e) => EVENTS.test(e.kind))) return;
       if (loaded) reread(); else missed = true;
     });
+    const heading = () => h("h3", { id: titleId }, opts.title || M.t("placements.title"));
     try {
-      items = (await M.api.getAll(ctx.base + "/placements")).items;
+      items = listed((await M.api.getAll(ctx.base + "/placements")).items);
     } catch (err) {
-      append(box, h("h3", { id: "placements-title" }, M.t("placements.title")), M.errorBox(err));
+      append(box, heading(), M.errorBox(err));
       return box;
     }
     await credentialsFor(items);
     draw();
     loaded = true;
     if (missed) reread();
-    append(box, h("h3", { id: "placements-title" }, M.t("placements.title")),
-      h("p", { class: "muted" }, M.t("placements.hint")),
-      await starting(), list, status.el);
+    append(box, heading(),
+      opts.own ? null : h("p", { class: "muted" }, M.t("placements.hint")),
+      opts.own ? null : await starting(), list, status.el);
     return box;
 
     // Start on a runner: for a human with members:admin, over the runners of their own that

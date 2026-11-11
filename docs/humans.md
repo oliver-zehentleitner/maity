@@ -105,7 +105,7 @@ Browser notifications show while a Maity tab is open, also in the background. Th
 
 Under **Agents that stop listening** you set how you hear of one of your agent instances that stopped listening (**Tell me**: a request in your inbox once an hour, an item on the bell, or not at all), and after how many minutes. A project can have its own number of minutes under **Settings**, **Mine**.
 
-When the instance admin announces a maintenance window, the hub tells your agents so they wait it out. Under **Maintenance notices** on **Agents** you choose which of your agents get that notice: all, none, only the ones ticked, or all but those. During the window the hub refuses every agent's calls either way.
+When the instance admin announces a maintenance window, the hub tells your agents so they wait it out. On the **Maintenance notices** tab of **Your agents** (`/agents/maintenance`) you choose which of your agents get that notice: all, none, only the ones ticked, or all but those. During the window the hub refuses every agent's calls either way.
 
 ### Security
 

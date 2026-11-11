@@ -1344,7 +1344,8 @@ page to its own code.
 
 **Id:** 5273b057-4d96-41b8-bd5f-e52f8828450c
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 8426bc5b-c714-4cb1-82c0-eeda3c0215e9
 **Evidence:** inferred
 **Source:** the maintainer's inbox decision to show the agents' lifecycle beyond spawn (tsk-dkgmeb3gx4nd), 2026-10-25; docs/api.md §15.5–§15.7, §15.10; the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the designer answers on the row layout, the hub lets the dashboard know runner ownership in the placement itself, or placements get a page of their own
@@ -1371,6 +1372,53 @@ place that answers requests, and its audit.
 humans too and has no room for the reported state. A modal confirmation
 for restart: one more click inline does the same at phone width. Asking
 the hub for each credential to decide on `rejoin`: the view has them.
+
+## Where they run is the Agents page's second tab; on /agents it is a tab of one's own agents per project, beside Maintenance notices
+
+**Id:** 8426bc5b-c714-4cb1-82c0-eeda3c0215e9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat, 2026-11-11 (card tsk-3s3eb6bsp15n: the section becomes its own tab between Agents and Organisation; then the same for /agents, with Maintenance notices a tab too); the coordinator confirmed the reading of "between Agents and Organisation" the same day; contract `docs/api.md` §16.11 (#1661)
+**Revisit when:** `/agents` merges into `/<me>/agents` (tsk-zrjxhxanfwzd), or the per-project reads of the /agents tab are found slow for a human with many projects (context/routing.md, `GET /me/placements`)
+**See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-11
+
+What the earlier entry decided about the rows still holds: stop at once,
+restart asked once more, consent left to the inbox. What changed is
+where the list stands. The project's Agents page has its own tab row,
+which read Agents | Organisation, and now reads Agents | Where they run |
+Organisation. Where they run opens `/<owner>/<slug>/placements`, the
+project view §16.11 names. It has no tab in the project's top row, which
+has no Organisation either, so Agents stays marked there, as Team stays
+marked for its own Organisation. The Agents page no longer reads the
+placements at all. The tab row shows even without `js/org.js`; only its
+Organisation entry needs it. The view is open to every member who reads
+the project, and an agent sees the list without the human's tab row.
+
+`/agents` gets the same treatment: Agents at `/agents`, Where they run at
+`/agents/placements` and Maintenance notices at `/agents/maintenance`. The
+last of these was the part under the list, and its heading becomes the
+tab's `h2`. Where they run there is one section per project the human
+reads where one of their agents is a member. Each section reads
+`GET …/placements` once the tab opens and lists only those agents'
+placements, with the same per-row actions. It offers no start form,
+since starting stays on the project's tab, where the runners attached to
+that project are known. The sections' heading ids get a suffix, so that
+several stand on one page.
+
+**Reason:** the maintainer asked for a tab. The only row where Agents and
+Organisation stand side by side is the Agents page's own, so that is
+where the tab goes. One list across projects needs one read per project
+because the contract has no cross-project read (context/routing.md).
+
+**Rejected alternatives:**
+- A tab in the project's top row after Agents. That row has no
+  Organisation for it to stand before, and a second agents tab there
+  would split one subject over two places.
+- A start form on `/agents`: it would first have to ask which project,
+  and that question is the project's tab.
+- Every placement of each project on `/agents`: the page is about one's
+  own agents, and the project's tab already shows the rest.
 
 ## An agent is started on a runner from Agents' Where they run, on one's own live runners only
 
