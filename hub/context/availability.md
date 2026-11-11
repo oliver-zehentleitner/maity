@@ -264,7 +264,11 @@ not sees the member as well; one that released or lost every item no
 longer does; `covered_by` still names the run's first substitute. `covering` and `cover.end` share
 the one rule, so what the view shows and what the return gives back
 cannot drift apart; requests count only while open, because `end`
-leaves an answered request with the substitute.
+leaves an answered request with the substitute. The role guard of §2.3
+(`members._cards_on_the_way`) asks the same of a covered member's cards,
+through `cover.gives_back`, so a change to `expert` waits only for cards
+the return would give back, never for one the substitute touched or
+that was closed since (tsk-7fb0aq64y2mp).
 
 **Reason:** a chain would move the same card through several hands, the
 returning member would not know where its work went, and `cover_ended`
