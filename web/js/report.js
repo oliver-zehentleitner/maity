@@ -23,7 +23,11 @@ window.Maity = window.Maity || {};
   };
   // §16.8: `text` at most 2 KiB, counted as the hub counts it, in UTF-8 bytes.
   const TEXT_MAX = 2048;
-  const bytes = (s) => new TextEncoder().encode(s).length;
+  const bytes = (s) => {
+    let n = 0;
+    for (const ch of s) { const c = ch.codePointAt(0); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; }
+    return n;
+  };
   // The button's accessible name says what is reported.
   const LABELS = {
     person: () => M.t("report.label.person"),

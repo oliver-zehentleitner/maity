@@ -1241,6 +1241,8 @@ window.Maity = window.Maity || {};
   const selfRenames = [];
   // The reports filed from this tab (§16.8, POST /reports), newest first, for GET /me/reports.
   const ownReports = [];
+  // A text's length in UTF-8 bytes, as the hub counts a report's text (§16.8: at most 2 KiB).
+  const utf8Length = (s) => { let n = 0; for (const ch of s) { const c = ch.codePointAt(0); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; } return n; };
   function renameSelf(mm, wanted, path) {
     if (typeof wanted !== "string" || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(wanted)) fail(400, "invalid", "handle", path, { fields: { handle: "format" } });
     if (wanted === mm.handle) return;
@@ -2701,7 +2703,7 @@ window.Maity = window.Maity || {};
       if (typeof t.id !== "string" || !t.id) fail(400, "invalid", "the request does not validate", path, { fields: { "target.id": "missing" } });
       if (["message", "card"].includes(t.type) && typeof t.project !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { "target.project": "missing" } });
       if (!["spam", "abuse", "illegal", "prompt_injection", "impersonation", "other"].includes(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "unknown" } });
-      if ("text" in body && (typeof body.text !== "string" || new TextEncoder().encode(body.text).length > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
+      if ("text" in body && (typeof body.text !== "string" || utf8Length(body.text) > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
       const key = t.type + " " + t.id + " " + (t.project || "");
       if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "at most 3 reports per target", path, {});
       const made = { id: "rpt-f" + String(ownReports.length + 1).padStart(4, "0"), created_at: nowIso() };
