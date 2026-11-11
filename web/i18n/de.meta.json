@@ -13063,6 +13063,18 @@
     "en": "070fafab629d7b6d",
     "text": "53ce4c3b7b013d7b"
   },
+  "placements.own.empty": {
+    "en": "a939a50cdf6177e0",
+    "text": "cb64c498e4fbef39"
+  },
+  "placements.own.hint": {
+    "en": "815c0821d7c93a7a",
+    "text": "738bc885088509aa"
+  },
+  "placements.own.none": {
+    "en": "43736f1ac284b0c4",
+    "text": "d381c63a25660277"
+  },
   "placements.read_failed": {
     "en": "bc47b19e6ac92b76",
     "text": "c75a665427828e16"
