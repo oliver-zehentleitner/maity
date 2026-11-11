@@ -616,21 +616,73 @@ def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) 
     assert recorded == shutil.which("git") and os.path.isabs(recorded)
 
 
-def test_a_granted_gh_stays_on_the_clones_own_repository(tmp_path: Path) -> None:
-    """The maintainer let placed agents open pull requests themselves (2026-11-11): a grant of
-    `gh pr create` and `gh pr view` plus api.github.com. gh's token reaches every repository
-    the account may, so naming another one on the command line is denied."""
-    grant = config.RepositoryGrant(allow=("gh pr create", "gh pr create *", "gh pr view *"),
-                                   network=("api.github.com",))  # fmt: skip
-    ctx = context(tmp_path, sandbox=True, grant=grant, hosts=("github.com", "maity.team"))
+REPOSITORY = "https://github.com/oliver-zehentleitner/maity.git"
+PULLS = config.RepositoryGrant(allow=("make test",), pull_requests=True)
+
+
+def fake_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return str(gh)
+
+
+def test_no_placed_session_runs_gh_even_with_pull_requests(tmp_path: Path) -> None:
+    """The settings test for 9f43804d: gh is denied in every session, a grant with pull
+    requests adds no gh rule and no forge API host to the sandbox, so a sandboxed
+    `gh pr create` is denied and only `maity gh` remains."""
+    ctx = context(tmp_path, sandbox=True, grant=PULLS, hosts=("github.com", "maity.team"),
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     settings = adapters.claude_settings(ctx)
-    assert {"Bash(gh pr create)", "Bash(gh pr create *)", "Bash(gh pr view *)"} <= set(
-        settings["permissions"]["allow"]
-    )
-    assert {f"Bash({rule})" for rule in adapters.GH_DENIED} <= set(settings["permissions"]["deny"])
-    assert "api.github.com" in settings["sandbox"]["network"]["allowedDomains"]
-    bash = adapters.opencode_config(context(tmp_path / "o", "opencode", grant=grant))["permission"]
-    assert all(bash["bash"][rule] == "deny" for rule in adapters.GH_DENIED)
+    assert adapters.GH_DENIED == ("gh", "gh *")
+    assert {"Bash(gh)", "Bash(gh *)"} <= set(settings["permissions"]["deny"])
+    assert not any("gh" in rule.split("(", 1)[1].split()[0] for rule in
+                   settings["permissions"]["allow"] if rule.startswith("Bash("))  # fmt: skip
+    assert "api.github.com" not in settings["sandbox"]["network"]["allowedDomains"]
+    o_ctx = context(tmp_path / "o", "opencode", grant=PULLS)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    assert all(bash[rule] == "deny" for rule in adapters.GH_DENIED)
+    assert list(bash)[-1] in (*adapters.GIT_DENIED, *adapters.GH_DENIED)
+
+
+def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gh = fake_gh(tmp_path, monkeypatch)
+    ctx = context(tmp_path, sandbox=True, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    (ctx.clone / ".git").mkdir(parents=True)
+    launch = adapters.launch(ctx)
+    record = (ctx.clone / ".git" / "maity" / "pull_requests").read_text()
+    assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
+    assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
+
+
+def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An earlier launch's record is overwritten: a grant taken back is taken back."""
+    fake_gh(tmp_path, monkeypatch)
+    ctx = context(tmp_path, sandbox=True,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    (ctx.clone / ".git" / "maity").mkdir(parents=True)
+    (ctx.clone / ".git" / "maity" / "pull_requests").write_text("github.com/o/other\n/bin/gh\n")
+    launch = adapters.launch(ctx)
+    assert (ctx.clone / ".git" / "maity" / "pull_requests").read_text() == ""
+    assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED
+
+
+def test_pull_requests_without_gh_on_the_path_record_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    ctx = context(tmp_path, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    assert adapters.pull_requests_record(ctx) == ""
 
 
 def test_an_unclosed_block_drops_only_its_marker_and_a_foreign_encoding_is_left(

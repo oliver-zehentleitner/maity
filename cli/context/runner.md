@@ -2116,38 +2116,62 @@ do, and hid that the cause was the shape of its own command.
 - Rewriting the agent's command in a hook: hooks are switched off for
   placements (`--setting-sources user`), and the harness owns the command.
 
-## Placed agents open their pull requests with a granted gh, pinned to the clone's repository
+## Placed agents open their pull requests through `maity gh`, pinned to the clone's repository
 
 **Id:** 9f43804d-cfdc-4496-b07b-b01e65fc6410
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on req-mvywh1gykvpg (option o1), 2026-11-11, recorded on card tsk-3qb19f0r56zf: placed agents open their pull requests themselves, with `gh pr create` and `gh pr view` and api.github.com, scoped to the project's repository
-**Revisit when:** the runner gets a forge credential per placement or per repository, or gh adds another way to name a repository than `--repo`, `-R`, `GH_REPO` and the remote
+**Source:** the maintainer's decision on req-mvywh1gykvpg (option o1), 2026-11-11, recorded on card tsk-3qb19f0r56zf: placed agents open their pull requests themselves, scoped to the project's repository; the shape (a maity command instead of gh rules) by the lead on #1663, messages 113208 and 113224
+**Revisit when:** the runner gets a forge credential per placement or per repository (tsk-anek9pkb5r82), or a harness's sandbox can deny reading a file to one command and allow it to another
 
-The runner's code adds no gh rule of its own. The operator grants it per
-repository in the runner's configuration (`allow` with `gh pr create` and
-`gh pr view`, `network` with `api.github.com`), which already applies to
-that repository's placements only. Every placed session denies gh's
-`--repo`, `-R` and `--hostname` (`adapters.GH_DENIED`), so gh works on
-the repository of the clone's remote. `GH_REPO` cannot be set, because a
-command with an assignment in front matches no allow rule.
+No placed session runs gh: every session denies `gh` and `gh *`
+(`adapters.GH_DENIED`). A repository's grant sets `pull_requests = true`,
+and its agents then run `maity gh pr create` and `maity gh pr view`
+(`maity/ghpr.py`). Like every `maity` call, it runs outside the harness's
+sandbox. It takes only the options it knows, with no abbreviations, so
+bundles such as `-dR` are refused. It does not take `--repo`, a URL, or an
+option gh would read a file with. It starts gh with `--repo=` set to the
+repository the runner wrote into `.git/maity/pull_requests` at launch, and
+it drops `GH_REPO`, `GH_HOST`, `GH_CONFIG_DIR` and the enterprise tokens
+from gh's environment. maity reads a `--body-file` itself and passes it
+to gh on standard input. Before reading, it resolves the file's real path
+(links and `..`) and checks that the path is in the clone and not under
+`.git`. An `allow` entry naming gh is not applied:
+`maity runner check` warns about it and names `pull_requests`, and the
+runner still starts. Codex is refused for a repository whose grant has
+`allow` or `pull_requests`. Codex cannot honour a command allowlist, and
+its `maity` runs inside its sandbox, where `maity gh` reaches neither the
+login nor the forge's API.
 
-**Reason:** before this, an agent could push but not open its pull
+**Reason:** before this, an agent could push but could not open its pull
 request, and the card's test needs it to. The forge login on the machine
 belongs to the account all agents push as, and it reaches every
-repository that account may. The command line is the only place left to
-pin the repository.
+repository that account may. Only code that parses the command can pin
+the repository. A glob rule cannot.
 
 **Rejected alternatives:**
+- gh allowed through `allow` rules, with `--repo`, `-R` and `--hostname`
+  denied (this PR's first version): `-dR other/repo` bundles the flag past
+  every glob, `gh pr view <URL>` names another repository, and `-F` reads
+  any file the agent names, so a rule never pins anything (review of #1663).
+- Granting all of `gh`, or api.github.com: `gh api` and any tool could
+  then act on every repository the account reaches. The sandbox network
+  gets no api.github.com, and `maity runner check` warns when a grant
+  adds it.
+- Hiding gh's configuration from the sandbox (denyRead): `git push` in
+  the sandbox authenticates through `gh auth git-credential`, which reads
+  that file, so pushing would stop working.
 - A per-repository token: none exists on the machine, and arranging one is
-  the operator's business (open).
-- Granting all of `gh`, or api.github.com without a command: `gh api` and
-  any tool could then act on every repository the account reaches.
+  the operator's business (tsk-anek9pkb5r82).
 - The runner or a person opening the pull request for the agent (the
   fallback offered for the test): the maintainer chose that agents do it
   themselves.
 
-**Known gap:** `gh pr view` with a URL of another repository still reads
-it. Reading is what the account may do anyway, and the deny rules do not
-parse URLs.
+**Known gap:** the login stays readable in the sandbox, because `git push`
+needs it. So code that an allowed command runs (tests, builds) can read
+it and push to any repository the account may push to. `maity gh` closes
+gh's paths and keeps the forge's API out of the sandbox, but not this one.
+It stays open until tsk-anek9pkb5r82 lands, either as a push outside the
+sandbox with the same pin or as a credential scoped to the project's
+repository.

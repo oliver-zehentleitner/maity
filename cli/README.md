@@ -946,20 +946,29 @@ and `maity` as any part of an argument (between `/`, `:`, `=` and the
 other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
 case or with a Windows extension. `maity` is the runner's own rule.
 
-For agents that open their pull requests themselves, grant gh's two pull
-request commands and its API host:
+For agents that open their pull requests themselves, set `pull_requests`:
 
 ```toml
 [repositories."github.com/oliver-zehentleitner/maity"]
-allow = ["gh pr create", "gh pr create *", "gh pr view", "gh pr view *"]
-network = ["api.github.com"]
+pull_requests = true
 ```
 
-gh then uses the login of the agents' user and the clone's own remote.
-The runner always denies `--repo`, `-R` and `--hostname` on gh, so the
-agent cannot name another repository; the login itself reaches every
-repository its account may, and `gh pr view` given another repository's
-URL still reads it.
+The agents then run `maity gh pr create --title <title> --body-file <file>`
+(or `--body <text>`, with `--base`, `--head`, `--draft`) and
+`maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]`.
+These run outside the sandbox, with the gh on the runner's `PATH` and the
+login of the agents' user, always on the repository of the placement's
+clone (`--repo` comes from the runner, never from the command line). An
+option not listed, a URL, or a body file outside the clone or under its
+`.git` is refused, and the refusal lists what is allowed. No placed
+session can run gh itself, and the runner adds no `api.github.com` to the
+sandbox (`maity runner check` warns when a grant with `pull_requests` lists
+it). A gh
+entry in `allow` is not applied: `maity runner check` warns about it and
+the runner still starts. A Codex placement is refused for a repository
+whose grant has `allow` or `pull_requests`. Open: `git push` in the sandbox
+reads the same login, so code an allowed command runs can push to other
+repositories the account reaches (tsk-anek9pkb5r82).
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
