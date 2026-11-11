@@ -453,6 +453,10 @@ window.MAITY_I18N["it"] = {
   "board.closed.failed": "Impossibile leggere le schede chiuse: {reason}",
   "board.closed.loading": "Lettura delle schede chiuse…",
   "board.closed.recheck_failed": "Non è stato possibile verificare se le schede chiuse sono cambiate durante la lettura: {reason}",
+  "board.closed.show_more": {
+    "one": "Mostra {count} altra scheda chiusa",
+    "other": "Mostra altre {count} schede chiuse"
+  },
   "board.column.other": "Altro",
   "board.column.unknown": "Stato sconosciuto",
   "board.contract.arbiter_admins": "gli admin",

@@ -351,7 +351,10 @@ too.
    neither reads the list or the members again): cards by status (`proposed` to
    `cancelled`, closed ones of the last 14 days; read as five column
    groups side by side, each following its own pages, then the cards
-   changed during those reads, newest first), with claim holder,
+   changed during those reads, newest first; Done and Cancelled each draw
+   the 50 cards closed last, and a button the rest, while the column's count
+   stays the whole number; the card the board is opened on is drawn
+   wherever it stands, with the cards it is folded under), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report — a code report's why (§6.23) as a link to its entry's
    file at the reported head on the forge with the entry's id beside it,

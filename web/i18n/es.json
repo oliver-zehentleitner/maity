@@ -446,6 +446,10 @@
   "board.closed.failed": "No se pudieron leer las tarjetas cerradas: {reason}",
   "board.closed.loading": "Leyendo las tarjetas cerradas…",
   "board.closed.recheck_failed": "No se pudo comprobar si las tarjetas cerradas cambiaron mientras se leían: {reason}",
+  "board.closed.show_more": {
+    "one": "Mostrar {count} tarjeta cerrada más",
+    "other": "Mostrar {count} tarjetas cerradas más"
+  },
   "board.column.other": "Otras",
   "board.column.unknown": "Estado desconocido",
   "board.contract.arbiter_admins": "quienes administran",

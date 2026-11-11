@@ -197,7 +197,8 @@ counted kind in a later range.
 
 **Reason:** the derivation's cost per held call came from wakes the human has no item in;
 the look costs one statement per such wake, and the positions one grouped read per pass, also
-in a pass whose stamp did not move; only a call with `wait` reads them.
+in a pass whose stamp did not move; only a call with `wait` whose first answer lists no item
+reads them.
 
 **Rejected alternatives:**
 - Narrowing the stamp's heads to the rows that may make an item: the filters read the payload
