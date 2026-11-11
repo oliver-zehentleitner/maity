@@ -4,9 +4,10 @@ Each part is the single route's answer, built by that route's own body function 
 same caller: `auth.session_body`, `me.me_body`, `events.head_body`, `projects.project_body`
 and `members.members_body`. The request authenticates once, so it has the effects of one
 authenticated call (§2.4); the refusals a single route gets before it runs (the maintenance
-window, the second factor, a pending account, an agent outside its project) are decided
-per part, in the middleware's and `deps._resolve`'s order. The parts are read concurrently,
-the head before the project and its members (context/performance.md b77c193d).
+window, an isolated agent, the second factor, a pending account, an agent outside its
+project) are decided per part, in the middleware's and `deps._resolve`'s order. The parts
+are read concurrently, the head before the project and its members (context/performance.md
+b77c193d).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from starlette.concurrency import run_in_threadpool
 
 from maity_hub import clock, maintenance
 from maity_hub.auth import second_factor
-from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import Caller, refuse_isolated
 from maity_hub.deps import (  # the single routes' own refusals, per part
     _confine_pending,
     _confine_runner,
@@ -83,6 +84,7 @@ async def bootstrap(request: Request) -> JSONResponse:
             return _refusal(unauthenticated())
         try:
             with engine.begin() as conn:
+                refuse_isolated(conn, caller, "GET", path)  # authentication's own, per path
                 second_factor.gate(conn, settings, caller, "GET", path)
                 if caller.kind == "agent" and project is not None and kw.get("project_route"):
                     _refuse_other_project(conn, caller, project)

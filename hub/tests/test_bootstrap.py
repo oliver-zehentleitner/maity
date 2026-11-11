@@ -93,6 +93,38 @@ def test_an_agent_gets_its_own_answers(
     assert [parts[p]["status"] for p in SINGLE] == [200, 403, 200, 200, 200, 200]
 
 
+def test_an_isolated_agent_gets_its_me_and_the_isolation_refusals(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine, now: Clock  # noqa: F811
+) -> None:
+    """`GET /me` tells an isolated agent why; every project part refuses it as its single
+    route does, and the bundle leaves no presence, as those calls do not (§6.2)."""
+    flow.project(admin)
+    agent = flow.agent(make_client, admin)
+    isolated = admin.post(
+        f"/projects/{PROJECT}/members/{agent.id}/isolate", {"reason": "it did a thing"}
+    )
+    assert isolated.status_code == 200, isolated.text
+    seen = _last_seen(migrated, agent.credential_id)
+    parts = same(agent.client, agent.auth)
+    assert [parts[p]["status"] for p in SINGLE] == [200, 403, 200, 403, 403, 403]
+    assert parts["me"]["body"]["membership"]["isolated"]["reason"] == "it did a thing"
+    assert {parts[p]["body"]["error"]["details"]["reason"] for p in list(SINGLE)[3:]} == {
+        "isolated"
+    }
+    assert _last_seen(migrated, agent.credential_id) == seen
+
+
+def _last_seen(engine: Engine, credential_id: str) -> Any:
+    from sqlalchemy import select
+
+    from maity_hub import tables as t
+
+    with engine.connect() as conn:
+        return conn.execute(
+            select(t.credential.c.last_used_at).where(t.credential.c.id == credential_id)
+        ).scalar_one()
+
+
 def test_an_agent_outside_the_project_gets_404s(
     admin: flow.Human, make_client: ClientFactory, now: Clock  # noqa: F811
 ) -> None:
