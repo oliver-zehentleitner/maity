@@ -995,14 +995,17 @@ window.Maity = window.Maity || {};
 
     // The cards a column draws: a closed one the CLOSED_SHOWN closed last (by closed_at, newest first)
     // until Show more opened it for this view, and the marked card wherever it stands, so a link to it
-    // still finds it on the board. They keep the column's order; only which of them are drawn changes.
+    // still finds it on the board, folded under a parent or not. They keep the column's order; only which
+    // of them are drawn changes.
     const shownWhole = new Set();
     const closedLater = (a, b) => ((a.closed_at || "") < (b.closed_at || "") ? 1 : (a.closed_at || "") > (b.closed_at || "") ? -1
       : a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
     function shownOf(s, cards) {
       if (!(s === "done" || s === "cancelled") || shownWhole.has(s) || cards.length <= CLOSED_SHOWN) return { drawn: cards, rest: 0 };
       const kept = new Set(cards.slice().sort(closedLater).slice(0, CLOSED_SHOWN).map((c) => c.id));
-      if (marked) kept.add(marked);
+      // The marked card, and the cards it is folded under (subtasks are two levels deep at most): a
+      // folded child is found under its parent only where that parent is drawn (review of #1645).
+      for (let id = marked, depth = 0; id && depth < 3; id = byId[id] && byId[id].parent, depth++) kept.add(id);
       const drawn = cards.filter((c) => kept.has(c.id));
       return { drawn, rest: cards.length - drawn.length };
     }

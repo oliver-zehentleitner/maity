@@ -6064,7 +6064,8 @@ many more there are ("Show 11 more closed cards"). The column's count stays
 the whole number. The button draws that column whole for the rest of the
 board view, and the first card it added takes the focus, since the button is
 gone. A card the board is opened on (by its link, or coming back from it) is
-drawn wherever it stands. A hub search's columns follow the same rule.
+drawn wherever it stands, and a subtask folded under a parent with that
+parent (and its parent), since it is found only under a drawn parent. A hub search's columns follow the same rule.
 
 **Reason:** every redraw of the board (a filter change, each keystroke of
 the board search, a card's update) drew every closed card: with 783 a full
