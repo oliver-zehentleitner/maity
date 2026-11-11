@@ -175,8 +175,9 @@ def stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
 
 def held_stamp(conn: Connection, human_id: str) -> tuple[Any, ...]:
     """What a held long-poll compares between passes: `stamp`, and each member project's
-    highest `seq` of any kind, the position `quietly_moved` looks past. Only the held call reads
-    the second part; the mail pass stores `stamp` alone, which card churn does not move."""
+    highest `seq` of any kind, the position `quietly_moved` looks past. Only a call with `wait`
+    reads it, its first answer included; the mail pass stores `stamp` alone, which card churn
+    does not move."""
     found = stamp(conn, human_id)
     project_ids = [project_id for _, project_id in found[0]]
     tops = (

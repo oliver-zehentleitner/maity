@@ -298,6 +298,25 @@ def test_a_role_change_among_agent_chatter_derives_again(
     assert derived >= 2, derived  # a pass after the change, then the deadline
 
 
+def test_a_call_that_cannot_hold_reads_no_stamp(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The positions of any kind cost a grouped read: an answer without `wait` makes none, a
+    held one does (fmzu, review of #1623)."""
+    calls: list[int] = []
+    real = listing.held_stamp
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(listing, "held_stamp", counted)
+    start = bell(owner, limit=0)["next_after"]
+    assert calls == []
+    bell(owner, after=start, wait=1)
+    assert calls, calls
+
+
 def test_the_quiet_kinds_make_no_item() -> None:
     """A kind the look passes over is none the derive reads."""
     assert not listing.QUIET_KINDS & set(items.EVENT_KINDS)
