@@ -319,7 +319,9 @@ declared pattern is read, not the parameters, and a test holds it for an answere
 `maity_hub.stats` logs `stats window=60s requests=<n> 5xx=<n> max_ms=<n> pool_open=<n>
 pool_checked_out=<n> pool_max=<n>` (`request_stats.Reporter`); the pool part is `pool=none` where
 the pool cannot be counted. The async engine's pool follows as `async_pool_open`,
-`async_pool_checked_out` and `async_pool_max` (`async_pool=none` on SQLite): every call
+`async_pool_checked_out` and `async_pool_max`; on a file SQLite both pools are counted too
+(SQLAlchemy's default for a file, 5 + 10 each), and only a pool without the counts (an in-memory
+database's) logs `pool=none` or `async_pool=none`. Every call
 authenticates on it (`deps._resolve`, tsk-v874y63b4z8p PR 2), so a burst waits there first.
 
 **Reason:** in the incident the pool was used up at a low request rate and nothing in the log said

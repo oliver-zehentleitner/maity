@@ -188,8 +188,9 @@ def route_of(scope: Any) -> str:
 
 
 def pool_fields(engine: Engine, prefix: str = "") -> str:
-    """The pool of a server database as `key=value`; SQLite has no pool worth counting. The
-    async engine's pool (its `sync_engine`'s) is named with the prefix `async_`."""
+    """The engine's pool as `key=value`, a file SQLite's included (SQLAlchemy's default, 5 + 10);
+    `pool=none` for a pool without the counts (an in-memory database's). The async engine's pool
+    (its `sync_engine`'s) is named with the prefix `async_`."""
     pool: Any = engine.pool
     if not all(hasattr(pool, name) for name in ("checkedout", "checkedin", "size")):
         return f"{prefix}pool=none"

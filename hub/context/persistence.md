@@ -1053,7 +1053,10 @@ tsk-v874y63b4z8p and its plan notes); the project lead's decision on the pool sp
 `hub/tests/test_async_engine.py`, `hub/tests/test_loop_lag.py`
 **Revisit when:** a measurement asks for a native async helper instead of `run_sync`, the series'
 cleanup removes sync paths the routes no longer use, the Docker base and every pinned binary wheel
-support free-threaded Python, or aiomysql falls behind PyMySQL's error numbers
+support free-threaded Python, aiomysql falls behind PyMySQL's error numbers, more route families
+run on the async engine (its pool's share and the loop's average lag measured again), production's
+`async_pool_checked_out` reaches `async_pool_max`, or a row lock held by a route makes
+authentications wait on each other (every call of a process then waits for that pool)
 **See:** replicas.md — 4e24abd8-ab64-4844-897b-629bfa211f6d — as of 2026-11-10
 
 A serving hub has two engines on one database. The sync engine is the one it always had: the routes
@@ -1071,9 +1074,10 @@ What the bridge has to keep:
   `write_guard` and `timing` install there (`create_app`). The statement counts of the tests
   (`tests/statements.py`) listen on the `Engine` class for the call and count the async engines on
   the test's database too, so a count includes the authentication without the test naming the
-  app's async engine. The two hooks read a context variable the request sets; SQLAlchemy's greenlet runs in the
-  context of the task that awaits `run_sync`, so the request's human and tally reach them as the
-  thread pool's copy of the context did. `hub/tests/test_async_engine.py` checks both.
+  app's async engine. The two hooks read a context variable the request sets; SQLAlchemy's
+  greenlet runs in the context of the task that awaits `run_sync`, so the request's human and
+  tally reach them as the thread pool's copy of the context did. `hub/tests/test_async_engine.py`
+  checks both.
 - **Nothing that blocks on the loop.** The body under `run_sync` runs on the event loop's thread.
   The engine's own waits await: the DNS retry's pause (`_pause_on_the_loop`), `retrying_async`'s
   pause. The steps of a rollback (a rate given back, which may write the shared counter) and those
@@ -1094,21 +1098,35 @@ What the bridge has to keep:
 
 **Authentication on the async engine (PR 2).** `deps._resolve` runs the authentication
 transaction (`authenticate`, the second-factor gate, the runner and project confinement, a
-bridge's `carry`, the pending account's confinement) through `run_sync`, and the session's end and
-a due revocation through the async engine too, with `retrying_async`. Every call thereby loses the
+bridge's `carry`, the pending account's confinement) through `run_sync` under `retrying_async`,
+a due revocation inside that retried attempt (`events.async_transaction`), and the session's end
+once, without a retry, as before. Every call thereby loses the
 authentication's thread hop. One hop before the route remains for every `/api/` call: the
 maintenance check in the middleware (`maintenance.window_now`, cached for a few seconds, in
 `run_in_threadpool`); it is a later PR's, as is the pre-check for a large body (`_precheck`).
 The audit of what that code does on the loop: statements on the authentication's own connection;
 SHA-256 and HMAC over a token or a signed request (`auth.caller`); the in-process nonce window's
-lock on SQLite and MariaDB (`credentials.NonceWindow`, held for a dictionary lookup, a pruning pass
-over at most 10,000 entries); no password hash (scrypt runs in routes only: sign-in, registration,
-the account's settings), no mail, no forge call and no shared counter (`second_factor` counts a
-wrong code only in `verify`, a route). It writes no event and registers no `on_commit` step
-(`bridges.carry` included); it opens `engine.begin()`, not `events.transaction`, as before. On a
-server database the authentication takes one of the async engine's connections
-(`MAITY_DB_ASYNC_POOL_SIZE`, 8 by default since PR 2, no overflow) for its few statements, so the
-`stats` line names that pool too (`async_pool_*`, `hub/context/serving.md`).
+lock on SQLite and MariaDB (`credentials.NonceWindow`, held for a dictionary lookup and for
+dropping the nonces that expired since the last call, oldest first from a queue in expiry order;
+before PR 2 the window walked every live nonce on each call once it held more than 10,000, which
+on the loop would have stalled the process, 20 ms per call at 200,000 live nonces); no password
+hash (scrypt runs in routes only: sign-in, registration, the account's settings), no mail, no
+forge call and no shared counter (`second_factor` counts a wrong code only in `verify`, a route).
+It writes no project event and registers no `on_commit` step (`bridges.carry` included); a gate
+that completes an enrolment writes the account's records and, on PostgreSQL, a `pg_notify`, as
+statements on the same connection. It opens `engine.begin()`, not `events.transaction`, as before.
+On a server database the authentication takes one of the async engine's connections
+(`MAITY_DB_ASYNC_POOL_SIZE`, no overflow) for its few statements, so the `stats` line names that
+pool too (`async_pool_*`, `hub/context/serving.md`).
+
+The cost is the loop's: it does the authentication's work now, so its average lag rose from about
+2 to about 4 ms in the loop-lag guard on PostgreSQL (16 threads × 20 rounds), the worst tick
+staying where the machine puts it. The threads busy fell from about 14.5 to about 3 on average.
+The async pool's default became 8 (the project lead's decision, 2026-11-11), carved out of
+`MAITY_DB_POOL_SIZE` as before, so the sync engine keeps 8 of the default 16 and the whole
+overflow. Rejected: keeping 2, PR 1's default while no call used the async engine; with 2 the
+guard's runs took 38–45 s against 34–39 s on main, with 8 they took 34–35 s, every call's
+authentication queueing on two connections per process otherwise.
 
 **Reason:** the routes paid two thread hops (authentication, then the body) and competed for the
 thread pool's 40 threads, held long-polls and slow reads included. The bridge removes the hops for
