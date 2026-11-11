@@ -448,6 +448,10 @@ through the database (`hub/context/replicas.md`).
   that under the database's `max_connections` less its reserved connections;
   the hub warns at its start when it is not. Example: 3 replicas with 2
   workers and the default 16 + 16 ask 4 × (2 × (8 + 8 + 2 + 1) + 1) = 156.
+  Each worker splits its pool share between its two engines: the async
+  engine, where every call authenticates, takes 8 of it but at most half, and
+  the sync engine, where the route bodies run, the rest and the whole
+  overflow. A pool lowered to 8 gives 4 + 4 per worker; with 2 workers, 2 + 2.
 
 ## When an install or upgrade fails
 

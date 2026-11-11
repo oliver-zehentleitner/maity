@@ -21,6 +21,10 @@ from maity_hub import attachment_store
 from maity_hub.config import Settings
 from maity_hub.db import SHARED_POOL_SIZE
 
+# The async engine's pooled connections when MAITY_DB_ASYNC_POOL_SIZE is unset, at most half the
+# process's share (`pool_shares`; the numbers in hub/context/persistence.md, 66f0bcf9).
+DEFAULT_ASYNC_POOL = 8
+
 
 def configure_logging() -> None:
     """What `maity-hub` sets up before any command; a spawned worker sets it up again, or the
@@ -32,14 +36,19 @@ def configure_logging() -> None:
 
 def pool_shares(settings: Settings) -> tuple[int, int]:
     """The pooled connections of one process's sync and async engine, from its settings (after
-    `per_worker`): the async engine holds `db_async_pool_size` (8 by default: every call
-    authenticates there), at least one and never all, and
-    the sync engine the rest of the pool share and the whole overflow, so the two never ask for
-    more than the pool share did alone (hub/context/replicas.md). That holds on a server
-    database; on SQLite the engines take no pool sizes and keep SQLAlchemy's default for a file
-    database each (5 + 10), with no server connection budget to keep."""
-    async_share = min(max(settings.db_async_pool_size, 1), settings.db_pool_size - 1)
-    return settings.db_pool_size - async_share, async_share
+    `per_worker`). The async engine holds `db_async_pool_size` when it is set, at least one and
+    never all; unset, `DEFAULT_ASYNC_POOL` (every call authenticates there), but at most half the
+    share, so a small pool keeps half of it for the route bodies, which still run on the sync
+    engine. The sync engine holds the rest of the pool share and the whole overflow, so the two
+    never ask for more than the pool share did alone (hub/context/replicas.md). That holds on a
+    server database; on SQLite the engines take no pool sizes and keep SQLAlchemy's default for a
+    file database each (5 + 10), with no server connection budget to keep."""
+    pool = settings.db_pool_size
+    wanted = settings.db_async_pool_size
+    if wanted is None:
+        wanted = min(DEFAULT_ASYNC_POOL, pool // 2)
+    async_share = min(max(wanted, 1), pool - 1)
+    return pool - async_share, async_share
 
 
 def pool_refusal(settings: Settings) -> str | None:
@@ -157,7 +166,11 @@ def per_worker(settings: Settings) -> Settings:
         settings,
         db_pool_size=settings.db_pool_size // n,
         db_max_overflow=settings.db_max_overflow // n,
-        db_async_pool_size=max(settings.db_async_pool_size // n, 1),
+        db_async_pool_size=(
+            None
+            if settings.db_async_pool_size is None
+            else max(settings.db_async_pool_size // n, 1)
+        ),
     )
 
 

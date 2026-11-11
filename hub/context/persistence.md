@@ -1106,27 +1106,35 @@ maintenance check in the middleware (`maintenance.window_now`, cached for a few 
 `run_in_threadpool`); it is a later PR's, as is the pre-check for a large body (`_precheck`).
 The audit of what that code does on the loop: statements on the authentication's own connection;
 SHA-256 and HMAC over a token or a signed request (`auth.caller`); the in-process nonce window's
-lock on SQLite and MariaDB (`credentials.NonceWindow`, held for a dictionary lookup and for
-dropping the nonces that expired since the last call, oldest first from a queue in expiry order;
-before PR 2 the window walked every live nonce on each call once it held more than 10,000, which
-on the loop would have stalled the process, 20 ms per call at 200,000 live nonces); no password
-hash (scrypt runs in routes only: sign-in, registration, the account's settings), no mail, no
-forge call and no shared counter (`second_factor` counts a wrong code only in `verify`, a route).
-It writes no project event and registers no `on_commit` step (`bridges.carry` included); a gate
-that completes an enrolment writes the account's records and, on PostgreSQL, a `pg_notify`, as
-statements on the same connection. It opens `engine.begin()`, not `events.transaction`, as before.
-On a server database the authentication takes one of the async engine's connections
-(`MAITY_DB_ASYNC_POOL_SIZE`, no overflow) for its few statements, so the `stats` line names that
-pool too (`async_pool_*`, `hub/context/serving.md`).
+lock on SQLite and MariaDB (`credentials.NonceWindow`, held for a dictionary lookup and for dropping
+expired nonces, oldest first from a queue in expiry order, at most 64 per call: the whole window can
+expire together after a burst, and a review measured 200,000 expired nonces dropped in one call at
+77 ms on the loop, so the backlog is spread over the next calls, each adding at most one; before PR
+2 the window walked every live nonce on each call once it held more than 10,000, which on the loop
+would have stalled the process, 20 ms per call at 200,000 live nonces); no password hash (scrypt
+runs in routes only: sign-in, registration, the account's settings), no mail, no forge call and no
+shared counter (`second_factor` counts a wrong code only in `verify`, a route). It writes no project
+event and registers no `on_commit` step (`bridges.carry` included); a gate that completes an
+enrolment writes the account's records and, on PostgreSQL, a `pg_notify`, as statements on the same
+connection. It opens `engine.begin()`, not `events.transaction`, as before. On a server database the
+authentication takes one of the async engine's connections (`MAITY_DB_ASYNC_POOL_SIZE`, no overflow)
+for its few statements, so the `stats` line names that pool too (`async_pool_*`,
+`hub/context/serving.md`).
 
 The cost is the loop's: it does the authentication's work now, so its average lag rose from about
 2 to about 4 ms in the loop-lag guard on PostgreSQL (16 threads × 20 rounds), the worst tick
 staying where the machine puts it. The threads busy fell from about 14.5 to about 3 on average.
-The async pool's default became 8 (the project lead's decision, 2026-11-11), carved out of
-`MAITY_DB_POOL_SIZE` as before, so the sync engine keeps 8 of the default 16 and the whole
-overflow. Rejected: keeping 2, PR 1's default while no call used the async engine; with 2 the
-guard's runs took 38–45 s against 34–39 s on main, with 8 they took 34–35 s, every call's
-authentication queueing on two connections per process otherwise.
+Unset, the async pool takes 8 of each process's pool share but at most half of it (the project
+lead's decisions, 2026-11-11), carved out of `MAITY_DB_POOL_SIZE` as before: the default 16 gives
+8 + 8, a pool of 8 gives 4 + 4, two workers on it 2 + 2 each, and the sync engine keeps the whole
+overflow. A value that is set still holds up to all but one of a share. Rejected: keeping 2, PR
+1's default while no call used the async engine; with 2 the guard's runs took 38–45 s against
+34–39 s on main, with 8 they took 34–35 s, every call's authentication queueing on two
+connections per process otherwise. Rejected too: a flat 8 whatever the pool. Every route body
+still runs on the sync engine, and an operator who lowers the pool to stay under the database's
+connections (the chart's README advises it, deploy/helm/check.sh renders a pool of 8 without
+overflow) would have left it 1 of 8 (async 7), 4 of 12, and with two workers on 8 + 8 one pooled
+connection each, where the old default gave 6 of 8.
 
 **Reason:** the routes paid two thread hops (authentication, then the body) and competed for the
 thread pool's 40 threads, held long-polls and slow reads included. The bridge removes the hops for

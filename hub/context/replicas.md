@@ -918,12 +918,13 @@ only about processes.
   meaning for the operator; each process holds its share, rounded down, so raising the workers
   never adds to the pool connections asked of the database (entry on connections above). Since
   tsk-v874y63b4z8p each process splits its share between its two engines (`serving.pool_shares`,
-  persistence.md 66f0bcf9): the async engine holds `MAITY_DB_ASYNC_POOL_SIZE` (8, divided by the
-  workers, at least one, never the whole share), the sync engine the rest and the whole overflow,
-  so the split adds nothing to the budget either. The default was 2 while no call used the async
-  engine (PR 1); since every call authenticates there (PR 2) it is 8, the project lead's decision
-  (2026-11-11) after the load test, so the sync cap is 8 of the default 16 (24 with the overflow),
-  with about 3 threads busy on average in that test. This is a server database's budget: on SQLite the engines take no pool sizes
+  persistence.md 66f0bcf9): the async engine holds `MAITY_DB_ASYNC_POOL_SIZE` (set: divided by
+  the workers, at least one, never the whole share; unset: 8 of the share, at most half of it),
+  the sync engine the rest and the whole overflow, so the split adds nothing to the budget
+  either. The default was 2 while no call used the async engine (PR 1); since every call
+  authenticates there (PR 2) it is 8 but at most half the share, the project lead's decisions
+  (2026-11-11) after the load test and the review, so the sync cap is 8 of the default 16 (24
+  with the overflow), with about 3 threads busy on average in that test, and 4 of a pool of 8. This is a server database's budget: on SQLite the engines take no pool sizes
   and keep SQLAlchemy's default for a file database each. A part of 0 pooled connections is refused at the start: SQLAlchemy reads
   `pool_size=0` as no limit, so a rounded-down part would lift the cap it is meant to keep, and a
   share therefore needs two, one per engine. The minimum was two while a
