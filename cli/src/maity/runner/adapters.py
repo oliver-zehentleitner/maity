@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import __version__, clonecheck, proc
+from .. import __version__, clonecheck, ghpr, proc
 from . import config, stub, trust
 from .asuser import AsUser
 
@@ -66,11 +66,17 @@ GIT_DENIED = (
     "git -c *", "git --config-env*", "git --exec-path*", "git * --no-index*",
     "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
 )  # fmt: skip
-# gh, where a repository's grant allows it (`gh pr create`, `gh pr view`), acts on the clone's
-# own repository, which it reads from the clone's remote: never on another one named on the
-# command line. The token is the operator's and reaches every repository it may, so the
-# repository is pinned here (cli/context/runner.md).
-GH_DENIED = ("gh * --repo*", "gh * -R*", "gh * --hostname*")
+# No session runs gh: the token is the operator's and reaches every repository it may, and no
+# glob on a command line pins one (`-dR`, a URL). Agents open and read their pull requests
+# with `maity gh`, which runs outside the sandbox with the repository fixed by the runner
+# (cli/context/runner.md).
+GH_DENIED = ("gh", "gh *")
+# Where a repository's grant has `pull_requests = true`.
+PULL_REQUEST_PROMPT = (
+    " Open your pull request with `maity gh pr create --title <title> --body-file <file>` "
+    "(a file in this clone) and read one with `maity gh pr view [<number>]`; `gh` itself "
+    "does not run here."
+)
 
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
@@ -196,6 +202,9 @@ def launch(ctx: Context) -> Launch:
     git = proc.program("git")
     if git is not None:
         ctx.as_user.write(ctx.clone / clonecheck.GIT_PATH, git + "\n")
+    # What `maity gh` may do here: the repository it pins and the gh it starts, or nothing
+    # (an empty record also clears one a former grant left).
+    ctx.as_user.write(ctx.clone / ghpr.PULL_REQUESTS_PATH, pull_requests_record(ctx))
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -311,12 +320,26 @@ def trust_clone(ctx: Context) -> None:
         )
 
 
-def _sandbox_prompt(ctx: Context) -> str:
-    """What the start prompt adds under the harness's sandbox: the git commands that fail, and
-    for Claude Code that `maity` runs alone."""
-    if not writes_denied(ctx):
+def pull_requests_record(ctx: Context) -> str:
+    """`ghpr.PULL_REQUESTS_PATH`'s content: the placement's repository and the gh on the
+    runner's PATH when the grant has pull requests and gh is there, else empty."""
+    if not ctx.grant.pull_requests:
         return ""
-    return GIT_PROMPT + (CLAUDE_MAITY_PROMPT if ctx.harness.id == "claude-code" else "")
+    gh = proc.program("gh")
+    workspace = ctx.placement.get("workspace") or {}
+    repository = config.normalise_repository(workspace.get("repository") or "")
+    if gh is None or not repository:
+        return ""
+    return f"{repository}\n{gh}\n"
+
+
+def _sandbox_prompt(ctx: Context) -> str:
+    """What the start prompt adds: under the harness's sandbox the git commands that fail, and
+    for Claude Code that `maity` runs alone; with the grant's pull requests, `maity gh`."""
+    pulls = PULL_REQUEST_PROMPT if pull_requests_record(ctx) else ""
+    if not writes_denied(ctx):
+        return pulls
+    return GIT_PROMPT + (CLAUDE_MAITY_PROMPT if ctx.harness.id == "claude-code" else "") + pulls
 
 
 def hide_placeholders(ctx: Context) -> None:
@@ -506,7 +529,9 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     model = ctx.placement.get("model")
     chosen = ["--model", model] if model else []
     if ctx.placement.get("mode") == "interactive":
-        return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", START_PROMPT], env)
-    first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, START_PROMPT]
-    again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", START_PROMPT]
+        prompt = START_PROMPT + _sandbox_prompt(ctx)
+        return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", prompt], env)
+    prompt = START_PROMPT + _sandbox_prompt(ctx)
+    first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, prompt]
+    again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", prompt]
     return _supervised(ctx, first, again, env)

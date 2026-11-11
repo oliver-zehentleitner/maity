@@ -248,6 +248,25 @@ def _check_config_file(report: Report, path: Path) -> None:
         )
 
 
+def _check_repositories(report: Report, cfg: config.Config) -> None:
+    """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
+    `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). Said, never
+    an error, so a restart before the table is edited keeps every placement running."""
+    for name, grant in cfg.repositories.items():
+        if grant.refused:
+            listed = ", ".join(repr(rule) for rule in grant.refused)
+            report.warn(
+                f"repositories.{name}: allow {listed} is not applied: no session runs gh; "
+                "remove it and set pull_requests = true to let agents open pull requests "
+                "with `maity gh pr create`"
+            )
+        if grant.pull_requests and "api.github.com" in grant.network:
+            report.warn(
+                f"repositories.{name}: network api.github.com is not needed for pull requests "
+                "(`maity gh` runs outside the sandbox) and lets repository code reach the API"
+            )
+
+
 def _check_state(report: Report, cfg: config.Config) -> None:
     directory = cfg.state_dir
     if not directory.is_dir():
@@ -504,6 +523,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         report.error(problem)
     _check_config_file(report, path)
     _check_state(report, cfg)
+    _check_repositories(report, cfg)
     if cfg.ssh is not None:
         _check_ssh(report, cfg, getattr(args, "target", None))
     elif getattr(args, "target", None):

@@ -29,6 +29,7 @@ from maity import (
     citecheck,
     clonecheck,
     environment,
+    ghpr,
     gitfacts,
     hub,
     onboarding,
@@ -1221,6 +1222,14 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
                     f"{unchecked}; this checkout has {shown}; {switch}"
                 )
     return None
+
+
+def cmd_gh(args: argparse.Namespace) -> int:
+    """`maity gh pr create|view` (ghpr): gh's own exit code, a refusal before it runs."""
+    try:
+        return ghpr.run(args)
+    except ghpr.Refused as exc:
+        raise LocalRefusal(str(exc)) from None
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -4390,6 +4399,8 @@ def build_parser() -> argparse.ArgumentParser:
         "`maity resume` still lists it (for a supervisor that starts a run on each event)",
     )
     p.set_defaults(handler=cmd_wait)
+
+    ghpr.parser(sub).set_defaults(handler=cmd_gh)
 
     p = add(
         "report",
