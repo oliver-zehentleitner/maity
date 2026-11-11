@@ -193,10 +193,14 @@ def test_the_printed_lines_run_only_the_fetch_in_a_real_shell(
 ) -> None:
     """Every line, pasted whole into the shell with stub functions, calls `maity files get
     att-1` and nothing else: no file the name or a bad id tries to create appears."""
-    if os.name == "nt":
-        # A `bash` there is Git's or WSL's, with paths and HOME of its own, so the stub's file
-        # lands elsewhere; the paste is a POSIX-shell concern, which the Linux jobs run.
-        pytest.skip("real POSIX shells only: the Windows bash runs in its own path namespace")
+    if os.name == "nt" and shell[0] == "bash":
+        # On the windows runners this case found no `calls` file, while [sh] (Git's sh.exe) passed
+        # with the same paste, cwd and env. A bare `bash` there may resolve to the WSL launcher in
+        # System32 before PATH, which runs nothing without a distribution; not reproduced. The
+        # case is not covered on native Windows; the Linux jobs run it.
+        pytest.skip(
+            "bash from native Windows Python not covered: on the runners it wrote no calls file"
+        )
     if shutil.which(shell[0]) is None:
         pytest.skip(f"{shell[0]} is not installed")
     names = [
