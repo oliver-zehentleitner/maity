@@ -115,21 +115,22 @@ segment, so the path costs nothing.
 **See:** routing.md#the-dashboard-is-addressed-by-paths-public-pages-sit-at-the-same-canonical-address-and-nothing-old-is-kept — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-11
 **Revisit when:** the tab is renamed to something a path can say, a second view of placements needs the word, or the `/agents` tab is found slow for a human with many projects (then `GET /me/placements`, below)
 
-"Where they run", the list of where the project's agents run (§15.6:
+"Where they run", the list of where the project's agents run (§15.5–§15.7:
 the wanted and reported state, Stop, Restart, Logs, the start on a
 runner), moves from the bottom of the Agents page to a project tab of
 its own between Agents and Organisation, at `/<owner>/<slug>/placements`.
 Every member who reads the project sees it, as they saw the section;
 the actions on it stay as §15.6 grants them. `placements` joins the
-project views of §16.11, so no project slug may take it (`PROJECT_VIEWS`).
+project views of §16.11 (`PROJECT_VIEWS`); as an API route word it was
+already no slug (§6.25).
 The global agents page `/agents` gets the same treatment (the maintainer,
 2026-11-11): "Where they run" at `/agents/placements` and "Maintenance
 notices", which was at its bottom, at `/agents/maintenance`, each a tab
 beside the list. §16.11 states that the hub never issues either word as
 an id, since ids are otherwise opaque; neither is a first segment, so no
 reserved word changes. The `/agents` "Where they run" tab reads
-`GET …/placements` (§15.6) in each project where the human has an agent,
-grouped by project, only when the tab is opened.
+`GET …/placements` (§15.6) in each project the human reads where one of
+their agents is a member, grouped by project, only when the tab is opened.
 
 **Reason:** the Team view moved to `team` so that the path says what
 the tab says (§16.11, 2026-11-10). "Where they run" is no path word, so
@@ -145,5 +146,6 @@ log or the CLI names the same thing.
 - Keeping the section on the Agents page: the maintainer asked for a tab.
 - `GET /me/placements` for the `/agents` tab, one call across projects:
   a new route with its own rights and paging, where one read per project,
-  made only when the tab opens, gives the same list (the coordinator's
-  choice, 2026-11-11). Revisited if a human with many projects finds it slow.
+  made only when the tab opens, gives the same list for the projects the
+  human reads (the coordinator's choice, 2026-11-11). Revisited if a human
+  with many projects finds it slow.
