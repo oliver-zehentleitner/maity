@@ -135,6 +135,7 @@ PENDING = {
     "/projects/{}/{}/conversations/{}",
     "/projects/{}/{}/conversations/{}/messages",
     "/projects/{}/{}/events",
+    "/projects/{}/{}/events/{}",
     "/projects/{}/{}/forge/webhook",
     "/projects/{}/{}/invitations",
     "/projects/{}/{}/joins",

@@ -66,26 +66,52 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
     settings = _settings(MAITY_WORKERS="4", MAITY_DB_POOL_SIZE="16", MAITY_DB_MAX_OVERFLOW="6")
     share = serving.per_worker(settings)
     assert (share.db_pool_size, share.db_max_overflow) == (4, 1)  # never more than the total
+    # The async engine's part of the share, at least one: 2 // 4 rounds down to 0.
+    assert share.db_async_pool_size == 1 and serving.pool_shares(share) == (3, 1)
     alone = replace(settings, workers=1)
     assert serving.per_worker(alone) is alone
 
 
 @pytest.mark.parametrize(
     ("workers", "pool", "refused"),
-    [(8, 16, False), (16, 16, False), (2, 3, False), (17, 16, True), (3, 2, True)],
+    [(8, 16, False), (2, 4, False), (16, 16, True), (2, 3, True), (17, 16, True), (3, 2, True)],
 )
-def test_workers_whose_share_of_the_pool_would_be_zero_are_refused(
+def test_workers_whose_share_of_the_pool_cannot_be_split_are_refused(
     workers: int, pool: int, refused: bool
 ) -> None:
-    """The minimum share of one (tsk-zm2z04ep2cma): no request handler in the measured tests held
-    two serving connections at once, and a share of 0 would be SQLAlchemy's `pool_size=0`, no
-    limit at all."""
+    """The minimum share of one connection per engine (tsk-zm2z04ep2cma, tsk-v874y63b4z8p): no
+    request handler in the measured tests held two serving connections at once, the share is
+    split between the sync and the async engine, and a part of 0 would be SQLAlchemy's
+    `pool_size=0`, no limit at all."""
     settings = replace(_settings(), workers=workers, db_pool_size=pool)
     reason = serving.refusal(settings)
     if refused:
-        assert reason is not None and f"needs MAITY_DB_POOL_SIZE of at least {workers}" in reason
+        assert (
+            reason is not None and f"needs MAITY_DB_POOL_SIZE of at least {2 * workers}" in reason
+        )
     else:
         assert reason is None
+
+
+@pytest.mark.parametrize(
+    ("pool", "wanted", "shares"),
+    [(16, 2, (14, 2)), (2, 2, (1, 1)), (8, 5, (3, 5)), (8, 8, (1, 7)), (4, 9, (1, 3))],
+)
+def test_the_async_engine_holds_its_part_of_the_pool_never_all(
+    pool: int, wanted: int, shares: tuple[int, int]
+) -> None:
+    """Carved out of the share, never on top: the two parts add up to the pool, and each holds
+    at least one connection (tsk-v874y63b4z8p)."""
+    settings = replace(_settings(), db_pool_size=pool, db_async_pool_size=wanted)
+    assert serving.pool_shares(settings) == shares
+    assert sum(shares) == pool
+
+
+def test_one_process_on_a_pool_of_one_is_refused_and_sqlite_is_not() -> None:
+    settings = replace(_settings(), db_pool_size=1)
+    assert "must be at least 2" in (serving.refusal(settings) or "")
+    sqlite = replace(settings, database_url="sqlite:///hub.db")
+    assert serving.refusal(sqlite) is None
 
 
 def test_a_worker_that_cannot_build_its_app_stops_the_supervisor(

@@ -127,7 +127,17 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
     assert f"Read(/{ws}/.git/maity/**)" in deny
-    assert f"Edit(/{ws}/.git/**)" in deny  # config, hooks; Edit covers every file tool
+    # What makes git run something, never all of .git: the sandbox makes an Edit deny a write
+    # deny, and git could no longer fetch or commit (tsk-2zz5tjpbt28n).
+    assert [rule for rule in deny if "/.git/" in rule] == [
+        f"Edit(/{ws}/.git/config)",
+        f"Edit(/{ws}/.git/config.worktree)",
+        f"Edit(/{ws}/.git/hooks/**)",
+        f"Edit(/{ws}/.git/info/**)",
+        f"Edit(/{ws}/.git/objects/info/alternates)",
+        f"Edit(/{ws}/.git/maity/**)",
+        f"Read(/{ws}/.git/maity/**)",
+    ]
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
@@ -139,7 +149,19 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert strict["allowUnsandboxedCommands"] is False
     assert strict["autoAllowBashIfSandboxed"] is False  # the allowlist still decides
     assert strict["filesystem"]["denyRead"][0].endswith("/.git/maity")
-    assert strict["filesystem"]["denyWrite"] == strict["filesystem"]["denyRead"]
+    sandboxed = str(tmp_path / "s" / "ws" / "maity" / "agent-3" / ".git")
+    assert strict["filesystem"]["denyWrite"] == [
+        f"{sandboxed}/{name}"
+        for name in (
+            "maity",
+            "config",
+            "config.worktree",
+            "hooks",
+            "info",
+            "objects/info/alternates",
+        )
+    ]
+    assert not any(path.endswith("commondir") for path in strict["filesystem"]["denyWrite"])
     assert strict["excludedCommands"] == ["maity *"]  # it alone reads the credential
     assert strict["network"] == {
         "allowedDomains": ["github.com", "maity.team"],

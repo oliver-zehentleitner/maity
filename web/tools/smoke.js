@@ -417,6 +417,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(tabIds() === MA + "," + SA && kept() && kept().open.join() === MA + "," + SA && kept().known.join() === MA + "," + SA,
       "tabs: a fresh browser without a start set opens every project in /me's order, and keeps that");
     expect(tabChip(MA).attrs.draggable === "true" && tabChip(MA).getAttribute("title") === "Drag to move, or Alt+Shift+Arrow", "tabs: each tab is draggable and says how to move it");
+    // A private project (public_page "off" in /me, §5.1) carries a lock named "Private" after its name, with
+    // the create form's sentence as its tooltip; a public one carries none (tsk-5t3qd0m9rj6r).
+    const lockOf = (id) => tabChip(id).querySelector(".private-mark");
+    expect(lockOf(SA) && lockOf(SA).getAttribute("role") === "img" && lockOf(SA).getAttribute("aria-label") === "Private"
+      && lockOf(SA).getAttribute("title") === "This project is private: only its members can read it." && !lockOf(MA),
+      "tabs: the private project's tab carries a lock named Private, the public one none");
     // The keyboard: Alt+Shift+Arrow moves the focused tab and says where it went.
     tabChip(SA).dispatch("keydown", { key: "ArrowLeft", altKey: true, shiftKey: true });
     expect(tabIds() === SA + "," + MA && kept().open.join() === SA + "," + MA && said() === "Sample shop moved to place 1 of 2",
@@ -464,7 +470,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     M_.api.patch = (path, body) => { patchesTabs.push([path, body]); return realPatchTabs(path, body); };
     tabsButton().click(); await tick();
     expect(tabsButton().getAttribute("aria-label") === "Project tabs" && tabsItems().map((i) => i.getAttribute("role") + ":" + (i.getAttribute("aria-checked") || "-") + ":" + i.textContent).join("|")
-      === "menuitemcheckbox:true:Maity|menuitemcheckbox:true:Sample shop|menuitem:-:Keep these tabs at start", "tabs: the menu lists each project as a switch, then the start set");
+      === "menuitemcheckbox:true:Maity|menuitemcheckbox:true:Sample shop|menuitem:-:Keep these tabs at start|menuitem:-:New project",
+      "tabs: the menu lists each project as a switch, then the start set, then a new project (tsk-c4dz5x6rb2h8)");
     tabsItems()[1].click(); await tick();
     expect(tabIds() === MA && kept().open.join() === MA && !header.querySelector(".tabs-menu-box").querySelector("ul").hidden
       && tabsItems()[1].getAttribute("aria-checked") === "false" && said() === "Sample shop is no longer a tab" && !patchesTabs.length,
@@ -1362,8 +1369,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !agRow("agt-a").querySelector(".member-takes-over"), "members: an agent that took over says from whom and where the hand-over is " + (takeOverP && text(takeOverP)));
   const agCRow = await agOpen("agt-c");
   expect(text(agCRow).includes("never resumed") && text(agCRow).includes("revoked") && text(agCRow).includes("replaced by a new clone"), "never resumed and revoked credentials");
+  // Each credential names its instance (tsk-s0jb9wkdp41j): <handle>#<id>, the #id a link to that instance's
+  // Sessions, an active one with its presence; a revoked one names its instance without a presence.
+  {
+    const credRow = (id) => agCRow.querySelectorAll(".credentials li").find((li) => li.querySelector("code") && li.querySelector("code").textContent === id);
+    const active = credRow("crd-c-0003"), gone = credRow("crd-c-0002");
+    const activeInst = active && active.querySelector(".credential-instance");
+    const goneInst = gone && gone.querySelector(".credential-instance");
+    expect(activeInst && text(activeInst) === " · agent-c#k3pa Online" && activeInst.querySelector(".dot.online")
+      && activeInst.querySelector("a.member-instance").getAttribute("href") === "#/maintainer/maity/team/agt-c/sessions/k3pa",
+      "credentials: an active one names its instance with its presence and links the #id to its Sessions " + (activeInst && JSON.stringify(text(activeInst))));
+    expect(goneInst && text(goneInst) === " · agent-c#q7rd" && !goneInst.querySelector(".credential-presence")
+      && !goneInst.querySelector("a.member-instance") && goneInst.querySelector("a.member-ref").getAttribute("href") === "#/maintainer/maity/team/agt-c",
+      "credentials: a revoked one, its instance unlisted, names it without a presence and without a link to Sessions " + (goneInst && JSON.stringify(text(goneInst))));
+    // The revoke confirmation names the instance; declined, nothing is sent.
+    const credConfirm = win.confirm, credPost = win.Maity.api.post;
+    let asked = null, posted = 0;
+    win.confirm = (q) => { asked = q; return false; };
+    win.Maity.api.post = (p, b) => { if (p.includes("/revoke")) posted += 1; return credPost(p, b); };
+    btn(active, "Revoke").click(); for (let k = 0; k < 2; k++) await tick();
+    win.confirm = credConfirm; win.Maity.api.post = credPost;
+    expect(asked === "Revoke agent-c#k3pa (crd-c-0003)? Its session loses access at once." && posted === 0,
+      "credentials: the revoke confirmation names the instance; declined, nothing is revoked " + JSON.stringify(asked));
+    // Two members share the short handle: the row and the confirmation both say owner/handle#id.
+    const dupMembers = [
+      { id: "agt-x1", kind: "agent", handle: "agent-c", name: "owner/agent-c", display_name: "C", instances: [{ id: "k3pa", presence: "online" }] },
+      { id: "agt-x2", kind: "agent", handle: "agent-c", name: "anna/agent-c", display_name: "Anna's C", instances: [] }];
+    const dupCtx = { members: dupMembers, memberById: { "agt-x1": dupMembers[0], "agt-x2": dupMembers[1] }, base: "/synthetic",
+      link: (...parts) => "/maintainer/maity/" + parts.join("/") };
+    const dupBox = win.Maity.agentParts.credentials(dupCtx, dupMembers[0], { items: [{ id: "crd-shared", instance: "k3pa", client: "cli", created_at: "2026-11-01T09:00:00Z" }] });
+    let dupAsked = null;
+    win.confirm = (q) => { dupAsked = q; return false; };
+    btn(dupBox, "Revoke").click(); for (let k = 0; k < 2; k++) await tick();
+    win.confirm = credConfirm;
+    const dupInst = dupBox.querySelector(".credential-instance");
+    expect(dupInst && text(dupInst) === " · owner/agent-c#k3pa Online"
+      && dupAsked === "Revoke owner/agent-c#k3pa (crd-shared)? Its session loses access at once.",
+      "credentials: where two members share the handle, the row and the confirmation both name owner/handle#id " + JSON.stringify([dupInst && text(dupInst), dupAsked]));
+  }
   expect(text(agCRow).includes("Areas") && text(agCRow).includes("Capabilities"), "areas and capabilities");
   expect(!text(agCRow).includes("The agent was told at once"), "an agent's own pause is a declaration, without that line");
+  // The member page's read-only list names each credential's instance the same way (tsk-s0jb9wkdp41j).
+  await go("#/maintainer/maity/team/agt-c/sessions"); for (let k = 0; k < 6; k++) await tick();
+  {
+    const credLis = main.querySelectorAll(".member-creds li");
+    const named = credLis.map((li) => li.querySelector(".credential-instance") ? text(li.querySelector(".credential-instance")) : null);
+    expect(credLis.length === 2 && named.includes(" · agent-c#k3pa Online") && named.includes(" · agent-c#q7rd"),
+      "member page: each credential names its instance, the active one with its presence " + JSON.stringify(named));
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 4; k++) await tick();
   const agB = await agOpen("agt-b");
   expect(text(agB.querySelector(".member-pause")).includes("A pause tells the agent at once and refuses it new work (claims, new cards)"),

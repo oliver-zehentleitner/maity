@@ -141,6 +141,26 @@ to open them from.
 
 **Rejected alternatives:** unknown beyond the contract entry's.
 
+## A private project carries a lock after its name, from the project's own public_page
+
+**Id:** fccd0d35-4bfc-44d8-8083-66765ec5a80f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5t3qd0m9rj6r (the owner in the project chat, 2026-11-10, seq 105399: a private project's tab shows a symbol after its name saying it is private; the proposal approved in seq 105431); the owner's answer on req-tj5y18pc44qz, 2026-11-10 (`public_page` on `GET /me`, the lock following `public_page` alone)
+**Revisit when:** a project gets a visibility other than `on` and `off`, or the tabs read their projects from somewhere other than `/me`
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-10
+
+A project whose `public_page` is `off` (§16.9) shows a small padlock (`M.icons.lock`, 12 px, the muted text colour, either theme) right after its name in these places: its tab, its entry in the tabs menu, the project header, and on All projects the project label of each request to the project and the project's group heading. The name stands without a lock elsewhere: a personal request that names a project keeps its "Personal · <project>" label, as it is the human's own request, not the project's (`inbox.js` `projectBadge`); an open request's Project fact (`inbox.js`, `inbox.fact.project`); the project filter on All projects, whose `<option>` cannot hold an icon; and a conversation's project mark in the chat list, which carries the name only in its title (`chats.js`). The lock is `role="img"` named "Private" (`new_project.private.label`), with the create form's sentence as its tooltip (`new_project.created.private`), so it does not rest on the picture alone. A public project, the default, carries nothing. `GET /me` lists `public_page` with each human's project (§5.1), so the row of tabs marks a project without reading each one.
+
+**Reason:** the owner wants to see at a glance which of their projects only members can read. The lock follows the project's own setting, not whether a page is served: an archived or held project that is `on` stays unmarked, because those states have marks of their own (the state dot, the moderation notices), and the lock says what the owner chose.
+
+**Rejected alternatives:**
+- A "Private" text label in the tab: on a phone it takes too much of the row's width.
+- An emoji: it is drawn by the font, in its own colours, not in the theme's.
+- Reading each project for its visibility, or the lock only where the open project is known: the first is a read per tab, the second would leave the tabs, the menu and All projects without it.
+- The lock when no page is served (archived, held, an owner suspended): it would mark projects the owner made public, for reasons the lock does not name.
+
 ## A join's state comes from its fields and the hub's clock; Revoke stays a minute past expiry
 
 **Id:** b8c3a4f4-1e21-4de1-9a82-7abe86456259
@@ -4359,9 +4379,27 @@ While a tab is dragged, a 3 px upright line in the accent colour stands in the g
 **Reason:** the owner's layout. A tab for one action among the projects read as one more project and kept the menu far from the tabs it manages. A line drawn by the drop's own rule is the place the drop takes, so what the eye sees is what happens. A border or a margin would shift the tabs under the pointer and so change the half it is on.
 
 **Rejected alternatives:**
-- New project as an item of the tabs menu: that menu is about the tabs, not about creating.
+- New project as an item of the tabs menu: that menu is about the tabs, not about creating. Reversed by the owner on 2026-11-10: the item is there now, see 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef.
 - The line as an element between two tabs: it would widen the row while dragging and move the tab under the pointer.
 - An inset `box-shadow` on the tab: on the round tab it follows the curve and reads as a second border, not as a place between two tabs.
+
+## The tabs menu offers New project too, beside the projects; the "+" menu keeps its entry
+
+**Id:** 6fd6bc4c-d67a-41bc-93fd-a37f3f4082ef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c4dz5x6rb2h8 (the owner's report in the project chat, 2026-11-10: the "…" menu right of the project tabs lacks the option to create a project)
+**Revisit when:** the tabs menu gets items that are neither about the tabs nor about the projects in them, or the "+" menu loses its New project entry
+**See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-10
+
+The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New project** (`view.new_project`), a link to `/new`, the same create form the header's "+" menu opens. Like the "+" menu it is there for humans only. The "+" entry stays; the row of tabs still has no New project tab of its own.
+
+**Reason:** a person looks for a new project next to the projects. After the tab went (4ff40142), the action lived only in the header's "+" menu, and the owner did not find it where he looked, in the menu beside the tabs. That outweighs keeping the menu strictly about the tabs.
+
+**Rejected alternatives:**
+- Bringing back the "+ New project" tab: the owner's 2026-11-08 layout keeps the row for projects and the menu right after the last tab (4ff40142).
+- Moving the entry out of the "+" menu: that menu is the header's one place to add something (an agent, a person, a runner, a project), and nothing asked to change it.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
@@ -5882,6 +5920,32 @@ the rejected alternatives below are inferred, nobody stated them.
 word for what the number is, and the list
 is `aria-live`, so it is announced with each new message (the Grok reviewer's nit, optional; axe
 reports nothing).
+
+## Each credential in an agent's list names its instance, so the one to revoke is told apart by name
+
+**Id:** 9bfd0309-9db6-47e1-bc8c-46cbac6def9c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-s0jb9wkdp41j (the maintainer, 2026-11-10: he had to revoke one dead instance of each of two agents and could tell their credentials apart only by their dates); docs/api.md §10 (each credential carries `instance`) and §6.17
+**Revisit when:** an instance can be revoked from its own line on the member's Sessions tab, or the member list carries the credentials
+
+In an agent's credentials list (its row on Team, its Details on Agents) each credential names its
+instance after its id as `<handle>#<id>`: where the member lists that instance, the `#id` links
+to it on the member's Sessions tab, and an active one shows its presence from the member list.
+A revoked credential's instance is usually no longer listed (Sessions shows the active instances,
+docs/api.md §6.2), so its `#id` is plain text: a link would only lead to "not listed". The revoke confirmation
+names the same address, by the same handle rule (owner/handle where two members share the
+short one): "Revoke maity-coder-claude-001#qwju (crd-…)?".
+
+**Reason:** revoking a credential ends that instance's session at once. With two instances of one
+agent the list showed only ids, client, created and last used, so the right one was picked by its
+dates, which is error-prone for a step that cannot be undone. The instance name is what every
+other view uses for an instance (messages, cards, the ticker).
+
+**Rejected alternative:** the list as it was, the instance told apart by its created and last-used
+times: what the maintainer had to do, and what this card is for. Alternatives beyond that were not
+discussed: unknown.
 
 ## All projects reads each project's members once per page drawn, shared by the Lead button and the inbox
 

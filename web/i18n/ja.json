@@ -127,7 +127,7 @@
   "agentparts.credential.never_resumed": "resume の実績なし",
   "agentparts.credential.not_revoked": "失効させられませんでした: {reason}",
   "agentparts.credential.revoke": "失効させる",
-  "agentparts.credential.revoke_confirm": "{name} の {id} を失効させますか? そのセッションは直ちにアクセスできなくなります。",
+  "agentparts.credential.revoke_confirm": "{address}（{id}）を失効させますか? そのセッションは直ちにアクセスできなくなります。",
   "agentparts.credential.revoked": "失効 {time}、実行者: {who}",
   "agentparts.credential.revoked_reason": "失効 {time}、実行者: {who} ({reason})",
   "agentparts.credential.revoking": "失効させています…",

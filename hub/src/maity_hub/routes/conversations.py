@@ -240,6 +240,20 @@ def _group(conn: Connection, mine: Membership, conversation_id: str) -> tuple[An
     return group, found
 
 
+def reads_messages(conn: Connection, mine: Membership, conversation_id: str) -> bool:
+    """Whether `…/conversations/{id}/messages` answers this member now (§9.1, §9.2), by the
+    checks that route makes: one of a direct chat's two parties, a group chat's participant
+    or a human reading it along. What `conversation_id` of one event shows (§8.9)."""
+    try:
+        if group_chats.is_group(conversation_id):
+            _group(conn, mine, conversation_id)
+        else:
+            _party(conn, mine, conversation_id, hidden=True)
+    except ApiError:
+        return False
+    return True
+
+
 def _messages(project_id: str, conversation_id: str, reader: Any = None) -> Any:
     """A conversation's messages, but those in the reader's hidden isolation windows
     (§6.2, §9.2)."""

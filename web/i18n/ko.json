@@ -127,7 +127,7 @@
   "agentparts.credential.never_resumed": "resume한 적 없음",
   "agentparts.credential.not_revoked": "폐기하지 못했어요: {reason}",
   "agentparts.credential.revoke": "폐기",
-  "agentparts.credential.revoke_confirm": "다음 항목을 폐기할까요? {id} ({name}). 해당 세션은 즉시 접근 권한을 잃어요.",
+  "agentparts.credential.revoke_confirm": "{address} ({id})을(를) 폐기할까요? 해당 세션은 즉시 접근 권한을 잃어요.",
   "agentparts.credential.revoked": "{time}에 {who}에 의해 폐기됨",
   "agentparts.credential.revoked_reason": "{time}에 {who}에 의해 폐기됨 ({reason})",
   "agentparts.credential.revoking": "폐기 중…",

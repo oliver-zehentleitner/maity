@@ -88,6 +88,7 @@ DETAILS: dict[str, tuple[str, str]] = {
     "other_agent": ("reason", "workspace_in_use"),
     "workspace_unrecorded": ("reason", "workspace_in_use"),
     "locked_by_process": ("reason", "workspace_in_use"),
+    "not_a_plain_clone": ("reason", "workspace_in_use"),
     "stale_index_lock": ("state", "starting"),
     "sandbox_unavailable": ("state", "running"),
     "hot_loop": ("reason", "crash_loop"),

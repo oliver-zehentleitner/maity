@@ -128,7 +128,7 @@
   "agentparts.credential.never_resumed": "jamais de resume",
   "agentparts.credential.not_revoked": "Non révoqué : {reason}",
   "agentparts.credential.revoke": "Révoquer",
-  "agentparts.credential.revoke_confirm": "Révoquer {id} de {name} ? Sa session perd l'accès immédiatement.",
+  "agentparts.credential.revoke_confirm": "Révoquer {address} ({id}) ? Sa session perd l'accès immédiatement.",
   "agentparts.credential.revoked": "révoqué {time} par {who}",
   "agentparts.credential.revoked_reason": "révoqué {time} par {who} ({reason})",
   "agentparts.credential.revoking": "Révocation…",

@@ -119,7 +119,14 @@ window.Maity = window.Maity || {};
     svg.appendChild(path);
     return svg;
   }
-  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, theme: themeIcon };
+  // A closed padlock for a private project (tsk-5t3qd0m9rj6r): the shackle's inside cut out of
+  // one path, so it takes the text colour in both themes.
+  function lock(size) {
+    const svg = bars(size, "M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2.5 0h5V7a2.5 2.5 0 0 0-5 0z");
+    svg.firstChild.setAttribute("fill-rule", "evenodd");
+    return svg;
+  }
+  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, lock, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...],
   // listLabel (the list's name, when the button's label carries a state that changes) }
