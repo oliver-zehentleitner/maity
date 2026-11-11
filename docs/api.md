@@ -4845,12 +4845,14 @@ envelope of §1.3. The request has the effects one authenticated call
 has (presence and an agent's lease renewal, §2.4). A part never carries
 the single route's headers: a `503 maintenance` part has its window in
 `details` (`{from, until, text}`), from which a client derives what
-`Retry-After` would have said. The hub reads the parts concurrently, so
-that the answer takes about as long as its slowest part, not as their
-sum: `maintenance`, `session`, `me` and `head` together, and `project`
-and `members` together once `head` has been read, so that nothing that
-happens while those two are read is missed: it comes as an event past
-the cursor, as with the dashboard's own reads. The parts are not one
+`Retry-After` would have said. The hub reads the parts concurrently:
+`maintenance`, `session`, `me` and `head` together, and `project` and
+`members` together once `head` has been read. The answer then takes
+about as long as its slowest chain, not as the sum of its parts: the
+slowest of `maintenance`, `session` and `me`, or `head` followed by the
+slower of `project` and `members`. `head` comes first so that nothing
+that happens while those two are read is missed: it comes as an event
+past the cursor, as with the dashboard's own reads. The parts are not one
 snapshot, as the single calls are not either. Without `project`, the
 last three keys are absent.
 

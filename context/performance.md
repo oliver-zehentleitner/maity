@@ -50,7 +50,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | tsk-d61rvjm6gteh |
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
-| 10 | One boot read: `/me`, the session, the project and its members in one answer | −0.3–0.6 s per full load | M, contract | decided, tsk-x4z69ff785y6 (below) |
+| 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | decided, tsk-x4z69ff785y6 (below) |
 | 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
@@ -124,8 +124,10 @@ instance admin, who measures and may read the instance's metadata anyway, gets i
 `GET /bootstrap` gives the dashboard's first reads (the maintenance window, the session,
 `GET /me`, and for a project view the event head, the project and its members) in one
 round trip. Each part is `{status, body}`: what the single route answers the same caller,
-errors included. The route needs no sign-in, and only what the hub decides before any
-route (a cross-site cookie request, a route limit) answers the whole request. Every single
+errors included. The route needs no sign-in. The whole request is answered with no parts only
+for what the hub answers before any route (a route limit, a credential in the query) and, as
+the route's own rule, for a caller it would refuse (a cross-site cookie, plain HTTP, a runner
+credential, `Maity-For`), §5.4. Every single
 route stays.
 
 **Reason:** the dashboard's boot reads them in three waves, each waiting for the one before
