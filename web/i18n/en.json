@@ -1120,7 +1120,7 @@
   "error.reason.step_up_required": "This needs your second factor first.",
   "error.release_in_flight": "Another release is already open.",
   "error.release_not_ready": "This release is not ready yet.",
-  "error.replace_open": "A replacement of this placement is still open. It stays open until the placement that goes away has closed: the old one after the handover, or the new one after an abort.",
+  "error.replace_open": "A replacement involving this placement is still open. It stays open until the placement that goes away has closed: the old one after the handover, or the new one after an abort.",
   "error.repository_not_offered": "That runner does not offer this project's repository.",
   "error.request_claimed": "Another admin already took this request.",
   "error.request_not_open": "This request is no longer open.",
