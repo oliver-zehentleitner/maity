@@ -266,16 +266,19 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-fffx19yteh4x (#1593, merged as f75de2db, added two error codes to `docs/api.md` §1.3 with a green CI, and every later pull request touching `web/` failed the web check until #1628); `.github/workflows/ci.yml`; `web/tools/test_ci_paths.py`
-**Revisit when:** a file that `make -C web check` reads is opened some other way than `os.path.join(os.path.dirname(ROOT), …)` in `web/tools/check.py` (the test does not see it), or the web job grows slow enough that a contract-only pull request should not run it
+**Revisit when:** `web/tools/check.py` reads a file outside `web/` without starting from `os.path.dirname(ROOT)` (the test does not see it), or the web job grows slow enough that a contract-only pull request should not run it
 
 `web/tools/check.py` reads four places outside `web/`: the hub's words, `hub/words-meta/`, the error codes of `docs/api.md`
 §1.3 (each needs words in `web/js/errors.js`) and the landing page's script
 `hub/src/maity_hub/landing_assets/landing.js` (size and request rules). The `web` part of the `changes` job listed only the
 first two, so a pull request that changed only the contract or only the landing script ran no web check, and main went red
 after the merge. The `web` part now also matches `docs/api.md` and `hub/src/maity_hub/landing_assets/*`.
-`web/tools/test_ci_paths.py`, run by `make check`, collects every path `check.py` builds from the repository root and fails
-unless a `web:` pattern of the `changes` job matches it; a new outside read changes `web/tools/`, which runs the web job,
-so the test names the missing pattern in the same pull request.
+`web/tools/test_ci_paths.py`, run by `make check`, reads `check.py`'s syntax tree, collects every
+`os.path.join(os.path.dirname(ROOT), "a", "b")` whatever its quotes or commas, and fails unless a `web:` pattern of the
+`changes` job matches the path; any other use of `os.path.dirname(ROOT)` (a variable part, the parent kept in a name) fails
+with its line instead of being skipped. A new outside read changes `web/tools/`, which runs the web job, so the test names
+the missing pattern in the same pull request. The first version matched the join with a regular expression and missed
+single quotes and a trailing comma (review of #1630).
 
 **Reason:** the web job is `make check` and `make smoke`, standard library and node, about a minute; running all of it for a
 contract change costs less than keeping a second place that knows which part of the check reads which file.
@@ -285,6 +288,8 @@ contract change costs less than keeping a second place that knows which part of 
   need, and a second list of what reads the contract, to save under a minute; the landing script would still need the web
   part.
 - Only the two patterns, with no test: the gap came from a read nobody added to the filter, and the next one would too.
+- A regular expression over `check.py`'s text: it matches one spelling of the join, and every other spelling passed
+  unseen.
 
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
