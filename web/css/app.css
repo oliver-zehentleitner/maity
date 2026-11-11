@@ -383,6 +383,10 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
 /* The tabs take their width, no more, so the tabs menu stands right after the last one (tsk-hp9gq9rmrdq2);
    a project's state keeps the far end of the row. */
 .switcher-row .switcher { flex: 0 1 auto; min-width: 0; }
+/* On a wide screen many tabs scroll before the row wraps, so the tabs menu stays beside the last one
+   instead of falling to a line of its own (tsk-qa2r972wjsws). 40px holds the menu (about 36px; its
+   negative margin cancels the column gap). A phone gives the tabs the room the menu leaves (below). */
+@media (min-width: 601px) { .switcher-row:has(> .tabs-menu-box) .switcher { max-width: calc(100% - 40px); } }
 /* The tabs menu beside the row (js/app.js tabsMenu): which projects are tabs, and the start set. */
 .tabs-menu-box { flex: none; display: inline-flex; align-items: center; }
 .tabs-menu-box .menu-button { min-width: 32px; min-height: 32px; }

@@ -6384,6 +6384,21 @@ def project_tabs_step(run: Run, page: Page) -> None:
         if size:
             page.set_viewport_size(size)
     run.shot(page, "tabs-menu-tab-light-1280")
+    # Many tabs on a wide screen: they scroll before the row wraps, so the menu stays on the tabs' line beside them
+    # instead of falling to a line of its own. Twenty copies of the last tab stand in for twenty more projects.
+    page.evaluate("(() => { const n = document.querySelector('nav.switcher'); const ts = n.querySelectorAll('a[data-project]'); const t = ts[ts.length - 1];"
+                  " for (let i = 0; i < 20; i++) { const c = t.cloneNode(true); c.classList.add('e2e-extra-tab'); c.removeAttribute('aria-current');"
+                  " n.appendChild(c); } })()")
+    try:
+        for width in (1280, 900, 601):
+            page.set_viewport_size({"width": width, "height": 844})
+            page.evaluate("document.querySelector('nav.switcher').scrollLeft = 1e6")
+            got = page.evaluate(like_tab)
+            assert abs(got["top"][0] - got["top"][1]) < 1 and got["right"] <= got["vw"], f"with many tabs the tabs menu left the tabs' line at {width} px: {got}"
+    finally:
+        page.evaluate("document.querySelectorAll('nav.switcher a.e2e-extra-tab').forEach((c) => c.remove())")
+        if size:
+            page.set_viewport_size(size)
     # The keyboard as before: Enter and ArrowDown open it, Escape closes it and gives the focus back.
     tabs_button = page.locator(".tabs-menu-box").get_by_role("button", name="Project tabs", exact=True)
     tabs_button.focus()
