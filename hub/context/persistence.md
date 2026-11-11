@@ -1092,7 +1092,9 @@ What the bridge has to keep:
   448332b9 237 ms and 251 ms, the agent's app serving nothing during the test (`threads_busy` 0).
   Its maximum measured the runner, not the hub. In two plain local runs the reference was 75 and
   78 ms late and the apps' loops at most 16 ms more; on the runners the busy and the idle app's
-  loop differed by 14–22 ms (the runs before the reference had none). The
+  loop differed by 14–22 ms (the runs before the reference had none). The first two runner runs
+  with the reference (on its branch, deb88b2b): the reference 241 and 314 ms late, the apps'
+  loops 259 and 251, 321 and 312 ms, at most 18 ms over it, on average 4–8 ms late. The
   margin of 150 ms keeps that noise out and still fails a loop blocked once for 400 ms (366 ms
   against a reference of 89). The average catches a loop busy in many slices, which the margin
   does not see: blocked in random slices of 30–120 ms, an app's loop ran 35 ms late on average
