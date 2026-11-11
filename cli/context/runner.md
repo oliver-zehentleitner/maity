@@ -309,6 +309,47 @@ network domains start empty, so the hub and the forge have to be named, or
 - Leaving `autoAllowBashIfSandboxed` at its default: inside the sandbox
   every command would run, `curl` to any allowed host included.
 
+## On macOS Claude Code's sandbox is Seatbelt; the service stays systemd's
+
+**Id:** 4d122813-2f28-4a7b-807e-44aaaf0c835b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-rrx15szr50c6 (the owner's request of 2026-11-11 for a first runner test on a Mac the next morning; its plan note); Claude Code's sandboxing documentation (code.claude.com/docs/en/sandboxing), read 2026-11-11: macOS uses the built-in Seatbelt, nothing to install, `failIfUnavailable` exits instead of running unsandboxed; `cli/src/maity/runner/capabilities.py`, `commands.py`. Not run on a Mac when written.
+**See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-11
+**See:** runner.md — 84732ea1-d314-465d-939c-fd274b2f8b0d — as of 2026-11-11
+**Revisit when:** the first run on a Mac shows git, the forge login or the read denies failing inside Seatbelt; a launchd service is wanted; Codex's sandbox or an ssh host is tried on macOS
+
+On macOS the runner switches Claude Code's sandbox on where
+`sandbox-exec` is on the agents' `PATH`, with the settings it gives
+bubblewrap on Linux. `maity runner check` names the sandbox's state for
+Claude Code on every platform: `ok` with the tools it found, otherwise a
+warning that agents run unsandboxed, an error with `require_sandbox`. On
+a platform with no Claude Code sandbox it says so instead of nothing.
+`install`, `uninstall` and `unit` stay systemd's; on macOS the operator
+runs `maity runner serve` in a terminal. The ssh backend's probe of a
+host still looks for bubblewrap and socat, so a Mac host reads
+`sandbox: off`.
+
+**Reason:** the sandbox ships with macOS, so its presence is the
+analogue of bubblewrap and socat on the `PATH`. `failIfUnavailable`
+already turns a Seatbelt that cannot start into a refused start, never a
+silent unsandboxed one. Before this, macOS agents ran unsandboxed and
+`check` said nothing about it; only the `sandbox_unavailable` detail
+showed it. A service needs a launchd agent that nobody could run on a
+Mac before the test, and the foreground `serve` is enough for it, since
+agents outlive it.
+
+**Rejected alternatives:**
+- Keeping macOS unsandboxed until a Mac run: the test would then have
+  run agents with the operator's rights and taught nothing about the
+  sandbox. Installing from main remains that state, reported.
+- Trying Seatbelt once (`sandbox-exec -p … true`) instead of finding the
+  binary: Claude Code's own start-up check and `failIfUnavailable` do
+  that per start, and the probe could not be tried here without a Mac.
+- A launchd agent in the same change: untested by the morning, and a
+  service file that does not work reads as support.
+
 ## The command allowlists are not a boundary until agents run as their own user
 
 **Id:** 2bdc5809-b08b-4fa2-97bc-004d37c4cddb
