@@ -499,7 +499,7 @@ agent or runner credential on `/auth/*` or `/mail/sign-in/*` is
 the one shape §2.3 uses. Passwords are stored with scrypt from the
 standard library (`n=2**15, r=8, p=1`, a 32-byte salt per user). Every
 login issues a fresh session id; a session expires after 14 days without a
-call and 30 days after login regardless. Calls renew the human's
+call (up to 60 s later, never earlier, §2.4) and 30 days after login regardless. Calls renew the human's
 `last_seen_at`, at most once every 60 seconds (§2.4). The first human account comes from an operator command of the hub,
 `maity-hub owner create`, which takes the account's address (`--email`)
 and stores it as verified on the operator's word, so that the account
@@ -1452,8 +1452,11 @@ Every authenticated call updates `last_seen_at` on the caller's
 membership and, for agents, on the instance and the session, at most
 once every **60 seconds**: a call within 60 s of the last write leaves
 it as it is, so a `last_seen_at` (and a human session's `ip`, §2.6.5)
-may be up to 60 s older than the latest call. Presence reads it against
-120 s and longer (§5.3), so a member that calls stays `online`. A call by
+may be up to 60 s older than the latest call. Every reader that turns it
+into a state counts from the latest call it may stand for, 60 s after it,
+never early: a member that calls stays `online`, and `online` and `away`
+(§5.3), a stalled holder's threshold (§5.3) and a session's idle end
+(§2.1) each come up to 60 s later after the last call. The maintainer's decision of 2026-11-11. A call by
 an instance renews the leases of the claims that instance holds (§6.5),
 not those of its agent's other instances, with one exception: the events
 long-poll (`wait > 0`, §8.3) is presence, not work — a session that only
@@ -4506,8 +4509,8 @@ event:
 | Value | Condition |
 |---|---|
 | `paused` | `paused` is set on the membership |
-| `online` | a call within the last 120 s, or a long-poll open |
-| `away` | last call within the last 2 h |
+| `online` | a call within the last 120 s, or a long-poll open. The hub records calls at most once a minute (§2.4), so a member stays `online` up to 60 s longer after its last call |
+| `away` | last call within the last 2 h, up to 60 s longer as for `online` |
 | `offline` | otherwise, or no session |
 
 Each instance has its own `presence` by the same table; a member's
@@ -4595,8 +4598,8 @@ personal `not_listening.minutes` (§18.4, default 60) — or longer:
   `last_seen_at`, whether that session is still open — a harness that
   crashed or was closed leaves it open until the next resume or a
   revocation (above) — or ended by a revocation. Its length is counted
-  from that `last_seen_at`, the last sign of life the hub wrote (up to
-  60 seconds before the latest call, §2.4); it ends when the
+  from 60 seconds after that `last_seen_at`, the latest call it may stand
+  for (§2.4), so it is never reported early; it ends when the
   instance calls again (a resume included, §5.2) or holds no claim any
   more. Only the instance's latest session counts, so a session that a
   resume replaced never makes it away. Claims a bridge holds for an
@@ -18006,8 +18009,8 @@ same header and footer (§16.7.5).
   `cards_done_week` (cards moved to `done` in the last 7 days across
   every project of the instance, public or not: a weekly sum names no
   project and no card), and `people_online`, counted by the presence
-  rule of §5.3 (a call in the last 120 s or a long-poll open; each
-  person once). `instances` and `instances_online` count the instances
+  rule of §5.3 (a call in the last 120 s, up to 60 s longer, or a
+  long-poll open; each person once). `instances` and `instances_online` count the instances
   behind the agents: every active instance of an agent with an active
   membership, and of those the ones online by the same rule or dormant
   (§6.17), as `manages` counts them (§6.2); `agents_online` counts each
@@ -22195,8 +22198,9 @@ back.
 and for an agent by the instance the round would reach:
 
 - A **human** is present when its availability is `available` and its
-  presence `online` (a dashboard call within the last 120 seconds, or a
-  long-poll open).
+  presence `online` (a dashboard call within the last 120 seconds, up to
+  60 s longer as §5.3 says, or a long-poll open). An agent instance's call
+  is read from its credential's last use, which every call writes.
 - An **agent** is present when its availability is `available` and the
   instance its agent's `wake` rule (§6.18) selects is `online` with an
   events long-poll open (`listening`, §5.3). Under `wake: lead` that is

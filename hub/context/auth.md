@@ -621,8 +621,8 @@ before.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on req-79cbqd7dcpps (seq 109161, 2026-11-11), docs/api.md §2.4 and §2.6.5, `auth/caller.SEEN_EVERY`
-**Revisit when:** presence (§5.3) reads against a window shorter than 120 s, or a reader needs a `last_seen_at` or session `ip` fresher than a minute
+**Source:** the maintainer's decisions on req-79cbqd7dcpps (seq 109161, 2026-11-11) and on req-xkwfa78akg93 (2026-11-11, "never early"), docs/api.md §2.4, §2.6.5 and §5.3, `seen.SEEN_EVERY`, `seen.latest_call`
+**Revisit when:** presence (§5.3) reads against a window shorter than 120 s, a reader needs a `last_seen_at` or session `ip` fresher than a minute, or a new reader turns `last_seen_at` into a state without `seen.latest_call`
 
 Every authenticated call used to write `last_seen_at` on the session and on the member or human,
 and a human session's `ip`: two or three UPDATEs, with their row locks, on every request. The hub
@@ -632,9 +632,23 @@ claim leases still renew on every call, since a lease is not presence. A human c
 wrote nothing still checks that the session is open and alive, so a session ended within the
 minute is refused. A completed sign-in writes the human's `last_seen_at` as a call does.
 
-**Reason:** presence reads `last_seen_at` against 120 s and longer, so a value up to 60 s old
-changes no answer, and the writes were most of the per-request database work on the auth path.
+The latest call then lies anywhere from the stored time to a minute after it, so no reading of the
+stored time is exact. Every reader that turns it into a state reads it from `seen.latest_call`, a
+minute after it: membership presence (`views`), the landing's people online, a session's idle
+end (`session_alive`, the cookie update, the address sweep) and the digest's stalled holder.
+`online`, `away`, the stalled holder's threshold and the idle end come up to a minute late after
+the last call, never early (§2.4, §5.3). The jour fixe's minutes online and its instance choice
+read an instance's latest call from its credential's `last_used_at` instead, which every call
+writes, as the instances' presence always has.
+
+**Reason:** the writes were most of the per-request database work on the auth path. With them
+gone, a reader must err one way: a caller shown away, expired or stalled while it still calls, or
+a state that holds up to a minute longer after the last call. The maintainer chose the second, so
+that a member that calls is never shown away.
 
 **Rejected alternatives:**
 - Writing on every call: the per-request UPDATEs and row locks above.
-- Other options of the request: unknown.
+- Reading the stored time as the latest call: a member that called 62 s ago showed `away` (a
+  write at T, a call at T + 59 that wrote nothing, a read at T + 121), and a session in use could
+  expire up to a minute early.
+- Other options of the first request: unknown.
