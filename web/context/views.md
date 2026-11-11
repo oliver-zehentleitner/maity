@@ -1666,8 +1666,8 @@ profile (views.md#the-header-gets-a-menu-to-bring-someone-in-invitations-get-the
 `counts.chat` from `/me/notifications`, which the header already reads,
 worded "N unread chat messages". `/chats` reads the conversations
 across projects (§9.3, `GET /me/conversations`) and shows them in the
-hub's order: pinned with unread, unpinned with unread, quiet pinned, the
-rest. On a hub
+hub's order: pinned with unread, quietly pinned (pinned, no unread),
+unpinned with unread, the rest. On a hub
 without notifications both buttons stand without a count, the bell as a
 link to everything waiting.
 
