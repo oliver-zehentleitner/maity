@@ -7,10 +7,11 @@ A probe read answers `forge_not_github`.
 from __future__ import annotations
 
 import socket
+from collections.abc import Callable
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine, String, inspect
 
 from maity_hub import forge, images, outbound, probe
 from tests import flow
@@ -158,7 +159,7 @@ class Outbound(Exception):
 def _forbid(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     calls: list[str] = []
 
-    def refuse(name: str):
+    def refuse(name: str) -> Callable[..., Any]:
         def gone(*_args: Any, **_kwargs: Any) -> Any:
             calls.append(name)
             raise Outbound(name)
@@ -289,7 +290,9 @@ def test_the_column_holds_2048_characters(migrated: Engine) -> None:
     column = next(
         c for c in inspect(migrated).get_columns("project") if c["name"] == "repository_url"
     )
-    assert column["type"].length == 2048
+    column_type = column["type"]
+    assert isinstance(column_type, String)
+    assert column_type.length == 2048
 
 
 def test_a_refused_url_names_not_a_repository_url(owner: flow.Human) -> None:
