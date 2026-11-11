@@ -11480,55 +11480,63 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const evMarked = () => main.querySelectorAll("li").filter((li) => li.classList.contains("seq-target")).map((li) => li.getAttribute("data-seq")).join();
   const evReads = [];
   const evGet = win.Maity.api.get;
-  // The one-item listing read that tells a project message's tombstone from a chat's (review of #1629, §8.8).
+  // Every case counts the Messages listing reads it makes: §8.9 places a removed project message and a chat's tombstone
+  // alike (req-5zfznap3s3bj o1), so the page no longer reads the listing to tell them apart (tsk-hpzs907e3xvx).
   const evLists = [];
-  const evList = (p) => { if (/\/messages\?after=\d+&limit=1$/.test(p)) evLists.push(p); };
+  const evList = (p) => { if (/\/messages\?/.test(p)) evLists.push(p); };
   win.Maity.api.get = (p, ...r) => { if (/\/events\/\d/.test(p)) evReads.push(p); evList(p); return evGet(p, ...r); };
   await evAt(6013);
   expect(win.location.hash === "#/maintainer/maity/messages#seq-6013" && evMarked() === "6013" && main.querySelector("section.view-messages")
-    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6013"]) && evLists.length === 0,
-    "event: a project message opens in Messages, marked there, after one read of the event " + win.location.hash + " " + JSON.stringify(evReads) + " " + JSON.stringify(evLists));
-  // 6001 was removed above: its tombstone has no type, as a chat's has (review of #1629). Its audience (["all"]) stays
-  // and would tell it from a chat's here, but not for a project message to one member, whose audience is member:
-  // tokens alone like a chat's; so the page asks the Messages listing for every typeless tombstone (§8.8, one item
-  // from just below its seq). The listing holds 6001, so it opens there, its tombstone marked, as §8.9 puts a message
-  // that is not a conversation's.
-  await evAt(6001);
-  expect(win.location.hash === "#/maintainer/maity/messages#seq-6001" && evMarked() === "6001" && main.querySelector("li.seq-target.removed")
-    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
-    "event: a removed project message's tombstone (no type) that the Messages listing holds opens there, marked, after one listing read of one item "
-    + win.location.hash + " " + evMarked() + " " + JSON.stringify(evLists));
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6013"]),
+    "event: a project message opens in Messages, marked there, after one read of the event " + win.location.hash + " " + JSON.stringify(evReads));
   // A project message about a card opens in Messages at its seq, the card linked beside it, not on the card, whose
   // panel lists no messages (§8.9, the owner's decision of 2026-11-11, req-cxyyb2w01s8m o2, tsk-hpzs907e3xvx).
-  evReads.length = 0; evLists.length = 0;
+  evReads.length = 0;
   await evAt(6005);
   const evCardLi = main.querySelectorAll("li").find((li) => li.classList.contains("seq-target") && li.getAttribute("data-seq") === "6005");
   expect(win.location.hash === "#/maintainer/maity/messages#seq-6005" && evMarked() === "6005"
     && !!evCardLi && evCardLi.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004")
-    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6005"]) && evLists.length === 0,
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6005"]),
     "event: a project message about a card opens in Messages at its seq, marked, the card linked beside it, after one read of the event "
-    + win.location.hash + " " + evMarked() + " " + JSON.stringify(evReads) + " " + JSON.stringify(evLists));
-  // A removed project message about a card (its subject kept, §8.5): the Messages listing holds it, so it opens there too.
+    + win.location.hash + " " + evMarked() + " " + JSON.stringify(evReads));
+  // From here on no listing read: what Messages renders on its own for the cases above is not this page's.
   evLists.length = 0;
+  // 6001 was removed above (its subject null, as the hub gives a message without a card): a removed project message
+  // never opens in Messages, though the listing holds its tombstone; without a card it is drawn on its page, removed.
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/events/6001" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "6001"
+    && main.querySelector("article.event-one p.msg-redacted") && evLists.length === 0,
+    "event: a removed project message without a card stays drawn on its page, removed, not sent to Messages, no listing read "
+    + win.location.hash + " " + JSON.stringify(evLists));
+  // A removed project message about a card (its subject kept through the redaction, §8.5) stays on its card.
   win.Maity.api.get = (p, ...r) => { evList(p); return p === "/projects/maintainer/maity/events/6001"
     ? evGet(p, ...r).then((e) => Object.assign({}, e, { subject: { type: "task", id: "tsk-0004" } }))
     : evGet(p, ...r); };
   await evAt(6001);
-  expect(win.location.hash === "#/maintainer/maity/messages#seq-6001" && evMarked() === "6001"
-    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
-    "event: a removed project message about a card, held by the Messages listing, opens there, not on the card "
-    + win.location.hash + " " + JSON.stringify(evLists));
-  // A chat's tombstone about a card that the reader no longer opens in its chat: the listing does not hold it, so it
-  // opens at its card, as before.
-  evLists.length = 0;
+  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-6001" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004")
+    && evLists.length === 0,
+    "event: a removed project message about a card opens its card, not Messages, no listing read " + win.location.hash + " " + JSON.stringify(evLists));
+  // A former group participant's tombstone (fmzu, #1629): the hub serves the redacted message with no conversation
+  // (the chat is no longer the reader's) and a tombstone payload with no type. About a card it goes to that card
+  // (§8.9: its subject, else the event's page).
   win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7003"
     ? Promise.resolve({ seq: 7003, kind: "message", at: "2026-10-22T09:07:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: { type: "task", id: "tsk-0004" },
       audience: ["member:agt-b", "member:hum-maintainer"], payload: { redacted: true, reason: null, by: "hum-maintainer", at: "2026-10-22T09:08:00Z" }, redacted: true, conversation_id: null })
     : evGet(p, ...r)); };
   await evAt(7003);
   expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-7003" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004")
-    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=7002&limit=1"]),
-    "event: a chat's tombstone about a card, absent from the Messages listing, opens that card " + win.location.hash + " " + JSON.stringify(evLists));
+    && evLists.length === 0,
+    "event: a chat's tombstone about a card the reader can no longer open in its chat opens that card, no listing read " + win.location.hash + " " + JSON.stringify(evLists));
+  // Without a subject it is drawn on its page, not sent to Messages, which lists no chat message and would say "not reached".
+  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7002"
+    ? Promise.resolve({ seq: 7002, kind: "message", at: "2026-10-22T09:05:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["member:agt-b", "member:hum-maintainer"],
+      payload: { redacted: true, reason: "posted by mistake", by: "hum-maintainer", at: "2026-10-22T09:06:00Z" }, redacted: true, conversation_id: null })
+    : evGet(p, ...r)); };
+  await evAt(7002);
+  expect(win.location.hash === "#/maintainer/maity/events/7002" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7002"
+    && main.querySelector("article.event-one p.msg-redacted") && evLists.length === 0,
+    "event: a chat's tombstone the reader can no longer open in its chat, without a subject, stays drawn on its page, no listing read "
+    + win.location.hash + " " + JSON.stringify(evLists));
   win.Maity.api.get = (p, ...r) => { if (/\/events\/\d/.test(p)) evReads.push(p); evList(p); return evGet(p, ...r); };
   await evAt(4202);
   expect(win.location.hash === "#/maintainer/maity/chat/agt-a#seq-4202" && evMarked() === "4202",
@@ -11555,41 +11563,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.location.hash === "#/maintainer/maity/events/7001" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7001"
     && text(main.querySelector("article.event-one .badge")) === "member_joined",
     "event: an event that lives nowhere else is drawn on its page");
-  // A former group participant's tombstone (fmzu, #1629): the hub serves the redacted message with no conversation
-  // (the chat is no longer the reader's) and a tombstone payload with no type; its audience is member: tokens alone, as
-  // a member-only project message's would be. The Messages listing does not hold it, so it is drawn on its page, not
-  // sent to Messages, which lists no chat message and would say "not reached".
-  evLists.length = 0;
-  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7002"
-    ? Promise.resolve({ seq: 7002, kind: "message", at: "2026-10-22T09:05:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["member:agt-b", "member:hum-maintainer"],
-      payload: { redacted: true, reason: "posted by mistake", by: "hum-maintainer", at: "2026-10-22T09:06:00Z" }, redacted: true, conversation_id: null })
-    : evGet(p, ...r)); };
-  await evAt(7002);
-  expect(win.location.hash === "#/maintainer/maity/events/7002" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7002"
-    && main.querySelector("article.event-one p.msg-redacted") && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=7001&limit=1"]),
-    "event: a chat's tombstone the reader can no longer open in its chat (no conversation, no type), absent from the Messages listing, stays drawn on its page "
-    + win.location.hash + " " + JSON.stringify(evLists));
-  // The listing read fails: nothing is guessed, the project tombstone is drawn on its page, removed.
-  evLists.length = 0;
-  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/messages?after=6000&limit=1"
-    ? Promise.reject(Object.assign(new Error("hub down"), { status: 503, code: "unavailable" }))
-    : evGet(p, ...r)); };
-  await evAt(6001);
-  expect(win.location.hash === "#/maintainer/maity/events/6001" && main.querySelector("article.event-one p.msg-redacted")
-    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
-    "event: a tombstone whose listing read fails stays drawn on its page, not guessed into Messages " + win.location.hash + " " + JSON.stringify(evLists));
-  // The listing's answer comes after the reader left the page: it moves nothing either.
-  let evListRelease = null;
-  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/messages?after=6000&limit=1"
-    ? new Promise((resolve) => { evListRelease = () => resolve(evGet(p, ...r)); })
-    : evGet(p, ...r));
-  await go("#/maintainer/maity/events/6001"); for (let k = 0; k < 6; k++) await tick();
-  const evListPending = typeof evListRelease === "function";
-  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
-  if (evListRelease) evListRelease();
-  for (let k = 0; k < 6; k++) await tick();
-  expect(evListPending && win.location.hash === "#/account" && main.querySelector("section.view-account"),
-    "event: a listing answer that comes after the reader left the page moves nothing " + win.location.hash);
   // The answer comes after the reader left the page (fmzu, #1629): the event's page is gone, its redirect with it.
   let evRelease = null;
   win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/events/7991"
