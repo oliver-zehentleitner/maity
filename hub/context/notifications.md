@@ -658,7 +658,7 @@ become `security` items with the titles of §18.1 (`items._two_factor_title`; a 
 hub does not know reads "Two-factor sign-in changed", never a guess), and the mail pass sends each
 of them as a security mail of its own, as it does a new sign-in: not batched, not held by quiet
 hours, one mail per item (`mail_item_sent`), only while the human's `security` mode is
-`immediate`, with the subject `[Maity] <title>`, the time, the link to Profile → Security and the
+`immediate`, with the subject `[Maity] <title>`, the time, the link to Security and the
 unsubscribe line of the `security` kind. The bell confirms them like the other security items
 (`listing._may_mark`: from a session in good standing that is older than the item). The mail
 carries no code, no secret and no link that changes anything.
