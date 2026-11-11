@@ -4979,6 +4979,209 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
   }
 
+  // The board is drawn once the four open groups have answered (tsk-a5pxwgkgr73e): the closed group's pages
+  // follow, its columns say they are being read and hold no count, then fill in; a closed read that fails says
+  // so in those columns and leaves the open ones as drawn.
+  {
+    const clAll = win.Maity.api.getAll;
+    let clHeld = null;
+    const clColumn = (st) => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === st);
+    const clCards = (st) => clColumn(st).querySelectorAll("article.card").length;
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p)
+      ? new Promise((res, rej) => { clHeld = { go: () => clAll(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) }; }) : clAll(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clEarly = { open: clCards("open"), done: clCards("done"), doneText: text(clColumn("done")), cancelledText: text(clColumn("cancelled")),
+      count: !!clColumn("done").querySelector(".count"), empty: !!main.querySelector(".first-hint") };
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clLate = { done: clCards("done"), reading: !!main.querySelector(".closed-read"), count: !!clColumn("done").querySelector(".count") };
+    expect(clEarly.open > 0 && clEarly.done === 0 && clEarly.doneText.includes("Reading the closed cards…") && clEarly.cancelledText.includes("Reading the closed cards…")
+      && !clEarly.count && !clEarly.empty,
+      "board: drawn once the open groups answer; the closed columns say they are being read, without a count " + JSON.stringify(clEarly));
+    expect(clLate.done > 0 && !clLate.reading && clLate.count,
+      "board: the closed columns fill in when the closed group has answered " + JSON.stringify(clLate));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clOpen = clCards("open");
+    clHeld.fail(); for (let k = 0; k < 6; k++) await tick();
+    expect(clOpen > 0 && clCards("open") === clOpen && text(clColumn("done")).includes("The closed cards could not be read: hub unreachable")
+      && !main.querySelector(".columns .error"),
+      "board: a failed closed read says so in the closed columns and keeps the open ones " + JSON.stringify([clOpen, text(clColumn("done"))]));
+    // One live region outside the redrawn columns says it, from pending to failed; the columns are busy while read.
+    const clLive = () => main.querySelectorAll("p.visually-hidden").find((x) => x.getAttribute("role") === "status");
+    expect(clLive() && text(clLive()) === "The closed cards could not be read: hub unreachable",
+      "board: the closed read's failure is said in a live region that outlives the redraw " + JSON.stringify(clLive() && text(clLive())));
+
+    // The focus stays where it was when the closed cards come in, on a card's title link (no data-focus key)
+    // and on a keyed control, and when their read fails.
+    const clProto = Object.getPrototypeOf(main), clFocus = clProto.focus;
+    clProto.focus = function () { document.activeElement = this; };
+    const clTitle = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0006").querySelector("a.card-open");
+    const clKeyed = () => main.querySelector(".columns").querySelectorAll("button, select").find((x) => x.getAttribute("data-focus"));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clBusy = clColumn("done").getAttribute("aria-busy") === "true" && text(clLive()) === "Reading the closed cards…";
+    clTitle().focus();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clTitleKept = document.activeElement === clTitle() && clColumn("done").getAttribute("aria-busy") !== "true" && text(clLive()) === "";
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clKey = clKeyed().getAttribute("data-focus");
+    clKeyed().focus();
+    clHeld.fail(); for (let k = 0; k < 6; k++) await tick();
+    const clKeyKept = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("data-focus") === clKey
+      && main.contains(document.activeElement);
+    expect(clBusy && clTitleKept && clKeyKept,
+      "board: the focus stays on a title link when the closed cards come in and on a keyed control when their read fails "
+      + JSON.stringify([clBusy, clTitleKept, clKey, clKeyKept]));
+    clProto.focus = clFocus; document.activeElement = undefined;
+
+    // The Closed filter gives no "No card matches" while the closed cards are still read.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    byId("board-column").value = "closed"; byId("board-column").dispatch("change"); await tick();
+    const clNoVerdict = !text(main).includes("No card matches the filter.") && text(clColumn("done")).includes("Reading the closed cards…");
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clFilled = clCards("done") > 0;
+    byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+    win.Maity.api.getAll = clAll;
+    expect(clNoVerdict && clFilled, "board: a filter on the closed columns says no verdict while they are read " + JSON.stringify([clNoVerdict, clFilled]));
+
+    // The closed group held again, for the checks below; each says whether it was held when it looked.
+    const clHold = win.Maity.api.getAll;
+    // The hub search's tsk-0003 closed an hour ago, inside the window whatever the fixture says.
+    let clClosedAt = new Date(Date.now() - 3600000).toISOString();
+    let clSince = null;
+    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p)
+      ? new Promise((res, rej) => {
+        clSince = decodeURIComponent(p.split("closed_after=")[1].split("&")[0]);
+        clHeld = { go: () => clAll(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) };
+      })
+      : /[?&]q=tsk-0003/.test(p) ? clAll(p).then((r) => ({ ...r, items: r.items.map((t) => (t.id === "tsk-0003" ? { ...t, closed_at: clClosedAt } : t)) }))
+        : clAll(p));
+    const clReading = () => text(clColumn("done")).includes("Reading the closed cards…");
+    // A hub search while the closed cards are still read marks a closed card outside the window by its
+    // closed_at, not by the cards loaded so far (review of #1622): tsk-0003, done inside the window, has no
+    // "outside board window" badge, before the closed group answers or after.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clSearchHeld = clReading();
+    byId("board-search").value = "tsk-0003"; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const clHit = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0003");
+    const clBadge = () => !!clHit() && text(clHit()).includes("Closed · outside board window");
+    const clSearchEarly = [!!clHit(), clBadge(), clSearchHeld];
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clSearchLate = [!!clHit(), clBadge()];
+    byId("board-search").value = ""; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(clSearchEarly[0] && !clSearchEarly[1] && clSearchEarly[2] && clSearchLate[0] && !clSearchLate[1],
+      "board: a hub search during the closed read marks no card in the window as outside it " + JSON.stringify([clSearchEarly, clSearchLate]));
+    // closed_after is strict: a card closed at the window's cutoff itself is outside it.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    clClosedAt = clSince;
+    byId("board-search").value = "tsk-0003"; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    const clAtCutoff = [!!clSince, !!clHit(), clBadge()];
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    byId("board-search").value = ""; byId("board-search").dispatch("input");
+    main.querySelector("form.board-filter").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    clClosedAt = new Date(Date.now() - 3600000).toISOString();
+    expect(clAtCutoff.every(Boolean), "board: a card closed at the window's cutoff is outside it, as closed_after reads " + JSON.stringify(clAtCutoff));
+
+    // A card opened by its link while the closed cards are read, and unchanged by them: the late draw draws its
+    // panel's card part anew and carries the focused control and a parent chosen there and not saved (review of #1622).
+    clProto.focus = function () { document.activeElement = this; };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+    const clPanel = () => main.querySelector("aside.card-panel");
+    const clParent = () => clPanel() && clPanel().querySelector(".card-panel-card").querySelectorAll("select")
+      .find((x) => (x.getAttribute("id") || "").startsWith("card-parent-"));
+    const clChoice = clParent() && clParent().querySelectorAll("option").map((o) => o.getAttribute("value")).find((v) => v && v !== clParent().value);
+    if (clChoice) { clParent().value = clChoice; clParent().dispatch("change"); }
+    clParent().focus();
+    const clBefore = clParent();
+    const clPanelHeld = clReading();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clAt = document.activeElement;
+    const clPanelKept = [clPanelHeld, !!clChoice, !!clBefore, clAt === clParent(), !!clAt && clPanel().contains(clAt), clParent().value === clChoice];
+    expect(clPanelKept.every(Boolean),
+      "board: the late draw keeps the focus and a chosen parent in the opened card's panel " + JSON.stringify(clPanelKept));
+
+    // A New subtask form opened in the panel after it was drawn keeps its draft and the focus through the late
+    // draw, after a success and after a failure (review of #1622, round 3).
+    const clDraft = [];
+    for (const outcome of ["go", "fail"]) {
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+      const start = clPanel().querySelectorAll("button").find((b) => b.getAttribute("data-focus") === "subtask:tsk-0006");
+      start.click(); for (let k = 0; k < 2; k++) await tick();
+      byId("new-subtask-title").value = "Unsaved subtask"; byId("new-subtask-title").dispatch("input");
+      byId("new-subtask-title").focus();
+      const held = clReading();
+      clHeld[outcome](); for (let k = 0; k < 8; k++) await tick();
+      const title = byId("new-subtask-title");
+      clDraft.push([outcome, held, !!title && title.value === "Unsaved subtask", document.activeElement === title,
+        start.getAttribute("aria-expanded") === "true" && clPanel().contains(start)]);
+    }
+    expect(clDraft.every((r) => r.slice(1).every(Boolean)),
+      "board: a subtask draft opened in the panel outlives the late draw, its read in or failed " + JSON.stringify(clDraft));
+
+    // A parent opened by its link while its closed child is read: the late draw draws the subtask list anew with
+    // the child, where the first draw said it was not loaded, and an open New subtask form moves into the new part
+    // with its draft and the focus (review of #1622, round 4).
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0010"); for (let k = 0; k < 8; k++) await tick();
+    const clPart = () => clPanel().querySelector(".card-panel-card");
+    const clChildEarly = [clReading(), text(clPart()).includes("not loaded on the board"), text(clPart()).includes("tsk-0012")];
+    const clStart10 = clPanel().querySelectorAll("button").find((b) => b.getAttribute("data-focus") === "subtask:tsk-0010");
+    clStart10.click(); for (let k = 0; k < 2; k++) await tick();
+    byId("new-subtask-title").value = "Unsaved child"; byId("new-subtask-title").dispatch("input");
+    byId("new-subtask-title").focus();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clTitle10 = byId("new-subtask-title");
+    const clChild = [clChildEarly[0], clChildEarly[1], !clChildEarly[2], text(clPart()).includes("tsk-0012"),
+      !text(clPart()).includes("not loaded on the board"), !!clTitle10 && clTitle10.value === "Unsaved child",
+      document.activeElement === clTitle10, clStart10.getAttribute("aria-expanded") === "true" && clPart().contains(clStart10)];
+    expect(clChild.every(Boolean),
+      "board: the late draw draws an opened parent's subtask list anew with its closed child, an open subtask draft moved along " + JSON.stringify(clChild));
+
+    // A card the read again of the changed cards brings anew is drawn anew in its panel: the parent chosen there
+    // and not saved is carried onto the new picker, which keeps the focus; then, with a New subtask form open in it,
+    // the form moves into the new part with its draft and the focus.
+    const clGet0 = win.Maity.api.get;
+    const clT6 = await clGet0("/projects/maintainer/maity/tasks/tsk-0006");
+    win.Maity.api.get = (p) => (/order=updated/.test(p)
+      ? clGet0(p).then((r) => ({ ...r, items: [{ ...clT6, title: "Changed while read", updated_at: new Date(Date.now() + 60000).toISOString() }]
+        .concat(r.items.filter((t) => t.id !== "tsk-0006")) }))
+      : clGet0(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+    const clChoice2 = clParent() && clParent().querySelectorAll("option").map((o) => o.getAttribute("value")).find((v) => v && v !== clParent().value);
+    if (clChoice2) { clParent().value = clChoice2; clParent().dispatch("change"); }
+    clParent().focus();
+    const clBefore2 = clParent();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    const clRedrawn = [!!clChoice2, clParent() !== clBefore2, text(clPanel()).includes("Changed while read"),
+      clParent().value === clChoice2, document.activeElement === clParent()];
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+    const clStart6 = clPanel().querySelectorAll("button").find((b) => b.getAttribute("data-focus") === "subtask:tsk-0006");
+    clStart6.click(); for (let k = 0; k < 2; k++) await tick();
+    byId("new-subtask-title").value = "Unsaved on a changed card"; byId("new-subtask-title").dispatch("input");
+    byId("new-subtask-title").focus();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.get = clGet0;
+    const clTitle6 = byId("new-subtask-title");
+    clRedrawn.push(text(clPanel()).includes("Changed while read"), !!clTitle6 && clTitle6.value === "Unsaved on a changed card",
+      document.activeElement === clTitle6, clStart6.getAttribute("aria-expanded") === "true" && clPanel().contains(clStart6));
+    clProto.focus = clFocus; document.activeElement = undefined;
+    expect(clRedrawn.every(Boolean),
+      "board: a card changed while read is drawn anew in its panel, the chosen parent, a subtask draft and the focus carried " + JSON.stringify(clRedrawn));
+
+    // A failure of the read again of the cards changed meanwhile is said as such, not as a failed closed read.
+    const clGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (/order=updated/.test(p) ? Promise.reject(new Error("hub unreachable")) : clGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const clRecheckHeld = clReading();
+    clHeld.go(); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.get = clGet;
+    win.Maity.api.getAll = clHold;
+    const clRecheck = text(clColumn("done"));
+    expect(clRecheckHeld && clRecheck.includes("The closed cards could not be checked for changes made while they were read: hub unreachable")
+      && !clRecheck.includes("The closed cards could not be read"),
+      "board: a failed read again of the changed cards is not called a failed closed read " + JSON.stringify(clRecheck));
+  }
+
   // A card moved between two group reads (review of #1536): the proposed group answers while tsk-0006 is
   // open, it is moved open → proposed, then the open group answers without it. The read of the cards changed
   // since the reads began puts it on the board, once, in proposed.
@@ -5656,6 +5859,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "body", (id) => "/m/" + id, idAt));
   expect(wmIds.querySelector("a.mention").getAttribute("href") === "#/m/agt-b" && idHrefs(wmIds) === "tsk-0123456789ab=#/maintainer/maity/tasks/tsk-0123456789ab",
     "ids: between mentions the text's ids are links, the mention stays the hub's");
+  // An event's number links to its page (§8.9, tsk-6g2h8dag2fkg): `seq 68216` and `seq-68216`, lowercase, the
+  // number without a leading zero and at most 2⁶³ − 1, not in a word, a path, a URL or a query; #… stays a forge number.
+  const seqHrefs = (box) => box.querySelectorAll("a.seq-ref").map((a) => text(a) + "=" + a.getAttribute("href")).join(" ");
+  const seqAll = idBox(IDS.link("See seq 68216, (seq-7) and seq 9223372036854775807; #12 is a PR.", idAt));
+  expect(seqHrefs(seqAll) === "seq 68216=#/maintainer/maity/events/68216 seq-7=#/maintainer/maity/events/7 seq 9223372036854775807=#/maintainer/maity/events/9223372036854775807"
+    && text(seqAll) === "See seq 68216, (seq-7) and seq 9223372036854775807; #12 is a PR."
+    && idHrefs(seqAll).endsWith("#12=https://github.com/oliver-zehentleitner/maity/issues/12") && !seqAll.querySelectorAll("a.seq-ref").some((a) => a.getAttribute("target")),
+    "seq: `seq N` and `seq-N` link to the event's page in the text's project, in this tab; #12 stays the forge's " + seqHrefs(seqAll));
+  const seqNone = idBox(IDS.link("Seq 5 SEQ-5 seq 0 seq 068216 seq  5 seq_5 seq--5 xseq 5 seq 5x seq 5-1 seq 9223372036854775808 seq 12345678901234567890 "
+    + "?seq=5 a/seq-5 /seq-5 seq-5/x seq-5.json a.seq-5 a+seq-5 %20seq-5 x:seq-5 ~seq-5 #seq-5", idAt));
+  expect(!seqNone.querySelector("a.seq-ref"), "seq: another case, a leading zero, past 2⁶³ − 1, part of a word or number, a path, a URL or a query: plain text " + seqHrefs(seqNone));
+  expect(seqHrefs(idBox(IDS.link("the end: seq-68216.", idAt))) === "seq-68216=#/maintainer/maity/events/68216", "seq: a full stop after the number ends a sentence, not a file name");
+  expect(!idBox(IDS.link("seq 68216", { slug: null, repository: "https://github.com/o/r" })).querySelector("a")
+    && !idBox(win.Maity.markdown("seq 68216 and `seq 68216`", idOut)).querySelector("a"),
+    "seq: a text with no project of its own, or read along from outside, links no seq");
+  const seqMd = idBox(win.Maity.markdown("Read `seq 68216` and `maity messages --after seq 5`, **seq-9** and [seq 3](https://example.org/x)\n\n```\nseq 4\n```", idAt));
+  expect(seqHrefs(seqMd) === "seq 68216=#/maintainer/maity/events/68216 seq-9=#/maintainer/maity/events/9" && seqMd.querySelector("a.seq-ref code")
+    && text(seqMd.querySelector("code.md-inline-copy")) === "maity messages --after seq 5" && !seqMd.querySelector("pre a"),
+    "seq: in Markdown linked in text and emphasis, a code span of one seq form alone linked as code; more in the span, a link's text and a code block stay as they are " + seqHrefs(seqMd));
+  // The chat's search for the message a link opened it at (js/chat.js reveal): older pages one at a time, at most ten.
+  const rvList = (seqs) => { const ol = document.createElement("ol"); const box = document.createElement("div"); box.appendChild(ol);
+    seqs.forEach((n) => { const li = document.createElement("li"); li.className = "msg"; li.setAttribute("data-seq", String(n)); ol.appendChild(li); }); return ol; };
+  const rvFollow = () => ({ opened: null, open(li) { this.opened = li; } });
+  let rvReads = 0;
+  const rvOl = rvList([900]), rvF = rvFollow();
+  const rvFound = await win.Maity.chatParts.reveal(rvOl, "897", { can: () => true, read: async () => { rvReads += 1; const li = document.createElement("li"); li.className = "msg"; li.setAttribute("data-seq", String(900 - rvReads)); rvOl.insertBefore(li, rvOl.firstChild); } }, rvF);
+  expect(rvFound && rvFound.getAttribute("data-seq") === "897" && rvF.opened === rvFound && rvReads === 3, "seq: a chat reads older pages until the linked message is drawn, then scrolls to it (" + rvReads + " reads)");
+  rvReads = 0;
+  const rvFar = rvList([900]), rvF2 = rvFollow();
+  const rvMissed = await win.Maity.chatParts.reveal(rvFar, "5", { can: () => true, read: async () => { rvReads += 1; } }, rvF2);
+  expect(rvMissed === null && rvReads === 10 && rvF2.opened === null && text(rvFar.parentNode.querySelector("p.seq-missed")).startsWith("seq 5 was not reached"),
+    "seq: at most ten older pages, then the chat says it did not reach the message (" + rvReads + " reads)");
+  rvReads = 0;
+  const rvNone = await win.Maity.chatParts.reveal(rvList([900]), "950", { can: () => false, read: async () => { rvReads += 1; } }, rvFollow());
+  expect(rvNone === null && rvReads === 0, "seq: nothing is read where the chat holds no older page that could have the message");
   // An id's pages: #/<owner>/<slug>/tasks/<id> is the board with the card marked and focused, its tab the
   // board's; #/<owner>/<slug>/inbox/<id> opens the request. An id neither holds is said.
   const idProto = Object.getPrototypeOf(main);
@@ -11156,6 +11394,122 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(allTime.board.closed_after === null && recent.board.counts.done === 0 && recent.board.counts.open === allTime.board.counts.open
     && badLimit && badLimit.details.fields.limit, "overview: the mock counts closed cards in the window, open ones in full, and refuses a bad limit");
 
+  // An event's page (js/event.js, §8.9) as the owner, here since the next case reloads the fixtures (opening a chat
+  // marks it read, which the chat cases above count): the event opens where it lives, the address that place's with
+  // #seq-<n> (replaced, no entry of its own), the message marked there; a 404 is "not visible", hidden and missing alike.
+  const evAt = async (seq) => { await go("#/maintainer/maity/events/" + seq); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5)); for (let k = 0; k < 6; k++) await tick(); };
+  const evMarked = () => main.querySelectorAll("li").filter((li) => li.classList.contains("seq-target")).map((li) => li.getAttribute("data-seq")).join();
+  const evReads = [];
+  const evGet = win.Maity.api.get;
+  // The one-item listing read that tells a project message's tombstone from a chat's (review of #1629, §8.8).
+  const evLists = [];
+  const evList = (p) => { if (/\/messages\?after=\d+&limit=1$/.test(p)) evLists.push(p); };
+  win.Maity.api.get = (p, ...r) => { if (/\/events\/\d/.test(p)) evReads.push(p); evList(p); return evGet(p, ...r); };
+  await evAt(6013);
+  expect(win.location.hash === "#/maintainer/maity/messages#seq-6013" && evMarked() === "6013" && main.querySelector("section.view-messages")
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/6013"]) && evLists.length === 0,
+    "event: a project message opens in Messages, marked there, after one read of the event " + win.location.hash + " " + JSON.stringify(evReads) + " " + JSON.stringify(evLists));
+  // 6001 was removed above: its tombstone has no type, as a chat's has (review of #1629). Its audience (["all"]) stays
+  // and would tell it from a chat's here, but not for a project message to one member, whose audience is member:
+  // tokens alone like a chat's; so the page asks the Messages listing for every typeless tombstone (§8.8, one item
+  // from just below its seq). The listing holds 6001, so it opens there, its tombstone marked, as §8.9 puts a message
+  // that is not a conversation's.
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/messages#seq-6001" && evMarked() === "6001" && main.querySelector("li.seq-target.removed")
+    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
+    "event: a removed project message's tombstone (no type) that the Messages listing holds opens there, marked, after one listing read of one item "
+    + win.location.hash + " " + evMarked() + " " + JSON.stringify(evLists));
+  await evAt(6005);
+  expect(win.location.hash === "#/maintainer/maity/tasks/tsk-0004#seq-6005" && main.querySelectorAll("article.card.wanted").some((a) => a.attrs["data-card"] === "tsk-0004"),
+    "event: a message about a card opens that card (its subject) " + win.location.hash);
+  await evAt(4202);
+  expect(win.location.hash === "#/maintainer/maity/chat/agt-a#seq-4202" && evMarked() === "4202",
+    "event: a message of one's direct chat opens in that chat, marked " + win.location.hash + " " + evMarked());
+  await evAt(5015);
+  expect(win.location.hash === "#/maintainer/maity/chat/cnv-0007#seq-5015" && evMarked() === "5015" && main.querySelector("section.group-chat"),
+    "event: a group chat's message opens in that chat, marked " + win.location.hash + " " + evMarked());
+  const evNotVisible = () => text(main.querySelector("p.event-not-visible") || main);
+  evReads.length = 0;
+  await evAt(4990);
+  const evHidden = evNotVisible();
+  await evAt(99999);
+  const evMissing = evNotVisible();
+  await evAt("068216");
+  expect(evHidden === "Not visible: there is no event with this number in this project, or you may not see it." && evMissing === evHidden && evNotVisible() === evHidden
+    && win.location.hash === "#/maintainer/maity/events/068216"
+    && JSON.stringify(evReads) === JSON.stringify(["/projects/maintainer/maity/events/4990", "/projects/maintainer/maity/events/99999"]),
+    "event: a chat one may not read, a seq nobody has and a malformed one all say \"not visible\" in the same words; the malformed one is never sent " + JSON.stringify(evReads));
+  // An event with no place the reader may open (a kind that is no message, no subject) is shown on the page itself.
+  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/events/7001"
+    ? Promise.resolve({ seq: 7001, kind: "member_joined", at: "2026-10-22T09:00:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["all"], payload: {}, redacted: false, conversation_id: null })
+    : evGet(p, ...r));
+  await evAt(7001);
+  expect(win.location.hash === "#/maintainer/maity/events/7001" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7001"
+    && text(main.querySelector("article.event-one .badge")) === "member_joined",
+    "event: an event that lives nowhere else is drawn on its page");
+  // A former group participant's tombstone (fmzu, #1629): the hub serves the redacted message with no conversation
+  // (the chat is no longer the reader's) and a tombstone payload with no type; its audience is member: tokens alone, as
+  // a member-only project message's would be. The Messages listing does not hold it, so it is drawn on its page, not
+  // sent to Messages, which lists no chat message and would say "not reached".
+  evLists.length = 0;
+  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/events/7002"
+    ? Promise.resolve({ seq: 7002, kind: "message", at: "2026-10-22T09:05:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null, audience: ["member:agt-b", "member:hum-maintainer"],
+      payload: { redacted: true, reason: "posted by mistake", by: "hum-maintainer", at: "2026-10-22T09:06:00Z" }, redacted: true, conversation_id: null })
+    : evGet(p, ...r)); };
+  await evAt(7002);
+  expect(win.location.hash === "#/maintainer/maity/events/7002" && main.querySelector("article.event-one") && main.querySelector("article.event-one").getAttribute("data-seq") === "7002"
+    && main.querySelector("article.event-one p.msg-redacted") && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=7001&limit=1"]),
+    "event: a chat's tombstone the reader can no longer open in its chat (no conversation, no type), absent from the Messages listing, stays drawn on its page "
+    + win.location.hash + " " + JSON.stringify(evLists));
+  // The listing read fails: nothing is guessed, the project tombstone is drawn on its page, removed.
+  evLists.length = 0;
+  win.Maity.api.get = (p, ...r) => { evList(p); return (p === "/projects/maintainer/maity/messages?after=6000&limit=1"
+    ? Promise.reject(Object.assign(new Error("hub down"), { status: 503, code: "unavailable" }))
+    : evGet(p, ...r)); };
+  await evAt(6001);
+  expect(win.location.hash === "#/maintainer/maity/events/6001" && main.querySelector("article.event-one p.msg-redacted")
+    && JSON.stringify(evLists) === JSON.stringify(["/projects/maintainer/maity/messages?after=6000&limit=1"]),
+    "event: a tombstone whose listing read fails stays drawn on its page, not guessed into Messages " + win.location.hash + " " + JSON.stringify(evLists));
+  // The listing's answer comes after the reader left the page: it moves nothing either.
+  let evListRelease = null;
+  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/messages?after=6000&limit=1"
+    ? new Promise((resolve) => { evListRelease = () => resolve(evGet(p, ...r)); })
+    : evGet(p, ...r));
+  await go("#/maintainer/maity/events/6001"); for (let k = 0; k < 6; k++) await tick();
+  const evListPending = typeof evListRelease === "function";
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  if (evListRelease) evListRelease();
+  for (let k = 0; k < 6; k++) await tick();
+  expect(evListPending && win.location.hash === "#/account" && main.querySelector("section.view-account"),
+    "event: a listing answer that comes after the reader left the page moves nothing " + win.location.hash);
+  // The answer comes after the reader left the page (fmzu, #1629): the event's page is gone, its redirect with it.
+  let evRelease = null;
+  win.Maity.api.get = (p, ...r) => (p === "/projects/maintainer/maity/events/7991"
+    ? new Promise((resolve) => { evRelease = () => resolve({ seq: 7991, kind: "message", at: "2026-10-22T09:10:00Z", actor: { kind: "member", member_id: "agt-b" }, subject: null,
+      audience: ["all"], payload: { type: "notice", to: "all", body: "late" }, redacted: false, conversation_id: null }); })
+    : evGet(p, ...r));
+  await go("#/maintainer/maity/events/7991"); for (let k = 0; k < 4; k++) await tick();
+  const evPending = typeof evRelease === "function";
+  await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+  if (evRelease) evRelease();
+  for (let k = 0; k < 6; k++) await tick();
+  expect(evPending && win.location.hash === "#/account" && main.querySelector("section.view-account"),
+    "event: an answer that comes after the reader left for another page moves nothing, the address stays where the reader went " + win.location.hash);
+  win.Maity.api.get = evGet;
+  // A removed direct chat message opens in its chat, marked there (spq4, #1629): the chat holds 6003 as its tombstone.
+  // agt-b's chat stays empty in fixtures/maity/conversations.json, as the chat list cases above need, so the tombstone
+  // is put there in a copy of the fixtures; the next case loads the mock afresh.
+  const evFx = win.MAITY_FIXTURES, evFxB = JSON.parse(JSON.stringify(evFx));
+  evFxB["maity/conversations.json"]["agt-b"] = { cursor: 6003, items: [{ id: "evt-6003", seq: 6003, conversation_id: "agt-b", from: "agt-b", from_instance: null,
+    to: "hum-maintainer", to_instance: null, body: null, sent_at: "2026-10-22T09:40:00Z", delivered_at: "2026-10-22T09:40:02Z", mentions: [], attachments: [],
+    redacted: true, redaction: { at: "2026-10-22T09:45:00Z", by: "hum-maintainer", reason: "a token in the chat" } }] };
+  win.MAITY_FIXTURES = evFxB;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  await evAt(6003);
+  expect(win.location.hash === "#/maintainer/maity/chat/agt-b#seq-6003" && evMarked() === "6003" && main.querySelector("li.seq-target p.msg-redacted"),
+    "event: a removed direct chat message still opens in its chat (conversation_id survives), its tombstone marked there " + win.location.hash + " " + evMarked());
+  win.MAITY_FIXTURES = evFx;
+  await go("#/maintainer/maity/inbox");
   // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).
   win.location.search = "?as=agt-a";
   vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
@@ -11194,6 +11548,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const owNotOwn = await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "reviewer" }).catch((err) => err);
   win.MAITY_FIXTURES = owFixtures; win.location.search = owSearch;
   vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  // The fixture as the hub answers a member with trust member (the mock of #1472): a message to everyone 200,
+  // one to the owners and another's direct chat 404, a malformed seq 400.
+  const evFixtures = win.MAITY_FIXTURES, evSearch = win.location.search;
+  const evF = JSON.parse(JSON.stringify(evFixtures));
+  evF["maity/members.json"].items.push({ ...evF["maity/members.json"].items.find((x) => x.id === "hum-maintainer"), id: "hum-friend", handle: "friend", display_name: "Friend", trust: "member", role: "coder", role_base: "coder" });
+  win.MAITY_FIXTURES = evF; win.location.search = "?as=hum-friend";
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  const evTry = (seq) => win.Maity.api.get("/projects/maintainer/maity/events/" + seq).then((e) => e.seq + ":" + e.conversation_id, (err) => err.status + " " + err.code);
+  const evMember = [await evTry(6001), await evTry(6009), await evTry(4202), await evTry(5015), await evTry("068216")];
+  win.MAITY_FIXTURES = evFixtures; win.location.search = evSearch;
+  vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+  expect(JSON.stringify(evMember) === JSON.stringify(["6001:null", "404 not_found", "404 not_found", "404 not_found", "400 invalid"]),
+    "event: as a member with trust member the fixture serves what GET /events would, nothing else " + JSON.stringify(evMember));
   const owLimit = (e) => e && e.status === 403 && e.details.reason === "member_join_limit" && e.details.field === "role";
   expect(owReviewer.role === "reviewer" && owReviewer.role_base === "reviewer" && owDocs.role === "docs" && owDocs.role_base === "writer"
     && owLimit(owOps) && owLimit(owDeployer) && owNone.status === 400 && owNone.details.fields.role === "unknown"

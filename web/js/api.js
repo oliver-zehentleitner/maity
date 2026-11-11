@@ -1366,9 +1366,10 @@ window.Maity = window.Maity || {};
   // events; owners and admins every event but a conversation's, which only
   // its audience reads. "_conversation" is the fixture's note of what the
   // hub stores and the event no longer shows once redacted; never served.
-  function readable(slug, e) {
-    const meId = me().member.id;
-    const mine = mineIn(slug);
+  // as: another reader's id, trust and role (the mock's ?as=, GET …/events/{seq}); the caller's otherwise.
+  function readable(slug, e, as) {
+    const meId = as ? as.id : me().member.id;
+    const mine = as || mineIn(slug);
     if (e.actor && e.actor.member_id === meId) return true;
     const named = (e.audience || []).some((t) => t === "all" || t === "member:" + meId || t === "role:" + mine.role || t === "trust:" + mine.trust);
     if (e._conversation) return (e.audience || []).includes("member:" + meId);
@@ -3727,6 +3728,48 @@ window.Maity = window.Maity || {};
       const limit = Math.min(200, Number(query.get("limit") || 50));
       const items = log.filter((e) => e.seq > Number(after || 0) && readable(m[1], e)).slice(0, limit).map(served);
       return { items, cursor: items.length ? items[items.length - 1].seq : Math.max(head, Number(after || 0)), server_time: nowIso(), superseded: false };
+    }],
+    // §8.9: one event by its number, by GET /events' readable set (readable() above); a hidden
+    // one and a missing one are the same 404. The fixture keeps its chats' messages apart from
+    // the log (conversations.json, group-chats.json): one of them is served as the log would
+    // serve it to this reader, with conversation_id where the reader reads that chat now. A
+    // group chat's participant reads what came in its window (§9.2), so one added later gets
+    // the 404 for an earlier message, as from the hub.
+    ["GET", /^\/projects\/([^/]+)\/events\/([^/]+)$/, (m, body, path) => {
+      project(m[1], path);
+      if (!/^(0|[1-9][0-9]{0,18})$/.test(m[2]) || BigInt(m[2]) > BigInt("9223372036854775807")) fail(400, "invalid", "not a seq", path, { fields: { seq: "not_a_seq" } });
+      const seq = Number(m[2]);
+      const gone = () => fail(404, "not_found", "Not found", path);
+      // The reader: the mock's ?as= member where one is set (caller), else the signed-in one.
+      const who = caller(m[1], path).member;
+      const meId = who.id;
+      const members = file(m[1], "members.json", path).items;
+      const ownsAgent = (id) => members.some((a) => a.id === id && a.kind === "agent" && a.owner_id === meId);
+      const logged = eventsOf(m[1]).find((e) => e.seq === seq);
+      if (logged) {
+        if (!readable(m[1], logged, fixtureAs ? { id: meId, trust: who.trust, role: who.role } : null)) gone();
+        return Object.assign(served(logged), { conversation_id: logged._conversation && ownsAgent(logged._conversation) ? logged._conversation : null });
+      }
+      const asEvent = (x, conversation, audience) => ({ seq: x.seq, kind: "message", at: x.sent_at,
+        actor: { kind: "member", member_id: x.from, instance: x.from_instance || null }, subject: null, audience, redacted: !!x.redacted,
+        payload: x.redacted ? { redacted: true } : { type: "chat", to: x.to, body: x.body, conversation_id: conversation, mentions: x.mentions || [], attachments: x.attachments || [] },
+        conversation_id: conversation });
+      for (const c of Object.values(groupChats(m[1]))) {
+        const x = c.items.find((y) => y.seq === seq);
+        if (!x) continue;
+        // A participant reads its window; the owner of an agent participant reads along (groupItem's rule).
+        const participant = c.view.participants.some((p) => p.member_id === meId);
+        const along = c.view.participants.some((p) => p.kind === "agent" && p.owner_id === meId);
+        if (participant ? !windowOf(c, meId).includes(x) : !along) gone();
+        return asEvent(x, c.view.id, c.view.participants.map((p) => "member:" + p.member_id));
+      }
+      for (const [agentId, c] of Object.entries(file(m[1], "conversations.json", path))) {
+        const x = c.items.find((y) => y.seq === seq);
+        if (!x) continue;
+        if (!ownsAgent(agentId)) gone();
+        return asEvent(x, agentId, ["member:" + agentId, "member:" + meId]);
+      }
+      return gone();
     }],
     // §17.9: the ticker in its compact form, per reader, newest first, paged
     // by an opaque cursor bound to the filters; after= oldest first.

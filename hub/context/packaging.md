@@ -210,6 +210,55 @@ them at one version.
 - Pointing `MAITY_WEB_DIR` at a checkout: an extra clone and an
   environment variable in a path meant to take five minutes.
 
+## A hub test holds the image's dockerignore allowlist to what the wheel build reads
+
+**Id:** db4cb20a-6023-4d18-9546-cb6d80b41a31
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the jour fixe of 2026-11-06 (round jfx-nerr4n29p2ce), card tsk-4x5fmke93m1r: `hub/hatch_build.py` became a build input in #1424 and was missing from the image's context until the image job failed; `hub/tests/test_image_context.py`
+**Revisit when:** the image's build stage reads a file the test does not collect (a new `COPY`, a requirements file named outside the Dockerfile), `hub/pyproject.toml` takes up a key the test refuses as unread (`force-include`, `include`, `shared-data`, another build or metadata hook, `license-files`, a version `path`) or reads files through a key or file the test neither collects nor refuses, or BuildKit's context walker changes its parent rule, Docker's patternmatcher changes how `.dockerignore` patterns match, or the build stops using `deploy/Dockerfile.dockerignore`
+
+`deploy/Dockerfile.dockerignore` is an allowlist: `*`, then a `!` line for each thing the build needs. A new
+build input nobody adds there is missing from the context, and only the image job noticed: in #1424 it failed
+about ten seconds after it started, but only once the pull request was pushed.
+`hub/tests/test_image_context.py` collects what the build stage reads from the files the build reads it from:
+the `hub/requirements/*.txt` that `deploy/Dockerfile` names, `hub/pyproject.toml` with its `readme`, a `license`
+given as a file, hatchling's default license files in `hub/` when it names none (`LICEN[CS]E*`, `COPYING*`,
+`NOTICE*`, `AUTHORS*`), its wheel `packages` and custom build hook, and the keys of `hatch_build.py`'s `BUNDLED` (read from its syntax tree, as the
+hook imports hatchling). These keys of `hub/pyproject.toml`, through which hatchling would read further files and
+which the test does not follow, fail it by name: `project.license-files`, `tool.hatch.version.path`, any
+`tool.hatch.build` key but `targets`, `hooks` and `exclude`, any build hook but `custom`, any wheel-target key but
+`packages` and `exclude`, and any metadata hook; so does a tracked `hub/hatch.toml`, which hatchling lays over
+`tool.hatch`. It runs every git-tracked file of those through a port of what BuildKit
+applies when it sends the context: moby's `ignorefile` and `patternmatcher` (v0.6) read the file (lines end at LF,
+a CR before it, a BOM and a `#` in the first column dropped, Go's white-space trim, each pattern cleaned of `.` and
+`..` and trimmed and cleaned once more with its `!`), and `*` and `?` stop at `/`, `**/` matches zero or more
+directories, a leading `**` with nothing wild after it is a suffix, a trailing one a prefix, and a regular
+expression matches the whole name. fsutil's walker decides as `MatchesUsingParentResults` does: each directory on
+the way down and then the file is matched, a pattern that matched a parent counts below it but one that was not
+evaluated there does not, and the last matching pattern decides. A lone `!` or `!/`, a trailing `\` and an
+unclosed `[` are refused, as Docker refuses them. It names each excluded
+file; an input with no tracked file fails too, and so does a checkout without `deploy/Dockerfile` or the ignore
+file (only a tree without git, an sdist, skips it). When it was written, the port picked exactly the files a real
+`docker build` context held (Docker 29.9.2: a `FROM scratch` build with `COPY . /ctx`, exported with
+`--output type=local`, compared with the port over every file of the author's working tree): 722 with the
+allowlist, 721 without `!hub/hatch_build.py`, and the same for each of the edge cases above, the parent rule's
+included. A change to the ignore file alone does not start the hub jobs; the image job, which it does start,
+builds the real context. Its own cases pin
+them; a pattern form none of them covers (an escape before a letter, for one) is not claimed.
+
+**Reason:** the jour fixe wanted the gap found before a push, not in CI: the hub's tests run in CI on every hub
+change and locally with `make -C hub test`, and need neither Docker nor a network.
+
+**Rejected alternatives:**
+- A `docker build` of the context inside the test: needs a Docker daemon, which neither the hub's test jobs nor
+  most contributors' machines have, and the image job already does it.
+- The `docker` Python package's `exclude_paths` as the matcher: a new test dependency, pinned with hashes, for
+  about sixty lines of matching rules.
+- A fixed list of the build inputs in the test: the next new input would be missing from it, as `hatch_build.py`
+  was from the allowlist.
+
 ## The image sets MALLOC_ARENA_MAX=2, because the process grew with every request through fragmented arenas
 
 **Id:** a20c28f6-6b1d-48c1-b60e-7fc9191e90df

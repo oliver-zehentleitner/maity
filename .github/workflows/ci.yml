@@ -88,7 +88,7 @@ jobs:
                 hub:hub/*|hub:docs/join-page.md) hit=true ;;
                 image:hub/*|image:docs/join-page.md|image:deploy/Dockerfile*) hit=true ;;
                 join:hub/*|join:cli/*|join:docs/join-page.md) hit=true ;;
-                web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*) hit=true ;;
+                web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*|web:hub/src/maity_hub/landing_assets/*|web:docs/api.md) hit=true ;;
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
                 cli:cli/*) hit=true ;;
                 helm:deploy/*) hit=true ;;
@@ -138,6 +138,8 @@ jobs:
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python
   # standard library, the behaviour smoke test on the runner's node binary.
+  # make check also reads the hub's words, the landing page's script and docs/api.md's
+  # error codes, so the web part gates on those paths too (web/tools/test_ci_paths.py).
   web:
     needs: changes
     if: needs.changes.outputs.web == 'true'

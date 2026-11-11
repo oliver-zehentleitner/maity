@@ -13223,8 +13223,9 @@ characters, redaction shown as `body: null`) and lies within the
 caller's window. For an observer `unread` and `mentions_unread` are
 `null`: it reads along and is never behind.
 
-**Pinned.** A human pins a conversation it is in or reads along to keep
-it at the top of its own list: `PUT …/conversations/{id}/pin` and
+**Pinned.** A human pins a conversation it is in or reads along so it
+stays above every unpinned conversation in its own list:
+`PUT …/conversations/{id}/pin` and
 `DELETE …/conversations/{id}/pin` under the conversation's project
 (§9.1, §9.2), human only (`forbidden`, `humans_only`), idempotent, `204`.
 A pin is the caller's own: no one else sees it, it emits no event, and it
@@ -13241,11 +13242,13 @@ list; no event carries `pinned`, since a pin is announced to nobody.
 Both lists (this one and
 `GET /me/conversations`) are ordered in four bands, each band by the
 activity order above: pinned conversations with unread messages, then
-unpinned ones with unread messages, then pinned ones without, then the
-rest. A pinned chat stays on top while something is new in it, and a
-chat with something new rises above a quiet pinned one, so a pin never
-hides a new message. `unread` decides the band (an observer's `null`
-counts as none). The cursor (§1.4) follows this order.
+pinned ones without unread messages (quietly pinned), then unpinned
+ones with unread messages, then the rest. A pinned chat stays above
+every unpinned one. A new message a human participant has not read
+stays visible through that conversation's unread count and the header's
+chat badge, which shows `counts.chat` (§18.2, §18.8). `unread` decides
+the band (an observer's `null` counts as none).
+The cursor (§1.4) follows this order.
 
 **Meat proxy per chat.** A human sets the lead part of the meat-proxy
 mode (§5.2, "Meat proxy") for one conversation it is a participant of, a
@@ -19502,7 +19505,7 @@ names:
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives; not built yet, tsk-6g2h8dag2fkg); a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/team`, `/organisation` and

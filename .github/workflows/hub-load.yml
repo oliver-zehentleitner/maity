@@ -3,9 +3,12 @@ name: hub-load
 # Does the notifications' cost grow with the history behind a human or with the dashboards they
 # hold open? hub/tests/test_load.py seeds a bell with thousands of unread requests over the
 # 30-day window and fails when a call sends more statements, or takes much longer, with four
-# times the history. hub/tests/test_loop_lag.py fails when, while concurrent requests run, any
-# tick of a test app's event loop runs later than its limit (250 ms by default,
-# tsk-v874y63b4z8p). PostgreSQL only, one process (a timing is measured on a quiet machine).
+# times the history. hub/tests/test_loop_lag.py fails when, while concurrent requests run, a
+# test app's event loop runs its worst tick more than 150 ms later than an idle reference loop
+# beside it or more than 1000 ms late at all, is late by more than 20 ms on average, or runs one
+# callback for more than 50 ms of its thread's CPU time (tsk-v874y63b4z8p); `-rP` prints the
+# windows of a passing run too, the numbers a PR of the series names. PostgreSQL only, one
+# process (a timing is measured on a quiet machine).
 # Not part of ci-ok and not on pull requests: it costs minutes, and the pull requests' CI
 # duration is the bottleneck. It runs on every push to main and once a night; a pull request
 # that touches the load starts it by hand (workflow_dispatch, on its branch).
@@ -29,7 +32,8 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
+        # pinned: a local tag cannot replace it
+        image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f
         env:
           POSTGRES_USER: maity
           POSTGRES_PASSWORD: ci-only
@@ -49,4 +53,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: make install
-      - run: python -m pytest -n 0 -m load -v
+      - run: python -m pytest -n 0 -m load -v -rP
