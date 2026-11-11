@@ -150,6 +150,7 @@ OPERATIONS: list[tuple[str, str, str | tuple[str, ...] | None]] = [
     ("POST", "/projects/{owner}/{slug}/requests/{id}/answer", "requests:ask"),
     ("POST", "/projects/{owner}/{slug}/requests/{id}/withdraw", "requests:ask"),
     ("GET", "/projects/{owner}/{slug}/events", "project:read"),
+    ("GET", "/projects/{owner}/{slug}/events/{seq}", "project:read"),
     ("POST", "/projects/{owner}/{slug}/events", "events:post"),
     ("GET", "/projects/{owner}/{slug}/conversations", None),
     ("GET", "/projects/{owner}/{slug}/conversations/{agent_id}/messages", None),
