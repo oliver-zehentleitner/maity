@@ -53,7 +53,7 @@ pytestmark = pytest.mark.load
 # hub/context/persistence.md (66f0bcf9); a PR that moves a family onto the loop must stay under
 # them.
 LOOP_LATE_MARGIN_MS = int(os.environ.get("MAITY_LOOP_LATE_MARGIN_MS", "150"))
-LOOP_LATE_AVG_LIMIT_MS = int(os.environ.get("MAITY_LOOP_LATE_AVG_LIMIT_MS", "20"))
+LOOP_LATE_AVG_LIMIT_MS = int(os.environ.get("MAITY_LOOP_LATE_AVG_LIMIT_MS", "35"))
 # The reference shares the process's GIL: work on an app's loop that holds the GIL (a long
 # computation in C) stops the reference too and cancels out of the margin. So each callback an
 # app's loop runs is also timed in the loop thread's own CPU time (`time.thread_time`), which a

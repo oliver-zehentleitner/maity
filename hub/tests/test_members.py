@@ -131,6 +131,35 @@ def test_presence_is_computed_from_the_last_call(
         assert view["presence"] == expected, offset
 
 
+def test_a_human_that_calls_within_the_minute_after_a_write_stays_online(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    # The hub writes `last_seen_at` at most once a minute (§2.4); presence reads from the
+    # latest call the stored time may stand for, so a call it skipped never shows away.
+    agent = flow.agent(make_client, owner)
+    start = clock.now()
+
+    def at(seconds: int) -> None:
+        clock.set_source(lambda: start + timedelta(seconds=seconds))
+
+    def shown() -> str:  # read by the agent, whose call writes nothing of the owner's
+        presence: str = agent.get(f"/projects/maintainer/maity/members/{owner.id}").json()[
+            "presence"
+        ]
+        return presence
+
+    at(120)
+    assert owner.get("/me").status_code == 200  # a write: T
+    at(179)
+    assert owner.get("/me").status_code == 200  # T + 59: within the minute, no write
+    at(241)
+    assert shown() == "online"  # T + 121: the latest call was 62 s ago
+    at(300)
+    assert shown() == "online"  # up to a minute longer after the stored time
+    at(301)
+    assert shown() == "away"
+
+
 def test_a_change_of_the_line_names_it_and_keeps_waking_everyone(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

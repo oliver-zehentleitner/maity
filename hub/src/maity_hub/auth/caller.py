@@ -31,17 +31,13 @@ from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.events import Actor
 from maity_hub.net import Origin
+from maity_hub.seen import SEEN_EVERY, latest_call
 
 SESSION_COOKIE = "maity_session"
 CSRF_COOKIE = "maity_csrf"
 CSRF_HEADER = "x-csrf-token"
 SESSION_IDLE = timedelta(days=14)
 SESSION_ABSOLUTE = timedelta(days=30)
-# A call writes `last_seen_at` (and a human session's `ip`) only when the stored one is at least
-# this old (docs/api.md §2.4, the maintainer's decision, seq 109161): presence reads it against
-# 120 s and longer, and every call writing two or three rows cost the database a row lock and a
-# write per request (tsk-wa3aqmrj8v1b).
-SEEN_EVERY = timedelta(seconds=60)
 UNSAFE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
 
 
@@ -227,9 +223,9 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .where(
             t.human_session.c.id_hash == id_hash,
             t.human_session.c.ended_at.is_(None),
-            # session_alive(): before its end and within the idle time
+            # session_alive(): before its end and within the idle time of the latest call
             t.human_session.c.expires_at > now,
-            t.human_session.c.last_seen_at > now - SESSION_IDLE,
+            t.human_session.c.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,
             t.human_session.c.last_seen_at <= now - SEEN_EVERY,
         )
         .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
@@ -316,13 +312,15 @@ def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:
 def session_alive(row: Any, now: datetime) -> bool:
     last_seen: datetime = row.last_seen_at
     expires: datetime = row.expires_at
-    return now < expires and now < last_seen + SESSION_IDLE
+    # The idle time runs from the latest call the stored time may stand for (`seen`), so a
+    # session in use never expires early.
+    return now < expires and now < latest_call(last_seen) + SESSION_IDLE
 
 
 def session_expires_at(row: Any) -> datetime:
     last_seen: datetime = row.last_seen_at
     expires: datetime = row.expires_at
-    return min(expires, last_seen + SESSION_IDLE)
+    return min(expires, latest_call(last_seen) + SESSION_IDLE)
 
 
 # --- agents ------------------------------------------------------------------------

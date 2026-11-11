@@ -38,6 +38,7 @@ from maity_hub import tables as t
 from maity_hub.cards import SOME_INSTANCE, open_claims
 from maity_hub.events import lock_project, transaction
 from maity_hub.notifications import preferences, records
+from maity_hub.seen import latest_call
 
 log = logging.getLogger(__name__)
 
@@ -265,7 +266,9 @@ def away_of(conn: Connection, owner_id: str, now: datetime | None = None) -> lis
             reason=reason,
         )
         for row, _credential, session, cards, reason in holders
-        if long_enough(row.project_id, session.last_seen_at)
+        # counted from the latest call the stored time may stand for (§2.4, `seen`), so an
+        # instance that may still have called within the minute is not stalled early
+        if long_enough(row.project_id, latest_call(session.last_seen_at))
     ]
     taken = {a.key for a in stalled}
     listed = [

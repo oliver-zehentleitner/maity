@@ -29,6 +29,7 @@ from maity_hub.auth.caller import (
 )
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.notifications import records
+from maity_hub.seen import SEEN_EVERY
 from maity_hub.views import ts
 
 # Ended sessions stay in the list for this long (`?ended=true`).
@@ -229,7 +230,7 @@ def forget_expired_addresses(conn: Connection) -> None:
         .where(
             t.human_session.c.ended_at.is_(None),
             (t.human_session.c.expires_at <= now)
-            | (t.human_session.c.last_seen_at <= now - SESSION_IDLE),
+            | (t.human_session.c.last_seen_at <= now - SESSION_IDLE - SEEN_EVERY),
             (t.human_session.c.ip.is_not(None)) | (t.human_session.c.source.is_not(None)),
         )
         .values(ip=None, source=None)
@@ -320,7 +321,7 @@ def _signed_in(conn: Connection, human_id: str, public_id: str, now: datetime) -
         update(t.human).where(t.human.c.id == human_id).values(last_login_at=now, last_seen_at=now)
     )
     # A sign-in is a call (§2.4): the session's `last_seen_at` starts now, and a call within the
-    # next 60 s writes no presence (`caller.SEEN_EVERY`), so the human and their memberships
+    # next 60 s writes no presence (`seen.SEEN_EVERY`), so the human and their memberships
     # are seen here.
     conn.execute(
         update(t.membership)
