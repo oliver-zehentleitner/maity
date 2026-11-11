@@ -214,7 +214,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record whose `run_id` the placement already stored with other numbers (`details.reason: run_id_reused`) or whose run overlaps one it stored (`details.reason: run_overlaps`), each with `details.record` (§15.15) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record whose `run_id` the placement already stored with other numbers (`details.reason: run_id_reused`) or whose run overlaps one it stored (`details.reason: run_overlaps`), each with `details.record`, while the hub keeps that record (§15.15) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -17304,7 +17304,7 @@ provider's request ids never leave the runner with a record.
 | Field | Values | Meaning |
 |---|---|---|
 | `run_id` | the runner's id for the run, 1–64 printable ASCII characters | identifies the run within the placement |
-| `started_at`, `ended_at` | timestamps | `started_at` after `ended_at`, as sent, is `invalid`; clamped by the hub into [the placement's `created_at`, hub time], and `started_at` both ends bounded by the run as the hub saw it (below, "The run's bounds") |
+| `started_at`, `ended_at` | timestamps | `started_at` after `ended_at`, as sent, is `invalid`, and so is an `ended_at` more than 5 minutes after hub time (`in_future`); both are clamped into the run as the hub saw it (below, "The run's bounds") |
 | `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | integers from 0 to 10^12, or `null` | `null`: the harness did not report it |
 | `cost` | `{amount, currency}` or `null` | the harness's own figure only: `amount` a decimal string from 0 to 10^9 with at most 6 decimals, `currency` an ISO 4217 code in capitals; `null` when the harness gives none |
 
@@ -17322,8 +17322,11 @@ provider's request ids never leave the runner with a record.
   no error while the placement is open; once it has closed, the resend
   is `not_found` like any record. The same `run_id` with any other
   number, timestamp or cost is `conflict` (`details.reason:
-  run_id_reused`, with the stored record in `details.record`): a runner
-  that counts a run twice shows it instead of hiding it.
+  run_id_reused`, with the stored record in `details.record`) while the
+  hub still keeps that record: a runner that counts a run twice shows it
+  instead of hiding it. A runner never reuses a `run_id` within a
+  placement; one reused after its record was deleted (90 days) is taken
+  as a new run, as the hub no longer knows the old one.
 - **A late record.** A record whose `started_at`, as sent, lies more than
   30 days before hub time is `invalid` (`details.reason: too_old`), a
   first send as much as a repeat. A record whose `ended_at`, as sent,
@@ -17334,9 +17337,7 @@ provider's request ids never leave the runner with a record.
   minutes ahead, and every accepted record started
   between 30 days before and 5 minutes after its arrival; its record is
   kept 90 days, so once it is deleted the same body is `too_old`, and a
-  run is never counted twice. Records are kept 90 days, so every
-  `run_id` the hub still accepts finds its stored record, and a resend
-  never counts a run a second time after its record was folded.
+  resend never counts a run a second time after its record was folded.
 - The record writes no event: one per run would fill the history. The
   totals are read on demand.
 
@@ -17380,22 +17381,27 @@ there. A holding that touches [`started_at`, `ended_at`] at any point
 counts.
 
 **The run's bounds.** A runner could stretch a run and count it for
-cards its instance held before or after it. The hub bounds both ends by
-what it saw (§15.7, by the hub's `reported_at`). The start: the latest
-report that changed `run` to `open` at or before `ended_at`;
-`started_at` is clamped to not before the latest of that report, the
-placement's `created_at` and the `ended_at` of the previous record — the
-stored record of the placement with the latest `ended_at` at or before
-this one's. The end: the first report after that start that changed
-`run` to `waiting` or ended the run with `state` `stopped`, `exited`
-or `failed`; `ended_at` is clamped to not after it, or to hub time while
-the hub has seen no such report yet. A placement that never reported an open run counts the
-run for no card. So a runner can stretch a run no further than the
-moments the hub saw it open and close. A record whose clamped
-`started_at` comes after its clamped `ended_at`, or whose clamped
-interval overlaps one already stored for the placement, is `conflict`
-(`details.reason: run_overlaps`, with the stored record in
-`details.record`): a supervised placement runs one run at a time.
+cards its instance held before or after it. The hub bounds the record by
+the run it saw (§15.7, by the hub's `reported_at`). An observed run
+opens with a report that changes `run` to `open` and closes with the
+first later report in which `run` is no longer `open` or `state` is no
+longer `running` (`waiting`, `rate_limited`, `stopping`, `stopped`,
+`exited`, `failed`, any other); one not yet closed ends at hub time. A
+record whose interval, as sent, holds the close of one observed run and
+the open of the next spans two runs and is `invalid` (`details.reason:
+spans_runs`). The record's run is the observed run with the latest open
+at or before `ended_at`; `started_at` is clamped to not before its open,
+the placement's `created_at` or the `ended_at` of the previous record —
+the stored record of the placement with the latest `ended_at` at or
+before this one's — and `ended_at` to not after its close. A placement
+that never reported an open run counts the run for no card. So a runner
+can stretch a run no further than the moments the hub saw it open and
+close. A record whose clamped `started_at` comes after its clamped
+`ended_at` lies outside the run the hub saw and is `invalid`
+(`details.reason: outside_run`); one whose clamped interval overlaps one
+already stored for the placement is `conflict` (`details.reason:
+run_overlaps`, with the stored record in `details.record`): a supervised
+placement runs one run at a time.
 - **A card's total** is the usage of the runs recorded for it. A run
   recorded for two cards counts in full for each, and both cards show it
   as shared (`shared_runs`); the hub never splits it, since any split
