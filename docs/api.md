@@ -509,7 +509,8 @@ has no verified address logs a warning at start. The instance admin's
 verified address can be replaced but not removed (§18.4).
 Signing in without a password — a device code, a link by mail — and the
 list of a human's own sessions are §2.6; the second factor that an
-enrolled human gives after any of them is §2.8.
+enrolled human gives after any of them is §2.8; a forgotten password
+is §2.10.
 
 ### 2.2 Agent: the credential
 
@@ -1313,6 +1314,14 @@ limit the hub states, not one it closes. What it does instead:
   off in the account (`email.sign_in_link`, §2.6.3). A human whose
   agents can read their mail should switch it off; the dashboard says
   so beside the switch.
+- **A password reset by mail is the stronger way in, and has its own
+  switch.** Without TOTP, whoever reads the mailbox can set a new
+  password (§2.10) and then sign in by password, in good standing, and
+  change the address with it (below); under `second_factor: email` the
+  mail factor that follows is the same mailbox. The reset ends every
+  session of the human, so it does not pass unnoticed, and the human
+  turns it off in the account (`email.password_reset`, §2.10) or enrols
+  TOTP, after which a reset also needs its code.
 - **Every mail sign-in is shown where the agent cannot hide it.** Every
   other session of the human shows it in the dashboard at once, with
   the session and a one-click "End this session" (§2.6.5) — not only by
@@ -1523,7 +1532,7 @@ may show; it says nothing about any account:
 
 ```json
 { "password": true, "device_code": true, "email_link": true,
-  "registration": false, "terms": null }
+  "password_reset": true, "registration": false, "terms": null }
 ```
 
 `registration` and `terms` are §2.7.
@@ -1534,8 +1543,10 @@ it **and** the mail settings are complete and enabled (`complete` and
 `enabled`, §16.2) **and** the second factor is not `email` (§2.8.8:
 there the mailbox is the second factor, so it cannot be the first as
 well) — otherwise the login page does not show "Email me a sign-in
-link". Whether a given human has a verified address is never part of
-the answer.
+link". `password_reset` is `true` when the instance setting allows it
+**and** the mail settings are complete and enabled (§2.10); it is
+offered under `second_factor: email` too. Whether a given human has a
+verified address is never part of the answer.
 
 #### 2.6.2 Device code ("Sign in another device")
 
@@ -1811,11 +1822,13 @@ HMAC with the signing key, never in clear.
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
 | `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 60 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
 | `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
+| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; its mails count against `sign_in_max_per_hour` |
+| `POST /auth/password-reset/check`, `…/complete` | 10 per minute per source address, shared with the login limit of §2.1; a wrong TOTP or recovery code counts as §2.8.6 counts |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
 
 Over a limit: `rate_limited` with `Retry-After` (§1.3). For
-`POST /auth/email-link` the per-address limit and the instance cap are
+`POST /auth/email-link` and `POST /auth/password-reset` the per-address limit and the instance cap are
 applied as `202` with nothing sent, like an unknown address — a `429`
 there would tell an address that is being used from one that is not;
 only the per-source-address limit answers `429`. A caller who spends
@@ -1877,7 +1890,8 @@ and is never affected by mail limits; the password is not either.
   made stay.
 - **Ended with the password.** `POST /auth/password` ends every other
   session of the human, however it was made, and voids their open codes
-  and links.
+  and links. A password reset by mail (§2.10) does the same to every
+  session, the one it was asked from included.
 
 **The session list.** Profile → Sessions:
 
@@ -1949,8 +1963,8 @@ session that approved a device code. `ip` is the one of the latest
 call; `created` is the account record of the sign-in (below), with the
 address and browser the session started from. `ended_at` and
 `ended_by` (`logout`, `revoked`, `end_others`, `expired`,
-`password_change`, `second_factor_disabled`, `second_factor_reset`,
-§2.8) are set on an ended session; an ended session shows no `ip`, and
+`password_change`, `password_reset` (§2.10), `second_factor_disabled`,
+`second_factor_reset`, §2.8) are set on an ended session; an ended session shows no `ip`, and
 the hub keeps none for it — only the keyed fingerprint of §2.1, never
 the address itself. A session of another
 human is `not_found`. `GET /auth/session` (§2.1) gains `session_id`,
@@ -2073,13 +2087,16 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
 |---|---|---|---|
 | `MAITY_SIGN_IN_DEVICE_CODE` | `device_code` | `true` | device codes (§2.6.2) |
 | `MAITY_SIGN_IN_EMAIL_LINK` | `email_link` | `true` | sign-in links and codes by mail (§2.6.3); offered only while the mail settings are complete and enabled, and sent only to a verified address whose human has not switched it off |
+| `MAITY_SIGN_IN_PASSWORD_RESET` | `password_reset` | `true` | a forgotten password reset by mail (§2.10); offered only while the mail settings are complete and enabled, and sent only to a verified address whose human has not switched it off |
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `second_factor` | `optional` | `off`, `optional`, `required_admins` or `email` (§2.8.5); TOTP is available only with `MAITY_SECRET_KEY` (`missing: ["secret_key"]`) |
 
 ```json
 { "password": { "value": true, "source": "fixed" },
   "device_code": { "value": true, "source": "default" },
   "email_link": { "value": true, "source": "admin" },
-  "email_link_available": false, "missing": ["mail"] }
+  "password_reset": { "value": true, "source": "default" },
+  "email_link_available": false, "missing": ["mail"],
+  "password_reset_available": false, "password_reset_missing": ["mail"] }
 ```
 
 `password` cannot be turned off (a `PATCH` of it is `invalid` with
@@ -2087,7 +2104,9 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
 right now, `missing` why not: `switched_off` (the setting is `false`),
 `mail` (the mail settings are not complete and enabled),
 `second_factor_email` (the second factor is `email`, §2.8.8), and
-`not_implemented` while the hub does not serve the sign-in link yet. A change is not an
+`not_implemented` while the hub does not serve the sign-in link yet.
+`password_reset_available` and `password_reset_missing` say the same of
+the reset (§2.10), with `switched_off`, `mail` and `not_implemented`. A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
@@ -2096,7 +2115,8 @@ event; the accounts design's instance audit log records it (pending).
   the password. After `details.reason: email_link` it says that the
   password is paused here for a while and offers "Email me a sign-in
   link" with the address filled in; after `password_paused` it says when
-  to try again (§2.1). Below the form "Have a code?"
+  to try again (§2.1). "Forgot password?" under the password field when
+  `password_reset` is on (§2.10), also after either answer. Below the form "Have a code?"
   when `device_code` is on, and "Email me a sign-in link" when
   `email_link` is on (§2.6.1). After the mail request: "If this address
   belongs to an account, a link is on its way", with a field for the
@@ -2119,7 +2139,8 @@ event; the accounts design's instance audit log records it (pending).
   with "This was me" only where that session may confirm it.
 - **Notification settings** (#160, §18.8) gain the `security` mail switch
   and "Allow sign-in links by mail" (`email.sign_in_link`), with the
-  mailbox warning of §2.6.3.
+  mailbox warning of §2.6.3, and "Allow password reset by mail"
+  (`email.password_reset`), with the warning of §2.10.
 - **Changing the address** asks for the password in the same form; for
   a human without one it says the change waits for approval from a
   session at least 24 hours old, and such sessions show the held change
@@ -2840,7 +2861,10 @@ enrolled TOTP. The maintainer's five rules of 2026-10-31:
    `GET /admin/settings/sign-in` names `second_factor_email` in
    `missing` (§2.6.6), and `POST /auth/email-link` answers its `202` and
    sends nothing — the same mailbox twice would be one factor. The
-   password and the device code stay as first factors.
+   password and the device code stay as first factors. A password reset
+   by mail stays on (§2.10, the maintainer's decision of 2026-11-11): for
+   a human without TOTP it is the same mailbox twice, which the hub says
+   to the human, pushing toward an authenticator app.
 4. **Step-up by mail.** A human without TOTP proves the factor before a
    sensitive call (§2.8.4) with a six-digit code by mail: `POST
    /auth/second-factor/email` from a full session sends it (a code
@@ -3082,6 +3106,165 @@ What deletion does:
 The operator is told nothing beyond a counter in the instance
 statistics (§16.6). An instance admin cannot delete an account through
 this route for someone else; that remains §16.1.
+
+### 2.10 Human: a forgotten password
+
+The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
+in seq 109283): a human who forgot the password sets a new one through
+a link to the verified address. `POST /auth/password` (§2.1) needs the
+current password, and the sign-in link (§2.6.3) is no answer where the
+instance has switched it off or made mail the second factor (§2.8.8).
+What the mailbox alone may do depends on the human's second factor:
+
+- **TOTP enrolled:** the reset also needs a TOTP code or a recovery
+  code. The mailbox alone changes nothing, not even the password.
+- **Mail as the second factor** (`second_factor: email`, no TOTP,
+  §2.8.8): the mailbox is enough to set the password, and the next
+  sign-in asks for the mail factor as always. Both reach the same
+  mailbox, so for this human whoever reads it can take the account over
+  (§2.3). The hub says so to the human and pushes toward an
+  authenticator app (below).
+- **No second factor:** the mailbox is enough.
+
+**Asking.** On the login page, "Forgot password?" asks for an address:
+
+```
+POST /auth/password-reset   {"address": "maintainer@example.org"}
+```
+
+Unauthenticated. **Always** answers `202 {"expires_in": 1800}`, as
+`POST /auth/email-link` does (§2.6.3): the hub answers before it looks
+the address up, and the lookup and the send run in the background, so
+neither the body, the status nor the timing tells an address that exists
+from one that does not. It sets no cookie: a reset signs nobody in. A
+mail is sent only when, at the time of the lookup:
+
+- the address is a human's verified address (`address_status:
+  verified`, §18.4; compared trimmed and lower-cased);
+- the account is not disabled and has a password. An account without
+  one has nothing to reset; it signs in as §2.6 offers;
+- the human has not switched resets off (`email.password_reset`,
+  below);
+- the instance setting is on and the mail settings are complete and
+  enabled (§2.6.6).
+
+Otherwise the call still answers `202` and sends nothing. A new request
+voids the earlier unused reset link requested from the **same source
+address** for that human; a request from another source address leaves
+it alone, so nobody elsewhere can void the link the human is about to
+use.
+
+**The mail.** Plain text in the human's interface language (§6.2), with
+the rules of §18.5 for headers and content, minus the unsubscribe
+parts. Like the sign-in mail it answers a request, so no mode, digest,
+quiet hours or hourly cap of notifications applies; it counts against
+`sign_in_max_per_hour` (§2.6.4), never against the security or the
+notification budget. Subject `[Maity] Reset your password`. Body:
+
+- the link `<MAITY_PUBLIC_URL>/sign-in/reset#<token>`, valid
+  **30 minutes**. The token stands in the fragment, which no browser
+  sends to a server and no log records, as for the mail factor's link
+  (§2.8.8);
+- when, and from which browser, operating system and address the request
+  came;
+- "If you did not ask for this, ignore this mail; your password stays
+  as it is";
+- for a human whose second factor is the mail: "This mailbox is your
+  second factor too, so whoever reads it can reset your password and
+  sign in. Set up an authenticator app under Profile → Security: then a
+  reset also needs its code."
+
+No code to type: the reset signs no browser in, so the link may be
+opened on any device, and nothing guessable needs to exist.
+
+**The page.** `/sign-in/reset` is a dashboard route (§16.11). It reads
+the token from the fragment, removes it from the address bar and asks
+the hub:
+
+```
+POST /auth/password-reset/check      {"token": "…"}
+POST /auth/password-reset/complete   {"token": "…", "new": "…", "code"?: "123456", "recovery_code"?: "…"}
+```
+
+`check` changes nothing and answers `{display_name, handle, factor}`,
+where `factor` is what the reset will ask for or say: `totp` (a code
+field, with "Use a recovery code"), `email` (the human's second factor
+is the mail: the page shows the sentence of the mail above) or `null`.
+The page then reads "Set a new password for <display name> (<handle>)".
+
+`complete` sets the password, in one transaction: the token checked and
+consumed, the TOTP or recovery code checked where `factor` is `totp`,
+the password stored, every session ended. It answers 200 `{}` and
+**signs nobody in**: the page links to the login, where the next sign-in
+runs as always, the second factor included (§2.8.2). A password has the
+rules of §2.1 (`invalid`, `details.fields.new: "too_short"`). A recovery
+code used here is consumed and writes `second_factor_changed` with
+`change: recovery_code_used` (§2.8.2).
+
+An invalid, expired or used token, one of a password that has changed
+since, and a wrong TOTP or recovery code are all `code_invalid`, never
+which reason applies. A wrong code counts as every second-factor code of
+the human does (§2.8.6) and leaves the token usable until it expires.
+Where the sign-in step would fail closed for TOTP (no instance key,
+§2.8.1), `complete` does too, with the same answer.
+
+**The token** follows §18.6: the base64url of `{human id, purpose:
+"password_reset", nonce, expiry, password generation}` with an
+HMAC-SHA-256 over it under `MAITY_MAIL_SIGNING_KEY`, so a forged token
+is refused before any lookup. The hub stores `sha256(nonce)` with the
+expiry for single use. The password generation moves with every
+password change, a reset or `POST /auth/password` (§2.1), so every
+older reset link dies with it.
+
+**What a reset ends.** Every session of the human, however it was made,
+second-factor and enrolment sessions included (`ended_by:
+password_reset`, §2.6.5), and every open device code, sign-in link and
+code, and reset link of the human, as a password change does (§2.6.5,
+"Ended with the password"). Whoever resets either forgot the password or
+fears someone has it, and a session should not outlive the password it
+was made with. Agent credentials stay: they are not derived from the
+password (§2.2), and ending them would stop the team without stopping
+anyone who holds the new password. The security mail says where to end
+them (below). The device cookie stays, since it authenticates nothing
+(§2.6.5).
+
+**Telling the human.** A completed reset writes the account record
+`password_reset` `{ip, browser, os}`, a `security` notification (§18.1),
+and sends its mail at once, whatever `email.kinds.security.mode` says:
+"The password of your Maity account was reset at <time> from <browser>
+on <os>, <ip>. Every session has ended. If this was not you, reset it
+again, set up an authenticator app, and end your agents' access under
+Agents." A request that was never used writes nothing, so anonymous
+requests cannot fill the account record.
+
+**The human's own switch.** `email.password_reset` in the notification
+settings (§18.4), `true` by default, `PATCH /me/notification-settings`
+`{"email": {"password_reset": false}}`. With `false` the hub sends no
+reset mail to that human; `POST /auth/password-reset` still answers
+`202`, and `GET /auth/methods` is unchanged, since it never speaks
+about an account. Turning it off voids an open reset link. The
+dashboard shows the switch beside "Allow sign-in links by mail" with
+the sentence "Turn this off if an agent or anyone else can read this
+mailbox: whoever reads it can set your password" (§2.3). It is a key of
+its own, apart from `email.sign_in_link`, because the reset is the
+stronger way in.
+
+**The instance switch.** `password_reset` in `GET, PATCH
+/admin/settings/sign-in` (§2.6.6), default `true`. Turning it off voids
+every open reset link at once; the three calls then answer `forbidden`
+with `details.reason: method_disabled` (§2.6.5).
+
+**Toward an authenticator app.** A human whose second factor is the mail
+(`via: email` in `GET /auth/second-factor`, §2.8.1) sees a banner on
+every dashboard page: "Your sign-in rests on your mailbox alone: whoever
+reads it can reset your password and sign in. Set up an authenticator
+app", linking to Profile → Security. "Later" hides it until the next
+sign-in; enrolling TOTP ends it. The reset mail and the reset page say
+the same (above).
+
+**Rules every method keeps.** §2.6.5 applies: transport, `Sec-Fetch-Site`
+(the three calls refuse `cross-site` and `same-site`, `forbidden`), and
+`humans_only` for an agent or runner credential. The limits are §2.6.4's.
 
 ## 3. Join
 
@@ -14658,6 +14841,7 @@ and `resolveEntry`, and any write.
 | GET, POST | `/auth/device-login` | — (the code; then the pending cookie) | 2.6.2 |
 | POST | `/auth/device-login/complete` | — (the pending cookie) | 2.6.2 |
 | POST | `/auth/email-link`, `/auth/email-code` | — (`email-code`: the pending cookie) | 2.6.3 |
+| POST | `/auth/password-reset`, `/auth/password-reset/check`, `/auth/password-reset/complete` | — (`check`, `complete`: the token) | 2.10 |
 | GET, POST | `/mail/sign-in/{token}` (outside the API) | — (the token) | 2.6.3 |
 | GET | `/auth/sessions` | human | 2.6.5 |
 | DELETE | `/auth/sessions/{id}` | human, own sessions; from a session not in good standing never one in good standing, and while it is younger than 1 hour no older one | 2.6.5 |
@@ -19527,6 +19711,7 @@ names:
 | `/login`, `/register` | the login and registration pages; both take `?next=<path>` (§2.6.5) |
 | `/sign-in/code#c=<code>` | the login page with a device code filled in; the code in the fragment, never sent to the hub (§2.6.2) |
 | `/sign-in/second-factor` | the second factor after a first one (§2.8.2) |
+| `/sign-in/reset#<token>` | the link of a password reset; the token in the fragment, never in a request line, posted by the page (§2.10) |
 | `/sign-in/second-factor/email#<token>` | the link of the mail factor; the token in the fragment, never in a request line, posted by the page from the browser that signed in (§2.8.8) |
 | `/invite/<token>` | an invitation (§3.4); on a join host its link is `/i/<token>`, redirected here (§1.1) |
 | `/invite` | the person invitations of the human's projects in one place: it reads §3.4's list in every project where the human holds `members:admin`, shows all of that project's invitations as the list gives them (newest first: the open ones and those used, revoked, voided or expired in the last 30 days), and creates one for a project of the caller's choice; no route of its own, and an organisation's invitations (§6.26) are not on it |
@@ -20582,7 +20767,7 @@ when it is read or sent, from two sources, plus a read flag per human:
   readable by that
   human alone — no other member, no instance admin, no agent, no
   runner — and kept 90 days. The types: `mail_disabled` (§18.7) and
-  `email_address_changed` (§18.4); with the sign-in contract (#169,
+  `email_address_changed` (§18.4); `password_reset` (§2.10); with the sign-in contract (#169,
   §2.6.5) also `session_created` and `session_ended`, shown in the
   account's session list; neither is a notification (§2.6.5, "A sign-in
   is no notification"); and with
@@ -20632,7 +20817,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account record `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
+| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
 
 The two jour fixe items are ordinary items: read by their read flag,
 mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
@@ -21074,6 +21259,7 @@ device; the browser's own permission is per browser and is not stored.
       "invitation": { "mode": "immediate" }
     },
     "sign_in_link": true,
+    "password_reset": true,
     "daily_at": "08:00",
     "weekly_on": "mon",
     "quiet_hours": { "from": "22:00", "to": "07:00" },
@@ -21226,7 +21412,7 @@ device; the browser's own permission is per browser and is not stored.
   hours or `off` holds them: the notice to the old address after an
   address change (above); the mail of `second_factor_changed`
   (disabled, reset or changed, §2.8) and of `second_factor_failed`
-  (§2.8); the confirmation of an account deletion (§2.9); the mail
+  (§2.8); the mail of `password_reset` (§2.10); the confirmation of an account deletion (§2.9); the mail
   after a registration decision (§2.7.5). They are security mail
   (§16.2, own budget).
 - **Defaults and what was saved.** The hub stores only what the human
@@ -21252,10 +21438,13 @@ device; the browser's own permission is per browser and is not stored.
   factor's code (§2.8.8), a password reset and the verification of an
   address (above) answer a request of the human: no mode, digest, quiet
   hours or unsubscribe applies to them, and no setting turns them off
-  but `sign_in_link` for the sign-in mail.
+  but `sign_in_link` for the sign-in mail and `password_reset` for the
+  reset mail.
 - **`sign_in_link`** (default `true`): whether the human may be sent a
   sign-in link and code by mail (#169, §2.6.3). Turning it off voids an
   open link and code. It has no effect until the sign-in contract is in.
+- **`password_reset`** (default `true`): whether the human may be sent a
+  password reset link (§2.10). Turning it off voids an open reset link.
 - **`content`** on `chat` and `mention` (default `false`): with `true`
   the mail carries the message text for this kind; without it the mail
   never contains a chat body (§18.5).
@@ -21282,7 +21471,7 @@ device; the browser's own permission is per browser and is not stored.
   time in a mail (§18.5) follow it, and UTC while it is `null`.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
   `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
-  `sign_in_link`), and `current_password` beside `email` when the
+  `sign_in_link`, `password_reset`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored
   otherwise); the
   read-only fields (`address_status`, `verified_at`, `pending_address`,

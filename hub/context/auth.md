@@ -349,6 +349,38 @@ effect and the operator's command share one function so that the record, the ses
 - Resetting a human who has no factor: nothing would change and a mail would go out for nothing;
   it is a conflict.
 
+## A forgotten password is reset by mail, also where the mail is the second factor
+
+**Id:** 2caa97c3-3a24-401b-a29f-02579a503559
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-s113f1gsd892 (seq 109195, 109226, confirmed in seq 109283, 2026-11-11), docs/api.md §2.10, tsk-pk755085ctff
+**Revisit when:** an account is taken over through its mailbox; or passkeys (§2.8) give humans without TOTP another factor to require at a reset
+
+A reset link to the verified address sets a new password (§2.10). With TOTP enrolled the reset
+also needs a TOTP or recovery code. Without TOTP the mailbox is enough, and that includes
+`second_factor: email`, where the next sign-in's mail factor is the same mailbox again. For those
+humans the hub says so and pushes toward an authenticator app: a dashboard banner, a sentence in
+the reset mail and one on the reset page. A per-human switch (`email.password_reset`) and an
+instance switch (`password_reset`), both on by default, turn it off.
+
+**Reason:** a team instance needs a way back in without an admin for every forgotten password. Under
+mail as the second factor the sign-in link is already off (§2.8.8), so without the reset such a
+human had no self-service way at all. The maintainer chose the mailbox as enough and a strong
+nudge toward TOTP over a gate.
+
+**Rejected alternatives:**
+- Under mail as the second factor, no self-service: an instance admin sends the reset mail after
+  checking with the person by another channel (as the second-factor reset, §2.8.3). An admin for
+  every forgotten password.
+- A 24-hour hold, announced in every live session with "Cancel": a human who forgot the password
+  usually has no live session, so it mostly delays the honest one.
+- No reset at all under mail as the second factor, only the operator: too hard for a team
+  instance.
+- One switch for the sign-in link and the reset together: the reset is the stronger way in, and
+  a human may want the link off and the reset on.
+
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 
 **Id:** 659d15cb-6c9b-4e06-8fec-164368951df4
