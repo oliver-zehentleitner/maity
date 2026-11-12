@@ -533,6 +533,13 @@ removes nothing a person might still need, and the question stays open:
 - **The runner's closed list leaves out `runner_revoked` and
   `runner_removed`.** A re-paired runner keeps its id, so the list would
   otherwise offer it clones the contract calls the operator's.
+- **Every active placement that names a credential revoked by a removal
+  rejoins.** The contract named only the reported placement. A stopped
+  successor that took the credential over would then keep it, revoked,
+  without `rejoin`, and its next start would be refused
+  (`credential_issued`) with no way out but a restart with `rejoin`
+  (review of tsk-34gb7frfbsk7). Only the credential is gone, so their
+  own clones and epochs stay.
 - **`workspace_retention` alone can be changed on a closed or closing
   placement.** The clock runs on after the close, and a change of the
   time moves the deadline; any other change there stays

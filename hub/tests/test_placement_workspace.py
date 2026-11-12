@@ -296,15 +296,24 @@ def test_another_running_placement_keeps_the_credential(
     assert get(setup, second["id"])["desired"] == "running"
 
 
-def test_a_stopped_placement_naming_it_does_not_keep_it(
+def test_a_stopped_placement_naming_it_does_not_keep_it_and_rejoins(
     setup: Setup, make_client: ClientFactory
 ) -> None:
     first, credential_id = with_credential(setup, make_client)
     closed(setup, first)
     second = placed(setup)
+    assert second["credential_id"] == credential_id
     setup.owner.patch(f"{PATH}/{second['id']}", {"desired": "stopped"})
     workspace(setup, first["id"], state="removed", removes_at=None)
     assert revoked_reason(setup, credential_id) == "workspace_removed"
+    # The successor took the credential over; it joins anew at its next start instead of
+    # being refused for a credential that is gone. Its own clone and epoch stay.
+    after = get(setup, second["id"])
+    assert (after["rejoin"], after["workspace_epoch"]) == (True, 1)
+    started = setup.owner.patch(f"{PATH}/{second['id']}", {"desired": "running"})
+    assert started.status_code == 200, started.text
+    again = pick_up(setup, started.json())
+    assert again.status_code == 201, again.text
 
 
 def test_a_start_clears_the_outcome_and_a_removed_clone_continues_nothing(

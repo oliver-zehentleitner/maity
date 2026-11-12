@@ -16684,7 +16684,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
 | `desired` | `running`, `stopped` |
 | `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` workspace report does not increment it, as the next start makes a new clone anyway (§15.5); the runner reports which generation it acted on |
-| `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked: the runner removes the old credential file and picks up a new join |
+| `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked, or by a `removed` workspace report on an active placement and on every active placement naming the credential it revoked (§15.5): the runner removes the old credential file and picks up a new join |
 | `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
 | `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
 | `workspace_retention` | `immediate`, `3h`, `24h` (default) or `7d`: how long the runner keeps the clone after the session ended under a stop or a close, before it removes it (§15.5). The hub stores it and the runner reads it; the runner's clock and its removal are not built yet, tsk-34gb7frfbsk7 |
@@ -16745,7 +16745,8 @@ clone Z. It is the only thing the hub asks of a runner.
   leak path of §2.2, member removal), sets `desired: stopped` in the
   same transaction; it does not close the placement. The one exception
   is `workspace_removed`: the credential's file went with the clone, so
-  the placement keeps its `desired` and rejoins at its next start
+  the placement, and every other active placement that names the
+  credential, keeps its `desired` and rejoins at its next start
   (§15.5).
 
 **Closing.** A placement closes in one of two ways, by cause:
@@ -16827,7 +16828,11 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
   workspace_removed`, §10), unless another running placement names it, and
   sets `rejoin` on a placement that is still active: its next start
   clones afresh and picks up a new join (§15.9), and a later placement
-  on that clone carries no credential over.
+  on that clone carries no credential over. When it revokes, every other
+  active placement that names the credential gets `rejoin` too (a
+  stopped successor that took it over), so its next start joins anew
+  instead of being refused for a credential that is gone; its own clone
+  and `workspace_epoch` stay.
 - **Reported as it goes.** The runner reports on the placement
   (`POST /runner/placements/{id}/workspace`, §15.8): `retained` with the
   deadline once the clock runs, then `removed` or `kept`; each report
@@ -17183,7 +17188,7 @@ Runner credential, signed (§15.1).
 | GET | `/runner/placements` | `closed` | `{items}`: every active, approved placement of this runner, the full desired spec as below, with `workspace_epoch`; one under `desired: stopped` also carries its `workspace_outcome` (with `remove_requested` and `remove_requested_at`, §15.5). `closed=true` lists instead the placements of this runner, closed at any time, whose clone it has not reported removed (`workspace_outcome` `null`, `retained` or `kept`), but none closed with the runner's own end (`runner_revoked`, `runner_removed`: those clones are the operator's, §15.5), each with `active: false`, its `closed_reason`, `workspace_retention`, `workspace_epoch` and `workspace_outcome` (§15.5) |
 | POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
-| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
+| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
 | PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |

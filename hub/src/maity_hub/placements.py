@@ -1207,7 +1207,9 @@ def workspace_report(conn: Connection, placement: Any, body: dict[str, Any], act
 def _removed(conn: Connection, placement: Any, epoch: int, now: datetime, actor: Actor) -> Any:
     """`removed` is a fact about the disk, taken in any state and final for its clone: the
     credential whose file was in it is revoked, unless another running placement names it;
-    an active placement rejoins at its next start, in a new clone of the next epoch."""
+    an active placement rejoins at its next start, in a new clone of the next epoch, and so
+    does every other active placement that names the revoked credential (a stopped
+    successor that took it over would otherwise start on a dead credential)."""
     values: dict[str, Any] = {
         **OUTCOME_CLEARED,
         "workspace_state": "removed",
@@ -1221,8 +1223,30 @@ def _removed(conn: Connection, placement: Any, epoch: int, now: datetime, actor:
     conn.execute(update(t.placement).where(t.placement.c.id == placement.id).values(**values))
     if placement.credential_id is not None and not _named_elsewhere(conn, placement):
         _revoke_removed(conn, placement, actor)
+        for other in _rejoin_the_others(conn, placement):
+            announce(conn, other, "placement_updated", actor)
     announce(conn, placement.id, "placement_updated", actor)
     return row(conn, placement.id)
+
+
+def _rejoin_the_others(conn: Connection, placement: Any) -> list[str]:
+    """Every other active placement naming the revoked credential joins anew at its next
+    start; none of them runs (`_named_elsewhere`), so each is stopped. Their own clones and
+    epochs are untouched: only the credential is gone."""
+    p = t.placement.c
+    ids = list(
+        conn.execute(
+            select(p.id).where(
+                p.credential_id == placement.credential_id,
+                p.id != placement.id,
+                p.active.is_(True),
+                p.rejoin.is_(False),
+            )
+        ).scalars()
+    )
+    if ids:
+        conn.execute(update(t.placement).where(p.id.in_(ids)).values(rejoin=True))
+    return ids
 
 
 def _named_elsewhere(conn: Connection, placement: Any) -> bool:

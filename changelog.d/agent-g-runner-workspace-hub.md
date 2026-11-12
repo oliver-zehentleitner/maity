@@ -7,7 +7,8 @@
 - hub: `POST /runner/placements/{id}/workspace`, the runner's report on a stopped or closed
   placement's clone (`retained`, `kept`, `removed`) without `Idempotency-Key`; `removed`
   revokes the placement's credential (`workspace_removed`) unless another running placement
-  names it, sets `rejoin` on an active placement and raises `workspace_epoch` (§15.8).
+  names it, sets `rejoin` on an active placement and on every other active placement naming the
+  revoked credential, and raises `workspace_epoch` (§15.8).
 - hub: `GET /runner/placements?closed=true`, the runner's closed placements whose clone it
   has not reported removed, also after a detach (§15.8).
 - hub: `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove`, a removal of a held
