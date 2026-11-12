@@ -10,7 +10,7 @@ memberships and open stays), and one UPDATE per open stay that has a nudge. It i
 The downgrade drops the column only; the hub before it reads the cycle from the log again.
 
 Revision ID: 20261112150000_nudged_through
-Revises: 20261112110000_password_reset
+Revises: 20261112090000_firewall_lists
 Create Date: 2026-11-12
 """
 
@@ -24,7 +24,7 @@ from alembic import op
 from maity_hub.types import BIG_ID
 
 revision: str = "20261112150000_nudged_through"
-down_revision: str | None = "20261112110000_password_reset"
+down_revision: str | None = "20261112090000_firewall_lists"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
