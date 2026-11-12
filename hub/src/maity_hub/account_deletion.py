@@ -614,6 +614,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
         t.notification_mail_state,
         t.notification_read,
         t.notification_position,
+        t.notification_recipient,  # which messages may notify them (§18.1)
         t.account_record,  # sign-ins with their addresses and browsers, address changes
         t.not_listening_seen,  # what the human answered `seen` to in the digest (§5.3)
     ):

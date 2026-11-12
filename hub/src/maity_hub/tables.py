@@ -2711,6 +2711,26 @@ notification_read = Table(
     **MYSQL_TABLE,
 )
 
+# The message events that may make a notification of a human (§18.1), written by
+# `events.emit` with the message: `chat` when a conversation's message names the human in
+# its audience, `mention` when its mentions name them. A superset of the items: a later
+# redaction leaves the row, and `notifications.items._classify` stays the exact test. The
+# notifications read these rows instead of matching the event's JSON as text, which scanned
+# every message of the window (hub/context/notifications.md fc79a4a6).
+notification_recipient = Table(
+    "notification_recipient",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Column("chat", Boolean, nullable=False),
+    Column("mention", Boolean, nullable=False),
+    PrimaryKeyConstraint("seq", "human_id"),
+    Index("ix_notification_recipient_window", "human_id", "project_id", "at", "seq"),
+    **MYSQL_TABLE,
+)
+
 # The stored vector behind a position handle, when the inline form would not fit
 # (§18.2): immutable, kept at least 30 days after its last use.
 notification_position = Table(

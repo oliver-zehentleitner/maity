@@ -31,6 +31,7 @@ EVENT_KINDS = (
     "jour_fixe_skipped",
     "jour_fixe_reported",
 )
+NOT_MESSAGES = tuple(kind for kind in EVENT_KINDS if kind != "message")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
 
@@ -142,12 +143,16 @@ def derive(conn: Connection, where: Scope, *, sign_ins: bool = False) -> list[It
 
 
 def _from_events(conn: Connection, where: Scope, mine: Membership, now: datetime) -> list[Item]:
-    rows = conn.execute(
-        select(t.event)
-        .where(*_event_window(where, mine, now), t.event.c.kind.in_(EVENT_KINDS))
-        .order_by(t.event.c.seq)
-    ).all()
-    return _items_of(conn, where, mine, rows)
+    window = _event_window(where, mine, now)
+    rows = [
+        *conn.execute(select(t.event).where(*window, t.event.c.kind.in_(NOT_MESSAGES))),
+        *conn.execute(
+            select(t.event).where(
+                *window, t.event.c.kind == "message", _recipient(where.human_id, mine, now)
+            )
+        ),
+    ]
+    return _items_of(conn, where, mine, sorted(rows, key=lambda row: row.seq))
 
 
 def _event_window(where: Scope, mine: Membership, now: datetime) -> tuple[Any, ...]:
@@ -217,8 +222,8 @@ def derive_page(
     cut from `derive`, which holds every item of 30 days and costs that much per call;
     the counts read `count_items` instead.
 
-    A message row whose payload text names the human may be a mention, so it is derived
-    with the rest; the text test only selects (a false hit is classified like any row).
+    A message row that `notification_recipient` lists as naming the human may be a mention,
+    so it is derived with the rest; the row only selects (`_classify` decides).
 
     `kinds` and `projects`, the page's filters (`wanted` applies them too): a source that can
     give no item of them is not read at all, since every row it holds would be rejected one
@@ -259,29 +264,37 @@ def derive_page(
             .exists()
         )
         others: tuple[Any, ...] = (
-            t.event.c.kind.in_(EVENT_KINDS),
-            or_(t.event.c.kind != "message", _names(where.human_id)),
+            t.event.c.kind.in_(NOT_MESSAGES),
             or_(t.event.c.kind.notin_(REQUEST_EVENTS), concerned),
             or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
         )
         if kinds is not None and "inbox" not in kinds:
-            others = (*others, t.event.c.kind.in_(("message", "mentioned")))
+            others = (*others, t.event.c.kind == "mentioned")
+        # The messages that may mention the human, apart: from `notification_recipient`, so
+        # the project's other messages are never read (hub/context/notifications.md
+        # fc79a4a6). Kept out of `others`, where an OR with the other kinds walked every
+        # message of the window on PostgreSQL. Both sources are cut to the page alike.
+        mentions = (
+            t.event.c.kind == "message",
+            _recipient(where.human_id, mine, now, mention=True),
+        )
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
         # Its first chunk is a whole one: few of these rows are rejected, so one statement
         # covers a page whatever the history, as the load test keeps (test_load.py).
         if kinds is None or kinds & {"inbox", "mention", "chat"}:
-            found += _paged(
-                conn,
-                where,
-                mine,
-                window,
-                others,
-                lambda i: True,
-                count,
-                newest_first,
-                wanted,
-                CHUNK,
-            )
+            for condition in (others, mentions):
+                found += _paged(
+                    conn,
+                    where,
+                    mine,
+                    window,
+                    condition,
+                    lambda i: True,
+                    count,
+                    newest_first,
+                    wanted,
+                    CHUNK,
+                )
         if kinds is None or "chat" in kinds:
             found += _chats(conn, where, mine, window, count, newest_first, wanted)
     if kinds is None or kinds - {"chat", "mention"}:
@@ -356,6 +369,30 @@ def _addressed(human_id: str) -> Any:
     return cast(t.event.c.audience, String).contains(f'"member:{human_id}"', autoescape=True)
 
 
+def _recipient(
+    human_id: str,
+    mine: Membership,
+    now: datetime,
+    *,
+    chat: bool | None = None,
+    mention: bool | None = None,
+) -> Any:
+    """The message rows of one project that may make an item of the human: those
+    `notification_recipient` lists for them in the window, narrowed by its flags. An index
+    range per person and project, where the payload and audience text was matched over
+    every message of the window (hub/context/notifications.md fc79a4a6); `_classify` stays
+    the exact test."""
+    r = t.notification_recipient.c
+    found = select(r.seq).where(
+        r.human_id == human_id, r.project_id == mine.project.id, r.at >= now - WINDOW
+    )
+    if chat is not None:
+        found = found.where(r.chat.is_(chat))
+    if mention is not None:
+        found = found.where(r.mention.is_(mention))
+    return t.event.c.seq.in_(found)
+
+
 def _paged(
     conn: Connection,
     where: Scope,
@@ -417,9 +454,8 @@ def _chats(
     other, are no item of the human's however many there are (tsk-spa1tad26vs1)."""
     plain = (
         t.event.c.kind == "message",
-        ~_names(where.human_id),
         t.event.c.conversation_id.is_not(None),
-        _addressed(where.human_id),
+        _recipient(where.human_id, mine, clock.now(), chat=True, mention=False),
     )
     return _paged(
         conn, where, mine, window, plain, lambda i: i.kind == "chat", count, newest_first, wanted
@@ -478,7 +514,10 @@ def count_items(conn: Connection, where: Scope) -> list[Item]:
                 *window,
                 or_(
                     t.event.c.kind == "mentioned",
-                    and_(t.event.c.kind == "message", _names(where.human_id)),
+                    and_(
+                        t.event.c.kind == "message",
+                        _recipient(where.human_id, mine, now, mention=True),
+                    ),
                 ),
             )
             .order_by(t.event.c.seq)
