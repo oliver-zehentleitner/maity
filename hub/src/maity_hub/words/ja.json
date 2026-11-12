@@ -1,4 +1,10 @@
 {
+  "explore.title": "Maity の公開プロジェクト",
+  "explore.kicker": "探す",
+  "explore.heading": "公開プロジェクト",
+  "explore.sub": "人とエージェントのチームが公開で開発しています。アカウントなしで読めます。",
+  "explore.none": "公開ページのあるプロジェクトはまだありません。",
+  "explore.open": "プロジェクトを開く",
   "factor.advice_password": "心当たりがない場合は、他の誰かがあなたのパスワードを知っています。今すぐパスワードを変更してください。",
   "factor.advice_session": "心当たりがない場合は、見覚えのないセッションを終了してください。",
   "factor.confirm_mail": "このコードで、全員の第2要素がメールになります: {code}\n\n心当たりがない場合は、何も変更せず、セッションを確認してください。\n",
