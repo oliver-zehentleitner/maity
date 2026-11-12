@@ -34,7 +34,7 @@ from .. import __version__, clonecheck, hub, onboarding, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
-from .tmux import Session, Tmux, TmuxError, session_name
+from .tmux import IDLE, Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
 PICKUP_RETRY = 15.0
@@ -126,6 +126,7 @@ LIVE = ("starting", "running", "stopping")
 IDLE_EVERY = 60.0
 HANG_AFTER_MINUTES = 30
 REPLY_WITHIN_MINUTES = 10
+TYPED_TRIES, TYPED_PAUSE = 10, 0.2  # up to 2 s for the nudge's line to show in the pane
 NUDGE_LINE = (
     "maity runner: you have not been listening for a while: no `maity wait` ran and nothing "
     "changed on this screen. Run `maity resume` if you lost track, then go back to your wait "
@@ -216,6 +217,7 @@ class Record:
     quiet_since: float | None = None
     nudged_at: float | None = None
     hung_at: float | None = None
+    hung_exits: list[float] = field(default_factory=list)  # for the crash cap (§15.14)
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
 
     def calm(self) -> None:
@@ -263,6 +265,7 @@ class Supervisor:
     probes: dict[str, capabilities.Probe]
     now: Callable[[], float] = time.time
     rand: Callable[[], float] = random.random
+    pause: Callable[[float], None] = time.sleep
     desired: list[dict[str, Any]] = field(default_factory=list)
     synced: bool = False  # the hub's placements have been read at least once
     records: dict[str, Record] = field(default_factory=dict)
@@ -486,6 +489,7 @@ class Supervisor:
         rec.target = target.name
         if rec.generation != generation:
             rec.generation, rec.restarts, rec.crashes, rec.retry_at = generation, 0, [], None
+            rec.hung_exits = []
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
             rec.exit_code = None
@@ -596,12 +600,13 @@ class Supervisor:
     def _idle(
         self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
     ) -> None:
-        """The runner's own check of an interactive session (§15.14): no `maity wait` below
-        its pane and the pane unchanged for `hang_after_minutes` means the agent stopped
-        listening. Nobody attached: one line typed into the pane. Still the same
-        `reply_within_minutes` later: the session is ended and started again, resuming it,
-        reported `exited`, `hung`, `idle`. A person attached, a wait running, a changed pane,
-        or anything the runner cannot read starts the count again."""
+        """The runner's own check of an interactive session (§15.14). The agent stopped
+        listening when the harness has no process below it at all (no `maity wait`, no tool
+        it runs, however quiet) and its pane is unchanged, for `hang_after_minutes`. Nobody
+        attached: one line typed into the pane. Still the same `reply_within_minutes` later:
+        the session is ended and started again, resuming it, reported `exited`, `hung`,
+        `idle`. A person attached, any process below the harness, a changed pane, or
+        anything the runner cannot read starts the count again."""
         if rec.hung_at is not None:  # ended for it: kill-session if TERM was not enough
             if now - rec.hung_at >= KILL_AFTER:
                 backend.kill(session.name)
@@ -610,19 +615,13 @@ class Supervisor:
         if rec.idle_checked_at is not None and now - rec.idle_checked_at < IDLE_EVERY:
             return
         rec.idle_checked_at = now
-        waiting = backend.waiting(session)
+        below = backend.activity(session)
         attached = backend.attached(session.name)
         digest = backend.pane_digest(session.name)
-        if waiting is None or attached is None or digest is None or waiting or attached:
+        if below != IDLE or attached is not False or digest is None:
             rec.pane, rec.quiet_since, rec.nudged_at = digest, None, None
             return
-        if rec.quiet_since is None or rec.pane is None:
-            # The first look, or the first after the nudge typed into the pane: the line
-            # changed it, so this is what "unchanged" is measured against from now on.
-            rec.pane = digest
-            rec.quiet_since = rec.quiet_since or now
-            return
-        if digest != rec.pane:
+        if rec.quiet_since is None or digest != rec.pane:
             rec.pane, rec.quiet_since, rec.nudged_at = digest, now, None
             return
         settings = (p.get("health") or {}).get("settings") or {}
@@ -636,7 +635,8 @@ class Supervisor:
             except TmuxError as exc:
                 self.log(f"{session.name}: cannot nudge: {exc}")
                 return
-            rec.nudged_at, rec.pane = now, None
+            rec.nudged_at = now
+            rec.pane = self._typed(backend, session.name, digest)
             self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
                      "nudged in its pane")  # fmt: skip
             return
@@ -647,24 +647,34 @@ class Supervisor:
         backend.terminate(session)
         rec.hung_at = now
 
+    def _typed(self, backend: Tmux, name: str, before: str) -> str | None:
+        """The pane right after the nudge, once the typed line shows: what "unchanged" is
+        measured against from then on, so the agent's answer to it is a change. A pane that
+        never shows it (a frozen screen) keeps its last hash."""
+        digest: str | None = before
+        for _ in range(TYPED_TRIES):
+            digest = backend.pane_digest(name)
+            if digest != before:
+                break
+            self.pause(TYPED_PAUSE)
+        return digest
+
     def _hung_exit(self, rec: Record, now: float, code: int | None) -> None:
-        """The end of a session the idle check ended: `exited`, `hung`, `idle` (§15.7), a
-        restart like any other exit, so the crash cap holds; the next start resumes it."""
-        started = (
-            rec.started_at
-            if rec.started_at is not None
-            else now - self.cfg.limits.restart.quick_exit
-        )
-        decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
+        """The end of a session the idle check ended: `exited`, `hung`, `idle` (§15.7),
+        restarted after the first backoff step and resumed. These ends are counted on their
+        own, since a hung session never ends quickly: `crash_cap` of them within
+        `crash_window` hold the placement as `failed`, `hung`, `idle`, like a crash loop."""
+        policy = self.cfg.limits.restart
+        rec.hung_exits = [t for t in rec.hung_exits if now - t < policy.crash_window] + [now]
         rec.hung_at = None
         rec.calm()
         rec.resume = True
-        if decision.crash_loop:
-            rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
-                      retry_at=None)  # fmt: skip
+        if len(rec.hung_exits) >= policy.crash_cap:
+            rec.enter(now, "failed", "hung", detail="idle", exit_code=code, retry_at=None)
+            self.log(f"{rec.target or 'local'}: held after {len(rec.hung_exits)} idle ends")
         else:
             rec.enter(now, "exited", "hung", detail="idle", exit_code=code,
-                      crashes=decision.crashes, retry_at=decision.retry_at)  # fmt: skip
+                      retry_at=now + restart.delay(policy, 0, self.rand))  # fmt: skip
 
     def _rate_limited(self, rec: Record, now: float, target: Target) -> None:
         """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is

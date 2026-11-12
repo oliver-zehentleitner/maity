@@ -981,16 +981,18 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Stops.** A stop waits `stop_grace_seconds` (capped by
   `stop_grace_max`), then sends SIGTERM, and ends the session 10 s later.
 - **An interactive agent that stopped listening.** Once a minute the
-  runner looks at each interactive session: does a `maity wait` run below
-  its pane, and did the pane change (a hash, never its text)? With
-  neither for `hang_after_minutes` (the agent owner's setting, default
-  30) and no client attached, it types one line into the pane telling
-  the agent to go back to its wait loop. With still neither
-  `reply_within_minutes` later (default 10), it ends the session, reports
+  runner looks at each interactive session: does any process run below
+  the harness (a `maity wait`, or a tool however quiet), and did the pane
+  change (a hash, never its text)? With neither for `hang_after_minutes`
+  and no client attached, it types one line into the pane telling the
+  agent to go back to its wait loop. With still neither
+  `reply_within_minutes` later, it ends the session, reports
   `exited`/`hung`/`idle`, and starts it again; Claude Code resumes its
-  last conversation (`--continue`). Attaching to the session pauses the
-  check, so the runner never types while you are there. Needs `ps` where
-  the agents run.
+  last conversation (`--continue`). `crash_cap` such ends within
+  `crash_window` hold the placement as `failed`/`hung`. The minutes are
+  30 and 10 until the hub sends the owner's health settings. Attaching
+  to the session pauses the check, so the runner never types while you
+  are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
   known placement is adopted, not restarted. A session whose placement
   is gone ends after `stop_grace_max`.

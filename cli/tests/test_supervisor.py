@@ -66,7 +66,7 @@ class FakeTmux:
     terminated: list[str] = field(default_factory=list)
     killed: list[str] = field(default_factory=list)
     # The idle check: what `ps`, `display-message` and `capture-pane` would say.
-    waits: bool | None = False
+    below: str | None = tmux.IDLE
     attach: bool | None = False
     screen: str | None = "> "
     typed: list[tuple[str, str]] = field(default_factory=list)
@@ -74,8 +74,8 @@ class FakeTmux:
     def sessions(self) -> dict[str, tmux.Session]:
         return dict(self.live)
 
-    def waiting(self, session: tmux.Session) -> bool | None:
-        return self.waits
+    def activity(self, session: tmux.Session) -> str | None:
+        return self.below
 
     def attached(self, name: str) -> bool | None:
         return self.attach
@@ -1621,12 +1621,13 @@ def test_an_attached_client_blocks_the_typing(world: Any) -> None:
 @pytest.mark.parametrize(
     "change",
     [
-        {"waits": True},  # a `maity wait` runs below the pane: listening
-        {"waits": None},  # `ps` could not say: nothing is done on a guess
+        {"below": tmux.WAITING},  # a `maity wait` runs below the harness: listening
+        {"below": tmux.WORKING},  # a tool runs below it, however quiet (a long build)
+        {"below": None},  # `ps` could not say: nothing is done on a guess
         {"attach": None},
         {"screen": None},
     ],
-    ids=["waiting", "ps-unknown", "attach-unknown", "screen-unknown"],
+    ids=["waiting", "working", "ps-unknown", "attach-unknown", "screen-unknown"],
 )
 def test_a_listening_or_unreadable_session_is_left_alone(
     world: Any, change: dict[str, Any]
@@ -1655,7 +1656,7 @@ def test_an_agent_that_answers_the_nudge_is_not_ended(world: Any) -> None:
     interactive(world)
     minutes(world, 31)
     assert len(backend.typed) == 1
-    backend.waits = True  # it read the line and runs its wait loop again
+    backend.below = tmux.WAITING  # it read the line and runs its wait loop again
     minutes(world, 30)
     assert backend.terminated == [] and len(backend.typed) == 1
 
@@ -1706,6 +1707,9 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     )
     assert tmux.waits_below(listing, 100)
     assert not tmux.waits_below(listing, 500)
+    assert tmux.below(listing, 100) == tmux.WAITING
+    assert tmux.below("  100     1 claude\n  600   100 /bin/sh -c sleep 900\n", 100) == tmux.WORKING
+    assert tmux.below("  100     1 claude\n  600     1 other\n", 100) == tmux.IDLE
     assert tmux.waits_below(listing, 1) and not tmux.waits_below(listing, 999)
     assert tmux.is_wait("/usr/bin/python3 -m maity wait")
     assert not tmux.is_wait("maity waiting") and not tmux.is_wait("notmaity wait")
@@ -1726,11 +1730,22 @@ def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
     session = tmux.Session(SESSION, False, None, 7, "plc-0003", 1)
     assert backend.attached(SESSION) is True
     assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
-    assert backend.waiting(session) is True
-    assert backend.waiting(replace(session, pid=None)) is None
+    assert backend.activity(session) == tmux.WAITING
+    assert backend.activity(replace(session, pid=None)) is None
     backend.type_line(SESSION, "a line; with -t words")
     assert calls[-2][-4:] == ["-t", SESSION, "-l", "a line; with -t words"]
     assert calls[-1][-3:] == ["-t", SESSION, "Enter"]
+
+
+def settle_on(read: Any, want: str) -> Any:
+    """`read()` until it gives `want`, for at most 5 s: a real shell takes a moment."""
+    seen = read()
+    for _ in range(50):
+        if seen == want:
+            break
+        subprocess.run(["sleep", "0.1"], check=False)
+        seen = read()
+    return seen
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None or shutil.which("ps") is None,
@@ -1748,14 +1763,62 @@ def test_real_tmux_idle_reads(tmp_path: Path) -> None:
         backend.start(SESSION, tmp_path, ["sh"], {}, "plc-0003", 1)
         session = backend.sessions()[SESSION]
         assert backend.attached(SESSION) is False
-        assert backend.waiting(session) is False
+        assert backend.activity(session) == tmux.IDLE  # a shell at its prompt
         before = backend.pane_digest(SESSION)
         backend.type_line(SESSION, f"{fake} wait --batch")
-        for _ in range(50):
-            if backend.waiting(session):
-                break
-            subprocess.run(["sleep", "0.1"], check=False)
-        assert backend.waiting(session) is True
+        seen = settle_on(lambda: backend.activity(session), tmux.WAITING)
+        assert seen == tmux.WAITING
         assert backend.pane_digest(SESSION) != before
+        subprocess.run(["tmux", "-S", str(socket), "send-keys", "-t", SESSION, "C-c"], check=False)
+        backend.type_line(SESSION, "sleep 600")  # a quiet tool: no output, no wait
+        assert settle_on(lambda: backend.activity(session), tmux.WORKING) == tmux.WORKING
     finally:
         subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
+
+
+def test_an_answer_right_after_the_nudge_starts_the_count_again(world: Any) -> None:
+    """The pane is measured again once the nudge's line shows, so the agent's answer before
+    the next look is a change, not the new baseline."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 30)
+    assert len(backend.typed) == 1
+    backend.screen = f"{backend.screen} ● on it"  # answered before the next look
+    minutes(world, 10)
+    assert backend.terminated == []  # the answer reset the count
+    minutes(world, 21)
+    assert len(backend.typed) == 2 and backend.terminated == []  # quiet again: a new nudge
+
+
+def test_an_answer_after_the_first_look_starts_the_count_again(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 32)
+    backend.screen = f"{backend.screen} ● on it"
+    minutes(world, 10)
+    assert backend.terminated == [] and len(backend.typed) == 1
+
+
+def test_idle_ends_count_toward_their_own_cap(world: Any) -> None:
+    """A hung session never ends quickly, so the quick-exit crash count never sees it: idle
+    ends are counted on their own, and `crash_cap` of them within `crash_window` hold the
+    placement as `failed`, `hung`, `idle` (§15.7)."""
+    sup, backend, reports, clock, _ = world
+    interactive(world, health={"settings": {"hang_after_minutes": 1, "reply_within_minutes": 1}})
+    cap = sup.cfg.limits.restart.crash_cap
+    for n in range(1, cap + 1):
+        minutes(world, 2)  # the nudge after one minute, the end after one more
+        assert backend.terminated == [SESSION] * n, n
+        backend.exit(SESSION, 143)
+        sup.tick()
+        if n < cap:
+            assert states(reports)[-1] == ("exited", "hung", "idle")
+            clock.now += 60
+            settle(sup)
+            clock.now += supervisor.RUNNING_AFTER
+            sup.tick()
+            sup.tick()
+    assert states(reports)[-1] == ("failed", "hung", "idle")
+    clock.now += 3600
+    sup.tick()
+    assert len(backend.started) == cap  # held: no start after the cap

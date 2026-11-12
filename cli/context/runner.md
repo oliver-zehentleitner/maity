@@ -1997,18 +1997,29 @@ its prompt, its process stays alive, and its placement stays `running`.
 Nothing noticed it: the hub's check-in and nudge are not routed yet, and
 §15.14 had the runner leave an interactive session alone. Now the runner
 looks at each interactive session once a minute.
-- **Not listening** means two things together: no `maity wait` among the
-  processes below the pane (`ps -A -ww`), and the pane unchanged. A wait
-  alone is not enough, because a working agent has none open. An unchanged
-  pane alone is not enough either, because an agent waiting for events
-  shows nothing new. The pane is compared by hash, so its text is never
+- **Not listening** means two things together: no process at all below the
+  harness (neither a `maity wait` nor a tool, however quiet), and the pane
+  unchanged. The first version looked only for a missing wait, and a
+  review showed a quiet build would then be ended. A Claude Code at its
+  prompt has no child process; every tool runs as one.
+- A missing process alone is not enough: an agent writing a long answer
+  has no child process for a while. An unchanged pane alone is not enough
+  either: an agent waiting for events shows nothing new. The processes
+  come from `ps -A -ww`. The pane is compared by hash, so its text is never
   kept, logged or sent.
+- Idle ends are counted on their own toward `crash_cap` within
+  `crash_window` and then hold the placement as `failed`/`hung`/`idle`:
+  a hung session never ends quickly, so the quick-exit crash count never
+  saw it. The pane is measured again right after the typed line shows, so
+  the agent's answer counts as a change.
 - After `hang_after_minutes`, the runner types one fixed line into the
   pane, and only while no client is attached: a person at the pane would
   have the runner type into their session. After `reply_within_minutes`
   more, it ends the session and reports `exited`/`hung`/`idle`. It
   starts the session again with Claude Code's `--continue`, so the
-  conversation survives, and the restart counts toward the crash cap.
+  conversation survives. Until the hub carries the owner's
+  `health.settings` to the runner, the minutes are the defaults, 30 and
+  10.
 - Anything the runner cannot read (no `ps`, a tmux error) starts the
   count again. The runner never acts on a guess.
 - `-ww`: without a terminal, ps cuts the command line at 80 columns, and

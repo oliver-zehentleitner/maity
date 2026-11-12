@@ -72,6 +72,23 @@ def is_wait(args: str) -> bool:
     )
 
 
+WAITING, WORKING, IDLE = "waiting", "working", "idle"
+
+
+def below(listing: str, root: int) -> str:
+    """What runs below `root`, the pane's process (the harness), from the `pid ppid args`
+    lines of `ps`: WAITING when a `maity wait` is among its descendants, WORKING when any
+    other process is (a tool the agent runs, however quiet), IDLE when it has none: the
+    harness sits at its prompt."""
+    if waits_below(listing, root):
+        return WAITING
+    for line in listing.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) >= 2 and parts[1] == str(root) and parts[0].isdigit():
+            return WORKING
+    return IDLE
+
+
 def waits_below(listing: str, root: int) -> bool:
     """Whether a process below `root` (the pane's process) is a `maity wait`, from the
     `pid ppid args` lines of `ps`."""
@@ -259,9 +276,9 @@ class Tmux:
             return None
         return hashlib.sha256(out.encode("utf-8", "replace")).hexdigest()
 
-    def waiting(self, session: Session) -> bool | None:
-        """Whether a `maity wait` runs among the processes below the session's pane, read
-        where the session runs; None when that could not be read."""
+    def activity(self, session: Session) -> str | None:
+        """What runs below the session's pane (`below`), read where the session runs; None
+        when that could not be read."""
         if session.pid is None:
             return None
         try:
@@ -272,7 +289,7 @@ class Tmux:
             return None
         if done.returncode != 0:
             return None
-        return waits_below(done.stdout, session.pid)
+        return below(done.stdout, session.pid)
 
     def type_line(self, name: str, line: str) -> None:
         """Type one line into the session's pane and press Enter: `-l` sends it literally,
