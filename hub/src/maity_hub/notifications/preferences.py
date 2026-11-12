@@ -34,7 +34,7 @@ from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 from maity_hub.ratelimit import Attempt
 
-KINDS = ("inbox", "chat", "mention", "security")
+KINDS = ("inbox", "chat", "mention", "security", "invitation")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
 DIGESTS = ("hourly", "daily", "weekly")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -56,11 +56,19 @@ _HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 DEFAULTS: dict[str, Any] = {
     "browser": {
         "enabled": False,
-        "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
+        "kinds": {
+            "inbox": True,
+            "chat": True,
+            "mention": True,
+            "security": True,
+            "invitation": True,
+        },
     },
     "email": {
         "language": "en",
-        "timezone": "UTC",
+        # The account's time zone, `null` until the human sets one (§18.4): the dashboard then
+        # shows the browser's, and the mails use UTC (`mail_zone`).
+        "timezone": None,
         "kinds": {
             "inbox": {"mode": "immediate"},
             # A digest by default against filled mailboxes; the inbox and security at once
@@ -69,8 +77,16 @@ DEFAULTS: dict[str, Any] = {
             "chat": {"mode": "daily", "content": False},
             "mention": {"mode": "daily", "content": False},
             "security": {"mode": "immediate"},
+            # An invitation by handle at once, like the inbox (tsk-8xsrzjv7f0yr, part 4);
+            # `daily` mails it with the daily digest, `off` keeps it on the platform only.
+            "invitation": {"mode": "immediate"},
         },
         "sign_in_link": True,
+        # A forgotten password reset by mail to this address (§2.10); apart from
+        # `sign_in_link`, because the reset is the stronger way in.
+        "password_reset": True,
+        # No mail of an immediate item while the human is present in the web app (§18.5).
+        "hold_while_online": True,
         "daily_at": "08:00",
         "weekly_on": "mon",
         "quiet_hours": None,
@@ -245,6 +261,10 @@ def _check_browser(given: Any, errors: dict[str, str]) -> dict[str, Any]:
     return out
 
 
+# The mail settings' on/off keys (§18.4).
+SWITCHES = ("sign_in_link", "password_reset", "hold_while_online")
+
+
 def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
     if not isinstance(given, dict):
         errors["email"] = "invalid"
@@ -265,7 +285,7 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
             else:
                 errors[name] = "invalid"
         elif key == "timezone":
-            if _zone(value):
+            if value is None or _zone(value):
                 out[key] = value
             else:
                 errors[name] = "invalid"
@@ -293,10 +313,11 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                 out[key] = value
             else:
                 errors[name] = "invalid"
-        elif key == "sign_in_link" and isinstance(value, bool):
+        elif key in SWITCHES and isinstance(value, bool):
             out[key] = value
         else:
-            errors[name] = "invalid" if key == "sign_in_link" else "extra_forbidden"
+            switch = key in SWITCHES
+            errors[name] = "invalid" if switch else "extra_forbidden"
     return out
 
 
@@ -341,6 +362,11 @@ def _check_not_listening(given: Any, errors: dict[str, str]) -> dict[str, Any]:
     if "minutes" in given and not minutes_valid(given["minutes"]):
         errors["not_listening.minutes"] = "invalid"
     return dict(given)
+
+
+def mail_zone(email: dict[str, Any]) -> ZoneInfo:
+    """The zone the mails use: the account's, or UTC while the human has set none (§18.4)."""
+    return ZoneInfo(email.get("timezone") or "UTC")
 
 
 def _zone(value: Any) -> bool:
@@ -438,6 +464,11 @@ def patch(
         from maity_hub.auth import email_links
 
         email_links.void_human(conn, human.id)
+    if email.get("password_reset") is False:
+        # Turning it off voids an open reset link (§2.10).
+        from maity_hub.auth import password_resets
+
+        password_resets.void_human(conn, human.id)
     return status
 
 
@@ -577,6 +608,7 @@ def apply_address(
                 updated_at=now,
             )
         )
+        _epoch_moved(conn, human_id)
         if row.address is not None and row.address_status in ("verified", "disabled"):
             _tell_old_address(conn, human_id, row.address, None, session, public_url)
         return
@@ -695,6 +727,7 @@ def verify(
     except IntegrityError:  # the unique constraint caught what the lock did not
         return False
     if previous is not None and previous != row.pending_address:
+        _epoch_moved(conn, owner)
         from maity_hub import account_deletion
 
         account_deletion.withdraw(conn, owner, "address")  # §2.9
@@ -841,4 +874,31 @@ def _tell_old_address(
             "If this was not you, sign in and check your sessions: "
             f"{public_url}/account/sessions\n"
         ),
+    )
+
+
+def _epoch_moved(conn: Connection, human_id: str) -> None:
+    """The address was removed or changed: every open reset link dies with it (§2.10), and
+    does not come back if the address returns."""
+    from maity_hub.auth import password_resets
+
+    password_resets.void_human(conn, human_id)
+
+
+def void_pending_address(conn: Connection, human_id: str) -> None:
+    """A new password, by `POST /auth/password` or a reset (§2.10): an unconfirmed new address
+    and its verification link are voided. Whoever held the old password may have asked for it,
+    and the password is the proof of the change. The verified address stays."""
+    conn.execute(
+        update(t.notification_settings)
+        .where(
+            t.notification_settings.c.human_id == human_id,
+            t.notification_settings.c.pending_address.is_not(None),
+        )
+        .values(
+            pending_address=None,
+            pending_nonce=None,
+            pending_expires_at=None,
+            updated_at=clock.now(),
+        )
     )

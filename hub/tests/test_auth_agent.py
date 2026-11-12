@@ -655,3 +655,47 @@ def test_the_epoch_after_a_loss_takes_the_databases_clock(
         database_now = conn.execute(select(func.timezone("UTC", func.now()))).scalar_one()
     assert abs((since.replace(tzinfo=None) - database_now).total_seconds()) < 60
     assert ahead - since > timedelta(minutes=50)  # not the replica's clock
+
+
+def test_presence_is_written_at_most_once_a_minute_and_leases_on_every_call(
+    make_client: ClientFactory, agent: factory.Agent, migrated: Engine
+) -> None:
+    """`last_seen_at` of the membership and the session at most once every 60 s (§2.4); the
+    leases of the instance's claims still move with every call (§6.5)."""
+    project_id = _project_of(migrated, agent)
+    start = clock.now()
+    held = factory.card(
+        migrated,
+        project_id,
+        agent.membership_id,
+        status="in_progress",
+        claim_holder=agent.membership_id,
+        claim_instance=agent.instance,
+        claim_since=start,
+        lease_until=start + timedelta(minutes=5),
+    )
+    now = [start + timedelta(hours=1)]
+    clock.set_source(lambda: now[0])
+
+    def call() -> tuple[Any, Any, Any]:
+        assert make_client().get("/api/v1/me", headers=bearer(agent)).status_code == 200
+        with migrated.connect() as conn:
+            member = conn.execute(
+                select(t.membership.c.last_seen_at).where(t.membership.c.id == agent.membership_id)
+            ).scalar()
+            session = conn.execute(
+                select(t.agent_session.c.last_seen_at).where(
+                    t.agent_session.c.id == agent.session_id
+                )
+            ).scalar()
+            lease = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == held)).scalar()
+        return member, session, lease
+
+    first = now[0]
+    assert call()[:2] == (first, first)
+    now[0] = first + timedelta(seconds=59)
+    member, session, lease = call()
+    assert (member, session) == (first, first)  # within the minute: not written
+    assert lease == now[0] + timedelta(seconds=7200)  # the lease moves with every call
+    now[0] = first + timedelta(seconds=60)
+    assert call()[:2] == (now[0], now[0])

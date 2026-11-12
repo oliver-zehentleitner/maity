@@ -67,7 +67,7 @@ def test_speaks_says_whether_a_section_has_its_own_words() -> None:
 @pytest.mark.parametrize(
     ("language", "opening", "line"),
     [
-        ("en", "Hello Ada,", "Or enter this code in the browser where you asked for it: 123 456"),
+        ("en", "Hello Ada,", "Or enter this code in the browser where you asked for it: 123456"),
         ("de", "Hallo Ada,", "Oder gib diesen Code in dem Browser ein"),
     ],
 )

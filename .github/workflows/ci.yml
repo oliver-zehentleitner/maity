@@ -88,7 +88,7 @@ jobs:
                 hub:hub/*|hub:docs/join-page.md) hit=true ;;
                 image:hub/*|image:docs/join-page.md|image:deploy/Dockerfile*) hit=true ;;
                 join:hub/*|join:cli/*|join:docs/join-page.md) hit=true ;;
-                web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*) hit=true ;;
+                web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*|web:hub/src/maity_hub/landing_assets/*|web:docs/api.md) hit=true ;;
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
                 cli:cli/*) hit=true ;;
                 helm:deploy/*) hit=true ;;
@@ -138,6 +138,8 @@ jobs:
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python
   # standard library, the behaviour smoke test on the runner's node binary.
+  # make check also reads the hub's words, the landing page's script and docs/api.md's
+  # error codes, so the web part gates on those paths too (web/tools/test_ci_paths.py).
   web:
     needs: changes
     if: needs.changes.outputs.web == 'true'
@@ -176,7 +178,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -415,8 +417,18 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' pg ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
-    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
-    timeout-minutes: 90
+    # A hang fails after 120 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts):
+    # green runs reached 88 of the former 90 (tsk-g6acq8cbajb4). Each shard has the limit on its own.
+    timeout-minutes: 120
+    # Three shards side by side, each the test files whose path hashes to it (MAITY_TEST_SHARD, hub/tests/conftest.py),
+    # each with its own PostgreSQL: the whole suite took 59-85 minutes, spread over its tests, not in a few
+    # (tsk-g6acq8cbajb4). ci-ok's `needs` takes the result over all three. On the maintainer's runner (one per job
+    # type, port 5432 fixed) the shards run one after another; `HUB_RUNNER_TYPES` without `pg` puts them on hosted
+    # runners, side by side (context/process.md).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services:
       postgres:
         image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
@@ -430,11 +442,14 @@ jobs:
           --health-timeout 5s --health-retries 30
     env:
       MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
+      MAITY_TEST_SHARD: ${{ matrix.shard }}/3
       # A test (setup and teardown included) still running after 300 s prints every thread's stack into the log
       # and runs on: a hang shows the frame it waits on (the test's or a fixture's) within 5 minutes, not as a
-      # cancel after 90; the dump names the test only when its call hangs (context/process.md, the entry on the
+      # cancel after 120; the dump names the test only when its call hangs (context/process.md, the entry on the
       # stack after 300 s).
-      PYTEST_ADDOPTS: -o faulthandler_timeout=300
+      # --durations=50: the 50 slowest test phases (setup, call and teardown each count on their own) at the end of
+      # the log, the data for making the job faster (tsk-g6acq8cbajb4).
+      PYTEST_ADDOPTS: -o faulthandler_timeout=300 --durations=50
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet

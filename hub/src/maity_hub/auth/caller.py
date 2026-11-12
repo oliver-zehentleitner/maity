@@ -20,16 +20,18 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, and_, or_, select, update
 
-from maity_hub import availability, clock
+from maity_hub import availability, clock, timing
 from maity_hub import tables as t
+from maity_hub.admin import instance_admin_id_query
 from maity_hub.auth import credentials, nonces
 from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.events import Actor
 from maity_hub.net import Origin
+from maity_hub.seen import SEEN_EVERY, latest_call
 
 SESSION_COOKIE = "maity_session"
 CSRF_COOKIE = "maity_csrf"
@@ -146,7 +148,12 @@ def session_id_hash(session_id: str) -> str:
     return hashlib.sha256(session_id.encode("ascii")).hexdigest()
 
 
-def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = True) -> Caller:
+def authenticate(
+    conn: Connection, facts: RequestFacts, *, renew_leases: bool = True, seen: bool = True
+) -> Caller:
+    """The caller of the request. `seen=False` (a dashboard tab's presence, §18.4) checks a
+    cookie session as any call does but writes no `last_seen_at`: that call shows nobody as
+    online and keeps no session alive (§2.4)."""
     authorization = facts.headers.get("authorization")
     if authorization:  # the header authenticates; a cookie alongside is ignored
         scheme, _, value = authorization.partition(" ")
@@ -156,7 +163,7 @@ def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = 
             return _signed(conn, facts, value.strip(), renew_leases)
         raise unauthenticated("unsupported authorization scheme")
     if SESSION_COOKIE in facts.cookies:
-        return _cookie(conn, facts, renew_leases)
+        return _cookie(conn, facts, renew_leases, seen)
     raise unauthenticated()
 
 
@@ -199,7 +206,7 @@ def _cookie_headers(facts: RequestFacts) -> None:
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
 
 
-def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
+def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
@@ -208,39 +215,54 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
     # sees what the gate's and the pending check's own reads used to see after these writes,
     # under READ COMMITTED too (#1540 review), and it runs once instead of three times
     # (tsk-6srccd2r1h62). A refusal below rolls the writes back with the transaction.
+    # They run at most once every `SEEN_EVERY` (§2.4): within it the session's update matches
+    # nothing, writes nothing and takes no lock, and the human's and the memberships' are not
+    # sent; the read below then tells a live session from an ended one.
     owner = (
         select(t.human_session.c.human_id)
         .where(t.human_session.c.id_hash == id_hash)
         .scalar_subquery()
     )
-    touched = conn.execute(
-        update(t.human_session)
-        .where(
-            t.human_session.c.id_hash == id_hash,
-            t.human_session.c.ended_at.is_(None),
-            # session_alive(): before its end and within the idle time
-            t.human_session.c.expires_at > now,
-            t.human_session.c.last_seen_at > now - SESSION_IDLE,
+    # A dashboard tab's presence (`seen=False`, §18.4) writes none of it: the read below
+    # alone tells a live session from an ended one, as for a call within `SEEN_EVERY`.
+    touched = 0
+    if seen:
+        touched = conn.execute(
+            update(t.human_session)
+            .where(
+                t.human_session.c.id_hash == id_hash,
+                t.human_session.c.ended_at.is_(None),
+                # session_alive(): before its end and within the idle time of the latest call
+                t.human_session.c.expires_at > now,
+                t.human_session.c.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,
+                t.human_session.c.last_seen_at <= now - SEEN_EVERY,
+            )
+            .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
+        ).rowcount
+    if touched == 1:
+        conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
+            .values(last_seen_at=now)
         )
-        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
-    )
-    if touched.rowcount != 1:
-        raise unauthenticated("the session has ended or expired")
-    conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
-    conn.execute(
-        update(t.membership)
-        .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
-        .values(last_seen_at=now)
-    )
+    # Whether this is the instance admin, for `Server-Timing` (`timing.admit`): in this same
+    # read rather than one more on every cookie call, as a join that finds the human only
+    # when it is the earliest account.
+    admin = t.human.alias("instance_admin")
     row = conn.execute(
         select(
             t.human_session,
             t.human.c.deleted_at.label("human_deleted_at"),
             t.human.c.account_status.label("human_account_status"),
+            admin.c.id.is_not(None).label("human_is_instance_admin"),
         )
         .join(t.human, t.human.c.id == t.human_session.c.human_id)
+        .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
         .where(t.human_session.c.id_hash == id_hash)
-    ).one()
+    ).first()
+    if row is None or (touched != 1 and (row.ended_at is not None or not session_alive(row, now))):
+        raise unauthenticated("the session has ended or expired")
     if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
         raise unauthenticated("the session has ended or expired")
     if facts.method in UNSAFE_METHODS:
@@ -268,6 +290,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
                 # A limit's hold is never shortened by a renewal (§6.12).
                 .values(lease_until=availability.renewed_lease(conn, membership_id, now, lease))
             )
+    timing.admit(row.human_is_instance_admin)
     return Caller(
         kind="human",
         via="cookie",
@@ -296,13 +319,15 @@ def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:
 def session_alive(row: Any, now: datetime) -> bool:
     last_seen: datetime = row.last_seen_at
     expires: datetime = row.expires_at
-    return now < expires and now < last_seen + SESSION_IDLE
+    # The idle time runs from the latest call the stored time may stand for (`seen`), so a
+    # session in use never expires early.
+    return now < expires and now < latest_call(last_seen) + SESSION_IDLE
 
 
 def session_expires_at(row: Any) -> datetime:
     last_seen: datetime = row.last_seen_at
     expires: datetime = row.expires_at
-    return min(expires, last_seen + SESSION_IDLE)
+    return min(expires, latest_call(last_seen) + SESSION_IDLE)
 
 
 # --- agents ------------------------------------------------------------------------
@@ -481,8 +506,35 @@ def _refuse_revoked(row: Any) -> None:
         raise runner_revoke.RevocationDue(row.id, row.revoke_due_by)
 
 
-# The two calls an isolated agent may still make, so that it learns why (§6.2).
-ISOLATED_MAY = {("GET", b"/api/v1/me"), ("POST", b"/api/v1/me/resume")}
+# The two calls an isolated agent may still make, so that it learns why (§6.2), and
+# `GET /bootstrap`, whose parts are refused one by one as their single routes are (§5.4,
+# `refuse_isolated`).
+ISOLATED_MAY = {
+    ("GET", b"/api/v1/me"),
+    ("POST", b"/api/v1/me/resume"),
+    ("GET", b"/api/v1/bootstrap"),
+}
+
+
+def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) -> None:
+    """The refusal an isolated agent's call on `path` gets (§6.2), for a caller authenticated
+    on another path: each part of `GET /bootstrap` (§5.4). Read as of now, in the part's
+    own transaction."""
+    if caller.kind != "agent" or caller.membership_id is None:
+        return
+    if (method, path.encode()) in ISOLATED_MAY:
+        return
+    row = conn.execute(
+        select(
+            t.membership.c.isolated_reason,
+            t.membership.c.isolated_since,
+            t.membership.c.isolated_by,
+        ).where(t.membership.c.id == caller.membership_id)
+    ).first()
+    if row is not None and row.isolated_since is not None:
+        from maity_hub import isolation
+
+        raise isolation.refusal(row)
 
 
 def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFacts) -> Caller:
@@ -529,13 +581,26 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
         .where(t.credential.c.id == credential_id)
         .values(last_used_at=now, last_used_via=via)
     )
+    # Presence at most once every `SEEN_EVERY` (§2.4): within it these match nothing and write
+    # nothing.
     conn.execute(
-        update(t.membership).where(t.membership.c.id == membership_id).values(last_seen_at=now)
+        update(t.membership)
+        .where(
+            t.membership.c.id == membership_id,
+            or_(
+                t.membership.c.last_seen_at.is_(None),
+                t.membership.c.last_seen_at <= now - SEEN_EVERY,
+            ),
+        )
+        .values(last_seen_at=now)
     )
     if session is not None:
         conn.execute(
             update(t.agent_session)
-            .where(t.agent_session.c.id == session.id)
+            .where(
+                t.agent_session.c.id == session.id,
+                t.agent_session.c.last_seen_at <= now - SEEN_EVERY,
+            )
             .values(last_seen_at=now)
         )
     instance: str = row.instance

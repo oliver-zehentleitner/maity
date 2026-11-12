@@ -349,6 +349,58 @@ effect and the operator's command share one function so that the record, the ses
 - Resetting a human who has no factor: nothing would change and a mail would go out for nothing;
   it is a conflict.
 
+## A forgotten password is reset by mail, also where the mail is the second factor
+
+**Id:** 2caa97c3-3a24-401b-a29f-02579a503559
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-s113f1gsd892 (seq 109195, 109226, confirmed in seq 109283, 2026-11-11), docs/api.md §2.10, tsk-pk755085ctff
+**Revisit when:** an account is taken over through its mailbox; or passkeys (§2.8) give humans without TOTP another factor to require at a reset
+
+A reset link to the verified address sets a new password (§2.10). With TOTP enrolled the reset
+also needs a TOTP or recovery code. Without TOTP the mailbox is enough, and that includes
+`second_factor: email`, where the next sign-in's mail factor is the same mailbox again. For those
+humans the hub says so and pushes toward an authenticator app: a dashboard banner, a sentence in
+the reset mail and one on the reset page. A per-human switch (`email.password_reset`) and an
+instance switch (`password_reset`), both on by default, turn it off.
+
+**Reason:** a team instance needs a way back in without an admin for every forgotten password. Under
+mail as the second factor the sign-in link is already off (§2.8.8), so without the reset such a
+human had no self-service way at all. The maintainer chose the mailbox as enough and a strong
+nudge toward TOTP over a gate.
+
+**Rejected alternatives:**
+- Under mail as the second factor, no self-service: an instance admin sends the reset mail after
+  checking with the person by another channel (as the second-factor reset, §2.8.3). An admin for
+  every forgotten password.
+- A 24-hour hold, announced in every live session with "Cancel": a human who forgot the password
+  usually has no live session, so it mostly delays the honest one.
+- No reset at all under mail as the second factor, only the operator: too hard for a team
+  instance.
+- One switch for the sign-in link and the reset together: the reset is the stronger way in, and
+  a human may want the link off and the reset on.
+- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails come from
+  it too, so anonymous reset requests could stop them for an hour, and with them the sign-in of
+  every human without TOTP. Reset mails got `password_reset_max_per_hour` instead (review of the
+  contract PR).
+- Wrong TOTP codes at a reset counted only in the per-human limit: whoever holds the mailbox could
+  keep guessing with fresh links unreported. Nor per link: four wrong codes on each of several
+  links never reach a fifth on any one. The fifth wrong code at resets of one human in 24 hours,
+  across links, voids every open reset link and writes `second_factor_failed`, as the sign-in
+  step does (reviews of the contract PR). A code under a dead token is neither compared nor
+  counted, so a former reader of an old mailbox cannot void the human's new links, and every
+  further wrong code in the window alarms again rather than restarting the count. Nor are coded
+  resets refused for the rest of the day after the fifth: whoever reads the mailbox could then
+  lock the honest human out of the reset for 24 hours with five wrong codes, while voiding and
+  alarming keeps a right code working (review of the contract PR).
+- Under the instance's `second_factor: off`, a reset that follows the sign-in and asks for no
+  TOTP code: the mailbox alone would then set the password of a human who enrolled an
+  authenticator app. `off` turns the sign-in step off, not the enrolment the human made, and a
+  password outlives a link session. An enrolled human who lost the app gets out through the
+  admin's second-factor reset or the operator, since their own removal is refused under `off`
+  (review of the contract PR).
+
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 
 **Id:** 659d15cb-6c9b-4e06-8fec-164368951df4
@@ -582,3 +634,73 @@ remove it.
 - Relying on `known` to ignore old rows: the same retention, and a copy of the database shows the
   pseudonyms.
 
+
+## The session sweep `forget_expired_addresses` gets no index until prod numbers show its cost
+
+**Id:** 87cd9a5c-af3b-4a06-a007-6898feadc9f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the measurement on tsk-6srccd2r1h62 (step 1, local PostgreSQL), the lead's decision on its PR 4
+**See:** events.md — 483be046-dbf5-4c2f-a9d4-cc18dfb09469 — as of 2026-11-09
+**Revisit when:** the `maity_hub.timing` line of a prod password login or session list shows a `db_ms` worth a look; the line is the request's total over all its statements, so the sweep's share needs a statement-level measurement on prod data (EXPLAIN ANALYZE of the sweep) before an index is built
+
+`auth/sessions.forget_expired_addresses` is one UPDATE over the sessions of every human on the
+instance: `ended_at IS NULL`, past `expires_at` or idle past `SESSION_IDLE`, with an address or a
+source still set. It runs on every password login (`POST /auth/login`, `routes/auth.py`) and
+every session list (`sessions.listing`); the device-code and mail sign-ins do not call it. It has no `human_id` filter, so no index on the human serves it. Run
+through EXPLAIN with `enable_seqscan=off` on local PostgreSQL, it was the one statement of the four
+measured routes with no index path: a scan that grows with all sessions on the instance. No index
+was added.
+
+**Reason:** the one index that would serve the sweep's filter without also covering the ended
+sessions is partial, and a partial index is not portable to MariaDB: the hub has none (no
+`postgresql_where` in `tables.py` or the migrations). A PostgreSQL-only index would split the
+schema by dialect and leave MariaDB and SQLite on the scan. A plain index over `ended_at` and the
+two times is portable, but locally the whole session list spends about 2 ms in the database over
+its 17 statements, the sweep included, and only prod has the session counts that could make the
+sweep matter. So it is built when prod numbers show the cost, not
+before.
+
+**Rejected alternatives:**
+- A partial index on open sessions (PostgreSQL): the dialect split above.
+- A plain index now, without numbers: a migration and a write cost on every session row, for a
+  cost not shown.
+
+## Presence and a session's address are written at most once a minute, not on every call
+
+**Id:** dea949c1-d5ec-4781-b618-884abfd151d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions on req-79cbqd7dcpps (seq 109161, 2026-11-11) and on req-xkwfa78akg93 (2026-11-11, "never early"), docs/api.md §2.4, §2.6.5 and §5.3, `seen.SEEN_EVERY`, `seen.latest_call`
+**Revisit when:** presence (§5.3) reads against a window shorter than 120 s, a reader needs a `last_seen_at` or session `ip` fresher than a minute, or a new reader turns `last_seen_at` into a state without `seen.latest_call`
+
+Every authenticated call used to write `last_seen_at` on the session and on the member or human,
+and a human session's `ip`: two or three UPDATEs, with their row locks, on every request. The hub
+now writes them only when the stored `last_seen_at` is at least `SEEN_EVERY` (60 s) old; the
+condition sits in the UPDATE's WHERE, so two calls racing in the same minute write once. An agent's
+claim leases still renew on every call, since a lease is not presence. A human cookie call that
+wrote nothing still checks that the session is open and alive, so a session ended within the
+minute is refused. A completed sign-in writes the human's `last_seen_at` as a call does.
+
+The latest call then lies anywhere from the stored time to a minute after it, so no reading of the
+stored time is exact. Every reader that turns it into a state reads it from `seen.latest_call`, a
+minute after it: membership presence (`views`), the landing's people online, a session's idle
+end (`session_alive`, the cookie update, the address sweep) and the digest's stalled holder.
+`online`, `away`, the stalled holder's threshold and the idle end come up to a minute late after
+the last call, never early (§2.4, §5.3). The jour fixe's minutes online and its instance choice
+read an instance's latest call from its credential's `last_used_at` instead, which every call
+writes, as the instances' presence always has.
+
+**Reason:** the writes were most of the per-request database work on the auth path. With them
+gone, a reader must err one way: a caller shown away, expired or stalled while it still calls, or
+a state that holds up to a minute longer after the last call. The maintainer chose the second, so
+that a member that calls is never shown away.
+
+**Rejected alternatives:**
+- Writing on every call: the per-request UPDATEs and row locks above.
+- Reading the stored time as the latest call: a member that called 62 s ago showed `away` (a
+  write at T, a call at T + 59 that wrote nothing, a read at T + 121), and a session in use could
+  expire up to a minute early.
+- Other options of the first request: unknown.

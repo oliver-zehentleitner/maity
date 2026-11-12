@@ -49,7 +49,8 @@ def on_base(project: Any, base: str) -> list[str]:
 
 def view(project: Any) -> dict[str, Any]:
     """The `custom` half of `GET …/roles`: `{custom: [{name, base, description, guide,
-    guide_by}]}`; the built-in roles are `guide.builtin`."""
+    guide_by}]}`. The route (routes/roles.py `read_roles`) adds the `builtin` half from
+    `guide.builtin`."""
     return {"custom": of(project)}
 
 
@@ -132,6 +133,7 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
             t.invitation.c.used_at.is_(None),
             t.invitation.c.revoked_at.is_(None),
             t.invitation.c.voided_at.is_(None),
+            t.invitation.c.declined_at.is_(None),
             t.invitation.c.expires_at > now,
         )
     ).first():

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import io
 import time
 from collections.abc import Iterator
@@ -234,7 +233,7 @@ def _unread_upload(client: Any, headers: list[tuple[bytes, bytes]]) -> dict[str,
             *headers,
         ],
     }  # fmt: skip
-    asyncio.run(client.app(scope, never_read, send))
+    flow.drive(client, scope, never_read, send)
     start = sent[0]
     error = dict(start["headers"])[b"maity-error"].decode()
     return {"status": start["status"], "code": error}
@@ -295,7 +294,7 @@ def test_a_credential_leaked_in_the_query_is_revoked_before_the_pre_check(
         "server": ("hub.example", 443), "client": ("203.0.113.7", 1),
         "headers": [(b"host", b"hub.example"), (b"content-length", b"9")],
     }  # fmt: skip
-    asyncio.run(owner.client.app(scope, never_read, send))  # type: ignore[arg-type]
+    flow.drive(owner.client, scope, never_read, send)
     error = dict(sent[0]["headers"])[b"maity-error"]
     assert (sent[0]["status"], error) == (400, b"credential_in_payload")
     with migrated.connect() as conn:

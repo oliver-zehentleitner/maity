@@ -1,5 +1,7 @@
-"""A dashboard call's authentication reads the session, the human and the instance settings
-once each (tsk-6srccd2r1h62). It runs before every route of a signed-in human, so each
+"""A dashboard call's authentication sends one standalone SELECT each for the session (with
+its human) and for the instance settings (tsk-6srccd2r1h62). The presence UPDATEs before it
+also read `human_session` in a scalar subquery (auth/caller.py `owner`); those embedded reads
+are not counted here. It runs before every route of a signed-in human, so each
 statement it repeats is paid on every call."""
 
 from __future__ import annotations
@@ -9,17 +11,18 @@ from collections import Counter
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, event, update
+from sqlalchemy import Engine, update
 
 from maity_hub import clock, instance_settings
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.statements import listening
 
 # A route whose own work reads neither the sessions nor the settings, and the human table
 # once: the project's owner by handle (namespace.resolve). Every other read counted is the
-# authentication's. Reads are counted by the first table after FROM, so the session read,
-# which joins its human, counts as `human_session`.
+# authentication's. Standalone SELECTs are counted by the first table after FROM, so the session
+# read, which joins its human, counts as `human_session`; a subquery inside an UPDATE is not.
 TASKS = "/projects/maintainer/maity/tasks"
 NOTIFICATIONS = "/me/notifications"  # one of the calls a moved session keeps (§2.8.5)
 _FROM = re.compile(r"^\s*SELECT\b.*?\bFROM\s+(\w+)", re.IGNORECASE | re.DOTALL)
@@ -34,11 +37,8 @@ def _reads(engine: Engine, call: Any) -> Counter[str]:
         if found:
             seen[found.group(1)] += 1
 
-    event.listen(engine, "before_cursor_execute", count)
-    try:
+    with listening(engine, count):
         response = call()
-    finally:
-        event.remove(engine, "before_cursor_execute", count)
     assert response.status_code == 200, response.text
     return seen
 
@@ -91,10 +91,7 @@ def test_a_confirmation_committed_just_before_the_call_counts(
                 .values(confirmed_at=clock.now(), confirmed_by="ses-other")
             )
 
-    event.listen(migrated, "before_cursor_execute", confirm)
-    try:
+    with listening(migrated, confirm):
         answered = owner.get(NOTIFICATIONS)
-    finally:
-        event.remove(migrated, "before_cursor_execute", confirm)
     assert fired, "the call wrote no session"
     assert answered.status_code == 200, answered.text

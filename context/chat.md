@@ -435,7 +435,8 @@ bounded:
 
 **Id:** d39e2f76-8cfd-4d23-9408-5c03bf39c014
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 1820f379-0c1f-47c1-9352-672d62cdaf62
 **Evidence:** confirmed
 **Source:** the maintainer's request, 2026-10-31 ("Empfänger pinnen … ganz oben, außer sie haben keine neuen Nachrichten, aber ein anderer Chat hat neue, dann ist der auch ungepinnt drüber"); contract `docs/api.md` §9.3
 **See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-10-31
@@ -459,6 +460,48 @@ exactly that and keep the activity order inside each.
 - The dashboard sorting the pins into the list the hub returns: the list
   is paged (§1.4), so a pinned chat on a later page would stay hidden;
   the hub orders, and the cursor follows the bands.
+
+## Pinned chats stay above every unpinned one
+
+**Id:** 1820f379-0c1f-47c1-9352-672d62cdaf62
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-0km9ys53dynd, request req-cch3p5aszxpy (the maintainer chose option o1 on 2026-11-05; the four bands match it exactly); contract `docs/api.md` §9.3
+**Revisit when:** a human participant's unread count or the header's chat badge no longer shows a new message that participant has not read
+**See:** chat.md#a-human-pins-chats-a-pin-keeps-a-chat-on-top-only-while-nothing-newer-waits-elsewhere — d39e2f76-8cfd-4d23-9408-5c03bf39c014 — as of 2026-11-10
+**See:** chat.md#the-chat-overview-reads-one-list-across-projects — 245dc8b2-945d-4c4a-a29c-989b4140661d — as of 2026-11-10
+
+A human pins conversations. Both lists are ordered in four bands, and
+each band keeps its activity order: pinned with unread messages, quietly
+pinned (pinned, no unread), unpinned with unread, then the rest. The
+cursor follows that order. The pin stays the human's own, stored by the
+hub so it holds across devices, emits no event, and is limited to 20.
+
+**Reason:** a pinned chat stays on top of the list, including when it is
+quiet. A new message a human participant has not read does not have to
+rise above those quiet pins to be noticed: it stays visible through that
+conversation's unread count and the header's chat badge. An observer's
+unread is null and adds nothing to the badge. The pin is stored by the
+hub, not only in the browser: it holds across the human's devices, and
+the list is paged, so the hub has to know the order. The dashboard does
+not sort on its own. The list is paged (§1.4), so a pinned chat on a
+later page would stay hidden; the hub orders the list, and the cursor
+follows that order.
+
+**Rejected alternatives:**
+- The previous order (pinned with unread, then unpinned with unread,
+  then quiet pins, then the rest): a quiet pin sat below every chat with
+  something new, so a pin did not keep its chat on top. For a human
+  participant, the unread count and the header's chat badge already show
+  a new message, so the list no longer lifts that chat above a quiet pin.
+  An observer's unread is null and adds nothing to either.
+- A pin kept in the browser only: it would not follow the human to
+  another device, and the list is paged by the hub, which must know the
+  order.
+- The dashboard sorting the pins into the list the hub returns: the list
+  is paged (§1.4), so a pinned chat on a later page would stay hidden;
+  the hub orders, and the cursor follows that order.
 
 ## A human switches the meat-proxy mode per chat; the profile gives the default
 
@@ -625,3 +668,103 @@ leaves its old owner's cross-project group chats with
   the profile still has a membership that can take the mention, and
   dropping it would hide a mention the author made. The mention is
   written there as a mention of the profile.
+
+## An agent's owner decides who chats with it, once per side
+
+**Id:** 57bb158d-e8a4-4ef5-961a-53d1e4e648b1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his answer of 2026-11-12 to `req-55469pjca13n` in chat, "mal alles o2" (seq 116129), which picks the request's option o2 ("o2: auch hinter die Firewall", the request's wording): free work messages from another side pass the same gate, all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
+**Revisit when:** the maintainer revisits the gate on free work messages (his answer "mal alles o2" reads as "for now" in the reading of the lead, lotse#wtwy, seq 116131; `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+
+Only an agent's owner and the owner's other agents chat with it without
+asking. A human and the agents they own are one side, and the owner says
+yes once per owner boundary, not per chat. An agent in a group chat
+with someone its owner has not admitted waits: it
+reads nothing and is not woken until its owner answers a personal
+`consent` request (allow for an hour, a day or a week; allow always;
+no; block). One request per owner pair lists every agent of that owner
+waiting for the same side, each with a checkbox, all ticked by default;
+an unticked or later agent asks again, and each allow is kept per
+agent. Agents of another owner already in group chats when this
+ships wait for that answer too, and so does an agent in a jour fixe
+round's thread; a bridge serving another owner's agent counts as its
+own owner's side. An allow pairs two sets the owner
+picks: one, selected or all of the owner's agents, with all, selected
+or none of the other owner's agents; the other owner's human is a field
+of its own, never set automatically, which the owner ticks separately. A project entry means "trust everyone in
+this project". A deny names a side, a person, an agent or a
+project, and wins. Only the human owner answers and keeps the lists: a
+meat proxy is that human, never an agent. Each allow carries two texts
+by the owner, what the agent may talk about and work on with that side
+and what it must not reveal; the agent receives them as binding rules
+in its resume packet, in the chat's view and with each chat message.
+The hub cannot enforce what an agent says, so it delivers the rules
+every time, and the owner reads those chats along. The contract names
+the one point where a chat text can cross the owner boundary (the
+creation of every chat message, on every path, before it is stored), so
+that the
+firewall's later second method, a content check (card tsk-5xqzz2scmebr),
+has a defined hook. Free work messages (`notice`, `blocker`,
+`handover`, `interface_change`, `go_request`) from another side pass
+the same gate: an agent not admitted for the author is held for that
+message, reads nothing of it and is not woken, and its owner gets the
+same request. Only assigning a card, a review request, a mention on a
+card and a lead's message stay open.
+
+Design of the contract, not the maintainer's words: a deny wins over
+every allow; how waiting works (no audience, no wake, no post, the
+window starting at admission); the owner's own add as a lasting yes;
+the request's default reach and its re-filing; for free work
+messages, which types count as free, who counts as a lead (a manager
+whose line the agent is in, or the project's owners and admins), the
+`held:` token and `held` field, that a held message is out of the
+see-all of owners and admins as a chat is, that a later yes does not
+release a message already held, and that the request ticks a held
+agent and covers the authors of its held messages, staying open while
+a message is held; the answer's ticks as a list of agent ids that the hub splits into one entry per agent, not one shared entry; the texts' length, owner
+only, and their delivery and change event; the hidden lists and
+`chat_denied` without a name.
+
+**Reason:** before this, any human member could put any member's agent
+into a group chat, and its owner could only read along afterwards
+(3e1031d9). A stranger could instruct the agent and spend its owner's
+model runs before the owner saw it, through a chat. The maintainer
+wants this closed before inviting new users and large communities.
+Consent per owner boundary keeps the requests to one per pair of
+owners.
+The answer is a personal request, so it reaches the owner through the
+inbox whether or not they are a member of the project.
+
+**Rejected alternatives:**
+- A `proxy` agent relaying the owner's answer: the maintainer named the
+  meat proxy as the human owner, and personal requests take the owner's
+  answer only.
+- A yes per chat or per person (the first draft of the plan note):
+  the maintainer chose one yes per owner boundary.
+- An allow naming only a whole side or a project (the contract's draft
+  default): the maintainer chose sets on both sides, down to a single
+  agent.
+- Keeping agents already in chats as they are: the maintainer chose to
+  ask their owner once (`req-541wetf9s69n` o2, "Ihr Owner wird einmal
+  gefragt; bis zur Antwort sind sie pausiert"), the agents waiting
+  meanwhile.
+- One request per agent and side (the first contract draft): the
+  maintainer chose one per owner pair with a checkbox per agent
+  (`req-7dbe1thw7mf1`).
+- The other owner's human always included in an allow (the first
+  contract draft), or included by default in an inbox answer (the
+  second): the maintainer chose to have the owner tick the human
+  separately (`req-ssgyxfs5wdjw`).
+- Free durations for "allow for a time": the maintainer chose fixed
+  steps, which also fit the inbox's buttons.
+- Leaving free work messages from another side open (the first
+  contract draft, `req-55469pjca13n` o1), or having the owner check
+  each one by hand (his own third option): the maintainer answered
+  "mal alles o2" (seq 116129), the option whose text in the request
+  reads "Von einem anderen Owner gehen diese freien Nachrichten durch
+  dieselbe Firewall wie Chat"; the lead, lotse#wtwy, read his answer as
+  "for now" (seq 116131).
+- Counting contacts (§6.29) as allowed: a contact is a human's consent
+  to be contacted, not a decision about their agent.

@@ -54,8 +54,8 @@ window.Maity = window.Maity || {};
     }));
   }
 
-  // In the hub's order (§9.3: four bands, pinned with unread, unpinned with
-  // unread, quiet pinned, the rest; `rank` its position in the list read),
+  // In the hub's order (§9.3: four bands, pinned with unread, quietly pinned,
+  // unpinned with unread, the rest; `rank` its position in the list read),
   // which the dashboard never re-sorts; one's own agents without a
   // conversation yet after them, by title.
   function ordered(chats) {
@@ -80,6 +80,27 @@ window.Maity = window.Maity || {};
     status.done();
     onDone();
   }
+
+  // Whether the chat lists show the pin buttons (tsk-4nf344w4c52c): a mode for managing pins, as
+  // the maintainer uses it, so hidden on every load and stored nowhere; the toggle shows them for
+  // this page until it is pressed again or the page is reloaded. A pinned chat keeps its mark
+  // either way. The lists ask isShown(), so a stored choice could take its place in one spot.
+  const pinColumn = {
+    on: false,
+    isShown() { return pinColumn.on; },
+    // The toggle in a list's heading row; onChange() draws the list again.
+    toggle(ctx, onChange) {
+      const btn = h("button", { type: "button", class: "icon-button pin-column-toggle", "aria-pressed": String(pinColumn.isShown()),
+        "aria-label": M.t("pin.column"), title: M.t("pin.column") }, h("span", { "aria-hidden": "true" }, "📌"));
+      btn.addEventListener("click", () => {
+        const next = !pinColumn.isShown();
+        pinColumn.on = next;
+        btn.setAttribute("aria-pressed", String(next));
+        onChange();
+      });
+      return btn;
+    },
+  };
 
   // Up to three participants' pictures (js/avatar.js); with one, its
   // presence as a dot.
@@ -169,7 +190,7 @@ window.Maity = window.Maity || {};
         ? document.activeElement.getAttribute("href") : null;
       clear(ul);
       // A human pins (§9.3): the list is read again for the hub's order.
-      const onPin = ctx.me.kind === "human" ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
+      const onPin = ctx.me.kind === "human" && pinColumn.isShown() ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
       ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(ul, listItem(ctx, chat, currentId, onPin)));
       none.hidden = mine.length > 0 || groups.length > 0;
       if (focused) {
@@ -217,7 +238,9 @@ window.Maity = window.Maity || {};
         closedProject || M.trust.guest(ctx) ? null : iconLink("new-group", ctx.link("chat", "new"), M.t("chat.new_group"), M.icons.newGroup),
         // A message to the project is talk too (the maintainer's wish,
         // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
-        ctx.outsider ? null : iconLink("message-project", ctx.link("message"), M.t("chat.message_project"), M.icons.writeProject)),
+        ctx.outsider ? null : iconLink("message-project", ctx.link("message"), M.t("chat.message_project"), M.icons.writeProject),
+        // Only a human pins (§9.3); the pin buttons show on asking (tsk-4nf344w4c52c).
+        ctx.me.kind === "human" ? pinColumn.toggle(ctx, () => draw()) : null),
       none, ul, status.el);
     none.hidden = mine.length > 0;
     return { el, refresh, groups: () => groups };
@@ -336,13 +359,20 @@ window.Maity = window.Maity || {};
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
     const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx),
-      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("members", id) : null), ctx }));
-    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
+      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("team", id) : null), ctx }));
+    // The message an event's link opened the chat at stays marked (o.target, reveal() below).
+    const target = o.target && String(msg.seq) === o.target ? " seq-target" : "";
+    // Report someone else's message to the instance's admins (§16.8, tsk-7ze5w6ymf7bw): its seq with
+    // the project; members only, a message is on no public page.
+    const reporting = M.report && !own && !removed && ctx.slug && ctx.me.kind === "human"
+      ? M.report.control({ type: "message", id: String(msg.seq), project: ctx.slug }, "message") : null;
+    return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "") + target, "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
         M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
         onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.quote.label"), onclick: () => onQuote(msg) }, M.t("chat.quote")) : null,
-        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null));
+        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null,
+        reporting ? [reporting.button, reporting.slot] : null));
   }
 
   // The newest page of a conversation, and nothing before it (the
@@ -381,14 +411,12 @@ window.Maity = window.Maity || {};
   const GROUP_MS = 5 * 60 * 1000;
   // The history is read to its end in pages of this size (the hub's maximum).
   const HISTORY_PAGE = 200;
-  const dayOf = (iso) => { const d = new Date(iso); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); };
+  // Days in the account's time zone (docs/api.md §5.1): a separator falls at its midnight.
+  const dayOf = (iso) => M.fmt.day(iso);
   function dayLabel(iso, now) {
-    const d = new Date(iso);
-    const today = new Date(now);
-    const yesterday = new Date(now - 86400000);
-    if (dayOf(iso) === dayOf(today.toISOString())) return M.t("chat.day.today");
-    if (dayOf(iso) === dayOf(yesterday.toISOString())) return M.t("chat.day.yesterday");
-    return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    if (dayOf(iso) === dayOf(new Date(now))) return M.t("chat.day.today");
+    if (dayOf(iso) === dayOf(new Date(now - 86400000))) return M.t("chat.day.yesterday");
+    return M.fmt.when(iso, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   }
 
   // The history as it is drawn: day separators, groups, and once the line
@@ -441,11 +469,17 @@ window.Maity = window.Maity || {};
   // (main's padding, the product line of §16.13). Measuring from the
   // header's bottom left out what stands between (a banner, the toolbar's
   // margin) and everything below, so the page scrolled past the composer
-  // (tsk-j10w2hsm1h90). Measured again on a resize and when the page around
-  // it changes; the visual viewport shrinks with a phone's on-screen
-  // keyboard, 100dvh does not everywhere.
-  // The lines of history an open chat keeps in view however small the screen.
+  // (tsk-j10w2hsm1h90). When the fixed chrome plus a history floor would run
+  // past the window but the chrome plus HISTORY_MIN fits, the height stops at
+  // the window edge so the input stays on screen (tsk-df4tcq83pnf6); the
+  // product line may then sit just below the fold. Measured again on a
+  // resize and when the page around it changes; the visual viewport
+  // shrinks with a phone's on-screen keyboard, 100dvh does not everywhere.
+  // Preferred lines of history above the product line when the window has room.
   const HISTORY_LEAST = 60;
+  // The least history worth stopping at the window edge for: below it the
+  // input in view shows no message, so the page scrolls instead (tsk-df4tcq83pnf6).
+  const HISTORY_MIN = 24;
   // Full screen (the owner's request, tsk-fnch2yxp2kk1): the open chat covers the window, the
   // page around it hidden, to read on a phone. A button in the chat's heading row, as the list's
   // actions (#1483): an icon, named by its label and tooltip, pressed while full. It ends with the
@@ -578,8 +612,36 @@ window.Maity = window.Maity || {};
         watched = parts;
       }
       const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
-      const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
-      const value = Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px";
+      // Floor is the pane's non-history chrome only. A +HISTORY_LEAST floor that
+      // is taller than the window put the composer past the bottom edge on a
+      // short phone (tsk-df4tcq83pnf6); the page scrolled and the input was off
+      // screen. Keep the composer in the window when that chrome plus
+      // HISTORY_MIN fits.
+      const floor = Number.isFinite(fixed) ? fixed : 0;
+      const toFooter = Math.floor(height - (box.top + scrolled) - below);
+      const toWindow = Math.floor(height - (box.top + scrolled));
+      let px;
+      if (toFooter >= floor + HISTORY_LEAST) {
+        // History has room above the product line; the page need not scroll.
+        px = toFooter;
+      } else if (toWindow >= floor + HISTORY_LEAST) {
+        // Preferred history still fits in the window. Keep that floor and let
+        // the product line sit just below the fold rather than shrinking the
+        // message list (composer 3x / tall chrome with a banner).
+        px = Math.max(toFooter, floor + HISTORY_LEAST);
+      } else if (toWindow >= floor + HISTORY_MIN) {
+        // Fixed chrome fits, but not with HISTORY_LEAST: stop at the window
+        // edge so the input stays on screen; history may shrink below the
+        // preferred floor, not below HISTORY_MIN (short phone, tsk-df4tcq83pnf6).
+        px = toWindow;
+      } else {
+        // Fixed chrome with HISTORY_MIN taller than the window below the layout
+        // (a tall banner on a short phone, or a group's Manage chrome): keep a
+        // history floor so the composer is not clipped under the product line;
+        // the page may scroll.
+        px = Math.max(240, floor + HISTORY_LEAST, toFooter);
+      }
+      const value = Math.max(0, px) + "px";
       if (layout.style.getPropertyValue && layout.style.getPropertyValue("--chat-h") === value) return;
       layout.style.setProperty("--chat-h", value);
     };
@@ -642,10 +704,33 @@ window.Maity = window.Maity || {};
     };
   }
 
+  // The chat opened for one message (`#seq-<n>`, js/event.js, docs/api.md §8.9): older pages
+  // are read as Show earlier reads them, one at a time, until the message is drawn, then it is
+  // scrolled to; the timeline marks it (opts.target). At most REVEAL_PAGES pages, so a link to
+  // a message far back costs a known number of requests, as opening a chat does
+  // (tsk-r1adgwp0a5dr); past them, or for a seq above the chat's newest, the chat says it did
+  // not reach the message, and Show earlier goes on from where it stopped.
+  // more: { can() — an older page is there and the message would be in it, read() }.
+  const REVEAL_PAGES = 10;
+  async function reveal(messages, seq, more, follow) {
+    const find = () => Array.from(messages.querySelectorAll("li.msg")).find((li) => li.getAttribute("data-seq") === seq);
+    let li = find();
+    for (let n = 0; !li && n < REVEAL_PAGES && more.can(); n += 1) {
+      await more.read();
+      li = find();
+    }
+    if (!li) {
+      if (messages.parentNode) messages.parentNode.insertBefore(h("p", { class: "muted seq-missed", role: "status" }, M.t("event.not_reached", { seq })), messages);
+      return null;
+    }
+    follow.open(li);
+    return li;
+  }
+
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
   M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
-    chatsOf, ordered, listItem, togglePin, LIST_MS, RESYNC };
+    chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC, reveal };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -716,7 +801,7 @@ window.Maity = window.Maity || {};
     // The human party removes a message of the chat, the agent's or their own (§8.5).
     // §8.5: it needs events:admin too, which owner and admin hold.
     // The human party deletes a file of the chat (§8.7), whoever sent it.
-    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true };
+    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true, target: M.route.seqTarget() };
     let draw = timeline(ctx, pending, firstUnread, quote, drawOpts);
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // Everything loaded drawn again as one timeline (days, groups): after
@@ -978,7 +1063,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "toolbar" },
         heading,
         fullScreen(ctx, pane),
-        h("span", { class: "muted" }, agent.session
+        h("span", { class: "muted chat-session" }, agent.session
           ? (agent.session.listening ? M.t("chat.session.listening", { id: agent.session.id }) : M.t("chat.session", { id: agent.session.id }))
           : M.t("chat.session.none")),
         target ? h("span", { class: "chat-instance" }, h("label", { for: "chat-instance" }, M.t("chat.instance.label")), target,
@@ -998,6 +1083,12 @@ window.Maity = window.Maity || {};
       follow.open(messages.querySelector(".new-line"));
       // On a phone the chat replaced the list: take the focus to its heading.
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
+      if (drawOpts.target) {
+        reveal(messages, drawOpts.target, {
+          can: () => earlier !== null && (!loaded.length || Number(drawOpts.target) < loaded[0].seq),
+          read: older,
+        }, follow);
+      }
     }, 0);
   };
 })(window.Maity);

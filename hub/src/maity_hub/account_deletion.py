@@ -439,6 +439,9 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
 
     # An organisation's invitations to the human first: they have no project to lock (§6.26).
     org_invitations.withdraw_for_human(conn, human_id, "invitee_deleted")
+    # A project's invitations by handle to the human are voided, their requests with them
+    # (§3.4), before the requests left over are withdrawn below.
+    invitations.invitee_deleted(conn, human_id)
     for request_id in _ids(
         conn,
         select(t.request.c.id)
@@ -543,6 +546,11 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
             wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
+    # Open reset links and the day's wrong codes at resets (§2.10).
+    conn.execute(delete(t.password_reset).where(t.password_reset.c.human_id == human_id))
+    conn.execute(
+        delete(t.password_reset_wrong).where(t.password_reset_wrong.c.human_id == human_id)
+    )
     conn.execute(
         update(t.device_code)
         .where(

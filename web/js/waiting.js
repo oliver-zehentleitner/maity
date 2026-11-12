@@ -46,7 +46,7 @@ window.Maity = window.Maity || {};
   }
 
   // "Current sessions" (§18.8): the human's active sessions, compact, newest
-  // first, at most five and "and N more", with a link to Profile → Sessions,
+  // first, at most five and "and N more", with a link to Security → Sessions,
   // where sessions are ended and confirmed. No buttons, no unread state. Read
   // when the page opens and again whenever `sessions_rev` moves (§18.2).
   const SESSIONS_SHOWN = 5;

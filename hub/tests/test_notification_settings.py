@@ -28,11 +28,17 @@ def signed_in(make_client: ClientFactory, engine: Engine, handle: str = "maintai
 def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: Engine) -> None:
     owner = signed_in(make_client, migrated)
     got = owner.get(S).json()
-    assert got["kinds"] == ["inbox", "chat", "mention", "security"]
+    assert got["kinds"] == ["inbox", "chat", "mention", "security", "invitation"]
     assert got["mail_available"] is False
     assert got["browser"] == {
         "enabled": False,
-        "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
+        "kinds": {
+            "inbox": True,
+            "chat": True,
+            "mention": True,
+            "security": True,
+            "invitation": True,
+        },
     }
     email = got["email"]
     assert email["address"] is None and email["address_status"] == "none"
@@ -41,7 +47,10 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
     assert email["kinds"]["mention"] == {"mode": "daily", "content": False}
     assert email["kinds"]["inbox"] == {"mode": "immediate"}
     assert email["kinds"]["security"] == {"mode": "immediate"}
-    assert (email["language"], email["timezone"], email["daily_at"]) == ("en", "UTC", "08:00")
+    # An invitation by handle at once too, switchable to the platform only (§18.4).
+    assert email["kinds"]["invitation"] == {"mode": "immediate"}
+    # No time zone until the human sets one: the dashboard shows the browser's (§18.4).
+    assert (email["language"], email["timezone"], email["daily_at"]) == ("en", None, "08:00")
     assert email["weekly_on"] == "mon"
     assert email["quiet_hours"] is None and email["sign_in_link"] is True
     flow.project(owner)
@@ -110,6 +119,7 @@ def test_preferences_change_key_by_key(make_client: ClientFactory, migrated: Eng
         "chat": False,
         "mention": True,
         "security": True,
+        "invitation": True,
     }
     assert got["browser"]["enabled"] is True
     assert got["email"]["kinds"]["chat"] == {"mode": "off", "content": False}
@@ -222,3 +232,32 @@ def test_every_kind_takes_every_mode_and_a_set_mode_stays(
         stored = conn.execute(select(t.notification_settings.c.preferences)).scalar_one()
     assert set(stored["email"]["kinds"]) == {"security", "mention"}
     assert "chat" not in stored["email"]["kinds"]
+
+
+def test_the_account_time_zone_is_one_value_read_by_me_too(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = signed_in(make_client, migrated)
+    assert owner.get("/me").json()["member"]["timezone"] is None
+    assert owner.patch(S, {"email": {"timezone": "Asia/Tokyo"}}).status_code == 200
+    assert owner.get(S).json()["email"]["timezone"] == "Asia/Tokyo"
+    assert owner.get("/me").json()["member"]["timezone"] == "Asia/Tokyo"
+    # `null` sets it back to unset; the browser's zone shows again.
+    assert owner.patch(S, {"email": {"timezone": None}}).status_code == 200
+    assert owner.get(S).json()["email"]["timezone"] is None
+    assert owner.get("/me").json()["member"]["timezone"] is None
+    refused = owner.patch(S, {"email": {"timezone": ""}})
+    assert refused.json()["error"]["details"]["fields"] == {"email.timezone": "invalid"}
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    assert "timezone" not in agent.get("/me").json()["member"]
+
+
+def test_the_mails_use_utc_until_a_zone_is_set() -> None:
+    from zoneinfo import ZoneInfo
+
+    from maity_hub.notifications.preferences import mail_zone
+
+    assert mail_zone({"timezone": None}) == ZoneInfo("UTC")
+    assert mail_zone({}) == ZoneInfo("UTC")
+    assert mail_zone({"timezone": "Europe/Vienna"}) == ZoneInfo("Europe/Vienna")

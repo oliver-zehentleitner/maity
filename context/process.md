@@ -196,7 +196,7 @@ review.
 
 **Id:** 06b11a79-65dc-4364-b6ca-bd36927ae829
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's card of 2026-10-23 (the Actions queue held 30–100 runs with about seven running, and every merge waited hours); `.github/workflows/ci.yml`
 **Revisit when:** a suite starts depending on files outside the paths that gate it, or a regression reaches main that a skipped suite would have caught
@@ -224,6 +224,14 @@ run names.
   hold itself.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
+
+(2026-11-11, needs-review: the revisit condition above has fired. `make -C web check` reads `docs/api.md` and
+`hub/src/maity_hub/landing_assets/landing.js`, and neither started the web job; #1593, which changed `docs/api.md` and no
+file under `web/`, merged green and left main's web check red (tsk-fffx19yteh4x). The entry "The web part runs for every
+file `make -C web check` reads, and a test holds the filter to the reads" closes that gap for the web part; whether this
+entry stands as it is, with the hub tests' known gap of 5b0f7a42 still open, is the re-check. For that re-check: the web
+job's `make smoke` also runs `tools/run_slot.sh` (web/Makefile's `SLOT`), which no `web:` pattern matches;
+`tools/test_run_slot.py` runs in the changelog job, which always runs.)
 
 ## A change to the contract alone runs a light `hub-contract` part, not the database jobs
 
@@ -253,6 +261,39 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
   selects them by the path they build.
 - Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
   CI only chooses when to run them.
+
+## The web part runs for every file `make -C web check` reads, and a test holds the filter to the reads
+
+**Id:** 66aced31-14ac-4f51-90d2-4232e22f2e8e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-fffx19yteh4x (#1593, merged as f75de2db, added two error codes to `docs/api.md` §1.3 with a green CI, and every later pull request touching `web/` failed the web check until #1628); `.github/workflows/ci.yml`; `web/tools/test_ci_paths.py`
+**Revisit when:** `web/tools/check.py` reads a file outside `web/` without starting from `os.path.dirname(ROOT)` (the test does not see it), or the web job grows slow enough that a contract-only pull request should not run it
+
+`web/tools/check.py` reads four places outside `web/`: the hub's words, `hub/words-meta/`, the error codes of `docs/api.md`
+§1.3 (each needs words in `web/js/errors.js`) and the landing page's script
+`hub/src/maity_hub/landing_assets/landing.js` (size and request rules). The `web` part of the `changes` job listed only the
+first two, so a pull request that changed only the contract or only the landing script ran no web check, and main went red
+after the merge. The `web` part now also matches `docs/api.md` and `hub/src/maity_hub/landing_assets/*`.
+`web/tools/test_ci_paths.py`, run by `make check`, reads `check.py`'s syntax tree, collects every
+`os.path.join(os.path.dirname(ROOT), "a", "b")` whatever its quotes or commas, and fails unless a `web:` pattern of the
+`changes` job matches the path; any other use of `os.path.dirname(ROOT)` (a variable part, the parent kept in a name) fails
+with its line instead of being skipped. A new outside read changes `web/tools/`, which runs the web job, so the test names
+the missing pattern in the same pull request. The first version matched the join with a regular expression and missed
+single quotes and a trailing comma (review of #1630).
+
+**Reason:** the web job is `make check` and `make smoke`, standard library and node, about five minutes (306 to 310 s on
+#1630's two heads and on main 30d84d15); running all of it for a contract change costs a few minutes of a runner, less
+than keeping a second place that knows which part of the check reads which file.
+
+**Rejected alternatives:**
+- The error-code check as its own job on `docs/api.md` (the card's second option): one more checkout and one more `ci-ok`
+  need, and a second list of what reads the contract, to save a few minutes per contract-only pull request; the landing
+  script would still need the web part.
+- Only the two patterns, with no test: the gap came from a read nobody added to the filter, and the next one would too.
+- A regular expression over `check.py`'s text: it matched only double-quoted parts without a trailing comma, and single
+  quotes, mixed quotes or a trailing comma passed unseen.
 
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
@@ -1197,9 +1238,10 @@ second review alone.
 
 **Id:** c73e26c4-60b2-49e7-9df8-278fca4fcb2e
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 96581882-bac8-4611-9124-cd4a2700c57a
 **Evidence:** confirmed
-**Source:** the maintainer's decision at the jour fixe of 2026-11-03, relayed by the lead on 2026-11-04; it follows the rule of the same morning, two of three vendors, set when every Antigravity instance ran out of quota at once
+**Source:** the maintainer's decision at the jour fixe of 2026-11-03, relayed by the lead on 2026-11-04; it follows the rule of the same morning, two of three vendors, set when every Antigravity instance ran out of quota at once; superseded by two approvals from two vendors (the entry named above): the two-vendor rule from 2026-11-09, the review lead's choice of legs from 2026-11-10
 **Revisit when:** a reviewer vendor is unavailable for long, or a fourth vendor joins
 **See:** process.md#every-pull-request-needs-two-approvals-one-from-a-grok-reviewer-and-one-from-an-antigravity-reviewer-and-a-green-ci-ok-on-the-exact-head — 297a0ea7-ebd0-4007-8b12-f839d005d205 — as of 2026-11-04
 
@@ -1298,9 +1340,10 @@ that changed was not recorded.
 
 **Id:** d9edf24e-9c27-4a2e-8c14-f4076a864c6d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 96581882-bac8-4611-9124-cd4a2700c57a
 **Evidence:** confirmed
-**Source:** the maintainer's answer of 2026-11-03 (req-g5z43w1n2fkj) to the question whether a reviewer of another vendor may stand in while one is out
+**Source:** the maintainer's answer of 2026-11-03 (req-g5z43w1n2fkj) to the question whether a reviewer of another vendor may stand in while one is out; superseded on 2026-11-10, when the maintainer left to the review lead which legs count, stand-ins included; the two-vendor rule itself dates from 2026-11-09 (the entry named above)
 **Revisit when:** the maintainer allows a substitute for a vendor that is out, or a vendor is out for longer than a release can wait
 **See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
 
@@ -1315,6 +1358,63 @@ building well and solidly matters more to him than building very fast.
 **Rejected alternative:** a substitute reviewer of another vendor while
 one is out: faster, but it lowers the three-vendor gate the entry above
 sets.
+
+## Every pull request needs two approvals on the exact head from agents of two vendors that did not write the code, the review lead deciding which legs count, and a green `ci-ok`
+
+**Id:** 96581882-bac8-4611-9124-cd4a2700c57a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); the maintainer's answer to req-8se88wy72g6s (2026-11-12, relayed by the lead in seq 118099): "im moment möchte ich: claude coded / grok, antigravity und chatgpt reviewen. und mindestens 2 reviews möchte ich haben, sollte das nicht einhaltbar sein besprichst du mit mir die situation und wir beschließen den weiteren verlauf." (for now Claude codes and Grok, Antigravity and ChatGPT review; at least two reviews; when that cannot be kept, the lead discusses the situation with him and they decide how to go on); that this is the project's own practice, not one the platform imposes, is the lead's paraphrase of the same answer (seq 118099), not a quote; the lead's relay to the review lead of 2026-11-12 (seq 118096): "No retro legs for #1692, #1675 and #1680." and "The open question of what the two Grok coders do from now on is with Oliver (req-68g15m2vs02m); until he answers, their PRs keep Antigravity + ChatGPT."; the maintainer's decision of req-68g15m2vs02m (2026-11-12, option 1), relayed by the lead in seq 118290: "the two Grok coders (maity-coder-grok-002, maity-coder-grok-003) keep coding; their PRs are reviewed by Antigravity + ChatGPT. This settles the interim from 118096 as the rule."; card tsk-tc191z1765fy
+**Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, the maintainer changes the number of at least two reviews, or he changes which vendors code
+**See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
+
+A pull request is merged with two approvals of exactly the head that is
+merged, from agents of two vendors that did not write the code (for
+example, Claude codes, and Grok, Antigravity and ChatGPT review), each in a
+fresh context of its own, and a green `ci-ok` on that head. Under the
+review lead's rule of 2026-11-10 (seq 104764), one leg is a ChatGPT
+reviewer's and the other an Antigravity or Grok reviewer's, whichever
+delivers a fully checked result first. A leg from the vendor that wrote
+the code does not count, so a pull request a Grok agent wrote needs two
+legs from other vendors (the lead's decision of 2026-11-12, seq 117419).
+It follows that for a pull request a ChatGPT agent wrote, the ChatGPT leg
+of the rule above is replaced by one from another vendor (a reading). Since
+the maintainer's answer to req-8se88wy72g6s (2026-11-12) the rule holds for
+every pull request, one that changes only docs included: for now Claude
+codes, and Grok, Antigravity and ChatGPT review, at least two of them.
+A missing leg goes to the lead, and any change of course, a stand-in for
+an absent vendor included, is agreed between the maintainer and the lead
+(req-8se88wy72g6s). Until that answer a stand-in was the review lead's
+call (seq 104757, each named in the MERGE-READY, seq 113755). A leg counts only after the review lead has compared it with the
+head; a false sentence any reviewer finds blocks the merge, and so does a
+P1 or P2 from the second round on. The review lead's MERGE-READY names the
+two legs it counted and their vendors. Which of the reviews in hand
+count is the review lead's decision (seq 104757, its stand-in part
+replaced by req-8se88wy72g6s). The number, at least two reviews, is the
+maintainer's (req-8se88wy72g6s). The pull requests merged under the
+docs-only interim (#1692, #1675 and #1680) get no later legs (the lead,
+seq 118096). The maintainer decided req-68g15m2vs02m (2026-11-12): the two
+Grok coders keep coding, and their pull requests get Antigravity and
+ChatGPT legs (the lead, seq 118290); that made the lead's interim of
+seq 118096 the rule.
+
+**Reason:** one waiting leg less than three of three, so a pull request
+no longer waits for the slowest or an absent vendor, while every merge
+still has the view of two model families. The rule began on 2026-11-09 as
+the maintainer's interim while Grok was out, and stayed after Grok was
+back: the maintainer's answer to req-8se88wy72g6s names Grok, Antigravity
+and ChatGPT as the reviewers.
+
+**Rejected alternatives:**
+- All three vendors on every head (c73e26c4): each pull request waited
+  for the slowest of three, and for a vendor that was out (d9edf24e)
+  until the maintainer acted.
+- No substitute for an absent vendor, the review waiting (d9edf24e): the
+  maintainer gave that choice to the review lead on 2026-11-10, and since
+  2026-11-12 it is agreed between the maintainer and the lead.
+- One review on a single other vendor's model (0b12c29d): a single pass
+  missed a real finding on 2026-10-29.
 
 ## The ci runs on main share one group: one runs, the newest waits, none is cancelled
 
@@ -1347,17 +1447,24 @@ for the newest run to finish.
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
 **Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
 
-`hub-sqlite`, `hub-postgresql` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`; every other job
-`ci-ok` waits for carries 30 (`web-e2e` keeps its 15). Without it a job runs to GitHub's limit of six hours; while main's one
-running ci run hangs, every newer push only replaces the waiting run (the entry above), so nothing on main finishes and the
-MariaDB start from `ci` never comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29
-(MariaDB, on the rented runners); the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a
-slow runner and still fail a hang the same evening.
+(2026-11-10: `web-e2e` now carries 30 as well. Its 15 had become too tight: in the last 60 `ci` runs before the change (ids
+42825184191 to 42853402637, 13:30 to 16:19 UTC; the jobs that had finished by 16:35 UTC), its 44 green jobs took 835 s
+median and up to 893 s, 12 of them 870 s or more, and on #1610 one ran past 900 s and was cancelled after its end-to-end
+step had passed, in `pseudo_run.py --strict`. Card tsk-w81egrhwz7a7. The same day `hub-postgresql` went to 120; see the
+paragraph after the rejected alternatives.)
+
+`hub-sqlite` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`, `hub-postgresql` 120 since
+2026-11-10 (90 before); every other job `ci-ok` waits for carries 30, except `web-vendor` with its 5 (`web-e2e` kept its 15
+until 2026-11-10). Without it a job runs to GitHub's limit of six hours; while main's one running ci run hangs, every newer
+push only replaces the waiting run (the entry above), so nothing on main finishes and the MariaDB start from `ci` never
+comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29 (MariaDB, on the rented runners);
+the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a slow runner and still fail a hang
+the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
@@ -1370,6 +1477,19 @@ hung MariaDB run ended without a word.
 - Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
+
+(2026-11-10, needs-review: the revisit condition above has fired. In the last 100 `ci` runs (ids 42819492463 to 42872347637,
+12:52 to 18:09 UTC; the jobs that had finished by 18:19 UTC), the 12 green `hub-postgresql` jobs took 73 minutes median and
+up to 88, 9 of them 70 or more; in main's last 60 `ci` runs (from 2026-11-09 11:51 UTC), its green jobs took about 68
+minutes median on 2026-11-09 and 86 on 2026-11-10. Each of the 12 ran about 6,600 tests on a hosted runner with 4 cpus and 4
+workers (read from their logs), so the growth did not come from the number of tests; that it came from the runners is an
+inference, since no run compares one commit on two runners. `hub-postgresql` now carries 120 so that a slow runner does not
+cancel a green run; the title's "90 minutes for the database jobs" holds for `hub-sqlite` and `hub-mariadb` only. Whether 90
+stays the rule for the database jobs, and how `hub-postgresql` gets faster, is open on card tsk-g6acq8cbajb4. `hub-sqlite`
+keeps 90: its 15 green jobs in the same window (finished by 18:19 UTC) took 44 minutes median and up to 54.)
+
+(2026-11-10, later: `hub-postgresql` runs in three shards, each with the 120-minute limit; the first sharded run's legs took
+19 to 29 minutes. See the entry on the shards, f150febd-ce19-4493-9a97-cfc3bc1c01fe.)
 
 ## The team lead or ops may cancel a hanging CI run after a fixed limit; the limit is open
 
@@ -1399,9 +1519,11 @@ depends on a human; the approval has to come from Oliver).
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
 **See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
-`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
+with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
 setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
-once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's limit (90 minutes,
+120 since 2026-11-10, 97f338fd). The log then
 already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
 when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
 fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
@@ -1411,8 +1533,9 @@ about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
 300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
 costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
 (`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
-300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
-an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s was
+an eighteenth of the then 90 minutes (a twenty-fourth of the 120 since 2026-11-10), so a hang shows where it waits early
+in the run.
 
 **Rejected alternatives:**
 - `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
@@ -1441,6 +1564,52 @@ passes is confirmed (proof run on #1316, and a local counter-check without the s
 hang's dump itself names no test is confirmed by the #1255 log and by a local reproduction in the review of #1319; that
 without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the
 value is the author's weighing, not measured against a real hang beyond #1255.
+
+## hub-postgresql runs in three shards by test file, each with its own PostgreSQL
+
+**Id:** f150febd-ce19-4493-9a97-cfc3bc1c01fe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
+**Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
+**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+
+`hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
+keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
+deselected, and a malformed value stops the run before collection. Each leg has its own PostgreSQL
+service and the 120-minute limit. ci-ok's `needs` is unchanged: a matrix job's result is the result
+over all its legs, so one red or cancelled leg fails ci-ok as before; ci-ok stays the one required
+check. Locally the three shards together collect the whole suite (2125, 2288 and 2227 of 6640 tests, counted at the head that adds `hub/tests/test_test_shard.py`).
+
+**Reason:** the whole suite took 59 to 85 minutes on a hosted runner, and the 50 slowest phases were
+only 3.6 to 3.7 % of the worker time: no test is worth speeding up on its own, the time is spread
+over the suite. Three legs side by side cut the wall time as far as the shards take about the same
+time and three runners are free at once: the first sharded run, ci 42909006763 on hosted runners
+(2026-11-10), took 25.0, 29.1 and 19.4 minutes per leg, so about 29 minutes against 59 to 85 for
+the whole suite; one run, not yet a median. By file, a test file stays in one leg, so a fixture set
+up once per file (today only the S3 server of `test_attachments_s3.py`, scope `module`) starts in
+one leg only. The session fixtures start once per xdist worker in every leg whichever way the
+suite is split, and within a leg a module fixture starts once per worker that runs some of its
+file's tests.
+
+**Trade-off, stated:** on a push to main with `HUB_RUNNER_LABEL` set and `pg` among `HUB_RUNNER_TYPES`
+(unset means all three) the job asks for the maintainer's
+one `pg` runner, where the three legs run one after another (the service keeps the fixed host port
+5432, so two legs must not share that machine at once). Whether main's `hub-postgresql` stays there
+or goes to hosted runners is the owner's to decide; `HUB_RUNNER_TYPES` without `pg` is the switch,
+and it needs no commit.
+
+**Rejected alternatives:**
+- Speeding up the slowest tests first (plan B): making all 50 free would save 2 to 3 minutes of wall
+  time.
+- Sharding by test node id, as the card's plan said first: a file's tests would spread over the
+  legs, and each leg would set up that file's module fixtures again. Today that is one fixture, so
+  the gain is small; the split by file keeps it from growing with new ones.
+- A random host port for the service, so that two legs could share a runner: not needed for hosted
+  runners, and the self-hosted machine runs one job per type by design (the entry on one runner
+  service per database job type).
+- A sharding plugin: a new dependency in the hashed locks for what one hook does.
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
@@ -1554,6 +1723,8 @@ each command is checked only once.
 **Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
 **See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
 
+(2026-11-10: the fixture-only rule below, and its rejected "screenshots of a real hub", are reversed by the maintainer for his own screenshots: see e148b060-628a-43ae-a5bf-35270d1c1b75. Where the images live, how the site points at them, and the 1600 px and 256-colour reduction still hold.)
+
 The images of the docs pages are files in `docs/img/`, linked from the
 Markdown with a relative path, so they show on GitHub as on the site.
 `tools/site_docs.py` rewrites a relative image the way it rewrites a link:
@@ -1601,6 +1772,42 @@ state that holds nothing private.
   enough.
 - Screenshots of a real hub: real names and data in the repository; the
   fixtures exist for this.
+
+## Docs screenshots may show the real hub with the maintainer's own data; they are still reduced to 1600 px and 256 colours
+
+**Id:** e148b060-628a-43ae-a5bf-35270d1c1b75
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to request req-wj3x9gr5nazr on card tsk-8cjckxxbvhm1 (pull request #1601), 2026-11-10T15:03:20Z, option o1; his go for the board picture's visible card text and tabs the same day ("passt schon nimm die")
+**Revisit when:** a screenshot would show someone else's account, a secret (a token, a join code, an address) or a private project; or the screenshots are made by a script
+**See:** process.md#docs-images-and-diagrams-live-in-docsimg-screenshots-are-of-fixture-mode-and-the-site-points-a-relative-image-at-the-deployed-file — 7f3f6220-0bf0-4d81-8521-5761b877a1dd — as of 2026-11-10
+
+The screenshots of the board, the inbox and Create a project in `docs/img/` are the
+maintainer's own, taken on the real hub. They show his name, his projects' tabs, agent
+handles, a session id and a card's checkpoint text, and no mail address, token or join
+code. They are scaled to 1600 px wide and reduced to 256 colours (libimagequant, then
+oxipng level 4), as 7f3f6220 says, which keeps their text readable.
+
+The request asked whether to lift the fixture-only rule of 7f3f6220. Its options, verbatim:
+
+- o1: "(a) So veröffentlichen, alte Regel aufheben"
+- o2: "(b) Session-ID und OVH-Zeile schwärzen"
+- o3: "(c) Neu im Fixture-Modus aufnehmen"
+- o4: "Erst besprechen"
+
+The answer was o1, given without a text.
+
+**Reason:** the maintainer had already released what the pictures show, and the request
+recommended (a), since real pictures look better than fixture data. The reduction stays
+because every version of an image stays in the history.
+
+**Rejected alternatives:**
+
+- o2, blacking out the session id and the checkpoint's hosting line: not chosen.
+- o3, new screenshots in fixture mode, which keeps the old rule but looks less real.
+- Publishing at full size (2554 px, truecolour, about 787 KB for three): against the
+  reduction of 7f3f6220, which this answer keeps.
 
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 
@@ -1925,9 +2132,11 @@ server, count as minor (the coordinator's scope for #1475).
   (`GH_HOST`, or the one host it is logged in to) can be another server: a non-empty list from there
   names heads origin does not serve and stops the check, but an empty one has nothing to compare and
   read as "no open pull request", exit 0 (the review of #1475 found it). A host on the loopback
-  (`localhost` in any case, an IPv4 literal in 127.0.0.0/8, `[::1]`; a name such as `127.example.com`
-  is a server of its own) is a proxy in front of github.com, as in Claude Code's cloud sessions, which
-  serves git and not the API, so it stands for github.com. A URL without a host (a local path,
+  (`localhost` in any case, `[::1]`, or `127` and three more dot-separated groups of one to three
+  digits, which covers 127.0.0.0/8 and does not check each group's range, so `127.999.999.999`
+  passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
+  github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
+  github.com. A URL without a host (a local path,
   `file://` with or without `localhost`) names no server to ask and stops the check.
 
 **Rejected alternatives:**
@@ -2242,7 +2451,7 @@ the reviewers corrected them.
 
 Before the first review order, a card for a tool or a security-relevant change carries a `Boundary:` paragraph
 in its body: what the change guarantees, what it does not, and what counts as P3. The review lead quotes it to
-all three reviewers in round one.
+every reviewer of round one.
 
 **Reason:** #1475 and #1478 each went two extra review rounds on edge cases before that boundary was written
 down.
@@ -2264,8 +2473,10 @@ down.
 The adopted rules were written nowhere shared: only in the lead's announcements and in the agents' own notes.
 `CONTRIBUTING.md` ("Rules from the jour fixe") now holds them as one sentence each with its card, grouped by who
 acts. Not all of them are in force: seven lines are marked *not yet in force* (the six of
-card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), three *exception to an older entry, open*,
-and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
+card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), one *exception to an older entry, open*
+(tsk-z3j36sy534ww), one *superseded* (the outage rules of tsk-x8ctwgw2cmwc, tsk-g3entm5r2rez and
+tsk-rkp7pvkshta2, once two exceptions of their own, superseded by the two-vendor rule
+96581882-bac8-4611-9124-cd4a2700c57a), and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
 
 - Push with `git -C <worktree> push origin <branch>` (tsk-a8wy190emg2q): a push from the wrong directory.
 - Report the card once the pull request is open (tsk-x61m2sv7va7b): cards reported after the merge could not
@@ -2333,9 +2544,70 @@ below and the lead's announcement of the VERDICT rule (2026-11-04)
 - tsk-z3j36sy534ww lets the lead forward review requests while the review lead is away;
   eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0 gives every request and its distribution to the review lead's team alone.
   tsk-rkp7pvkshta2's second request is a review request like any other; the card does not say who orders it
-  from the two vendors there.
+  from the two vendors there (tsk-rkp7pvkshta2 is superseded since; see the next item).
 - tsk-x8ctwgw2cmwc and tsk-rkp7pvkshta2 allow a merge with two of three on the maintainer's answer per pull
-  request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e requires all three approvals before any merge.
+  request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e required all three approvals before any merge (superseded on 2026-11-09 by
+  96581882-bac8-4611-9124-cd4a2700c57a, two approvals from two vendors). Settled: under the two-vendor rule the
+  review lead decides which of the reviews in hand count; a missing leg goes to the lead, and the maintainer and
+  the lead agree how to go on, stand-ins included (req-8se88wy72g6s, 2026-11-12); `CONTRIBUTING.md` marks both
+  outage rules superseded.
 
-These three outage rules were announced as in force and are written in `CONTRIBUTING.md`, marked as exceptions
-to an older entry; the older entries are not changed. Which version holds, here and in the first two, is open.
+tsk-z3j36sy534ww was announced as in force and is written in `CONTRIBUTING.md`, marked as an exception to an
+older entry; that entry is not changed. Which version holds, there and in the first two items, is open.
+
+## Cloud sessions open and edit their own pull requests over REST with tools/pr.sh, kept to their own branch by its head
+
+**Id:** fa985d49-8a00-4e9a-b05a-a16d7cd1fd58
+**Type:** decision
+**Type:** workaround
+**Status:** active
+**Evidence:** inferred
+**Source:** jour fixe of 2026-11-08 (round jfx-x83wyff3vxm0, adopted by the maintainer as req-8pbgznkgfmkt); card tsk-b3mzbvb9mzgf, whose plan and boundary the lead approved (head-ref guard, attribution refusal), and the lead's later precision of the attribution list after the first review round of #1507, 2026-11-08; the write probe from a cloud session on 2026-11-08 (a REST PATCH answered 200 where GraphQL is refused); `tools/pr.sh`, `CONTRIBUTING.md`
+**Revisit when:** cloud sessions get a working GitHub tool or GraphQL access, agents push as separate GitHub accounts, or pull requests from forks are wanted
+**See:** process.md#the-overlap-check-before-a-push-decides-by-merge-trees-exit-code-and-counts-only-the-conflicts-the-branch-adds — 53705871-3016-476f-8482-392106c6f450 — as of 2026-11-08
+
+`tools/pr.sh open` and `tools/pr.sh edit` send `POST` and `PATCH` to `repos/{owner}/{repo}/pulls`
+through `gh api`, with owner, repository and host read from `remote.origin.url` in a few
+supported forms with exactly owner/repo after the host; any other URL is refused before GitHub
+is called. `open` needs the branch on origin at the local head; `edit` refuses a pull
+request whose head is not the checked-out branch (or one named with `--branch`). The body comes
+from a file, and a body with one of a fixed list of lines is refused: `Generated with`,
+`Generated by`, `Co-Authored-By:`, `Claude-Session:` at a line's start after spaces, emoji,
+symbols, `>` and emphasis or link markup, or `Co-Authored-By` or `Claude-Session` there as the
+text of an inline or a full or collapsed reference link, whatever follows; mid-line the words
+are text. The body is checked and sent as one text, its line endings made LF. A shortcut
+reference link and other Markdown that renders such a label are not detected: the lead set the
+check's scope as a safety net
+against the lines tools write by accident, not a Markdown sanitiser. Opening pull requests for cloud
+sessions stopped being the lead's job. The need is the maintainer's adoption; the head-ref guard,
+the attribution refusal and the rest of the boundary are the lead-approved plan.
+
+**Reason:** in Claude Code's cloud sessions the GitHub tool answers "invalid session" and GraphQL
+is refused, so every pull request, body edit and title change went through the lead; REST writes
+work there. Every agent pushes as the same GitHub account, so authorship cannot keep an agent to
+its own pull request; the head branch, which each agent names after itself, can, as a guard
+against mistakes rather than an access control. Pull requests here carry no attribution lines, and
+a tool that only sends what it is given is the place to refuse one before it is published.
+
+**Rejected alternatives:**
+- A `maity` command: the CLI is the agents' tool for the hub, not for GitHub, and would need the
+  forge client in every agent install.
+- `gh pr create` / `gh pr edit`: they go through GraphQL, which these sessions cannot reach.
+- Checking the author before an edit: every pull request has the same author.
+- Sharing the origin parsing with overlap.sh in this change: it would touch a tool in daily use.
+  The first version copied overlap.sh's parsing, which takes the last two path pieces of any URL;
+  the first review round showed a query, a fragment or extra segments could then name another
+  repository than the one git reads, so pr.sh now reads only the supported forms and overlap.sh,
+  which writes nothing to GitHub, is left as it is.
+- An open-ended attribution pattern (any line naming Claude Code, or symbols before only some of
+  the forms): the first version missed the cloud session's own `_Generated by [Claude Code](…)_`
+  footer and symbol-prefixed forms; a fixed, documented list at the line's start is what the lead
+  set, and a form outside it is a follow-up card.
+- Parsing a linked label's destination to find the colon after the link: nested parentheses,
+  angle-bracket destinations, quoted titles and line breaks inside the link each let a linked
+  `Co-Authored-By` through in review rounds 3 to 5; refusing the label as an inline or a full or
+  collapsed reference link's text whatever follows is what the lead chose, at the price of
+  refusing such a link without a colon too.
+- Chasing every Markdown form that renders a label (shortcut reference links were next, in round
+  6): the lead stopped there, since the check guards against accidents, and the texts name what
+  it does not detect instead.

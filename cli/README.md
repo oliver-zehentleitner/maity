@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a7 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a9 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -350,7 +350,26 @@ It refuses with exit 4, before anything is sent, on any of these:
   `gh` can't be asked does the hub's last observation stand. A report for another PR is sent from
   that PR's branch (`git switch`), or after a merge with the branch
   deleted, from that branch recreated at its merged head
-  (`git switch -c <branch> <merged head>`)
+  (`git switch -c <branch> <merged head>`). So on a card with two
+  stacked pull requests, once the card's last report names the first,
+  the second is reported only after the first has merged (or closed):
+  while the card's last report names the first and the hub last saw it
+  open, a report from the second's branch is refused, unless gh finds it
+  merged or closed now. A card that links the first needs the second
+  linked as well (`maity link`)
+
+A branch other than the default branch itself whose upstream is the
+remote's default branch, as `git switch -c <branch> origin/main` leaves
+it, would be compared with
+main's head and refused when the two differ. `report` sets such a branch
+to track its own branch of the same name on that remote
+(`branch.<branch>.merge` becomes `refs/heads/<branch>`, the remote stays)
+and says so on standard error,
+when the remote has that branch; when it has none, nothing is changed and
+the report is refused with exit 4, naming `git push -u <remote> <branch>`.
+The default branch is `refs/remotes/<remote>/HEAD`, else what the remote's
+`HEAD` names. Any other upstream, a stacked branch tracking the one below
+it included, is left as it is.
 
 Before it asks git about the upstream, it refuses with exit 1 an upstream
 whose remote, configured URL or merge ref starts with `-` or names a remote
@@ -930,9 +949,14 @@ again. A revoked credential, an answer the hub will not change (401, 403,
 SIGTERM exits 0. In every case the agents keep running.
 
 ```sh
-maity runner serve            # in the foreground; as a service: `maity runner unit`
+maity runner serve            # in the foreground; as a service: `sudo maity runner install`
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
 ```
+
+`status` shows each placement's state as the supervisor last recorded
+it. For a placement that is `starting` or `running` it adds the line to
+attach to its session (`attach` in `--json`), the same text the hub
+shows as its session hint.
 
 With `[backend] kind = "local"` the service supervises the agents itself.
 Every five seconds it compares the placements with the sessions of its
@@ -975,15 +999,33 @@ and runs `maity join --join-file - --no-resume` in the clone. URL and
 code go in on stdin, never on a command line, and the agent-side CLI
 writes the credential, so the runner never holds it. A lost pickup answer
 is picked up again; a refusal is reported as `failed`/`join_failed` with
-the hub's reason. Harnesses run with the narrowest grant the runner can give them, and the
+the hub's error code, such as `instance_quota`, or for `forbidden` its
+reason when that has the code form, such as `member_agents_max`,
+otherwise `forbidden`. `maity runner serve` prints one
+line to stderr for each new state of a placement, with its reason and
+detail. Harnesses run with the narrowest grant the runner can give them, and the
 project's own harness configuration is never loaded:
 
 - **Claude Code** gets `--setting-sources user`, a settings file written
   by the runner outside the clone (`maity`, `git`, the repository's
   `allow` list, file tools inside the clone only, nothing on
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
-  configuration. Where bubblewrap and socat are on the agents' `PATH`,
-  its OS sandbox is switched on strictly. It refuses to start without the
+  configuration. A `supervised` placement also gets `AskUserQuestion` as a
+  bare deny rule: nobody answers a headless run, so the tool is not
+  offered. Before an `interactive` start the runner marks the
+  clone as trusted in the agents' Claude Code configuration
+  (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
+  Code's own saves take; see `cli/context/runner.md` for the one case in
+  which a concurrent write can be lost), so the
+  first start in a fresh clone does not wait at the folder-trust
+  question; a start whose entry cannot be written fails with the cause in
+  the log. The entry stays after the placement ends, and an unrestricted
+  `claude` started later in that clone also finds it: it asks nothing and
+  loads the clone's project hooks and MCP configuration (a Claude Code
+  configuration directory per placement would avoid that). This is a
+  known limit: do not start your own `claude` in a runner workspace. Where
+  bubblewrap and socat are on the agents' `PATH`, its OS sandbox is
+  switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
   repository's `network` list. Sandboxed commands cannot read the
@@ -1027,7 +1069,10 @@ project's own harness configuration is never loaded:
   credential stays readable, because the agent's `maity` runs inside the
   sandbox. It sets
   `approval_policy = "never"`, and allows network to the hub, the forge,
-  Codex's model endpoints and a repository's `network` list only. The
+  Codex's model endpoints and a repository's `network` list only. For a
+  `supervised` placement it also turns off the tool for asking the person
+  at the terminal (`[tools.experimental_request_user_input] enabled =
+  false`). The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
   in the repository is not loaded. Codex has no per-command allowlist, so
@@ -1110,9 +1155,22 @@ account out of their reach either way.
 
 The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check
-above. **Never run git in an agent's clone as yourself in the `single`
-layout:** a planted `.git/commondir`, submodule, hook or configuration
-runs as you. Look at the work through the pushed branch or the pull
+above. It reads every existing clone with that check at each start too,
+and starts nothing in one whose `.git` is not a plain clone's (a planted
+`commondir` or `worktrees/`, for example): the placement fails with
+`workspace_in_use`, `not_a_plain_clone`, the runner's log says what it
+found, and nothing in the clone is removed. Run git in a runner's clone
+only through `maity`, or, once the clone passed the runner's check with
+no session since, only git that reads (`log`, `diff`, `show`; no git
+at all in a clone the check refused), never one that continues a state
+the agent left
+(`rebase --continue` or `--skip`, `cherry-pick --continue`, `am --continue`): the
+check does not read `.git/rebase-merge/` and the like, and a planted
+`exec` line there runs as you. A session that ran on since the check may
+have planted something again. Do your own work in a clone of your own
+(see "Working in an agent's clone" in `docs/runners.md`). **Beyond that, never run git in an agent's
+clone as yourself in the `single` layout:** a planted `.git/commondir`,
+submodule, hook or configuration runs as you. Look at the work through the pushed branch or the pull
 request instead. The `agent_user` layout keeps you out by itself: git
 refuses another user's repository unless `safe.directory` says
 otherwise. Keep `hub.state_dir` out of `/tmp`: Codex's sandbox can write
@@ -1216,6 +1274,100 @@ is listed as "not inspected" and never removed, as is one where git
 fails. `--yes` needs
 the service stopped, and a record whose path is not the workspace it
 names is never followed.
+
+On Linux with systemd, one command sets the runner up as a system
+service:
+
+```sh
+sudo maity runner install https://<hub>/r/<token> --code-file -   # the code on stdin
+sudo maity runner uninstall [--purge]
+```
+
+`install` checks for Linux, root, systemd, tmux and `runuser`, then:
+1. It creates the `maity-runner` system user and `/var/lib/maity-runner`
+   (`state/`, `workspaces/`; 0700, owned by that user), and records the
+   account in `/var/lib/maity-runner-install.json` (root's, with its uid).
+   An existing `maity-runner` account without that record, or a
+   `/var/lib/maity-runner` without the account, is refused.
+2. It writes `/etc/maity-runner/runner.toml`: the hub, `state_dir` and
+   `[backend.local] workspaces`. The directory is 0755 and the file 0644,
+   root's, whatever root's umask is.
+3. It checks that `maity-runner` can run this `maity` and read the
+   configuration.
+4. It writes `/etc/systemd/system/maity-runner.service`, whose
+   `ExecStart` runs this `maity`'s Python interpreter (`<python> -I -m maity
+   runner serve --config <file>`). Each word is quoted for systemd, and a
+   path with a control character is refused.
+5. It pairs as `maity-runner`, unless the configuration's `state_dir`
+   already holds a credential.
+6. It enables the service with `systemctl enable --now`, then runs
+   `maity runner check`.
+
+`maity` has to be installed where the service user can run it; `sudo pipx
+install --global maity` does that. While the configuration still lacks
+`[limits]` or a `[harness.<id>]`, or names a key this version does not
+support yet, the service is enabled but not started, and `install`
+lists what is missing. Fix it, then `sudo systemctl start maity-runner`.
+The harness itself (installed and logged in as `maity-runner`) is yours
+to set up.
+
+Running `install` again is safe. It creates only what is missing and
+pairs only an unpaired runner; an already paired one needs no code.
+Paired means a credential in `/var/lib/maity-runner/state`, a regular
+file of `maity-runner`'s, read without following a link. An existing
+configuration it keeps must use that `state_dir` (`~/state` counts, as
+`serve` reads `~` as the service user's home) and the hub of the pairing
+URL as `hub.url`; another one is refused before any change, and
+`--force` writes install's own, which then pairs an unpaired runner. A
+runner already paired under a configuration for another hub keeps that
+hub's credential, so `--force` refuses it too: run
+`maity runner uninstall --purge` first. It keeps an existing file that differs unless
+`--force`; a file with install's own text but another mode is put back to
+0644.
+
+The paths are fixed: `/etc/maity-runner/runner.toml`,
+`/etc/systemd/system/maity-runner.service` and `/var/lib/maity-runner`.
+For other paths, follow the steps in `maity runner unit` by hand. The
+`workspaces` a kept configuration names are not checked: that directory
+is the service user's to write, not root's. Root refuses what someone
+else may have set up, and puts only modes right. Every directory on the
+way to these paths must be a real directory of root's that group and
+others cannot write, root's files there regular files of root's that
+group and others cannot write, and the service user's directories real
+directories of that user's. A link, another owner, or such a directory
+or file anywhere there stops `install` and `uninstall` before any
+change. A mode that is otherwise not install's is set back:
+`/etc/maity-runner` to 0755, the service user's directories to 0700, and
+a file with install's own text to 0644. Directories are opened from `/` one at
+a time without following a link, and files are written and removed
+through their directory's descriptor. `--code` puts the code on the
+command line, where other users can see it; `--code-file -` reads it from
+stdin.
+
+`uninstall` stops and disables the service, then ends the agents it
+started (`stop-all`), then removes the unit. If it cannot tell that the
+agents stopped, it removes nothing and exits 2: stopping the service or
+the agents failed, the configuration is missing or does not load (as
+install's own starter configuration does not), or there is no account of
+install's to run `stop-all` as. Whatever of these it can know without
+stopping anything (the configuration, the account) is checked before it
+disables the service. A link or anything but a regular file of
+root's at `/etc/maity-runner/runner.toml` is refused before any change;
+with `--force` uninstall goes on without reading it. `--force` goes on
+anyway in the other cases too. `--purge` also
+removes the account, then `/var/lib/maity-runner` (state, credential, and
+workspaces with any work not pushed), `/etc/maity-runner` and the
+account's record. The account goes only if install's record names it;
+without that account or its record, an existing `/var/lib/maity-runner`
+or `/etc/maity-runner` stops `--purge` before any change.
+`--purge` checks all of this before it touches anything. The account goes
+first: if `userdel` fails (a process of the user's still runs), nothing
+more is removed (the unit is already gone), and the next `--purge` goes
+on from there. One that stopped
+after the account was gone finishes, since the record still names it;
+its directories are first checked against the uid in the record (owned
+by it, no link, not writable by group or others). The hub keeps listing the runner until you
+remove it in the dashboard.
 
 `maity runner unit` prints the systemd unit shipped in the package
 ([`src/maity/runner/maity-runner.service`](https://github.com/oliver-zehentleitner/maity/blob/main/cli/src/maity/runner/maity-runner.service)). It runs the

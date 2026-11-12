@@ -222,7 +222,7 @@ Each gets **Mark read** where this session may mark it, and Mark all read asks f
 sends `include_security: true`. A sign-in is in none of it: the pinned block has no
 **This was me**, and nothing in the bell links to a session. The Notifications page shows
 a small "Current sessions" box instead: the active sessions, newest first, five and a
-count of the rest, this session and the unconfirmed ones marked, a link to Profile →
+count of the rest, this session and the unconfirmed ones marked, a link to Security →
 Sessions, no buttons. It reads `GET /auth/sessions` when the page opens and again only
 when the `sessions_rev` the bell knows (from a counts answer or the long-poll) differs from
 the value it last read with; a failed read is tried again on the bell's next change. The
@@ -238,7 +238,7 @@ rarely changes.
 **Rejected alternatives:** reading the sessions on every counts round: it works without
 `sessions_rev`, at one more request per round per tab. Keeping **This was me** in the
 box: the maintainer asked for a small field that shows, not one that acts; confirming
-stays in Profile → Sessions and on the banner.
+stays in Security → Sessions and on the banner.
 
 ## A device code is followed with wait=0 every 2 seconds on both devices, not with its long-poll
 
@@ -307,7 +307,12 @@ reads it within 5 seconds, once; the events from the cursor. Its chat
 lists catch up at the next 30-second round. Actions and events still
 re-read `/me` at once. `/chats`, which has no project feed, reads the
 notification counts (`/me/notifications?limit=0`, not `/me`) every 15
-seconds while it is shown: a reply in the open chat comes in by them.
+seconds while it is shown. Those counts bring a reply in the open chat
+at once only where they move: a message from someone else to a party or
+participant. A group chat read along as an agent's owner moves no count
+(§9.3), so while one is open, each counts read refreshes it anyway;
+one's own message from another tab moves none either and comes with the
+30-second round.
 
 **Reason:** the 15-second round in every open tab was a large share of
 the hub's load: each round with an unread sign-in alert also read the
@@ -376,3 +381,41 @@ Redrawing on any difference in /me or the members: the counts and
 presence move all the time, so nearly every switch would be drawn twice.
 Keeping until the next read without a time limit: a membership changed
 by someone else would stand until something else read /me.
+
+## A tab's presence for the mail hold: a timer a minute after its last call, only against a hub
+
+**Id:** 4c11cdf5-5f3f-4e9a-a6cd-cba0496e5aa9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 (`POST /me/presence`), §18.5; the hub's decision in hub/context/notifications.md (59e31f20-6e15-4827-866d-ec17444e7efb); web/js/presence.js, web/js/app.js
+**Revisit when:** the dashboard gets a live connection that every tab holds, or the hub's two minutes or ten calls a minute change, or `localStorage` is replaced by a shared store for such state
+
+`js/presence.js` sends `POST /me/presence` from a human's dashboard while the tab is visible and
+had pointer, key, wheel, scroll or focus input within ten minutes: at once when it starts or
+becomes present again, then a minute after its last call. It starts after `/me` for a human
+whose account does not wait for approval, and only in API mode (`start` decides); a sign-out and
+an ended session stop it. Its call is no write for the page-switch cache (f71932e2): `M.onWrite`
+is not told. A hidden or idle tab sends nothing: a hidden one drops its timer at once, an idle
+one at its next tick. The time of the last call is kept in `localStorage`
+(`maity-presence-sent`, removed on stop), so the session's tabs and page loads in this browser
+share the minute: a tab whose session called within it, from this tab, another or an earlier
+load, waits for that minute instead of calling again. That is best effort, not a lock: two tabs
+that read the time at the same moment both call, each still at most once a minute, and the hub
+writes once.
+
+**Reason:** the hub counts a session present for two minutes after a write and writes at most
+once a minute, so a call a minute after the last lands while the last write's two minutes still
+run, unless the timer is held back by most of a minute (§18.5 counts 1 to 2 minutes after the
+last call); a fixed 60-second interval started at load would not, after a hidden spell, keep
+that distance to the last call. Waiting out the minute keeps tabs, reloads and a tab switched
+back and forth from spending the ten calls a minute the hub allows (§1.7): the first version
+counted per tab, and the browser e2e, which loads several pages a minute in one session, got
+`429` on the call (#1678, CI run of 2026-11-11). The hub would write nothing for those calls
+anyway. Fixture mode has no hub that holds mail.
+
+**Rejected alternative:** the dashboard's 60-second `/me` read as the signal: it runs while the
+tab is visible whether or not anyone uses it, and it writes `last_seen_at` (§2.4), which
+presence must not. `setInterval` like the other refresh rounds: see Reason. A last call kept per
+tab only: see Reason. Sending only while `hold_while_online` is on: the tab would read the
+settings first, and with the switch off the hub holds nothing anyway.

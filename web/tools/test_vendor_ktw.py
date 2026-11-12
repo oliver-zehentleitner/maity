@@ -4,6 +4,7 @@ roll-up, tsk-gsk31zvpfv02; #1497 review). The slow peers are real servers on 127
 leaves the machine."""
 
 import contextlib
+import http.client
 import http.server
 import io
 import os
@@ -67,6 +68,30 @@ try:
     code, err = run(["--latest"])
     check(seen == [vendor_ktw.ATTEMPT_SECONDS] and code == 1 and "no answer within" in err,
           "a socket wait is capped at ATTEMPT_SECONDS, and no fetch starts after the deadline " + repr((seen, err)))
+    # A body cut short (IncompleteRead) and a body that is not JSON: each one refused: line,
+    # never a traceback (#1497 review).
+    class Answer:
+        def __init__(self, read):
+            self.read = read
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def cut(n=-1):
+        raise http.client.IncompleteRead(b'{"info": {"vers', 200)
+
+    for what, body in (("a body cut short", cut), ("a body that is not JSON", lambda n=-1: b"<html>busy</html>")):
+        vendor_ktw.urllib.request.urlopen = lambda url, timeout, body=body: Answer(body)
+        vendor_ktw._deadline = None
+        try:
+            code, err = run(["--latest"])
+        except Exception as e:  # an earlier head let it through
+            code, err = None, "%s: %s" % (type(e).__name__, e)
+        check(code == 1 and err.startswith("refused: ") and "Traceback" not in err and "\n" == err[-1:],
+              "%s is one refused: line %r" % (what, err))
 finally:
     vendor_ktw.urllib.request.urlopen = real_urlopen
 

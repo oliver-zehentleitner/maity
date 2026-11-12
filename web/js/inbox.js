@@ -112,6 +112,7 @@ window.Maity = window.Maity || {};
     return h("a", { class: "project-label", href: ctx.projectLink(p.full_name, "inbox") },
       M.projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
+      M.privateMark(ctx.projects.find((q) => q.full_name === p.full_name)),
       p.state ? h("span", { class: "state state-" + p.state }, ctx.stateLabel(p.state)) : null);
   }
 
@@ -333,7 +334,7 @@ window.Maity = window.Maity || {};
 
     // Mentions link to the member in the request's own project (docs/api.md §8.6).
     // A personal request's project may be one the human is not in: no links there.
-    const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "members", id));
+    const memberHref = (id) => (req.personal ? null : ctx.projectLink(req.slug, "team", id));
     // Drawn by the one renderer of chats, cards and messages (js/markdown.js): code with its Copy, links, mentions.
     const said = (field, text, mentions) => M.markdown(text, at, { mentions, field, hrefOf: memberHref, ctx });
     if (req.summary) append(body, h("div", { class: "md summary" }, said("summary", req.summary, req.mentions)));
@@ -380,15 +381,18 @@ window.Maity = window.Maity || {};
     }
 
     const status = M.statusLine();
+    // A go that moves a project is a sensitive call (§2.8.4): the second factor is asked for here.
+    const stepSlot = h("div", { class: "step-up-slot", hidden: true });
     // What stays disabled once a refused answer gives the controls back (Talk, Send without words).
     let settle = null;
     const send = (payload, verb) => {
       body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = true; });
       status.busy(M.t("inbox.sending"));
-      onAnswer(req, payload, verb).catch((err) => {
+      onAnswer(req, payload, verb, stepSlot).catch((err) => {
         body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = false; });
         if (settle) settle();
-        status.fail(M.t("inbox.not_sent"), err);
+        if (err.code === "cancelled") status.done();
+        else status.fail(M.t("inbox.not_sent"), err);
       });
     };
 
@@ -405,7 +409,7 @@ window.Maity = window.Maity || {};
     }
     // A preference proposal (§19.4) is answered in its review: accept,
     // accept an edit, decline; Later, talk and Withdraw stay below.
-    if (preference) append(body, M.preferences.review(ctx, req, (payload) => onAnswer(req, payload)));
+    if (preference) append(body, M.preferences.review(ctx, req, (payload) => onAnswer(req, payload, undefined, stepSlot)));
 
     const textId = "reply-" + String(req.slug).replace("/", "-") + "-" + req.id;
     const text = h("textarea", { id: textId, rows: "3", placeholder: M.t("inbox.reply_placeholder") });
@@ -501,7 +505,7 @@ window.Maity = window.Maity || {};
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send(withText({ reply_id: r.id })) }, r.label)),
         sendText),
       why.length ? h("p", { class: "muted reply-hint", id: hintId }, why.join(" ")) : null,
-      status.el);
+      stepSlot, status.el);
 
     // Ownership is known inside a project only; across projects the link to
     // the project's inbox leads there.
@@ -596,7 +600,7 @@ window.Maity = window.Maity || {};
     let own = new Set();
     if (ctx.scope !== "project") {
       const slugs = [...new Set(items.map((r) => r.slug))].filter((s) => s && ctx.projects.some((p) => p.full_name === s));
-      await Promise.all(slugs.map((s) => M.api.getAll("/projects/" + M.api.projectPath(s) + "/members")
+      await Promise.all(slugs.map((s) => M.membersOnce(ctx, s)
         .then((r) => { members[s] = Object.fromEntries(r.items.map((x) => [x.id, x])); }, () => null)));
       if (left) return;
     }
@@ -717,7 +721,8 @@ window.Maity = window.Maity || {};
           const own = shown.filter((r) => groupOf(r) === slug);
           const id = "inbox-group-" + (slug ? slug.replace("/", "-") : "personal");
           append(list, h("section", { class: "entry-group", "aria-labelledby": id },
-            h("h3", { id }, slug ? names.project(own[0]) : M.t("inbox.personal"), h("span", { class: "count" }, String(own.length))),
+            h("h3", { id }, slug ? names.project(own[0]) : M.t("inbox.personal"),
+              slug ? M.privateMark(ctx.projects.find((q) => q.full_name === slug)) : null, h("span", { class: "count" }, String(own.length))),
             h("ol", { class: "entries" }, own.map(entry))));
         });
       } else {
@@ -743,15 +748,18 @@ window.Maity = window.Maity || {};
 
     // A personal request is answered and withdrawn on /requests/{id} (§7):
     // the project's routes answer not_found for it.
-    async function answer(req, payload, verb) {
+    async function answer(req, payload, verb, stepSlot) {
       const order = ordered();
       const path = (req.personal ? "" : "/projects/" + M.api.projectPath(req.slug))
         + "/requests/" + encodeURIComponent(req.id) + "/" + (verb || "answer");
-      const updated = await M.api.post(path, payload);
+      const updated = await M.stepUp.run(() => M.api.post(path, payload), stepSlot, M.t("inbox.answer.step_up"));
+      // Left for another view while the answer was on its way: the answer stands, but the shared
+      // selection and the drawing belong to the view that stands now (web roll-up 3, as the way in).
+      ui.later.delete(keyOf(req));
+      if (left) return;
       updated.slug = req.slug;
       if (req.project) updated.project = req.project;
       items[items.indexOf(req)] = updated;
-      ui.later.delete(keyOf(req));
       // Move on to the open entry after this one in the current order.
       next(order, req);
       draw();

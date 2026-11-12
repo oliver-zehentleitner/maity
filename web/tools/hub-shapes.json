@@ -205,6 +205,7 @@
      },
      "start_tabs": "null",
      "terms": "null",
+     "timezone": "null",
      "website": "null"
     }
    },
@@ -221,6 +222,7 @@
       },
       "name": "string",
       "open_requests": "number",
+      "public_page": "string",
       "role": "string",
       "slug": "string",
       "state": "string",
@@ -710,6 +712,10 @@
       },
       "cross_owner": "boolean",
       "display_name": "string",
+      "expert_for": "null",
+      "expert_sources": {
+       "array": null
+      },
       "handle": "string",
       "handover": "null",
       "harness": "string",
@@ -944,6 +950,25 @@
     }
    },
    "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/roles": {
+  "object": {
+   "builtin": {
+    "array": {
+     "object": {
+      "description": "string",
+      "guide": "string",
+      "name": "string",
+      "scopes": {
+       "array": "string"
+      }
+     }
+    }
+   },
+   "custom": {
+    "array": null
+   }
   }
  },
  "GET /projects/{project}/tasks": {
@@ -1703,6 +1728,10 @@
    },
    "cross_owner": "boolean",
    "display_name": "string",
+   "expert_for": "null",
+   "expert_sources": {
+    "array": null
+   },
    "handle": "string",
    "handover": "null",
    "harness": "null",

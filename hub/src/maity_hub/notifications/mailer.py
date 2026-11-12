@@ -1,6 +1,6 @@
 """Notification mail (docs/api.md §18.4, §18.5): which items a human gets by mail, when,
-and what the mail says. The kinds are `inbox`, `chat` and `mention`; `security` is a mail
-of its own for a new sign-in.
+and what the mail says. The kinds are `inbox`, `chat`, `mention` and `invitation`; `security`
+is a mail of its own for a new sign-in.
 
 Per kind the human chose `immediate` (within about two minutes, every item that fell due
 in that window in one mail, at most ten such mails an hour), `hourly` (at the full hour),
@@ -34,7 +34,7 @@ from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
-from maity_hub.notifications import items, listing, preferences, records
+from maity_hub.notifications import items, listing, preferences, presence, records
 from maity_hub.notifications.items import Item
 
 log = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ IMMEDIATE_PER_HOUR = 10
 DIGEST_MAX = 50
 SUBJECT_MAX = 120
 CONTENT_MAX = 500
-MAILED_KINDS = ("inbox", "chat", "mention")
+MAILED_KINDS = ("inbox", "chat", "mention", "invitation")
 # An open matter the dashboard shows and no mail carries (§18.5).
 NEVER_MAILED = ("registration_pending", "mail_disabled")
 # The alert of a new sign-in: a security mail of its own while `security` is immediate, an
@@ -127,20 +127,26 @@ def run(
             ).scalars()
         )
     budget = int(resolved.value("max_per_hour"))
+    grace = timedelta(minutes=int(resolved.value("online_grace_minutes")))
     queued = 0
     for human_id in humans:
         if stop is not None and stop.is_set():
             break
         try:
             with engine.begin() as conn:
-                queued += for_human(conn, human_id, env.signing_key, public_url, budget)
+                queued += for_human(conn, human_id, env.signing_key, public_url, budget, grace)
         except Exception:  # one human's failure must not stop the others
             log.exception("notification mail for %s failed", human_id)
     return queued
 
 
 def for_human(
-    conn: Connection, human_id: str, signing_key: bytes, public_url: str, budget: int = 500
+    conn: Connection,
+    human_id: str,
+    signing_key: bytes,
+    public_url: str,
+    budget: int = 500,
+    grace: timedelta = timedelta(minutes=5),
 ) -> int:
     """One human's pass. It holds the human's settings row (`FOR UPDATE`) to its end, so
     a second process passing over the same human waits, then finds what the first one
@@ -164,7 +170,7 @@ def for_human(
     moved = json.dumps([listing.stamp(conn, human_id), prefs, row.verified_at], default=str)
     if state.stamp == moved and not state.waiting and state.held_since is None:
         return 0
-    zone = ZoneInfo(prefs["timezone"])
+    zone = preferences.mail_zone(prefs)
     now = clock.now()
     local = now.astimezone(zone)
     where = items.scope(conn, human_id, public_url)
@@ -205,20 +211,37 @@ def for_human(
     if _quiet(prefs.get("quiet_hours"), local):
         _set_state(conn, human_id, stamp=moved, waiting=_waiting(mailable, modes))
         return queued
+    # Held while present (§18.5): the immediate items wait while the human is in the web app
+    # and for the grace after; the mail of a suspension (`urgent`) never does. A held item
+    # stays in `mailable`, so `waiting` keeps the passes coming until the hold ends.
+    present = bool(prefs.get("hold_while_online", True)) and presence.held(
+        conn, human_id, now, grace
+    )
+
+    def held(item: Item) -> bool:
+        return present and not item.urgent and _mode(item, modes) == "immediate"
+
     # What falls due in this pass goes out as one mail, so a pass sends at most one per
     # human and the instance's budget is checked right before that one send.
     due: list[Item] = []
     clocks: dict[str, datetime | None] = {}
     if state.held_since is not None:
-        due = [i for i in mailable if _mode(i, modes) != "off"]
+        due = [i for i in mailable if _mode(i, modes) != "off" and not held(i)]
         clocks = {"hourly_at": now, "daily_at": now, "weekly_at": now}
     else:
-        immediate = [i for i in mailable if _mode(i, modes) == "immediate"]
+        immediate = [i for i in mailable if _mode(i, modes) == "immediate" and not held(i)]
         capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
+        hour = now.replace(minute=0, second=0, microsecond=0)
         if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
             due += immediate
             immediate = []
-        hour = now.replace(minute=0, second=0, microsecond=0)
+        elif capped:
+            # A capped item from an hour that ended while the human was present missed that
+            # hour's mail: it goes with the first pass after the grace, as the hour's mail
+            # would have, not at a later hour's end (§18.5, "Held while present").
+            late = [i for i in immediate if i.at < hour]
+            due += late
+            immediate = [i for i in immediate if i.at >= hour]
         if state.hourly_at is None:
             clocks["hourly_at"] = hour
         elif state.hourly_at < hour:

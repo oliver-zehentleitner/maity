@@ -44,7 +44,7 @@ from maity_hub.routes.events import (
     remember_read,
     writer,
 )
-from maity_hub.views import principal_id, sees_chat_reasons, shape_deleted, ts
+from maity_hub.views import principal_id, principal_ids, sees_chat_reasons, shape_deleted, ts
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -173,6 +173,8 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
         if rows
         else {}
     )
+    # The senders of the page in one read, not one per message.
+    senders = principal_ids(conn, [r.actor_membership for r in rows])
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
     # A deleted account among the mentions is shown as one (§2.9).
@@ -186,7 +188,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "id": f"evt-{row.seq}",
             "seq": row.seq,
             "conversation_id": row.conversation_id,
-            "from": principal_id(conn, row.actor_membership),
+            "from": senders.get(row.actor_membership),
             "from_instance": (
                 None if row.actor_bridge else instance_of.get(row.actor_credential_id or "")
             ),
@@ -236,6 +238,20 @@ def _group(conn: Connection, mine: Membership, conversation_id: str) -> tuple[An
     if found is None:
         raise not_found()
     return group, found
+
+
+def reads_messages(conn: Connection, mine: Membership, conversation_id: str) -> bool:
+    """Whether `…/conversations/{id}/messages` answers this member now (§9.1, §9.2), by the
+    checks that route makes: one of a direct chat's two parties, a group chat's participant
+    or a human reading it along. What `conversation_id` of one event shows (§8.9)."""
+    try:
+        if group_chats.is_group(conversation_id):
+            _group(conn, mine, conversation_id)
+        else:
+            _party(conn, mine, conversation_id, hidden=True)
+    except ApiError:
+        return False
+    return True
 
 
 def _messages(project_id: str, conversation_id: str, reader: Any = None) -> Any:
@@ -399,7 +415,7 @@ def list_conversations(
         _mark_pinned(conn, caller, items)
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
         items.sort(key=_band)
-        bound = paging.scope(observed=observed, bands=True)
+        bound = paging.scope(observed=observed, bands=_BAND_ORDER)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
             band, after_id = _after_band(after)
@@ -454,7 +470,7 @@ def list_my_conversations(
             "unread": sum(i["unread"] for i in counted),
             "mentions_unread": sum(i["mentions_unread"] for i in counted),
         }
-        bound = paging.scope(me=True, observed=observed, bands=True)
+        bound = paging.scope(me=True, observed=observed, bands=_BAND_ORDER)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
             band, rest = _after_band(after)
@@ -503,12 +519,17 @@ def _mark_pinned(conn: Connection, caller: Caller, items: list[dict[str, Any]]) 
         item["pinned"] = (item["_project"], item["id"]) in held
 
 
+# Names this band order in the cursor's scope (§1.4). A cursor minted for the earlier
+# order, where a quiet pin sat below every chat with something new, is refused.
+_BAND_ORDER = "pinned-top"
+
+
 def _band(item: dict[str, Any]) -> int:
-    """The item's band in a list (§9.3 "Pinned"): pinned with something new, the others
-    with something new, pinned without, the rest. An observer's `null` counts as none."""
-    if item["unread"]:
-        return 0 if item["pinned"] else 1
-    return 2 if item["pinned"] else 3
+    """The item's band (§9.3 "Pinned"): pinned with unread, quietly pinned, unpinned with
+    unread, the rest. An observer's `null` counts as no unread."""
+    if item["pinned"]:
+        return 0 if item["unread"] else 1
+    return 2 if item["unread"] else 3
 
 
 def _after_band(after: str) -> tuple[int, str]:

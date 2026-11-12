@@ -17,6 +17,7 @@ from maity_hub.auth import (
     email_links,
     mail_factor,
     password_limits,
+    password_resets,
     passwords,
     second_factor,
     sessions,
@@ -30,6 +31,7 @@ from maity_hub.auth.caller import (
     session_expires_at,
     session_id_hash,
 )
+from maity_hub.config import Settings
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import (
     ApiError,
@@ -41,7 +43,7 @@ from maity_hub.errors import (
     unauthenticated,
 )
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import records
+from maity_hub.notifications import preferences, records
 from maity_hub.ratelimit import Attempt, Limiter
 from maity_hub.views import human_member
 
@@ -265,30 +267,40 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             "password_change",
         )
         email_links.void_human(conn, row.id)
+        # The reset links of the old password die with it, and so does an unconfirmed new
+        # address (§2.10).
+        password_resets.password_changed(conn, row.id)
+        preferences.void_pending_address(conn, row.id)
         url = avatars.urls(conn, [row.id])[row.id]
         return JSONResponse({"member": human_member(row, avatar_url=url)})
 
 
 @router.get("/session")
 def session(request: Request, caller: HumanCaller) -> JSONResponse:
-    _require_cookie(caller)
     with engine_of(request).begin() as conn:
-        row = conn.execute(
-            select(t.human_session).where(t.human_session.c.id_hash == caller.human_session)
-        ).one()
-        owed = second_factor.session_view(conn, settings_of(request), row)
-        if owed is not None:
-            return JSONResponse(owed)  # no member before the step is done (§2.8.2)
-        return JSONResponse(
-            {
-                "member": member_of(conn, caller.principal_id),
-                "csrf_token": row.csrf_token,
-                "expires_at": clock.rfc3339(session_expires_at(row)),
-                "session_id": row.public_id,
-                # The dashboard offers "join link via <join host>" only when one is set.
-                "join_url": settings_of(request).join_url,
-            }
-        )
+        return JSONResponse(session_body(conn, settings_of(request), caller))
+
+
+def session_body(conn: Connection, settings: Settings, caller: Caller) -> dict[str, Any]:
+    """`GET /auth/session`'s answer for a caller (§2.1), also the `session` part of
+    `GET /bootstrap` (§5.4)."""
+    if caller.kind != "human":
+        raise forbidden(message="this endpoint is for humans")  # as `HumanCaller`
+    _require_cookie(caller)
+    row = conn.execute(
+        select(t.human_session).where(t.human_session.c.id_hash == caller.human_session)
+    ).one()
+    owed = second_factor.session_view(conn, settings, row)
+    if owed is not None:
+        return owed  # no member before the step is done (§2.8.2)
+    return {
+        "member": member_of(conn, caller.principal_id),
+        "csrf_token": row.csrf_token,
+        "expires_at": clock.rfc3339(session_expires_at(row)),
+        "session_id": row.public_id,
+        # The dashboard offers "join link via <join host>" only when one is set.
+        "join_url": settings.join_url,
+    }
 
 
 @router.get("/sessions")

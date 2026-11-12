@@ -13,7 +13,7 @@ import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
@@ -79,6 +79,8 @@ class Member:
     role_base: str  # the built-in role whose scopes `role` has (§2.3)
     kind: str  # human, agent
     areas: tuple[str, ...]
+    # An expert's declared sources (§2.3 "The expert", §17.3); empty for everyone else.
+    expert_sources: tuple[str, ...] = ()
 
 
 def members(conn: Connection, project_id: str) -> list[Member]:
@@ -96,6 +98,7 @@ def members(conn: Connection, project_id: str) -> list[Member]:
             r.role_base,
             "agent" if r.agent_id else "human",
             tuple(r.areas or ()),
+            tuple(r.expert_sources or ()) if r.role == "expert" else (),
         )
         for r in rows
     ]
@@ -671,6 +674,24 @@ def store_subscription(conn: Connection, membership_id: int, lists: dict[str, An
 # --- merges (§17.2–§17.4): written from what the probe observed --------------------------
 
 
+# A merge the probe did not see while it happened is delivered only inside this
+# window (§17.4). Exactly this old is still delivered; older is discarded.
+MISSED_MERGE_MAX = timedelta(hours=1)
+
+
+def missed_merge_too_old(merged_at: str, at: datetime) -> bool:
+    """Whether a forge `merged_at` (RFC 3339, such as `2099-01-01T10:00:00Z`) is more
+    than `MISSED_MERGE_MAX` before `at`. Exactly one hour before `at` is not too old.
+    A value that is not a timestamp is not too old: the scan's other checks decide it."""
+    if not isinstance(merged_at, str):
+        return False
+    try:
+        moment = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return moment < at - MISSED_MERGE_MAX
+
+
 def switched_on(conn: Connection, project_id: str) -> None:
     """The ticker was switched on: the probe announces merges from this moment (§17.4)."""
     now = clock.now()
@@ -851,6 +872,15 @@ def write_merge(
         for m in people:
             if m.areas:
                 audience.add(m.principal, "area_owner:*")
+    for m in people:  # an expert whose declared source changed (§2.3 "The expert", §17.3)
+        if not m.expert_sources:
+            continue
+        if merge.paths_truncated:
+            audience.add(m.principal, "expert_source:*")
+            continue
+        for source in m.expert_sources:
+            if any(contains(source, path) for path in merge.paths):
+                audience.add(m.principal, f"expert_source:{source}")
     cards = linked_cards(conn, project.id, merge.number, merge.head)
     for card in cards:
         holder = _principal_of(conn, card.claim_holder)

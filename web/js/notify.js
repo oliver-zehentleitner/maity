@@ -17,6 +17,7 @@ window.Maity = window.Maity || {};
     // Read from the catalog when asked, so a language set later applies.
     get inbox() { return M.t("bell.kind.inbox"); },
     get chat() { return M.t("bell.kind.chat"); },
+    get invitation() { return M.t("bell.kind.invitation"); },
     get mention() { return M.t("bell.kind.mention"); },
     get security() { return M.t("bell.kind.security"); },
   };
@@ -223,7 +224,7 @@ window.Maity = window.Maity || {};
     }
     // One pinned alert, with Mark read where this session may mark it (§18.8);
     // a sign-in is no alert, its "This was me" is on the banner and in
-    // Profile → Sessions (§2.6.5).
+    // Security → Sessions (§2.6.5).
     function pinnedRow(x) {
       const cur = sessions.find((y) => y.current) || null;
       const mark = M.sessions && M.sessions.mayMark(cur, x, null);

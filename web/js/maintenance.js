@@ -82,9 +82,8 @@ window.Maity = window.Maity || {};
 
   // `from` with its date, `until` with its date only when it is another day.
   function span(w) {
-    const from = new Date(w.from), until = new Date(w.until);
-    const sameDay = from.toDateString() === until.toDateString();
-    return { from: M.fmt.dateTime(from), until: sameDay ? M.fmt.time(until) : M.fmt.dateTime(until) };
+    const sameDay = M.fmt.day(w.from) === M.fmt.day(w.until);
+    return { from: M.fmt.dateTime(w.from), until: sameDay ? M.fmt.time(w.until) : M.fmt.dateTime(w.until) };
   }
 
   // Above the header, outside what a drawing replaces.

@@ -66,26 +66,85 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
     settings = _settings(MAITY_WORKERS="4", MAITY_DB_POOL_SIZE="16", MAITY_DB_MAX_OVERFLOW="6")
     share = serving.per_worker(settings)
     assert (share.db_pool_size, share.db_max_overflow) == (4, 1)  # never more than the total
+    # The async engine's part of the share: by default half the share of 4.
+    assert share.db_async_pool_size is None and serving.pool_shares(share) == (2, 2)
+    # A value that is set is divided by the workers.
+    named = serving.per_worker(replace(settings, db_async_pool_size=8))
+    assert named.db_async_pool_size == 2 and serving.pool_shares(named) == (2, 2)
     alone = replace(settings, workers=1)
     assert serving.per_worker(alone) is alone
 
 
 @pytest.mark.parametrize(
     ("workers", "pool", "refused"),
-    [(8, 16, False), (16, 16, False), (2, 3, False), (17, 16, True), (3, 2, True)],
+    [(8, 16, False), (2, 4, False), (16, 16, True), (2, 3, True), (17, 16, True), (3, 2, True)],
 )
-def test_workers_whose_share_of_the_pool_would_be_zero_are_refused(
+def test_workers_whose_share_of_the_pool_cannot_be_split_are_refused(
     workers: int, pool: int, refused: bool
 ) -> None:
-    """The minimum share of one (tsk-zm2z04ep2cma): no request handler in the measured tests held
-    two serving connections at once, and a share of 0 would be SQLAlchemy's `pool_size=0`, no
-    limit at all."""
+    """The minimum share of one connection per engine (tsk-zm2z04ep2cma, tsk-v874y63b4z8p): no
+    request handler in the measured tests held two serving connections at once, the share is
+    split between the sync and the async engine, and a part of 0 would be SQLAlchemy's
+    `pool_size=0`, no limit at all."""
     settings = replace(_settings(), workers=workers, db_pool_size=pool)
     reason = serving.refusal(settings)
     if refused:
-        assert reason is not None and f"needs MAITY_DB_POOL_SIZE of at least {workers}" in reason
+        assert (
+            reason is not None and f"needs MAITY_DB_POOL_SIZE of at least {2 * workers}" in reason
+        )
     else:
         assert reason is None
+
+
+@pytest.mark.parametrize(
+    ("pool", "wanted", "shares"),
+    [(16, 2, (14, 2)), (2, 2, (1, 1)), (8, 5, (3, 5)), (8, 8, (1, 7)), (4, 9, (1, 3))],
+)
+def test_the_async_engine_holds_its_part_of_the_pool_never_all(
+    pool: int, wanted: int, shares: tuple[int, int]
+) -> None:
+    """Carved out of the share, never on top: the two parts add up to the pool, and each holds
+    at least one connection (tsk-v874y63b4z8p)."""
+    settings = replace(_settings(), db_pool_size=pool, db_async_pool_size=wanted)
+    assert serving.pool_shares(settings) == shares
+    assert sum(shares) == pool
+
+
+@pytest.mark.parametrize(
+    ("workers", "pool", "overflow", "shares"),
+    [
+        (1, 16, 16, (8, 8)),
+        (1, 8, 0, (4, 4)),
+        (1, 4, 0, (2, 2)),
+        (2, 8, 8, (2, 2)),
+        (1, 32, 0, (24, 8)),
+    ],
+)
+def test_by_default_the_async_engine_holds_8_but_at_most_half_the_share(
+    workers: int, pool: int, overflow: int, shares: tuple[int, int]
+) -> None:
+    """MAITY_DB_ASYNC_POOL_SIZE unset: a pool lowered to stay under the database's connections
+    (the chart's README, deploy/helm/check.sh's pool of 8) keeps half for the sync engine,
+    where every route body still runs; a flat 8 left it 1 of 8 (tsk-v874y63b4z8p)."""
+    settings = _settings(
+        MAITY_WORKERS=str(workers),
+        MAITY_DB_POOL_SIZE=str(pool),
+        MAITY_DB_MAX_OVERFLOW=str(overflow),
+    )
+    assert settings.db_async_pool_size is None
+    assert serving.pool_shares(serving.per_worker(settings)) == shares
+
+
+def test_a_set_async_pool_size_still_takes_up_to_all_but_one() -> None:
+    settings = _settings(MAITY_DB_POOL_SIZE="8", MAITY_DB_ASYNC_POOL_SIZE="8")
+    assert settings.db_async_pool_size == 8 and serving.pool_shares(settings) == (1, 7)
+
+
+def test_one_process_on_a_pool_of_one_is_refused_and_sqlite_is_not() -> None:
+    settings = replace(_settings(), db_pool_size=1)
+    assert "must be at least 2" in (serving.refusal(settings) or "")
+    sqlite = replace(settings, database_url="sqlite:///hub.db")
+    assert serving.refusal(sqlite) is None
 
 
 def test_a_worker_that_cannot_build_its_app_stops_the_supervisor(

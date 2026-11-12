@@ -187,6 +187,28 @@ expect(glossary("nl", "Tekens als [U+XXXX]", "Characters as [U+XXXX]") == [], "g
 expect(glossary("nl", "Wijzig uw wachtwoord.", "Change your password.") != [], "glossary: Dutch uw")
 expect(glossary("ko", "저장합니다", "Saved") == [], "glossary: Korean has no word check")
 expect(glossary("pt", "`tu`", "`tu`") == [], "glossary: code spans are not words")
+# French ton/ta (nte-fvbb75pa1ym8): the possessive only before a word the catalog writes after "votre".
+FR_ADDRESS = dict(address, fr="vous")
+
+
+def fr_glossary(text):
+    data = {"k.t": text, "k.votre": "Ouvrez votre compte et votre session."}
+    english = {"k.t": "Text", "k.votre": "Open your account and your session."}
+    return [p for p in check.glossary_problems("fr", data, english, fixed, FR_ADDRESS) if p.startswith("k.t:")]
+
+
+expect(any("'ton compte'" in p for p in fr_glossary("Ouvrez ton compte.")), "glossary: French ton before a catalog noun")
+expect(any("'ta session'" in p for p in fr_glossary("Fermez ta session.")), "glossary: French ta before a catalog noun")
+expect(fr_glossary("Le ton, la longueur, ce que vous ne voulez jamais.") == [], "glossary: French le ton is the tone")
+expect(fr_glossary("Gardez un ton calme dans votre compte.") == [], "glossary: French ton as tone before a word that is no catalog noun")
+expect(fr_glossary("Le ton compte autant que le texte.") == [] and fr_glossary("Un ton session, pas un autre.") == [],
+       "glossary: French ton after an article is the tone, even before a catalog noun")
+expect(fr_glossary("Le  ton compte autant.") == [] and fr_glossary("Le\n ton compte autant.") == [] and fr_glossary("Le\tton compte.") == [],
+       "glossary: the article guard holds across any run of whitespace (#1581 review)")
+expect(any("'ton compte'" in p for p in fr_glossary("Le texte. Ouvrez ton compte.")),
+       "glossary: an article earlier in the text does not hide a later possessive")
+expect(check.glossary_problems("fr", {"k.t": "Ouvrez ton compte."}, {"k.t": "Open your account."}, fixed, FR_ADDRESS) == [],
+       "glossary: a catalog without votre teaches no noun, and nothing is flagged")
 
 # The hub's words: a translation and what it follows, in a stand-in of the repository.
 import json  # noqa: E402
@@ -378,5 +400,22 @@ wired = {n.func.id for n in ast.walk(ast.parse(textwrap.dedent(inspect.getsource
          if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
 for rule in ("check_prefixes", "check_fail_sentences", "check_unfilled_placeholders"):
     expect(rule in wired, "make check runs " + rule)
+
+# literal_keys reads the values' object literal by its top-level commas on the code without comments,
+# and a shorthand item with a comment beside its name is not read as a name (web roll-up 3,
+# nte-h9ajmyghwg81): the literal is skipped, never read as a property that is not there. A comment in
+# a named property's value leaves that name read (#1574 review).
+def keys_of(src):
+    code, error = check.strip_js(src, [])
+    assert not error, error
+    return check.literal_keys(src, code, src.index("{"))
+
+
+expect(keys_of("({ name, count: 2 })") == {"name", "count"}, "literal_keys reads shorthand and named properties")
+expect(keys_of("({ /* reason */ name })") is None, "a comment before a shorthand name skips the literal")
+expect(keys_of("({ name /* reason: x */ })") is None, "a comment after a name, with a colon in it, skips the literal")
+expect(keys_of("({ a: 1, /* b, c */ d })") is None, "a comma inside a comment does not split the literal into names")
+expect(keys_of("({ name: /* reason */ 1 })") == {"name"} and keys_of("({ name: 1 /* reason */ })") == {"name"},
+       "a comment in a named property's value leaves the name read")
 
 raise SystemExit(1 if failures else 0)

@@ -22,6 +22,16 @@ raised on the card, not replaced in one place. Translations carry no note saying
   form of address than the one the table below names (`web/tools/check.py`, `GLOSSARY_OTHER_ADDRESS`).
 - **No gender guess:** a person or an agent is addressed or named without assuming a gender, using the
   language's neutral form where it has one that reads naturally.
+- **Member, not person, where an agent can be meant** (tsk-9sec7t0rt238): a subject that can be an agent, such
+  as an assignee, a card's holder, an author, a claimer, a role holder, a moderator, a chat's or a message's
+  readers, the recipients of a report, whoever watches presence, outsiders or whom it concerns, takes the
+  `member` row or a neutral word (everyone, someone, nobody, the other side, outside), never the
+  `human, person` row. English is the reference: where it says someone and an agent can be meant, the
+  translation does not say person. Words for real humans keep that row, such as owners, instance admins, whoever
+  runs the instance, accounts, sign-in, invitations, registrations, a forge installation's link, whose
+  agents are shown, the limits per person and `paths.chip.request_human`. A counter for members (Japanese
+  `2 人`) is not a subject and stays. Japanese example: the table's `人間` stands for a human as opposed to
+  an agent; the word replaced is the short `人`, by `メンバー`, `相手` (the other side), `全員` (everyone) or `外部` (outside).
 
 ## How the reader is addressed
 
@@ -56,6 +66,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | forge | Forge | forge | forja | forge | forge | forge | フォージ | 포지 | 代码托管平台 |
 | repository | Repository | dépôt | repositorio | repository | repositório | repository | リポジトリ | 저장소 | 仓库 |
 | pull request | Pull Request | pull request | pull request | pull request | pull request | pull request | プルリクエスト | 풀 리퀘스트 | 拉取请求 |
+| Actions (a forge's workflows, its product name) | Actions | Actions | Actions | Actions | Actions | Actions | Actions | Actions | Actions |
 | review | Review | revue | revisión | revisione | revisão | review | レビュー | 리뷰 | 评审 |
 | trust (level) | Vertrauensstufe | niveau de confiance | nivel de confianza | livello di fiducia | nível de confiança | vertrouwensniveau | 信頼レベル | 신뢰 수준 | 信任级别 |
 | role | Rolle | rôle | rol | ruolo | função | rol | ロール | 역할 | 角色 |

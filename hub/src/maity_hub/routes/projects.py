@@ -53,6 +53,7 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
+from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import Actor, emit, lock_project
@@ -665,18 +666,26 @@ def _export(project: Any, request: Request) -> dict[str, Any] | None:
     return ktw.export_for_view(reader_of(request), project.id, project.repository_url)
 
 
-def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int | None] | None:
+class _Unread:
+    """The caller's membership in the project, not read yet (`_reader` reads it)."""
+
+
+_UNREAD = _Unread()
+
+
+def _stored(
+    conn: Connection,
+    project: Any,
+    request: Request,
+    mine: Membership | None | _Unread = _UNREAD,
+) -> dict[str, int | None] | None:
     """The project's attachment bytes against its limit `max_attachment_storage_per_project`
     (`quota`, None under `unlimited`), for a caller with `project:admin` in it (§8.7); anyone
-    else gets None."""
-    caller = getattr(request.state, "caller", None)
-    if caller is None:
-        return None
-    try:
-        mine = membership(conn, caller, namespace.full_name(conn, project))
-    except ApiError:
-        return None
-    if not mine.may("project:admin"):
+    else gets None. `mine` is the caller's membership (None: none) when the route has read it
+    already."""
+    if isinstance(mine, _Unread):
+        mine = _reader(conn, project, request)
+    if mine is None or not mine.may("project:admin"):
         return None
     return {
         "used": attachments.used(conn, project.id),
@@ -684,7 +693,21 @@ def _stored(conn: Connection, project: Any, request: Request) -> dict[str, int |
     }
 
 
-def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
+def _view(
+    conn: Connection,
+    project: Any,
+    request: Request,
+    mine: Membership | None | _Unread = _UNREAD,
+) -> dict[str, Any]:
+    """The project as `GET` answers it. A route that has the caller's membership passes it as
+    `mine`, so that the view does not resolve the project and the membership again for the
+    storage figures and the restricted setting (tsk-6srccd2r1h62); without it, the view
+    reads it once and both use that read, also when the caller has none. Their `project:admin`
+    checks follow the membership as that one read saw it, not a role change committed after
+    it; whether the caller is in the restricted set is still read live (`restricted.resolve`)
+    (hub/context/persistence.md, "A project read decides the caller's role checks")."""
+    if isinstance(mine, _Unread):
+        mine = _reader(conn, project, request)
     shown = images.views(conn, [project.id])[project.id]
     owner = namespace.owner_of(conn, project)["handle"]
     aliases = namespace.aliases_of(conn, project.id)
@@ -695,13 +718,13 @@ def _view(conn: Connection, project: Any, request: Request) -> dict[str, Any]:
         shown,
         _export(project, request),
         aliases,
-        _stored(conn, project, request),
+        _stored(conn, project, request, mine),
         confirmed_by_of(conn, [project])[project.id],
     )
     held = moderation.view(moderation.hold(conn, "project", project.id))
     if held is not None:  # only while a hold stands (§16.8)
         view["moderation"] = held
-    _serve_restricted(conn, project, request, view)
+    _serve_restricted(conn, project, request, view, mine)
     return view
 
 
@@ -716,13 +739,17 @@ def _reader(conn: Connection, project: Any, request: Request) -> Membership | No
 
 
 def _serve_restricted(
-    conn: Connection, project: Any, request: Request, view: dict[str, Any]
+    conn: Connection,
+    project: Any,
+    request: Request,
+    view: dict[str, Any],
+    mine: Membership | None | _Unread = _UNREAD,
 ) -> dict[str, Any]:
     """`settings.restricted_access` per reader (§6.1 "Reading the setting"): `null` without
     the key, `{mode, members, included, cards_with_text}` to a human with `project:admin` and
     to a member in the set, `{mode, included}` to every other."""
     view["settings"]["restricted_access"] = restricted.served(
-        conn, project, _reader(conn, project, request)
+        conn, project, _reader(conn, project, request) if isinstance(mine, _Unread) else mine
     )
     return view
 
@@ -949,9 +976,15 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
 @router.get("/projects/{owner}/{slug}")
 def get_project(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
-        mine.require("project:read")
-        return JSONResponse(_view(conn, mine.project, request))
+        return JSONResponse(project_body(conn, request, caller, slug))
+
+
+def project_body(conn: Connection, request: Request, caller: Caller, slug: str) -> dict[str, Any]:
+    """`GET /projects/{owner}/{slug}`'s answer (§6.1), also the `project` part of
+    `GET /bootstrap` (§5.4)."""
+    mine = membership(conn, caller, slug)
+    mine.require("project:read")
+    return _view(conn, mine.project, request, mine)
 
 
 @router.patch("/projects/{owner}/{slug}")

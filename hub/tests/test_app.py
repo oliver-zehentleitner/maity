@@ -295,6 +295,21 @@ def test_a_refused_gzip_is_not_sent_even_beside_a_wildcard(
     assert wanted.headers["content-encoding"] == "gzip"
 
 
+def test_a_request_without_accept_encoding_gets_the_plain_form_and_its_etag(
+    client: TestClient, web_dir: Path
+) -> None:
+    """No header at all is not a gzip request (RFC 9110 §12.5.3): the plain body comes with the
+    plain tag. The test client sends `Accept-Encoding` by default, so it is removed here."""
+    content = _css(web_dir)
+    plain = client.get("/assets/css/app.css", headers=IDENTITY).headers["etag"]
+    del client.headers["accept-encoding"]
+    bare = client.get("/assets/css/app.css")
+    assert "accept-encoding" not in bare.request.headers
+    assert bare.status_code == 200 and bare.text == content
+    assert "content-encoding" not in bare.headers and bare.headers["etag"] == plain
+    assert bare.headers["vary"] == "Accept-Encoding"
+
+
 def test_only_the_built_files_leave_no_store(client: TestClient, web_dir: Path) -> None:
     assert client.get("/api/v1/health").headers["cache-control"] == "no-store"
     missing = client.get("/assets/js/none.js")
@@ -443,6 +458,7 @@ def test_the_database_error_handler_logs_the_cause_not_the_secret(
         response = client.get("/api/v1/_broken")
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "database_unavailable"
+    assert response.headers["Retry-After"] == "5"
     logged = " ".join(record.getMessage() for record in caplog.records)
     assert logged.endswith(" dns") and "pw-in-dsn" not in logged
     assert "pw-in-dsn" not in response.text
