@@ -260,7 +260,14 @@ def test_the_login_page_learns_whether_it_offers_registration(
     answer = client_for(make_client, hub(**env)).get("/api/v1/auth/methods").json()
     assert answer["registration"] is offered
     assert answer["terms"] is None
-    assert set(answer) == {"password", "device_code", "email_link", "registration", "terms"}
+    assert set(answer) == {
+        "password",
+        "device_code",
+        "email_link",
+        "password_reset",
+        "registration",
+        "terms",
+    }
 
 
 def test_an_empty_allowlist_offers_no_registration(
