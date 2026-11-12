@@ -125,6 +125,15 @@ def test_an_entry_a_plain_clone_has_not_is_refused(placed: Path) -> None:
         gitfacts.collect(placed)
 
 
+@pytest.mark.parametrize("name", ["alternates", "Alternates", "HTTP-Alternates"])
+def test_an_alternates_file_in_any_case_is_refused(placed: Path, name: str) -> None:
+    """A case-insensitive file system (APFS, NTFS) hands git `alternates` for any spelling."""
+    (placed / ".git" / "objects" / "info").mkdir(parents=True, exist_ok=True)
+    (placed / ".git" / "objects" / "info" / name).write_text("/elsewhere/objects\n")
+    with pytest.raises(gitfacts.FactsError, match="exists"):
+        gitfacts.collect(placed)
+
+
 # What one sandboxed Claude Code session left in a clone, and a plain clone has not: Claude
 # Code 2.1.321, bubblewrap (cli/context/runner.md). A trailing `/` is an empty directory.
 SANDBOX_LEFT = (

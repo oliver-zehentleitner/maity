@@ -351,12 +351,18 @@ def _check_harness(
 def _check_claude_code(
     report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = ""
 ) -> None:
-    if sys.platform.startswith("linux"):
-        # On the agents' PATH, as their user finds it: that is where the sandbox starts.
-        missing = [t for t in ("bwrap", "socat") if not capabilities.which(t, agent_path, as_user)]
-        if missing:
-            line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
-            (report.error if harness.require_sandbox else report.warn)(line)
+    # On the agents' PATH, as their user finds it: that is where the sandbox starts.
+    tools = capabilities.claude_sandbox_tools()
+    missing = [t for t in tools or () if not capabilities.which(t, agent_path, as_user)]
+    line = None
+    if tools is None:
+        line = f"harness claude-code: no OS sandbox on {sys.platform}; agents run unsandboxed"
+    elif missing:
+        line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
+    if line is not None:
+        (report.error if harness.require_sandbox else report.warn)(line)
+    else:
+        report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
     _check_claude_settings(report, as_user, "")
 
 
