@@ -19953,7 +19953,8 @@ from the hub's catalogue in `language`.
   own. Its footer keeps the landing page's language switch, whose links
   (`?lang=`) reopen `/explore` in that language. No count is shown: with
   no project the page says so in a sentence. It has no script and no
-  inline `style` attribute; its policy is the legal pages' (§16.7.1),
+  inline `style` attribute of its own (the maintenance banner keeps its
+  own, §16.12); its policy is the legal pages' (§16.7.1),
   with `Vary: Cookie, Accept-Language`.
 
 ### 16.8 Abuse reports
