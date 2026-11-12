@@ -349,6 +349,83 @@ effect and the operator's command share one function so that the record, the ses
 - Resetting a human who has no factor: nothing would change and a mail would go out for nothing;
   it is a conflict.
 
+## A forgotten password is reset by mail, also where the mail is the second factor
+
+**Id:** 2caa97c3-3a24-401b-a29f-02579a503559
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-s113f1gsd892 (seq 109195, 109226, confirmed in seq 109283, 2026-11-11), docs/api.md §2.10, tsk-pk755085ctff
+**Revisit when:** an account is taken over through its mailbox; or passkeys (§2.8) give humans without TOTP another factor to require at a reset
+
+A reset link to the verified address sets a new password (§2.10). With TOTP enrolled the reset
+also needs a TOTP or recovery code. Without TOTP the mailbox is enough, and that includes
+`second_factor: email`, where the next sign-in's mail factor is the same mailbox again. For those
+humans the hub says so and pushes toward an authenticator app: a dashboard banner, a sentence in
+the reset mail and one on the reset page. A per-human switch (`email.password_reset`) and an
+instance switch (`password_reset`), both on by default, turn it off.
+
+**Reason:** a team instance needs a way back in without an admin for every forgotten password. Under
+mail as the second factor the sign-in link is already off (§2.8.8), so without the reset such a
+human had no self-service way at all. The maintainer chose the mailbox as enough and a strong
+nudge toward TOTP over a gate.
+
+**Rejected alternatives:**
+- Under mail as the second factor, no self-service: an instance admin sends the reset mail after
+  checking with the person by another channel (as the second-factor reset, §2.8.3). An admin for
+  every forgotten password.
+- A 24-hour hold, announced in every live session with "Cancel": a human who forgot the password
+  usually has no live session, so it mostly delays the honest one.
+- No reset at all under mail as the second factor, only the operator: too hard for a team
+  instance.
+- One switch for the sign-in link and the reset together: the reset is the stronger way in, and
+  a human may want the link off and the reset on.
+- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails come from
+  it too, so anonymous reset requests could stop them for an hour, and with them the sign-in of
+  every human without TOTP. Reset mails got `password_reset_max_per_hour` instead (review of the
+  contract PR).
+- Wrong TOTP codes at a reset counted only in the per-human limit: whoever holds the mailbox could
+  keep guessing with fresh links unreported. Nor per link: four wrong codes on each of several
+  links never reach a fifth on any one. The fifth wrong code at resets of one human in 24 hours,
+  across links, voids every open reset link and writes `second_factor_failed`, as the sign-in
+  step does (reviews of the contract PR). A code under a dead token is neither compared nor
+  counted, so a former reader of an old mailbox cannot void the human's new links, and every
+  further wrong code in the window alarms again rather than restarting the count. Nor are coded
+  resets refused for the rest of the day after the fifth: whoever reads the mailbox could then
+  lock the honest human out of the reset for 24 hours with five wrong codes, while voiding and
+  alarming keeps a right code working (review of the contract PR).
+- Under the instance's `second_factor: off`, a reset that follows the sign-in and asks for no
+  TOTP code: the mailbox alone would then set the password of a human who enrolled an
+  authenticator app. `off` turns the sign-in step off, not the enrolment the human made, and a
+  password outlives a link session. An enrolled human who lost the app gets out through the
+  admin's second-factor reset or the operator, since their own removal is refused under `off`
+  (review of the contract PR).
+
+## The reset's request limits are buckets of their own, and an empty code is no guess
+
+**Id:** 0e98bef7-6601-4f00-b10c-6c1a4c19222e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.4 ("as `POST /auth/email-link`"), §2.10; tsk-tadt2vw7589n; `hub/src/maity_hub/auth/password_resets.py` `RequestLimits`, `hub/src/maity_hub/routes/password_reset.py` `_code_right`
+**See:** auth.md#a-forgotten-password-is-reset-by-mail-also-where-the-mail-is-the-second-factor — 2caa97c3-3a24-401b-a29f-02579a503559 — as of 2026-11-12
+
+`POST /auth/password-reset` has the numbers of the sign-in link's request (10 per hour per
+source address, 3 per 15 minutes and 10 per day per address and source), counted in limiters
+of its own. At `complete`, an enrolled human's call without a TOTP or recovery code is refused
+like a wrong code, but neither compared nor counted.
+
+**Reason:** the reset has its own mail budget so that anonymous reset requests stop nothing but
+reset mails (2caa97c3); one set of request buckets shared with the sign-in link would undo that
+one step earlier, since reset requests from an address would then refuse its sign-in links. A
+call without a code is no guess at the factor: counting it would let a client that has not yet
+asked for the code, or a mailbox reader who never tries one, spend the human's five wrong codes
+of the day and raise the alarm for nothing.
+
+**Rejected alternatives:**
+- The sign-in link's own limiters, shared: one kind of request would refuse the other.
+- An empty code counted as a wrong one: alarms that say nothing about the factor.
+
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 
 **Id:** 659d15cb-6c9b-4e06-8fec-164368951df4
@@ -614,3 +691,41 @@ before.
 - A partial index on open sessions (PostgreSQL): the dialect split above.
 - A plain index now, without numbers: a migration and a write cost on every session row, for a
   cost not shown.
+
+## Presence and a session's address are written at most once a minute, not on every call
+
+**Id:** dea949c1-d5ec-4781-b618-884abfd151d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions on req-79cbqd7dcpps (seq 109161, 2026-11-11) and on req-xkwfa78akg93 (2026-11-11, "never early"), docs/api.md §2.4, §2.6.5 and §5.3, `seen.SEEN_EVERY`, `seen.latest_call`
+**Revisit when:** presence (§5.3) reads against a window shorter than 120 s, a reader needs a `last_seen_at` or session `ip` fresher than a minute, or a new reader turns `last_seen_at` into a state without `seen.latest_call`
+
+Every authenticated call used to write `last_seen_at` on the session and on the member or human,
+and a human session's `ip`: two or three UPDATEs, with their row locks, on every request. The hub
+now writes them only when the stored `last_seen_at` is at least `SEEN_EVERY` (60 s) old; the
+condition sits in the UPDATE's WHERE, so two calls racing in the same minute write once. An agent's
+claim leases still renew on every call, since a lease is not presence. A human cookie call that
+wrote nothing still checks that the session is open and alive, so a session ended within the
+minute is refused. A completed sign-in writes the human's `last_seen_at` as a call does.
+
+The latest call then lies anywhere from the stored time to a minute after it, so no reading of the
+stored time is exact. Every reader that turns it into a state reads it from `seen.latest_call`, a
+minute after it: membership presence (`views`), the landing's people online, a session's idle
+end (`session_alive`, the cookie update, the address sweep) and the digest's stalled holder.
+`online`, `away`, the stalled holder's threshold and the idle end come up to a minute late after
+the last call, never early (§2.4, §5.3). The jour fixe's minutes online and its instance choice
+read an instance's latest call from its credential's `last_used_at` instead, which every call
+writes, as the instances' presence always has.
+
+**Reason:** the writes were most of the per-request database work on the auth path. With them
+gone, a reader must err one way: a caller shown away, expired or stalled while it still calls, or
+a state that holds up to a minute longer after the last call. The maintainer chose the second, so
+that a member that calls is never shown away.
+
+**Rejected alternatives:**
+- Writing on every call: the per-request UPDATEs and row locks above.
+- Reading the stored time as the latest call: a member that called 62 s ago showed `away` (a
+  write at T, a call at T + 59 that wrote nothing, a read at T + 121), and a session in use could
+  expire up to a minute early.
+- Other options of the first request: unknown.

@@ -43,31 +43,38 @@ EXPORTS = Limiter(1, 600, name="routes.me.EXPORTS")
 @router.get("/me")
 def me(request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        if caller.kind == "human":
-            assert caller.human_id is not None
-            body = human_body(conn, caller.human_id)
-        else:
-            agent = conn.execute(
-                select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
-            ).one()
-            body = {
-                "member": {
-                    **agent_member(
-                        agent,
-                        avatar_url=None,
-                        owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
-                    ),
-                    "aliases": handles.aliases(conn, [agent.id])[agent.id],
-                    **avatars.state(conn, agent.id),
-                    "avatar_motif": agent.avatar_motif,
-                },
-                "projects": _agent_project(conn, caller),
-                "membership": {"isolated": _isolated(conn, caller)},
-            }
-        # The hub's maintenance window, for every caller whatever its owner chose (§16.12).
-        body["maintenance"] = maintenance.view(maintenance.current(conn))
+        body = me_body(conn, caller)
     body["server_time"] = clock.rfc3339(clock.now())
     return JSONResponse(body)
+
+
+def me_body(conn: Connection, caller: Caller) -> dict[str, Any]:
+    """`GET /me`'s answer without `server_time` (§5.1), also the `me` part of
+    `GET /bootstrap` (§5.4), which adds it as this route does."""
+    if caller.kind == "human":
+        assert caller.human_id is not None
+        body = human_body(conn, caller.human_id)
+    else:
+        agent = conn.execute(
+            select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
+        ).one()
+        body = {
+            "member": {
+                **agent_member(
+                    agent,
+                    avatar_url=None,
+                    owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
+                ),
+                "aliases": handles.aliases(conn, [agent.id])[agent.id],
+                **avatars.state(conn, agent.id),
+                "avatar_motif": agent.avatar_motif,
+            },
+            "projects": _agent_project(conn, caller),
+            "membership": {"isolated": _isolated(conn, caller)},
+        }
+    # The hub's maintenance window, for every caller whatever its owner chose (§16.12).
+    body["maintenance"] = maintenance.view(maintenance.current(conn))
+    return body
 
 
 def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
@@ -188,6 +195,7 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
             t.project.c.slug,
             t.project.c.name,
             t.project.c.state,
+            t.project.c.public_page,
         )
         .join(t.project, t.project.c.id == t.membership.c.project_id)
         .where(t.membership.c.human_id == human_id, t.membership.c.removed_at.is_(None))
@@ -206,6 +214,9 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
                 names[row.project_id],
             ),
             "open_requests": open_requests(conn, row.id),
+            # The project's own setting (§16.9), so the tabs mark a private project without a read
+            # per project (§5.1); whether a page is served is the public read's business.
+            "public_page": row.public_page,
         }
         for row in rows
     ]

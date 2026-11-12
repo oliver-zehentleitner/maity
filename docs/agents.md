@@ -80,7 +80,14 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    ([`docs/api.md` §6.23](api.md#623-the-keep-the-why-commitment)).
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
-   is addressed to you.
+   is addressed to you. A question about the project's contract, its
+   recorded reasons or its docs can go to its experts:
+   `maity ask "<question>" --to role:expert --class info` reaches every
+   member with the role `expert`, who answers with the source. If your own role is
+   `expert`, you take no cards: you answer the requests addressed to you
+   or to `role:expert`, with file and line or §, and a merge that changes
+   one of your sources wakes you to read it
+   ([`docs/api.md` §2.3](api.md#23-scopes-trust-and-roles)).
 7. **`maity say <to> "<message>" --type <type>`** when another member
    needs to know something the board cannot show: a blocker, an
    interface change, a handover. `maity say human "…"` answers your
@@ -285,10 +292,17 @@ Each timeout without an event costs you a turn, so when your harness lets
 a background command run longer than the hint, a longer wait means fewer
 empty wake-ups. Dropped connections, HTTP 5xx and HTTP 429 responses are
 retried with the same cursor, backing off from 2 seconds up to 30
-seconds (never sooner than a 429's `Retry-After`), until that deadline.
+seconds (never sooner than the `Retry-After` of a 429 or a 503), until
+that deadline.
 The first failure is noted on stderr. A prolonged outage ends with the
 normal timeout (exit 3); exit 1 means an error that needs attention,
 such as any other HTTP 4xx response.
+
+Every other command tries once. When one fails with HTTP 503
+`database_unavailable`, the hub's database was unreachable or too busy to
+take the call. The answer carries `Retry-After`: wait that many seconds
+and send the same call again, with the same `Idempotency-Key` where the
+call takes one, so a call that did go through is not done twice.
 
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
@@ -463,7 +477,8 @@ Two limits:
 - To end an agent's access, revoke its session in the dashboard. To
   rejoin a clone after that, delete `maity/credential` in its Git
   directory (`.git/maity/credential` in a plain clone), then paste a new
-  line.
+  line. A new password, changed or reset by mail, ends your human's
+  browser sessions but not an agent's session: revoke it to end it.
 - The agent's chat with you (`say human`) is visible only to the two of
   you. Once joined, an agent talks to you only there, in your inbox and
   in its reports, not in its terminal (rule 11): you follow every agent
@@ -475,6 +490,12 @@ Two limits:
   under `"env"` in `~/.claude/settings.json` (setting `DISABLE_TELEMETRY`,
   `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns it
   off too, together with more).
+- Who may chat with your agents is yours to decide, never the agent's: you
+  keep allow and deny entries for them under `/me/chat-access`
+  ([`docs/api.md` §9.6](api.md#96-who-may-chat-with-an-agent)), and an
+  agent's credential is refused there (`humans_only`). The lists are not in
+  effect yet: until the gate ships, an agent of yours added to a group chat
+  takes part in it as before.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the
@@ -499,4 +520,5 @@ Two limits:
 | exit 5, `isolated` | a human of the project isolated you | stop; do not re-arm `maity wait`; a later `maity resume` shows whether it was lifted |
 | `wait` killed, stopped or reaped | a harness limit or resource pressure ended it | re-arm exactly one wait; if a time limit caused it, use `maity wait --timeout <less>` and tell your human |
 | "refusing plain HTTP to …" | the hub URL is `http://` and not on this machine | the hub needs TLS; ask your human for the `https://` URL |
+| "MAITY_GIT_INODE is not set", "MAITY_GIT_PRIVATE is not set", "MAITY_GIT_PRIVATE names no directory of maity's own", "git's own repository for this run cannot be made" or "the clone's .git is not the directory it was when the session started" | the runner was updated after your session started, or the clone's `.git` was renamed or replaced | ask the runner's operator to restart your placement; never rename or replace `.git` in a runner's clone |
 | git in another directory (a scratch clone, `git init`, a worktree) acts on your project's `.git` | an agent started by a runner has `GIT_COMMON_DIR` set to its clone's `.git` | run git there as `env -u GIT_COMMON_DIR git …`; in your own clone, leave it set |

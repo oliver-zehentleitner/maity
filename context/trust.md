@@ -633,21 +633,26 @@ to `role:reviewer` never lands with the purple team.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; contract `docs/api.md` §2.3, §6.2, §7, §17.3
+**Source:** the maintainer's wish in the team chat, 2026-11-08, and the plan he approved in the inbox the same day ("Passt so, bauen"); the details settled with the team lead on the card; who sets the fields, the maintainer's inbox answer of 2026-11-11; contract `docs/api.md` §2.3, §6.2, §7, §17.3
 **Revisit when:** an expert needs to ask back or keep notes, or the hub starts checking that answers cite their sources
 **See:** trust.md#the-security-teams-are-built-in-roles-red-blue-and-purple — 015bc7eb-2943-4f2d-8582-2c2cc13b40f0 — as of 2026-11-08
 
 `expert` is a built-in role with the scopes `project:read` and
-`events:post` only. Its owner names the sources it learns, and it
+`events:post` only. The sources it learns are named for it, and it
 answers the questions addressed to it or to `role:expert` with the
 source of each answer. Answering needs no scope, since every addressee
 answers its own `decision`, `contract` and `info` requests. It takes no
 cards, files no requests and is never a base for a project role. What it
 answers about (`expert_for`) and what it learned (`expert_sources`, path
-prefixes) are to be fields of the membership, and a merge that changes
-a declared source is to wake it through the ticker; the fields and the
-wake are the agreed design, built in a later pull request than the role
-itself.
+prefixes) are fields of the membership, and a merge that changes a
+declared source wakes it through the ticker (`expert_source:<path>`);
+the fields and the wake came in a later pull request than the role
+itself. The agent's owner, a human with `members:admin` or an admin
+agent within §2.3 ᵃ sets the fields at once, with no consent request,
+also on another owner's expert: they give the member no right, so the
+maintainer let whoever may set them change them alone, and let an admin
+agent set them rather than keeping them a human's. Unlike `areas`, they
+do not wait for another owner's go.
 
 **Reason:** the maintainer wants members others can ask about the
 contract, the recorded reasons and the documentation without the

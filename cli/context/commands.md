@@ -887,6 +887,33 @@ so that a route such as `/api/v1/events` is not refused.
 - Running the text check when the cites were not checked: without the commit there is nothing to
   read the names at.
 
+## A Keep-the-Why id in a review is the whole UUID, and a cited test is a test
+
+**Id:** 99295d1e-4e0a-45b8-ac9e-88ebd054121b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-vxzgj3adehe3; contract `docs/api.md` §8.4. The card names a review of pull request #1525; that review's text was not among the pull request's comments when this was written, so that part is the card's account. The behaviour below was reproduced by running the check on main `126b030c58b0586c66abc931ddc36865ed9ec9f4`.
+**Revisit when:** a review is refused for an id or a test name that does stand at its head, or a ratio is again read as a file and line
+**See:** https://github.com/oliver-zehentleitner/maity — 66b1e1f9-4641-4a55-be2d-d60963606cb3 — as of 2026-11-10
+
+Three holes in the text check, on top of the decision this follows.
+
+A contrast ratio is not a file and a line. `5.60:1` and `4.5:1` matched the file-and-line form because the part before the colon was digits and a dot, which the form took as a name and an extension. They are skipped. `3:1` has no extension, so it was never that form, and it stays that way.
+
+A Keep-the-Why id is the full UUID, eight hex digits, three groups of four and a group of twelve. It has to stand in a file at the head, the same characters; the case of the hex digits does not matter. One that shares the first eight with a real id and differs after them is refused. Any other token that starts with eight hex digits and a hyphen and is only hyphenated hex groups is refused too, when it contains a letter `a`–`f`: a shortened middle group, a last group that is not twelve hex digits, or a form that stops early, including when an id at the head starts with it. A token of digits only, such as `20261110-1530`, is not an id. Eight hex digits and no hyphen stay an object hash, as before, so a short commit is still a commit. An id the change removed is written in a fenced block or under `Ran`.
+
+A name in a code span that is a test (`test_` and then only letters, digits and `_`) has to be that test at the head, and so does `path::name` (a `[` and the parameter after it are removed first, so the parameter may contain `::`; the part after the last `::` is then the test, and the path before the first `::` has to be a file or a directory there). The definition is a line whose first token, after indentation, is `def` or `async def`, then the name, optional whitespace and `(`. A space before `(` counts; a `def` in a comment does not, and a longer name that only begins with it does not. In `test_real[longer-parameter-than-test]` the test name is the core that is checked, not the longer parameter. There is no fallback to the default branch. Other names stay a text search, at the head or the default branch.
+
+**Reason:** on main `126b030c` the check reported `5.60:1` and `4.5:1` as paths that are not files, and it accepted a fabricated UUID that shared the first eight hex digits of an id in `web/context/rendering.md`, and a hyphenated prefix of that id. It also accepted `test_names_that_stand`, which is not a test: the string occurs inside `test_names_that_stand_at_the_head_pass`. The card says the same acceptance of a fabricated id happened in a review of #1525.
+
+**Rejected alternatives:**
+- Matching a Keep-the-Why id by its first eight hex digits: that is the acceptance the card is about.
+- Leaving every UUID skipped: a fabricated id then passes, which is what the card says happened in that review.
+- Treating eight hex digits with no hyphen as a Keep-the-Why prefix and refusing it: that is also a short object hash, and a real commit prefix would be refused.
+- Searching for a test name as text: `test_real` is then found inside `test_real_widget`.
+- Matching the fixed string `def name(`: a comment that contains those characters counts as a test, and a space before `(` does not.
+
 ## A quote in a review's text is checked only where the text ties it to one file
 
 **Id:** ee1f9aff-4675-4821-a689-4630ea801826
@@ -983,6 +1010,46 @@ to check, and the rule in `docs/agents.md` carries the weight.
   and others were all ASCII until they moved to this printer, so invisible characters that are not
   dangerous (`U+200B`, `U+FEFF`, `U+00AD`) now come out raw there too.
 - Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
+
+## `wait` names a message's attachments and gives `files get` without `-o`
+
+**Id:** 9468d8cc-cd19-4583-88d0-b9d1a327a490
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hnw52rvtwdsv (agents missed screenshots the owner attached to chat messages; the owner approved the fix, seq 109092); `docs/api.md` §8.7 (a message event carries its attachments as metadata); decision 3a8f1852 above
+**Revisit when:** a message event stops carrying attachment names, `files get` without `-o` stops saving into `./maity-files/`, agents still answer without opening a file the line names, or hub ids take a character outside letters, digits, `.`, `_` and `-`
+
+The event line `wait` prints on stderr gets, for a message with files, `[N attachment(s): name, …]` before the author's standing: each name as `files get` would
+save it (`file_name`), cleaned for a line, its square brackets made round so it cannot close the list, cut at 60 characters, and
+the whole list at 200. Under it, without the `maity:` prefix and in the same order, one line per file: `  maity files get <id>`,
+or `  : attachment <k> of <n> has no id the CLI can fetch`, which starts with the shell's no-op `:`. Only an id inside a conservative policy gets one: 1 to 128 letters,
+digits, `.`, `_` and `-`, not starting with `-` or `.` (the hub's are a prefix and 12 Crockford characters). Outside it lie the
+real hazards, an option such as `-h`, `.` and `..`, shell characters, line breaks, escape and bidi characters, which would change
+when shown, quoted or parsed and fetch another id or none; also some ids that would pass unharmed, such as `.abc` or 129 letters,
+which the CLI does not support either. These lines carry nothing the sender wrote, neither the name nor an
+id the CLI cannot fetch, so a pasted one runs the fetch or nothing in any shell. The event line above them quotes the names and is
+not for pasting: in an interactive zsh a name's `;` there would run, as a task title's always could. The event stream keeps a message's payload as it
+was written (`docs/api.md` §8.7), so a file taken out since still has its command; `files get` then says it was taken out. The names
+come from the event's own `payload.attachments`, so no hub call is made per event. The `wait` help says the files are part of the
+message and are opened before answering. Standard output stays the JSON.
+
+**Reason:** a screenshot showed only in the JSON under the line, which an agent skims, so the agent answered without it. The printed
+command has no `-o <file>`: without it `files get` saves into `./maity-files/` under the cleaned name (3a8f1852). A command with
+`-o <the sender's name>` would put a file the sender named `conftest.py` or `Makefile` into the working directory of whoever
+copies the line.
+
+**Rejected alternatives:**
+- `maity files get <id> -o <name>`, as the card first proposed: it undoes 3a8f1852 for anyone who copies it.
+- Shell-quoting any id (the first version): the line is also escaped for display, so an id with a newline or an escape was
+  shown as a different id, and one starting with `-` reached argparse as an option (review of #1641).
+- The name before the command on the same line (the first version): a whole pasted line ran the shell syntax in a sender's name
+  (review of #1641).
+- `attachment <k> of <n>: no id …` for an id the CLI cannot fetch (the third version): pasted, it ran a command named
+  `attachment`, which a user's own function or program of that name would answer (review of #1641).
+- The name after the command as a shell comment (`maity files get <id>  # <name>`, the second version): an interactive zsh
+  reads `#` as a word unless `interactive_comments` is set, which it is not by default, so the name's `;`, `|` or `$( )` still ran (review of #1641).
+- Fetching each file's metadata or bytes during `wait`: a hub call per event on the long-poll path, for what the event already carries.
 
 ## Text from the forge and one-line fields name who wrote them
 
@@ -1456,14 +1523,14 @@ deadline is what the deadline promises, not an outage.
   load, and the last ones were cut off anyway. An event that arrives
   while `wait` rests is returned by the next call.
 
-## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After`
+## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After` (a 503's too)
 
 **Id:** 6288d23f-c0fb-477d-a120-8e862ae10628
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built
-**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, or a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule
+**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built; for the 503, card tsk-p80cre8r9355 (2026-11-11), its split into a hub PR and this CLI PR agreed with the team lead
+**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule, or the hub sends `Retry-After` on a 5xx other than 503
 
 A `429` on the events long-poll is retried with the same cursor, as a
 `5xx` or a dropped connection is: the first one prints `hub answered
@@ -1473,6 +1540,12 @@ the deadline. A `429` without `Retry-After`, as a limit on open
 requests sends it, gets the backoff alone. A wait whose deadline comes
 first ends as any timeout does, with exit 3, so the loop around it
 re-arms. Every other `4xx` still ends `wait` with exit 1.
+
+A `503` keeps its `Retry-After` the same way: the hub sends one with
+`database_unavailable`, when its database cannot be reached or no pooled
+connection came free in time (`docs/api.md` §1.3), and reading again
+sooner only adds to that load. Other `5xx` keep the plain backoff, since
+the hub sends `Retry-After` on no other.
 
 **Reason:** a `429` says "not now", not "this request is wrong": a
 rate limit in front of the hub (an ingress or a proxy) or in it answers

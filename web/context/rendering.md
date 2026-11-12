@@ -108,13 +108,15 @@ picture from a third-party avatar service — it would send member ids out.
 **Revisit when:** the hub serves a board's avatars without queueing (one read for all of them, or a picture inside the list's answer), or browsers lazy-load images that are not yet on the page
 **See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-11-09
 
-`M.avatar` returns the identicon every time. When the member carries an
+`M.avatar` returns the identicon every time a picture for that sized URL is not
+already loaded (bc1ada13-2b42-4ac6-8af7-5d7eb3742fd4). When the member carries an
 `avatar_url` the page may load, it loads that picture once the identicon
 is within 200 px of the screen (IntersectionObserver; without one, at
 once). It asks for the smallest size the hub serves (§6.10, Sizes: 32, 64,
 128, 256) that covers the shown size on this screen, with the device pixel
 ratio capped at 2. The loaded image takes the identicon's place with the
-same size and class rules. A picture that does not load leaves the
+same size and class rules. Each place that shows that picture gets its own
+image, at the size that place asked for. A picture that does not load leaves the
 identicon. A logo or banner is loaded as given, without a size. `h()`
 allows the sized address and no other parameter. The observer watches
 only placeholders that are on the page. One that is not (built before its
@@ -367,6 +369,44 @@ button: it is the entry's name for the keyboard and for the list. Keeping
 `/` in the lookbehind: `#909/#911` would link only the first. A lookbehind
 for `/` after a reference: it matches `issues/#5/#6`'s `#6` too, since it
 cannot know whether `#5` was itself accepted, so the check sits in the loop.
+
+## An event's number in text links to its page by shape alone, into the text's own project
+
+**Id:** eeb4c3ab-d5c0-45e1-b888-25a3c4de046b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's ask that "seq 68216" in a text link to that message (tsk-6g2h8dag2fkg), 2026-11-04; docs/api.md §8.9 "The dashboard's links" (#1599, reviewed and merged before this); the dashboard's implementation (PR 3 of the card), 2026-11-11
+**Revisit when:** agents cite events in another form, the hub gives a cross-project chat's messages a page of their own, or readers report a `seq` linked where they meant a word
+
+`js/ids.js` links `seq 68216` (lowercase `seq`, one space) and
+`seq-68216` (one hyphen), 1 to 19 digits without a leading zero and at
+most 2⁶³ − 1, wherever it links ids (3274d199, with the same lone-code-span
+exception, 50234f88), to `/<owner>/<slug>/events/<n>` in the text's own
+project. It is not linked inside a word or a longer number, nor in a path,
+URL or query: never after `/`, `+`, `%`, `:` or `~`, never before `/` or a
+`.` that goes on as a word (`seq-5.json`). A full stop that ends the
+sentence still links. `?seq=5` never matches, and `#…` stays a forge
+number. A text with no project of its own (read along from outside,
+`/observe`, and a cross-project chat once the dashboard shows one, whose
+`seq` is the chat's own counter, §9.5) links none. The bound is checked
+with `BigInt` after the match, since a regular expression cannot compare
+numbers. The link is a plain dashboard route (`a.id-ref.seq-ref`) that
+opens in the same tab, copies and reloads like any route.
+
+**Reason:** §8.9 is the contract for exactly these forms, and agents write
+both. Nothing is looked up while the text is drawn, as for ids: the page
+behind the link reads the event once and says "not visible" when there
+is none (routing.md, the event's page). Linking only into the text's own
+project keeps the link's target a project where that `seq` means
+something.
+
+**Rejected alternative:** linking `#68216` as well. `#n` is a pull request
+or issue number (§6.13), and both readings would collide. Linking any
+digits after `seq` (any case, any spacing): "Seq 5" in prose and `seq  5`
+are not what agents write, and §8.9 names the two forms. Checking the
+bound in the regular expression: a 19-digit alternation is unreadable,
+and `BigInt` is exact.
 
 ## Nested lists nest by indentation: further in than the item before opens a list inside it
 
@@ -1466,3 +1506,73 @@ every page for one value `/me` can carry. Rendering times on the hub: the contra
 API and leaves display to the dashboard. Keeping the browser's local clock for day boundaries
 while formatting in the account's zone: a message at 23:50 in the account's zone could then sit
 under the next day's separator.
+
+## A redraw keeps an `<img>` whose src and attributes are unchanged; every redraw site goes through `M.dom.keepImages`
+
+**Id:** bc1ada13-2b42-4ac6-8af7-5d7eb3742fd4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-4pgj07raakw7, the lead's go 2026-11-12; the review of that card, 2026-11-12
+**Revisit when:** a redraw updates a tree in place, or the hub sends a view's pictures inside the list so a page draws no separate image
+**See:** rendering.md#an-avatar-shows-the-generated-picture-at-once-and-loads-the-hubs-picture-only-near-the-screen-at-the-size-shown — 4db0d863-545e-46bb-b031-b5c9bbbfacb8 — as of 2026-11-12
+
+`M.dom.keepImages(old, fresh)` runs before a fresh tree replaces an old one.
+For every `<img>` in the fresh tree whose `src` equals an `<img>` in the old
+one, in document order and with each old node used once, the old node takes
+the fresh node's place, but only when every other attribute matches as well.
+A different `src` (an avatar whose `?v=` moved), or a different alt, class,
+width or any other attribute, keeps the fresh node. An `<img>` that `h()`
+gave an `on*` handler is never swapped: listeners cannot be compared, and
+`h()` marks those nodes. `keptBrand` keeps the header's `h1.brand` when that
+heading is still there with the same link href and the same tag.
+`renderHeader` asks for the signed-in home (`/all`). The brand `index.html`
+ships points at `/`, and a signed-out header builds a new brand, so neither
+of those is that element. The lockup `<img>` nodes from `index.html` stay
+on the first signed-in header because `keepImages` finds the same src and
+the same other attributes. `keepImages` also keeps the switcher's logos and
+the profile. The same call runs in `render()` before the view replaces
+`main`, in `renderSwitcher`, and at the local redraws that rebuild a list
+of pictures: the agents list, a project's agent cards, the fleet, the
+members list, the organisation, and both chat lists.
+
+`M.avatar` returns the identicon while that sized URL is not loaded yet. It
+does not start a second load for one that is already loaded, or in flight.
+Every placeholder that is still in a tree when the load arrives becomes its
+own `<img>`: the loaded node fills one of them, and each other place gets a
+clone (`cloneNode`), which the browser serves from cache. A node that is on
+the page is never moved, including one in the header and one in `main` that
+a later draw did not replace (a chat list that then loads its messages, a
+new message, a placeholder the observer claims). A redraw reuses the
+remembered node only when it is off the page. The width and height of each
+image are the size that place asked for. At a device pixel ratio of 1, 16 px
+and 24 px ask for the same `s=32` URL, and each image still has the size its
+place asked. The map drops only a loaded image that has left the page. A
+load that has not finished is left to fill its placeholders, so the map can
+sit above 64 sized URLs until a loaded image that has left the page can be
+dropped.
+
+**Reason:** Firefox aborts the load of an `<img>` that a redraw removes
+(`NS_BINDING_ABORTED`) and the new `<img>` with the same `src` starts it
+again. That was every lockup and every avatar, on each change of view, each
+reload and each quiet refresh. The bytes were already on the way, or
+already here; the new node was the whole cost. Keeping the node leaves the
+load running. A handler cannot be seen on the fresh node, so those images
+stay new. One shared node cannot sit in two places: the header's picture
+and a row in `main` are both on the page at once, and moving the node
+empties the place that had it. A clone of a picture that has already loaded
+does not start that request again. The reuse map has to be bounded, or a
+long session would keep every picture it had ever shown, but dropping a
+load that has not finished leaves its placeholders as identicons for good.
+
+**Rejected alternatives:** skipping the header rebuild on a content-only
+redraw. Out of scope: the header's DOM is cheap, and the images were the
+cost. A virtual-DOM or morph library. None is allowed; the stack is plain
+JS. One shared `<img>` moved into the newest placeholder. The other places
+stayed identicons, and a later draw pulled the image out of a place that
+was still showing it. Evicting the oldest entry whenever nothing loaded had
+left the page. A load in flight was dropped and its placeholders never
+filled. Keying the map by the presentation size as well as the URL. Two
+sizes that share one `s=` would start two loads of the same bytes. Setting
+the size only on the shared node. A 16 px place kept the 24 px width of the
+node it reused.

@@ -233,9 +233,10 @@ All settings come from the environment.
 | `MAITY_ATTACHMENT_S3_PREFIX` | unset | `s3`: a key prefix such as `maity/attachments`; objects are `<prefix>/<project id>/<attachment id>`. |
 | `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | unset | `s3`: the credentials, both or neither; neither uses the client's default chain (an instance role, a mounted profile). Never logged. |
 | (the attachment sweep) | every 5 minutes | Not a setting. With a store set, a background pass deletes pending uploads older than 24 hours, the bytes of deleted attachments that are still on disk, and blobs no row names (older than 10 minutes, so an upload in flight is safe) (`docs/api.md` §8.7). A folder no project has (`lost+found` on an ext4 volume, other data in the bucket) is left alone and logged once per process start. |
-| `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. They are reused, the most recently used first. |
+| `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500, at least 2 (one for each engine, `MAITY_DB_ASYNC_POOL_SIZE`). They are reused, the most recently used first. |
 | `MAITY_DB_MAX_OVERFLOW` | `16` | Connections beyond the pool when it is busy, 0–500. |
-| `MAITY_WORKERS` | `1` | Serving processes of `maity-hub serve`, 1–64. More than one only with PostgreSQL and with `MAITY_DB_POOL_SIZE` at least the workers (refused otherwise). The pool and the overflow above are the hub's total: each process holds its share, rounded down. Each process takes about 130 MB of memory. |
+| `MAITY_DB_ASYNC_POOL_SIZE` | 8, at most half the share | On a server database, how many of `MAITY_DB_POOL_SIZE` the async engine holds, 1–500; every call authenticates on it. Unset, each process's async engine holds 8 of its pool share but at most half of it (a pool of 8 gives 4 + 4). A value that is set is divided among several `MAITY_WORKERS` like the pool (rounded down, at least one each), so each process's async engine holds its share. Carved out of the pool, never on top, at least one and never all of it; the sync engine keeps the rest and the whole overflow. A server database's pool therefore needs at least 2 per process. SQLite takes no pool sizes: each engine keeps SQLAlchemy's default for a file database (5 + 10). |
+| `MAITY_WORKERS` | `1` | Serving processes of `maity-hub serve`, 1–64. More than one only with PostgreSQL and with `MAITY_DB_POOL_SIZE` at least twice the workers (refused otherwise). The pool and the overflow above are the hub's total: each process holds its share, rounded down. Each process takes about 130 MB of memory. |
 | `MAITY_REPLICAS` | `1` | How many hubs the deployment runs on this database, 1–100, as the deployment states it (the chart sets it from `replicas`). More than one only with PostgreSQL and without a local attachment directory (refused otherwise). At the start the hub warns when the connections it may ask (per worker its pool and overflow share plus two shared-counter connections and a listener, per pod one for the probe, for replicas + 1 pods during a rolling update) exceed what PostgreSQL gives ordinary roles. |
 | `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_DB_STATEMENT_TIMEOUT` | `30` | Seconds a statement may run on a PostgreSQL connection of the hub before the server cancels it (`statement_timeout`), 0–3600; 0 turns it off. Not set on `maity-hub migrate` and the other commands, nor on MariaDB or SQLite. |
@@ -253,10 +254,11 @@ All settings come from the environment.
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
 | `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
 | `MAITY_SMTP_FROM`, `MAITY_SMTP_REPLY_TO` | unset | The sender, `maity@example.org` or `Maity <maity@example.org>`, and an optional reply address; one address each, never a list. |
-| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30` | The hourly budgets: notification, security, sign-in and registration mail, each counted on its own. |
+| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30`, `30` | The hourly budgets: notification, security, sign-in, password reset and registration mail, each counted on its own. |
+| `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `5` | 0–60. How long after a person stopped being present in the web app their held notification mail still waits; while they are present, the mail of an immediate item waits (docs/api.md §18.5). |
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
-| `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
+| `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK`, `MAITY_SIGN_IN_PASSWORD_RESET` | unset | `1` or `0`: switch a sign-in method, or the reset of a forgotten password by mail, on or off for good (`docs/api.md` §2.6.6, §2.10); unset leaves it to the instance admin (default on). The password cannot be switched off. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; the dashboard the package carries (`maity_hub/web`) when installed | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
 Moving a volume's files into the bucket: `maity-hub attachments copy-to-s3` copies every file under `MAITY_ATTACHMENT_DIR` into the bucket of the `s3` settings, under the same key, and skips an object the bucket already holds with the same SHA-256; an object the hub wrote with other bytes is reported, not overwritten (exit 1), and a file whose attachment is deleted or has no row is not copied. With `--apply` it then removes from the bucket what was deleted since an earlier run (a deleted attachment's object at once, an object no row names once it is 30 minutes old), and leaves alone the objects of a project the database does not know. Without `--apply` it only counts, the removals too, and it never changes the files. There is no copy back: after the switch, new uploads are only in the bucket. Run it with `MAITY_ATTACHMENT_STORE=s3` before switching the store, and once more after (`deploy/helm/maity-hub/README.md`, *Moving attachments to S3*). With the bucket's versioning on, a deletion is final only once a lifecycle rule expires the noncurrent versions.
@@ -491,6 +493,28 @@ its proof run in CI (`hub-dist`), and locally:
 make release-build   # a fresh environment from requirements/release.txt; sdist and wheel to ../dist
 make release-check   # the bundled files, a wheel rebuilt from the sdist, an install that serves the dashboard
 ```
+
+Every deploy of maity.team is a release, so what runs there can be installed
+under the same version. Per deploy:
+
+1. A pull request raises `version` in `pyproject.toml` to the next
+   pre-release (`0.1.0a2` after `0.1.0a1`) and folds the changelog: in a
+   commit of its own, `python3 tools/changelog.py release <version>` from the
+   repository root, its output unchanged, with the command in the commit
+   message. It is the last merge before the deploy. A pull request merged
+   after the fold leaves new fragments behind, so right before the final
+   MERGE-READY the fold is redone on the newest main: merge main, undo the
+   fold (`git revert --no-commit <fold commit>`), run the same command again,
+   and commit both as one.
+2. ci passes on the push of that merge to main (`ci-ok`).
+3. The maintainer pushes the tag `v<version>` on that merge commit, and
+   nobody else pushes a `v*` tag. The tag runs `release-hub.yml` (the package
+   on PyPI) and `publish-image.yml` (the image), and both wait for ci on that
+   commit and for hub-mariadb on the same hub files.
+4. Ops deploys the image that tag built, pinned by its digest.
+
+The deployment itself is unchanged: manual approvals, on the maintainer's
+command.
 
 ### Migrations
 

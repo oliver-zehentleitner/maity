@@ -161,9 +161,10 @@ def read_public_page(path: str, request: Request) -> Response:
 
 
 @page_router.api_route("/explore", methods=["GET", "HEAD"], include_in_schema=False)
-def explore(request: Request) -> Response:
-    """The public projects (§16.9), for every visitor, with or without a session; the shell
-    while the instance serves no public pages, as for any address it does not have."""
+def explore(request: Request, lang: str | None = None) -> Response:
+    """The public projects (§16.9), for every visitor, with or without a session, in the
+    language of the frame (`?lang`, else the reader's); the shell while the instance serves no
+    public pages, as for any address it does not have."""
     settings = settings_of(request)
     if not settings.public_pages:
         return _shell(settings)
@@ -172,13 +173,23 @@ def explore(request: Request) -> Response:
         raise rate_limited(wait)
     window = maintenance.window_now(engine_of(request))
     with engine_of(request).begin() as conn:
-        body = maintenance.with_banner(public_projects.explore_html(conn, settings), window)
+        frame = landing.stored(conn)
+        body = public_projects.explore_html(
+            conn,
+            settings,
+            setting=frame,
+            legal=legal.public(legal.stored(conn)),
+            stats=landing_stats.for_frame(conn, frame),
+            lang=lang,
+            accept_language=request.headers.get("accept-language"),
+        )
+        body = maintenance.with_banner(body, window)
     return HTMLResponse(
         body,
         headers={
             "Cache-Control": public_pages.CACHE,
-            "Vary": "Cookie",
-            "Content-Security-Policy": public_pages.CSP,
+            "Vary": "Cookie, Accept-Language",
+            "Content-Security-Policy": LEGAL_CSP,
             "X-Content-Type-Options": "nosniff",
         },
     )

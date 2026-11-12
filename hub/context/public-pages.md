@@ -183,7 +183,7 @@ It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profi
 existing account on; an instance that upgrades later has its accounts of that moment switched the same
 way, so its operator tells their users first (the changelog says so). `public_people.served` no longer reads it: every active account that is not suspended
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
-pages of its open projects, by handle, on the Overview, Board, Team (at /members), Organisation, a card's page and the
+pages of its open projects, by handle, on the Overview, Board, Team (at /team), Organisation, a card's page and the
 snapshot alike, who is online included (on `main` before, an online member with the profile off was only
 counted); the setting to keep one's online status off the public pages came on its own card (54823a3a), and
 this change goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
@@ -457,9 +457,12 @@ moment.
 **Revisit when:** the Board's card events become a cost the busiest projects notice, or a view shows a count
 
 2026-11-09: the Members view is named Team (req-77az2zs017fe); its path stays /members.
+2026-11-10: the path follows the name: the view is at /team (the maintainer's decision, so that the name
+and the path match; card tsk-yy9d5np8pjmr). `members` stays a reserved word of the project views, the
+maintainer's wish, so no slug or later view takes it; /members serves no page and redirects nowhere.
 
 `public_project_views` registers the kind `project_views`, one target per public project and three pages
-(`/board`, `/members`, `/organisation`). The kind `project` lists it as a dependent, so everything that
+(`/board`, `/team`, `/organisation`). The kind `project` lists it as a dependent, so everything that
 renders a project page (a switch, a hold, an archive, a rename, an owner's suspension, a member change) renders
 the views with it, and a person's page lists both kinds. The Board is the one part that follows the cards:
 `events.emit` touches `project_views` alone for a card event (`task_created` as an addition, the others as
@@ -848,3 +851,33 @@ page's number still counts you, without your name (card tsk-en9mm6x2v3s0).
 - Leaving the person out of the instance-wide counts as well: no project is named there, so nothing points at
   anyone, and the landing page would need a filter of its own.
 - A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.
+
+## The hub's own signed-out pages take their frame from one function, and `/explore` is in the frame's language
+
+**Id:** cb025c0e-ce40-4638-bd81-e8034e3e66e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (step 2 of tsk-zp0vqj9wm37x), the lead's build order of 2026-11-12 ("one shared signed-out frame … from the shared parts in render.py, not copied per page") and the lead's go on the plan for its first pull request; the started branch agent-d/kg22-explore-layout, taken over; contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-12
+
+`render.public_frame(model, lang)` builds the header, the footer, the stylesheet links and the inline fallback of
+a page the hub renders itself, from the model of `chrome`. The legal pages, the mail link pages and `/explore` use
+it; `render.framed_document` puts a page's content in it. The following pull requests put the stored public pages
+on the same frame. `/explore` takes its words from the catalogue's `explore` section in the model's language,
+and English where the catalogue has no words in that language; the frame then says its own `lang`.
+
+**Reason:** the frame's rules already live once in `chrome` (scope.md, 41837936). The parts each page added
+around it (the header's links, the button, the two stylesheets and their fallback, and on the mail link pages the
+mark without its `style` attributes) were copied into each page, and a page the next card adds would have copied
+them again. The legal pages now drop the mark's `style` attributes as well; `public-pages.css` colours it, so they
+look the same. A page whose
+words come from the catalogue can follow the reader's language like the frame around it, so the two say the same
+language.
+
+**Rejected alternatives:**
+- One copy of the header and footer code per page (the state before for the legal and mail link pages): the copies
+  drift. A change to the mark or to the stylesheets would have to be made in every page.
+- `/explore` in English, with the frame forced to English to match (the first cut on the started branch): a
+  German reader then left a German landing page for an English frame. With the words in the catalogue there was
+  no reason left to keep it.

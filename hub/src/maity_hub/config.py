@@ -98,6 +98,11 @@ class Settings:
     # whole hub: with several workers each process holds its share (`per_worker`).
     db_pool_size: int = 16
     db_max_overflow: int = 16
+    # MAITY_DB_ASYNC_POOL_SIZE: how much of that pool the async engine holds on a server
+    # database, carved out of it, never on top: the sync engine keeps the rest and the whole
+    # overflow; SQLite takes no pool sizes. Unset (None) it is 8, but at most half the process's
+    # pool share (`serving.pool_shares`, hub/context/replicas.md).
+    db_async_pool_size: int | None = None
     # MAITY_DB_POOL_RECYCLE: seconds after which a pooled connection is replaced; 0 never.
     db_pool_recycle: int = 1800
     # MAITY_DB_STATEMENT_TIMEOUT, MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT: seconds, set on every
@@ -114,10 +119,12 @@ class Settings:
     # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
     # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
-    # MAITY_SIGN_IN_DEVICE_CODE, MAITY_SIGN_IN_EMAIL_LINK: the sign-in methods when the
-    # environment switches them (§2.6.6); None leaves them to the instance admin.
+    # MAITY_SIGN_IN_DEVICE_CODE, MAITY_SIGN_IN_EMAIL_LINK, MAITY_SIGN_IN_PASSWORD_RESET: the
+    # sign-in methods and the reset by mail when the environment switches them (§2.6.6,
+    # §2.10); None leaves them to the instance admin.
     sign_in_device_code: bool | None = None
     sign_in_email_link: bool | None = None
+    sign_in_password_reset: bool | None = None
     # MAITY_ON_RUNNER_REVOKE: what revoking a runner does to its agents where a project
     # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
     # is refused).
@@ -224,6 +231,11 @@ class Settings:
             db_max_overflow=int(
                 parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
             ),
+            db_async_pool_size=(
+                int(parse_number(env, "MAITY_DB_ASYNC_POOL_SIZE", 1, minimum=1, maximum=500))
+                if env.get("MAITY_DB_ASYNC_POOL_SIZE", "").strip()
+                else None
+            ),
             db_pool_recycle=int(
                 parse_number(env, "MAITY_DB_POOL_RECYCLE", 1800, minimum=0, maximum=86400)
             ),
@@ -237,6 +249,7 @@ class Settings:
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
+            sign_in_password_reset=parse_switch(env, "MAITY_SIGN_IN_PASSWORD_RESET"),
             on_runner_revoke=parse_choice(
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),

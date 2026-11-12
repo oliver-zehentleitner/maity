@@ -502,9 +502,13 @@ def test_a_substitute_who_could_not_answer_a_proposals_kind_is_skipped(
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
     # A human member without members:admin: available, but no answerer of the kind.
     plain = flow.human(make_client, migrated, handle="plain")
-    factory.membership(migrated, project_id, role="member", human_id=plain.id)
+    factory.membership(
+        migrated, project_id, role="member", human_id=plain.id, last_seen_at=clock.now()
+    )  # seen at the join, as every join writes it: a call within the minute writes nothing (§2.4)
     admin_human = flow.human(make_client, migrated, handle="admin")
-    factory.membership(migrated, project_id, role="admin", human_id=admin_human.id)
+    factory.membership(
+        migrated, project_id, role="admin", human_id=admin_human.id, last_seen_at=clock.now()
+    )
     lead = flow.agent(make_client, owner, role="admin")
     reviewer = flow.agent(make_client, owner, role="reviewer")
     for agent in (lead, reviewer):
@@ -817,6 +821,68 @@ def test_a_covered_member_becomes_an_expert_only_after_its_cards_are_settled(
     changed = owner.patch(f"/projects/maintainer/maity/members/{covered.id}", {"role": "expert"})
     assert changed.status_code == 409, changed.text
     assert changed.json()["error"]["details"] == {"reason": "holds_cards"}
+
+
+@pytest.mark.parametrize("settled", ["touched", "cancelled"])
+def test_a_covered_member_whose_covered_cards_stay_with_the_substitute_may_become_an_expert(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    now: list[datetime],
+    settled: str,
+) -> None:
+    """§2.3 "The expert" refuses only for cards the cover's end would give back. A card the
+    substitute touched, or one closed since, stays with the substitute (§6.12, `cover.end`),
+    so it is no card on the way to the member (tsk-7fb0aq64y2mp)."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    card = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    [started] = events(migrated, "cover_started")
+    assert started.payload["tasks"] == [card["id"]]
+    if settled == "touched":
+        touched = sub.post(
+            f"/projects/maintainer/maity/tasks/{card['id']}/checkpoint",
+            {"last_step": "a", "next_step": "b"},
+        )
+        assert touched.status_code == 200, touched.text
+    else:
+        closed = owner.patch(
+            f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "cancelled"}
+        )
+        assert closed.status_code == 200, closed.text
+    changed = owner.patch(f"/projects/maintainer/maity/members/{covered.id}", {"role": "expert"})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["role"] == "expert"
+
+
+def test_a_leftover_card_of_an_earlier_cover_does_not_hold_up_the_expert_role(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """The guard reads only the running cover's cards (`cover.since` = the member's
+    `cover_since`), as `cover.end` returns only those: a card still marked from an earlier,
+    ended cover would not come back with this one's end. Written past the API, since a
+    cover's end clears its own marks."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    card = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    [started] = events(migrated, "cover_started")
+    assert started.payload["tasks"] == [card["id"]]
+    with migrated.begin() as conn:
+        row = conn.execute(select(t.card).where(t.card.c.id == card["id"])).one()
+        earlier = {**row.cover, "since": z(now[0] - timedelta(days=1))}
+        conn.execute(update(t.card).where(t.card.c.id == card["id"]).values(cover=earlier))
+    changed = owner.patch(f"/projects/maintainer/maity/members/{covered.id}", {"role": "expert"})
+    assert changed.status_code == 200, changed.text
 
 
 def test_the_substitute_of_a_running_cover_does_not_become_an_expert(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import replace
 from typing import Any
@@ -10,12 +11,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import TimeoutError as PoolTimeout
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
-from maity_hub import db
+from maity_hub import db, forge_webhook, maintenance
 from maity_hub.app import create_app
+from maity_hub.auth import caller
 from maity_hub.config import ConfigError, Settings
-from maity_hub.errors import connection_cause
+from maity_hub.errors import DATABASE_RETRY_AFTER_SECONDS, connection_cause
 
 DNS = OSError("failed to resolve host 'db': Temporary failure in name resolution")
 
@@ -154,6 +157,45 @@ def captured_connect_args(engine: Any, driver: str = "psycopg") -> dict[str, Any
     return seen
 
 
+def captured_async_connect_args(engine: AsyncEngine) -> dict[str, Any]:
+    """What the async engine would hand to psycopg's `AsyncConnection.connect`, without
+    connecting."""
+    import psycopg
+
+    seen: dict[str, Any] = {}
+
+    async def fake(*args: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        raise psycopg.OperationalError("stop")
+
+    async def connect() -> None:
+        async with engine.connect():
+            pass
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(psycopg.AsyncConnection, "connect", fake)
+    try:
+        with pytest.raises(Exception, match="stop"):
+            asyncio.run(connect())
+    finally:
+        patch.undo()
+    return seen
+
+
+def test_the_async_engine_takes_the_same_connection_options() -> None:
+    """The two engines of a hub must not drift apart: the time zone, the timeouts, the name in
+    `pg_stat_activity` and the connect timeout reach both (tsk-v874y63b4z8p)."""
+    url = "postgresql+psycopg://u:p@localhost/h"
+    engine = db.make_engine(url, 2, 0, 60, 30, 60, db.APPLICATION_SERVING)
+    async_engine = db.make_async_engine(url, 2, 60, 30, 60, db.APPLICATION_SERVING)
+    wanted = captured_connect_args(engine)
+    seen = captured_async_connect_args(async_engine)
+    for key in ("options", "application_name", "connect_timeout"):
+        assert seen[key] == wanted[key], key
+    levels = [e.dialect._on_connect_isolation_level for e in (engine, async_engine.sync_engine)]
+    assert levels == ["READ COMMITTED", "READ COMMITTED"]
+
+
 def test_a_postgres_engine_sets_the_timeouts_on_each_connection() -> None:
     engine = db.make_engine("postgresql+psycopg://u:p@localhost/h", 2, 0, 60, 30, 60)
     seen = captured_connect_args(engine)
@@ -228,6 +270,7 @@ def test_the_probe_answers_while_the_pool_is_used_up(
     small = create_engine(engine.url, pool_size=1, max_overflow=0, pool_timeout=0.3)
     app = create_app(settings, small)
     probe: Engine = app.state.health_engine
+    maintenance.forget()  # the middleware's window is read through the used-up pool, not a cache
     held = small.connect()
     try:
         with pytest.raises(PoolTimeout):
@@ -235,6 +278,20 @@ def test_the_probe_answers_while_the_pool_is_used_up(
         assert probe is not small and isinstance(probe.pool, NullPool)
         answer = TestClient(app).get("/api/v1/health")
         assert answer.status_code == 200 and answer.json()["status"] == "ok"
+
+        def needs_the_pool() -> None:
+            with small.connect():
+                pass
+
+        app.add_api_route("/api/v1/_needs_the_pool", needs_the_pool)
+        busy = TestClient(app).get("/api/v1/_needs_the_pool")
+        assert busy.status_code == 503, busy.text
+        assert busy.json()["error"] == {
+            "code": "database_unavailable",
+            "message": "the database is unreachable",
+            "details": {},
+        }
+        assert busy.headers["Retry-After"] == str(DATABASE_RETRY_AFTER_SECONDS)
     finally:
         held.close()
         small.dispose()
@@ -305,3 +362,64 @@ def test_a_postgres_session_is_utc_whatever_the_server_default(
         plain.dispose()
     with engine.connect() as conn:
         assert conn.execute(text("SHOW TimeZone")).scalar() == "UTC"
+
+
+def test_a_used_up_pool_is_a_retryable_503_not_a_500(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Card tsk-p80cre8r9355: the pool's timeout is load, not a fault (§1.3). The timeout is
+    raised by hand, so this runs on every backend, SQLite included."""
+
+    def busy() -> None:
+        raise PoolTimeout("QueuePool limit of size 1 overflow 0 reached, connection timed out")
+
+    client.app.add_api_route("/api/v1/_busy", busy)  # type: ignore[attr-defined]
+    with caplog.at_level("ERROR", logger="maity_hub.errors"):
+        answer = client.get("/api/v1/_busy")
+    assert answer.status_code == 503
+    assert answer.json()["error"]["code"] == "database_unavailable"
+    assert answer.headers["Retry-After"] == str(DATABASE_RETRY_AFTER_SECONDS)
+    assert "QueuePool" not in answer.text
+    assert any("no pooled connection" in record.getMessage() for record in caplog.records)
+
+
+def _pool_used_up(*_args: Any, **_kwargs: Any) -> Any:
+    raise PoolTimeout("QueuePool limit of size 1 overflow 0 reached, connection timed out")
+
+
+def assert_retryable_503(answer: Any) -> None:
+    assert answer.status_code == 503, answer.text
+    assert answer.json()["error"]["code"] == "database_unavailable"
+    assert answer.headers["Retry-After"] == str(DATABASE_RETRY_AFTER_SECONDS)
+    assert "QueuePool" not in answer.text
+
+
+def test_the_maintenance_check_answers_a_used_up_pool_itself(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The middleware reads the window before any route; a pool timeout there is the same 503,
+    answered at once instead of a second wait on the route."""
+    reached: list[int] = []
+    client.app.add_api_route("/api/v1/_reached", lambda: reached.append(1))  # type: ignore[attr-defined]
+    monkeypatch.setattr(maintenance, "window_now", _pool_used_up)
+    assert_retryable_503(client.get("/api/v1/_reached"))
+    assert reached == []
+
+
+def test_the_large_body_precheck_answers_a_used_up_pool_itself(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(maintenance, "window_now", lambda _engine: None)
+    monkeypatch.setattr(caller, "precheck", _pool_used_up)
+    assert_retryable_503(client.post("/api/v1/admin/settings/landing/preview", json={}))
+
+
+def test_a_forge_webhook_answers_a_used_up_pool_with_the_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def handle(*_args: Any, **_kwargs: Any) -> int:
+        _pool_used_up()
+        return 200
+
+    monkeypatch.setattr(forge_webhook, "handle", handle)
+    assert_retryable_503(client.post("/api/v1/projects/acme/widget/forge/webhook", content=b"{}"))

@@ -210,6 +210,55 @@ them at one version.
 - Pointing `MAITY_WEB_DIR` at a checkout: an extra clone and an
   environment variable in a path meant to take five minutes.
 
+## A hub test holds the image's dockerignore allowlist to what the wheel build reads
+
+**Id:** db4cb20a-6023-4d18-9546-cb6d80b41a31
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the jour fixe of 2026-11-06 (round jfx-nerr4n29p2ce), card tsk-4x5fmke93m1r: `hub/hatch_build.py` became a build input in #1424 and was missing from the image's context until the image job failed; `hub/tests/test_image_context.py`
+**Revisit when:** the image's build stage reads a file the test does not collect (a new `COPY`, a requirements file named outside the Dockerfile), `hub/pyproject.toml` takes up a key the test refuses as unread (`force-include`, `include`, `shared-data`, another build or metadata hook, `license-files`, a version `path`) or reads files through a key or file the test neither collects nor refuses, or BuildKit's context walker changes its parent rule, Docker's patternmatcher changes how `.dockerignore` patterns match, or the build stops using `deploy/Dockerfile.dockerignore`
+
+`deploy/Dockerfile.dockerignore` is an allowlist: `*`, then a `!` line for each thing the build needs. A new
+build input nobody adds there is missing from the context, and only the image job noticed: in #1424 it failed
+about ten seconds after it started, but only once the pull request was pushed.
+`hub/tests/test_image_context.py` collects what the build stage reads from the files the build reads it from:
+the `hub/requirements/*.txt` that `deploy/Dockerfile` names, `hub/pyproject.toml` with its `readme`, a `license`
+given as a file, hatchling's default license files in `hub/` when it names none (`LICEN[CS]E*`, `COPYING*`,
+`NOTICE*`, `AUTHORS*`), its wheel `packages` and custom build hook, and the keys of `hatch_build.py`'s `BUNDLED` (read from its syntax tree, as the
+hook imports hatchling). These keys of `hub/pyproject.toml`, through which hatchling would read further files and
+which the test does not follow, fail it by name: `project.license-files`, `tool.hatch.version.path`, any
+`tool.hatch.build` key but `targets`, `hooks` and `exclude`, any build hook but `custom`, any wheel-target key but
+`packages` and `exclude`, and any metadata hook; so does a tracked `hub/hatch.toml`, which hatchling lays over
+`tool.hatch`. It runs every git-tracked file of those through a port of what BuildKit
+applies when it sends the context: moby's `ignorefile` and `patternmatcher` (v0.6) read the file (lines end at LF,
+a CR before it, a BOM and a `#` in the first column dropped, Go's white-space trim, each pattern cleaned of `.` and
+`..` and trimmed and cleaned once more with its `!`), and `*` and `?` stop at `/`, `**/` matches zero or more
+directories, a leading `**` with nothing wild after it is a suffix, a trailing one a prefix, and a regular
+expression matches the whole name. fsutil's walker decides as `MatchesUsingParentResults` does: each directory on
+the way down and then the file is matched, a pattern that matched a parent counts below it but one that was not
+evaluated there does not, and the last matching pattern decides. A lone `!` or `!/`, a trailing `\` and an
+unclosed `[` are refused, as Docker refuses them. It names each excluded
+file; an input with no tracked file fails too, and so does a checkout without `deploy/Dockerfile` or the ignore
+file (only a tree without git, an sdist, skips it). When it was written, the port picked exactly the files a real
+`docker build` context held (Docker 29.9.2: a `FROM scratch` build with `COPY . /ctx`, exported with
+`--output type=local`, compared with the port over every file of the author's working tree): 722 with the
+allowlist, 721 without `!hub/hatch_build.py`, and the same for each of the edge cases above, the parent rule's
+included. A change to the ignore file alone does not start the hub jobs; the image job, which it does start,
+builds the real context. Its own cases pin
+them; a pattern form none of them covers (an escape before a letter, for one) is not claimed.
+
+**Reason:** the jour fixe wanted the gap found before a push, not in CI: the hub's tests run in CI on every hub
+change and locally with `make -C hub test`, and need neither Docker nor a network.
+
+**Rejected alternatives:**
+- A `docker build` of the context inside the test: needs a Docker daemon, which neither the hub's test jobs nor
+  most contributors' machines have, and the image job already does it.
+- The `docker` Python package's `exclude_paths` as the matcher: a new test dependency, pinned with hashes, for
+  about sixty lines of matching rules.
+- A fixed list of the build inputs in the test: the next new input would be missing from it, as `hatch_build.py`
+  was from the allowlist.
+
 ## The image sets MALLOC_ARENA_MAX=2, because the process grew with every request through fragmented arenas
 
 **Id:** a20c28f6-6b1d-48c1-b60e-7fc9191e90df
@@ -351,6 +400,66 @@ version to name, and the package path stays untested).
   platform without the wheel uses; it is kept and proven instead.
 - An API token stored as a repository secret: a long-lived credential;
   trusted publishing needs none.
+
+## Every deploy of maity.team is a release: a version bump as the last merge, then the maintainer's `v*` tag
+
+**Id:** 1555765c-85df-41a5-9929-2ee3479ce1fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump and redoing the fold before the final MERGE-READY set by the team lead); the maintainer's answer to req-k3acfg3wva0g, 2026-11-10 (fold the changelog at every release); the log of the `v0.1.0a1` run of publish-image (job 129086565903); `.github/workflows/publish-image.yml`; `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
+**Revisit when:** a deploy runs an image no tag built, the deploy stops being a manual step on the maintainer's command, or the hub reaches its beta and leaves the `0.1.0aN` pre-releases
+**See:** packaging.md#the-hub-is-published-to-pypi-as-maity-hub-from-the-same-v-tag-as-the-image-built-from-a-hashed-lock — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-10
+
+Until deploy 5, maity.team ran images built from main by commit, and
+only `0.1.0a1` was ever tagged. From deploy 6 on, every deploy also
+publishes `maity-hub` on PyPI, with the image's version. Each deploy goes
+through the same steps:
+
+1. A pull request raises `version` in `hub/pyproject.toml` to the next
+   pre-release. It also raises `appVersion` in the Helm chart to match,
+   together with the chart's own `version`, and folds `changelog.d/` into
+   `CHANGELOG.md` with `tools/changelog.py release <version>` in a commit of
+   its own. That pull request is the last merge before the deploy, and the
+   fold is redone on the newest main right before its final MERGE-READY.
+2. ci passes on the push of that merge.
+3. The maintainer pushes `v<version>` on that commit, and nobody else
+   pushes a `v*` tag. The tag builds the package and the image, gated as
+   in 843b8d35.
+4. Ops deploys the image that tag built.
+
+The deployment itself (manual approvals, the maintainer's command) does
+not change. The chart's `appVersion` follows the bump so that its default
+image tag names the image the release tag builds. It had stayed at
+`0.1.0.dev0`, which was never published. For that image to exist,
+`publish-image.yml` tags the image with `type=pep440` rather than
+`type=semver`. The pinned metadata-action drops a PEP 440 pre-release such
+as `0.1.0a1` as invalid SemVer, so the
+`v0.1.0a1` run logged `v0.1.0a1 is not a valid semver` and pushed only
+the commit-SHA tag (found in the review of this change). The deploy of
+maity.team pins the image by digest, so the default tag only matters to a
+chart install that sets neither `image.tag` nor `image.digest`. The labels
+`app.kubernetes.io/version` show `appVersion` either way.
+
+**Reason:** this is the maintainer's decision; no reason beyond it was
+stated.
+
+**Rejected alternatives:**
+- Deploying images built from main by commit and tagging releases
+  separately: the status quo until deploy 5. What maity.team runs then
+  has no version a person could install.
+
+Every hub release folds the changelog (the maintainer, 2026-11-10,
+req-k3acfg3wva0g: the tidiest way). `v0.1.0a1` was tagged without a fold,
+so the fold for `0.1.0a2` takes in every fragment since the start. The
+fold has to be redone on the newest main because fragments of pull
+requests merged after it would otherwise stay in `changelog.d/` and miss
+the release they shipped in. The fold is a commit of its own, with the
+command in its message, so a reviewer can rerun the tool and compare.
+
+The fold had a rejected alternative: leaving the fragments unfolded, as
+at `v0.1.0a1`. The maintainer chose the fold as the tidier way, and no
+further reason was stated.
 
 ## The sdist carries the dashboard and the join page under `bundled/`
 

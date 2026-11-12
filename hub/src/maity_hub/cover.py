@@ -377,6 +377,13 @@ def still_with(card: Any, sub_id: int | None) -> bool:
     return bool(card.assigned_to == sub_id and card.claim_holder in (None, sub_id))
 
 
+def gives_back(card: Any, sub_id: int | None) -> bool:
+    """Whether a cover's end gives this covered card back to the member (§6.12), the
+    member's role aside: still with its substitute, not touched by it, not closed. The role
+    guard of §2.3 asks the same, so the two cannot drift."""
+    return still_with(card, sub_id) and not card.cover.get("touched") and card.status not in CLOSED
+
+
 def _set_state(
     conn: Connection, row: Any, state: str | None, by: int | None, since: datetime | None
 ) -> None:
@@ -427,7 +434,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
             continue
-        if cover.get("touched") or card.status in CLOSED or row.role == "expert":
+        if not gives_back(card, members_by_principal.get(cover["by"])) or row.role == "expert":
             # An expert takes no cards back (§2.3 "The expert"): the substitute keeps it.
             kept.append(card.id)
         else:
@@ -506,27 +513,58 @@ def touch(conn: Connection, card: Any, principal: str) -> None:
     )
 
 
-def routed(conn: Connection, membership_id: int | None) -> tuple[int | None, dict[str, Any] | None]:
-    """Area routing while a cover runs (§6.12): a new card for the covered member goes
-    to its substitute, with `cover` set. Returns the assignee and the card's cover."""
+def _assignment_cover(covered: Any, sub: Any) -> dict[str, Any]:
+    """`cover` on a card area routing assigns while this cover runs (§6.12).
+
+    `since` is the running cover's, so the return groups the card with it."""
+    return {
+        "for": _principal(covered),
+        "by": _principal(sub),
+        "since": clock.rfc3339(covered.cover_since),
+        "moved": "assignment",
+        "instance": None,
+        "touched": False,
+    }
+
+
+class _OpenCard:
+    """A new area-routed card: open, and not under a takeover (§6.4)."""
+
+    id = ""
+    status = "open"
+
+
+def routed(
+    conn: Connection, membership_id: int | None, card: Any | None = None
+) -> tuple[int | None, dict[str, Any] | None]:
+    """Area routing while a cover runs (§6.12). Returns the assignee and the card's cover.
+
+    A new card for the covered member goes to its substitute. When that substitute's
+    membership has ended, the cover itself runs on (`cover_by` stays who it started
+    with) and the card goes to the first entry of the cover order, as it stands now,
+    that is available, not itself covered, and may take the card. With no such entry
+    it goes to the covered member, as without cover."""
     if membership_id is None:
         return None, None
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
     if row.cover_state != "covered" or row.cover_by is None:
         return membership_id, None
     sub = conn.execute(select(t.membership).where(t.membership.c.id == row.cover_by)).one()
-    if sub.role == "expert":
-        # An expert takes no cards (§2.3 "The expert"); the role change waits while the cover
-        # runs, so this is a backstop: the card goes to the covered member, as without cover.
-        return membership_id, None
-    return sub.id, {
-        "for": _principal(row),
-        "by": _principal(sub),
-        "since": clock.rfc3339(row.cover_since),
-        "moved": "assignment",
-        "instance": None,
-        "touched": False,
-    }
+    if sub.removed_at is None:
+        if sub.role == "expert":
+            # An expert takes no cards (§2.3 "The expert"); the role change waits while the
+            # cover runs, so this is a backstop: the card goes to the covered member.
+            return membership_id, None
+        return sub.id, _assignment_cover(row, sub)
+    # The substitute's membership has ended. The removal already took them out of every
+    # `substitutes` list (`availability.drop_substitute`); walk what remains.
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    prospect = card if card is not None else _OpenCard()
+    ready = available(conn, project, cover_order(conn, project, row), clock.now())
+    for entry in ready:
+        if may_take_card(conn, project, prospect, entry):
+            return entry.id, _assignment_cover(row, entry)
+    return membership_id, None
 
 
 def view(cover: dict[str, Any] | None) -> dict[str, Any] | None:

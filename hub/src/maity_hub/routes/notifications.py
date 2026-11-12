@@ -35,7 +35,7 @@ IDS_MAX = 200
 POLL = 0.5  # seconds between looks while a long-poll holds
 # Full answers (and marks) at once per hub process. Each derives every item of 30 days
 # and holds a pooled connection while it does; more of them would take the pool from
-# every other call. A held long-poll looks at `listing.stamp` between them instead.
+# every other call. A held long-poll looks at `listing.held_stamp` between them instead.
 AT_ONCE = 4
 
 # One notifications long-poll per cookie session; a newer one supersedes it (§18.2).
@@ -122,6 +122,10 @@ async def list_notifications(
     wait = wait_of(request)
     if wait and after is None:
         raise invalid({"wait": "needs_after"})
+    if wait and limit == 0:
+        # A wait with `limit=0` would hold for an item it may not list (§18.2, the
+        # maintainer's decision, seq 109132).
+        raise invalid({"wait": "needs_limit"})
     kinds = _kinds(_filters(kind, None, "kind"))
     slugs = _filters(project, None, "project")
     older = None
@@ -143,14 +147,24 @@ async def list_notifications(
             # while the request waited receives nothing more (§18.2).
             _require_live(conn, session)
             found = _answer(conn, request, human_id, limit, older, unread, kinds, slugs, after)
-            return found, listing.stamp(conn, human_id)
+            # Only a call that can hold compares stamps; any other reads none (review of #1623),
+            # nor does an answer with items, which a held call returns at once and a held loop
+            # returns as moved: nothing compares its stamp.
+            return found, listing.held_stamp(conn, human_id) if wait and not found["items"] else ()
 
-    def unchanged(seen: tuple[Any, ...]) -> bool:
-        """Whether nothing an answer reads moved since `seen`: a few aggregates, not
-        the derivation of every item."""
+    def unchanged(seen: tuple[Any, ...]) -> tuple[bool, tuple[Any, ...]]:
+        """Whether nothing an answer reads moved since `seen`, and the stamp to compare
+        with next: a few aggregates, not the derivation of every item. Heads moved only by
+        rows that make no item of the human (`listing.quietly_moved`) count as unchanged,
+        and the new stamp is the one seen from then on."""
         with engine_of(request).begin() as conn:
             _require_live(conn, session)
-            return listing.stamp(conn, human_id) == seen
+            now = listing.held_stamp(conn, human_id)
+            if now[0] == seen[0]:  # the positions alone moved: nothing to look at yet
+                return True, seen
+            if listing.quietly_moved(conn, human_id, seen, now):
+                return True, now
+            return False, seen
 
     def still_live() -> None:
         with engine_of(request).begin() as conn:
@@ -214,7 +228,8 @@ async def list_notifications(
             if _holding.get(session) is not token:
                 await run_in_threadpool(still_live)
                 return JSONResponse({**first, "superseded": True})
-            if await run_in_threadpool(unchanged, seen):
+            same, seen = await run_in_threadpool(unchanged, seen)
+            if same:
                 continue
             again, seen = await _limited(request, answer)
             if moved(again):
@@ -260,7 +275,14 @@ def _answer(
     # dashboard asks for the counts alone on every page.
     found = (
         items.derive_page(
-            conn, where, count=limit + 1, newest_first=since is None, wanted=wanted, since=since
+            conn,
+            where,
+            count=limit + 1,
+            newest_first=since is None,
+            wanted=wanted,
+            since=since,
+            kinds=kinds,
+            projects=project_ids,
         )
         if limit
         else []

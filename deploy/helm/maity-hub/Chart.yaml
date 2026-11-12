@@ -5,9 +5,9 @@ description: >-
   external PostgreSQL; migrations run as a Job before every rollout.
 type: application
 # The chart's own version; bump it with every change to deploy/helm/.
-version: 0.1.0
+version: 0.1.3
 # The hub version the chart is written for, and the default image tag.
-appVersion: "0.1.0.dev0"
+appVersion: "0.1.0a4"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/oliver-zehentleitner/maity
 sources:

@@ -14,14 +14,14 @@ from typing import Any
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 from sqlalchemy.orm import aliased
 
-from maity_hub import avatars, catalog, clock, events, inbox, namespace
+from maity_hub import avatars, catalog, clock, events, inbox, invitations, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
 from maity_hub.views import deleted, deleted_person
 
 WINDOW = timedelta(days=30)
-KINDS = ("inbox", "chat", "mention", "security")
+KINDS = ("inbox", "chat", "mention", "security", "invitation")
 REQUEST_EVENTS = ("request_created", "request_forwarded", "request_answered", "request_withdrawn")
 # The only event kinds that can make a notification; the derive reads no other row.
 EVENT_KINDS = (
@@ -208,6 +208,8 @@ def derive_page(
     newest_first: bool,
     wanted: Callable[[Item], bool],
     since: Any = None,
+    kinds: set[str] | None = None,
+    projects: set[str] | None = None,
 ) -> list[Item]:
     """The items a page of `count` can reach: of each project's events, of its plain chat
     messages and of the account records, only the first `count` that `wanted` accepts,
@@ -216,10 +218,19 @@ def derive_page(
     the counts read `count_items` instead.
 
     A message row whose payload text names the human may be a mention, so it is derived
-    with the rest; the text test only selects (a false hit is classified like any row)."""
+    with the rest; the text test only selects (a false hit is classified like any row).
+
+    `kinds` and `projects`, the page's filters (`wanted` applies them too): a source that can
+    give no item of them is not read at all, since every row it holds would be rejected one
+    chunk at a time to the end of the window (tsk-p8w1s1zwsx2y). The plain chats give only
+    `chat`; the events besides them give `inbox` only from requests and the jour fixe, so
+    without `inbox` only their messages and mentions are read; the records give no `chat` and
+    no `mention`; a project outside `projects` gives nothing."""
     now = clock.now()
     found: list[Item] = []
     for mine in where.memberships:
+        if projects is not None and mine.project.id not in projects:
+            continue
         window = _event_window(where, mine, now)
         if since is not None:
             # Read after a position (`after`, oldest first): start right behind it, so a held
@@ -247,22 +258,42 @@ def derive_page(
             )
             .exists()
         )
-        others = (
+        others: tuple[Any, ...] = (
             t.event.c.kind.in_(EVENT_KINDS),
             or_(t.event.c.kind != "message", _names(where.human_id)),
             or_(t.event.c.kind.notin_(REQUEST_EVENTS), concerned),
             or_(t.event.c.kind.notin_(ADDRESSED), ~superseded),
         )
+        if kinds is not None and "inbox" not in kinds:
+            others = (*others, t.event.c.kind.in_(("message", "mentioned")))
         # Every item of these rows may be on the page: no `keep` beyond `wanted`.
         # Its first chunk is a whole one: few of these rows are rejected, so one statement
         # covers a page whatever the history, as the load test keeps (test_load.py).
-        found += _paged(
-            conn, where, mine, window, others, lambda i: True, count, newest_first, wanted, CHUNK
+        if kinds is None or kinds & {"inbox", "mention", "chat"}:
+            found += _paged(
+                conn,
+                where,
+                mine,
+                window,
+                others,
+                lambda i: True,
+                count,
+                newest_first,
+                wanted,
+                CHUNK,
+            )
+        if kinds is None or "chat" in kinds:
+            found += _chats(conn, where, mine, window, count, newest_first, wanted)
+    if kinds is None or kinds - {"chat", "mention"}:
+        found += _records_paged(
+            conn,
+            where,
+            now,
+            count,
+            newest_first,
+            wanted,
+            None if since is None else since.account,
         )
-        found += _chats(conn, where, mine, window, count, newest_first, wanted)
-    found += _records_paged(
-        conn, where, now, count, newest_first, wanted, None if since is None else since.account
-    )
     found.sort(key=lambda item: item.order, reverse=True)
     return found
 
@@ -273,6 +304,12 @@ def _may_concern(mine: Membership) -> Any:
     another member that no admin pool holds, nobody covers, and the member neither holds
     nor asked: agents asking each other, which make no item of the human's
     (tsk-spa1tad26vs1)."""
+    return may_concern_member(mine.id)
+
+
+def may_concern_member(member_id: int) -> Any:
+    """`_may_concern` by the membership's id, for the held long-poll's look
+    (`listing.quietly_moved`), which reads the stamp's memberships, not a `Scope`."""
     r = t.request.c
     return (
         select(r.id)
@@ -281,16 +318,26 @@ def _may_concern(mine: Membership) -> Any:
             r.personal.is_(False),
             or_(
                 r.to_kind != "member",
-                r.to_member == mine.id,
-                r.holder_member == mine.id,
+                r.to_member == member_id,
+                r.holder_member == member_id,
                 r.holder_pool.is_(True),
                 r.cover.is_not(None),
-                r.asked_by == mine.id,
-                r.on_behalf_of == mine.id,
+                r.asked_by == member_id,
+                r.on_behalf_of == member_id,
             ),
         )
         .exists()
     )
+
+
+def names(human_id: str) -> Any:
+    """`_names`, for the held long-poll's look (`listing.quietly_moved`)."""
+    return _names(human_id)
+
+
+def addressed(human_id: str) -> Any:
+    """`_addressed`, for the held long-poll's look (`listing.quietly_moved`)."""
+    return _addressed(human_id)
 
 
 def _names(human_id: str) -> Any:
@@ -617,7 +664,8 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
     change = f"tf_{data.get('change')}"
-    if change not in catalog.section("notify", "en") or change in ("tf_changed", "tf_failed"):
+    alarms = ("tf_changed", "tf_failed", "tf_failed_reset")  # not changes; other placeholders
+    if change not in catalog.section("notify", "en") or change in alarms:
         change = "tf_changed"
     return where.say(change, by=data.get("by"))
 
@@ -638,6 +686,14 @@ def _from_records(
     conn: Connection, where: Scope, now: datetime, types: Sequence[str] = RECORD_TYPES
 ) -> list[Item]:
     return _record_items(conn, where, now, conn.execute(_record_rows(where, now, types)).all())
+
+
+def _personal_kind(request: Any) -> str:
+    """The kind of a personal request's item (§18.1): `invitation` for the consent request
+    an invitation by handle files (§3.4), so that its bell, push and mail follow that kind's
+    settings (§18.4); `inbox` for every other."""
+    proposal = request.proposal if isinstance(request.proposal, dict) else {}
+    return "invitation" if proposal.get("kind") == invitations.KIND else "inbox"
 
 
 def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[Any]) -> list[Item]:
@@ -686,7 +742,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
             )
             items.append(
                 Item(
-                    kind="inbox",
+                    kind=_personal_kind(request),
                     at=row.at,
                     record=row.n,
                     project_id=request.project_id,
@@ -741,7 +797,33 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record=row.n,
                     title=_cut(
                         where.say(
-                            "tf_failed",
+                            # The reset's alarm says so: the mailbox, not the app, is
+                            # in other hands (§2.10, §18.1).
+                            (
+                                "tf_failed_reset"
+                                if data.get("method") == "password_reset"
+                                else "tf_failed"
+                            ),
+                            browser=data.get("browser") or where.say("a_browser"),
+                            os=data.get("os") or where.say("unknown_os"),
+                            ip=data.get("ip") or "?",
+                        )
+                    ),
+                    target={"type": "settings", "id": "security"},
+                    url=_url(where, "/account/security"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
+        elif row.type == "password_reset":
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(
+                        where.say(
+                            "password_reset",
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",

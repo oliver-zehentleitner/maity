@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from maity import __version__
+from maity import __version__, clonecheck
 from maity.runner import adapters, config, loop, supervisor
 from maity.runner.asuser import AsUser
 
@@ -45,9 +45,17 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
+        clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
+
+
+def test_claude_code_interactive_resumes_its_conversation_after_hung(tmp_path: Path) -> None:
+    launch = adapters.launch(context(tmp_path, resume=True))
+    assert launch.argv[-2:] == ["--continue", adapters.RESUME_PROMPT]
+    assert adapters.START_PROMPT not in launch.argv
 
 
 def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_prompt(
@@ -127,7 +135,17 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
     assert f"Read(/{ws}/.git/maity/**)" in deny
-    assert f"Edit(/{ws}/.git/**)" in deny  # config, hooks; Edit covers every file tool
+    # What makes git run something, never all of .git: the sandbox makes an Edit deny a write
+    # deny, and git could no longer fetch or commit (tsk-2zz5tjpbt28n).
+    assert [rule for rule in deny if "/.git/" in rule] == [
+        f"Edit(/{ws}/.git/config)",
+        f"Edit(/{ws}/.git/config.worktree)",
+        f"Edit(/{ws}/.git/hooks/**)",
+        f"Edit(/{ws}/.git/info/**)",
+        f"Edit(/{ws}/.git/objects/info/alternates)",
+        f"Edit(/{ws}/.git/maity/**)",
+        f"Read(/{ws}/.git/maity/**)",
+    ]
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
@@ -139,7 +157,19 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert strict["allowUnsandboxedCommands"] is False
     assert strict["autoAllowBashIfSandboxed"] is False  # the allowlist still decides
     assert strict["filesystem"]["denyRead"][0].endswith("/.git/maity")
-    assert strict["filesystem"]["denyWrite"] == strict["filesystem"]["denyRead"]
+    sandboxed = str(tmp_path / "s" / "ws" / "maity" / "agent-3" / ".git")
+    assert strict["filesystem"]["denyWrite"] == [
+        f"{sandboxed}/{name}"
+        for name in (
+            "maity",
+            "config",
+            "config.worktree",
+            "hooks",
+            "info",
+            "objects/info/alternates",
+        )
+    ]
+    assert not any(path.endswith("commondir") for path in strict["filesystem"]["denyWrite"])
     assert strict["excludedCommands"] == ["maity *"]  # it alone reads the credential
     assert strict["network"] == {
         "allowedDomains": ["github.com", "maity.team"],
@@ -329,6 +359,9 @@ def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
                   placement={**PLACEMENT, "mode": "supervised", "model": "gpt-5.5"})  # fmt: skip
     launch = adapters.launch(ctx)
     codex_home = Path(launch.env["CODEX_HOME"])
+    # Codex runs maity inside its sandbox, which cannot write the runner's directory: git's own
+    # repository stays in `.git/maity`, named so, never by leaving the variable out.
+    assert launch.env[clonecheck.GIT_PRIVATE_ENV] == clonecheck.IN_CLONE
     assert codex_home.parent == ctx.agent_dir
     assert (codex_home / "auth.json").resolve() == (home / "codex" / "auth.json").resolve()
     assert (ctx.clone / ".git" / "maity").is_dir()

@@ -179,7 +179,7 @@ window.Maity = window.Maity || {};
     return h("section", { class: "overview-part", "aria-labelledby": "overview-members" },
       head("overview-members", M.t("overview.team.title"),
         list.length ? M.t("overview.team.facts", { humans: M.t("overview.team.humans", { count: humans }), agents: M.t("overview.team.agents", { count: agents }), online }) : null,
-        h("a", { href: ctx.link("members"), "data-key": "members" }, M.t("overview.team.all"))),
+        h("a", { href: ctx.link("team"), "data-key": "members" }, M.t("overview.team.all"))),
       list.length
         // By trust (§2.3); each chip names its role on hover.
         ? h("div", { class: "overview-roles" }, M.trust.TRUSTS.filter((t) => list.some((m) => m.trust === t)).map((t) =>
@@ -314,7 +314,12 @@ window.Maity = window.Maity || {};
         draw(null, err);
       }
     }
-    append(root, h("h2", null, M.t("overview.title")), tabsNav(ctx, tab), status.el, box);
+    // Report the project to the instance's admins (§16.8, tsk-7ze5w6ymf7bw), by its full name: at the
+    // end of the overview, out of the way of its summary.
+    const reporting = M.report && ctx.me.kind === "human" ? M.report.control({ type: "project", id: ctx.slug }, "project") : null;
+    append(root, h("h2", null, M.t("overview.title")), tabsNav(ctx, tab), status.el, box,
+      reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null);
+    if (reporting && M.report.asked()) reporting.open();
     // A summary is not read line by line: it is drawn again in place. A
     // trigger during a read runs one more read after it, so none is lost.
     let reading = false;

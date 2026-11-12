@@ -5,7 +5,8 @@
 // closes it too. Items are links (href), actions (onSelect) or a
 // disabled note (disabled: true, with why). An item with `checkbox: true`
 // and `checked` is a switch: it keeps the menu open, so several are
-// switched in one go, and the focus stays on it.
+// switched in one go, and the focus stays on it. An item's `key` (data-key) names what it does
+// independently of its words, so that a view drawing the menu anew can find the same item again.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -14,6 +15,10 @@ window.Maity = window.Maity || {};
   const { h, append, clear } = M.dom;
   const SVG = "http://www.w3.org/2000/svg";
   let serial = 0;
+  // Each menu by its button, so that a view which draws a menu anew can open the new one where the
+  // old one stood open (M.menuOf): the board's redraws that no action of the reader starts.
+  const MENUS = new WeakMap();
+  M.menuOf = (button) => MENUS.get(button) || null;
 
   // A gear of eight teeth, drawn from points; it takes the text colour.
   function gear(size) {
@@ -119,7 +124,14 @@ window.Maity = window.Maity || {};
     svg.appendChild(path);
     return svg;
   }
-  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, theme: themeIcon };
+  // A closed padlock for a private project (tsk-5t3qd0m9rj6r): the shackle's inside cut out of
+  // one path, so it takes the text colour in both themes.
+  function lock(size) {
+    const svg = bars(size, "M7 10V7a5 5 0 0 1 10 0v3h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2.5 0h5V7a2.5 2.5 0 0 0-5 0z");
+    svg.firstChild.setAttribute("fill-rule", "evenodd");
+    return svg;
+  }
+  M.icons = { gear, bell, chat, lead, newGroup, writeProject, plus, close, expand, collapse, lock, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...],
   // listLabel (the list's name, when the button's label carries a state that changes) }
@@ -158,7 +170,7 @@ window.Maity = window.Maity || {};
         // An item of a choice (checked given) says whether it is the current one.
         const choice = typeof it.checked === "boolean";
         const attrs = { role: choice ? (it.checkbox ? "menuitemcheckbox" : "menuitemradio") : "menuitem", "aria-checked": choice ? String(it.checked) : null,
-          tabindex: "-1", class: "menu-item" + (choice && it.checked ? " checked" : ""), title: it.title || null };
+          tabindex: "-1", class: "menu-item" + (choice && it.checked ? " checked" : ""), title: it.title || null, "data-key": it.key || null };
         let el;
         if (it.disabled) {
           el = h("span", Object.assign(attrs, { "aria-disabled": "true", class: "menu-item disabled" }), it.label,
@@ -200,6 +212,8 @@ window.Maity = window.Maity || {};
       else if (e.key === "Home") { e.preventDefault(); items[0].focus(); }
       else if (e.key === "End") { e.preventDefault(); items[items.length - 1].focus(); }
     });
-    return { el: box, button, close };
+    const api = { el: box, button, close, open };
+    MENUS.set(button, api);
+    return api;
   };
 })(window.Maity);

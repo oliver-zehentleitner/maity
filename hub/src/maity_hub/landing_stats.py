@@ -23,6 +23,7 @@ from sqlalchemy import Connection, func, select
 
 from maity_hub import clock, instance_counts, public_projects
 from maity_hub import tables as t
+from maity_hub.seen import SEEN_EVERY
 
 TTL = timedelta(minutes=5)
 ONLINE = timedelta(seconds=120)
@@ -48,7 +49,8 @@ def compute(conn: Connection) -> dict[str, Any]:
         select(func.count()).where(
             t.human.c.account_status == "active",
             t.human.c.deleted_at.is_(None),
-            t.human.c.last_seen_at >= now - ONLINE,
+            # the latest call the stored time may stand for (§2.4, `seen`)
+            t.human.c.last_seen_at >= now - ONLINE - SEEN_EVERY,
         )
     ).scalar_one()
     # Instances behind the agents and the online agents, by the one counting rule

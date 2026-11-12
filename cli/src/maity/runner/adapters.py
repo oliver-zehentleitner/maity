@@ -29,6 +29,13 @@ START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
     "comes first. Then work as `docs/agents.md` and the rules in the packet say."
 )
+# An interactive session the runner ended because its agent stopped listening (§15.14) starts
+# again on the same conversation with this line, where the harness can resume one.
+RESUME_PROMPT = (
+    "The runner ended and resumed this session: you had stopped listening (no `maity wait` "
+    "ran and nothing changed on screen). Run `maity resume`, then carry on with your work and "
+    "your wait loop."
+)
 # Supervised runs end with the turn: the loop starts the next one on the next event.
 SUPERVISED_PROMPT = (
     START_PROMPT + " Handle what is waiting for you, checkpoint what you hold, then end your "
@@ -50,6 +57,19 @@ GIT_DENIED = (
     "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
 )  # fmt: skip
 
+
+# What in a clone's .git redirects git's configuration, hooks or object sources: never
+# written by the agent. Not everything that can make git run something: a rebase state
+# (`rebase-merge/`) the agent wrote runs on `rebase --continue` (cli/context/runner.md). The
+# rest of .git (refs, index, objects, logs, FETCH_HEAD) is what commit, fetch and push need
+# between them: a commit writes the index, a fetch FETCH_HEAD, both refs, objects and logs.
+# Not `commondir`: GIT_COMMON_DIR pins the session's git to the real .git (below),
+# and the sandbox's guard on a missing commondir leaves git unable to read it at all.
+# Verified on a sandboxed Claude Code run (cli/context/runner.md).
+# Not `objects/info/http-alternates`: only a dumb-HTTP fetch reads it (the forge speaks smart
+# HTTP), clonecheck refuses it with content, and a deny on a missing file would leave one
+# more placeholder that was not seen in a sandboxed run.
+GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
 READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
@@ -83,6 +103,7 @@ class Context:
     workspaces: Path | None = None  # the root of every clone, for sandboxes that can carve
     as_user: AsUser = AsUser()  # who the agents run as (§7.6)
     agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
+    resume: bool = False  # interactive: continue the harness's last conversation (§15.14)
 
 
 @dataclass(frozen=True)
@@ -110,6 +131,18 @@ def launch(ctx: Context) -> Launch:
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     ctx.as_user.write(ctx.clone / clonecheck.MARKER_PATH, ctx.placement["id"] + "\n")
+    # Which directory `.git` is: the sandbox does not keep the agent from renaming it, so
+    # maity outside the sandbox takes `.git` only as this one (clonecheck.opened_git).
+    env[clonecheck.GIT_INODE_ENV] = str(ctx.as_user.inode(ctx.clone / ".git"))
+    # git's own repository for each run maity starts, outside the clone, in the agent's
+    # directory the sandbox hides (clonecheck._private_dir). Codex runs maity in its sandbox,
+    # which cannot write there: named as the clone's `.git/maity`.
+    if ctx.harness.id == "codex":
+        env[clonecheck.GIT_PRIVATE_ENV] = clonecheck.IN_CLONE
+    else:
+        private = ctx.agent_dir / "git"
+        ctx.as_user.mkdir(private)
+        env[clonecheck.GIT_PRIVATE_ENV] = str(private)
     # The git maity starts there: this one, found on the runner's PATH, not the agent's.
     git = proc.program("git")
     if git is not None:
@@ -170,11 +203,14 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
-    # Agents commit through git and never edit .git: its config and hooks would turn an
-    # allowed `git status` into anything. The credential is not readable through Read.
+    # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
+    # Not all of .git: the sandbox turns an Edit deny into a write deny for every command, and
+    # git could no longer fetch or commit. The credential is not readable through Read.
     # `Edit(…)` covers every file-editing tool; Claude Code ignores a `Write(…)` deny rule.
-    deny = [f"Edit(/{ws}/.git/**)"]
-    deny += [f"Read(/{ws}/.git/maity/**)"]
+    git = f"{ws}/.git"
+    deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
+            for name in GIT_PROTECTED]  # fmt: skip
+    deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
     deny += [f"Bash({rule})" for rule in GIT_DENIED]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
@@ -197,8 +233,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            "filesystem": {"denyRead": [f"{ws}/.git/maity", *(str(p) for p in ctx.private)],
-                           "denyWrite": [f"{ws}/.git/maity"]},
+            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
+                           "denyWrite": [f"{git}/maity",
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED)]},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
     return settings
@@ -243,6 +280,8 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
+        if ctx.resume:  # `--continue`: the clone's latest conversation, with its context
+            return Launch([*base, "--continue", RESUME_PROMPT], env)
         return Launch([*base, START_PROMPT], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).

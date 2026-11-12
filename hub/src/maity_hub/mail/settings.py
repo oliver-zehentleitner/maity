@@ -22,6 +22,7 @@ from maity_hub.errors import invalid
 from maity_hub.mail import address, headers
 from maity_hub.mail.environment import (
     DEFAULT_PORTS,
+    GRACE_MAX,
     MAX_PASSWORD,
     MAX_PER_HOUR,
     MAX_USERNAME,
@@ -44,7 +45,9 @@ VALUE_FIELDS = (
     "max_per_hour",
     "security_max_per_hour",
     "sign_in_max_per_hour",
+    "password_reset_max_per_hour",
     "registration_max_per_hour",
+    "online_grace_minutes",
 )
 DEFAULTS: dict[str, object] = {
     "enabled": True,
@@ -57,7 +60,12 @@ DEFAULTS: dict[str, object] = {
     "max_per_hour": 500,
     "security_max_per_hour": 100,
     "sign_in_max_per_hour": 60,
+    # Reset mails (§2.10), a budget of their own: anonymous requests spend it, so it must stop
+    # nothing but reset mails, not the mail factor's, which `sign_in_max_per_hour` sends.
+    "password_reset_max_per_hour": 30,
     "registration_max_per_hour": 30,
+    # How long after a human stopped being present their held mail still waits (§18.5).
+    "online_grace_minutes": 5,
 }
 WRITABLE = (*DEFAULTS, "password")
 ENVIRONMENT_ONLY = ("signing_key", "secret_key")
@@ -203,6 +211,8 @@ def counters(conn: Connection) -> dict[str, int]:
         "security_queued": int(queued),
         "sign_in_sent_last_hour": recent.get(("sign_in", "sent"), 0),
         "sign_in_dropped_last_hour": recent.get(("sign_in", "dropped"), 0),
+        "password_reset_sent_last_hour": recent.get(("password_reset", "sent"), 0),
+        "password_reset_dropped_last_hour": recent.get(("password_reset", "dropped"), 0),
         "registration_sent_last_hour": recent.get(("registration", "sent"), 0),
         "registration_dropped_last_hour": recent.get(("registration", "dropped"), 0),
         "failed_last_hour": sum(n for (_, outcome), n in recent.items() if outcome == "failed"),
@@ -326,9 +336,17 @@ store.register(
         "mail.sign_in_max_per_hour", _whole(1, MAX_PER_HOUR), DEFAULTS["sign_in_max_per_hour"]
     ),
     store.Setting(
+        "mail.password_reset_max_per_hour",
+        _whole(1, MAX_PER_HOUR),
+        DEFAULTS["password_reset_max_per_hour"],
+    ),
+    store.Setting(
         "mail.registration_max_per_hour",
         _whole(1, MAX_PER_HOUR),
         DEFAULTS["registration_max_per_hour"],
+    ),
+    store.Setting(
+        "mail.online_grace_minutes", _whole(0, GRACE_MAX), DEFAULTS["online_grace_minutes"]
     ),
     # Written by the test send only, never by a PATCH (§16.3).
     store.Setting(LAST_TEST, _when(lambda v: isinstance(v, dict))),

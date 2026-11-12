@@ -504,7 +504,8 @@ A project's Team page has the tabs Members (humans and agents in one
 list, filterable, actions in a menu per row), Organisation (the org
 chart), Swarm (who works on what) and Availability. (Swarm is no longer
 a tab: since 2026-10-29 it is a section of the Overview, projects.md
-bfe4c4a6.) Built so far (2026-10-30): the Members tab at `members` and
+bfe4c4a6.) Built so far (2026-10-30): the Members tab at `members` (at `team` since
+2026-11-10, card tsk-yy9d5np8pjmr) and
 the Organisation tab at `organisation`; Availability is not built yet. Invitations and join
 links are an 'Add' button, not a tab; project settings stay their own
 page; old addresses redirect to the matching tab. The designer drafts it
@@ -1190,3 +1191,133 @@ be a channel for spam.
 The dashboard says what the relation allows: "May contact me" / "Can
 contact" ("Darf mich kontaktieren" / "Darf ich kontaktieren"), the
 maintainer's choice on req-x0va57a71221; the API says `contacts`.
+
+## A human member leaves a project on their own; an agent does not
+
+**Id:** 04bb56da-91d5-424f-ab26-5db6c816d82d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-06 (chat seq 81987), card tsk-z1khn7tkpyqk; the contract's shape (the same route, no step-up, agents do not leave, the actor instead of a field) proposed in the plan (seq 114169) and agreed by the lead, lotse#wtwy (seq 114178); the cover case raised in the review by maity-review-team-grok#spq4 (seq 115820) and asked for by the review lead, maity-review-team-lead#vuur (seq 115826)
+**Revisit when:** an agent should end its own membership, or leaving a project should ask for a step-up
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-11-11
+
+Every human member, a guest included, ends their own membership with
+`DELETE /projects/{owner}/{slug}/members/{id}` naming their own member
+id, without `members:admin`. An agent naming its own id does not. The
+last owner cannot, and neither can the project's namespace owner nor an
+organisation's owner in one of its projects. An owner leaves while
+another owner remains. The effects are the removal's, on that one path.
+The `member_updated` has the member itself as `actor`, which tells a
+leaving from a removal. The agents the human owns follow the rule for
+an agent whose owner is no member
+(355f12f3-543f-4cf4-bcc5-ccad6e853af6): under `members` they are
+isolated, and under `anyone` one within `outside_roles` keeps working
+while one beyond them is isolated. The call offers no separate choice,
+and the dashboard's confirmation names which case applies to each agent
+and lists them. A running cover in which the leaver is the substitute
+that area routing names does not keep routing to them: each new card of
+the covered member goes to the first entry of its cover order, as it
+stands after the removal, that §6.12 would pick for that card now, and
+with none to the covered member as without cover. The cover itself runs
+on (ef231375-7a0f-40f2-8c62-251b8962c80c). The hub does this; the
+dashboard's confirmation follows in the web change.
+
+**Reason:** the maintainer asked on 2026-11-06, because leaving someone
+else's project needed self-removal as an admin. The shape agreed for
+this contract:
+- The same route, because `DELETE /orgs/{org}/members/{id}` already lets
+  every member leave an organisation themselves, and a second route
+  would be a second cascade to keep identical.
+- No step-up, because leaving mints nothing and grants nothing. Leaving
+  an organisation and an admin's removal of a member need none. §2.8.4
+  lists only calls that give access or move ownership. The dashboard's
+  confirmation is enough.
+- An agent does not leave on its own, because an agent ending its
+  membership would silently drop its owner's commitment in the project.
+  The owner decides about the agent: the owner removes it or deletes the
+  profile, and when the owner leaves, the rule for an agent whose owner
+  is no member applies.
+- The leaver's agents follow that rule, because leaving and removal are
+  one path, so an agent cannot fare differently because its owner left
+  on their own.
+- The cascade is the removal's, because a leaving that kept a
+  credential, a claim or a chat would be a softer removal, and one that
+  deleted what the member wrote would destroy the project's record. One
+  code path stays in step.
+- A cover stops routing to a substitute who left, because a member who
+  left can take no card. Routing to them would hide new work on a
+  membership nobody holds. Today `cover.routed` reads `cover_by` without
+  checking that the substitute is still active, so the hub step fixes
+  this for removal and leaving alike, on one path. The entry is the
+  first one §6.12 would pick for that card now, from the cover order as
+  it stands after the removal.
+
+**Rejected alternatives:**
+- A route of its own for leaving: see the reason above.
+- A step-up: the call takes access away and grants nothing, so it does
+  not belong on the list of calls that give access or move ownership.
+- An agent leaves by naming its own id, with or without its owner's
+  consent on that call: the membership is the owner's commitment in the
+  project, and ending it would be the agent's decision.
+- A choice on the call (take the agents along, or leave them): it would
+  be a second cascade.
+- A field on `member_updated` that marks a leaving: the actor is the
+  member, and a removal's actor is someone else. A new field would say
+  the same thing twice.
+- Keeping the member's claims, chats or credentials, or deleting the
+  cards, notes and messages it wrote: those are the removal's choices
+  already, and a second set would make the record depend on who ended
+  the membership.
+- Ending the covered member's whole cover when its substitute leaves:
+  cards the substitute already handed on or touched would then go back
+  to a member who is still out.
+- Leaving the cover as it is: new cards would go to a non-member.
+- Sending the next card always to the covered member, as without cover:
+  the cover order already names who takes the member's work while it is
+  out, so the next available entry takes it, and the covered member only
+  when there is none.
+
+## A running cover keeps naming the substitute it started with after that membership ends
+
+**Id:** ef231375-7a0f-40f2-8c62-251b8962c80c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the hub step of cards tsk-z1khn7tkpyqk and tsk-n5hqcbcg3xvw; the point the contract review left open, of what `covered_by` shows and who `cover_ended` names once the substitute's membership has ended
+**Revisit when:** a removal should retarget a running cover, or `covered_by` should name who the next card would go to
+**See:** members.md#a-human-member-leaves-a-project-on-their-own-an-agent-does-not — 04bb56da-91d5-424f-ab26-5db6c816d82d — as of 2026-11-12
+
+When the substitute of a running cover is removed or leaves, the cover
+row is not rewritten. `covered_by` keeps naming the substitute the cover
+started with (`cover_by`), including after that membership has ended.
+Each new card of the covered member is chosen apart from that field, from
+the cover order as it stands after the removal. When the covered member
+returns, `cover_ended` is the one `cover.end` already emits: one event
+per substitute that an item of this cover names (`cover.by`, same
+`since`). A new card routed to a later entry names that entry, so that
+entry is told. The original substitute is told when an item of the cover
+still names them, or when nothing of the cover was moved at all — then
+the event names the original `cover_by`, the one told when the cover
+started. A later card means something was moved, so that fallback does
+not also name the original.
+
+**Reason:** which entry may take a card depends on the card, so there is
+no single next substitute to store on the membership, and an emptied
+substitutes list is `wait` while the cover still runs. `covered_by` is
+how a reader sees that a cover is running. `cover.end` already tells
+whoever an item of the cover names; a second rule for a substitute who
+left would be a second cascade on the one removal path.
+
+**Rejected alternatives:**
+- Retarget `cover_by`, and so `covered_by`, to the next entry that could
+  take a card. Rejected because the next entry depends on the card, and
+  rewriting the cover would be a second cascade. With no entry left there
+  is still a cover, and nothing honest to point `cover_by` at.
+- Clear `covered_by` while the cover runs, so the view matches a new card
+  that went back to the member. Rejected because the cover has not ended,
+  and a null `covered_by` would say there is none.
+- Always emit `cover_ended` to the original substitute as well, even when
+  no item of the cover names them. Rejected because the return already
+  tells whoever the cover's items name, and the fallback for nothing
+  moved already names the one the cover started with.

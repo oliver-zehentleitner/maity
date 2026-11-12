@@ -365,7 +365,9 @@ def methods(request: Request) -> JSONResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         device_code = sign_in_settings.device_code_enabled(conn, hub)
-        email_link = sign_in_settings.view(conn, hub)["email_link_available"]
+        offered = sign_in_settings.view(conn, hub)
+        email_link = offered["email_link_available"]
+        password_reset = offered["password_reset_available"]
         env = hub.registration or registration.RegistrationEnvironment()
         resolved = registration.resolve(
             conn, env, registration.mail_ready(conn, hub), hub.public_url
@@ -376,6 +378,8 @@ def methods(request: Request) -> JSONResponse:
             "password": True,
             "device_code": device_code,
             "email_link": email_link,
+            # Whether "Forgot password?" is shown (§2.10); never whether an account could use it.
+            "password_reset": password_reset,
             # An allowlist with both lists empty admits nobody: no way in is shown (§2.7);
             # nor while a maintenance window runs, which refuses registration (§16.12).
             "registration": resolved.effective_mode in ("allowlist", "open")

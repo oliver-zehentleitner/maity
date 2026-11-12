@@ -903,8 +903,8 @@ SQLite, the later arrival still takes over.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-hnp19jx1ajvx; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub (one process, SQLite, local attachments) stays the default and keeps working, every scaling path is opt-in; `serving.py`, `cli._serve_workers`, `tests/test_workers.py`; uvicorn 0.54 `supervisors.multiprocess`; for the minimum share, card tsk-zm2z04ep2cma: checkouts of the serving pool counted per HTTP request on PostgreSQL across ten test files (383 tests, 4605 checkouts inside requests), peak one per request; the one nested checkout was the deliberate second writer of `test_of_two_concurrent_redactions_the_first_stands`, which showed the count sees one
-**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, the load test shows that more workers per pod buy less than more pods, or a request path takes a second connection from the serving pool while it holds one (a pool share of one would then wait on itself until the pool's timeout once the overflow share is in use, at once when it is 0), or card tsk-p80cre8r9355 maps the pool timeout (the known consequence below then reads differently)
+**Source:** card tsk-hnp19jx1ajvx; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub (one process, SQLite, local attachments) stays the default and keeps working, every scaling path is opt-in; `serving.py`, `cli._serve_workers`, `tests/test_workers.py`; uvicorn 0.54 `supervisors.multiprocess`; for the minimum share, card tsk-zm2z04ep2cma: checkouts of the serving pool counted per HTTP request on PostgreSQL across ten test files (383 tests, 4605 checkouts inside requests), peak one per request; the one nested checkout was the deliberate second writer of `test_of_two_concurrent_redactions_the_first_stands`, which showed the count sees one; for the 503 on a used-up pool, card tsk-p80cre8r9355 and `tests/test_db_pool.py`
+**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, the load test shows that more workers per pod buy less than more pods, or a request path takes a second connection from the serving pool while it holds one (a pool share of one would then wait on itself until the pool's timeout once the overflow share is in use, at once when it is 0)
 
 `MAITY_WORKERS` (chart: `config.workers`) sets how many processes `maity-hub serve` runs on one
 socket. The default is 1, and 1 is the hub as it always was: one process, no supervisor, any
@@ -916,22 +916,36 @@ only about processes.
 
 - **The pool is the hub's total.** `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` keep their
   meaning for the operator; each process holds its share, rounded down, so raising the workers
-  never adds to the pool connections asked of the database (entry on connections above). A share
-  of 0 pooled connections is refused at the start: SQLAlchemy reads `pool_size=0` as no limit, so
-  the rounded-down share would lift the cap it is meant to keep. The minimum was two while a
+  never adds to the pool connections asked of the database (entry on connections above). Since
+  tsk-v874y63b4z8p each process splits its share between its two engines (`serving.pool_shares`,
+  persistence.md 66f0bcf9): the async engine holds `MAITY_DB_ASYNC_POOL_SIZE` (set: divided by
+  the workers, at least one, never the whole share; unset: 8 of the share, at most half of it),
+  the sync engine the rest and the whole overflow, so the split adds nothing to the budget
+  either. The default was 2 while no call used the async engine (PR 1); since every call
+  authenticates there (PR 2) it is 8 but at most half the share, the project lead's decisions
+  (2026-11-11) after the load test and the review, so the sync cap is 8 of the default 16 (24
+  with the overflow), with about 3 threads busy on average in that test, and 4 of a pool of 8. This is a server database's budget: on SQLite the engines take no pool sizes
+  and keep SQLAlchemy's default for a file database each. A part of 0 pooled connections is refused at the start: SQLAlchemy reads
+  `pool_size=0` as no limit, so a rounded-down part would lift the cap it is meant to keep, and a
+  share therefore needs two, one per engine. The minimum was two while a
   shared count or the forge budget took a second connection from the same pool (entry 2bd65fec),
   so that a process with one waited on itself until the pool's timeout once its overflow share was
   in use. Since #1320 they have their own engine, and a measurement on PostgreSQL (card
   tsk-zm2z04ep2cma) found no request in the request handlers of the measured test files that held
-  two serving connections at once, so one is enough to be correct and more is throughput, the
-  operator's choice. The shared-counter connections (two per process), the listener connections
+  two serving connections at once, so one per engine is enough to be correct and more is
+  throughput, the operator's choice. The shared-counter connections (two per process), the listener connections
   (one per process) and the readiness probe's come on top. A known consequence of a share of one:
   the background passes take from the same pool, so a request that finds its pool share and its
   overflow share (`MAITY_DB_MAX_OVERFLOW` divided by the workers, rounded down) in use waits up to
-  SQLAlchemy's pool timeout (30 s) and then answers 500 `internal`, since
-  `sqlalchemy.exc.TimeoutError` is not mapped to 503. The gap predates the minimum of one, which
-  makes it reachable with one held connection when the overflow share is 0; mapping it is its own
-  card (tsk-p80cre8r9355).
+  SQLAlchemy's pool timeout (30 s). Since card tsk-p80cre8r9355 it then answers 503
+  `database_unavailable` with `Retry-After` (`errors.DATABASE_RETRY_AFTER_SECONDS`, the same as
+  for an unreachable database), not 500 `internal`: a used-up pool is load, not a fault, and a
+  client that waits and sends again is right to. The middleware's own reads before the route
+  (the maintenance window, the pre-check of a large body) answer that 503 themselves instead of
+  handing on to the route as they do for an unreachable database: the route would take from the
+  same used-up pool and wait the timeout a second time. Before that card it was a 500; the gap
+  predates the minimum of one, which makes it reachable with one held connection when the
+  overflow share is 0.
 - **The checks and the one-time work of a start run in the parent** before any worker is
   spawned: the startup checks (schema, secrets, mail, reserved holders, a required dashboard
   directory), then `app.start_once` (the generated text, the public pages, the sign-in

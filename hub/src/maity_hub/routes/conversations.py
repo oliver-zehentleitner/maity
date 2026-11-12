@@ -240,6 +240,20 @@ def _group(conn: Connection, mine: Membership, conversation_id: str) -> tuple[An
     return group, found
 
 
+def reads_messages(conn: Connection, mine: Membership, conversation_id: str) -> bool:
+    """Whether `…/conversations/{id}/messages` answers this member now (§9.1, §9.2), by the
+    checks that route makes: one of a direct chat's two parties, a group chat's participant
+    or a human reading it along. What `conversation_id` of one event shows (§8.9)."""
+    try:
+        if group_chats.is_group(conversation_id):
+            _group(conn, mine, conversation_id)
+        else:
+            _party(conn, mine, conversation_id, hidden=True)
+    except ApiError:
+        return False
+    return True
+
+
 def _messages(project_id: str, conversation_id: str, reader: Any = None) -> Any:
     """A conversation's messages, but those in the reader's hidden isolation windows
     (§6.2, §9.2)."""
@@ -401,7 +415,7 @@ def list_conversations(
         _mark_pinned(conn, caller, items)
         items.sort(key=lambda i: (i["_activity"], i["id"]), reverse=True)
         items.sort(key=_band)
-        bound = paging.scope(observed=observed, bands=True)
+        bound = paging.scope(observed=observed, bands=_BAND_ORDER)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
             band, after_id = _after_band(after)
@@ -456,7 +470,7 @@ def list_my_conversations(
             "unread": sum(i["unread"] for i in counted),
             "mentions_unread": sum(i["mentions_unread"] for i in counted),
         }
-        bound = paging.scope(me=True, observed=observed, bands=True)
+        bound = paging.scope(me=True, observed=observed, bands=_BAND_ORDER)
         if cursor is not None:
             at, after = paging.uncursor(cursor, bound)
             band, rest = _after_band(after)
@@ -505,12 +519,17 @@ def _mark_pinned(conn: Connection, caller: Caller, items: list[dict[str, Any]]) 
         item["pinned"] = (item["_project"], item["id"]) in held
 
 
+# Names this band order in the cursor's scope (§1.4). A cursor minted for the earlier
+# order, where a quiet pin sat below every chat with something new, is refused.
+_BAND_ORDER = "pinned-top"
+
+
 def _band(item: dict[str, Any]) -> int:
-    """The item's band in a list (§9.3 "Pinned"): pinned with something new, the others
-    with something new, pinned without, the rest. An observer's `null` counts as none."""
-    if item["unread"]:
-        return 0 if item["pinned"] else 1
-    return 2 if item["pinned"] else 3
+    """The item's band (§9.3 "Pinned"): pinned with unread, quietly pinned, unpinned with
+    unread, the rest. An observer's `null` counts as no unread."""
+    if item["pinned"]:
+        return 0 if item["unread"] else 1
+    return 2 if item["unread"] else 3
 
 
 def _after_band(after: str) -> tuple[int, str]:

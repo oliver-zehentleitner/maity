@@ -12,6 +12,7 @@ from sqlalchemy import Connection, func, insert, select, update
 from maity_hub import (
     allowed_projects,
     avatars,
+    chat_access,
     clock,
     events,
     handles,
@@ -172,7 +173,9 @@ def patch_agent(
     given = body.model_fields_set
 
     def action(conn: Connection) -> idempotency.Outcome:
-        owned(conn, agent_id, caller.principal_id)
+        # The lock first: a reset holds this row until its hold is written, so a display
+        # name reads that hold. `handles.rename` locks the same row, then the handle lock.
+        owned(conn, agent_id, caller.principal_id, lock=True)
         if "handle" in given:
             if body.handle is None:  # as in `PATCH /me`: null renames nothing
                 raise invalid({"handle": "required"})
@@ -344,3 +347,4 @@ def delete_profile(
     from maity_hub import cross_chats
 
     cross_chats.profile_left(conn, agent_id, by, "membership_removed")
+    chat_access.forget_agent(conn, agent_id)  # out of every allow and deny entry (§9.6)

@@ -74,31 +74,91 @@ snapshot, or close the request with the report still open.
 
 **Id:** 442bb50d-5a43-44f2-85c3-24a3fd39878f
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
-**Source:** `docs/api.md` §16.8 ("what they cannot read is `not_found`, exactly as a read would answer"); the implementation of the card; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29
-**Revisit when:** a further target becomes readable outside a membership (public profiles and pages, §16.9), or an owner outside a project reads a group chat along and should report from it
+**Source:** `docs/api.md` §16.8; the review of card tsk-pqbjrr4a1n5a; for the public swarm page, the coordinator's ruling after the first part's review, 2026-10-29; the maintainer's answers relayed by the team lead, 2026-11-11 (cards, the current name only, the neutral word once a page is gone, and every agent a stranger can see); the team lead's ruling of 2026-11-11 on a handle a project page lists twice (seq 110107; reopened in seq 110252 and 110253 after the reviews of #1407: the dashboard links each agent, and a report naming several agents has no single current name)
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-06
+**Revisit when:** a message is shown on a public page (§16.9), or the profile redesign (tsk-zrjxhxanfwzd) shows each agent with its owner on a project page
 
-A card, a message or a project is found through the reporter's
-membership (`access.membership`), as their reads are, and a message
-must pass `events.readable_by` with the redactions hidden. A profile is
-readable when the reporter is it, owns it, or shares an active project
-with it; an agent credential reaches its one project only. An agent may be
-named by its id or by its global name `<owner>/<handle>`. Anything else
-answers `not_found`, the same for a target that exists and one that does
-not.
+A stranger reports a target whose public page is served now, and only
+that. Served now means `MAITY_PUBLIC_PAGES` is `on` and the hub stores
+the page (§16.9). The page is where they see it, so the report is not
+narrower than the page: an agent with its own page, listed on its
+owner's served agents page (with or without a page of its own) or named
+on a served project page, a person whose page is served, a project whose page is
+served, and a card whose own page is served. A card with no stored page
+is members-only, and so is every message, because §16.9 shows no
+message. What the caller cannot read is `not_found`, the same for a
+target that exists and one that does not.
+
+The id is the one the page shows. A person is the current handle, never
+the account id or a member id: a public URL names no account (§6.10,
+§16.9). An agent is the current global name `<owner>/<handle>` from a
+page of its owner, where `<owner>` is the agent's owner; seen only on a
+project page, it is the handle that page shows with the project's
+current `full_name`, looked up among the agents that page lists. The
+dashboard's visitor view links each listed agent to its own page, so a
+reporter there has its global name; the handle form is for a reporter
+who has only the page's text. Handles are unique per owner only, so when
+the page lists the handle more than once the hub refuses it
+(`ambiguous_handle`) and the reporter reports from the agent's own page;
+a pick by the hub could report the wrong agent. A report names one
+agent. A
+project page's address names the project's owner, who need not own the
+agent, so it never gives `<owner>`. A project is the current `full_name`, a card the task id the page shows with
+the project's current `full_name`. By §16.8 a former name or an alias
+does not resolve, and `GET /me/reports` shows that current public name
+while the page is still served and a neutral word (`person`, `agent`,
+`project`, `card`) once it is not, so the list never keeps an old name or
+an alias.
+
+A caller who already reads the target inside a membership may still name
+a profile by the id that read uses. The hub stores a project and a
+profile by that id, so a rename does not reset the limits, and the
+admin's view shows the current `full_name`.
 
 Until 2026-10-30 an agent was also readable while a project's public
-swarm page showed it (`swarm_public: on`): strangers saw agents there, so
-that was where they reported them. The page and the flag went with
-contract #697 (§6.22), so today no page outside a project shows an agent
-and a stranger's report of one is `not_found`. A project's public page
-(§16.9) will show agents again; it brings the readability back with it
-(tsk-w89mspg3gwx1), and the global name is kept for that.
+swarm page showed it (`swarm_public: on`). The page and the flag went
+with contract #697 (§6.22). The public pages of §16.9 are what brings
+the stranger's report back, by the rule above (tsk-pqbjrr4a1n5a). The
+hub follows it since the hub part of tsk-pqbjrr4a1n5a: a stranger's
+target is found through the stored pages (`public_page`, by the path
+that is the current public name, while `MAITY_PUBLIC_PAGES` is on), a
+member's through the membership reads as before, and neither resolves
+a former name or an alias. A report of an agent by its handle on a
+project page keeps that project, so `GET /me/reports` names it the
+same way while the page lists it. The handle on a project page is a stand-in
+until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
+their agents under it) shows each agent with its owner where a project
+page lists it; that redesign may replace it.
 
-**Rejected alternative:** a lookup of the target by id, then a separate
-permission check: a different answer for an existing target the
-reporter may not read would tell them it exists.
+**Reason:** a report that refused a person, a project or a card the page
+already shows would be narrower than the page, and accepting an account
+id or an old name would publish an identifier the page and §16.9 keep
+out.
+
+**Rejected alternatives:**
+- A lookup of the target by id, then a separate permission check: a
+  different answer for an existing target the reporter may not read
+  would tell them it exists.
+- Leaving cards members-only while the card's page shows the title,
+  body and notes: the public text would have no report.
+- Treating every card as public, page or not: a stranger would learn
+  that a private card exists.
+- Reporting an agent from a project page only through its own page's
+  link (`agents[].page`): the dashboard links each listed agent, but the
+  static page shows only the name and the bare handle, and the
+  maintainer wants the handle as seen on the page to be enough.
+- One report naming every agent a duplicated handle lists, the admin
+  naming the one an action applies to (the first ruling): the reporter's
+  list then needs one current name for agents that may rename apart, and
+  the dashboard's link already names exactly one agent.
+- Taking `<owner>` from a project page's address: on `/alice/project`
+  Bob's agent would be named `alice/<handle>`, a wrong profile or
+  `not_found`.
+- Resolving an alias, as §6.24 does everywhere else: the answer would
+  confirm that the old name belongs to someone, which §16.9 refuses
+  even as a redirect.
 
 ## The limits count the stored reports, under the account's row lock
 
@@ -225,7 +285,11 @@ members that the contract waives only for this one change.
 type, stable target id, action); resolving the report again replaces
 it and `dismiss` deletes it. Ordinary writes that would undo it ask
 `moderation.refuse_held`: turning a project's badge on, reopening an archived project, a status change of a held cancelled card (checked before the transition, which §6.4 refuses anyway), renaming an agent
-or uploading a picture over a reset one. Since the public pages, the hold also decides what they serve: a held project,
+or uploading a picture over a reset one, changing an agent's display
+name, or turning a person's public profile on. A profile's writers take
+the owner's row before that read, and the reset and a hide take the
+same row before the hold is written (the entry "A profile writer takes
+the owner's row before it reads the hold"). Since the public pages, the hold also decides what they serve: a held project,
 profile or organisation has no page (`moderation.hold` in `public_projects`, `public_people`, `public_orgs`,
 `public_agents`). A message is public nowhere, so its hold changes nothing yet. A suspension is no hold: only the operator's
 `maity-hub account unsuspend` lifts it, `dismiss` does not.
@@ -270,3 +334,71 @@ The lock order is account, then project, then the human's own rows
 for an uncommitted suspension, so an issue could see the account
 unsuspended, and then commit a fresh credential after the suspension has
 revoked all the others.
+
+## A profile writer takes the owner's row before it reads the hold
+
+**Id:** d4ba888f-22ba-4a5c-b262-13dab0dedff8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-4mnn5q5cg3w4; pull request #1471 (motif choice and picture upload)
+**Revisit when:** a profile hold covers a writer that cannot take the owner's row first, or the lock order changes
+**See:** reports.md#holds-live-in-their-own-table-keyed-by-report-hide-is-the-hold-alone-until-public-pages — aab2c1b8-0a27-4bcf-832d-4f34a389e3d8 — as of 2026-11-11
+**See:** reports.md#a-suspension-takes-the-account-lock-first-every-issue-waits-for-it — 525c4922-109b-418f-82e2-0b02b285b946 — as of 2026-11-11
+
+Every writer that asks `moderation.refuse_held` for a profile takes the
+owner's row lock first (`avatars.lock_owner`, or `owned(..., lock=True)`
+on the same `agent_profile` row). A `remove` (`_reset_profile`) and a
+`hide` of a profile take that same lock before the hold is written. The
+reset also reads the profile row (its display name and handle) only
+after that lock, so a name a writer committed before the reset got the
+row is reset too. A writer that read "no hold" and then waited on the
+lock therefore reads the hold the reset or the hide committed, and is
+refused.
+
+The order is the suspension's: the account lock, then a project row,
+then the human's row or the agent profile's row. A request already holds
+the account lock shared before any other lock. `handles.rename` locks
+the profile row and then the handle lock, so a patch that locks the
+profile row first leaves that order. A project hide locks the project
+and does not take a profile row. A profile hide takes the profile row
+only, and `apply` holds no project lock before that. After the hold,
+`apply` may lock a project while it reconciles agents, and the notice
+locks the account's human row. A `remove` already holds the owner's row
+across both, because the reset locks it and then announces the picture
+in each project. The hide lock matches that; it does not take a lock
+`apply` already held.
+
+Writers this covers: an agent's display name (`PATCH /agents/{id}`), a
+person's `public_profile: true` (`PATCH /me`), a motif choice and a
+picture upload. `display_name: null` changes nothing and does not read
+the hold. A refusal raises inside the request's transaction, so a handle
+rename or a motif count in the same request is rolled back with it.
+
+Checked and left as they are: a human has no display-name write after
+registration; an agent's own `PATCH /me` sets no display name (a motif
+goes through `choose_motif`, which already locks first); an
+organisation has no profile hold, only a suspension: its handle rename
+and `public_page: on` read that hold after the route locked the
+organisation row, and its display name reads no hold at all (a
+suspended organisation may still change it).
+
+**Reason:** a read of the hold does not wait for an uncommitted one. A
+writer that looked before taking the row the reset holds can commit
+after the reset, and undo it.
+
+**Reason:** a read before the lock can see the name from before a
+writer's commit and skip the reset, which leaves the new name under the
+hold.
+
+**Rejected alternative:** only locking in the writers. A `hide` of a
+profile took no row lock, so `public_profile: true` could read "no hold"
+and commit after the hide had written one. The hide takes the same lock
+the writer waits on.
+
+**Rejected alternative:** re-reading only the display name after the
+update. One read under the lock is simpler and also covers the handle.
+
+**Rejected alternative:** a lock of its own for the hold, apart from the
+owner's row. The picture, the motif and the display name already
+serialise on that row; a second lock is another order to get wrong.

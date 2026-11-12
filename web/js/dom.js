@@ -5,9 +5,14 @@
 window.Maity = window.Maity || {};
 
 (function (M) {
+  // An <img> h() gave an on* handler. Listeners cannot be compared, so
+  // keepImages never swaps one of these for an older node (context/rendering.md).
+  const handledImgs = new WeakSet();
+
   // h("div", {class: "card", onclick: fn}, child, "text", [more])
   function h(tag, attrs) {
     const el = document.createElement(tag);
+    let handled = false;
     if (attrs) {
       for (const [key, value] of Object.entries(attrs)) {
         if (value === null || value === undefined || value === false) continue;
@@ -15,6 +20,7 @@ window.Maity = window.Maity || {};
           // Handlers are functions; a string here would be inline script.
           if (typeof value !== "function") throw new TypeError("h(): " + key + " must be a function");
           el.addEventListener(key.slice(2), value);
+          handled = true;
         } else if (key === "href" && M.route.isRoute(value)) {
           // A path of the dashboard, as the address bar holds it (js/route.js).
           el.setAttribute("href", M.route.href(value));
@@ -38,6 +44,7 @@ window.Maity = window.Maity || {};
         }
       }
     }
+    if (handled && String(tag).toLowerCase() === "img") handledImgs.add(el);
     for (let i = 2; i < arguments.length; i++) append(el, arguments[i]);
     return el;
   }
@@ -110,6 +117,66 @@ window.Maity = window.Maity || {};
   function clear(el) {
     while (el.firstChild) el.removeChild(el.firstChild);
     return el;
+  }
+
+  // Every <img> under root, the root itself included, in document order.
+  function imgsIn(root) {
+    const out = [];
+    if (!root || !root.querySelectorAll) return out;
+    if (root.tagName === "IMG") out.push(root);
+    const found = root.querySelectorAll("img");
+    for (let i = 0; i < found.length; i++) out.push(found[i]);
+    return out;
+  }
+
+  function attrNames(el) {
+    const names = typeof el.getAttributeNames === "function" ? el.getAttributeNames() : [];
+    const out = [];
+    for (let i = 0; i < names.length; i++) if (names[i] !== "src") out.push(names[i]);
+    return out;
+  }
+
+  // Every attribute other than src. A different alt, class, width or
+  // anything else means a different image: the fresh node stays.
+  function sameAttrs(a, b) {
+    const an = attrNames(a);
+    const bn = attrNames(b);
+    if (an.length !== bn.length) return false;
+    for (let i = 0; i < an.length; i++) {
+      if (b.getAttribute(an[i]) !== a.getAttribute(an[i])) return false;
+    }
+    return true;
+  }
+
+  // Before a fresh tree replaces an old one: where an <img> in the fresh
+  // tree has the same src and the same other attributes as one in the old,
+  // in document order, put that old node in its place. Each old node is
+  // used once. The browser then keeps the load it already started instead
+  // of aborting it and starting again. An <img> h() gave an on* handler is
+  // never swapped: listeners cannot be compared.
+  function keepImages(oldRoot, freshRoot) {
+    if (!oldRoot || !freshRoot || oldRoot === freshRoot) return freshRoot;
+    const oldImgs = imgsIn(oldRoot);
+    const used = new Set();
+    const freshImgs = imgsIn(freshRoot);
+    for (let i = 0; i < freshImgs.length; i++) {
+      const fresh = freshImgs[i];
+      if (handledImgs.has(fresh)) continue;
+      const src = fresh.getAttribute("src");
+      if (!src) continue;
+      let old = null;
+      for (let k = 0; k < oldImgs.length; k++) {
+        const candidate = oldImgs[k];
+        if (used.has(candidate) || handledImgs.has(candidate)) continue;
+        if (candidate.getAttribute("src") !== src || !sameAttrs(candidate, fresh)) continue;
+        old = candidate;
+        break;
+      }
+      if (!old || old === fresh) continue;
+      used.add(old);
+      if (fresh.parentNode) fresh.parentNode.replaceChild(old, fresh);
+    }
+    return freshRoot;
   }
 
   // A date and time in the reader's locale, through Intl (js/i18n.js).
@@ -322,12 +389,12 @@ window.Maity = window.Maity || {};
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
     const ref = !linkable
       ? h("span", { class: "member-ref plain", title: name }, pic, label)
-      : h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+      : h("a", { class: "member-ref", href: ctx.link("team", id), title: name, "data-member": id }, pic, label);
     // The #id is a link of its own beside the handle's, never inside it.
     return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
   }
   // Where an instance's #id leads: its member's page, Sessions, with it chosen.
-  const instanceHref = (ctx, memberId, instanceId) => ctx.link("members", memberId, "sessions", instanceId);
+  const instanceHref = (ctx, memberId, instanceId) => ctx.link("team", memberId, "sessions", instanceId);
   const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
   function instanceOf(x) {
     const src = typeof x === "string" ? { instance: x } : x;
@@ -362,7 +429,7 @@ window.Maity = window.Maity || {};
     ];
     const linkable = ctx.memberById && ctx.memberById[id] && !ctx.outsider && typeof ctx.link === "function";
     return linkable
-      ? h("a", { class: "member-chip", href: ctx.link("members", id), title: said, "aria-label": said, "data-member": id }, face)
+      ? h("a", { class: "member-chip", href: ctx.link("team", id), title: said, "aria-label": said, "data-member": id }, face)
       : h("span", { class: "member-chip plain", title: said }, face);
   }
 
@@ -411,5 +478,5 @@ window.Maity = window.Maity || {};
     return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
   };
 
-  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

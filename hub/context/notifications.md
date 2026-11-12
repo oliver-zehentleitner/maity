@@ -151,6 +151,73 @@ would raise a serialization failure even with an on-conflict clause.
 one can take. Evidence is inferred: the cost per event was measured locally; the incident
 log showed pool timeouts at a low request rate, with no lock wait found on these paths.
 
+## A held long-poll looks past the moved heads before it derives again
+
+**Id:** e98b2d42-4d1d-4cbe-89a8-4793db05205a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-a5pxwgkgr73e: the operators' hub timing on rev 30 (2026-11-10: a held bell call about 480 statements and 2.8 s of database time, 38 % of the hub's database time); `tests/test_bell_quiet_heads.py`, red on main (5 derivations where one is due)
+**See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-11-10
+**See:** events.md#a-held-waits-later-pass-looks-at-the-projects-head-before-it-reads-the-runners-stream-does-not — 2263cf0a-7f4d-44e8-9264-352005a8390f — as of 2026-11-10
+**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
+
+The stamp's project heads count every event kind that can make an item, and `message` is one
+of them. So every message agents send each other moved the stamp of every human in the
+project, and each such move derived the whole answer again although the
+held call answers only on an item past `after` or a changed `sessions_rev` (a session's record,
+§18.2). When the stamp moved in its heads alone (the
+same memberships, account records and read marks), the held long-poll now first reads one
+statement over the rows of every member project between the position seen and the new one,
+with `items.derive_page`'s own superset filters: a request's event only where its request may
+concern the human's membership, a message only where its text may mention the human or its
+audience names them in a chat, every other kind that makes items. With no such row, the new
+stamp becomes the seen one and the wait keeps holding; with one, the answer is derived as
+before. The position is the project's highest `seq` of any kind, which the held call keeps
+beside the stamp (`listing.held_stamp`); the mail pass stores the stamp alone, which card churn
+does not move. Any row in the range of a kind that is neither an item kind nor one of
+`listing.QUIET_KINDS` (an agent's work on cards, notes, sessions and probes) makes the move not
+quiet as well: the derive judges older rows with the relations of now (who holds a request,
+who covers whom, a membership's trust and role, a chat's participants), so a cover starting, a
+claim or a role changed can make an item of a row below the seen head, and the next derive
+finds it, as it did before the look whenever the next move of a head came. That holds across
+projects: a cover in a project whose head stands still is read when chatter moves another
+project's head, since every project's range is read once any head moved. The list names the
+kinds passed over, not the kinds that count, so a kind added later counts until it is listed.
+A row written before the wait (an agent's join) lies below the seen position and is not read
+again. A relation change with no later move of the stamp stays unseen until the deadline, as it
+was before: only a moved stamp starts a look, and the position stays where it was seen until
+then. Supersession, a session's end, the shutdown and the deadline are where they were.
+
+The look is safe on the same ground as the held events wait's: within one project `seq`
+follows commit order (`events.emit` inserts under `lock_project`), so no row below a visible
+position is still to commit, and the range read now is the whole of what moved it. For the
+rows below it, what may change their verdict is a relation, and its change is a row of a
+counted kind in a later range.
+
+**Reason:** the derivation's cost per held call came from wakes the human has no item in;
+the look costs one statement per such wake, and the positions one grouped read per pass, also
+in a pass whose stamp did not move; only a call with `wait` whose first answer lists no item
+reads them.
+
+**Rejected alternatives:**
+- Narrowing the stamp's heads to the rows that may make an item: the filters read the payload
+  text, so the head would read the project's whole history on every look, where the range read
+  starts at the seen position. That bounds it in `seq`, not in rows: a long wait whose stamp
+  does not move collects every row written meanwhile into the next look's range.
+- Only the item kinds in the range, as the first version had it: a cover (`cover_started`,
+  not an item kind) made an older request the human's without being looked at, and the chatter
+  that followed held to the deadline where main derived at once (review of #1623).
+- Ranges only in the projects whose item head moved, as the second version had it: a cover in
+  a project whose head stood still went unread while chatter in another project held the call
+  to the deadline, where main derived at once (review of #1623).
+- The positions of every kind inside `listing.stamp`: the mail pass stores that stamp and
+  derives again whenever it moved, so an agent's card churn would make every mail pass derive.
+- The relations in the stamp (trust and role per membership, the requests the human covers):
+  the stamp would read every request's cover on each look, and each new relation would need
+  its own part; the list of kinds passed over fails safe for a kind nobody thought of.
+- Other alternatives were not weighed in this change.
+
 ## Deriving items reads each kind of lookup once per batch, not once per event
 
 **Id:** b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411
@@ -585,15 +652,15 @@ callable keeps `preferences` free of the caller and the hub settings.
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §2.8.1, §18.1 (the `security` row), §18.5; the implementation of #380, part 3, 2026-10-28
-**Revisit when:** a third kind of security record needs a mail (the list in `mailer.SECURITY_MAIL` and the titles in `items._two_factor_title` are the places), or the security mail of a sign-in and of these records should share one builder
+**Revisit when:** a third kind of security record needs a mail (the list in `mailer.AT_ONCE` and the titles in `items._two_factor_title` are the places), or the security mail of a sign-in and of these records should share one builder
 
 The account records `second_factor_changed` and `second_factor_failed` (`records.SECURITY`)
 become `security` items with the titles of §18.1 (`items._two_factor_title`; a `change` this
 hub does not know reads "Two-factor sign-in changed", never a guess), and the mail pass sends each
 of them as a security mail of its own, as it does a new sign-in: not batched, not held by quiet
-hours, one mail per item (`mail_item_sent`), only while the human's `security` mode is
-`immediate`, with the subject `[Maity] <title>`, the time, the link to Profile → Security and the
-unsubscribe line of the `security` kind. The bell confirms them like the other security items
+hours, one mail per item (`mail_item_sent`), whatever the human's `security` mode (§18.4
+"At once, whatever the mode"; `mailer.AT_ONCE`), with the subject `[Maity] <title>`, the time,
+the link to Security and the settings line, and no unsubscribe line, since no mode turns it off. The bell confirms them like the other security items
 (`listing._may_mark`: from a session in good standing that is older than the item). The mail
 carries no code, no secret and no link that changes anything.
 
@@ -989,3 +1056,126 @@ instances an owner ever saw.
   quadratic in that history without an index of its own.
 - Choosing among sessions with an equal start by id alone: ids are random, so an ended
   session could stand for a live one after a resume within one tick.
+
+## A filtered page of the bell reads only the sources that can give an item of its kinds and projects
+
+**Id:** 950a792f-319e-4a64-b7af-8cc56b33a570
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-p8w1s1zwsx2y; prod timing 2026-11-10 08:11–08:16 UTC (three `GET /me/notifications` calls of about 2200 statements and 60–64 s each, 95 % database time, one 2.9 s after a load of /notifications; the query string is not logged); `tests/test_notifications.py` `test_a_filtered_page_costs_the_same_statements_for_more_items_it_does_not_list`, red on main
+**See:** notifications.md — 38cf47f3-98f3-41aa-8d85-4e22cd28f1e6 — as of 2026-11-10
+**Revisit when:** a source gives an item of a kind it is not read for here (a chat that makes an `inbox` item, a record that makes a `mention`), or a filtered page is slow again
+
+A page fills from its sources chunk by chunk (`_paged`) until it holds as many items as
+`wanted`, the page's filters, accepts. With `kind=mention&project=…`, the link beside a
+project's tabs, `wanted` rejected nearly every row: the requests, the chats addressed to the
+human, the records, and every project but the one asked. Each source was read to the end of
+the 30-day window, a few statements per chunk.
+
+Now `derive_page` takes the filters as well (`kinds`, `projects`) and skips what can give none
+of them:
+- a project outside `projects`;
+- the plain chats (`_chats`), unless `chat` is asked: they give only `chat`;
+- the records, when only `chat` or `mention` is asked;
+- without `inbox`, the event scan reads only messages and mentions, since requests and the jour
+  fixe give only `inbox`.
+
+`wanted` still applies the filters to every item read, so the answer is the same; the pruning
+only leaves out sources whose items it would reject.
+
+**Reason:** the cost of a filtered page follows the items it lists, not the rows it rejects.
+Pruning by source keeps the exact kind decision in `_classify`; only the mapping of source to
+possible kinds is stated here, next to the sources.
+
+**Rejected alternatives:**
+- Stopping a source's scan after a few chunks: a page could miss an older item it should list.
+- Deciding the kind in SQL for every row: a second copy of `_classify`, as 38cf47f3 rejects.
+
+## An invitation by handle has a notification kind of its own, mailed at once by default
+
+**Id:** 11617fa3-6098-4383-b70d-b46115fe4356
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in the plan on tsk-8xsrzjv7f0yr (parts 3 and 4, 2026-11-08); docs/api.md §18.1, §18.4; the web part in the same change: the lead's decision in the change's review (2026-11-10); the settings page's rows: the card's web part (scope point 3)
+**See:** joins.md — 02273831-24de-4fa6-8c5d-8a2ac2f7203b — as of 2026-11-10
+**Revisit when:** another personal request (an organisation's invitation) is to join the kind, or the kind defaults are decided again
+
+The consent request an invitation by handle files is an item of the kind `invitation`, not
+`inbox` (`items._personal_kind`, from the request's proposal kind). The kind has its own
+browser switch and mail mode, `immediate` by default, so the person may take invitations
+with the daily digest (`daily`) or keep them on the platform only (`off`) without touching
+the inbox's mail. The counts do not change: an open request counts in `inbox` whatever its
+item's kind, and the five keys stay.
+
+**Reason:** the maintainer wanted the invitation's mail switchable on its own and at once by
+default. The general rule of 2026-11-02, that a kind added later mails as a daily digest, is
+for informing kinds against filled mailboxes; an invitation waits for an answer and expires.
+
+The web learns the kind in the same change (the bell, the notifications page and its filter,
+the browser notifications): it drops an item of a kind it does not know, so a hub with the kind
+and a web without it would hide every invitation from the bell. Shipping the web part with the
+later Members change instead was rejected: it ties the two to one deploy. The settings page's
+rows for the kind, its browser switch and mail mode, came with that Members change; until it
+shipped, the kind's settings could be changed only through the API (§18.4).
+
+**Rejected alternatives:**
+- Leaving it under `inbox`: its mail could only be turned off with every other request's.
+- `daily` by default, as the rule for later kinds says: the invitation would often expire in a
+  digest before the person saw it.
+- A count of its own: the counts' five keys are a contract the dashboard's badges read; the
+  request is an open request like any other.
+- Moving an organisation's invitation into the kind too: not decided, left to a later card.
+
+## Notification mail waits while the human is present in the web app, told by a heartbeat of its own
+
+**Id:** 59e31f20-6e15-4827-866d-ec17444e7efb
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11) and their approval of the contract's wording on req-a2wck5jr9xpb (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); hub/src/maity_hub/notifications/presence.py, mailer.py (`held`), auth/caller.py (`seen`), deps.py (`presence_caller`); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
+**Revisit when:** the maintainer reads the contract and wants urgent requests mailed while present, or the dashboard gets a live connection that every tab holds
+
+`email.hold_while_online` (default `true`) holds the mail of `immediate` items while one of
+the human's live sessions has a `present_until` in the future, and `online_grace_minutes`
+(default 5, an instance mail setting) after that; the next pass mails what is still unread,
+an item the hourly cap held over an hour's end included.
+A dashboard tab calls `POST /me/presence` every 60 seconds while it is visible and had input
+within 10 minutes. The hub moves `present_until` to two minutes ahead only when that moves it
+by at least a minute, so it writes at most once a minute per session: every present tab calls
+the route each minute, and a row write per call would cost the database a write for each of
+them. A tab that goes hidden or idle stops counting within 2 minutes of its last call, then the
+grace runs. A signed-out, ended or expired session stops counting at once.
+
+**Reason:** a human who reads the dashboard sees the items in the bell; a mail two minutes
+later repeats them. "Present" needs input as well as a visible tab, since a visible tab on an
+unattended desk would hold mail all night. `present_until` is the hold's input only. The call
+writes no `last_seen_at` and shows nobody online, so nobody reads it as presence. Security
+mail, the mails sent at once whatever the mode and the mail of a suspension are never held.
+An urgent request is an `inbox` item and is held: the present human sees it in the bell.
+Digests keep their moment.
+
+In the hub the call authenticates as any cookie call, the CSRF check included, but with
+`seen=False`: the session's liveness is read, not written, and no `last_seen_at` of the
+session, the human or a membership moves. A request with `Authorization` or `Maity-For` is
+refused (`humans_only`) before any credential is looked up, so a refused agent's call writes
+no presence either. The ten calls a minute count in the process (`Limiter(local=True)`), since
+a shared count writes a row per call on PostgreSQL. The mailer leaves a held item in
+`mailable`: `waiting` keeps the passes deriving until the grace ends, as an unread immediate
+item already did while it waited for its window. A suspension ends the account's sessions,
+and the hold excludes the `urgent` item as well.
+
+**Rejected alternatives:**
+- A `present=1|0` flag on the bell's long-poll (the first plan): the long-poll runs only while
+  browser pop-ups are on or a view watches the stream (`wanted()` in notify.js), so a reader
+  without pop-ups would never count. And one session holds one long-poll: a hidden tab that
+  takes it over pauses the visible one for 5 minutes (`SUPERSEDED_MS`), and the present
+  human is mailed.
+- A "hidden at once" end (`present=0` clearing the value): tabs of one browser share a
+  session, so one tab going hidden would end another's presence; and the write throttle allows
+  at most one write a minute.
+- A valid session alone as "online": a signed-in browser left closed would hold mail forever.
+- Holding the items the mailer marks `urgent` (the first plan): the only such item is the mail
+  of a suspension, and a suspended account has no live session; the contract lists it among the
+  mails never held instead.

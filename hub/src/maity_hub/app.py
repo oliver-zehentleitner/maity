@@ -14,6 +14,7 @@ from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.routing import Mount
 
 from maity_hub import (
@@ -72,11 +73,12 @@ from maity_hub.db import (
     APPLICATION_SERVING,
     current_revision,
     head_revision,
+    make_async_engine,
     make_engine,
     make_health_engine,
     make_shared_engine,
 )
-from maity_hub.errors import error_response
+from maity_hub.errors import database_unavailable, error_response
 from maity_hub.events import transaction
 from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
@@ -92,6 +94,7 @@ from maity_hub.routes import (
     board,
     bridges,
     briefing_view,
+    chat_access,
     contract_text,
     conversations,
     cross_chats,
@@ -113,6 +116,7 @@ from maity_hub.routes import (
     notifications,
     overview,
     pages,
+    password_reset,
     placements,
     preferences,
     project_images,
@@ -134,6 +138,7 @@ from maity_hub.routes import (
 )
 from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import auth_pages as auth_pages_routes
+from maity_hub.routes import bootstrap as bootstrap_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
@@ -164,12 +169,31 @@ class SchemaNotCurrentError(RuntimeError):
 
 
 def serving_engine(settings: Settings) -> Engine:
-    """The engine of a serving hub: the pool and the PostgreSQL timeouts of the settings.
-    `maity-hub serve` builds it here too, so a setting reaches the engine the hub runs on."""
+    """The engine of a serving hub: its share of the pool (`serving.pool_shares`, the async
+    engine holds the rest) and the PostgreSQL timeouts of the settings. `maity-hub serve`
+    builds it here too, so a setting reaches the engine the hub runs on."""
+    from maity_hub import serving
+
     return make_engine(
         settings.database_url,
-        settings.db_pool_size,
+        serving.pool_shares(settings)[0],
         settings.db_max_overflow,
+        settings.db_pool_recycle,
+        settings.db_statement_timeout,
+        settings.db_idle_in_transaction_timeout,
+        APPLICATION_SERVING,
+    )
+
+
+def serving_async_engine(engine: Engine, settings: Settings) -> AsyncEngine:
+    """The async engine beside `engine`, on the same database: the part carved out of the pool
+    share (`serving.pool_shares`) and no overflow on a server database, the sync engine keeping
+    the rest; the same timeouts and names."""
+    from maity_hub import serving
+
+    return make_async_engine(
+        engine.url,
+        serving.pool_shares(settings)[1],
         settings.db_pool_recycle,
         settings.db_statement_timeout,
         settings.db_idle_in_transaction_timeout,
@@ -241,6 +265,10 @@ def start_once(engine: Engine, settings: Settings) -> None:
             from maity_hub.auth import email_links
 
             email_links.void_open(conn)
+        if not sign_in.password_reset_enabled(conn, settings):
+            from maity_hub.auth import password_resets
+
+            password_resets.void_open(conn)
         # A second factor the environment switched off is told, once (§2.8.5).
         source = sign_in.resolve(conn, settings)["second_factor"][1]
         sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
@@ -293,7 +321,9 @@ def create_app(
     """The hub's app. `started`: a worker of several, whose parent ran `start_once`."""
     engine = engine if engine is not None else serving_engine(settings)
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
+    async_engine = serving_async_engine(engine, settings)
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
+    write_guard.install(async_engine.sync_engine)
     shared_engine = make_shared_engine(
         engine,
         statement_timeout=settings.db_statement_timeout,
@@ -366,7 +396,7 @@ def create_app(
             engine, settings.mail, settings.secret_key, settings.public_url
         )
         notify_worker.start()
-        stats_reporter = request_stats.Reporter(engine)
+        stats_reporter = request_stats.Reporter(engine, async_engine=async_engine.sync_engine)
         stats_reporter.start()
         load_watch = asyncio.create_task(request_stats.watch_load(request_stats.LOAD))
         pages_worker = public_pages.Worker(engine, settings)
@@ -412,6 +442,7 @@ def create_app(
             worker.stop()
         if shared_engine is not None:
             shared_engine.dispose()
+        await async_engine.dispose()
         engine.dispose()
         if health_engine is not None:
             health_engine.dispose()
@@ -427,6 +458,9 @@ def create_app(
     )
     app.state.settings = settings
     app.state.engine = engine
+    # The routes still run on `engine`; the async family moves them over one by one
+    # (tsk-v874y63b4z8p): `async with async_transaction(...)`, then `run_sync`.
+    app.state.async_engine = async_engine
     app.state.shared_engine = shared_engine
     app.state.health_engine = health_engine or engine
     # Read once: it loads every migration file, and the files do not change under a running hub.
@@ -449,6 +483,7 @@ def create_app(
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(maintenance_routes.router, prefix=prefix)
+    app.include_router(bootstrap_routes.router, prefix=prefix)
     app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
@@ -484,6 +519,7 @@ def create_app(
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(cross_chats.router, prefix=prefix)
+    app.include_router(chat_access.router, prefix=prefix)  # §9.6, the lists
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
@@ -498,6 +534,7 @@ def create_app(
     app.include_router(joins.page_router)  # /join/{token}, before the app shell
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(email_sign_in.router, prefix=prefix)
+    app.include_router(password_reset.router, prefix=prefix)
     app.include_router(email_sign_in.page_router)
     app.include_router(mail_links.page_router)  # /mail/*, likewise
     app.include_router(register_page.page_router)  # the registration's link page, likewise
@@ -521,7 +558,7 @@ def create_app(
     app.add_middleware(Compression)
     app.add_middleware(HubMiddleware, settings=settings, engine=engine)
     # Outermost: an answer's statements and time, the hub's own checks included.
-    timing.install(engine, shared_engine, health_engine)
+    timing.install(engine, async_engine.sync_engine, shared_engine, health_engine)
     app.add_middleware(timing.ServerTiming)
     if settings.allow_plain_http:
         log.warning(
@@ -577,7 +614,7 @@ def _api_router() -> APIRouter:
             current = current_revision(engine)
         except SQLAlchemyError:
             log.exception("health: database unreachable")
-            return error_response(503, "database_unavailable", "the database is unreachable")
+            return database_unavailable()
         head = request.app.state.schema_head
         if current != head:
             return error_response(

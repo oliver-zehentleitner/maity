@@ -1,4 +1,4 @@
-// A member's page (/<owner>/<slug>/members/<id>[/<tab>], the designer's
+// A member's page (/<owner>/<slug>/team/<id>[/<tab>], the designer's
 // handover #6484, the read-only cut of the coordinator, 2026-10-30): a
 // breadcrumb back to Members, a header — the 64 px avatar with its presence,
 // the name and @handle, pills for trust and role, whose agent it is, whom it
@@ -91,6 +91,9 @@ window.Maity = window.Maity || {};
       owner ? h("span", { class: "pill member-pill" }, M.tn("memberpage.agent_of", { owner })) : null,
       m.reports_to ? h("span", { class: "pill member-pill" }, M.tn("memberpage.reports_to", { boss: M.dom.memberRef(ctx, m.reports_to) })) : null,
       (m.areas || []).length ? pill(M.t("memberpage.areas", { areas: m.areas.join(", ") })) : null,
+      // What an expert answers about and the paths it learned (§2.3 "The expert", §6.2).
+      m.role === "expert" && m.expert_for ? pill(M.t("members.expert.for", { topic: m.expert_for })) : null,
+      m.role === "expert" && (m.expert_sources || []).length ? pill(M.t("memberpage.expert_sources", { sources: m.expert_sources.join(", ") })) : null,
       m.paused ? pill(M.t("memberpage.paused"), "member-pill-paused") : null];
     // Chat: one's own agent's direct chat, anyone else a group chat with them chosen (§9.2).
     const groupOk = !M.trust.guest(ctx) && !["accepted", "archived"].includes(ctx.project.state);
@@ -98,7 +101,7 @@ window.Maity = window.Maity || {};
       : ownAgentOf(ctx, m) ? ctx.link("chat", m.id) : groupOk ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
     // Actions lead to where each one is done (#643): nothing is done here.
     const actions = [];
-    if (ctx.canAdmin && m.id !== ctx.me.id) actions.push({ label: M.t("memberpage.manage_members"), href: ctx.link("members") + "?manage=" + encodeURIComponent(m.id) });
+    if (ctx.canAdmin && m.id !== ctx.me.id) actions.push({ label: M.t("memberpage.manage_members"), href: ctx.link("team") + "?manage=" + encodeURIComponent(m.id) });
     if (ownAgentOf(ctx, m)) actions.push({ label: M.t("memberpage.manage_agents"), href: ctx.link("agents", m.id) });
     const menu = actions.length ? M.menuButton({
       label: M.t("memberpage.actions.label", { name: m.display_name }),
@@ -107,6 +110,10 @@ window.Maity = window.Maity || {};
     }) : null;
     if (menu) menu.el.className = "menu-box member-actions-menu";
     const availability = M.availabilityNodes ? M.availabilityNodes(ctx, m) : null;
+    // Report this person or agent to the instance's admins (§16.8, tsk-7ze5w6ymf7bw), by the member id
+    // the project's read gives; not oneself, and from a human (the dashboard's reader).
+    const reporting = M.report && ctx.me.kind === "human" && m.id !== ctx.me.id
+      ? M.report.control({ type: "profile", id: m.id }, m.kind === "agent" ? "agent" : "person") : null;
     const heading = h("h2", { id: "member-heading", tabindex: "-1" }, m.display_name, " ", h("span", { class: "mono muted" }, "@" + M.dom.handleOf(ctx, m)));
     const el = h("div", { class: "member-head" },
       h("div", { class: "member-head-face" }, M.avatar(m, 64),
@@ -119,8 +126,8 @@ window.Maity = window.Maity || {};
         total ? h("p", { class: "muted member-manages" }, M.t("manages.total", { text: total })) : null, availability),
       h("div", { class: "member-head-actions" },
         chat ? h("a", { class: "button primary member-chat", href: chat }, M.t("members.chat")) : null,
-        menu ? menu.el : null));
-    return { el, heading };
+        menu ? menu.el : null, reporting ? reporting.button : null));
+    return { el, heading, reportSlot: reporting ? reporting.slot : null };
   }
 
   // Activity: what the member did among the project's latest events.
@@ -249,14 +256,14 @@ window.Maity = window.Maity || {};
     // Read only here: Revoke is in the Manage row (#643).
     append(clear(slot), got.error ? M.errorBox(got.error) : h("div", null, h("h3", null, M.t("members.credentials")),
       h("ul", { class: "member-creds" }, ((got.list && got.list.items) || []).map((c) => h("li", { class: c.revoked_at ? "revoked" : null },
-        h("span", { class: "mono" }, c.id), " ",
+        h("span", { class: "mono" }, c.id), M.agentParts.credentialInstance(ctx, m, c), " ",
         h("span", { class: "muted" }, [c.client || null, M.t("memberpage.cred.created", { when: formatTime(c.created_at) }),
           c.revoked_at ? M.t("memberpage.cred.revoked", { ago: formatAgo(c.revoked_at) }) : c.last_used_at ? M.t("memberpage.cred.used", { ago: formatAgo(c.last_used_at) }) : M.t("memberpage.cred.never")].filter(Boolean).join(" · ")))))));
   }
 
   async function page(ctx, root, id, tab, instanceId) {
     const m = (ctx.members || []).find((x) => x.id === id);
-    const crumb = h("nav", { class: "breadcrumb", "aria-label": M.t("memberpage.breadcrumb") }, h("a", { href: ctx.link("members") }, M.t("members.title")), " / ",
+    const crumb = h("nav", { class: "breadcrumb", "aria-label": M.t("memberpage.breadcrumb") }, h("a", { href: ctx.link("team") }, M.t("members.title")), " / ",
       h("span", { "aria-current": "page" }, m ? "@" + M.dom.handleOf(ctx, m) : id));
     if (!m) {
       append(root, crumb, h("p", { class: "error", role: "alert" }, M.t("members.no_such", { id })));
@@ -268,10 +275,10 @@ window.Maity = window.Maity || {};
     const claims = (m.instances || []).some((i) => typeof i.claims === "number")
       ? (m.instances || []).filter((i) => !i.revoked_at).reduce((n, i) => n + (i.claims || 0), 0) : null;
     const tabs = h("nav", { class: "member-tabs", "aria-label": M.t("memberpage.sections") }, offered.map(([k, label]) =>
-      h("a", { href: ctx.link("members", m.id, k), class: "member-tab", "aria-current": k === chosen ? "page" : null }, label())));
+      h("a", { href: ctx.link("team", m.id, k), class: "member-tab", "aria-current": k === chosen ? "page" : null }, label())));
     const body = h("section", { class: "member-section", "aria-label": TABS.find(([k]) => k === chosen)[1]() });
     const head = header(ctx, m, claims);
-    append(root, crumb, head.el, tabs, body);
+    append(root, crumb, head.el, head.reportSlot, tabs, body);
     // Opened by a member's link: the heading takes the focus; a tab's own link keeps it on the tabs.
     if (!tab) window.setTimeout(() => head.heading.focus(), 0);
     if (chosen === "activity") await activity(ctx, m, body);
