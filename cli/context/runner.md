@@ -1785,7 +1785,7 @@ every call can run that way.
 **Evidence:** confirmed
 **Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself
 **See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-12
-**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory or `maity gh` start reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
+**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory starts reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
 
 At a session's start the runner records the inode of the clone's `.git`
 (`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
@@ -1842,8 +1842,8 @@ nor checks, so an update of Claude Code could reopen it unnoticed.
   filter ran outside the sandbox).
 
 **Known gap:** the state directory (the credential) is still taken
-through the name `.git`, and so is the record of the `maity gh` that
-pull request #1663 adds until it moves onto this check. Under a sandbox
+through the name `.git`. `maity gh` reads its record and compares the
+body-file walk through `opened_git`'s descriptor since #1663 (round 7). Under a sandbox
 that lets the agent rename `.git`, a later sandboxed command can also
 read the real `.git/maity` under its new name, because the deny applies
 to the path; only the harness can close that. Claude Code 2.1.322

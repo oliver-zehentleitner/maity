@@ -966,7 +966,10 @@ finds it under `HOME` (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and
 `XDG_CONFIG_HOME` do not reach it); maity names the branch. An option not
 listed, a URL, or a body file reached through a link, a FIFO, a file with
 other hard links, outside the clone or under its `.git` is refused, and
-the refusal lists what is allowed. On Windows maity takes no body file
+the refusal lists what is allowed. A `.git` renamed or replaced since the
+session started is refused too: maity reads the record only from the
+`.git` the runner recorded at the start, so a placement started by an
+older runner needs a restart after the update. On Windows maity takes no body file
 (`--body` only), since it cannot open one there without following
 links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner

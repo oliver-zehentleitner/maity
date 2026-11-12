@@ -8,12 +8,14 @@ clone (a link, `..`, `.git`, the login file), gh's other file options, and a for
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import stat
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -509,3 +511,47 @@ def test_the_record_comes_from_the_checked_git_after_a_rename(
             f"github.com/attacker/other\n{sys.executable}\n"
         )
         assert ghpr.granted(clone, dot_git) == (REPOSITORY, placed["gh"])
+
+
+def renamed_after_the_check(monkeypatch: pytest.MonkeyPatch, clone: Path, decoy_gh: str) -> None:
+    """`opened_git` checks the real `.git`, then sandboxed code renames it and puts a decoy
+    with its own record under the old name, before `maity gh` reads anything."""
+    checked = clonecheck.opened_git
+
+    @contextlib.contextmanager
+    def then_renamed(root: Path) -> Iterator[int | None]:
+        with checked(root) as dot_git:
+            os.rename(clone / ".git", clone / ".git-moved")
+            (clone / ".git" / "maity").mkdir(parents=True)
+            (clone / ghpr.PULL_REQUESTS_PATH).write_text(f"github.com/attacker/other\n{decoy_gh}\n")
+            yield dot_git
+
+    monkeypatch.setattr(clonecheck, "opened_git", then_renamed)
+
+
+@walks
+def test_maity_gh_reads_the_record_through_the_checked_git(
+    placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run` hands the checked descriptor to `granted`: the record read after the rename is
+    the runner's, so the real gh runs, on the real repository."""
+    decoy = tmp_path / "decoy-gh"
+    decoy.write_text(f"#!{sys.executable}\nopen({str(tmp_path / 'decoy-ran')!r}, 'w')\n")
+    decoy.chmod(0o755)
+    renamed_after_the_check(monkeypatch, placed["clone"], str(decoy))
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert not (tmp_path / "decoy-ran").exists()
+    call = ran(placed)
+    assert call is not None and f"--repo={REPOSITORY}" in call["argv"]
+
+
+@walks
+def test_maity_gh_walks_the_body_file_against_the_checked_git(
+    placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`command` hands the checked descriptor to `body_file`: the real `.git`, renamed after
+    the check, is still no body's way."""
+    renamed_after_the_check(monkeypatch, placed["clone"], placed["gh"])
+    argv = ["gh", "pr", "create", "--title", "t", "--head", "x"]
+    assert cli.main([*argv, "--body-file", ".git-moved/maity/pull_requests"]) == 4
+    assert ran(placed) is None
