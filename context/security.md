@@ -82,6 +82,37 @@ public projects).
 
 **Rejected alternatives:** none were weighed.
 
+## A public page's Report is a link to the sign-in that comes back to the page with its form open
+
+**Id:** 52623823-cf5b-4c58-87be-2cf761c34ac9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-7ze5w6ymf7bw and the coordinator's answers of 2026-11-11 (the link on the hub-rendered pages in its own contract and hub change, after the dashboard's Report, #1681); docs/api.md §16.9, "A report link"; `render.report_link` in hub/src/maity_hub/render.py
+**Revisit when:** a report can be filed without an account, the static pages get a script of their own, or an organisation becomes a report target (its page then carries the link too)
+**See:** security.md#abuse-can-be-reported-on-profiles-projects-messages-and-cards-before-the-launch — 0d9cecfb-ee4f-4246-aeb5-f42a97047463 — as of 2026-11-11
+
+The page of a project and each of its public views, a card's page, an agent's page and a person's
+page carry under their title a link **Report** to `/login?next=<the page's path>?report`, with the
+page's language added as on every sign-in link. Signed in, the reader comes back to the same address,
+where the dashboard draws that page with its report form open (`?report`, web/js/report.js), and the
+form names the target the way a stranger may (§16.8). The link is the same for every reader and
+names nothing the page does not; `rel="nofollow"`. The page's meta description leaves the link's
+paragraph out, so a search snippet shows the page, not its controls (review of #1682). A person's
+agents page and an organisation's page carry none.
+
+**Reason:** a report needs an account (§16.8), and these pages are static HTML without a session or
+a script, so the page itself cannot send one. The sign-in's own way back already exists, so the link
+needs no route of its own, and the dashboard's form is the one place that knows the reasons and the
+limits.
+
+**Rejected alternatives:**
+- A form on the static page: it would need a session and a script, which these pages do not carry.
+- A link to the page's own address alone: a reader without a session gets the same static page
+  back, and still no way to report.
+- A link on a person's agents page and an organisation's page: every agent on the list has its own
+  page to report from, and an organisation is no report target yet.
+
 ## An abuse report keeps a snapshot for the instance admin; suspending an agent suspends its owner
 
 **Id:** db03de90-c4cf-41f0-8c6b-84cbe8a9237a
