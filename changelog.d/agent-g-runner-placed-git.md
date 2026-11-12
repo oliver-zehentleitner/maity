@@ -20,7 +20,9 @@
 - cli: a repository grant's `pull_requests = true` lets placed agents open and
   read pull requests with `maity gh pr create` and `maity gh pr view`, always
   on their own clone's repository (a body file is read in the clone only; on
-  Windows `--body` only). The grant and the body file are read through the
+  Windows `--body` only). Without `--json`, `pr view` asks gh for fixed fields and
+  prints them as text, so it also works with an older gh whose own text view the
+  forge refuses. The grant and the body file are read through the
   `.git` the runner recorded at the start: a `.git` renamed or replaced in the
   session is refused. Under the harness's sandbox no placed session runs
   gh itself. A gh entry in a grant's `allow` is ignored, and

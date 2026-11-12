@@ -314,6 +314,66 @@ def test_no_dropped_variable_is_passed() -> None:
 
 
 @runs_gh
+@pytest.mark.parametrize("argv", [[], ["1663"], [BRANCH], ["--comments"], ["1663", "--comments"]])
+def test_view_never_runs_gh_without_json(placed: dict[str, Any], argv: list[str]) -> None:
+    """gh's own text view asks for fields an older gh's query names and the forge refuses
+    (`projectCards`, gh 2.46): maity always names the fields and prints them itself."""
+    assert cli.main(["gh", "pr", "view", *argv]) == 0
+    call = ran(placed)
+    assert call is not None
+    fields = [arg for arg in call["argv"] if arg.startswith("--json=")]
+    expected = ",".join([*ghpr.VIEW_FIELDS, *(["comments"] if "--comments" in argv else [])])
+    assert fields == [f"--json={expected}"]
+    assert "--comments" not in call["argv"]  # comments come as a field
+    assert "projectCards" not in expected
+
+
+@runs_gh
+def test_view_without_json_prints_the_pull_request_as_text(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer = {
+        "number": 1709, "title": "e2e (close me)", "state": "OPEN", "isDraft": True,
+        "url": "https://github.com/o/r/pull/1709", "headRefName": "e2e-1663",
+        "baseRefName": "main", "author": {"login": "agent"}, "body": "Card tsk-x\n",
+        "comments": [{"author": {"login": "reviewer"}, "createdAt": "2026-11-12T20:00:00Z",
+                      "body": "looks fine"}],
+    }  # fmt: skip
+    Path(placed["gh"]).write_text(
+        f"#!{sys.executable}\nimport sys\nsys.stdout.write({json.dumps(answer)!r})\n"
+    )
+    assert cli.main(["gh", "pr", "view", "1709", "--comments"]) == 0
+    assert capsys.readouterr().out == (
+        "#1709 e2e (close me)\n"
+        "OPEN (draft)  e2e-1663 -> main  by agent\n"
+        "https://github.com/o/r/pull/1709\n"
+        "\n"
+        "Card tsk-x\n"
+        "\n"
+        "--- reviewer, 2026-11-12T20:00:00Z\n"
+        "looks fine\n"
+    )
+
+
+@runs_gh
+def test_view_with_json_passes_gh_s_answer_through(
+    placed: dict[str, Any], capfd: pytest.CaptureFixture[str]
+) -> None:
+    Path(placed["gh"]).write_text(f'#!{sys.executable}\nprint(\'{{"state":"OPEN"}}\')\n')
+    assert cli.main(["gh", "pr", "view", "--json", "state"]) == 0
+    assert capfd.readouterr().out == '{"state":"OPEN"}\n'
+
+
+@runs_gh
+def test_view_without_json_prints_what_is_not_gh_s_json_as_it_came(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    Path(placed["gh"]).write_text(f"#!{sys.executable}\nprint('not json')\n")
+    assert cli.main(["gh", "pr", "view"]) == 0
+    assert capsys.readouterr().out == "not json\n"
+
+
+@runs_gh
 def test_view_without_a_selector_names_the_current_branch(placed: dict[str, Any]) -> None:
     """gh does not read the branch from git: maity names it, read with its own pinned git."""
     assert cli.main(["gh", "pr", "view"]) == 0

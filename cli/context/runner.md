@@ -2215,7 +2215,11 @@ variable names another repository, configuration or login, or a program
 to start. gh runs in an empty directory of its own, never in the clone,
 and maity names the branch (`--head`, the pull request to view), read
 with its own pinned git, so gh's git reads nothing of the clone's `.git`.
-maity reads a `--body-file` itself and passes it to gh on standard input. An `allow` entry naming gh is not applied:
+maity reads a `--body-file` itself and passes it to gh on standard input. `maity gh pr view` never
+uses gh's own text view: without `--json` it asks gh for a fixed list of fields (`ghpr.VIEW_FIELDS`,
+plus `comments` with `--comments`) and prints them as text itself. gh's text view builds its query
+by gh's version, and an older gh (2.46, a distribution's package) asks for `projectCards`, which the
+forge now refuses, so every plain `gh pr view` failed on such a runner (the E2E of #1663). An `allow` entry naming gh is not applied:
 `maity runner check` warns about it and names `pull_requests`, and the
 runner still starts. Codex is refused for a repository whose grant has
 `allow` or `pull_requests`. Codex cannot honour a command allowlist, and
@@ -2233,6 +2237,9 @@ the repository. A glob rule cannot.
   denied (this PR's first version): `-dR other/repo` bundles the flag past
   every glob, `gh pr view <URL>` names another repository, and `-F` reads
   any file the agent names, so a rule never pins anything (review of #1663).
+- For `pr view`, requiring a newer gh in `maity runner check` instead of
+  naming the fields: runners use their distribution's gh, and the next
+  field the forge retires would break the text view again (#1663's E2E).
 - Granting all of `gh`, or api.github.com: `gh api` and any tool could
   then act on every repository the account reaches. The sandbox network
   gets no api.github.com, and `maity runner check` warns when a grant

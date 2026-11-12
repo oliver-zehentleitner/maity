@@ -956,6 +956,9 @@ pull_requests = true
 The agents then run `maity gh pr create --title <title> --body-file <file>`
 (or `--body <text>`, with `--base`, `--head`, `--draft`) and
 `maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]`.
+Without `--json`, `pr view` prints the number, title, state, branches,
+author, link and description as text (and the comments with
+`--comments`); with `--json` it prints gh's JSON as gh gives it.
 These run outside the sandbox, with the gh the runner found on its `PATH`
 and the login of the agents' user under `HOME`, always on the repository
 of the placement's clone (`--repo` comes from the runner, never from the

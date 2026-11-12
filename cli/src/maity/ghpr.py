@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import argparse
 import errno
+import json
 import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -32,6 +34,14 @@ JSON_FIELDS = re.compile(r"[A-Za-z]+(,[A-Za-z]+)*")
 # A pull request named by its number or its head branch; never a URL or `owner:branch`.
 SELECTOR = re.compile(r"[0-9]+|[A-Za-z0-9._][A-Za-z0-9._/-]{0,254}")
 REPOSITORY = re.compile(r"[a-z0-9.-]+/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+# What `pr view` without `--json` asks gh for. gh's own text view is never used: its query
+# depends on gh's version, and older ones (2.46, a distribution's package) ask for a field
+# the forge refuses today (`projectCards`), so every plain `gh pr view` fails there. These
+# fields exist in every gh that has `--json`; maity prints them as text (`_readable`).
+VIEW_FIELDS = (
+    "number", "title", "state", "isDraft", "url", "headRefName", "baseRefName", "author",
+    "body",
+)  # fmt: skip
 # What gh gets from maity's environment, nothing else: no variable that names another
 # repository, host, configuration or login (GH_REPO, GH_HOST, GH_CONFIG_DIR, XDG_CONFIG_HOME,
 # GH_TOKEN, GITHUB_TOKEN, the enterprise tokens) and none that starts a program (GH_PAGER,
@@ -261,8 +271,11 @@ def command(
         if not JSON_FIELDS.fullmatch(args.json_fields):
             raise Refused(f"--json {args.json_fields!r}: field names and commas only")
         argv.append(f"--json={args.json_fields}")
-    if args.comments:
-        argv.append("--comments")
+        if args.comments:
+            argv.append("--comments")
+    else:  # never gh's text view (VIEW_FIELDS): the fields maity prints as text
+        fields = [*VIEW_FIELDS, *(["comments"] if args.comments else [])]
+        argv.append(f"--json={','.join(fields)}")
     selector = args.selector if args.selector is not None else current_branch(root)
     if not SELECTOR.fullmatch(selector):
         raise Refused(
@@ -271,6 +284,33 @@ def command(
         )
     argv += ["--", selector]
     return argv, None
+
+
+def as_text(args: argparse.Namespace) -> bool:
+    """Whether maity prints gh's answer as text: a `pr view` without `--json`."""
+    return bool(args.gh_command == "view" and args.json_fields is None)
+
+
+def _readable(answer: bytes) -> str:
+    """A `pr view` answer (VIEW_FIELDS, comments with `--comments`) as text; what is not
+    the JSON gh gives is printed as it came."""
+    try:
+        pr = json.loads(answer)
+        author = (pr.get("author") or {}).get("login") or "?"
+        state = pr["state"] + (" (draft)" if pr.get("isDraft") else "")
+        lines = [
+            f"#{pr['number']} {pr['title']}",
+            f"{state}  {pr['headRefName']} -> {pr['baseRefName']}  by {author}",
+            pr["url"],
+            "",
+            (pr.get("body") or "").rstrip() or "(no description)",
+        ]
+        for comment in pr.get("comments") or []:
+            who = (comment.get("author") or {}).get("login") or "?"
+            lines += ["", f"--- {who}, {comment.get('createdAt', '')}", comment["body"].rstrip()]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return answer.decode("utf-8", "replace")
+    return "\n".join(lines) + "\n"
 
 
 def gh_env(environ: Mapping[str, str], gh: str) -> dict[str, str]:
@@ -300,8 +340,17 @@ def run(args: argparse.Namespace) -> int:
             argv, stdin = command(args, root, repository, gh, dot_git)
     except clonecheck.Refused as exc:
         raise Refused(str(exc)) from None
+    text = as_text(args)
     with tempfile.TemporaryDirectory(prefix="maity-gh-") as empty:
         done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built above
-            argv, input=stdin, cwd=empty, env=gh_env(os.environ, gh), check=False
+            argv,
+            input=stdin,
+            cwd=empty,
+            env=gh_env(os.environ, gh),
+            check=False,
+            stdout=subprocess.PIPE if text else None,
         )
+    if text and done.stdout:
+        sys.stdout.write(_readable(done.stdout))
+        sys.stdout.flush()
     return done.returncode
