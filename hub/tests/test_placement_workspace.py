@@ -276,6 +276,7 @@ def test_removed_is_taken_while_a_start_came_in(setup: Setup, make_client: Clien
     assert answer.status_code == 200, answer.text
     after = get(setup, body["id"])
     assert (after["desired"], after["rejoin"], after["workspace_epoch"]) == ("running", True, 2)
+    assert after["workspace_outcome"] is None  # it runs: no outcome shown (§15.5)
     assert revoked_reason(setup, credential_id) == "workspace_removed"
     again = pick_up(setup, after)
     assert again.status_code == 201, again.text  # the rejoin's pickup

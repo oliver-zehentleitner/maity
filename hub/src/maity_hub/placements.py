@@ -258,7 +258,7 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
-        "workspace_outcome": workspace_outcome(placement),
+        "workspace_outcome": workspace_outcome(placement) if stopped_or_closed(placement) else None,
         "approval": {
             "status": approved,
             "request_id": open_request_id(conn, placement.id),
@@ -302,10 +302,15 @@ def workspace_outcome(placement: Any) -> dict[str, Any] | None:
     }
 
 
+def stopped_or_closed(placement: Any) -> bool:
+    """`workspace_outcome` is about a placement that no longer runs: `null` while it runs,
+    also after a `removed` taken while a start came in (§15.5)."""
+    return placement.active is None or placement.desired == "stopped"
+
+
 def held(placement: Any) -> bool:
     """The clone of a stopped or closed placement is still on the runner's disk (§15.6)."""
-    stopped = placement.active is None or placement.desired == "stopped"
-    return stopped and placement.workspace_state in HELD
+    return stopped_or_closed(placement) and placement.workspace_state in HELD
 
 
 def _shown_report(report: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -351,7 +356,7 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
         "workspace_epoch": placement.workspace_epoch,
         "seq": placement.reported_seq,
     }
-    if placement.active is None or placement.desired == "stopped":
+    if stopped_or_closed(placement):
         # What the runner removes, keeps or was asked to remove by hand (§15.8).
         found["workspace_outcome"] = workspace_outcome(placement)
     return found
