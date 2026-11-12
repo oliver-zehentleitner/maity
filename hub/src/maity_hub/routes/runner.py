@@ -407,11 +407,23 @@ def _runner_answer(conn: Connection, placement: Any) -> dict[str, Any]:
 
 
 @router.get("/runner/placements")
-def runner_placements(request: Request, caller: RunnerCaller) -> JSONResponse:
+def runner_placements(request: Request, caller: RunnerCaller, closed: bool = False) -> JSONResponse:
+    """The active placements, or with `closed=true` the closed ones whose clone this runner
+    has not reported removed, wherever they are (§15.5, §15.8)."""
     runner_id = caller.runner_id
     assert runner_id is not None
     with engine_of(request).begin() as conn:
-        items = [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)]
+        if closed:
+            items = [
+                {
+                    **pl.for_runner(conn, p),
+                    "active": False,
+                    "closed_reason": p.closed_reason,
+                }
+                for p in pl.runner_reads_closed(conn, runner_id)
+            ]
+        else:
+            items = [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)]
         return JSONResponse({"items": items, "next_cursor": None})
 
 
@@ -433,6 +445,59 @@ def report_status(
         except pl.Refusal as refusal:
             raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
         return JSONResponse(_runner_answer(conn, after))
+
+
+class WorkspaceReport(Strict):
+    epoch: int = Field(ge=1, le=2**31 - 1)
+    state: Literal["retained", "removed", "kept"]
+    reason: str | None = None
+    unsaved: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    size_bytes: int | None = Field(default=None, ge=0, le=2**63 - 1)
+    removes_at: AwareDatetime | None = None
+    remove_requested_at: AwareDatetime | None = None
+
+
+def _check_workspace(body: WorkspaceReport) -> None:
+    """`reason` only with `kept`, from its closed list; `retained` with its deadline (§15.5)."""
+    errors: dict[str, str] = {}
+    if body.state == "kept":
+        if body.reason is None:
+            errors["reason"] = "required_with_kept"
+        elif body.reason not in pl.WORKSPACE_REASONS:
+            errors["reason"] = "unknown"
+    elif body.reason is not None:
+        errors["reason"] = "not_with_state"
+    if body.state == "retained" and body.removes_at is None:
+        errors["removes_at"] = "required_with_retained"
+    if body.unsaved and body.reason != "unsaved_work":
+        errors["unsaved"] = "not_with_reason"
+    if errors:
+        raise invalid(errors)
+
+
+@router.post("/runner/placements/{placement_id}/workspace")
+def report_workspace(
+    placement_id: str, body: WorkspaceReport, request: Request, caller: RunnerCaller
+) -> JSONResponse:
+    """No `Idempotency-Key`: a report states the clone as it is, and a repeat states it
+    again (§15.8). Reaches every approved placement of this runner, closed ones wherever
+    they are: an active one is in the runner's projects by definition, and a closed one is
+    either held, so a detach does not orphan its clone, or its `removed` was this runner's
+    own report, whose late retry must get its `200` (§15.8, "What a runner reads")."""
+    runner_id = caller.runner_id
+    assert runner_id is not None
+    _check_workspace(body)
+    with events.transaction(engine_of(request)) as conn:
+        placement = _own_placement(conn, runner_id, placement_id)
+        events.lock_project(conn, placement.project_id)
+        placement = pl.row(conn, placement.id)  # as it is under the lock
+        try:
+            after = pl.workspace_report(conn, placement, body.model_dump(), caller.runner_actor())
+        except pl.Refusal as refusal:
+            raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
+        return JSONResponse(
+            {**_runner_answer(conn, after), "workspace_outcome": pl.workspace_outcome(after)}
+        )
 
 
 # --- the join pickup (§15.9) -------------------------------------------------------------
