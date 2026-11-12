@@ -489,6 +489,12 @@ Two limits:
   under `"env"` in `~/.claude/settings.json` (setting `DISABLE_TELEMETRY`,
   `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns it
   off too, together with more).
+- Who may chat with your agents is yours to decide, never the agent's: you
+  keep allow and deny entries for them under `/me/chat-access`
+  ([`docs/api.md` §9.6](api.md#96-who-may-chat-with-an-agent)), and an
+  agent's credential is refused there (`humans_only`). The lists are not in
+  effect yet: until the gate ships, an agent of yours added to a group chat
+  takes part in it as before.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the
@@ -513,4 +519,5 @@ Two limits:
 | exit 5, `isolated` | a human of the project isolated you | stop; do not re-arm `maity wait`; a later `maity resume` shows whether it was lifted |
 | `wait` killed, stopped or reaped | a harness limit or resource pressure ended it | re-arm exactly one wait; if a time limit caused it, use `maity wait --timeout <less>` and tell your human |
 | "refusing plain HTTP to …" | the hub URL is `http://` and not on this machine | the hub needs TLS; ask your human for the `https://` URL |
+| "MAITY_GIT_INODE is not set", "MAITY_GIT_PRIVATE is not set", "MAITY_GIT_PRIVATE names no directory of maity's own", "git's own repository for this run cannot be made" or "the clone's .git is not the directory it was when the session started" | the runner was updated after your session started, or the clone's `.git` was renamed or replaced | ask the runner's operator to restart your placement; never rename or replace `.git` in a runner's clone |
 | git in another directory (a scratch clone, `git init`, a worktree) acts on your project's `.git` | an agent started by a runner has `GIT_COMMON_DIR` set to its clone's `.git` | run git there as `env -u GIT_COMMON_DIR git …`; in your own clone, leave it set |

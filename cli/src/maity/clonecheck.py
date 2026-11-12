@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import secrets
 import shutil
 import stat
 import subprocess
@@ -31,6 +32,18 @@ MARKER_PATH = Path(".git", "maity", "placement")
 # Beside it, the git the runner found: the one maity starts under the runner, not one the
 # PATH of maity's command line picks.
 GIT_PATH = Path(".git", "maity", "git")
+# The inode of the clone's `.git` when the runner started the session (adapters.launch).
+# The sandbox keeps the agent out of `.git/maity`, not from renaming `.git` itself, so a
+# directory of the session's own could take its name; maity takes `.git` only as the one
+# with this inode, opened once (opened_git).
+GIT_INODE_ENV = "MAITY_GIT_INODE"
+# Where maity makes git's own repository for one run, outside the clone, in the runner's
+# directory for the agent, which the sandbox hides: git gets that repository as a path, and a
+# path through `.git` names whatever `.git` is when git opens it. For Codex, whose maity
+# runs inside the sandbox with the agent's own rights, the runner sets IN_CLONE: there
+# `.git/maity` is used. Unset under the runner, maity runs no git.
+GIT_PRIVATE_ENV = "MAITY_GIT_PRIVATE"
+IN_CLONE = "clone"
 # What git under the runner gets from maity's own environment. PATH is not among them: git
 # gets one of its own (git_path_env), so no variable set for maity
 # (`GIT_SSH_COMMAND=… maity report`, `PATH=…`) picks a program git starts; HOME reaches git
@@ -427,13 +440,14 @@ def placement_git(cwd: Path) -> Iterator[Pinned | None]:
     clone, after checking that clone and that `cwd` lies in it; None outside such a session.
 
     git does not read the clone's `.git` for its configuration, HEAD or refs: it reads a
-    repository maity writes for this run under `.git/maity`: for Claude Code a directory
-    its sandbox keeps the agent from writing; Codex runs maity inside its sandbox, with the
-    agent's own rights. Its configuration is maity's own, with no system or global one and
-    the clone's entries maity checked passed on through the environment, so a configuration
-    changed after the check is never read. Objects, the index and the work tree are the
-    clone's: data git reads, nothing it runs. The directory is removed after the run. git is
-    the one the runner found (GIT_PATH), with a PATH of its own."""
+    repository maity writes for this run in the runner's directory for the agent, outside
+    the clone and hidden from the sandbox (_private_dir); for Codex, which runs maity inside
+    its sandbox with the agent's own rights, under `.git/maity`. Its configuration is maity's
+    own, with no system or global one and the clone's entries maity checked passed on through
+    the environment, so a configuration changed after the check is never read. Objects, the
+    index and the work tree are the clone's: data git reads, nothing it runs. The directory
+    is removed after the run. git is the one the runner found (GIT_PATH), with a PATH of its
+    own."""
     root = placement_root(cwd)
     if root is None:
         yield None
@@ -444,38 +458,45 @@ def placement_git(cwd: Path) -> Iterator[Pinned | None]:
         raise Refused(f"the working directory cannot be resolved ({exc})") from None
     if not _within(here, root):
         raise Refused(f"{onboarding.inline(str(here))} is outside the clone {root}")
-    program = _recorded_git(root)  # the config is read by the same git, not PATH's
-    finding, entries = _inspect(root, LOCAL, program)
-    if finding is not None:
-        raise Refused(_refusal(root, finding))
     dot_git = root / ".git"
-    own = dot_git / "maity"
-    if own.is_symlink() or not own.is_dir():
-        raise Refused(f"the clone {root} has no .git/maity directory of maity's own")
-    private = Path(tempfile.mkdtemp(prefix="git-", dir=own))
-    try:
-        _copy_refs(dot_git, private)
-        (private / "config").write_text("[core]\n\trepositoryformatversion = 0\n\tbare = false\n")
-        yield Pinned(
-            program,
-            {
-                **git_path_env(program),
-                "GIT_DIR": str(private),
-                "GIT_COMMON_DIR": str(private),
-                "GIT_OBJECT_DIRECTORY": str(dot_git / "objects"),
-                "GIT_INDEX_FILE": str(dot_git / "index"),
-                "GIT_WORK_TREE": str(root),
-                "GIT_CEILING_DIRECTORIES": str(root.parent),
-                "GIT_OPTIONAL_LOCKS": "0",  # `status` writes no refreshed index into the clone
-                # No configuration but maity's own and the checked entries: not the system's,
-                # not HOME's (a missing file reads as empty).
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CONFIG_GLOBAL": str(private / "global"),
-                **_passed_on(entries, private / "none"),
-            },
-        )
-    finally:
-        shutil.rmtree(private, ignore_errors=True)
+    with opened_git(root) as top:
+        program = _recorded_git(root, top)  # the config is read by the same git, not PATH's
+        # The check reads `.git` by name: under an exchange it checks the replacement, and
+        # only what it accepts reaches git, a plain clone's keys, none of which runs a program.
+        finding, entries = _inspect(root, LOCAL, program)
+        if finding is not None:
+            raise Refused(_refusal(root, finding))
+        private = _private_dir(root, top)
+        try:
+            try:
+                _copy_refs(dot_git, private, top)
+                (private / "config").write_text(
+                    "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+                )
+            except OSError as exc:
+                raise Refused(f"git's own repository for this run cannot be made ({exc})") from None
+            yield Pinned(
+                program,
+                {
+                    **git_path_env(program),
+                    "GIT_DIR": str(private),
+                    "GIT_COMMON_DIR": str(private),
+                    # Data git reads, through the name `.git`: under an exchange, the
+                    # replacement's objects and index, which start no program.
+                    "GIT_OBJECT_DIRECTORY": str(dot_git / "objects"),
+                    "GIT_INDEX_FILE": str(dot_git / "index"),
+                    "GIT_WORK_TREE": str(root),
+                    "GIT_CEILING_DIRECTORIES": str(root.parent),
+                    "GIT_OPTIONAL_LOCKS": "0",  # `status` writes no refreshed index
+                    # No configuration but maity's own and the checked entries: not the
+                    # system's, not HOME's (a missing file reads as empty).
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                    "GIT_CONFIG_GLOBAL": str(private / "global"),
+                    **_passed_on(entries, private / "none"),
+                },
+            )
+        finally:
+            shutil.rmtree(private, ignore_errors=True)
 
 
 def _refusal(root: Path, finding: Finding) -> str:
@@ -526,17 +547,14 @@ def _read_regular(name: str, dir_fd: int, limit: int) -> bytes:
     return data
 
 
-def _copy_refs(dot_git: Path, private: Path) -> None:
+def _copy_refs(dot_git: Path, private: Path, top: int | None) -> None:
     """HEAD, `packed-refs`, `shallow` and `refs/` of the clone into `private`, as regular
     files only: a link, or anything else, is refused rather than followed. Read through
-    the directory `.git` was when opened, so a `.git` replaced meanwhile is not read."""
-    if sys.platform == "win32":
+    `top`, the descriptor of the `.git` the runner recorded (opened_git), so a `.git`
+    replaced meanwhile is not read."""
+    if top is None:
         _copy_refs_by_path(dot_git, private)
         return
-    try:
-        top = os.open(dot_git, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY)
-    except OSError as exc:
-        raise Refused(f"the clone's .git cannot be opened as a directory ({exc})") from None
     try:
         (private / "HEAD").write_bytes(_read_regular("HEAD", top, REF_MAX))
         for name in ("packed-refs", "shallow"):
@@ -555,8 +573,6 @@ def _copy_refs(dot_git: Path, private: Path) -> None:
                 (where / name).write_bytes(_read_regular(name, fd, REF_MAX))
     except OSError as exc:
         raise Refused(f"the clone's refs cannot be copied ({exc})") from None
-    finally:
-        os.close(top)
 
 
 def _plain_file(path: Path, limit: int) -> bytes:
@@ -598,16 +614,112 @@ def _copy_refs_by_path(dot_git: Path, private: Path) -> None:
         raise Refused(f"the clone's refs cannot be copied ({exc})") from None
 
 
-def _recorded_git(root: Path) -> str:
-    """The git the runner recorded for this clone (GIT_PATH): an absolute path to a program."""
-    where = root / GIT_PATH
+@contextlib.contextmanager
+def opened_git(root: Path) -> Iterator[int | None]:
+    """The clone's `.git` as the runner left it: opened once from the clone's root without
+    following a link, and refused unless it is the directory whose inode the runner set in
+    GIT_INODE_ENV at the session's start. Yields its descriptor, so what maity reads from it
+    afterwards is not looked up through the name `.git` again; sandboxed code can rename
+    `.git` and put a directory of its own there. Where directories cannot be opened (Windows,
+    local mode) the inode is checked by name and None is yielded."""
+    value = os.environ.get(GIT_INODE_ENV, "")
+    if not (value.isascii() and value.isdigit()):
+        raise Refused(
+            f"{GIT_INODE_ENV} is not set, so the clone's .git is unknown; the runner sets it"
+            " when it starts a session: restart the placement"
+        )
+    replaced = Refused(
+        "the clone's .git is not the directory it was when the session started (it was"
+        " renamed or replaced); maity runs no git there"
+    )
+    if not _walks():
+        try:
+            here = os.lstat(root / ".git")
+        except OSError:
+            raise replaced from None
+        if not stat.S_ISDIR(here.st_mode) or here.st_ino != int(value):
+            raise replaced
+        yield None
+        return
+    top = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        mode = where.lstat()
-        if not stat.S_ISREG(mode.st_mode) or mode.st_size > REF_MAX:
-            raise OSError("not a plain file")
-        program = where.read_bytes().decode("utf-8").strip()
-    except (OSError, UnicodeDecodeError):
-        raise Refused(f"the clone {root} has no git the runner recorded ({GIT_PATH})") from None
+        fd = os.open(".git", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+    except OSError:
+        raise replaced from None
+    finally:
+        os.close(top)
+    try:
+        if os.fstat(fd).st_ino != int(value):
+            raise replaced
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _walks() -> bool:
+    """Whether a name can be opened in a directory's descriptor without following a link."""
+    return not _windows() and os.open in os.supports_dir_fd and hasattr(os, "O_DIRECTORY")
+
+
+def _private_dir(root: Path, top: int | None) -> Path:
+    """A new directory for one git run's own repository (its configuration, HEAD, refs): in
+    the directory GIT_PRIVATE_ENV names, outside the clone, since git opens it by path and no
+    path through `.git` is safe once `.git` can be renamed. With IN_CLONE (Codex, whose maity
+    has the agent's own rights) in the clone's `.git/maity`, made through `.git`'s descriptor
+    `top` where there is one. Unset, maity runs no git: a lost variable must not put git's
+    repository back under `.git`."""
+    outside = os.environ.get(GIT_PRIVATE_ENV, "")
+    if not outside:
+        raise Refused(
+            f"{GIT_PRIVATE_ENV} is not set, so git has no repository of maity's own; the runner"
+            " sets it when it starts a session: restart the placement"
+        )
+    if outside != IN_CLONE:
+        where = Path(outside)
+        if (not where.is_absolute() or where.is_symlink() or not where.is_dir()
+                or _within(where.resolve(), root)):  # fmt: skip
+            raise Refused(f"{GIT_PRIVATE_ENV} names no directory of maity's own ({where})")
+        try:
+            return Path(tempfile.mkdtemp(prefix="git-", dir=where))
+        except OSError as exc:
+            raise Refused(f"git's own repository for this run cannot be made ({exc})") from None
+    own = root / ".git" / "maity"
+    if top is None:
+        if own.is_symlink() or not own.is_dir():
+            raise Refused(f"the clone {root} has no .git/maity directory of maity's own")
+        return Path(tempfile.mkdtemp(prefix="git-", dir=own))
+    try:
+        fd = os.open("maity", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+    except OSError:
+        raise Refused(f"the clone {root} has no .git/maity directory of maity's own") from None
+    try:
+        name = f"git-{secrets.token_hex(8)}"
+        os.mkdir(name, 0o700, dir_fd=fd)
+    finally:
+        os.close(fd)
+    return own / name
+
+
+def _recorded_git(root: Path, top: int | None) -> str:
+    """The git the runner recorded for this clone (GIT_PATH): an absolute path to a program,
+    read through `.git`'s descriptor `top` (by name where None)."""
+    missing = Refused(f"the clone {root} has no git the runner recorded ({GIT_PATH})")
+    try:
+        if top is None:
+            where = root / GIT_PATH
+            mode = where.lstat()
+            if not stat.S_ISREG(mode.st_mode) or mode.st_size > REF_MAX:
+                raise OSError("not a plain file")
+            data = where.read_bytes()
+        else:
+            fd = os.open("maity", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+            try:
+                data = _read_regular("git", fd, REF_MAX)
+            finally:
+                os.close(fd)
+        program = data.decode("utf-8").strip()
+    except (OSError, UnicodeDecodeError, Refused):
+        raise missing from None
     if not (os.path.isabs(program) and os.path.isfile(program) and os.access(program, os.X_OK)):
         raise Refused(f"the git the runner recorded for {root} is not a program here")
     return program

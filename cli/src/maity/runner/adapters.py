@@ -29,6 +29,13 @@ START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
     "comes first. Then work as `docs/agents.md` and the rules in the packet say."
 )
+# An interactive session the runner ended because its agent stopped listening (§15.14) starts
+# again on the same conversation with this line, where the harness can resume one.
+RESUME_PROMPT = (
+    "The runner ended and resumed this session: you had stopped listening (no `maity wait` "
+    "ran and nothing changed on screen). Run `maity resume`, then carry on with your work and "
+    "your wait loop."
+)
 # Supervised runs end with the turn: the loop starts the next one on the next event.
 SUPERVISED_PROMPT = (
     START_PROMPT + " Handle what is waiting for you, checkpoint what you hold, then end your "
@@ -96,6 +103,7 @@ class Context:
     workspaces: Path | None = None  # the root of every clone, for sandboxes that can carve
     as_user: AsUser = AsUser()  # who the agents run as (§7.6)
     agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
+    resume: bool = False  # interactive: continue the harness's last conversation (§15.14)
 
 
 @dataclass(frozen=True)
@@ -123,6 +131,18 @@ def launch(ctx: Context) -> Launch:
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     ctx.as_user.write(ctx.clone / clonecheck.MARKER_PATH, ctx.placement["id"] + "\n")
+    # Which directory `.git` is: the sandbox does not keep the agent from renaming it, so
+    # maity outside the sandbox takes `.git` only as this one (clonecheck.opened_git).
+    env[clonecheck.GIT_INODE_ENV] = str(ctx.as_user.inode(ctx.clone / ".git"))
+    # git's own repository for each run maity starts, outside the clone, in the agent's
+    # directory the sandbox hides (clonecheck._private_dir). Codex runs maity in its sandbox,
+    # which cannot write there: named as the clone's `.git/maity`.
+    if ctx.harness.id == "codex":
+        env[clonecheck.GIT_PRIVATE_ENV] = clonecheck.IN_CLONE
+    else:
+        private = ctx.agent_dir / "git"
+        ctx.as_user.mkdir(private)
+        env[clonecheck.GIT_PRIVATE_ENV] = str(private)
     # The git maity starts there: this one, found on the runner's PATH, not the agent's.
     git = proc.program("git")
     if git is not None:
@@ -260,6 +280,8 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
+        if ctx.resume:  # `--continue`: the clone's latest conversation, with its context
+            return Launch([*base, "--continue", RESUME_PROMPT], env)
         return Launch([*base, START_PROMPT], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).

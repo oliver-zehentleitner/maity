@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a9 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a10 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -980,6 +980,22 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   generation moves.
 - **Stops.** A stop waits `stop_grace_seconds` (capped by
   `stop_grace_max`), then sends SIGTERM, and ends the session 10 s later.
+- **An interactive agent that stopped listening.** Once a minute the
+  runner looks at each interactive session: does any process run below
+  the harness (a `maity wait`, or a tool however quiet; not the sandbox's
+  own `socat` bridges), and did the pane change (a hash, never its text)?
+  With neither for `hang_after_minutes` and no client attached, it types
+  one line into the pane telling the agent to go back to its wait loop,
+  and sends it. Any answer counts as a change. If the pane is still as it
+  was before Enter `reply_within_minutes` later, or after three answered
+  nudges with no `maity wait` in between, it ends the session, reports
+  `exited`/`hung`/`idle`, and starts it again; Claude Code resumes its
+  last conversation (`--continue`). `crash_cap` such ends in a row,
+  with no `maity wait` seen in between, hold the placement as
+  `failed`/`hung`. The minutes are
+  30 and 10 until the hub sends the owner's health settings. Attaching
+  to the session pauses the check, so the runner never types while you
+  are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
   known placement is adopted, not restarted. A session whose placement
   is gone ends after `stop_grace_max`.

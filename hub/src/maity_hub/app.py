@@ -94,6 +94,7 @@ from maity_hub.routes import (
     board,
     bridges,
     briefing_view,
+    chat_access,
     contract_text,
     conversations,
     cross_chats,
@@ -263,6 +264,10 @@ def start_once(engine: Engine, settings: Settings) -> None:
             from maity_hub.auth import email_links
 
             email_links.void_open(conn)
+        if not sign_in.password_reset_enabled(conn, settings):
+            from maity_hub.auth import password_resets
+
+            password_resets.void_open(conn)
         # A second factor the environment switched off is told, once (§2.8.5).
         source = sign_in.resolve(conn, settings)["second_factor"][1]
         sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
@@ -513,6 +518,7 @@ def create_app(
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(cross_chats.router, prefix=prefix)
+    app.include_router(chat_access.router, prefix=prefix)  # §9.6, the lists
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)

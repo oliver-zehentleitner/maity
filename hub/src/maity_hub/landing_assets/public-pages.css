@@ -93,3 +93,30 @@
 /* Narrow and no pitch (the default delivery, second factor, mail sent, closed): no empty dark band.
    A panel holding any of the pitch's parts (subline, points, note) stays. */
 @media (max-width:959.98px){.door-panel:not(:has(.subline)):not(:has(li)):not(:has(.note)){display:none}}
+/* ---- the hub's own public pages in this frame: /explore (§16.9) ------------------------ */
+/* From the approved mockup's pp.css (tsk-tp97v64vpy5z): the landing's dark hero (.hero.dz from
+   landing.css), shorter, then sections in the landing's tokens. */
+.xhero .wrap{display:block;padding-top:64px;padding-bottom:64px}
+.xhero h1{margin:6px 0 0;font-size:3.6rem;overflow-wrap:anywhere}
+.xhero .sub{margin:16px 0 0}
+.sec{padding:52px 0}
+/* a project's tile: no picture, so its letter in the accent colour */
+.pmark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:64px;border-radius:16px;
+  font:700 30px/1 var(--font-display);color:var(--accent-text);background:var(--accent)}
+.xgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;list-style:none;margin:0;padding:0}
+.xgrid>li{display:flex;min-width:0}
+.xcard{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;padding:22px;border-radius:18px;background:var(--surface);
+  border:1px solid var(--border);color:var(--text);text-decoration:none;box-shadow:0 1px 2px var(--shadow);transition:border-color .15s}
+.xcard:hover{border-color:var(--accent)}
+.xcard .pmark{margin-bottom:12px}
+.xcard b{font:700 1.5rem/1.2 var(--font-display);letter-spacing:-.02em;overflow-wrap:anywhere}
+.xcard small{font:400 13px var(--font-mono);color:var(--muted);overflow-wrap:anywhere}
+.xcard .go{margin-top:14px;font-weight:600;color:var(--accent);font-size:14.5px}
+.empty-note{color:var(--muted);text-align:center;padding:40px 0}
+@media (max-width:760px){
+  .xhero .wrap{padding-top:36px;padding-bottom:36px}.xhero h1{font-size:2.5rem}
+  .sec{padding:34px 0}
+  .pmark{width:48px;height:48px;border-radius:12px;font-size:24px}
+  .xgrid{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){.xcard{transition:none}}

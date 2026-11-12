@@ -1837,6 +1837,81 @@ every call can run that way.
 - A copy of the check in the CLI beside the runner's: two lists of
   allowed keys drift apart.
 
+## maity takes the clone's `.git` only as the directory the runner recorded
+
+**Id:** e44249f8-15d0-4104-8940-5ff48decd412
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself
+**See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-12
+**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory or `maity gh` start reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
+
+At a session's start the runner records the inode of the clone's `.git`
+(`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
+runner cannot read it itself). Before maity starts git there, it opens
+the clone's root, then `.git` from it once, without following a link,
+and refuses a directory with another inode. It reads the recorded git
+and copies the refs through that descriptor, so a `.git` renamed after
+the check is not read. git's own repository for the run (its
+configuration, HEAD, refs) is made outside the clone, in the runner's
+directory for the agent, which the sandbox hides (`MAITY_GIT_PRIVATE`);
+for Codex, whose maity runs inside its sandbox with the agent's own
+rights, the runner sets the value `clone`, and it stays in `.git/maity`,
+made through the descriptor. A directory inside the clone, a link or a
+relative path is refused. Without the inode or that variable maity runs
+no git: a session started by an older runner needs a restart. On
+Windows (local mode) no directory opens, so the inode is compared by
+name. The check of the clone (`_inspect`) and the objects
+and index git reads still go through the name `.git`: under an exchange
+the check reads the replacement and passes on only a plain clone's keys,
+none of which starts a program, and objects and the index are data.
+
+**Reason:** the sandbox denies the agent `.git/maity` and the paths that
+redirect git, not renaming `.git` itself, and the clone's root is
+writable. A directory of the session's own named `.git` then held a
+`maity/git` that maity ran outside the sandbox. Claude Code blocks that
+rename today with a mount of its own, which the runner neither asks for
+nor checks, so an update of Claude Code could reopen it unnoticed.
+
+**Rejected alternatives:**
+- Denying writes to `.git`: the whole directory turns read-only, and
+  commit, fetch and push write refs, the index, objects and logs there.
+- Making `.git` a mount point in the sandbox settings (a rename then
+  fails with EBUSY): the settings cannot ask for it.
+- Recording the device too: `ls -di` prints only the inode on every
+  system, and a decoy cannot come from another file system, since a
+  directory cannot be renamed across one.
+- Falling back to the name when the variable is missing: the fallback
+  would be the hole again, for every session older than the runner.
+- git's own repository under a random name in `.git/maity`: git opens
+  it by a path through `.git`, and the name can be learned. A sandboxed
+  command started while `.git` was renamed sees the real `.git/maity`
+  under its new name, puts `.git` back and watches for new names; a
+  decoy with that name gave git a clean filter that ran outside the
+  sandbox (review of #1683).
+- Handing git `/proc/self/fd` paths with `pass_fds`: Linux only, and a
+  runner on macOS has no such path into an open directory.
+- Pinning more keys with `-c`: configuration can start programs
+  through many keys, filters among them.
+- Taking an unset `MAITY_GIT_PRIVATE` as Codex: a session whose
+  variable is lost, or a runner that forgets it, would put git's
+  repository back under `.git/maity`, opened by a path through `.git`;
+  the runner names Codex's case instead, and maity refuses an unset
+  variable under the runner (review of #1683 round 2: unset, a decoy's
+  filter ran outside the sandbox).
+
+**Known gap:** the state directory (the credential) is still taken
+through the name `.git`, and so is the record of the `maity gh` that
+pull request #1663 adds until it moves onto this check. Under a sandbox
+that lets the agent rename `.git`, a later sandboxed command can also
+read the real `.git/maity` under its new name, because the deny applies
+to the path; only the harness can close that. Claude Code 2.1.322
+refuses the rename (EBUSY) with a mount of its own. Codex's git
+repository stays in `.git/maity` by name: Codex's maity runs in its
+sandbox, so a decoy's program runs there too (review of #1683 round 2,
+in a Codex-like bwrap: once inside, never outside).
+
 ## A headless placement is offered no tool for asking a person
 
 **Id:** e71f0da3-46ed-4276-b88a-3fcd6af905bf
@@ -2042,3 +2117,184 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
   tool's message, which is outside the contract.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
+
+## The runner nudges an interactive agent that stopped listening, then resumes it
+
+**Id:** 20fe2a78-29ec-49fa-b428-0a785db95d14
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-cbz655mvt4ss (the lead asked for it after both placed agents on a VM went silent at once on 2026-11-12 while their placements reported `running`; the "no client attached" guard confirmed by the lead); `cli/src/maity/runner/supervisor.py` (`_idle`), `tmux.py`; docs/api.md §15.14
+**Revisit when:** the hub's half of §15.14 (check-in, nudge) is routed, or a harness gives the runner a machine-readable signal that its session waits for input
+
+An interactive agent listens by running `maity wait`. When that ends (a
+full disk, a provider limit, a turn the agent closed), the agent sits at
+its prompt, its process stays alive, and its placement stays `running`.
+Nothing noticed it: the hub's check-in and nudge are not routed yet, and
+§15.14 had the runner leave an interactive session alone. Now the runner
+looks at each interactive session once a minute.
+- **Not listening** means two things together: no process below the
+  harness but its own helpers (neither a `maity wait` nor a tool, however
+  quiet), and the pane unchanged. The first version looked only for a
+  missing wait, and a review showed a quiet build would then be ended. An
+  unsandboxed Claude Code at its prompt has no child process; every tool
+  runs as one (seen with `ps` on a live session). A sandboxed one on Linux
+  keeps a `socat UNIX-LISTEN:` bridge per proxy for its whole life
+  (fkyb's review, from the sandbox runtime's source, not seen live): such
+  a bridge is not counted as work, or the check would never fire under
+  the sandbox the runner turns on wherever bwrap and socat are present.
+  Only a socat with the bridge's whole shape counts: it listens on a
+  socket whose own name is `claude-http-<hex>.sock` or
+  `claude-socks-<hex>.sock` and forwards to `TCP:localhost:<port>` (or
+  127.0.0.1; the runtime adds keepalive options after the port, so only
+  the address before the first comma is compared), as the sandbox runtime
+  builds it. A first version compared the whole word and took the real
+  bridge for work (fkyb's review). Rejected: `/claude-`
+  anywhere in the path, which exempted a service in a `claude-`
+  directory (hcrb's review); any `claude-<word>-<id>.sock`, which
+  exempted an agent's own service named like that (v5vp's review); an
+  agent's own socat on another socket is a tool, and so is any process
+  below a bridge but its own forks (hcrb's review).
+- A missing process alone is not enough: an agent writing a long answer
+  has no child process for a while. An unchanged pane alone is not enough
+  either: an agent waiting for events shows nothing new. The processes
+  come from `ps -A -ww`. The pane is compared by hash, so its text is never
+  kept, logged or sent.
+- Idle ends are counted on their own and in a row toward `crash_cap`,
+  then hold the placement as `failed`/`hung`/`idle`: a hung session never
+  ends quickly, so the quick-exit crash count never saw it. Rejected:
+  counting them within `crash_window`. One end takes 40 minutes with the
+  default times, and the window is 30, so five never fit and the cap was
+  never reached (fkyb's review). A `maity wait` seen below the harness
+  starts the row over: the resume worked.
+- The baseline after a nudge is the pane with the line typed and before
+  Enter, so whatever the harness does with the line, a reply included, is
+  a change: a session must never be ended 10 minutes after a genuine reply
+  (the lead's decision on hcrb's review). Rejected: measuring after Enter,
+  at the next look (the first version) or at the first capture after
+  Enter (round 2); a reply already on screen by then became the baseline.
+  If the line does not show within the short window (a stalled screen, a
+  slow read), Enter waits for the next look, which measures the pane
+  first. Rejected: keeping the hash from before the nudge, which took the
+  late echo for an answer and nudged forever; and taking the baseline at
+  the next look after Enter had gone out, which made a reply the baseline
+  again (both fkyb's reviews). A line that has still not shown at that
+  look keeps its Enter back until a look sees it, so its own late echo is
+  never an answer; one that never shows within `reply_within_minutes`
+  ends the session. A nudge counts toward the cap only once an answer to
+  it is seen: a change of the pane after its Enter, or a process the
+  harness started. A look the runner cannot use (a person attached, an
+  unreadable pane) is no answer, and the reply time runs on. A held-back
+  line dropped before its Enter does not count; its line may still be
+  in the input, so the next nudge sends it rather than typing a second
+  copy behind it. Rejected: counting at typing, which ended a session for
+  "three answered nudges" after zero Enters (fkyb's review); counting at
+  Enter, which did the same after three unanswered Enters with a person
+  attaching in between (v5vp's review); clearing the input before typing,
+  which could throw away what a person typed there. Once a person was
+  attached, the input is theirs: the next nudge types afresh behind
+  whatever they left instead of pressing Enter on it alone (fkyb's
+  review); like any nudge, it then sends a draft they left together with
+  its line, and a second copy if they left the line as it was.
+- Since Enter itself changes a live harness's pane, only a session that
+  does not react at all is ended after `reply_within_minutes`. An agent
+  that answers every nudge but never goes back to its wait would be
+  nudged forever, so after three answered nudges with no `maity wait`
+  seen in between its next quiet spell ends it, without another nudge.
+  Rejected: resetting on any change without a cap (an agent that only
+  answers stays deaf for good).
+- A new generation clears the resume flag: it may change the harness, the
+  model or the mode, and §15.14 wants a fresh session then.
+- A live tool below the harness keeps the session out of the check for as
+  long as it runs. An interactive session gets no `tool_call_max_minutes`
+  backstop (`hung`/`tool`) yet: a tool that hangs forever there is not
+  ended. Rejected: treating a quiet tool like an idle prompt, which ended
+  a long build after 40 minutes.
+- After `hang_after_minutes`, the runner types one fixed line into the
+  pane, and only while no client is attached: a person at the pane would
+  have the runner type into their session. After `reply_within_minutes`
+  more, it ends the session and reports `exited`/`hung`/`idle`. It
+  starts the session again with Claude Code's `--continue`, so the
+  conversation survives. Until the hub carries the owner's
+  `health.settings` to the runner, the minutes are the defaults, 30 and
+  10.
+- Anything the runner cannot read (no `ps`, a tmux error) starts the
+  count again. The runner never acts on a guess.
+- `-ww`: without a terminal, ps cuts the command line at 80 columns, and
+  `maity wait` behind a long venv path fell past the cut. The real-tmux
+  test found it.
+- Rejected: restarting at once without the typed line. A typed line costs
+  the agent nothing, while a restart costs it its tool state. For Codex
+  and opencode a restart still starts a new conversation.
+- Rejected: asking the hub whether the instance listens. The runner's
+  credential reads no members, and the processes are on the runner's side
+  anyway.
+
+## A stopped agent's clone stays for its retention time, then the runner removes it
+
+**Id:** 161d5507-5b44-45d6-8bec-cacd58de58a2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-34gb7frfbsk7 (disks of runner machines filled with the clones of agents that no longer ran there); the owner's answer to req-fdfb49yzqnhv, verbatim: "ich bin für eine zeitspanne die der workspace noch liegen bleiben darf zb 3h oder 24h falls doch noch was daraus benötigt wird oder "sofort entfernen" das soll eine option sein bitte"; the lead's decision on unsaved work (2026-11-12); docs/api.md §15.5
+**Revisit when:** a placement can save an agent's unsaved work somewhere other than its clone, or the owner asks for unsaved work to go too after the retention time
+
+Not built yet (tsk-34gb7frfbsk7): this records the contract's decision;
+the hub and the runner follow in their own pull requests.
+
+A clone stays on the runner until the operator removes it, and the
+clones of agents that no longer run there fill the disk. The contract
+has a stop start a retention time, chosen per placement (`immediate`, `3h`,
+`24h` by default, `7d`); after it, the runner removes the clone, and a
+start within it continues in the same clone. The time is the owner's
+answer: something in the clone may still be needed.
+- Unsaved work (uncommitted or untracked files, unpushed commits,
+  stashes) keeps the clone however long the retention, shown with its
+  size, and the owner can have it removed by hand. The runner never
+  throws away work nobody has looked at. Rejected: removing it anyway
+  once the time is up, because the owner chose the time; the owner's
+  reason for the time was that something might still be needed.
+- Rejected: removing the clone only when the placement closes (the first
+  draft). The owner asked for a time after a stop, and a stopped
+  placement that is never deleted would keep its clone for good.
+- Rejected: one fixed time for every placement. The owner asked for a
+  choice, with "remove immediately" among it.
+- The runner removes only on the hub's word (a stopped or closed
+  placement it lists), never because a placement is missing from its
+  list, and under the checks of `maity runner gc` plus a process check
+  and stashes, because the service runs on while it removes. The removed
+  clone's credential is revoked, so nothing carries over to a later
+  start.
+- Removal by hand is for people only (the profile's owner or a project
+  admin): it deletes unsaved work. A request stays until a report names
+  it, so a report the runner decided before seeing it cannot drop it
+  (spq4's review). The runner reads `remove_requested_at` on every
+  placement it may remove, active under `desired: stopped` or closed, and
+  names it in its report; `removed` clears the request whatever it names,
+  because nothing is left to remove. `removed` is accepted in any state of the placement,
+  because a start that arrives during the removal would otherwise find
+  neither a credential nor a way to rejoin.
+- A closed placement stays listed to its runner as long as its clone is
+  held, not for 30 days: a kept clone outlives any window, and it is the
+  clone that fills the disk. The same holds for people (`closed=true`
+  in the dashboard's list) and after a detach: the runner still reads
+  and reports on those closed placements, or the clone would be
+  orphaned on its disk (v5vp's review). After a detach, the workspace
+  report still reaches a placement whose `removed` this runner already
+  reported, though `closed=true` no longer lists it: a retry whose first
+  answer was lost must get its `200`, or the runner retries for ever.
+  Rejected: taking `not_found` after its own `removed` as done, since the
+  runner cannot tell it from a wrong id or a placement it never had.
+- Each workspace report names its clone (`workspace_epoch`, raised when a
+  removal is taken), and `removed` is final per clone. Rejected: one
+  final `removed` per placement. A placement that starts again gets a new
+  clone, so either its own later removal could not be reported, or a
+  late retry about the old clone could revoke the new clone's
+  credential (v5vp's review). The runner makes a removed clone's
+  successor only after the hub took the `removed` report, under the epoch
+  of that answer; a clone made earlier would carry the old epoch and all
+  its reports would be dropped (spq4's review). A placement that
+  continues another placement's clone reports under its own epoch, the
+  one it read when it started there. Rejected: carrying the older
+  placement's epoch over, which could make its first report later than
+  the hub's and so `invalid` (spq4's review).

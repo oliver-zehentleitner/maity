@@ -665,6 +665,63 @@ def report_failure(answers: list, base: str, artifacts: Path) -> str:
     return trace
 
 
+BOOTSTRAP = re.compile(r"/api/v1/bootstrap(\?|$)")
+
+
+def bundled(part: str, change):
+    """A route handler for GET /bootstrap (docs/api.md §5.4) that changes one part's body as a test changes
+    that part's single route: the boot reads the bundle, so a check that answers the project's or its
+    members' read differently answers the bundle's part the same way (tsk-j591fzgnmspf)."""
+    def handler(route) -> None:
+        parts = route.fetch().json()
+        got = parts.get(part)
+        if got and 200 <= got.get("status", 0) < 300:
+            change(got["body"])
+        route.fulfill(json=parts)
+    return handler
+
+
+def bootstrap_boot(run: Run, page: Page) -> None:
+    """The boot's first reads in one GET /bootstrap (docs/api.md §5.4, tsk-j591fzgnmspf): a cold load of
+    a project view asks the bundle with the project and none of the six single reads it replaces; with
+    the route answering 404, as an older hub does, the page reads them one by one and draws all the same."""
+    run.step("boot: one GET /bootstrap?project=… instead of the three waves; an older hub's 404 falls back")
+    base = "/api/v1"
+    singles = {f"{base}/maintenance", f"{base}/auth/session", f"{base}/me", f"{base}/projects/owner/e2e-alpha",
+               f"{base}/projects/owner/e2e-alpha/members", f"{base}/projects/owner/e2e-alpha/events?after=latest&wait=0"}
+    asked: list[str] = []
+
+    def record(r) -> None:
+        path = r.url.split("://", 1)[1].split("/", 1)[1]
+        if path.startswith("api/v1/"):
+            asked.append("/" + path)
+
+    page.on("request", record)
+    try:
+        page.goto(f"{run.base}/owner/e2e-alpha/board")
+        expect(page.locator("main section.view-board")).to_be_visible()
+        boot = [a for a in asked if a.startswith(f"{base}/bootstrap")]
+        assert boot == [f"{base}/bootstrap?project=owner/e2e-alpha"], asked
+        assert not singles.intersection(asked), f"single reads beside the bundle: {sorted(singles.intersection(asked))}"
+        asked.clear()
+
+        def older_hub(route) -> None:
+            route.fulfill(status=404, json={"error": {"code": "not_found", "message": "no such route", "details": {}}})
+
+        page.route(BOOTSTRAP, older_hub)
+        try:
+            page.goto(f"{run.base}/owner/e2e-alpha/board")
+            expect(page.locator("main section.view-board")).to_be_visible()
+            missing = {f"{base}/auth/session", f"{base}/me", f"{base}/projects/owner/e2e-alpha"} - set(asked)
+            assert not missing, f"the fallback did not read {sorted(missing)}: {asked}"
+            # The 404 is this step's own answer, not a failure of the page.
+            run.problems[:] = [x for x in run.problems if not re.fullmatch(r"GET /api/v1/bootstrap\S* answered 404", x)]
+        finally:
+            page.unroute(BOOTSTRAP, older_hub)
+    finally:
+        page.remove_listener("request", record)
+
+
 def no_problems(run: Run, where: str) -> None:
     if run.problems:
         raise AssertionError(f"{where}:\n  " + "\n  ".join(run.problems))
@@ -3830,7 +3887,7 @@ def account_tabs_layout(run: Run, browser) -> None:
                     where = f"{path} at {width}x{height}" + (" with the banner" if banner else "")
                     m = page.evaluate(TABS_MEASURE)
                     assert not m["problems"] and not errors, f"{where}: {m['problems'] + errors}"
-                    want = [t if t != tab else "*" + t for t in ("Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts")]
+                    want = [t if t != tab else "*" + t for t in ("Profile", "Settings", "Notifications", "Security", "Organisations", "Reports", "Linked accounts")]
                     assert m["tabs"][0] == want, f"{where}: the tabs are {m['tabs'][0]}"
                     if sub:
                         assert "*" + sub in m["tabs"][1] and len(m["tabs"]) == 2, f"{where}: Security's tabs are {m['tabs'][1:]}"
@@ -3870,7 +3927,7 @@ def account_tabs_layout(run: Run, browser) -> None:
             menu = page.locator("#header .profile-menu")
             menu.click()
             items = page.locator("#header ul.menu:visible .menu-item")
-            expect(items).to_have_text(["Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts · later", "Sign out"])
+            expect(items).to_have_text(["Profile", "Settings", "Notifications", "Security", "Organisations", "Reports", "Linked accounts · later", "Sign out"])
             m = page.evaluate(LINES_MEASURE, "#header ul.menu:not([hidden])")
             assert not m["problems"] and not errors, f"the profile menu at {width}: {m['problems'] + errors}"
             run.shot(page, f"fixtures-account-menu-{width}")
@@ -4187,6 +4244,39 @@ def board_cards_step(run: Run, page: Page, alpha: Path) -> None:
     overview_step(run, page)
     ticker_step(run, page)
     notifications_step(run, page, alpha)
+    report_step(run, page)
+
+
+def report_step(run: Run, page: Page) -> None:
+    """Report (docs/api.md §16.8, tsk-7ze5w6ymf7bw) against the hub: the project from the end of its
+    Overview, the form's reason first, sent as one POST /reports the hub takes (201); then
+    Your account → Reports lists it as open."""
+    run.step("report: the project from its Overview, then Your account → Reports lists it")
+    page.goto(f"{run.base}/owner/e2e-alpha/overview")
+    open_it = page.get_by_role("button", name="Report this project to the instance's admins", exact=True)
+    open_it.click()
+    form = page.locator("form.report-form")
+    expect(form).to_be_visible()
+    expect(form.locator("select")).to_be_focused()
+    run.a11y(page, "report, the form open")
+    form.get_by_role("button", name="Send report", exact=True).click()
+    expect(form.locator(".field-error").first).to_have_text("Choose a reason first.")
+    form.locator("select").select_option("spam")
+    form.locator("textarea").fill("e2e: a report from the overview")
+    with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/api/v1/reports")) as sent:
+        form.get_by_role("button", name="Send report", exact=True).click()
+    assert sent.value.status == 201, sent.value.status
+    done = page.locator(".report-sent")
+    expect(done).to_contain_text("Sent.")
+    done.get_by_role("link", name="Your account → Reports", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/account/reports$"))
+    row = page.locator("li.report-item").first
+    # The hub names the target by its current public name while its page is served, else by its word (§16.8).
+    expect(row).to_contain_text(re.compile(r"owner/e2e-alpha|a project"))
+    expect(row).to_contain_text("Spam")
+    expect(row).to_contain_text("open")
+    run.a11y(page, "account, reports")
+    no_problems(run, "report")
 
 
 def request_action_step(run: Run, page: Page) -> None:
@@ -4310,6 +4400,49 @@ def two_signatures_step(run: Run, page: Page) -> None:
     no_problems(run, "two signatures")
 
 
+def explore_layout(run: Run, browser) -> None:
+    """`/explore` in the frame of the hub's public pages (§16.7.5, tsk-zp0vqj9wm37x) at 1280 x 900 and
+    390 x 844, light and dark: the landing page's header and footer, the project as one card that is
+    one link, the stylesheets loaded, nothing wider than the window, no policy refusal, axe clean;
+    and in German for a German reader (tsk-tp97v64vpy5z)."""
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            where = f"/explore at {width}x{height} {scheme}"
+            context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            seen = context.new_page()
+            refused: list[str] = []
+            seen.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+            answer = seen.goto(f"{run.base}/explore")
+            assert answer is not None and answer.status == 200, f"{where}: {answer.status if answer else None}"
+            expect(seen.locator("header.site-header")).to_be_visible()
+            expect(seen.locator("footer.site-footer")).to_be_visible()
+            card = seen.locator('a.xcard[href="/owner/e2e-alpha"]')
+            expect(card).to_be_visible()
+            expect(card.locator("small")).to_have_text("owner/e2e-alpha")
+            expect(card.locator(".pmark")).to_have_text("E")
+            ground = card.locator(".pmark").evaluate("e => getComputedStyle(e).backgroundColor")
+            assert ground != "rgba(0, 0, 0, 0)", f"{where}: the project's tile has no ground"
+            hero = seen.locator("section.hero.dz").evaluate("e => getComputedStyle(e).backgroundColor")
+            assert hero == "rgb(11, 15, 20)", f"{where}: the hero is not the landing's dark zone: {hero}"
+            sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
+            assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
+            wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{where}: {wide} px wider than the window"
+            assert not refused, f"{where}: {refused}"
+            run.shot(seen, f"explore-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(seen, "/explore")
+            context.close()
+    # The page is in the frame's language, its words from the hub's catalogue (tsk-tp97v64vpy5z).
+    context = browser.new_context(viewport={"width": 390, "height": 844}, locale="de-DE")
+    seen = context.new_page()
+    seen.goto(f"{run.base}/explore")
+    expect(seen.locator("html")).to_have_attribute("lang", "de")
+    expect(seen.locator("h1")).to_have_text("Öffentliche Projekte")
+    run.shot(seen, "explore-390-light-de")
+    context.close()
+
+
 def visitor_step(run: Run, page: Page) -> None:
     """A browser without a session never ends at the login on a public address (tsk-jj1tfre7n6zb)."""
     run.step("public pages: a visitor reaches them, a dashboard address links them from the login")
@@ -4335,6 +4468,7 @@ def visitor_step(run: Run, page: Page) -> None:
     assert not guest.evaluate("!!(window.Maity && window.Maity.route)"), "/explore: still the dashboard"
     guest.goto(f"{run.base}/explore")
     expect(guest.locator("h1")).to_have_text("Public projects")
+    explore_layout(run, page.context.browser)
     guest.locator('a[href="/owner/e2e-alpha"]').click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
     expect(guest.locator("#login-email")).to_have_count(0)
@@ -4692,6 +4826,7 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
     expect(card).to_contain_text("It has not reported what it can do yet")
     run.shot(page, "project-runners")
     run.a11y(page, "project runners")
+    bootstrap_boot(run, page)
     start_on_runner_form(run, page, name)
     page.goto(f"{run.base}/owner/e2e-alpha/runners")
     expect(card).to_contain_text("no agent running here")
@@ -4740,13 +4875,20 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
             item["runner"]["capabilities"] = {**(item["runner"].get("capabilities") or {}), "repositories": ["github.com/owner/*"]}
         route.fulfill(json=body)
 
+    def repository_on(body) -> None:
+        body["repository"] = {"url": "https://github.com/owner/e2e-alpha", "default_branch": "main", "required_check": None,
+                              "forge": "github", "probe_configured": False, "probe_via": None, "owner_confirmed": False, "confirmed_by": None}
+
+    in_bundle = bundled("project", repository_on)
     page.route(project_read, with_repository)
     page.route(runners_read, offering_it)
+    page.route(BOOTSTRAP, in_bundle)
     try:
         start_on_runner_open(run, page, name, section, open_form)
     finally:
         page.unroute(project_read, with_repository)
         page.unroute(runners_read, offering_it)
+        page.unroute(BOOTSTRAP, in_bundle)
     no_problems(run, "start on a runner")
 
 
@@ -4836,14 +4978,19 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     # agents as admins for this check alone, which gives the header a Lead (spq4 at #1271).
     members = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
 
-    def as_admins(route) -> None:
-        body = route.fetch().json()
+    def admins(body) -> None:
         for item in body.get("items", []):
             if item.get("kind") == "agent" and item.get("role") != "proxy":
                 item["trust"] = "admin"
+
+    def as_admins(route) -> None:
+        body = route.fetch().json()
+        admins(body)
         route.fulfill(json=body)
 
+    admins_in_bundle = bundled("members", admins)
     page.route(members, as_admins)
+    page.route(BOOTSTRAP, admins_in_bundle)
     try:
         page.reload()
         expect(page.locator("header .me .lead-button")).to_be_visible()
@@ -4879,6 +5026,7 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
         expect(page.locator("main .chats-lead .lead-button")).to_be_hidden()
     finally:
         page.unroute(members, as_admins)
+        page.unroute(BOOTSTRAP, admins_in_bundle)
     page.reload()
     expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
     run.a11y(page, "chats across projects")
@@ -4994,7 +5142,9 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
         body["name"] = long_name
         route.fulfill(json=body)
 
+    long_in_bundle = bundled("project", lambda body: body.__setitem__("name", long_name))
     page.route(project_read, with_long_name)
+    page.route(BOOTSTRAP, long_in_bundle)
     try:
         for width in (390, 360):
             page.set_viewport_size({"width": width, "height": 844})
@@ -5004,6 +5154,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             assert wide[0] <= wide[1], f"Agents with a 63-character project name is {wide[0]} px wide at {width} px"
     finally:
         page.unroute(project_read, with_long_name)
+        page.unroute(BOOTSTRAP, long_in_bundle)
         page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     tabs = page.locator("main nav.agents-tabs")
@@ -5092,17 +5243,22 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     assert alphabet and not set("zi0l") <= set(alphabet[1]), alphabet
     foreign_instance = re.compile(r"(?<![0-9A-Za-z])zi0l(?![0-9A-Za-z])")
 
-    def with_foreign_boss(route) -> None:
-        body = route.fetch().json()
+    def foreign_boss(body) -> None:
         for item in body.get("items", []):
             if item["id"] == agent_id:
                 item["reports_to"] = foreign["id"]
                 for n, inst in enumerate(i for i in item.get("instances", []) if not i.get("revoked_at")):
                     inst["lead"] = n == 0
         body["items"].append(foreign)
+
+    def with_foreign_boss(route) -> None:
+        body = route.fetch().json()
+        foreign_boss(body)
         route.fulfill(json=body)
 
+    boss_in_bundle = bundled("members", foreign_boss)
     page.route(listing, with_foreign_boss)
+    page.route(BOOTSTRAP, boss_in_bundle)
     try:
         for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
             page.set_viewport_size({"width": width, "height": height})
@@ -5119,6 +5275,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
             run.shot(page, f"agents-fleet-foreign-boss-{width}-{scheme}")
     finally:
         page.unroute(listing, with_foreign_boss)
+        page.unroute(BOOTSTRAP, boss_in_bundle)
         page.emulate_media(color_scheme="light")
         page.set_viewport_size({"width": 1280, "height": 900})
     no_problems(run, "agents organisation")
@@ -5534,12 +5691,17 @@ def project_links_step(run: Run, page: Page) -> None:
     # one for this check alone; still one row at 390 and 360 px, light and dark.
     project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha$")
 
+    def repo_on(body) -> None:
+        body["repository"] = {**(body.get("repository") or {}), "url": "https://github.com/owner/e2e-alpha", "forge": "github"}
+
     def with_repo(route) -> None:
         body = route.fetch().json()
-        body["repository"] = {**(body.get("repository") or {}), "url": "https://github.com/owner/e2e-alpha", "forge": "github"}
+        repo_on(body)
         route.fulfill(json=body)
 
+    repo_in_bundle = bundled("project", repo_on)
     page.route(project_read, with_repo)
+    page.route(BOOTSTRAP, repo_in_bundle)
     try:
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
@@ -5559,6 +5721,7 @@ def project_links_step(run: Run, page: Page) -> None:
         run.a11y(page, "project links with Actions")
     finally:
         page.unroute(project_read, with_repo)
+        page.unroute(BOOTSTRAP, repo_in_bundle)
         page.emulate_media(color_scheme="light")
         page.set_viewport_size({"width": 360, "height": 780})
         page.reload()

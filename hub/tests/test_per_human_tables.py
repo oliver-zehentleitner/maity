@@ -17,7 +17,15 @@ from typing import Any
 
 from sqlalchemy import Table
 
-from maity_hub import account_deletion, avatars, contacts, cross_chats, export, org_invitations
+from maity_hub import (
+    account_deletion,
+    avatars,
+    chat_access,
+    contacts,
+    cross_chats,
+    export,
+    org_invitations,
+)
 from maity_hub import tables as t  # noqa: F401  (registers every table on the metadata)
 from maity_hub.auth import second_factor
 from maity_hub.db import metadata
@@ -44,6 +52,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("avatar_size", "owner_id"): True,  # the sizes of the same picture
     ("bridge", "created_by"): True,  # the human who asked for the connection
     ("bridge", "ended_by"): True,  # who ended it, a human's or an agent's principal id
+    ("chat_access", "their_human"): False,  # whether an allow covers the side's human
     ("conversation_participant", "added_by"): True,
     ("conversation_participant", "removed_by"): True,
     ("cross_chat_participant", "added_by"): True,  # a principal id, as on a project group chat
@@ -102,6 +111,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
 # removal does", "as §6.3 deletes a profile", "as DELETE /runners/{id} removes it").
 DELETION_THROUGH: dict[str, ModuleType] = {
     "agent_profile": agents,  # delete_profile
+    "chat_access": chat_access,  # forget_human: the lists, and every entry naming the account
     "contact": contacts,  # forget, both ways
     "cross_chat": cross_chats,  # remove_owned, which account_deletion calls
     "cross_chat_participant": cross_chats,
@@ -151,6 +161,7 @@ KEPT_THOUGH_READ = {"project"}
 # Tables the export reads through another module rather than in `export.py` itself.
 EXPORT_THROUGH: dict[str, ModuleType] = {
     "avatar_image": avatars,  # the avatar URL, never the image
+    "chat_access": chat_access,  # exported: `chat_access`, `{allow, deny}`
     "contact": contacts,  # exported: `contacts` and `contact_of`
     "cross_chat": cross_chats,  # export_of, which export.py calls
     "cross_chat_participant": cross_chats,
@@ -178,6 +189,8 @@ EXPORT_LEAVES_OUT = {
     "device_code": _SECRET,
     "email_sign_in": _SECRET,
     "email_sign_in_day": _BOOKKEEPING,
+    "password_reset": _SECRET,
+    "password_reset_wrong": _BOOKKEEPING,
     "forge_link_state": _SECRET,
     "handle_alias": _UNLISTED,
     "handle_register": f"the handle is in the account; {_UNLISTED}",

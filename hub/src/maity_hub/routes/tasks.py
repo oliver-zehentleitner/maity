@@ -884,7 +884,11 @@ def create_card(
         # that owner is covered to its substitute (§6.12): the hub's routing, not an
         # agent's assignment, so the coordinator gate does not apply.
         assigned = cards.area_owner(conn, mine.project.id, body.area)
-        assigned, routed_cover = cover.routed(conn, assigned)
+        # The card does not exist yet. Its status is what `may_take_card` needs; a new
+        # card is not under a takeover.
+        assigned, routed_cover = cover.routed(
+            conn, assigned, SimpleNamespace(id="", status=body.status)
+        )
         if routed_cover is not None:
             extra = {**extra, "cover": routed_cover}
     assigned_instance = _assigned_instance(conn, assigned)

@@ -355,6 +355,7 @@ window.Maity = window.Maity || {};
     M.api.endSession();
     renderSeq++;
     M.notify.halt();
+    M.presence.stop();
     stopTimers();
     if (M.clearChatDrafts) M.clearChatDrafts();
     // As a sign-out does: the next human in this tab starts with their own settings.
@@ -480,8 +481,9 @@ window.Maity = window.Maity || {};
   // out (H on #461); anything else, and none, is the root.
   async function logout(back) {
     const after = safeNext(back);
-    // The held long-poll goes before the session does (§18.2).
+    // The held long-poll goes before the session does (§18.2), and the presence calls with it.
     M.notify.halt();
+    M.presence.stop();
     // Signing out on purpose is no session that ended under the page.
     sessionEnded = true;
     kept = null;
@@ -1961,7 +1963,9 @@ window.Maity = window.Maity || {};
   // the view watches, from someone else, offers a reload. Listeners added
   // with ctx.onEvents get every event, the human's own included.
   // Set by a quiet reload of the inbox, shown once by the next watch().
+  // noteOnce says one line on the next view, such as having left a project.
   let quietNote = null;
+  M.noteOnce = (text) => { quietNote = text; };
 
   function watch(ctx, where, item, main) {
     // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
@@ -2173,7 +2177,19 @@ window.Maity = window.Maity || {};
     }
   }
 
+  // A drawing, and the end of its boot's bundle on every way out (review of #1672): a failure
+  // page, the second factor's step, the setup, a window's full page, a visitor's page and a pending
+  // account all return early; their parts end with the drawing, not 15 s later.
   async function render(how) {
+    const boot = { primed: null };
+    try {
+      return await drawing(how, boot);
+    } finally {
+      if (boot.primed) M.api.unprime(boot.primed);
+    }
+  }
+
+  async function drawing(how, boot) {
     const seq = ++renderSeq;
     const wrote = writes;
     const reuse = how === SWITCH && kept && !sessionEnded && kept.epoch === (M.sessionEpoch || 0)
@@ -2229,9 +2245,17 @@ window.Maity = window.Maity || {};
     // second factor and for a session cookie that outlived its session.
     // Not for the invitation and registration pages, which read the session themselves (review
     // of #1524): an early read there was one more, and its late answer could still set a language.
-    let first = null;
-    try { first = parseRoute().scope; } catch { /* the drawing below says why */ }
+    let firstWhere = null;
+    try { firstWhere = parseRoute(); } catch { /* the drawing below says why */ }
+    const first = firstWhere ? firstWhere.scope : null;
     const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    // The three waves (the window and the session, then /me, then the project's head, project and
+    // members) come in one GET /bootstrap (§5.4, tsk-j591fzgnmspf): the reads below take their
+    // answers from its parts, in the same order and with the same handling; an older hub's 404
+    // leaves them to their own routes. They end once the context is read (below), at the latest
+    // when the drawing returns (render), and serve no read once a newer drawing has started.
+    const primed = reuse || ownRead ? null : M.api.prime(first === "project" ? firstWhere.slug : null, () => seq === renderSeq);
+    boot.primed = primed;
     const early = reuse || ownRead ? null : M.api.get("/auth/session");
     if (early) early.catch(() => {});
     await M.maintenance.fresh();
@@ -2313,6 +2337,8 @@ window.Maity = window.Maity || {};
         renderPending(main);
         return;
       }
+      // The tab's presence for the mail hold (§18.4); js/presence.js decides whether this page sends it.
+      M.presence.start(me);
       if (where.scope === null || where.scope === "login") {
         const next = where.scope === "login" ? routeNext() : null;
         M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
@@ -2333,6 +2359,17 @@ window.Maity = window.Maity || {};
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
       if (moved) { M.route.go(moved, { replace: true }); return; }
+      // A public page's Report signs a reader in and comes back with `?report` (§16.9, §16.8). A member
+      // of the project gets their own view at that address, which has no report form there: the
+      // project's page and its public views lead to the Overview, whose Report opens (review of #1681).
+      // A card's page is the board with its panel, which opens its own.
+      if (where.scope === "project" && M.report && M.report.asked() && me.projects.some((p) => p.full_name === where.slug)) {
+        const parts = M.route.current().path.split("/").filter(Boolean);
+        if (parts.length === 2 || (parts.length === 3 && ["board", "team", "organisation", "why"].includes(parts[2]))) {
+          M.route.go(projectLink(where.slug, "overview") + "?report", { replace: true });
+          return;
+        }
+      }
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and the counts stay as /me has them.
       // The project's own reads are kept only for a switch inside the same project.
@@ -2340,6 +2377,8 @@ window.Maity = window.Maity || {};
       const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
+      // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
+      if (primed) M.api.unprime(primed);
       ctx.projectViews = views;
       ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;
