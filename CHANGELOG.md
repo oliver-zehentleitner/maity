@@ -11,7 +11,7 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 Unreleased changes are collected in `changelog.d/` (one file per pull request) and folded in at release.
 
-## [0.1.0a4] - 2026-11-11
+## [0.1.0a4] - 2026-11-12
 
 ### Added
 
@@ -20,6 +20,7 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
 - docs: the project's Discord server (https://discord.gg/VRWUe7zKzp) is linked from the README badges, the docs overview, the FAQ ("Where do I ask a question?"), Getting started's next steps, the footer of maity.dev and the issue chooser's contact links.
 - Contract: a forgotten password is reset by mail (§2.10). `POST /auth/password-reset` always answers `202`, and the link stays valid for 30 minutes with its token in the fragment. With TOTP enrolled, the reset also needs a TOTP or recovery code: the fifth and every further wrong code at resets of one human in 24 hours, across links, voids every open reset link and writes `second_factor_failed` (`method: password_reset`); a code under a dead token is neither compared nor counted. The reset ends every session, voids an unconfirmed new address and withdraws a pending account deletion, while agent credentials stay. The TOTP step used at a reset is consumed as at sign-in, and an enrolled TOTP is asked for even under `second_factor: off`. The token is bound to the address epoch, so an address change voids open reset links. Reset mails have their own budget, `password_reset_max_per_hour` (default 30), apart from the sign-in budget the mail factor sends from. A per-human switch `email.password_reset` and an instance switch `password_reset` turn it off, and `GET /auth/methods` gains `password_reset`. Humans whose second factor is the mail get a banner pushing toward an authenticator app. The routes are not served yet.
 - Contract: no notification mail while the human is present in the web app (§18.5, "Held while present"). `email.hold_while_online` (§18.4, default `true`) holds the mail of `immediate` items while a live session of the human has a `present_until` in the future, and for `online_grace_minutes` (§16.2, default 5) after that; then only what is still unread is mailed. `POST /me/presence` (§18.4) is the tab's signal: sent only while the tab is visible and had input within 10 minutes, written at most once a minute per session, never shown as presence (§2.4). Security mail, the mails sent at once whatever the mode and the mail of a suspension are never held; digests are built at their time as before. No route yet.
+- hub: no mail of an immediate notification while the human is present in the web app (§18.5); the hourly, daily and weekly digests keep their moments. `POST /me/presence` moves the session's `present_until` (new column, migration `20261111150000_present_until`) two minutes ahead, at most once a minute per session, and writes no `last_seen_at`. While `email.hold_while_online` is on (the default), the mail of an immediate item waits while a live session is present and for `online_grace_minutes` after (mail settings and `MAITY_MAIL_ONLINE_GRACE_MINUTES`, default 5), then goes if still unread. Nothing is held until the dashboard sends the call (the web part).
 - contract, hub: an expert's two membership fields. `expert_for` says what it answers about (plain text, at most 120
   characters), and `expert_sources` lists the path prefixes it learned (at most 20, in the form of areas). A human
   member who owns the agent or holds `members:admin`, or an admin agent within §2.3 ᵃ, sets them on their own in a
@@ -90,6 +91,8 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   saying when the second of two stacked pull requests reports, a review resolving a full Keep the Why id and a real
   test and no longer reading a ratio as a file and line, and an error answer with a non-string code no longer
   crashing the CLI.
+- cli: version 0.1.0a9 for PyPI, with `maity wait` waiting at least a 503's `Retry-After` (the hub's
+  `database_unavailable`) before it reads again, as it does for a 429.
 - hub: the hub names CLI 0.1.0a8 as the newest published CLI (`hints.cli_version` and `GET …/events`
   `cli_version`), so a CLI older than 0.1.0a8 prints its upgrade line (§5.2, §8.3).
 - contract: §1.3 503 `database_unavailable` names the busy pool as its second cause and carries `Retry-After` (5 seconds, the same for both causes and on `/health`). `GET /api/v1/help` and `docs/agents.md` say to wait that long and send the call again.
@@ -100,6 +103,10 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
 - docs: README and `context/scope.md` 70482b44 narrow "counts no tokens": the hub sums the token counts and cost a
   supervised run's harness reported, and runs no inference, keeps no price list, bills nothing and sees no model
   name, because the maintainer chose that narrowing with the usage contract.
+- cli: `maity wait` waits at least a 503's `Retry-After` before it reads again, as it did for a 429; the hub sends one with `database_unavailable` (an unreachable or busy database). Other 5xx keep the plain back-off, and the wait's deadline still caps every pause.
+- web: a page load asks the hub one `GET /bootstrap` (§5.4) instead of its three waves of reads (the maintenance window and
+  the session, then `/me`, then the project, its members and the event head); a hub without the route (404) is read as
+  before. Nothing on the page changes but the time to the first view.
 - hub: both conversation lists (§9.3) keep every pinned chat above every unpinned one:
   pinned with unread messages, then quietly pinned, then unpinned with unread messages,
   then the rest, each band in its activity order. The cursor follows that order; one from
