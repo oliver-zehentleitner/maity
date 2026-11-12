@@ -3431,6 +3431,7 @@
   "placements.reason.evicted": "퇴출됨",
   "placements.reason.harness_missing": "러너에 harness가 설치되어 있지 않아요",
   "placements.reason.harness_refused": "러너의 설정이 이 harness, 모드, 모델을 허용하지 않아요",
+  "placements.reason.hung": "응답 없음",
   "placements.reason.image_pull": "이미지를 가져오지 못했어요",
   "placements.reason.join_failed": "참여 실패",
   "placements.reason.oom_killed": "메모리 부족",

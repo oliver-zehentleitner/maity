@@ -4400,6 +4400,49 @@ def two_signatures_step(run: Run, page: Page) -> None:
     no_problems(run, "two signatures")
 
 
+def explore_layout(run: Run, browser) -> None:
+    """`/explore` in the frame of the hub's public pages (§16.7.5, tsk-zp0vqj9wm37x) at 1280 x 900 and
+    390 x 844, light and dark: the landing page's header and footer, the project as one card that is
+    one link, the stylesheets loaded, nothing wider than the window, no policy refusal, axe clean;
+    and in German for a German reader (tsk-tp97v64vpy5z)."""
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            where = f"/explore at {width}x{height} {scheme}"
+            context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            seen = context.new_page()
+            refused: list[str] = []
+            seen.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+            answer = seen.goto(f"{run.base}/explore")
+            assert answer is not None and answer.status == 200, f"{where}: {answer.status if answer else None}"
+            expect(seen.locator("header.site-header")).to_be_visible()
+            expect(seen.locator("footer.site-footer")).to_be_visible()
+            card = seen.locator('a.xcard[href="/owner/e2e-alpha"]')
+            expect(card).to_be_visible()
+            expect(card.locator("small")).to_have_text("owner/e2e-alpha")
+            expect(card.locator(".pmark")).to_have_text("E")
+            ground = card.locator(".pmark").evaluate("e => getComputedStyle(e).backgroundColor")
+            assert ground != "rgba(0, 0, 0, 0)", f"{where}: the project's tile has no ground"
+            hero = seen.locator("section.hero.dz").evaluate("e => getComputedStyle(e).backgroundColor")
+            assert hero == "rgb(11, 15, 20)", f"{where}: the hero is not the landing's dark zone: {hero}"
+            sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
+            assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
+            wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{where}: {wide} px wider than the window"
+            assert not refused, f"{where}: {refused}"
+            run.shot(seen, f"explore-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(seen, "/explore")
+            context.close()
+    # The page is in the frame's language, its words from the hub's catalogue (tsk-tp97v64vpy5z).
+    context = browser.new_context(viewport={"width": 390, "height": 844}, locale="de-DE")
+    seen = context.new_page()
+    seen.goto(f"{run.base}/explore")
+    expect(seen.locator("html")).to_have_attribute("lang", "de")
+    expect(seen.locator("h1")).to_have_text("Öffentliche Projekte")
+    run.shot(seen, "explore-390-light-de")
+    context.close()
+
+
 def visitor_step(run: Run, page: Page) -> None:
     """A browser without a session never ends at the login on a public address (tsk-jj1tfre7n6zb)."""
     run.step("public pages: a visitor reaches them, a dashboard address links them from the login")
@@ -4425,6 +4468,7 @@ def visitor_step(run: Run, page: Page) -> None:
     assert not guest.evaluate("!!(window.Maity && window.Maity.route)"), "/explore: still the dashboard"
     guest.goto(f"{run.base}/explore")
     expect(guest.locator("h1")).to_have_text("Public projects")
+    explore_layout(run, page.context.browser)
     guest.locator('a[href="/owner/e2e-alpha"]').click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
     expect(guest.locator("#login-email")).to_have_count(0)
