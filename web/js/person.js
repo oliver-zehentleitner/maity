@@ -6,7 +6,9 @@
 // person's links_visible admits this reader; the projects the hub lists, the
 // shared ones marked; for an organisation its members with their roles
 // for a member. **View public page** only where the hub serves one,
-// opened at ?as=public (§16.9).
+// opened at ?as=public (§16.9). A person's view has two tabs, as their public
+// page has (§16.9, "A person's agents"): **Profile** at /<handle> and
+// **Agents** at /<handle>/agents, the agents the same answer lists (§6.27).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -71,7 +73,35 @@ window.Maity = window.Maity || {};
   const ROLE_WORDS = { owner: () => M.t("person.role.owner"), admin: () => M.t("person.role.admin"), member: () => M.t("person.role.member") };
   const roleWords = (role) => (Object.hasOwn(ROLE_WORDS, role) ? ROLE_WORDS[role]() : role);
 
-  M.views.person = async function (ctx, root, handle) {
+  // The tabs a person's view and both their public pages carry (§16.9): Profile and Agents.
+  const tabs = (handle, chosen) => h("nav", { class: "view-tabs person-tabs", "aria-label": M.t("person.tabs.label") },
+    [["profile", "/" + encodeURIComponent(handle), M.t("person.tab.profile")],
+      ["agents", "/" + encodeURIComponent(handle) + "/agents", M.t("person.tab.agents")]].map(([k, href, label]) =>
+      h("a", { href, class: "view-tab", "aria-current": k === chosen ? "page" : null }, label)));
+
+  // One listed agent as the agents page shows it (§16.9, "A person's agents"): the picture at
+  // 64 px from its public address, the name, linked where it has a page, and the handle; with a
+  // page also its roles, model and harness. Shared with js/visitor.js, whose entries name the
+  // name `name` and the picture `picture` (the visitors' route) where §6.27 says `display_name`
+  // and `avatar_url`.
+  function agentItem(a) {
+    const name = a.display_name || a.name || a.handle;
+    const pic = a.avatar_url !== undefined ? a.avatar_url : a.picture;
+    const shownPic = picture({ avatar_url: typeof pic === "string" && pic ? pic + (pic.includes("?") ? "&" : "?") + "s=64" : null }, 64);
+    const facts = [a.model ? M.t("visitor.model", { model: a.model }) : null, a.harness ? M.t("visitor.harness", { harness: a.harness }) : null].filter(Boolean);
+    return h("li", { class: "person-agent", "data-agent": a.handle },
+      shownPic,
+      h("div", null,
+        M.route.isRoute(a.page) ? h("a", { href: a.page }, name) : h("span", null, name),
+        " (" + a.handle + ")",
+        (a.page && Array.isArray(a.roles) ? a.roles : []).map((role) => [" ", h("span", { class: "label-tag" }, M.trust.roleLabel(role))]),
+        facts.length ? h("p", { class: "muted" }, facts.join(" · ")) : null));
+  }
+  const agentList = (agents) => (agents && agents.length
+    ? h("ul", { class: "person-agents" }, agents.map(agentItem))
+    : h("p", { class: "muted" }, M.t("person.agents.none")));
+
+  M.views.person = async function (ctx, root, handle, tab) {
     let p;
     try {
       p = await M.api.get("/people/" + encodeURIComponent(handle));
@@ -80,10 +110,15 @@ window.Maity = window.Maity || {};
       append(root, h("h2", null, "@" + handle), h("p", null, M.t("person.not_found", { handle })));
       return;
     }
-    // An alias answers with the current handle: the address follows it, and
-    // the view drawn there reads it; this one stops.
-    if (p.handle && p.handle !== handle) { M.route.go("/" + encodeURIComponent(p.handle), { replace: true }); return; }
+    // An alias answers with the current handle: the address follows it, the
+    // tab kept, and the view drawn there reads it; this one stops.
+    if (p.handle && p.handle !== handle) {
+      M.route.go("/" + encodeURIComponent(p.handle) + (tab === "agents" ? "/agents" : ""), { replace: true });
+      return;
+    }
     const org = p.kind === "organisation";
+    // An organisation has no agents (§16.9): /<org>/agents names nothing.
+    if (org && tab === "agents") { M.notFound.view(root); return; }
     const own = !org && ctx.me && ctx.me.handle === p.handle;
     append(root,
       h("div", { class: "person-head" },
@@ -92,7 +127,17 @@ window.Maity = window.Maity || {};
           h("h2", { class: "person-name" }, p.display_name || p.handle),
           h("p", { class: "muted" }, org ? M.t("person.handle.organisation", { handle: p.handle })
             : own ? M.t("person.handle.you", { handle: p.handle }) : M.t("person.handle", { handle: p.handle })))),
-      p.page_served ? h("p", null, h("a", { class: "button-link", href: "/" + encodeURIComponent(p.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("person.view_public"))) : null,
+      org ? null : tabs(p.handle, tab === "agents" ? "agents" : "profile"));
+    const publicAt = "/" + encodeURIComponent(p.handle) + (tab === "agents" ? "/agents" : "");
+    const viewPublic = p.page_served ? h("p", null, h("a", { class: "button-link", href: publicAt + "?as=public", target: "_blank", rel: "noopener" }, M.t("person.view_public"))) : null;
+    // Agents: the list of §6.27's `agents`, the one the public agents page shows (§16.9), so a
+    // reader sees at this address what a visitor sees at it.
+    if (tab === "agents") {
+      append(root, viewPublic, h("h3", null, M.t("person.tab.agents")), agentList(p.agents));
+      return;
+    }
+    append(root,
+      viewPublic,
       typeof p.public_bio === "string" && p.public_bio ? h("p", { class: "person-bio" }, p.public_bio) : null,
       org ? null : links(p.website, p.social));
     append(root, h("h3", null, own ? M.t("person.projects.yours") : M.t("person.projects")),
@@ -105,5 +150,5 @@ window.Maity = window.Maity || {};
     }
   };
 
-  M.person = { links };
+  M.person = { links, tabs, agentList };
 })(window.Maity);
