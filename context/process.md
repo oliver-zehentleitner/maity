@@ -1365,7 +1365,7 @@ sets.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count, for a pull request that changes only docs until the maintainer answers req-8se88wy72g6s; card tsk-tc191z1765fy
+**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); card tsk-tc191z1765fy
 **Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, or the maintainer sets a number of vendors again
 **See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
 
@@ -1378,9 +1378,12 @@ reviewer's and the other an Antigravity or Grok reviewer's, whichever
 delivers a fully checked result first. A leg from the vendor that wrote
 the code does not count, so a pull request a Grok agent wrote needs two
 legs from other vendors (the lead's decision of 2026-11-12, seq 117419).
-For a pull request that changes only docs the same holds until the
-maintainer answers req-8se88wy72g6s; that question is open. Another vendor may stand in for an absent one when the review
-lead says so in the MERGE-READY (seq 113755). A leg counts only after the review lead has compared it with the
+It follows that for a pull request a ChatGPT agent wrote, the ChatGPT leg
+of the rule above is replaced by one from another vendor (a reading). For
+a pull request that changes only docs the same holds as an interim; the
+final answer is open until the maintainer answers req-8se88wy72g6s. Who
+stands in for an absent vendor is the review lead's call (seq 104757);
+the lead asked that each MERGE-READY say so (seq 113755). A leg counts only after the review lead has compared it with the
 head; a false sentence any reviewer finds blocks the merge, and so does a
 P1 or P2 from the second round on. The review lead's MERGE-READY names the
 two legs it counted and their vendors. Which reviewer's legs count, and
@@ -2463,8 +2466,10 @@ down.
 The adopted rules were written nowhere shared: only in the lead's announcements and in the agents' own notes.
 `CONTRIBUTING.md` ("Rules from the jour fixe") now holds them as one sentence each with its card, grouped by who
 acts. Not all of them are in force: seven lines are marked *not yet in force* (the six of
-card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), three *exception to an older entry, open*,
-and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
+card tsk-cqzz7bs7kfj5's list, and the VERDICT line's base form), one *exception to an older entry, open*
+(tsk-z3j36sy534ww), one *superseded* (the outage rules of tsk-x8ctwgw2cmwc, tsk-g3entm5r2rez and
+tsk-rkp7pvkshta2, once two exceptions of their own, superseded by the two-vendor rule
+96581882-bac8-4611-9124-cd4a2700c57a), and tsk-g3p686ckd25v is not written there at all (the open entry below). The reason of each, from its card:
 
 - Push with `git -C <worktree> push origin <branch>` (tsk-a8wy190emg2q): a push from the wrong directory.
 - Report the card once the pull request is open (tsk-x61m2sv7va7b): cards reported after the merge could not
@@ -2532,13 +2537,15 @@ below and the lead's announcement of the VERDICT rule (2026-11-04)
 - tsk-z3j36sy534ww lets the lead forward review requests while the review lead is away;
   eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0 gives every request and its distribution to the review lead's team alone.
   tsk-rkp7pvkshta2's second request is a review request like any other; the card does not say who orders it
-  from the two vendors there.
+  from the two vendors there (tsk-rkp7pvkshta2 is superseded since; see the next item).
 - tsk-x8ctwgw2cmwc and tsk-rkp7pvkshta2 allow a merge with two of three on the maintainer's answer per pull
   request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e required all three approvals before any merge (superseded on 2026-11-09 by
-  96581882-bac8-4611-9124-cd4a2700c57a, two approvals from two vendors).
+  96581882-bac8-4611-9124-cd4a2700c57a, two approvals from two vendors). Settled: under the two-vendor rule the
+  review lead decides which legs count and who stands in, and `CONTRIBUTING.md` marks both outage rules
+  superseded.
 
-These three outage rules were announced as in force and are written in `CONTRIBUTING.md`, marked as exceptions
-to an older entry; the older entries are not changed. Which version holds, here and in the first two, is open.
+tsk-z3j36sy534ww was announced as in force and is written in `CONTRIBUTING.md`, marked as an exception to an
+older entry; that entry is not changed. Which version holds, there and in the first two items, is open.
 
 ## Cloud sessions open and edit their own pull requests over REST with tools/pr.sh, kept to their own branch by its head
 
