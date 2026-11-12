@@ -893,6 +893,7 @@ def main() -> int:
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
+                    password_reset_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
@@ -2969,6 +2970,169 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
             joiner_context.close()
         if older_context is not None:
             older_context.close()
+        stop_hub(hub)
+        catcher.close()
+        run.base = first_base
+
+
+def reset_request(run: Run, browser, address: str, width: int = 1280):
+    """Signed out, "Forgot password?" under the login's password field asks for an address; the
+    answer is one sentence whatever the address (§2.10). The context and page, still open."""
+    context = browser.new_context(viewport={"width": width, "height": 900 if width > 400 else 844})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/login")
+    page.get_by_role("button", name="Forgot password?", exact=True).click()
+    page.locator("#reset-address").fill(address)
+    page.locator("form.reset-ask").get_by_role("button", name="Send the link", exact=True).click()
+    expect(page.locator("form.reset-ask")).to_contain_text("If this address can reset a password here, a link is on its way. It is valid for 30 min.")
+    return context, page
+
+
+def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """A forgotten password (§2.10, tsk-yksxdpd2pk0m) on a hub of its own with mail: the login's
+    "Forgot password?", the same answer for an unknown address, the mailed link's page, every
+    session ended, the new password signing in; with an authenticator app the page asks for its
+    code; the human's own switch stops the mail."""
+    home = work / "password-reset-hub"
+    home.mkdir()
+    port = free_port()
+    catcher = MailCatcher()
+    extra = {
+        "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_SMTP_HOST": "127.0.0.1",
+        "MAITY_SMTP_PORT": str(catcher.port),
+        "MAITY_SMTP_TLS": "none",
+        "MAITY_SMTP_ALLOW_PLAINTEXT": "1",
+        "MAITY_SMTP_FROM": "hub@e2e.example",
+    }
+    first_base = run.base
+    run.base = f"http://127.0.0.1:{port}"
+    run.step(f"password reset hub on {run.base}: Forgot password? on the login page, one answer for every address")
+    hub = start_hub(home, artifacts, port, extra, "hub-password-reset.log")
+    contexts = []
+    try:
+        signed_context, signed = sign_in(run, browser)
+        contexts.append(signed_context)
+        verify_address(run, signed, catcher)
+        seen = len(catcher.mails)
+        context, page = reset_request(run, browser, "nobody@e2e.example")
+        contexts.append(context)
+        run.shot(page, "reset-ask-1280")
+        run.a11y(page, "login: Forgot password? answered")
+        time.sleep(2)
+        assert not [m for m in catcher.mails[seen:] if "nobody@e2e.example" in m[0]], "a reset mail to an unknown address"
+        context.close()
+        context, page = reset_request(run, browser, MAIL_ADDRESS.upper(), width=390)
+        contexts.append(context)
+        wide = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        assert wide[0] <= wide[1], f"the reset form widens the login at 390 px: {wide}"
+        run.shot(page, "reset-ask-390")
+        link = re.search(r"(http\S+/sign-in/reset#[A-Za-z0-9_.-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
+        assert link, "no reset link in the mail"
+        context.close()
+
+        run.step("password reset: the link's page sets a new password, ends every session and signs nobody in")
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        context.set_default_timeout(TIMEOUT_MS)
+        contexts.append(context)
+        page = context.new_page()
+        watch_page(run, page)
+        page.goto(link.group(1))
+        form = page.locator("form.reset-form")
+        expect(page.locator("article.reset-page h1")).to_have_text("Set a new password for Owner (owner)")
+        assert "#" not in page.url, f"the token stays in the address: {page.url}"
+        expect(page.locator("#reset-code")).to_have_count(0)
+        run.shot(page, "reset-page-1280")
+        run.a11y(page, "reset: the page")
+        new_password = "e2e new owner password"
+        page.locator("#reset-password").fill(new_password)
+        page.locator("#reset-repeat").fill(new_password)
+        form.get_by_role("button", name="Set password", exact=True).click()
+        expect(page.locator("article.reset-page h1")).to_have_text("Your password is set")
+        expect(page.locator("header .me-name")).to_have_count(0)
+        run.shot(page, "reset-done")
+        # The same link a second time does not work, and the page says where to ask for a new one.
+        # (From another page: the same path with only a fragment would not load the page again.)
+        page.goto("about:blank")
+        page.goto(link.group(1))
+        expect(page.locator(".reset-dead")).to_be_visible()
+        run.problems = [p for p in run.problems if "/auth/password-reset/check answered 403" not in p]
+        # The session from before is gone: its next page is the login.
+        signed.goto(run.base + "/account/notifications")
+        expect(signed.locator("#login-email")).to_be_visible()
+        # The new password signs in.
+        signed.locator("#login-email").fill(OWNER_EMAIL)
+        signed.locator("#login-password").fill(new_password)
+        signed.get_by_role("button", name="Sign in", exact=True).click()
+        expect(signed.locator("header .me")).to_contain_text("Owner")
+        no_problems(run, "password reset: by mail")
+
+        run.step("password reset: the human's own switch stops the mail")
+        signed.goto(run.base + "/account/notifications")
+        expect(signed.locator("#mail-password-reset-hint")).to_contain_text("Turn this off if an agent or anyone else can read this mailbox")
+        signed.locator("#mail-password-reset").uncheck()
+        signed.locator("form.mail-modes-form").get_by_role("button", name="Save", exact=True).click()
+        expect(signed.locator("section.mail-modes")).to_contain_text("Saved.")
+        assert signed.evaluate("""() => window.Maity.api.get("/me/notification-settings")""")["email"]["password_reset"] is False
+        seen = len(catcher.mails)
+        context, page = reset_request(run, browser, MAIL_ADDRESS)
+        contexts.append(context)
+        time.sleep(2)
+        assert not [m for m in catcher.mails[seen:] if MAIL_ADDRESS in m[0]], "a reset mail although the human switched it off"
+        context.close()
+        signed.reload()
+        signed.locator("#mail-password-reset").check()
+        signed.locator("form.mail-modes-form").get_by_role("button", name="Save", exact=True).click()
+        expect(signed.locator("section.mail-modes")).to_contain_text("Saved.")
+        no_problems(run, "password reset: the human's switch")
+
+        run.step("password reset: with an authenticator app the page asks for its code; a wrong one is said")
+        started = signed.evaluate("""() => window.Maity.api.post("/auth/second-factor/totp", {})""")
+        secret = started["secret"]
+        used = int(time.time() // 30)
+        signed.evaluate("""(code) => window.Maity.api.post("/auth/second-factor/totp/confirm", { code })""", totp_code(secret, used))
+        signed.goto(run.base + "/account/notifications")
+        expect(signed.locator("#mail-password-reset-hint")).to_contain_text("A reset by mail also needs a code from your authenticator app")
+        seen = len(catcher.mails)
+        context, page = reset_request(run, browser, MAIL_ADDRESS)
+        contexts.append(context)
+        link = re.search(r"(http\S+/sign-in/reset#[A-Za-z0-9_.-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
+        assert link, "no reset link in the mail"
+        page.goto(link.group(1))
+        form = page.locator("form.reset-form")
+        expect(page.locator('label[for="reset-code"]')).to_have_text("Code from your authenticator app")
+        expect(form.get_by_role("button", name="Use a recovery code", exact=True)).to_be_visible()
+        page.set_viewport_size({"width": 390, "height": 844})
+        wide = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        assert wide[0] <= wide[1], f"the reset page widens at 390 px: {wide}"
+        run.shot(page, "reset-page-totp-390")
+        run.a11y(page, "reset: the page with an authenticator app, 390 px")
+        page.set_viewport_size({"width": 1280, "height": 900})
+        final_password = "e2e final owner password"
+        page.locator("#reset-password").fill(final_password)
+        page.locator("#reset-repeat").fill(final_password)
+        page.locator("#reset-code").fill(wrong_totp_code(secret))
+        form.get_by_role("button", name="Set password", exact=True).click()
+        expect(form).to_contain_text("the code is wrong, or this link no longer works")
+        run.problems = [p for p in run.problems if "/auth/password-reset/complete answered 403" not in p]
+        # The hub takes only a step newer than the last one used, within one step of skew.
+        while int(time.time() // 30) <= used:
+            time.sleep(1)
+        page.locator("#reset-code").fill(totp_code(secret, max(used + 1, int(time.time() // 30))))
+        form.get_by_role("button", name="Set password", exact=True).click()
+        expect(page.locator("article.reset-page h1")).to_have_text("Your password is set")
+        no_problems(run, "password reset: with an authenticator app")
+        context.close()
+
+    finally:
+        for c in contexts:
+            try:
+                c.close()
+            except Exception:
+                pass
         stop_hub(hub)
         catcher.close()
         run.base = first_base

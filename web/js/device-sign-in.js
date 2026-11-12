@@ -66,7 +66,8 @@ window.Maity = window.Maity || {};
 
   // Below the password form. `every` runs on the login page's timers;
   // `signedIn` draws the dashboard once a session exists.
-  function loginOptions(every, signedIn) {
+  // methodsRead(methods): the page's own use of the same read (the login's "Forgot password?").
+  function loginOptions(every, signedIn, methodsRead) {
     // The other ways in under a rule of their own (public-pages.css `.or`), only where there are
     // any; the way to register below them.
     const ways = h("div", { class: "sign-in-ways" });
@@ -74,6 +75,7 @@ window.Maity = window.Maity || {};
     const offer = (...parts) => { ways.classList.toggle("or", true); append(ways, ...parts); };
     M.api.get("/auth/methods")
       .then((methods) => {
+        if (methodsRead) methodsRead(methods);
         const prefilled = codeFromAddress();
         const next = M.signInNext ? M.signInNext() : null;
         if (methods.device_code || methods.email_link) {

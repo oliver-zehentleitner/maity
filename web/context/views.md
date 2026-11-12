@@ -6382,3 +6382,34 @@ head above the tabs puts the menu on every tab, and the Team page no longer jump
   would mix what runs with how to start one.
 - Renaming the path to say the tab's words: an address read from the API, a log or the CLI would
   name another thing than the contract's `placements` (context/routing.md, b32bb82c).
+
+## The reset page is drawn before the session is read, and never says why a link is dead
+
+**Id:** 281af47c-7469-4e8a-bf62-879aaf06beeb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.10 (the page, the token in the fragment, `code_invalid` for every dead link and every wrong code, a reset ending every session and signing nobody in); the card tsk-yksxdpd2pk0m; the dashboard's implementation, 2026-11-12
+**Revisit when:** a reset starts to sign the human in, the hub starts to tell a wrong code from a dead link, or the dashboard gains a page that must see the session before it draws
+
+`/sign-in/reset` is drawn in `js/app.js` before `GET /auth/session`,
+signed in or not, in the frame of the pages without a session. It takes
+the token from the fragment (from `?token=` in fixture mode, where the
+fragment holds the route) and drops it from the address before the first
+call. A link the hub refuses at the check is one sentence and the way to a
+new link. At the end a refused code keeps the form and clears the code
+where a code was asked; without one, the link is dead.
+
+**Reason:** a reset ends every session of the human and signs nobody in,
+so a session in this browser changes nothing about the page; reading it
+first would put a session owing the second factor, or a failed read,
+between the human and a page that does not need it. The hub answers
+`code_invalid` for an expired, used or voided link and for a wrong code
+alike (§2.10); the page cannot know which, and must not guess one.
+
+**Rejected alternatives:**
+- Drawing the page after the session read, as every dashboard route is:
+  a signed-in browser would show the dashboard or the second-factor step
+  instead of the link's page.
+- Saying "expired" or "used" for a dead link: the hub does not tell them
+  apart, and a guess would be wrong half the time.
