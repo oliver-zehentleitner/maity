@@ -14286,6 +14286,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("section.sessions .send-status.failed")).includes("Could not read your sessions"), "sessions: a failed read is said as an error");
   win.Maity.api.get = sesGet;
 
+  // Toward an authenticator app (§2.10): a banner on every page while the mail is the second
+  // factor; its sentence says whether a reset by mail could reach the human; Later until the
+  // next sign-in; what it stands on read once, again after a write.
+  {
+    const fbGet = win.Maity.api.get;
+    const fbLs = win.localStorage;
+    const fbStore = {};
+    win.localStorage = { getItem: (k) => (k in fbStore ? fbStore[k] : null), setItem: (k, v) => { fbStore[k] = String(v); }, removeItem: (k) => { delete fbStore[k]; } };
+    const fbBox = () => main.querySelector(".factor-banner");
+    let fbVia = "totp", fbOffered = true, fbOwn = true, fbReads = 0;
+    win.Maity.api.get = async (p, o) => {
+      if (p === "/auth/second-factor") { fbReads += 1; return { enrolled: fbVia === "totp", enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: fbVia }; }
+      const v = await fbGet(p, o);
+      if (p === "/auth/methods") return Object.assign({}, v, { password_reset: fbOffered });
+      if (p === "/me/notification-settings") return Object.assign({}, v, { email: Object.assign({}, v.email, { password_reset: fbOwn }) });
+      return v;
+    };
+    const fbGo = async (route) => { await go(route); for (let k = 0; k < 6; k++) await tick(); };
+    win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(!fbBox(), "authenticator banner: none while the app is the second factor");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbLink = fbBox() && fbBox().querySelector('a[href="#/account/security"]');
+    expect(fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone: whoever reads it can reset your password and sign in. Set up an authenticator app.")
+      && fbLink && text(fbLink) === "Set up an authenticator app" && btn(fbBox(), "Later") && fbBox().getAttribute("role") === "region",
+      "authenticator banner: the mail as the factor and a reset that could reach the human, linked to Security, with Later ");
+    const fbRead = fbReads;
+    await fbGo("#/maintainer/maity/board");
+    expect(fbBox() && fbReads === fbRead, "authenticator banner: on the next page too, without reading again (" + fbReads + ")");
+    win.Maity.onWrite("/projects/maintainer/maity/tasks");
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && fbReads === fbRead, "authenticator banner: a write elsewhere reads nothing again (" + fbReads + ")");
+    fbOwn = false; win.Maity.onWrite("/me/notification-settings");
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox. Set up an authenticator app: it is the stronger one.") && fbReads === fbRead + 1,
+      "authenticator banner: the human's own switch off, the milder sentence, read again after a write");
+    fbOwn = true; fbOffered = false; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."), "authenticator banner: the instance not offering a reset, the milder sentence");
+    fbOffered = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    btn(fbBox(), "Later").click(); await tick();
+    const fbSession = (await win.Maity.api.get("/auth/session")).session_id;
+    expect(!fbBox() && fbStore["maity.factor-banner.later"] === fbSession, "authenticator banner: Later hides it, kept for this session " + JSON.stringify(fbStore));
+    await fbGo("#/maintainer/maity/board");
+    expect(!fbBox(), "authenticator banner: Later holds on the next page");
+    fbStore["maity.factor-banner.later"] = "an-earlier-session";
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox(), "authenticator banner: back after the next sign-in");
+    // A browser that keeps nothing: Later still holds for this page load.
+    win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+    btn(fbBox(), "Later").click(); await tick();
+    await fbGo("#/maintainer/maity/board");
+    expect(!fbBox(), "authenticator banner: Later without storage holds for this page load");
+    fbVia = "totp"; win.Maity.factorBanner.forget();
+    win.localStorage = fbLs;
+    win.Maity.api.get = fbGet;
+  }
+
   // Ctrl+Enter (Cmd+Enter on a Mac) sends every multi-line form; plain Enter never does, nor a disabled submit button.
   const ceCalls = [];
   const cePost = win.Maity.api.post, cePatch = win.Maity.api.patch;

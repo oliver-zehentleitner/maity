@@ -1539,6 +1539,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .sessions-ended { margin-top: 8px; }
 .address-change { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: var(--radius); }
 .signin-banner { margin: 0 0 12px; }
+.factor-banner { margin: 0 0 12px; }
+.factor-banner .flag { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.factor-banner .flag p { flex: 1 1 20em; margin: 0; }
 
 /* The change ticker (js/ticker.js). */
 .ticker-tabs { display: flex; gap: 6px; margin: 8px 0; }
