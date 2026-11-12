@@ -4,6 +4,7 @@ import dataclasses
 import json
 import os
 import shutil
+import subprocess
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,8 @@ from maity.runner import adapters, config, loop, supervisor
 from maity.runner.asuser import AsUser
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
+# Under the sandbox: the git commands that fail, and `maity` alone.
+SANDBOXED = adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
 
 
 def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -> adapters.Context:
@@ -34,7 +37,8 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     launch = adapters.launch(ctx)
     argv = launch.argv
-    assert argv[0] == "/usr/bin/claude" and argv[-1] == adapters.START_PROMPT
+    assert argv[0] == "/usr/bin/claude"
+    assert argv[-1] == adapters.START_PROMPT  # no sandbox: nothing about git or `maity` alone
     assert argv[argv.index("--setting-sources") + 1] == "user"
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -43,11 +47,12 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     mcp = [a for a in argv if a.startswith("--mcp-config")]
     assert len(mcp) == 1 and mcp[0].startswith("--mcp-config=")
     assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
+    # No MAITY_SUPERVISOR: nothing wakes an interactive session, so the hub must not tell it
+    # to stop waiting (the first runner test of 0.1.0a8: the agents went away after each turn).
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
         clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
         clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
-        "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
 
@@ -183,9 +188,125 @@ def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
     assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT]
+    assert spec["env"]["MAITY_SUPERVISOR"] == f"maity-runner/{__version__}"
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert spec["restart"]["crash_cap"] == 5
+
+
+def test_the_sandboxed_session_prompt_and_git_settings(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True, placement={**PLACEMENT, "mode": "supervised"})
+    launch = adapters.launch(ctx)
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    assert spec["first"][-1] == adapters.SUPERVISED_PROMPT + SANDBOXED
+    assert spec["env"]["GIT_CONFIG_COUNT"] == "5"
+    keys = {spec["env"][f"GIT_CONFIG_KEY_{i}"]: spec["env"][f"GIT_CONFIG_VALUE_{i}"]
+            for i in range(5)}  # fmt: skip
+    assert keys == {"core.fsmonitor": "false", "diff.ignoreSubmodules": "all",
+                    "branch.autoSetupMerge": "false", "push.default": "current",
+                    "fetch.recurseSubmodules": "false"}  # fmt: skip
+    codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", sandbox=True)
+    assert adapters.launch(codex).argv[-1] == adapters.START_PROMPT + adapters.GIT_PROMPT
+
+
+def test_without_a_sandbox_the_clone_git_configuration_stands(tmp_path: Path) -> None:
+    """Without a sandbox `.git/config` is writable, and the session leaves the repository's
+    own tracking, push and submodule settings alone (review of #1663)."""
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    for key, value in (("branch.autoSetupMerge", "true"), ("push.default", "simple"),
+                       ("fetch.recurseSubmodules", "on-demand")):  # fmt: skip
+        subprocess.run(["git", "-C", str(clone), "config", key, value], check=True)
+    env = {**os.environ, **adapters.launch(context(tmp_path, clone=clone)).env}
+    for key, value in (("branch.autoSetupMerge", "true"), ("push.default", "simple"),
+                       ("fetch.recurseSubmodules", "on-demand")):  # fmt: skip
+        got = subprocess.run(["git", "-C", str(clone), "config", "--get", key], env=env,
+                             capture_output=True, text=True, check=True)  # fmt: skip
+        assert got.stdout.strip() == value
+
+
+def test_the_session_git_needs_no_configuration_write(tmp_path: Path) -> None:
+    """The sandbox keeps `.git/config` unwritable (config.lock is held), so tracking a remote
+    branch on `switch -c` failed and an upstream could not be stored (the first runner test of
+    0.1.0a8). With the session's settings a branch is cut, committed and pushed without one."""
+    remote, clone = tmp_path / "remote.git", tmp_path / "clone"
+    sandboxed = context(tmp_path, sandbox=True)
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@b", "GIT_COMMITTER_NAME": "a",
+           "GIT_COMMITTER_EMAIL": "a@b"}  # fmt: skip
+
+    def git(*args: str, cwd: Path = clone, session: bool = True) -> None:
+        extra = adapters.git_config(sandboxed) if session else {}
+        subprocess.run(["git", *args], cwd=cwd, env={**env, **extra}, check=True,
+                       capture_output=True)  # fmt: skip
+
+    git("init", "-q", "--bare", str(remote), cwd=tmp_path, session=False)
+    git("clone", "-q", str(remote), str(clone), cwd=tmp_path, session=False)
+    git("commit", "-q", "--allow-empty", "-m", "one", session=False)
+    git("push", "-q", "origin", "HEAD:refs/heads/main", session=False)
+    git("fetch", "-q", "origin", session=False)
+    before = (clone / ".git" / "config").read_text()
+    (clone / ".git" / "config.lock").write_text("")
+    if os.name != "nt":  # the sandbox's unreadable placeholder; fetch must not read it
+        (clone / ".gitmodules").write_text("")
+        (clone / ".gitmodules").chmod(0)
+    done = subprocess.run(["git", "fetch", "origin"], cwd=clone,
+                          env={**env, **adapters.git_config(sandboxed)},
+                          capture_output=True, text=True, check=True)  # fmt: skip
+    assert ".gitmodules" not in done.stderr
+    git("switch", "-q", "-c", "work", "origin/main")
+    git("commit", "-q", "--allow-empty", "-m", "two")
+    git("push", "-q")
+    assert (clone / ".git" / "config").read_text() == before
+    assert (remote / "refs" / "heads" / "work").is_file()
+
+
+def test_the_sandbox_placeholders_are_hidden_and_other_lines_kept(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text("# git's own comment\n*.tmp\n")
+    (ctx.clone / ".claude" / "agents").mkdir(parents=True)  # empty: Claude Code makes these
+    adapters.launch(ctx)
+    adapters.launch(ctx)  # a second start replaces the block, it does not add another
+    lines = exclude.read_text().splitlines()
+    assert lines[:2] == ["# git's own comment", "*.tmp"]
+    assert lines.count(adapters.EXCLUDE_BEGIN) == 1
+    assert lines[3:-1] == [f"/{name}" for name in adapters.CLAUDE_PLACEHOLDERS]
+
+
+def test_real_content_at_a_placeholder_path_stays_visible(tmp_path: Path) -> None:
+    """Untracked files of the agent's own at those paths are not placeholders, and hiding
+    them would hide real work (review of #1663). A block from an earlier start is rebuilt, so
+    content that appeared since shows again."""
+    ctx = context(tmp_path, sandbox=True)
+    clone = ctx.clone
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    adapters.launch(ctx)  # nothing there yet: every path is hidden
+    assert "/.gitmodules" in (clone / ".git" / "info" / "exclude").read_text()
+    (clone / ".gitmodules").write_text("[submodule]\n")
+    (clone / ".mcp.json").write_text("{}\n")
+    (clone / ".claude" / "skills").mkdir(parents=True)
+    (clone / ".claude" / "skills" / "real.md").write_text("a skill\n")
+    adapters.launch(ctx)
+    lines = (clone / ".git" / "info" / "exclude").read_text().splitlines()
+    assert {"/.gitmodules", "/.mcp.json", "/.claude/skills"}.isdisjoint(lines)
+    assert "/.bashrc" in lines
+    status = subprocess.run(["git", "-C", str(clone), "status", "--porcelain",
+                             "--untracked-files=all"], capture_output=True, text=True,
+                            check=True).stdout  # fmt: skip
+    assert {"?? .gitmodules", "?? .mcp.json", "?? .claude/skills/real.md"} <= set(
+        status.splitlines()
+    )
+
+
+def test_without_a_sandbox_the_exclude_file_is_left_alone(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text("*.tmp\n")
+    adapters.launch(ctx)
+    assert exclude.read_text() == "*.tmp\n"
 
 
 def test_extra_environment_reaches_the_session(tmp_path: Path) -> None:
@@ -394,7 +515,8 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
-    assert list(rules["bash"])[-1] in adapters.GIT_DENIED  # denies last: the last match wins
+    denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED)
+    assert list(rules["bash"])[-1] in denied  # denies last: the last match wins
     assert rules["read"] == {"*": "allow", f"{ctx.clone}/.git/maity/*": "deny"}
     assert rules["edit"] == {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     assert rules["webfetch"] == "deny" and rules["external_directory"] == "deny"
@@ -515,3 +637,95 @@ def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) 
     assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"
     recorded = (ctx.clone / ".git" / "maity" / "git").read_text().strip()
     assert recorded == shutil.which("git") and os.path.isabs(recorded)
+
+
+REPOSITORY = "https://github.com/oliver-zehentleitner/maity.git"
+PULLS = config.RepositoryGrant(allow=("make test",), pull_requests=True)
+
+
+def fake_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return str(gh)
+
+
+def test_no_placed_session_runs_gh_even_with_pull_requests(tmp_path: Path) -> None:
+    """The settings test for 9f43804d: gh is denied in every session, a grant with pull
+    requests adds no gh rule and no forge API host to the sandbox, so a sandboxed
+    `gh pr create` is denied and only `maity gh` remains."""
+    ctx = context(tmp_path, sandbox=True, grant=PULLS, hosts=("github.com", "maity.team"),
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    settings = adapters.claude_settings(ctx)
+    assert adapters.GH_DENIED == ("gh", "gh *")
+    assert {"Bash(gh)", "Bash(gh *)"} <= set(settings["permissions"]["deny"])
+    assert not any("gh" in rule.split("(", 1)[1].split()[0] for rule in
+                   settings["permissions"]["allow"] if rule.startswith("Bash("))  # fmt: skip
+    assert "api.github.com" not in settings["sandbox"]["network"]["allowedDomains"]
+    o_ctx = context(tmp_path / "o", "opencode", grant=PULLS)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    assert all(bash[rule] == "deny" for rule in adapters.GH_DENIED)
+    assert list(bash)[-1] in (*adapters.GIT_DENIED, *adapters.GH_DENIED)
+
+
+def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gh = fake_gh(tmp_path, monkeypatch)
+    ctx = context(tmp_path, sandbox=True, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    (ctx.clone / ".git").mkdir(parents=True)
+    launch = adapters.launch(ctx)
+    record = (ctx.clone / ".git" / "maity" / "pull_requests").read_text()
+    assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
+    assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
+
+
+def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An earlier launch's record is overwritten: a grant taken back is taken back."""
+    fake_gh(tmp_path, monkeypatch)
+    ctx = context(tmp_path, sandbox=True,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    (ctx.clone / ".git" / "maity").mkdir(parents=True)
+    (ctx.clone / ".git" / "maity" / "pull_requests").write_text("github.com/o/other\n/bin/gh\n")
+    launch = adapters.launch(ctx)
+    assert (ctx.clone / ".git" / "maity" / "pull_requests").read_text() == ""
+    assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED
+
+
+def test_pull_requests_without_gh_on_the_path_record_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    ctx = context(tmp_path, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    assert adapters.pull_requests_record(ctx) == ""
+
+
+def test_an_unclosed_block_drops_only_its_marker_and_a_foreign_encoding_is_left(
+    tmp_path: Path,
+) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text(f"a\n{adapters.EXCLUDE_BEGIN}\nb\n")
+    adapters.launch(ctx)
+    lines = exclude.read_text().splitlines()
+    assert lines[:2] == ["a", "b"] and lines.count(adapters.EXCLUDE_BEGIN) == 1
+    exclude.write_bytes(b"caf\xe9\n")  # not UTF-8: rewriting could change it
+    adapters.launch(ctx)
+    assert exclude.read_bytes() == b"caf\xe9\n"
+
+
+def test_codex_under_its_sandbox_gets_the_git_line_and_not_the_maity_line(tmp_path: Path) -> None:
+    ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex", sandbox=True)
+    prompt = adapters.launch(ctx).argv[-1]
+    assert adapters.GIT_PROMPT in prompt and adapters.CLAUDE_MAITY_PROMPT not in prompt
+    bare = context(tmp_path / "b", harness_id="codex", binary="/usr/bin/codex")
+    assert adapters.launch(bare).argv[-1] == adapters.START_PROMPT

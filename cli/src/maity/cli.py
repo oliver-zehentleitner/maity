@@ -27,7 +27,9 @@ from typing import IO, Any, NoReturn, TypeGuard
 from maity import (
     __version__,
     citecheck,
+    clonecheck,
     environment,
+    ghpr,
     gitfacts,
     hub,
     onboarding,
@@ -172,6 +174,13 @@ def _renamed(path: str, renamed: dict[str, str]) -> str:
     return path
 
 
+SANDBOXED_CALL = (
+    "this session cannot read the clone's credential: a runner placed it, and its sandbox "
+    "hides the credential from every command but a `maity` call of its own; run maity alone, "
+    "not in a pipe, chained with `;`, `&&` or `||`, with a trailing `&` or inside `$(...)`"
+)
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
@@ -185,6 +194,10 @@ class Session:
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
         if not state.has_credential(self.dir):
+            if os.environ.get(clonecheck.PLACEMENT_ENV):
+                # Under the runner the clone has joined; Claude Code's sandbox hides its
+                # credential, and only a `maity` call of its own runs outside the sandbox.
+                raise state.StateError(SANDBOXED_CALL)
             raise state.StateError(
                 "this clone has not joined a project; run `maity join <url> --code <code>`"
             )
@@ -1212,6 +1225,14 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
                     f"{unchecked}; this checkout has {shown}; {switch}"
                 )
     return None
+
+
+def cmd_gh(args: argparse.Namespace) -> int:
+    """`maity gh pr create|view` (ghpr): gh's own exit code, a refusal before it runs."""
+    try:
+        return ghpr.run(args)
+    except ghpr.Refused as exc:
+        raise LocalRefusal(str(exc)) from None
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -4382,6 +4403,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(handler=cmd_wait)
 
+    ghpr.parser(sub).set_defaults(handler=cmd_gh)
+
     p = add(
         "report",
         "report finished work with facts read from git and gh",
@@ -4572,7 +4595,10 @@ def build_parser() -> argparse.ArgumentParser:
         "claim",
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
-        "agent makes; nothing is released automatically. In a project in plan or review, "
+        "agent makes except the events long-poll, the wait for events inside `maity wait`. The "
+        "unread-chats check `maity wait` makes on a timeout is an ordinary call and does renew "
+        "it. Nothing is released automatically, an expired lease included: the card stays yours "
+        "until you give it back or someone takes it over. In a project in plan or review, "
         "--reason is required.",
     )
     p.add_argument("card", type=_id, help="the card id, e.g. tsk-0004")
