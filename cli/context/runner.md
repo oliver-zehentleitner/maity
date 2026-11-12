@@ -1960,7 +1960,7 @@ is the way left to put a question to a person.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-dtdx205z8232 (agents on the runner added `Co-Authored-By: Claude …` to commits and a "Generated with" line to pull request bodies; the lead's decision on the key); Claude Code's settings reference (`attribution`, `attribution.commit`, `attribution.pr`, `attribution.sessionUrl`, `includeCoAuthoredBy`); a check with Claude Code 2.1.322 `-p` in scratch repositories, 2026-11-12; `cli/src/maity/runner/adapters.py`
+**Source:** card tsk-dtdx205z8232 (agents on the runner added `Co-Authored-By: Claude …` to commits and a "Generated with" line to pull request bodies; the lead's decision on the key); Claude Code's settings reference (`attribution`, `attribution.commit`, `attribution.pr`, `attribution.sessionUrl`, `includeCoAuthoredBy`); a check with Claude Code 2.1.322 `-p` in scratch repositories, 2026-11-12; a check with 2.1.280 and 2.1.322, 2026-11-12, of a `--settings` file holding `attribution: false` with an allow rule and an `env` value; `cli/src/maity/runner/adapters.py`
 **Revisit when:** Claude Code renames or drops the `attribution` keys, or the oldest Claude Code a runner supports is 2.1.281 or later
 
 The settings the runner writes for every Claude Code placement, interactive
@@ -1979,8 +1979,11 @@ wrote neither line; the same run with `{}` wrote both.
   ignored once `attribution.commit` or `attribution.pr` is set anywhere.
 - `attribution: false`: hides everything too, but needs 2.1.281 or later; an
   older binary rejects the value and skips the whole settings file, which
-  carries the placement's permission grant. Empty strings work on every
-  version that reads `attribution`.
+  carries the placement's permission grant. The reference says so for user,
+  project and local files; the check showed it for `--settings` too: 2.1.280
+  applied neither the file's allow rule nor its `env` value, while the same
+  file with the empty-string object, and either file on 2.1.322, applied
+  both. Empty strings work on every version that reads `attribution`.
 - Leaving it to the agents to strip the lines: the harness tells the model to
   add them on every commit and pull request, subagents included, so a missed
   line reaches the forge.
