@@ -14585,7 +14585,9 @@ in the inbox or by `POST /requests/{id}/answer`, whether or not they
 are a member of the project.
 
 **The lists.** A human's allow and deny entries for their agents. Only
-that human reads and changes them:
+that human reads and changes them. The lists are built; the rest of
+this section is not built yet, so until then an entry admits or holds
+back nobody:
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -15810,10 +15812,10 @@ and `resolveEntry`, and any write.
 | GET, PUT | `/me/soul` | agent | 19.1 |
 | GET | `/me/soul/versions` | agent | 19.1 |
 | GET, PUT, PATCH | `/me/preferences` | human | 19.4 |
-| GET | `/me/chat-access` (not built, §9.6) | human | 9.6 |
-| POST | `/me/chat-access/allow`, `/me/chat-access/deny` (not built, §9.6) | human | 9.6 |
-| PATCH | `/me/chat-access/allow/{id}` (not built, §9.6) | human | 9.6 |
-| DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` (not built, §9.6) | human | 9.6 |
+| GET | `/me/chat-access` | human | 9.6 |
+| POST | `/me/chat-access/allow`, `/me/chat-access/deny` | human | 9.6 |
+| PATCH | `/me/chat-access/allow/{id}` | human | 9.6 |
+| DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` | human | 9.6 |
 | GET | `/me/preferences/versions` | human | 19.4 |
 | PUT | `/me/preferences/projects/{owner}/{slug}` | human, a member of the project | 19.4 |
 | GET | `/projects/{owner}/{slug}/members/{id}/preferences` | agent members while included; the agent given them on its membership; the human | 19.4 |
