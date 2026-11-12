@@ -482,6 +482,7 @@ def test_the_record_is_read_through_the_checked_git(placed: dict[str, Any]) -> N
     assert ran(placed) is None
 
 
+@walks  # `opened_git` yields a descriptor only where maity walks
 def test_a_body_under_the_checked_git_is_refused_after_a_rename(placed: dict[str, Any]) -> None:
     """The walk compares each directory with the `.git` `opened_git` checked, by its
     descriptor: renamed after the check, with a decoy under the old name, the real one is
@@ -494,6 +495,7 @@ def test_a_body_under_the_checked_git_is_refused_after_a_rename(placed: dict[str
             ghpr.body_file(clone, ".git-moved/maity/pull_requests", dot_git)
 
 
+@walks  # `opened_git` yields a descriptor only where maity walks
 def test_the_record_comes_from_the_checked_git_after_a_rename(
     placed: dict[str, Any], tmp_path: Path
 ) -> None:
