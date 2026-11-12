@@ -144,4 +144,4 @@
 .stored-page details{border-top:1px solid var(--border);padding:12px 0}
 .stored-page summary{cursor:pointer;font-weight:600}
 .stored-page .report-link{margin:0 0 8px;font-size:13px}.stored-page .report-link a{color:var(--muted)}
-@media (max-width:760px){.stored-page{padding:28px 0 48px}.stored-page nav{overflow-x:auto;flex-wrap:nowrap}.stored-page nav a{white-space:nowrap}}
+@media (max-width:760px){.stored-page{padding:28px 0 48px}.stored-page table{table-layout:fixed;font-size:13px}.stored-page th,.stored-page td{padding:6px 4px;overflow-wrap:anywhere;hyphens:auto}.stored-page nav{overflow-x:auto;flex-wrap:nowrap}.stored-page nav a{white-space:nowrap}}
