@@ -14597,6 +14597,10 @@ back nobody:
 | `POST /me/chat-access/deny` | human | `{agents, owner_id \| human_id \| agent_id \| project}`; `201` with the entry; removes the allow entries for the same agents and subject |
 | `DELETE /me/chat-access/{allow\|deny}/{id}` | human | `204`, also when the entry was not there |
 
+A repeat of a `POST` or `PATCH` with the same `Idempotency-Key` (§1.5)
+answers the entry as it is now; an entry deleted since, by a `DELETE`, a
+deny or an agent's deletion, is `not_found`.
+
 An allow entry:
 
 ```json

@@ -185,10 +185,20 @@ def _until(duration: str | None, at: datetime) -> datetime | None:
 
 
 def _lock(conn: Connection, me: str) -> None:
-    """The caller's human row, locked for update before its entries are read or counted: two
-    writes of the same human run one after the other, so the cap holds and a deny sees an
-    allow written at the same time (SQLite's `BEGIN IMMEDIATE` already serialises them)."""
-    conn.execute(select(t.human.c.id).where(t.human.c.id == me).with_for_update()).first()
+    """The caller's human row, locked before its entries are read or counted: two writes of the
+    same human run one after the other, so the cap holds and a deny sees an allow written at the
+    same time (SQLite's `BEGIN IMMEDIATE` already serialises them).
+
+    On PostgreSQL the lock is `FOR NO KEY UPDATE`, which the foreign key check of another
+    human's entry naming this one (`FOR KEY SHARE`) does not wait for: two humans naming each
+    other at once do not deadlock. The caller's `account_lock` is no choice here, since every
+    write already holds it shared (`write_guard.hold`), and taking it exclusively from there
+    would deadlock two writes of the same human. MariaDB has no such mode: its foreign key check
+    takes a shared lock on the other's row, and the deadlock it may then report is transient and
+    run again (`db.TRANSIENT`)."""
+    conn.execute(
+        select(t.human.c.id).where(t.human.c.id == me).with_for_update(key_share=True)
+    ).first()
 
 
 def _room(conn: Connection, me: str) -> None:
@@ -264,9 +274,10 @@ def patch_allow(conn: Connection, me: str, entry_id: str, body: dict[str, Any]) 
     """`PATCH /me/chat-access/allow/{id}` (§9.6). A `duration` sent starts the time again from
     now; one not sent keeps `until`. `their_agents` and `their_human` only on a side's entry."""
     _lock(conn, me)
-    # The agents are checked, and their rows held shared, before the entry's row is locked:
-    # an agent's deletion takes its row first and the entry's after, so this order cannot
-    # wait on it in a cycle.
+    # The agents are checked, and their rows held shared, before the entry's row is locked, and
+    # the entry's agent rows are replaced only after that: an agent's deletion takes the agent's
+    # row, then the entries' rows, then their agent rows (`forget_agent`), so the two orders
+    # agree and cannot wait on each other in a cycle.
     row = _row(conn, me, ALLOW, entry_id)
     values: dict[str, Any] = {}
     own: list[str] | None = None
@@ -447,12 +458,22 @@ def forget_human(conn: Connection, human_id: str) -> None:
 
 
 def forget_agent(conn: Connection, agent_id: str) -> None:
-    """A deleted agent profile (§6.3): taken out of every entry; a deny of it goes."""
+    """A deleted agent profile (§6.3): taken out of every entry; a deny of it goes.
+
+    The caller holds the agent's row. The entries that name the agent are locked next, in the
+    order of their ids, and only then are their agent rows deleted: the order `PATCH`, `DELETE`
+    and a deny take (entry, then its agent rows), so neither waits on the other in a cycle. No
+    entry can come to name the agent meanwhile, since a write naming it holds its row shared."""
     c, g = t.chat_access.c, t.chat_access_agent.c
-    named = list(conn.execute(select(g.entry_id).where(g.agent_id == agent_id)).scalars())
+    named = set(conn.execute(select(g.entry_id).where(g.agent_id == agent_id)).scalars())
+    subject = set(conn.execute(select(c.id).where(c.subject_agent_id == agent_id)).scalars())
+    if named | subject:
+        conn.execute(
+            select(c.id).where(c.id.in_(named | subject)).order_by(c.id).with_for_update()
+        ).all()
     conn.execute(delete(t.chat_access_agent).where(g.agent_id == agent_id))
-    _drop(conn, list(conn.execute(select(c.id).where(c.subject_agent_id == agent_id)).scalars()))
-    _prune(conn, sorted(set(named)))
+    _drop(conn, sorted(subject))
+    _prune(conn, sorted(named - subject))
 
 
 # Reads ---------------------------------------------------------------------------------------
@@ -494,8 +515,9 @@ def one(conn: Connection, me: str, kind: str, entry_id: str) -> dict[str, Any]:
 
 
 def replayed(conn: Connection, entry_id: str) -> dict[str, Any]:
-    """An entry as its write answered, for the replay of an `Idempotency-Key` (§1.5): the key
-    is the caller's own, so the entry is read by its id alone."""
+    """An entry as it is now, for the replay of an `Idempotency-Key` (§1.5): the key is the
+    caller's own, so the entry is read by its id alone. An entry deleted since (by `DELETE`, a
+    deny or an agent's deletion) answers `not_found`, not the first call's status."""
     found = conn.execute(select(t.chat_access).where(t.chat_access.c.id == entry_id)).first()
     if found is None:
         raise not_found()

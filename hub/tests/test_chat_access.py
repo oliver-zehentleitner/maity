@@ -365,6 +365,110 @@ def test_a_key_is_checked_and_not_reused_for_another_call(
     assert _entries(migrated) == 1
 
 
+def test_a_patch_and_a_deny_replay_and_a_deleted_entry_is_not_found(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    """Review of #1691 (r9j3, delta): every write with a key replays, and a replay of an entry
+    deleted since answers `not_found` (§9.6)."""
+    a1 = profile(migrated, anna.id, "anna-a")
+    a2 = profile(migrated, anna.id, "anna-b")
+    made = allow(anna, agents=[a1], owner_id=ben.id).json()
+    path = f"/api/v1/me/chat-access/allow/{made['id']}"
+    keyed = {"X-CSRF-Token": anna.csrf, "Idempotency-Key": "chat-access-key-0003"}
+    first = anna.client.patch(path, json={"agents": [a2]}, headers=keyed)
+    again = anna.client.patch(path, json={"agents": [a2]}, headers=keyed)
+    assert first.status_code == again.status_code == 200, again.text
+    assert again.headers.get("idempotent-replayed") == "true"
+    assert again.json() == first.json()
+    keyed = {"X-CSRF-Token": anna.csrf, "Idempotency-Key": "chat-access-key-0004"}
+    body = {"agents": [a1], "human_id": ben.id}
+    first = anna.client.post("/api/v1/me/chat-access/deny", json=body, headers=keyed)
+    assert first.status_code == 201, first.text
+    gone = anna.client.delete(
+        f"/api/v1/me/chat-access/deny/{first.json()['id']}", headers={"X-CSRF-Token": anna.csrf}
+    )
+    assert gone.status_code == 204
+    again = anna.client.post("/api/v1/me/chat-access/deny", json=body, headers=keyed)
+    assert again.status_code == 404 and again.json()["error"]["code"] == "not_found"
+
+
+def test_an_agents_deletion_and_a_patch_at_once_do_not_deadlock(
+    anna: flow.Human, ben: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1691 (r9j3, delta, P2): an agent's deletion locks the entries naming the agent
+    before it deletes their agent rows, the order `PATCH` takes, so a `PATCH` of such an entry
+    meanwhile waits and then finds the entry gone, and neither deadlocks."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import threading
+    import time
+
+    from maity_hub.errors import ApiError
+
+    a1 = profile(migrated, anna.id, "anna-a")
+    a2 = profile(migrated, anna.id, "anna-b")
+    entry = allow(anna, agents=[a2], owner_id=ben.id).json()["id"]
+    chat_access.lock_rows(migrated, anna.id, ben.id)
+    outcome: list[str] = []
+
+    def patch() -> None:
+        try:
+            with migrated.begin() as conn:
+                chat_access.patch_allow(conn, anna.id, entry, {"agents": [a1]})
+            outcome.append("patched")
+        except ApiError as error:
+            outcome.append(error.code)
+        except Exception as error:  # a deadlock the database broke
+            outcome.append(type(error).__name__)
+
+    racer = threading.Thread(target=patch)
+    drop = chat_access._drop
+
+    def drop_after_the_patch_started(conn: Any, entry_ids: list[str]) -> None:
+        if not racer.is_alive() and not outcome:
+            racer.start()
+            time.sleep(1.0)  # the patch runs as far as it can
+        drop(conn, entry_ids)
+
+    monkeypatch.setattr(chat_access, "_drop", drop_after_the_patch_started)
+    with migrated.begin() as conn:
+        a = t.agent_profile.c
+        conn.execute(select(a.id).where(a.id == a2).with_for_update()).first()
+        chat_access.forget_agent(conn, a2)
+    racer.join(10)
+    assert outcome == ["not_found"]
+    assert _entries(migrated) == 0
+
+
+def test_two_humans_naming_each_other_at_once_do_not_deadlock(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    """Review of #1691 (r9j3, delta, P3): a write locks its human's row `FOR NO KEY UPDATE`, which
+    the foreign key check of another human's entry naming that human does not wait for."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import threading
+
+    mine = profile(migrated, anna.id, "anna-a")
+    bens = profile(migrated, ben.id, "ben-b")
+    chat_access.lock_rows(migrated, anna.id, ben.id)
+    outcome: list[str] = []
+
+    def bens_write() -> None:
+        with migrated.begin() as conn:
+            chat_access.create_allow(conn, ben.id, {"agents": [bens], "owner_id": anna.id})
+        outcome.append("made")
+
+    with migrated.begin() as conn:
+        chat_access.create_allow(conn, anna.id, {"agents": [mine], "owner_id": ben.id})
+        racer = threading.Thread(target=bens_write)
+        racer.start()
+        racer.join(2.0)
+        assert not racer.is_alive()  # it did not wait for anna's write
+    assert outcome == ["made"]
+    assert _entries(migrated) == 2
+
+
 def test_two_writes_at_once_keep_the_cap(
     anna: flow.Human, ben: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
