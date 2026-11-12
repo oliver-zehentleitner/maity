@@ -85,7 +85,8 @@ window.Maity = window.Maity || {};
 
   // The link's token once read, and whether the password is set: a redraw of the page (the
   // frame's language arriving, a language chosen in its footer) finds the fragment gone and
-  // must still show the same form, or the same "set". Kept until another page is drawn.
+  // must still show the same form, or the same "set". Only in memory, never written back into
+  // the address or any storage; dropped once the password is set and when another page is drawn.
   let held = null;
 
   // /sign-in/reset#<token>: read before any session, signed in or not, since the reset ends
@@ -109,8 +110,8 @@ window.Maity = window.Maity || {};
       clear(box);
       append(box, heading, h("p", { class: "reset-dead" }, M.t("reset.dead")), newLink());
     };
+    if (held && held.done) { setDone(box); return; }
     if (!token) { dead(); return; }
-    if (held.done) { setDone(box); return; }
     status.busy(M.t("reset.reading"));
     let who;
     try {
@@ -185,7 +186,8 @@ window.Maity = window.Maity || {};
           return;
         }
         password.value = ""; repeat.value = ""; code.value = "";
-        if (held && held.token === token) held.done = true;
+        // Set: the token is of no more use, only that the password is set stays for a redraw.
+        if (held && held.token === token) held = { token: null, done: true };
         setDone(box);
       },
     },

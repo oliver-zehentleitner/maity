@@ -10164,6 +10164,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)" && !main.querySelector(".reset-dead")
       && JSON.stringify(fpPosts.map((x) => x[1].token)) === JSON.stringify(["reset-plain", "reset-plain"]),
       "reset: a redraw without the token in the address keeps the link's form " + JSON.stringify([win.location.hash, fpPosts]));
+    // A language picked in the frame's footer: the page's address without the token, drawn again.
+    const fpGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => (p.startsWith("/site/chrome") ? fpGet(p, o).then((m) => Object.assign({}, m, {
+      footer: Object.assign({}, m.footer, { languages: [{ tag: "de", name: "Deutsch" }, { tag: "en", name: "English" }] }) })) : fpGet(p, o));
+    await go("#/sign-in/reset?lang=de"); for (let k = 0; k < 6; k++) await tick();
+    const fpFoot = body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
+    const fpLang = fpFoot && fpFoot.querySelector("p.langs") ? fpFoot.querySelector("p.langs").querySelectorAll("a").find((a) => text(a) === "English") : null;
+    if (fpLang) { fpLang.click(); for (let k = 0; k < 6; k++) await tick(); }
+    expect(fpLang && /^#\/sign-in\/reset\?lang=en$/.test(win.location.hash) && fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)"
+      && !main.querySelector(".reset-dead") && fpPosts.length === 4 && fpPosts.every((x) => x[1].token === "reset-plain"),
+      "reset: a language picked in the frame's footer keeps the link's form " + JSON.stringify([win.location.hash, fpPosts.length, !!fpLang]));
+    win.Maity.api.get = fpGet;
     fpPosts.length = 1;
     fpSet("short", "short"); fpForm().dispatch("submit"); await tick();
     expect(fpPosts.length === 1 && text(fpForm()).includes("a password has at least 12 characters"), "reset: a short password is refused before sending");
