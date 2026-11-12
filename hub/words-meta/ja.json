@@ -1,4 +1,36 @@
 {
+  "explore.count_one": {
+    "en": "93c566705e24fc63",
+    "text": "8112d4854bcc0b4e"
+  },
+  "explore.count_other": {
+    "en": "f6559047dc584ba3",
+    "text": "8112d4854bcc0b4e"
+  },
+  "explore.heading": {
+    "en": "1a72c10edf3e3765",
+    "text": "12d8fe525a36884b"
+  },
+  "explore.kicker": {
+    "en": "e3abd89f854ecdf2",
+    "text": "6a66982a0773f170"
+  },
+  "explore.none": {
+    "en": "b030b5edca8f86f8",
+    "text": "f7cd33db9775dc46"
+  },
+  "explore.sorted": {
+    "en": "e2eb69101196e5f0",
+    "text": "9e724ac84b3310f9"
+  },
+  "explore.sub": {
+    "en": "c0035d47f31f57dc",
+    "text": "2614b1c66568ffc1"
+  },
+  "explore.title": {
+    "en": "bd0224ac466d10fc",
+    "text": "00f0fca5f6657525"
+  },
   "factor.advice_password": {
     "en": "d3f377764b058242",
     "text": "66ca43f5ee782b4a"
