@@ -1259,9 +1259,28 @@ def set_paused(
     )
 
 
+def _leaving_tokens(conn: Connection, project_id: str) -> list[str]:
+    """`member:<id>` of every active human with trust `owner` or `admin` (§6.2).
+
+    A `member_updated` from the member leaving is addressed to them as well as
+    broadcast. A removal's own event is not: this is only the leaving."""
+    humans = conn.execute(
+        select(t.membership.c.human_id)
+        .where(
+            t.membership.c.project_id == project_id,
+            t.membership.c.human_id.is_not(None),
+            t.membership.c.trust.in_(("owner", "admin")),
+            t.membership.c.active.is_(True),
+        )
+        .order_by(t.membership.c.joined_at, t.membership.c.id)
+    ).scalars()
+    return [f"member:{human_id}" for human_id in humans]
+
+
 def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     """Remove a membership (§6.2): its credentials revoked on the approver's authority,
-    its claims released, every `reports_to` that names it cleared."""
+    its claims released, every `reports_to` that names it cleared. A human leaving is
+    this same path; only the `member_updated` audience differs."""
     from maity_hub import onboarding
     from maity_hub.routes.requests import return_held_by, withdraw_owners_round
 
@@ -1302,11 +1321,16 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     )
     removed = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     view = member_view(conn, removed)  # to everyone: never the briefing
+    # Leaving: the actor is the member. A removal's actor is someone else, and that
+    # event stays broadcast-only apart from the tokens every `member_updated` gains.
+    audience = ["all"]
+    if removed.human_id is not None and change.actor.membership_id == removed.id:
+        audience += _leaving_tokens(conn, change.project.id)
     emit(
         conn,
         change.project.id,
         "member_updated",
-        ["all"],
+        audience,
         view,
         actor=change.actor,
         subject=("member", view["id"]),
@@ -1362,15 +1386,31 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         agent_owners.human_left(conn, change.project, removed.human_id, change.actor, change.by)
 
 
+def _leaving(mine: Membership, target: Any) -> bool:
+    """A human naming their own member id ends that membership (§6.2, "Leaving a project").
+
+    Any trust, a guest included. An agent naming its own id is not this: it stays on
+    `members:admin`, and an admin agent on the consent path."""
+    return bool(
+        mine.kind == "human"
+        and target.human_id is not None
+        and target.human_id == mine.principal_id
+        and target.removed_at is None
+    )
+
+
 @router.delete("/projects/{owner}/{slug}/members/{member_id}")
 def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         agent_admin = mine.kind == "agent" and in_admin_team(mine.trust, mine.role)
         target = member_row_or_removed(conn, mine.project.id, member_id)
+        leaving = _leaving(mine, target)
         if mine.kind == "agent" and target.agent_id is None:  # whatever the agent's role
             raise humans_only("an agent never removes a human's membership")
-        if not agent_admin:
+        # Leaving needs no `members:admin` and is not `owner_only` (that is removing
+        # another owner). The last owner and the namespace owner still cannot.
+        if not leaving and not agent_admin:
             mine.require("members:admin")
         if agent_admin:  # before the idempotent answer: it carries the briefing
             admin_agents.check_target(mine, target)
@@ -1382,14 +1422,14 @@ def remove_member(slug: str, member_id: str, request: Request, caller: AnyCaller
             # An admin agent never removes on the call: the owner gives the go (§2.3 ᵃ).
             request_id = admin_agents.propose(conn, mine, caller, target, {"action": "remove"})
             return idempotency.Outcome(202, "request", request_id, _request(conn, request_id))
-        if target.trust == "owner" and mine.trust != "owner":
+        if not leaving and target.trust == "owner" and mine.trust != "owner":
             raise owner_only("only an owner removes an owner")
         if target.trust == "owner" and _owners(conn, mine.project.id) <= 1:
             raise invalid({"member": "last_owner"}, "the last owner cannot be removed")
         if target.human_id is not None:  # the namespace owner stays a member (§6.25)
             namespace.namespace_owner_of(conn, target.human_id, [mine.project.id])
         apply_remove(conn, change_of(mine, caller), target)
-        # The answer goes to the admin who removed it, like a repeated DELETE's.
+        # The answer goes to the caller, like a repeated DELETE's.
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
