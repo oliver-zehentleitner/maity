@@ -8054,13 +8054,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Settings", "Notifications", "Security", "Organisations", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Settings", "Notifications", "Security", "Organisations", "Reports", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
   expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/settings",
     "header: arrows move through the items; Settings goes to the account's Settings tab");
-  for (let k = 0; k < 4; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(pMenu.querySelectorAll(".menu-item")[5].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[5],
+  for (let k = 0; k < 5; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[6].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[6],
     "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
@@ -8078,7 +8078,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Your account · Maity" && text(main).includes("@maintainer") && !byId("password-current")
     && JSON.stringify(main.querySelector("nav.account-tabs").querySelectorAll("a").map((a) => [text(a), a.getAttribute("href"), a.getAttribute("aria-current")]))
       === JSON.stringify([["Profile", "#/account", "page"], ["Settings", "#/account/settings", null], ["Notifications", "#/account/notifications", null],
-        ["Security", "#/account/security", null], ["Organisations", "#/account/orgs", null]]),
+        ["Security", "#/account/security", null], ["Organisations", "#/account/orgs", null], ["Reports", "#/account/reports", null]]),
     "the account view: its tabs, Profile shown (tsk-3banvfzv3nvs)");
   // Renaming one's own handle (docs/api.md §6.24).
   const hdPatches = [];
@@ -13069,6 +13069,119 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
   expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
     "settings: settings/mine shows one's own settings, its tab marked, not the project's");
+  // Leaving the project from Mine (§6.2): the namespace owner is stopped up front; a member and a
+  // guest confirm, and the dialog says which of their agents are isolated or stay. The live fixture
+  // store is set for each caller and put back, so the pages after this keep what they had.
+  expect(btn(main, "Leave project") && btn(main, "Leave project").disabled
+    && text(main.querySelector(".leave-project")).includes("You own this project's namespace. Transfer the project or close it first."),
+    "leave: the namespace owner sees Leave project disabled, with the reason");
+  {
+    const fx = win.Maity.api.fixturesLive();
+    const project = fx["maity/project.json"];
+    const savedOwner = JSON.parse(JSON.stringify(project.owner));
+    const savedMode = project.policy.agent_owners;
+    const savedMembers = JSON.parse(JSON.stringify(fx["maity/members.json"]));
+    const savedProjects = JSON.parse(JSON.stringify(fx["me.json"].projects));
+    const savedStart = fx["me.json"].member.start_tabs;
+    const projectId = savedProjects.find((p) => p.slug === "maity").id;
+    const leaveDel = win.Maity.api.del;
+    const resetLeave = () => {
+      fx["maity/members.json"] = JSON.parse(JSON.stringify(savedMembers));
+      fx["me.json"].projects = JSON.parse(JSON.stringify(savedProjects));
+      fx["me.json"].member.start_tabs = savedStart;
+      project.owner = JSON.parse(JSON.stringify(savedOwner));
+      project.policy.agent_owners = savedMode;
+      win.Maity.api.del = leaveDel;
+    };
+    const setCaller = (trust, agentOwners) => {
+      resetLeave();
+      project.owner = { id: "hum-other", handle: "other" };
+      if (agentOwners !== undefined) project.policy.agent_owners = agentOwners;
+      fx["maity/members.json"].items.find((x) => x.id === "hum-maintainer").trust = trust;
+      fx["me.json"].projects.find((p) => p.slug === "maity").trust = trust;
+    };
+    const leaveDialog = () => main.querySelector(".leave-dialog");
+    const fateOf = (name) => {
+      let found = null;
+      leaveDialog().querySelectorAll(".leave-agent").forEach((row) => { if (text(row).includes(name)) found = row.getAttribute("data-fate"); });
+      return found;
+    };
+    const leaveOpen = async () => {
+      await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 6; k++) await tick();
+      const button = btn(main, "Leave project");
+      button.click(); for (let k = 0; k < 2; k++) await tick();
+      return button;
+    };
+    setCaller("member");
+    await leaveOpen();
+    const beforeEscape = win.Maity.api.fixtureAsked.length;
+    expect(leaveDialog() && leaveDialog().querySelector(".leave-rule") && !leaveDialog().querySelector(".leave-agent")
+      && text(leaveDialog()).includes("cannot be read from here"),
+      "leave: when the policy cannot be read, the dialog states the rule and names no agent");
+    leaveDialog().dispatch("keydown", { key: "Escape" });
+    expect(!main.querySelector(".leave-dialog") && win.location.hash === "#/maintainer/maity/settings/mine"
+      && !win.Maity.api.fixtureAsked.slice(beforeEscape).some((p) => p.startsWith("DELETE ")),
+      "leave: Escape cancels and sends nothing");
+    setCaller("member", "anyone");
+    const opener = await leaveOpen();
+    expect(!opener.disabled && fateOf("Agent A") === "isolated" && fateOf("Agent B") === "stays" && fateOf("Reviewer") === "isolated",
+      "leave: a member's dialog lists owned agents, isolated or staying " + fateOf("Agent A") + "/" + fateOf("Agent B") + "/" + fateOf("Reviewer"));
+    let returned = 0;
+    opener.focus = () => { returned += 1; };
+    btn(leaveDialog(), "Cancel").click();
+    expect(returned === 1 && !main.querySelector(".leave-dialog") && win.location.hash === "#/maintainer/maity/settings/mine",
+      "leave: cancel closes the dialog, returns focus, and stays on Mine");
+    opener.click(); for (let k = 0; k < 2; k++) await tick();
+    const keys = [];
+    let failedOnce = false;
+    const deletesBefore = win.Maity.api.fixtureAsked.filter((p) => p === "DELETE /projects/maintainer/maity/members/hum-maintainer").length;
+    win.Maity.api.del = (p, b, h) => {
+      keys.push(h && (h["idempotency-key"] || h["Idempotency-Key"]));
+      if (!failedOnce) { failedOnce = true; return Promise.reject(new win.Maity.api.ApiError("down", 0, p)); }
+      return leaveDel(p, b, h);
+    };
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(leaveDialog() && text(leaveDialog()).includes("Not left:"), "leave: a failed attempt stays on the dialog");
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 6; k++) await tick();
+    // The shim assigns the hash and does not fire hashchange; a browser does (smoke, the rename).
+    win.onhashchange(); for (let k = 0; k < 8; k++) await tick();
+    const deletesAfter = win.Maity.api.fixtureAsked.filter((p) => p === "DELETE /projects/maintainer/maity/members/hum-maintainer").length;
+    expect(keys.length === 2 && keys[0] && keys[0] === keys[1] && /^[0-9a-f-]{36}$/.test(keys[0])
+      && deletesAfter === deletesBefore + 1 && win.location.hash === "#/all"
+      && main.querySelector(".notice") && text(main.querySelector(".notice")).includes("You left Maity."),
+      "leave: confirm sends DELETE for one's own id, keeps the key for the retry, and routes to /all " + win.location.hash);
+    const again = await win.Maity.api.del("/projects/maintainer/maity/members/hum-maintainer").catch((e) => e);
+    const replay = await win.Maity.api.del("/projects/maintainer/maity/members/hum-maintainer", undefined, { "idempotency-key": keys[0] });
+    expect(again.code === "not_found" && replay && replay.id === "hum-maintainer" && replay.removed_at,
+      "leave: a repeat without the key is not_found; the same key replays the stored answer");
+    setCaller("guest", "anyone");
+    await leaveOpen();
+    expect(fateOf("Agent A") === "isolated" && fateOf("Agent B") === "stays",
+      "leave: a guest sees Leave project and the same per-agent list");
+    let guestPath = null;
+    win.Maity.api.del = (p, b, h) => { guestPath = p; return leaveDel(p, b, h); };
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 6; k++) await tick();
+    win.onhashchange(); for (let k = 0; k < 8; k++) await tick();
+    expect(guestPath === "/projects/maintainer/maity/members/hum-maintainer" && win.location.hash === "#/all"
+      && main.querySelector(".notice") && text(main.querySelector(".notice")).includes("You left Maity."),
+      "leave: a guest's confirm deletes their own id and routes to /all");
+    setCaller("owner");
+    fx["maity/members.json"].items.forEach((x) => {
+      if (x.kind === "human" && x.id !== "hum-maintainer" && x.trust === "owner") x.trust = "member";
+    });
+    await leaveOpen();
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(leaveDialog() && text(leaveDialog()).includes("You are the last owner. Make someone else an owner first.")
+      && win.location.hash === "#/maintainer/maity/settings/mine",
+      "leave: the last owner is told in words and stays");
+    resetLeave();
+    project.owner = { id: "org-oz00team0001", handle: "oz-team" };
+    const orgNo = await win.Maity.api.del("/projects/maintainer/maity/members/hum-maintainer").catch((e) => e);
+    expect(orgNo.code === "namespace_owner", "leave: an owner of the organisation that owns the project is refused");
+    resetLeave();
+    win.Maity.tabs.setOpen({ me: fx["me.json"].member, projects: fx["me.json"].projects }, projectId, true);
+    nlPatches.length = 0;
+  }
   // Memory (§19): filters ask the hub, an entry says where and who, Delete with a reason leaves its row; souls of one's own agents.
   {
     await go("#/maintainer/maity/memory"); for (let k = 0; k < 6; k++) await tick();
@@ -14000,10 +14113,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     return viGet(p);
   };
   const viView = () => main.querySelector("section.view-visitor");
+  // What a visitor can press: nothing but the Report control (§16.8, tsk-7ze5w6ymf7bw).
+  const viPress = () => viView().querySelectorAll("button, input, select, textarea").filter((e) => !e.classList.contains("report-open"));
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "board" && viAsked[0] === "/public/pages/stranger/tool/board"
     && text(viView()).includes("A <b>card</b>") && text(viView()).includes("A member")
-    && !viView().querySelectorAll("button, input, select, textarea").length,
+    && !viPress().length,
     "visitor: the board of a project one is no member of, its text as text, and nothing to press");
   expect(viView().querySelectorAll("a.card-id").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/tasks/tsk-1")), "visitor: the board links each card to its own page");
   await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
@@ -14015,8 +14130,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(viView() && viView().getAttribute("data-kind") === "card" && viAsked.includes("/public/pages/stranger/tool/tasks/tsk-1")
     && text(viView()).startsWith("A <b>card</b>") && text(viView().querySelector(".about")).includes("Steps") && text(viView()).includes("An agent")
     && !viView().querySelector("img") && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
-    && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/board") && a.getAttribute("aria-current") === "page") && !viView().querySelectorAll("button, input, select, textarea").length,
+    && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/board") && a.getAttribute("aria-current") === "page") && !viPress().length,
     "visitor: a card's own page, its Markdown drawn without raw HTML, the project's tabs above it, and nothing to press");
+  // Report what the page shows (§16.8, tsk-7ze5w6ymf7bw), named as the page names it; ?report opens the form.
+  {
+    const rpPost = win.Maity.api.post, rpSent = [];
+    win.Maity.api.post = (p, body) => { if (p === "/reports") rpSent.push(body); return rpPost(p, body); };
+    const rpOpen = () => viView().querySelector("button.report-open");
+    const rpSend = async (reason) => {
+      rpOpen().click(); await tick();
+      const f = viView().querySelector("form.report-form");
+      f.querySelector("select").value = reason;
+      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    };
+    const rpCardLabel = rpOpen() && rpOpen().getAttribute("aria-label");
+    const rpCounts = [viView().querySelectorAll(".report-open").length];
+    await rpSend("spam");
+    const rpCardSent = viView().querySelector(".report-sent");
+    const rpTargets = [];
+    for (const [hash, kind] of [["#/stranger/tool", "project"], ["#/stranger/agents/overview", "agent"]]) {
+      await go(hash); for (let k = 0; k < 4; k++) await tick();
+      if (viView() && rpOpen()) { rpCounts.push(viView().querySelectorAll(".report-open").length); await rpSend("other"); rpTargets.push(kind); }
+    }
+    win.Maity.api.post = rpPost;
+    expect(rpCardLabel === "Report this card to the instance's admins" && rpCardSent && rpCardSent.querySelector("a").getAttribute("href").endsWith("/account/reports")
+      && JSON.stringify(rpSent.map((b) => b.target)) === JSON.stringify([{ type: "card", id: "tsk-1", project: "stranger/tool" }, { type: "project", id: "stranger/tool" },
+        { type: "profile", id: "stranger/overview" }])
+      && rpSent[0].reason === "spam" && !("text" in rpSent[0]) && JSON.stringify(rpCounts) === "[1,1,1]",
+      "report: a public card, project and agent each send their public name, and the sent line links Your account → Reports " + JSON.stringify([rpCardLabel, rpTargets, rpSent.map((b) => b.target)]));
+    await go("#/stranger/tool?report"); for (let k = 0; k < 6; k++) await tick();
+    const rpAsked = viView() && viView().querySelector("form.report-form");
+    expect(rpAsked && rpOpen().hidden && rpOpen().getAttribute("aria-expanded") === "true",
+      "report: ?report on a public page opens the form at once (the sign-in link's way back) " + JSON.stringify([!!viView(), !!rpAsked, rpOpen() && rpOpen().hidden]));
+    await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
+  }
   const viNotes = viView().querySelectorAll("li").filter((li) => li.getAttribute("data-note"));
   expect(viNotes.length === 2 && text(viNotes[0]).includes("A member") && text(viNotes[0]).includes("note") && !viNotes[0].querySelector("img")
     && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed") && !text(viNotes[0]).includes("open"),
@@ -14046,6 +14193,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viFramed = !!frFoot();
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   const viAfter = [!!viView(), !!frFoot(), header.hidden, productLine.querySelectorAll("a").length];
+  const rpOut = viView() && viView().querySelector("a.report-open");
+  expect(rpOut && rpOut.getAttribute("href").replace(/^#/, "") === "/login?next=%2Fstranger%2Ftool%3Freport" && text(rpOut) === "Sign in to report",
+    "report: signed out, a public page's Report is a link to the sign-in that comes back with the form open " + (rpOut && rpOut.getAttribute("href")));
   // An address that shows a visitor nothing (tsk-h1e5zmq1wnhj): "not found" in the frame instead of
   // the sign-in form, worded so that a private name and a missing one read alike (routing.md
   // e34ae588), the sign-in one link away and back here; a dashboard route keeps the login.
@@ -14159,6 +14309,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(pvView().querySelector(".person-bio")) === "Builds trading tools."
     && pvPublic() && pvPublic().getAttribute("href") === "#/wolfgang?as=public" && pvPublic().getAttribute("target") === "_blank",
     "person: name, handle, bio and View public page where the hub serves one, opened at ?as=public");
+  {
+    // Report a person from their page by the current handle (§16.8, tsk-7ze5w6ymf7bw).
+    const pvPost = win.Maity.api.post, pvSent = [];
+    win.Maity.api.post = (p, body) => { if (p === "/reports") pvSent.push(body); return pvPost(p, body); };
+    const pvReport = pvView().querySelector("button.report-open");
+    if (pvReport) {
+      pvReport.click(); await tick();
+      const f = pvView().querySelector("form.report-form");
+      f.querySelector("select").value = "impersonation";
+      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    }
+    win.Maity.api.post = pvPost;
+    expect(pvReport && pvReport.getAttribute("aria-label") === "Report this person to the instance's admins"
+      && JSON.stringify(pvSent.map((b) => b.target)) === JSON.stringify([{ type: "profile", id: "wolfgang" }]) && pvView().querySelector(".report-sent"),
+      "report: a person's page sends their current handle " + JSON.stringify(pvSent.map((b) => b.target)));
+  }
   expect(pvView().querySelector(".person-picture-none.size-64") && !pvView().querySelector(".person-head img"),
     "person: without an avatar_url a neutral placeholder, never a generated avatar");
   expect(JSON.stringify(pvLinks().map((a) => a.getAttribute("href"))) === JSON.stringify(["https://example.org", "https://github.com/wolfgang", "https://mastodon.social/@wolfgang"])
@@ -14872,6 +15038,89 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const raWait = raErr && raErr.details ? raErr.details.retry_after : null;
     expect(raErr && raErr.status === 503 && raErr.code === "maintenance" && raWait >= 115 && raWait <= 121 && raErr.details.until === raUntil,
       "boot: a 503 window's part carries retry_after from its end " + JSON.stringify([raErr && raErr.status, raErr && raErr.code, raWait]));
+  }
+
+  // Report (§16.8, tsk-7ze5w6ymf7bw), inside a project: a card, a person or agent, the project and a
+  // message from someone else, each by the id the member's read gives; one's own page and message
+  // offer none. The form asks a reason first and keeps the text to 2 KiB; a refusal is the hub's;
+  // Your account → Reports lists what was sent, newest first.
+  {
+    const rmPost = win.Maity.api.post, rmSent = [];
+    win.Maity.api.post = (p, body) => { if (p === "/reports") rmSent.push(body); return rmPost(p, body); };
+    const rmOpen = (root) => root.querySelector("button.report-open");
+    const rmForm = (root) => root.querySelector("form.report-form");
+    const rmSend = async (root, reason, words) => {
+      rmOpen(root).click(); await tick();
+      const f = rmForm(root);
+      f.querySelector("select").value = reason;
+      if (words !== undefined) f.querySelector("textarea").value = words;
+      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+      return f;
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0001"); for (let k = 0; k < 8; k++) await tick();
+    const rmPanel = main.querySelector("aside.card-panel");
+    rmOpen(rmPanel).click(); await tick();
+    const rmF = rmForm(rmPanel);
+    rmF.dispatch("submit"); await tick();
+    const rmNoReason = [text(rmF.querySelector(".field-error")), rmSent.length];
+    rmF.querySelector("select").value = "abuse";
+    rmF.querySelector("textarea").value = "é".repeat(1025);
+    rmF.dispatch("submit"); await tick();
+    const rmTooLong = [rmF.querySelectorAll(".field-error").map(text).filter(Boolean)[0], rmSent.length];
+    rmF.querySelector("textarea").value = "spam in the description";
+    rmF.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmNoReason[0] === "Choose a reason first." && rmNoReason[1] === 0 && rmTooLong[0] === "This is longer than 2 KiB. Shorten it." && rmTooLong[1] === 0
+      && JSON.stringify(rmSent[0]) === JSON.stringify({ target: { type: "card", id: "tsk-0001", project: "maintainer/maity" }, reason: "abuse", text: "spam in the description" })
+      && rmPanel.querySelector(".report-sent"),
+      "report: the card panel's form asks a reason first, keeps the text to 2 KiB (bytes), then sends the card with its project " + JSON.stringify([rmNoReason, rmTooLong, rmSent[0]]));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team/agt-a"); for (let k = 0; k < 6; k++) await tick();
+    const rmAgentLabel = rmOpen(main) && rmOpen(main).getAttribute("aria-label");
+    await rmSend(main, "impersonation");
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
+    const rmOwnPage = !!rmOpen(main);
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 6; k++) await tick();
+    await rmSend(main, "other");
+    expect(rmAgentLabel === "Report this agent to the instance's admins" && !rmOwnPage
+      && JSON.stringify(rmSent.slice(1).map((b) => b.target)) === JSON.stringify([{ type: "profile", id: "agt-a" }, { type: "project", id: "maintainer/maity" }]),
+      "report: an agent's member page sends its member id, one's own page offers none, the overview sends the project " + JSON.stringify([rmAgentLabel, rmOwnPage, rmSent.slice(1).map((b) => b.target)]));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 6; k++) await tick();
+    const rmItems = main.querySelectorAll("li.pmsg").filter((li) => !li.classList.contains("removed"));
+    const rmOthers = rmItems.filter((li) => rmOpen(li));
+    const rmOne = rmOthers[0];
+    const rmSeq = rmOne ? rmOne.getAttribute("data-seq") : null;
+    if (rmOne) await rmSend(rmOne, "prompt_injection");
+    expect(rmOne && JSON.stringify(rmSent[rmSent.length - 1].target) === JSON.stringify({ type: "message", id: rmSeq, project: "maintainer/maity" }),
+      "report: in Messages someone else's message offers Report and sends its seq with the project " + JSON.stringify([rmItems.length, rmOthers.length, rmSeq]));
+    // A public page's Report comes back with ?report: a member of the project gets the Overview with the
+    // form open (the project's page and its views lead there), or the card's panel with it open.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board?report"); for (let k = 0; k < 10; k++) await tick();
+    const rmBack = [win.location.hash, !!rmForm(main)];
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0001?report"); for (let k = 0; k < 10; k++) await tick();
+    const rmCardBack = main.querySelector("aside.card-panel") && rmForm(main.querySelector("aside.card-panel"));
+    expect(rmBack[0] === "#/maintainer/maity/overview?report" && rmBack[1] && rmCardBack,
+      "report: a member back from a public page's Report gets the Overview, or the card's panel, with the form open " + JSON.stringify([rmBack, !!rmCardBack]));
+    // The day's limit says when it lets up (Retry-After as `retry_after`); the per-target limit below has none.
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 6; k++) await tick();
+    win.Maity.api.post = (p, body) => (p === "/reports" ? Promise.reject(new win.Maity.api.ApiError("too many attempts", 429, p, "rate_limited", { retry_after: 590 })) : rmPost(p, body));
+    const rmDay = await rmSend(main, "spam");
+    win.Maity.api.post = (p, body) => { if (p === "/reports") rmSent.push(body); return rmPost(p, body); };
+    expect(text(rmDay.querySelector(".send-status")) === "Not sent: too many attempts (rate_limited). Try again in about 10 min.",
+      "report: the day's limit says when to try again " + JSON.stringify(text(rmDay.querySelector(".send-status"))));
+    // The same target a 4th time: the hub's refusal, as it says it.
+    for (let k = 0; k < 2; k++) { await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let j = 0; j < 6; j++) await tick(); await rmSend(main, "spam"); }
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/overview"); for (let k = 0; k < 6; k++) await tick();
+    const rmFourth = await rmSend(main, "spam");
+    expect(text(rmFourth.querySelector(".send-status")) === "Not sent: this target was reported 3 times already (rate_limited)" && rmForm(main),
+      "report: a refusal is the hub's message and code, and the form stays " + JSON.stringify(text(rmFourth.querySelector(".send-status"))));
+    win.Maity.api.post = rmPost;
+    await go("#/account/reports"); for (let k = 0; k < 6; k++) await tick();
+    const rmTab = main.querySelectorAll("nav.account-tabs a").find((a) => text(a) === "Reports");
+    const rmRows = main.querySelectorAll("li.report-item");
+    expect(rmTab && rmTab.getAttribute("aria-current") === "page" && rmRows.length >= rmSent.length - 1
+      && text(rmRows[0]).startsWith("maintainer/maity") && text(rmRows[0]).includes("Spam") && text(rmRows[0]).includes("open")
+      && rmRows.some((li) => text(li).startsWith("maintainer/maity · tsk-0001") && text(li).includes("Abuse"))
+      && rmRows.some((li) => text(li).startsWith("message " + rmSeq + " in maintainer/maity")),
+      "report: Your account → Reports lists what was sent, newest first, each with its target, reason and state " + JSON.stringify(rmRows.slice(0, 3).map(text)));
   }
 
   // The invitation and registration pages read the session themselves: the drawing asks it no second

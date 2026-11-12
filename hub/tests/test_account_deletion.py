@@ -1119,7 +1119,8 @@ def test_forge_links_and_sign_in_links_go_with_the_account(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
     """§2.9 "Ends access at once": the forge links with their pending state and token
-    (§11.4) and the pending sign-in links (§2.6.3), with the day's wrong-code count, go."""
+    (§11.4), the pending sign-in links (§2.6.3), with the day's wrong-code count, and the
+    open reset links (§2.10) with their wrong codes, go."""
     admin_first(migrated, moment)
     pat = person(make_client, migrated, moment)
     now = clock.now()
@@ -1134,6 +1135,13 @@ def test_forge_links_and_sign_in_links_go_with_the_account(
         conn.execute(
             insert(t.email_sign_in_day).values(human_id=pat.id, day="2026-10-29", wrong_codes=2)
         )
+        conn.execute(
+            insert(t.password_reset).values(
+                nonce_hash="e" * 64, human_id=pat.id, source="198.51.100.7", created_at=now,
+                expires_at=now + timedelta(minutes=30),
+            )
+        )  # fmt: skip
+        conn.execute(insert(t.password_reset_wrong).values(human_id=pat.id, at=now))
         conn.execute(
             insert(t.forge_link).values(
                 id="fgl-pat", human_id=pat.id, forge="github", installation_id=4711,
@@ -1159,6 +1167,8 @@ def test_forge_links_and_sign_in_links_go_with_the_account(
         for table in (
             t.email_sign_in,
             t.email_sign_in_day,
+            t.password_reset,
+            t.password_reset_wrong,
             t.forge_link,
             t.forge_link_state,
             t.forge_token,

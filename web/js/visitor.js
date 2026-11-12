@@ -245,8 +245,14 @@ window.Maity = window.Maity || {};
       append(clear(header), h("div", { class: "bar" }, brand, signIn, tools));
     }
     const title = answer.kind === "card" ? d.title : d.name || base.slice(1);
+    // Report what this page shows (§16.8, tsk-7ze5w6ymf7bw), named as the page names it: a person by
+    // the handle, an agent by its global name `<owner>/<handle>`, a project by its full name, a card by
+    // its id with the project. Signed out, a link to the sign-in that comes back with the form open.
+    const report = M.report ? reportOf(answer, base) : null;
+    const reporting = report ? M.report.control(report.target, report.what, { signedOut: signedIn ? null : path }) : null;
     append(clear(main), h("section", { class: "view-visitor", "data-kind": answer.kind },
       h("h1", null, title),
+      reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
         href: base + v.path,
         class: "view-tab",
@@ -255,7 +261,18 @@ window.Maity = window.Maity || {};
       }, v.label))) : null,
       draw[answer.kind] ? draw[answer.kind](d, base) : null));
     document.title = title;
+    if (reporting && reporting.open && M.report.asked()) reporting.open();
     return true;
+  }
+
+  // What a page reports, and the word for its button; null where it names no one target.
+  function reportOf(answer, base) {
+    const parts = answer.path.split("/").filter(Boolean);
+    if (answer.kind === "person") return { target: { type: "profile", id: parts[0] }, what: "person" };
+    if (answer.kind === "agent") return { target: { type: "profile", id: parts[0] + "/" + parts[2] }, what: "agent" };
+    if (answer.kind === "card") return { target: { type: "card", id: parts[3], project: base.slice(1) }, what: "card" };
+    if (PROJECT_KINDS.includes(answer.kind)) return { target: { type: "project", id: base.slice(1) }, what: "project" };
+    return null;
   }
 
   M.visitor = { page };

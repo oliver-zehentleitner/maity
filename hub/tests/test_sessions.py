@@ -460,9 +460,12 @@ def test_sign_in_settings_defaults_and_who_reads_them(
         "password": {"value": True, "source": "fixed"},
         "device_code": {"value": True, "source": "default"},
         "email_link": {"value": True, "source": "default"},
+        "password_reset": {"value": True, "source": "default"},
         "second_factor": {"value": "optional", "source": "default"},
         "email_link_available": False,
         "missing": ["mail", "signing_key", "secret_key"],
+        "password_reset_available": False,
+        "password_reset_missing": ["mail", "signing_key", "not_implemented"],
     }
     other = flow.human(make_client, migrated, "someone")
     assert other.get(SIGN_IN).json()["error"]["details"] == {"scope": "instance:admin"}

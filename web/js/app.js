@@ -1963,7 +1963,9 @@ window.Maity = window.Maity || {};
   // the view watches, from someone else, offers a reload. Listeners added
   // with ctx.onEvents get every event, the human's own included.
   // Set by a quiet reload of the inbox, shown once by the next watch().
+  // noteOnce says one line on the next view, such as having left a project.
   let quietNote = null;
+  M.noteOnce = (text) => { quietNote = text; };
 
   function watch(ctx, where, item, main) {
     // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
@@ -2357,6 +2359,17 @@ window.Maity = window.Maity || {};
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
       if (moved) { M.route.go(moved, { replace: true }); return; }
+      // A public page's Report signs a reader in and comes back with `?report` (§16.9, §16.8). A member
+      // of the project gets their own view at that address, which has no report form there: the
+      // project's page and its public views lead to the Overview, whose Report opens (review of #1681).
+      // A card's page is the board with its panel, which opens its own.
+      if (where.scope === "project" && M.report && M.report.asked() && me.projects.some((p) => p.full_name === where.slug)) {
+        const parts = M.route.current().path.split("/").filter(Boolean);
+        if (parts.length === 2 || (parts.length === 3 && ["board", "team", "organisation", "why"].includes(parts[2]))) {
+          M.route.go(projectLink(where.slug, "overview") + "?report", { replace: true });
+          return;
+        }
+      }
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and the counts stay as /me has them.
       // The project's own reads are kept only for a switch inside the same project.
