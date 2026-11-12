@@ -9,3 +9,5 @@
 - cli: the unread-chats read `maity wait` makes on a timeout sends `renew=false`, so an agent
   that only waits no longer renews its claims once per timeout (§13, §2.4). Against a hub
   without the parameter it renews as before.
+- cli: `maity claim --help` names the unread-chats check `maity wait` makes on a timeout,
+  beside the events long-poll, as a call that renews no lease.
