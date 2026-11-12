@@ -253,3 +253,102 @@ def test_the_derive_reads_a_fixed_number_of_queries_however_many_events(
     many, many_items = queries()
     assert many_items > few_items * 2  # three times the events, and their items
     assert many == few
+
+
+def test_a_poll_costs_the_same_however_many_messages_are_not_the_human_s(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """The messages that may make an item of the human are read from
+    `notification_recipient` (hub/context/notifications.md fc79a4a6), not found by matching
+    every message's JSON as text: the bell reads as many statements with 2,000 messages
+    between agents in the window as with 20,000, and on PostgreSQL none of them scans `event`
+    whole."""
+    from sqlalchemy import select
+
+    agent = flow.agent(make_client, owner)
+    for body in ("@maintainer look", "hi"):  # a mention, then a chat message
+        said = agent.post(
+            "/projects/maintainer/maity/events",
+            {"kind": "message", "type": "notice", "to": "all", "body": body},
+        )
+        assert said.status_code in (200, 201), said.text
+    assert agent.post(
+        f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "hi"}
+    ).status_code in (200, 201)
+    with migrated.connect() as conn:
+        project_id = conn.execute(
+            select(t.project.c.id).where(t.project.c.slug == "maity")
+        ).scalar()
+    unrelated = {
+        "project_id": project_id, "kind": "message", "audience": ["role:coder"],
+        "payload": {"body": "between agents", "mentions": []}, "redacted": False,
+    }  # fmt: skip
+
+    def add(n: int) -> None:
+        with migrated.begin() as conn:
+            conn.execute(insert(t.event), [{**unrelated, "at": clock.now()} for _ in range(n)])
+            if conn.dialect.name == "postgresql":
+                conn.exec_driver_sql("ANALYZE event")
+
+    def poll() -> tuple[list[tuple[str, Any]], dict[str, Any]]:
+        seen: list[tuple[str, Any]] = []
+
+        def note(_c: Any, _cur: Any, statement: str, parameters: Any, *_: Any) -> None:
+            seen.append((statement, parameters))
+
+        event.listen(migrated, "before_cursor_execute", note)
+        try:
+            got = bell(owner)
+        finally:
+            event.remove(migrated, "before_cursor_execute", note)
+        return seen, got
+
+    add(2000)
+    poll()  # the first look of a session reads its keys once
+    few, few_got = poll()
+    add(18000)
+    many, many_got = poll()
+    assert [s for s, _ in many] == [s for s, _ in few]
+    assert many_got["items"] == few_got["items"] and many_got["counts"] == few_got["counts"]
+    assert few_got["counts"]["mention"] == 1 and few_got["counts"]["chat"] >= 1
+    if migrated.dialect.name != "postgresql":
+        return
+    scans = []
+    with migrated.connect() as conn:
+        for statement, parameters in many:
+            # The statements that read event rows to classify; the join position's lookup
+            # (`items.scope`) reads none and is a cost of its own, not of the messages.
+            if statement.lstrip().upper().startswith("SELECT") and "event.payload" in statement:
+                plan = conn.exec_driver_sql(f"EXPLAIN {statement}", parameters).scalars().all()
+                if any("Seq Scan on event " in line for line in plan):
+                    scans.append("\n".join([statement, *plan]))
+    assert not scans, "\n\n".join(scans)
+
+
+def test_a_message_writes_a_recipient_row_per_human_it_may_notify(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """`events.emit` writes `notification_recipient` with the message: `chat` for a
+    conversation's message to the human, `mention` for one that mentions them, nothing for a
+    message between agents (hub/context/notifications.md fc79a4a6)."""
+    from sqlalchemy import select
+
+    agent = flow.agent(make_client, owner)
+    said = [
+        agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "hi"})
+    ]
+    said += [
+        agent.post(
+            "/projects/maintainer/maity/events",
+            {"kind": "message", "type": "notice", "to": "all", "body": body},
+        )
+        for body in ("@maintainer look", "no human named")
+    ]
+    assert all(s.status_code in (200, 201) for s in said), [s.text for s in said]
+    r = t.notification_recipient.c
+    with migrated.connect() as conn:
+        rows = conn.execute(select(r.human_id, r.chat, r.mention).order_by(r.seq)).all()
+    assert [(row.human_id, row.chat, row.mention) for row in rows] == [
+        (owner.id, True, False),
+        (owner.id, False, True),
+    ]

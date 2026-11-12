@@ -143,7 +143,7 @@ window.MAITY_I18N["ko"] = {
   "agents.add.hint": "이 프로필을 선택한 상태로 프로젝트의 에이전트 화면과 참여 패널을 엽니다. 이미 참여 중인 프로젝트에서는 이 라인이 다른 인스턴스를 시작하거나 기존 인스턴스를 교체합니다.",
   "agents.add.label": "프로젝트에 추가",
   "agents.add.none": "에이전트를 데려올 수 있는 프로젝트가 없어요.",
-  "agents.add.open": "+ 에이전트 추가",
+  "agents.add.open": "새 에이전트 프로필",
   "agents.add.option": "{name} ({full})",
   "agents.add.submit": "프로젝트에 추가",
   "agents.allowed.add": "추가",
@@ -195,6 +195,7 @@ window.MAITY_I18N["ko"] = {
     "other": "활성 인스턴스 {active}/{count}개"
   },
   "agents.intro": "모든 프로젝트에 걸친 내 에이전트 프로필입니다. 각 프로필은 사진, 핸들, 보유한 멤버십을 가진 하나의 신원입니다. 프로젝트에 추가하면 그곳의 참여 라인이 만들어집니다.",
+  "agents.join.any": "아무 에이전트나 추가",
   "agents.join.failed": "참여를 준비하지 못했어요: {reason}",
   "agents.join.none": "에이전트를 참여시킬 수 있는 프로젝트가 없어요.",
   "agents.join.open": "에이전트 참여",
@@ -2576,7 +2577,6 @@ window.MAITY_I18N["ko"] = {
   "members.edit.trust": "신뢰 수준",
   "members.filter.mine": "내 에이전트만",
   "members.filter.mine_none": "이 프로젝트에 내 에이전트가 없어요.",
-  "members.heading": "멤버",
   "members.hint": "{project}의 모든 멤버, 사람이 먼저이고 각각 채팅이 있어요.",
   "members.hint.admin": "행을 관리해 역할을 바꾸고, 에이전트의 자격 증명을 보거나 폐기하고, 브리핑을 편집하고, 일시 중지하거나 멤버를 제거하세요.",
   "members.humans": {
@@ -2603,7 +2603,6 @@ window.MAITY_I18N["ko"] = {
   "members.isolation_windows": {
     "other": "격리 {count}회 이후 이 멤버에게 숨겨진 구간: {ranges}."
   },
-  "members.join_agent": "에이전트 참여",
   "members.ktw.by": "{when}까지 확인 필요",
   "members.ktw.confirmed": "{ago} 확인됨",
   "members.ktw.late": "Keep the Why가 제때 확인되지 않았어요",
@@ -3425,6 +3424,7 @@ window.MAITY_I18N["ko"] = {
   "placements.new.none_link": "이 프로젝트의 러너",
   "placements.new.open": "러너에서 에이전트 시작",
   "placements.new.profile": "새 에이전트의 프로필과 팀에서의 자리",
+  "placements.new.reading": "러너를 읽는 중…",
   "placements.new.reason": "이유 (선택)",
   "placements.new.reason_required": "이유 (프로젝트가 {state} 상태인 동안 필수)",
   "placements.new.runner": "러너",
@@ -3495,7 +3495,7 @@ window.MAITY_I18N["ko"] = {
   "placements.stop": "중지",
   "placements.stop.label": "{name} 중지",
   "placements.stopping": "중지하는 중…",
-  "placements.title": "실행되는 곳",
+  "placements.title": "관리되는 에이전트",
   "placements.waiting": "러너가 세대 {generation}을(를) 처리하기를 기다리는 중…",
   "placements.waiting.last": "러너가 세대 {generation}을(를) 처리하기를 기다리는 중… (마지막: {last})",
   "placements.wanted": "요구됨",
