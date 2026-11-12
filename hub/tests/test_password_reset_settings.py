@@ -175,6 +175,37 @@ def test_removing_the_address_voids_the_open_reset_links(
     assert not is_open(migrated)
 
 
+def test_changing_the_verified_address_voids_the_open_reset_links(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    import re
+
+    client, human = setup(make_client, migrated)
+    open_link(migrated, human)
+    headers = signed_in(client)
+    asked = client.patch(
+        SETTINGS,
+        json={"email": {"address": "ada.new@example.com"}, "current_password": factory.PASSWORD},
+        headers=headers,
+    )
+    assert asked.status_code == 200, asked.text
+    assert is_open(migrated)  # a change waiting for its link changes nothing yet
+    with migrated.connect() as conn:
+        mail = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id.desc())).first()
+    assert mail is not None
+    found = re.search(r"/mail/verify/(\S+)", mail.body)
+    assert found, mail.body
+    assert client.post(f"/mail/verify/{found.group(1)}").status_code == 200
+    with migrated.connect() as conn:
+        address = conn.execute(
+            select(t.notification_settings.c.address).where(
+                t.notification_settings.c.human_id == human
+            )
+        ).scalar_one()
+    assert address == "ada.new@example.com"
+    assert not is_open(migrated)
+
+
 # --- the password generation (§2.10) -----------------------------------------------------
 
 
