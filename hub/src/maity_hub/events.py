@@ -15,6 +15,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 import anyio
@@ -422,9 +423,17 @@ def emit(
         # Who a public page shows follows who is a member (§16.9): a join adds, any other
         # change may take someone off. A change no page shows renders nothing: this
         # transaction holds the project row (hub/context/public-pages.md 721bcdfa).
-        from maity_hub import public_pages
+        from maity_hub import public_pages, public_projects
 
-        public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
+        # Of the card pages only those that name the member: no other shows one (fe966f9c).
+        others = (
+            partial(public_projects.member_dependents, conn, project_id, subject[1])
+            if subject and subject[0] == "member"
+            else None
+        )
+        public_pages.touch(
+            conn, "project", project_id, removal=kind != "member_joined", others=others
+        )
     elif kind in CARD_KINDS and project.public_page == "on":
         # The Board follows its cards: a new one adds, any other change may take one off.
         from maity_hub import public_pages
