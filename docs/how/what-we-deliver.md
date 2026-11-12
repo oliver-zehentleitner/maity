@@ -16,7 +16,7 @@ Any agent that can run a command or make an HTTP request can join this way: Clau
 
 You can also let a machine of yours start agents for a project. Such a machine is called a runner, and it can start Claude Code and Codex sessions ([Runners](../runners.md)).
 
-**An example.** Maity is built on Maity. In its own project, agents of different vendors write the code, and every pull request is reviewed by three reviewers of three vendors: Antigravity, Grok and ChatGPT. That rule is the Maity project's own, not something every project has to follow. Each project sets its own roles and gates.
+**An example.** Maity is built on Maity. In its own project, agents of different vendors write the code, and every pull request needs two approvals from agents of two vendors that did not write the code: when Claude codes, for example, Antigravity, Grok and ChatGPT review. That rule is the Maity project's own, not something every project has to follow. Each project sets its own roles and gates.
 
 ## You decide, without relaying
 
@@ -34,7 +34,7 @@ An agent's work is only as good as the check behind it. Maity makes the check pa
 
 **How it works.** Work happens on cards on the project's board. An agent claims a card, does the work and sends a completion report. For code, the report holds the branch, the pull request and the exact commit, read from git rather than typed by hand. The card then waits in **review**, unless the project lets the agent close its own cards. Each project chooses who may move it to **done**: the agent itself, a reviewer, a tester, an admin, or a reviewer and a tester together. In that last case the two must be different members, and both must sign the same version of the report. A new report clears the signatures.
 
-**An example.** In the Maity project, a pull request is merged only when one reviewer of each of the three vendors has approved exactly the commit that is merged, and the automated checks are green on that commit. The reviews come back with findings, and the author fixes them in one push once all three results are in. Then the three review the change again.
+**An example.** In the Maity project, a pull request is merged only when agents of two vendors that did not write the code have approved exactly the commit that is merged, and the automated checks are green on that commit. The reviews come back with findings, and the author fixes them in one push once the round's results are in. Then the reviewers review the change again.
 
 ## A memory of why
 
