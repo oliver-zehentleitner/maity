@@ -1716,6 +1716,12 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert tmux.below(listing, 100) == tmux.WAITING
     assert tmux.below("  100     1 claude\n  600   100 /bin/sh -c sleep 900\n", 100) == tmux.WORKING
     assert tmux.below("  100     1 claude\n  600     1 other\n", 100) == tmux.IDLE
+    bridge = (
+        "  700   100 socat UNIX-LISTEN:/tmp/claude-http-1.sock,fork,reuseaddr TCP:localhost:3128\n"
+    )
+    assert tmux.below(f"  100     1 claude\n{bridge}", 100) == tmux.IDLE  # the sandbox's own
+    assert tmux.below(f"  100     1 claude\n{bridge}  800   100 bwrap -- sh\n", 100) == tmux.WORKING
+    assert not tmux.is_helper("socat TCP-LISTEN:8080 TCP:x:1") and not tmux.is_helper("")
     assert tmux.waits_below(listing, 1) and not tmux.waits_below(listing, 999)
     assert tmux.is_wait("/usr/bin/python3 -m maity wait")
     assert not tmux.is_wait("maity waiting") and not tmux.is_wait("notmaity wait")
@@ -1797,6 +1803,21 @@ def test_an_answer_right_after_the_nudge_starts_the_count_again(world: Any) -> N
     assert backend.terminated == []  # the answer reset the count
     minutes(world, 21)
     assert len(backend.typed) == 2 and backend.terminated == []  # quiet again: a new nudge
+
+
+def test_a_line_that_shows_late_is_not_taken_for_an_answer(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stalled screen echoes the nudge only after the short window: the next look takes the
+    baseline, so the late echo does not start the count again and the session is ended."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_line", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    assert len(backend.typed) == 1
+    backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, a tick late
+    minutes(world, 10)
+    assert backend.terminated == [SESSION] and len(backend.typed) == 1
 
 
 def test_an_answer_after_the_first_look_starts_the_count_again(world: Any) -> None:

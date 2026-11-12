@@ -83,17 +83,30 @@ def is_wait(args: str) -> bool:
 WAITING, WORKING, IDLE = "waiting", "working", "idle"
 
 
+def is_helper(args: str) -> bool:
+    """Whether a child of the harness is one of its own long-lived helpers rather than a tool
+    it runs: Claude Code's sandbox on Linux keeps a `socat UNIX-LISTEN:…` bridge per proxy for
+    the whole session, at its prompt too."""
+    words = args.split()
+    return (
+        bool(words)
+        and os.path.basename(words[0]) == "socat"
+        and any(word.startswith("UNIX-LISTEN:") for word in words[1:])
+    )
+
+
 def below(listing: str, root: int) -> str:
     """What runs below `root`, the pane's process (the harness), from the `pid ppid args`
     lines of `ps`: WAITING when a `maity wait` is among its descendants, WORKING when any
-    other process is (a tool the agent runs, however quiet), IDLE when it has none: the
-    harness sits at its prompt."""
+    other child runs (a tool the agent runs, however quiet), IDLE when it has none but the
+    harness's own helpers (`is_helper`): the harness sits at its prompt."""
     if waits_below(listing, root):
         return WAITING
     for line in listing.splitlines():
         parts = line.split(None, 2)
         if len(parts) >= 2 and parts[1] == str(root) and parts[0].isdigit():
-            return WORKING
+            if not is_helper(parts[2] if len(parts) > 2 else ""):
+                return WORKING
     return IDLE
 
 

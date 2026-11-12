@@ -2062,7 +2062,7 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
 **Id:** 20fe2a78-29ec-49fa-b428-0a785db95d14
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** card tsk-cbz655mvt4ss (the lead asked for it after both placed agents on a VM went silent at once on 2026-11-12 while their placements reported `running`; the "no client attached" guard confirmed by the lead); `cli/src/maity/runner/supervisor.py` (`_idle`), `tmux.py`; docs/api.md §15.14
 **Revisit when:** the hub's half of §15.14 (check-in, nudge) is routed, or a harness gives the runner a machine-readable signal that its session waits for input
 
@@ -2072,11 +2072,16 @@ its prompt, its process stays alive, and its placement stays `running`.
 Nothing noticed it: the hub's check-in and nudge are not routed yet, and
 §15.14 had the runner leave an interactive session alone. Now the runner
 looks at each interactive session once a minute.
-- **Not listening** means two things together: no process at all below the
-  harness (neither a `maity wait` nor a tool, however quiet), and the pane
-  unchanged. The first version looked only for a missing wait, and a
-  review showed a quiet build would then be ended. A Claude Code at its
-  prompt has no child process; every tool runs as one.
+- **Not listening** means two things together: no process below the
+  harness but its own helpers (neither a `maity wait` nor a tool, however
+  quiet), and the pane unchanged. The first version looked only for a
+  missing wait, and a review showed a quiet build would then be ended. An
+  unsandboxed Claude Code at its prompt has no child process; every tool
+  runs as one (seen with `ps` on a live session). A sandboxed one on Linux
+  keeps a `socat UNIX-LISTEN:` bridge per proxy for its whole life
+  (fkyb's review, from the sandbox runtime's source, not seen live): such
+  a bridge is not counted as work, or the check would never fire under
+  the sandbox the runner turns on wherever bwrap and socat are present.
 - A missing process alone is not enough: an agent writing a long answer
   has no child process for a while. An unchanged pane alone is not enough
   either: an agent waiting for events shows nothing new. The processes
@@ -2087,11 +2092,14 @@ looks at each interactive session once a minute.
   ends quickly, so the quick-exit crash count never saw it. Rejected:
   counting them within `crash_window`. One end takes 40 minutes with the
   default times, and the window is 30, so five never fit and the cap was
-  never reached (spq4's review). A `maity wait` seen below the harness
+  never reached (fkyb's review). A `maity wait` seen below the harness
   starts the row over: the resume worked.
 - The pane is measured again right after the typed line shows, not at the
   next look a minute later, so an answer that comes within that minute
-  counts as a change instead of becoming the new baseline.
+  counts as a change instead of becoming the new baseline. If the line
+  does not show within that short window (a stalled screen, a slow read),
+  the next look takes the baseline: keeping the hash from before the nudge
+  took the late echo for an answer and nudged forever (fkyb's review).
 - A new generation clears the resume flag: it may change the harness, the
   model or the mode, and §15.14 wants a fresh session then.
 - A live tool below the harness keeps the session out of the check for as

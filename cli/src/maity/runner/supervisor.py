@@ -623,6 +623,9 @@ class Supervisor:
         if below != IDLE or attached is not False or digest is None:
             rec.pane, rec.quiet_since, rec.nudged_at = digest, None, None
             return
+        if rec.nudged_at is not None and rec.pane is None:  # the line showed only late
+            rec.pane = digest
+            return
         if rec.quiet_since is None or digest != rec.pane:
             rec.pane, rec.quiet_since, rec.nudged_at = digest, now, None
             return
@@ -651,15 +654,15 @@ class Supervisor:
 
     def _typed(self, backend: Tmux, name: str, before: str) -> str | None:
         """The pane right after the nudge, once the typed line shows: what "unchanged" is
-        measured against from then on, so the agent's answer to it is a change. A pane that
-        never shows it (a frozen screen) keeps its last hash."""
-        digest: str | None = before
+        measured against from then on, so the agent's answer to it is a change. A line that
+        does not show within the window (a stalled screen, a slow read) leaves no baseline:
+        the next look takes one, so its late echo is not taken for an answer."""
         for _ in range(TYPED_TRIES):
             digest = backend.pane_digest(name)
             if digest != before:
-                break
+                return digest
             self.pause(TYPED_PAUSE)
-        return digest
+        return None
 
     def _hung_exit(self, rec: Record, now: float, code: int | None) -> None:
         """The end of a session the idle check ended: `exited`, `hung`, `idle` (§15.7),

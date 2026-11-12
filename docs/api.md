@@ -17632,7 +17632,8 @@ its process stays alive, so its placement stays `running` (2026-11-12,
 tsk-cbz655mvt4ss). The runner checks such a session itself, with or
 without the hub's ask, at most once a minute:
 
-- **Not listening** means the harness has no process below it at all,
+- **Not listening** means the harness has no process below it but its
+  own helpers (the `socat UNIX-LISTEN:` bridges of Claude Code's sandbox),
   neither a `maity wait` nor a tool it runs (however quiet: a long build
   or migration keeps it busy), and what the pane shows has not changed.
   The runner compares a hash of the pane; it keeps, logs and sends none
@@ -17641,7 +17642,8 @@ without the hub's ask, at most once a minute:
   and only while no client is attached to the session, the runner types
   one fixed line into the pane, telling the agent it stopped listening
   and to go back to its wait loop. It measures the pane again once that
-  line shows, so the agent's answer is a change.
+  line shows, so an answer after that measurement is a change; a line
+  that shows only later is measured at the next look instead.
 - After `reply_within_minutes` more with still no wait and no change, it
   ends the session as a stop does (TERM, kill-session after a few
   seconds), reports `exited` with `reason: hung`, `detail: idle`, and
@@ -17654,7 +17656,7 @@ without the hub's ask, at most once a minute:
   `idle` until its generation moves, like a crash loop. A wait seen below
   the harness starts the row over. A new generation starts a fresh
   session, not the resumed one.
-- A client attached to the session, any process below the harness, a
+- A client attached to the session, any other process below the harness, a
   change in the pane, or anything the runner cannot read (`ps`, tmux)
   starts the count again. A stop wins over a pending end.
 - Until the hub carries `health.settings` in the placement the runner
