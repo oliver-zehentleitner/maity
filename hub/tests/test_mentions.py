@@ -208,7 +208,9 @@ def test_the_global_name_resolves_and_a_shared_short_handle_is_refused(
             "length": 19,
         },
     ]
-    assert f"member:{theirs}" in long["audience"] and f"member:{mine.id}" in long["audience"]
+    # The other owner's agent is held for this notice until its owner says yes (§9.6).
+    assert f"held:{theirs}" in long["audience"] and f"member:{mine.id}" in long["audience"]
+    assert long["payload"]["held"] == [theirs]
     # A global name that is no member, and a human's handle, which has no long form.
     other = say(writer, to=owner.id, body="@nobody/agent-b @maintainer/maintainer @maintainer")
     [human] = other.json()["payload"]["mentions"]

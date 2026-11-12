@@ -630,6 +630,8 @@ def post_message(
         audience = _deliver_review(conn, mine, body.task_id, review, audience)
     if body.type == "chat":  # where a chat text may cross the owner boundary (§9.6)
         chat_gate.boundary(conn, mine.project.id, me, body.body, sides)
+    # A free work message from another side reaches an agent only on its owner's yes (§9.6).
+    audience, held = chat_gate.hold(conn, mine.project.id, mine, body.type, audience)
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -639,6 +641,7 @@ def post_message(
         "task_id": body.task_id,
         "mentions": mentioned,
         "attachments": [attachments.meta(r) for r in named],
+        "held": held,
     }
     if group is not None:  # where an agent that lost the chat answers (§9.4)
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}

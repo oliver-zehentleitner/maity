@@ -10,6 +10,10 @@ An agent that is not admitted waits: its stay holds the human of each side it wa
 `member:<id>`, which its owner reads along by), reads and posts nothing and is woken by nothing.
 An agent a deny entry stops leaves the chat with `reason: "denied_participant"`.
 
+A free work message from another side (`GATED_WORK`) is gated the same way, per message: `hold`
+takes each agent it reaches that is not admitted for its author out of its audience and names it
+`held:<id>`, which its owner reads along by; a lead's message passes.
+
 `settle` is the one place that writes the state: every change of who is in a chat, and every
 change of an owner's entries, ends in it. The request to the owner (§9.6, "The request") is a
 later part of the same card.
@@ -28,6 +32,7 @@ from maity_hub import chat_access, clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
+from maity_hub.scopes import tokens_of
 
 DENIED = "denied_participant"
 # Whether a jour fixe round's moderator that waits in the round's thread is held back from
@@ -35,6 +40,11 @@ DENIED = "denied_participant"
 # asks the maintainer; until he answers, the moderator writes the statement while it waits.
 # The one switch point: `moderator_held` reads it, `jourfixe.exchange` asks that.
 MODERATOR_WAITS = False
+# The free work messages an owner's yes gates like chat (§9.6, "Free work messages from another
+# side"). The maintainer's o2 of 2026-11-12 is "for now": this set, read by `hold` alone, is the
+# one switch point; empty, every work message reaches as before.
+GATED_WORK = frozenset({"notice", "blocker", "handover", "interface_change", "go_request"})
+LEAD_TRUSTS = frozenset({"owner", "admin"})
 
 
 @dataclass(frozen=True)
@@ -405,3 +415,73 @@ def boundary(conn: Connection, project_id: str, author: str, body: str, sides: l
     at that moment. The check of such texts for dangerous content is to sit here (a later
     card); today nothing is checked and every message passes."""
     del conn, project_id, author, body, sides
+
+
+def hold(
+    conn: Connection, project_id: str, mine: Any, kind: str, audience: list[str]
+) -> tuple[list[str], list[str]]:
+    """A free work message's audience with every agent it reaches on another side than its
+    author, and not admitted for the author, taken out and named `held:<id>` instead; and those
+    agents (§9.6). A lead's message is not gated: a member with trust `owner` or `admin`, or a
+    manager whose line the agent is in (§2.3, "The manager")."""
+    if kind not in GATED_WORK or mine.trust in LEAD_TRUSTS:
+        return audience, []
+    author = mine.principal_id
+    side = owners_of(conn, [author]).get(author, author) if mine.row.agent_id else author
+    m = t.membership.c
+    rows = conn.execute(
+        select(
+            m.id, m.agent_id, m.trust, m.role, m.role_base, m.reports_to, t.agent_profile.c.owner_id
+        )
+        .select_from(t.membership.join(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
+    ).all()
+    tokens = set(audience)
+    reached = [
+        r
+        for r in rows
+        if r.owner_id != side
+        and r.agent_id != author
+        and (
+            "all" in tokens
+            or f"member:{r.agent_id}" in tokens
+            or any(x.startswith(f"instance:{r.agent_id}#") for x in tokens)
+            or bool(tokens_of(r.trust, r.role, r.role_base) & tokens)
+        )
+    ]
+    if not reached:
+        return audience, []
+    bosses = dict(conn.execute(select(m.id, m.reports_to).where(m.project_id == project_id)).all())
+    entries = _entries(conn, {r.owner_id for r in reached})
+    party = Party(author, "agent" if mine.row.agent_id else "human", side)
+    held = [
+        r.agent_id
+        for r in reached
+        if not _in_line(bosses, r.id, mine.id)
+        and _held(judge(r.agent_id, r.owner_id, [party], entries[r.owner_id], project_id))
+    ]
+    if not held:
+        return audience, []
+    gone = {f"member:{a}" for a in held}
+    kept = [
+        x
+        for x in audience
+        if x not in gone and not any(x.startswith(f"instance:{a}#") for a in held)
+    ]
+    return [*kept, *(f"held:{a}" for a in held)], held
+
+
+def _held(verdict: Verdict) -> bool:
+    return verdict.denied or bool(verdict.waiting_for)
+
+
+def _in_line(bosses: dict[int, int | None], member: int, manager: int) -> bool:
+    """`manager` is on `member`'s `reports_to` chain (§2.3); a loop or a broken chain ends it."""
+    seen: set[int] = set()
+    boss = bosses.get(member)
+    while boss is not None and boss not in seen:
+        if boss == manager:
+            return True
+        seen.add(boss)
+        boss = bosses.get(boss)
+    return False

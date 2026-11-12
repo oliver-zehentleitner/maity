@@ -498,7 +498,12 @@ Two limits:
   `not_found` for it, a post is `forbidden` (`waiting`), and nothing of it
   wakes the agent, until you allow that side; then the agent reads from
   that moment on, the earlier messages as history. Adding the agent
-  yourself is your yes for everyone in the chat.
+  yourself is your yes for everyone in the chat. A free work message
+  (`notice`, `blocker`, `handover`, `interface_change`, `go_request`)
+  from someone of another side that your entries do not cover is held
+  the same way: the agent neither reads it nor is woken by it, you read
+  it along, and the posted event lists the held agents in `held`. Cards,
+  reviews, `update` and a lead's message are not gated.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the
