@@ -5,7 +5,7 @@ Every existing placement gets the default retention `24h` and its first clone (`
 report exists yet, so the outcome columns start null, and no removal is asked.
 
 Revision ID: 20261112180000_workspace_retain
-Revises: 20261112150000_nudged_through
+Revises: 20261112170000_notif_recipients
 Create Date: 2026-11-12
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261112180000_workspace_retain"
-down_revision: str | None = "20261112150000_nudged_through"
+down_revision: str | None = "20261112170000_notif_recipients"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
