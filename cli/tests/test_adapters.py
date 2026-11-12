@@ -350,6 +350,18 @@ def test_an_interactive_placement_keeps_the_question_tool(tmp_path: Path) -> Non
     assert "tools" not in codex
 
 
+@pytest.mark.parametrize("mode", ["interactive", "supervised"])
+@pytest.mark.parametrize("sandbox", [False, True])
+def test_claude_code_writes_no_attribution_lines(tmp_path: Path, mode: str, sandbox: bool) -> None:
+    """Every placement: no commit trailer, no pull request line, no session link. Empty
+    strings, not `false`, which a binary older than 2.1.281 rejects with the whole file."""
+    ctx = context(tmp_path, placement={**PLACEMENT, "mode": mode}, sandbox=sandbox)
+    adapters.launch(ctx)  # a supervised one names the file in the loop's spec, not in argv
+    written = json.loads((ctx.agent_dir / "claude-settings.json").read_text())
+    assert written["attribution"] == {"commit": "", "pr": "", "sessionUrl": False}
+    assert "includeCoAuthoredBy" not in written  # deprecated; ignored once this is set
+
+
 def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     (home / "codex").mkdir(parents=True)

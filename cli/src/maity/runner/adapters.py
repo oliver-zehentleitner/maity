@@ -219,6 +219,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         deny += ["AskUserQuestion"]
     settings: dict[str, Any] = {
         "permissions": {"allow": allow, "deny": deny, "defaultMode": "dontAsk"},
+        # Agents write no attribution lines in commits or pull request bodies. Empty
+        # strings, not `false`: a binary older than 2.1.281 rejects `false` and drops this
+        # whole file, grant included (cli/context/runner.md).
+        "attribution": {"commit": "", "pr": "", "sessionUrl": False},
     }
     if ctx.sandbox:
         settings["sandbox"] = {
