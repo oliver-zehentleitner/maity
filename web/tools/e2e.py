@@ -2832,7 +2832,7 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     newest_mail(catcher, MAIL_ADDRESS, seen)
     panel.locator(".join-form .actions").get_by_role("button", name="Cancel", exact=True).click()
     expect(panel).to_be_hidden()
-    add.click()
+    join_any(page)
     expect(question).to_have_count(0)
     expect(create).to_be_enabled()
     # A project's full name may be one long word: at phone width the panel's line wraps it.
