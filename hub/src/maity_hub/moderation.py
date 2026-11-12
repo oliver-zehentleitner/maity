@@ -319,12 +319,20 @@ def _reason(report: Any, note: str | None) -> str:
 
 
 def _hide(conn: Connection, report: Any, note: str | None) -> None:
-    """A project's public surfaces go off; a profile, a message or a card is not served
-    publicly anywhere yet (§16.9), so its hold is all there is to it."""
+    """A project's public surfaces go off. A profile takes the owner's row lock before
+    its hold is written, the same row a reset locks and the writers that ask
+    `refuse_held` lock first; a message or a card has nothing else to switch off."""
     if report.target_type == "project":
         from maity_hub.routes.projects import hide_by_moderation
 
         hide_by_moderation(conn, report.project_id, _reason(report, note), actor(report.id))
+    elif report.target_type == "profile":
+        # The lock first: held until `apply` writes the hold, so a writer reads that hold.
+        # No project lock is held yet here (a project hide locks its project above and takes
+        # no profile row), so the order stays account, then project, then this row.
+        from maity_hub import avatars
+
+        avatars.lock_owner(conn, report.target_id)
 
 
 def _reset_profile(conn: Connection, report: Any) -> None:
@@ -332,10 +340,12 @@ def _reset_profile(conn: Connection, report: Any) -> None:
 
     owner = report.target_id
     table = t.agent_profile if owner.startswith("agt-") else t.human
+    # The lock first: the name and the handle are read under it, so a name committed
+    # after this reset started is reset too, and the hold is written after that.
+    avatars.lock_owner(conn, owner)
     row = conn.execute(select(table).where(table.c.id == owner)).first()
     if row is None:
         return
-    avatars.lock_owner(conn, owner)
     before = avatars.state(conn, owner)
     avatars.remove_upload(conn, owner)
     if owner.startswith("agt-"):  # its motif goes too: the generated picture shows (§16.8)

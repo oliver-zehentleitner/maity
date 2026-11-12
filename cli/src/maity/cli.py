@@ -908,7 +908,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 )
                 continue
             # A 429 is a limit in front of the hub or in it, not an error of this wait: it is
-            # retried like a 5xx, but never sooner than its `Retry-After`.
+            # retried like a 5xx, but never sooner than its `Retry-After`; so is a 503, the hub's
+            # database unreachable or busy (§1.3). The deadline caps either wait.
             server_error = exc.status is not None and (500 <= exc.status < 600 or exc.status == 429)
             disconnected = exc.status is None and exc.code is None
             if disconnected and time.monotonic() >= deadline:
@@ -918,7 +919,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
                     reason = f"hub answered {exc.status}" if server_error else "hub connection lost"
                     _err(f"{reason}, retrying until the timeout")
                     warned = True
-                pause = max(backoff, exc.retry_after or 0.0) if exc.status == 429 else backoff
+                pause = backoff
+                if exc.status in (429, 503):
+                    pause = max(backoff, exc.retry_after or 0.0)
                 time.sleep(min(pause, max(0.0, deadline - time.monotonic())))
                 backoff = min(backoff * 2, 30.0)
                 continue

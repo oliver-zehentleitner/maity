@@ -148,7 +148,12 @@ def session_id_hash(session_id: str) -> str:
     return hashlib.sha256(session_id.encode("ascii")).hexdigest()
 
 
-def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = True) -> Caller:
+def authenticate(
+    conn: Connection, facts: RequestFacts, *, renew_leases: bool = True, seen: bool = True
+) -> Caller:
+    """The caller of the request. `seen=False` (a dashboard tab's presence, §18.4) checks a
+    cookie session as any call does but writes no `last_seen_at`: that call shows nobody as
+    online and keeps no session alive (§2.4)."""
     authorization = facts.headers.get("authorization")
     if authorization:  # the header authenticates; a cookie alongside is ignored
         scheme, _, value = authorization.partition(" ")
@@ -158,7 +163,7 @@ def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = 
             return _signed(conn, facts, value.strip(), renew_leases)
         raise unauthenticated("unsupported authorization scheme")
     if SESSION_COOKIE in facts.cookies:
-        return _cookie(conn, facts, renew_leases)
+        return _cookie(conn, facts, renew_leases, seen)
     raise unauthenticated()
 
 
@@ -201,7 +206,7 @@ def _cookie_headers(facts: RequestFacts) -> None:
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
 
 
-def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
+def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
@@ -218,19 +223,23 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .where(t.human_session.c.id_hash == id_hash)
         .scalar_subquery()
     )
-    touched = conn.execute(
-        update(t.human_session)
-        .where(
-            t.human_session.c.id_hash == id_hash,
-            t.human_session.c.ended_at.is_(None),
-            # session_alive(): before its end and within the idle time of the latest call
-            t.human_session.c.expires_at > now,
-            t.human_session.c.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,
-            t.human_session.c.last_seen_at <= now - SEEN_EVERY,
-        )
-        .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
-    )
-    if touched.rowcount == 1:
+    # A dashboard tab's presence (`seen=False`, §18.4) writes none of it: the read below
+    # alone tells a live session from an ended one, as for a call within `SEEN_EVERY`.
+    touched = 0
+    if seen:
+        touched = conn.execute(
+            update(t.human_session)
+            .where(
+                t.human_session.c.id_hash == id_hash,
+                t.human_session.c.ended_at.is_(None),
+                # session_alive(): before its end and within the idle time of the latest call
+                t.human_session.c.expires_at > now,
+                t.human_session.c.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,
+                t.human_session.c.last_seen_at <= now - SEEN_EVERY,
+            )
+            .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
+        ).rowcount
+    if touched == 1:
         conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
         conn.execute(
             update(t.membership)
@@ -252,9 +261,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
         .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
         .where(t.human_session.c.id_hash == id_hash)
     ).first()
-    if row is None or (
-        touched.rowcount != 1 and (row.ended_at is not None or not session_alive(row, now))
-    ):
+    if row is None or (touched != 1 and (row.ended_at is not None or not session_alive(row, now))):
         raise unauthenticated("the session has ended or expired")
     if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
         raise unauthenticated("the session has ended or expired")
