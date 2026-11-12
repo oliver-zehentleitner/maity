@@ -120,3 +120,28 @@
   .xgrid{grid-template-columns:minmax(0,1fr)}
 }
 @media (prefers-reduced-motion:reduce){.xcard{transition:none}}
+/* A stored public page (person, agent, organisation, project and its views, card) in the frame,
+   put around it when it is served: its content as stored, in the landing's tokens. */
+.stored-page{padding:48px 0 72px}
+.stored-page .wrap{max-width:960px}
+.stored-page h1{font:700 clamp(2.2rem,4.4vw,3.2rem)/1.1 var(--font-display);letter-spacing:-.02em;margin:10px 0 14px;overflow-wrap:anywhere}
+.stored-page h2{font:700 1.6rem/1.2 var(--font-display);margin:40px 0 14px}
+.stored-page h3{font-size:1.1rem;margin:20px 0 8px}
+.stored-page .eyebrow a{color:inherit;text-decoration:none}
+.stored-page .sub{font-size:1.1rem;color:var(--muted);max-width:42rem}
+.stored-page nav{display:flex;flex-wrap:wrap;gap:4px;margin:18px 0 8px;border-bottom:1px solid var(--border)}
+.stored-page nav a{padding:10px 12px 8px;font-weight:600;font-size:15px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent}
+.stored-page nav a[aria-current]{color:var(--text);border-color:var(--accent)}
+.stored-page .tag{height:22px;padding:5px 9px 0;border-radius:999px;background:var(--chip);color:var(--chip-text);font-size:11px;letter-spacing:.04em;vertical-align:middle}
+.stored-page ul,.stored-page ol{padding-left:1.2rem}
+.stored-page li{margin:6px 0}
+.stored-page .facts{display:flex;flex-wrap:wrap;gap:6px 24px;list-style:none;padding:0;color:var(--muted)}
+.stored-page .pic{display:inline-block;vertical-align:middle;border-radius:14px;margin:4px 12px 4px 0;object-fit:cover}
+.stored-page .pic.none{background:var(--surface2);border:1px solid var(--border)}
+.stored-page table{border-collapse:collapse;width:100%}
+.stored-page th,.stored-page td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+.stored-page blockquote{margin:16px 0;padding-left:16px;border-left:3px solid var(--border);color:var(--muted)}
+.stored-page details{border-top:1px solid var(--border);padding:12px 0}
+.stored-page summary{cursor:pointer;font-weight:600}
+.stored-page .report-link{margin:0 0 8px;font-size:13px}.stored-page .report-link a{color:var(--muted)}
+@media (max-width:760px){.stored-page{padding:28px 0 48px}.stored-page table{table-layout:fixed;font-size:13px}.stored-page th,.stored-page td{padding:6px 4px;overflow-wrap:anywhere;hyphens:auto}.stored-page nav{overflow-x:auto;flex-wrap:nowrap}.stored-page nav a{white-space:nowrap}}

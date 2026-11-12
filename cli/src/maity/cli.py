@@ -5660,7 +5660,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return EXIT_USAGE
     if args.command == "runner" and sys.platform == "win32":
         _err(
-            "the runner does not run on Windows: it needs tmux, systemd and OS users. "
+            "the runner does not run on Windows: it needs tmux and POSIX OS users. "
             "Run it inside WSL; every other maity command works here"
         )
         return EXIT_REFUSED
