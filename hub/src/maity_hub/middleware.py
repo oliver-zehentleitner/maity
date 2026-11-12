@@ -104,6 +104,9 @@ SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # one asked for under another answers `no-cache` (in ROUTE_CACHE), so a stale link repairs itself.
 LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
+# The dashboard's files (§16.11) the same way: one asked for under its version may be cached for
+# good, any other answers `no-cache` (shell.AssetFiles decides, hub/context/serving.md).
+DASHBOARD_FILES = re.compile(r"/assets/(?:brand|css|js|vendor)/.+")
 
 
 # Not refused during a maintenance window (§16.12): health, the window's own routes, the
@@ -150,7 +153,7 @@ class HubMiddleware:
                 public = PUBLIC_AVATARS_CACHE
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
-            elif LANDING_FILES.fullmatch(path):
+            elif LANDING_FILES.fullmatch(path) or DASHBOARD_FILES.fullmatch(path):
                 public = LANDING_FILES_CACHE
             elif self.settings.public_pages and not paths.is_hub_path(path):
                 # A public page may be cached; only the stored page's answer asks for it, the

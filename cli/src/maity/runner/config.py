@@ -118,6 +118,11 @@ class Harness:
 class RepositoryGrant:
     allow: tuple[str, ...] = ()
     network: tuple[str, ...] = ()
+    # Agents open and read their pull requests through `maity gh` (cli/context/runner.md).
+    pull_requests: bool = False
+    # `allow` entries for gh, which no session runs any more: left out of `allow`, named by
+    # `maity runner check`, never a reason to stop the runner or its other placements.
+    refused: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -424,9 +429,13 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
                 continue
             if table is None:
                 continue
+            allow = tuple(table.get("allow", list, [], check=_commands))
+            gh = tuple(rule for rule in allow if _program_name(rule.split(" ")[0]) == "gh")
             grants[normalise_repository(name)] = RepositoryGrant(
-                allow=tuple(table.get("allow", list, [], check=_commands)),
+                allow=tuple(rule for rule in allow if rule not in gh),
                 network=tuple(table.get("network", list, [], check=_strings())),
+                pull_requests=table.get("pull_requests", bool, False),
+                refused=gh,
             )
             table.done()
 
