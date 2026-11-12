@@ -478,9 +478,27 @@ def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tup
     ]
 
 
-def explore_html(conn: Connection, hub: Settings) -> str:
-    """The page of `/explore`: every project that has a page now, by name. It shows only what
-    those pages already show, and is rendered per request, behind the public cache."""
+def monogram(full: str, name: str) -> str:
+    """The letter on a project's card on `/explore`: the first letter of its name in upper
+    case, else the first character of its slug. Projects have no picture, so the tile shows
+    this letter in the accent colour (the approved mockup, README point 8)."""
+    return next((char for char in name if char.isalpha()), full.rsplit("/", 1)[-1][:1]).upper()
+
+
+def explore_html(
+    conn: Connection,
+    hub: Settings,
+    *,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    lang: str | None,
+    accept_language: str | None,
+) -> str:
+    """The page of `/explore`: every project that has a page now, by name, as cards in the
+    frame of §16.7.5 (`setting`, `legal`, `stats` and `accept_language` are the frame's). It
+    shows only what those pages already show, and is rendered per request, behind the public
+    cache."""
     shown = sorted(
         (
             (namespace.full_name(conn, project), project.name)
@@ -493,16 +511,41 @@ def explore_html(conn: Connection, hub: Settings) -> str:
         ),
         key=lambda item: (item[1].casefold(), item[0]),
     )
-    items = "".join(
-        f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a> ({escape(full)})</li>'
-        for full, name in shown
-    )
-    listed = f"<ul>{items}</ul>" if items else "<p>No project has a public page yet.</p>"
-    return render.page_document(
-        lang="en",
-        title="Public projects on Maity",
+
+    def page(lang: str, words: dict[str, str]) -> tuple[str, str]:
+        # As the approved mockup draws it (tsk-tp97v64vpy5z): the landing's dark hero, then the
+        # projects as cards. No count is shown, so no figure can be 0.
+        cards = "".join(
+            f'<li><a class="xcard" href="/{escape(full, quote=True)}">'
+            f'<span class="pmark" aria-hidden="true">{escape(monogram(full, name))}</span>'
+            f"<b>{escape(name)}</b><small>{escape(full)}</small>"
+            f'<span class="go">{escape(words["open"])} <span aria-hidden="true">→</span></span>'
+            "</a></li>"
+            for full, name in shown
+        )
+        listed = (
+            f'<ul class="xgrid">{cards}</ul>'
+            if cards
+            else f'<p class="empty-note">{escape(words["none"])}</p>'
+        )
+        content = (
+            '<section class="hero dz xhero"><div class="wrap">'
+            f'<p class="eyebrow">{escape(words["kicker"])}</p>'
+            f'<h1>{escape(words["heading"])}</h1><p class="sub">{escape(words["sub"])}</p>'
+            "</div></section>"
+            f'<section class="sec"><div class="wrap">{listed}</div></section>'
+        )
+        return words["title"], content
+
+    return render.framed_document(
+        section="explore",
+        page=page,
         canonical=f"{hub.public_url.rstrip('/')}/explore",
-        content=f"<h1>Public projects</h1>{listed}",
+        setting=setting,
+        legal=legal,
+        stats=stats,
+        lang=lang,
+        accept_language=accept_language,
     )
 
 

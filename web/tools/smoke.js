@@ -13178,6 +13178,59 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     project.owner = { id: "org-oz00team0001", handle: "oz-team" };
     const orgNo = await win.Maity.api.del("/projects/maintainer/maity/members/hum-maintainer").catch((e) => e);
     expect(orgNo.code === "namespace_owner", "leave: an owner of the organisation that owns the project is refused");
+    // A null start set stays null. An explicit list that names this project is
+    // written back without it. The fixture's DELETE already drops the id from
+    // an array, so the case reads the PATCH, not the store afterwards.
+    const sampleId = savedProjects.find((p) => p.slug === "sample").id;
+    const mePatchesSince = (from) => nlPatches.slice(from).filter((row) => row[0] === "/me");
+    const leaveConfirmed = async () => {
+      const from = nlPatches.length;
+      win.Maity.api.del = leaveDel;
+      btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 6; k++) await tick();
+      win.onhashchange(); for (let k = 0; k < 8; k++) await tick();
+      return mePatchesSince(from);
+    };
+    setCaller("member", "anyone");
+    fx["me.json"].member.start_tabs = null;
+    await leaveOpen();
+    const nullPatches = await leaveConfirmed();
+    expect(win.location.hash === "#/all" && nullPatches.length === 0 && fx["me.json"].member.start_tabs === null,
+      "leave: leaving with start_tabs null sends no PATCH /me " + JSON.stringify(nullPatches) + " start_tabs=" + JSON.stringify(fx["me.json"].member.start_tabs));
+    setCaller("member", "anyone");
+    fx["me.json"].member.start_tabs = [projectId, sampleId];
+    await leaveOpen();
+    const restPatches = await leaveConfirmed();
+    expect(win.location.hash === "#/all" && restPatches.length === 1
+      && JSON.stringify(restPatches[0][1]) === JSON.stringify({ start_tabs: [sampleId] }),
+      "leave: leaving with an explicit start list sends PATCH /me with the rest " + JSON.stringify(restPatches));
+    // While DELETE is pending, Tab stays inside the dialog. The shim does not
+    // move focus on Tab; when the handler does not take the key, the case
+    // moves it to the opener, which is where a browser would go.
+    const focusWas = El.prototype.focus;
+    El.prototype.focus = function () { document.activeElement = this; };
+    setCaller("member", "anyone");
+    const pendingOpener = await leaveOpen();
+    let rejectLeave = null;
+    win.Maity.api.del = () => new Promise((resolve, reject) => { rejectLeave = reject; });
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 2; k++) await tick();
+    const pendingDialog = leaveDialog();
+    const pendingLine = pendingDialog.querySelector(".send-status");
+    let tabHeld = false;
+    const tabTarget = document.activeElement && pendingDialog.contains(document.activeElement) ? document.activeElement : pendingDialog;
+    tabTarget.dispatch("keydown", { key: "Tab", preventDefault() { tabHeld = true; } });
+    if (!tabHeld) document.activeElement = pendingOpener;
+    expect(tabHeld && pendingDialog.contains(document.activeElement) && document.activeElement === pendingLine
+      && pendingLine.getAttribute("tabindex") === "-1" && text(pendingLine).includes("Leaving"),
+      "leave: while the request is pending, Tab keeps the focus inside the dialog");
+    rejectLeave(new win.Maity.api.ApiError("down", 0, "/projects/maintainer/maity/members/hum-maintainer"));
+    for (let k = 0; k < 4; k++) await tick();
+    const pendingConfirm = btn(pendingDialog, "Leave Maity");
+    expect(pendingDialog && !pendingConfirm.disabled && !btn(pendingDialog, "Cancel").disabled
+      && document.activeElement === pendingConfirm && text(pendingDialog).includes("Not left:"),
+      "leave: when the request fails, the buttons work again and the focus returns to Confirm");
+    btn(pendingDialog, "Cancel").click();
+    El.prototype.focus = focusWas;
+    document.activeElement = undefined;
     resetLeave();
     win.Maity.tabs.setOpen({ me: fx["me.json"].member, projects: fx["me.json"].projects }, projectId, true);
     nlPatches.length = 0;
