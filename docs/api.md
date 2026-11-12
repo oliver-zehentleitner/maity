@@ -19935,12 +19935,12 @@ The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
 a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
 pages (§16.7.1), the mail link pages, which are the sign-in link's page `/mail/sign-in/{token}` (§2.6.3) and the
-pages of §18.6, each with its page for a link that no longer works, and the dashboard's
+pages of §18.6, each with its page for a link that no longer works, `/explore` (§16.9), and the dashboard's
 `/login` and `/register` (§16.7.4).
 The dashboard's sign-in stands in the frame wherever it is drawn without
 a session, not only at `/login`: at the root after a sign-out, and at an
 address of the app opened without a session that has no stored public
-page (§16.9). The hub renders the first three itself; the dashboard draws
+page (§16.9). The hub renders the first four itself; the dashboard draws
 the others in the app shell. So the hub computes the frame once, as a model: it
 renders its own pages from that model, and hands the same model to the
 dashboard. The rules stay in one place: which sections are a link, which
@@ -20051,6 +20051,19 @@ from the hub's catalogue in `language`.
   line's `style-src 'sha256-…'` (§1.1) for this policy, which is
   stricter in every other part. Registration's link page (§2.7.1) stays
   outside the frame, with the product line (§16.13).
+- **`/explore`** (§16.9) stands in the model's header and footer around
+  the landing page's dark hero with its title, and the projects as cards.
+  Each card is one link to the project's page: the first letter of its
+  name on a tile in the accent colour (projects have no picture), its
+  name, its full name and "Open project". The page is in the model's
+  `language` where the hub's catalogue has the page's words in it, else
+  in English; header and footer then say theirs with a `lang` of their
+  own. Its footer keeps the landing page's language switch, whose links
+  (`?lang=`) reopen `/explore` in that language. No count is shown: with
+  no project the page says so in a sentence. It has no script and no
+  inline `style` attribute of its own (the maintenance banner keeps its
+  own, §16.12); its policy is the legal pages' (§16.7.1),
+  with `Vary: Cookie, Accept-Language`.
 
 ### 16.8 Abuse reports
 
@@ -21084,7 +21097,7 @@ names:
 | `/agents`, `/agents/<id>`, `/agents/placements`, `/agents/maintenance` | the human's agent profiles across projects (§6.3), and one of them marked; and the page's two tabs: **Where they run**, where the human's agents run in the projects the human reads (§15.6), and **Maintenance notices**, which of them the hub tells about a maintenance window (§16.12). `placements` and `maintenance` under `/agents/` are view names: the hub never issues either as an id |
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
-| `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
+| `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for every visitor with or without a session, under the public pages' `Cache-Control` and `nosniff` (§16.9), the legal pages' policy (§16.7.1) and `Vary: Cookie, Accept-Language`, without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
@@ -21409,7 +21422,8 @@ back to the English sentence.
 | the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
 | the join page for an agent, the Markdown answer (§3.2) | no |
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
-| `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
+| `/explore` in the frame of §16.7.5 (§16.9) | no: the frame's footer |
+| the stored public pages (§16.9), as the hub answers them from what it stored | no |
 
 The mail link pages are the hub's own pages in that frame, so they have
 no line either. Where the dashboard draws the sign-in or `/register`
