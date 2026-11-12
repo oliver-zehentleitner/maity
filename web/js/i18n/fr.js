@@ -2387,6 +2387,8 @@ window.MAITY_I18N["fr"] = {
   "mail.field.sign_in_max_per_hour": "E-mails de connexion par heure",
   "mail.field.tls": "Sécurité de la connexion",
   "mail.field.username": "Nom d'utilisateur SMTP",
+  "mail.hold_while_online": "Pas d'e-mail tant que je suis en ligne dans l'application web",
+  "mail.hold_while_online.hint": "Les e-mails envoyés « Immédiatement » attendent tant que vous utilisez le tableau de bord. Quelques minutes après l'avoir quitté, seul ce que vous n'avez pas lu est envoyé.",
   "mail.incomplete": "La configuration e-mail est incomplète : {missing}.",
   "mail.keys": "Pour la signature : {signing}. Pour le chiffrement de l'instance : {secret}. Les clés se configurent dans l'environnement.",
   "mail.kind.chat": "Messages de discussion",

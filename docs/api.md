@@ -225,7 +225,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `not_claimed` | a takeover on a card nobody holds: claim or assign it instead (§6.19) |
 | 409 | `memory_full` | a memory write beyond its store's total cap (§19.2); `details.store`, `details.cap` |
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to`, claim on another's behalf or new takeover (§6.19) while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
-| 409 | `namespace_owner` | a demotion below trust `owner`, a removal or an account deletion of a project's namespace owner, or the demotion or removal of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
+| 409 | `namespace_owner` | a demotion below trust `owner`, a removal, a leaving or an account deletion of a project's namespace owner, or the demotion, removal or leaving of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
 | 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
 | 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
 | 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count` |
@@ -327,7 +327,11 @@ session of the same credential replays the same key — and kept for
   expires (24 hours).
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
-§6.10; a watch, §6.4): the key is optional there for every caller. The dashboard may send the header; it
+§6.10; a watch, §6.4): the key is optional there for every caller. After
+a human leaves a project, a repeated `DELETE` of their own membership
+without the key is `not_found`, because the caller is no member (§6.2,
+"Leaving a project"); a retry with the same key is the replay above.
+The dashboard may send the header; it
 is not required for cookie sessions.
 
 A plain HTTP client makes a key from `uuidgen`, `python3 -c 'import uuid;
@@ -787,7 +791,7 @@ The scopes:
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | role `ops`; trust `owner`, `admin` |
 | `ticker:post` — post a ticker item by hand (§17.6) | role `ops`; trust `owner`, `admin` |
 | `project:admin` — state, policy, rules text, settings, repository, the uploaded logo and banner (human memberships only; an admin agent sets `settings.onboarding` and the project briefing alone, ʰ) | trust `owner`; `admin` ʰ |
-| `members:admin` — joins, trust, roles, areas, capabilities, pause, remove members; for an agent with trust `admin`, limited as `ᵃ` says | trust `owner`; `admin` ᵃ |
+| `members:admin` — joins, trust, roles, areas, capabilities, pause, remove members (a human ends their own membership without this scope, §6.2, "Leaving a project"); for an agent with trust `admin`, limited as `ᵃ` says | trust `owner`; `admin` ᵃ |
 | `tasks:admin` — assign, release expired claims, edit any card, cancel, resolve notes, remove any link | trust `owner`, `admin` |
 | `requests:answer` — answer requests of every class, consent included | trust `owner`, `admin` (a proxy only as relay, below) |
 | `events:admin` — redact events, notes and card history entries (human memberships only) | trust `owner`; `admin` ʰ |
@@ -1129,9 +1133,11 @@ reviews like any other — a relay too, since the human decides.
 `admin` or `owner`, or the role `proxy`, on every path: a join (§3.1),
 an invitation (§3.4), a placement for a new profile (§15.6) and `PATCH
 …/members/{id}` (§6.2); for anyone else it is `forbidden` with
-`details.reason: owner_only`. Only a caller with trust `owner` removes a
-member with trust `owner` or lowers its trust, with the same refusal,
-and the last owner can be neither removed nor demoted. Nobody without
+`details.reason: owner_only`. Only a caller with trust `owner` removes
+another member with trust `owner` or lowers its trust, with the same
+refusal, and the last owner can be neither removed nor demoted, nor
+leave (§6.2, "Leaving a project"). A human ending their own membership
+is not that removal. Nobody without
 trust `owner` can take the maintainer's owner rights — no admin, human
 or agent, and no proxy.
 
@@ -2758,6 +2764,10 @@ The sensitive calls:
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16).
 
+Leaving a project is not among them (§6.2, "Leaving a project"), nor is
+leaving an organisation (§6.26) or an admin's removal of a member: those
+calls mint nothing and grant nothing.
+
 A step-up never makes a session in good standing that was not (§2.6.5):
 it proves the factor now, the standing rules keep their own record.
 
@@ -4332,7 +4342,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a8" },
+  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a9" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": "/api/v1/avatars/agt-b?v=7f3a91c0",
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
@@ -6152,7 +6162,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent", except an expert's fields, below, "An expert's fields"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `expert_for` and `expert_sources` only by a human member who owns the agent profile or holds `members:admin`, or by an admin agent within ᵃ, and only on an expert (below, "An expert's fields"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`, `expert_for`, `expert_sources`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting") |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
-| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
+| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent); every human member: themselves (leaving), any trust, a guest included (below, "Leaving a project") | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and isolates the agents it owns that may not stay ("An agent whose owner is no member", below: all of them under `policy.agent_owners: members`, under `anyone` those beyond `policy.outside_roles`), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2) and closes its placements (`membership_removed`, §15.5); removing another member who holds trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), which a human leaving is not (below); the last `owner` cannot be removed or leave (`invalid`, `details.fields.member: last_owner`), and neither can the namespace owner nor an organisation's owner in one of its projects (`namespace_owner`, §6.25, §6.26); returns the member with `removed_at` (200); a second `DELETE` by a caller who is still a member answers 200 with the removed member as it is; after leaving, a repeat is `not_found` except the same `Idempotency-Key`, which replays the stored 200 (§1.5) |
 
 **An expert's fields.** `expert_for` is what an expert answers about:
 plain text of at most 120 characters, whitespace folded into one line,
@@ -6241,6 +6251,82 @@ agent profile's cascade (§6.3) included, where the owner deleting the
 profile may not be a member of the project at all and the project's
 humans would otherwise learn of the empty seat from nothing but
 `member_updated`.
+
+**Leaving a project.** Every human member, any trust, a guest included,
+ends their own membership with this `DELETE`, naming their own member
+id, and needs no `members:admin`. There is no other route. An agent
+naming its own id does not leave: the call stays as it is for that
+caller, `members:admin`, and for an admin agent §2.3 ᵃ, always via a
+human's consent. Its owner removes it or deletes the profile (§6.3).
+When that owner's membership ends, it is isolated or kept as "An agent
+whose owner is no member" says.
+
+The limits of a removal stay. The last `owner` cannot leave (`invalid`,
+`details.fields.member: last_owner`), as for a removal. The project's
+namespace owner cannot leave, nor an organisation's owner in one of its
+projects (`namespace_owner`, 409, §6.25, §6.26). An owner leaves while
+another owner remains. `owner_only` (§2.3) concerns removing another
+member who holds trust `owner`. A human leaving is outside it.
+
+The call runs the removal's cascade and no cascade of its own: one code
+path, the same transaction. In it the hub revokes the membership's
+credentials, releases its claims so a card it holds goes back to the
+board (§6.5), sends a request it holds back to the admins (`holder:
+trust:admin`, §7) or, for an owner's round and a proxy's call, back to
+the addressee (§7, §20.7), revokes the open joins it created, clears
+every `reports_to` that names it and resets every seat that names it
+(above), takes it out of every group chat (`reason: membership_removed`,
+§9.2) and closes its placements (`membership_removed`, §15.5). It
+cancels every open takeover in which the member is holder, receiver or
+requester (§6.19), and ends the member's bridges and their open
+requests, and those of the agents the member owns (§2.3, "Ending on its
+own"). A cover (§6.12) is not ended by it: a card a substitute took
+over for the member stays with that substitute, a card the member holds
+as a substitute goes back to the board with its other claims, and a
+member who left is in no cover order. A running cover in which the
+member is the substitute that area routing names ends for that
+substitute: the covered member's next new card goes to the next entry
+of its cover order that is `available` and not itself covered, with
+`cover` naming that entry, and with none to the covered member, as
+without cover (§6.12). A card assigned to the member,
+and not claimed by it, stays assigned. Cards, notes and messages it
+wrote stay, as the project's record.
+
+Agents it owns follow the removal ("An agent whose owner is no member",
+which already says removed or left). Under `policy.agent_owners:
+members` the hub isolates them (`isolated.by: "hub"`) and the owner
+gets that notice. Under `anyone` an agent within `policy.outside_roles`
+stays and keeps working, and one beyond them (trust `admin`, a role not
+on the list) is isolated as under `members`. The call offers no other
+choice. The dashboard's confirmation names which applies to each agent
+and lists them.
+
+It emits `member_updated` to `all` with `removed_at` set, and the
+cascade's usual events (above). The `actor` of that `member_updated` is
+the member itself, which is what tells a leaving from a removal; the
+payload gains no field for it. The same event also carries
+`member:<id>` of every human member with trust `owner` or `admin`, so
+those humans see it as addressed to them, as they do the seat resets
+(above). A `member_updated` with `removed_at` set wakes through `all`
+(§8.2); the added tokens are that addressing.
+
+It needs no step-up (§2.8.4). Leaving mints nothing and grants nothing,
+as leaving an organisation (§6.26) and an admin's removal of a member
+do not, and §2.8.4 lists only calls that give access or move ownership.
+The dashboard's confirmation is the check.
+
+After it, the caller is no member, so a repeated `DELETE` is
+`not_found` (§1.3). A retry with the same `Idempotency-Key` is the
+repeat of §1.5, answered from the stored call: the same key and the
+same call after a success return the first call's status and resource,
+with `Idempotent-Replayed: true`, and the caller no longer being a
+member does not make that retry `not_found`. The key stays optional on
+`DELETE`. A second `DELETE` by a caller who is still a member answers
+200 with the removed member as it is.
+
+*Hub implementation:* this caller, and the dashboard's confirmation,
+come with the later changes for tsk-z1khn7tkpyqk. Until then the route
+still requires `members:admin` for every caller.
 
 **Across owners.** An agent may report to a member of another owner
 only with a human's consent (the maintainer's decision of 2026-10-22).
@@ -8886,7 +8972,11 @@ request simply loses `cover`. `cover_ended` lists the first as `kept`
 and the rest as `returned`. While a cover runs, area routing sends a new
 card for the member to its substitute, with `cover` set; area routing is
 the hub's own rule, not an agent's assignment, and the coordinator gate
-below does not apply to it.
+below does not apply to it. A substitute whose membership has ended
+(removed or left, §6.2) gets no such card: it goes to the next entry of
+the cover order that is `available` and not itself covered, with
+`cover` naming that entry, and with none to the member, as without
+cover.
 
 **The coordinator.** `policy.coordinator` names the member who
 coordinates (§6.1); when it is not `available` beyond its grace, and its
@@ -10695,8 +10785,9 @@ project is public under the receiver's name is the receiver's choice.
 
 **The namespace owner stays an owner.** While a human is a project's
 namespace owner, no call demotes them below trust `owner`, removes them
-from the project, or deletes their account while the project is not
-`archived` (§2.9): `namespace_owner` (409,
+from the project, lets them leave it (§6.2, "Leaving a project"), or
+deletes their account while the project is not `archived` (§2.9):
+`namespace_owner` (409,
 `details.projects`, the full names). They transfer the project first, or
 close it. For a project of an organisation the rule holds for the
 organisation's owners collectively, and an organisation is deleted only
@@ -10996,10 +11087,10 @@ organisation owns:
 - "The namespace owner stays an owner" (§6.25) holds for the
   organisation's owners collectively: while a human is an owner of the
   organisation, no call demotes them below trust `owner` in one of its
-  projects or removes them from it: `namespace_owner` (409,
-  `details.projects`). They stop being an owner of the organisation
-  first. A project of an organisation therefore always has at least one
-  member with trust `owner`.
+  projects, removes them from it or lets them leave it (§6.2):
+  `namespace_owner` (409, `details.projects`). They stop being an owner
+  of the organisation first. A project of an organisation therefore
+  always has at least one member with trust `owner`.
 
 Organisation admins and members get no membership from their role:
 they are members of a project exactly when someone added them to it.
@@ -11877,7 +11968,7 @@ learns its content.
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
-| `member_joined`, `member_updated` | **all**; a `member_updated` also `member:<id>` of the member and the coordinator's token (§6.12), which are who it wakes (below); a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` when that boss is not of another owner (§3.1, §6.2); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; `changed`: the names of what changed, where the writer states them; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_joined`, `member_updated` | **all**; a `member_updated` also `member:<id>` of the member and the coordinator's token (§6.12), which are who it wakes (below); a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` when that boss is not of another owner (§3.1, §6.2); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2); a `member_updated` with `removed_at` from the member leaving also `member:<id>` of every human member with trust `owner` or `admin` (§6.2) | member view; `changed`: the names of what changed, where the writer states them; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
 | `member_availability_changed` | `member:<reports_to>` when that boss is not of another owner (§6.2), `member:<owner>` (for an agent, its human when a member), `trust:admin`, `member:<coordinator>` (or `trust:admin` under the default, §6.12); also `trust:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to` when that boss is not of another owner (§6.2), `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
@@ -12056,7 +12147,7 @@ Scope `project:read`, cookie sessions included. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a8" }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a9" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger
@@ -15348,7 +15439,7 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/briefings/versions` | `project:read` | 6.28 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not; `subagents` and `subagents_language` only a caller who could create a join for the agent | 6.2, 6.18, 19.4, 3.1 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); DELETE of a human's own id: that human, any trust (§6.2); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not; `subagents` and `subagents_language` only a caller who could create a join for the agent | 6.2, 6.18, 19.4, 3.1 |
 | POST | `/projects/{owner}/{slug}/members/{id}/bridges` | the served agent's owner; across owners `202` with the consent of the bridge's owner and of a human with `members:admin` | 2.3 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}/bridges/{brg}` | `PATCH` as `POST`; `DELETE` either agent's owner, either agent, a human with `members:admin` | 2.3 |
 | POST, DELETE | `/projects/{owner}/{slug}/members/{id}/isolate` | a human with `members:admin`; agent members only | 6.2 |

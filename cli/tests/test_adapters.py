@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from maity import __version__
+from maity import __version__, clonecheck
 from maity.runner import adapters, config, loop, supervisor
 from maity.runner.asuser import AsUser
 
@@ -45,6 +45,8 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
+        clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
@@ -351,6 +353,9 @@ def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
                   placement={**PLACEMENT, "mode": "supervised", "model": "gpt-5.5"})  # fmt: skip
     launch = adapters.launch(ctx)
     codex_home = Path(launch.env["CODEX_HOME"])
+    # Codex runs maity inside its sandbox, which cannot write the runner's directory: git's own
+    # repository stays in `.git/maity`, named so, never by leaving the variable out.
+    assert launch.env[clonecheck.GIT_PRIVATE_ENV] == clonecheck.IN_CLONE
     assert codex_home.parent == ctx.agent_dir
     assert (codex_home / "auth.json").resolve() == (home / "codex" / "auth.json").resolve()
     assert (ctx.clone / ".git" / "maity").is_dir()
