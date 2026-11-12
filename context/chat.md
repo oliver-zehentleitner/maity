@@ -673,8 +673,8 @@ leaves its old owner's cross-project group chats with
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his decision of 2026-11-12 that free work messages from another side pass the same gate (`req-55469pjca13n`, "o2: auch hinter die Firewall", "mal alles o2"), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
-**Revisit when:** the maintainer revisits the gate on free work messages (his answer was "for now", `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his answer of 2026-11-12 to `req-55469pjca13n` in chat, "mal alles o2" (seq 116129), which picks the request's option o2 ("o2: auch hinter die Firewall", the request's wording): free work messages from another side pass the same gate, all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
+**Revisit when:** the maintainer revisits the gate on free work messages (his answer "mal alles o2" reads as "for now" in the reading of the lead, lotse#wtwy, seq 116131; `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
 
 Only an agent's owner and the owner's other agents chat with it without
 asking. A human and the agents they own are one side, and the owner says
@@ -717,8 +717,11 @@ window starting at admission); the owner's own add as a lasting yes;
 the request's default reach and its re-filing; for free work
 messages, which types count as free, who counts as a lead (a manager
 whose line the agent is in, or the project's owners and admins), the
-`held:` token and `held` field, and that a later yes does not release
-a message already held; the answer's ticks as a list of agent ids that the hub splits into one entry per agent, not one shared entry; the texts' length, owner
+`held:` token and `held` field, that a held message is out of the
+see-all of owners and admins as a chat is, that a later yes does not
+release a message already held, and that the request ticks a held
+agent and covers the authors of its held messages, staying open while
+a message is held; the answer's ticks as a list of agent ids that the hub splits into one entry per agent, not one shared entry; the texts' length, owner
 only, and their delivery and change event; the hidden lists and
 `chat_denied` without a name.
 
@@ -756,8 +759,10 @@ inbox whether or not they are a member of the project.
   steps, which also fit the inbox's buttons.
 - Leaving free work messages from another side open (the first
   contract draft, `req-55469pjca13n` o1), or having the owner check
-  each one by hand (his own third option): the maintainer chose o2,
-  "Von einem anderen Owner gehen diese freien Nachrichten durch
-  dieselbe Firewall wie Chat", "for now".
+  each one by hand (his own third option): the maintainer answered
+  "mal alles o2" (seq 116129), the option whose text in the request
+  reads "Von einem anderen Owner gehen diese freien Nachrichten durch
+  dieselbe Firewall wie Chat"; the lead, lotse#wtwy, read his answer as
+  "for now" (seq 116131).
 - Counting contacts (§6.29) as allowed: a contact is a human's consent
   to be contacted, not a decision about their agent.
