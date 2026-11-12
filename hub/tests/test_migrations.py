@@ -1490,3 +1490,79 @@ def test_the_invite_by_handle_downgrade_revokes_what_an_older_hub_would_show_as_
     assert rows["inv-open"] is not None
     assert str(rows["inv-declined"])[:16] == declined_at.strftime("%Y-%m-%d %H:%M")
     assert rows["inv-used"] is None and rows["inv-link"] is None
+
+
+def test_notif_recipients_backfills_the_window_in_batches_and_runs_again(engine: Engine) -> None:
+    """20261112170000_notif_recipients: each message of the notifications' 30 days gets a row
+    per human its audience (a chat) or its mentions name, over more than one batch; an older
+    message, an agent and an id that is no human get none. A MariaDB run that stopped part way
+    left the table and some rows; the next run keeps them and writes the rest."""
+    from datetime import timedelta
+
+    from sqlalchemy import MetaData, insert, inspect, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261112170000_notif_recipients"
+    migrate(engine, _before(engine, revision))
+    project_id = factory.project(engine, "recipients")
+    a, b = factory.human(engine, "rec-a"), factory.human(engine, "rec-b")
+    now = clock.now()
+
+    def message(at: Any, audience: list[str], mentions: list[str], chat: bool) -> dict[str, Any]:
+        return {
+            "project_id": project_id, "kind": "message", "at": at, "audience": audience,
+            "conversation_id": "agt-chat" if chat else None, "redacted": False,
+            "payload": {"text": "x", "mentions": [{"member_id": m} for m in mentions]},
+        }  # fmt: skip
+
+    many = [message(now, [f"member:{a}"], [b], chat=False) for _ in range(2001)]  # > BATCH
+    special = [
+        message(now, [f"member:{a}", "member:agt-x"], [], chat=True),  # a's chat
+        message(now, [f"member:{b}"], [], chat=False),  # an audience outside a chat
+        message(now - timedelta(days=40), [f"member:{a}"], [a], chat=True),  # too old
+        message(now, ["role:coder"], ["hum-gone", "agt-x"], chat=False),  # no human
+        message(now, [f"member:{a}"], [a], chat=True),  # both
+    ]
+    with engine.begin() as conn:
+        conn.execute(insert(t.event), many + special)
+        seqs = list(conn.execute(select(t.event.c.seq).order_by(t.event.c.seq)).scalars())
+    first = seqs[: len(many)]
+    chat, outside, old, nobody, both = seqs[len(many) :]
+    migrate(engine, revision)
+
+    def rows() -> set[tuple[str, int, bool, bool]]:
+        with engine.connect() as conn:
+            r = t.notification_recipient
+            query = select(r.c.human_id, r.c.seq, r.c.chat, r.c.mention)
+            return {(row[0], row[1], row[2], row[3]) for row in conn.execute(query)}
+
+    expected = {(b, seq, False, True) for seq in first} | {
+        (a, chat, True, False),
+        (a, both, True, True),
+    }
+    assert rows() == expected
+    assert not {old, outside, nobody} & {seq for _, seq, _, _ in rows()}
+    downgrade(engine, _before(engine, revision))
+    # What a MariaDB run that stopped after some batches leaves, where each DDL statement
+    # commits alone: the table without its window index (hcrb on #1703), the first rows.
+    with engine.begin() as conn:
+        tables = MetaData()
+        tables.reflect(conn, only=["human", "event", "project"])
+        bare = t.notification_recipient.to_metadata(tables)
+        bare.indexes.clear()
+        bare.create(conn)
+        conn.execute(
+            insert(t.notification_recipient),
+            [
+                {"human_id": b, "seq": seq, "project_id": project_id, "at": now, "chat": False,
+                 "mention": True}
+                for seq in first[:10]
+            ],
+        )  # fmt: skip
+    migrate(engine, revision)
+    assert rows() == expected
+    indexes = {i["name"] for i in inspect(engine).get_indexes("notification_recipient")}
+    assert "ix_notification_recipient_window" in indexes
