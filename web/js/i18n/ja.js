@@ -3453,6 +3453,7 @@ window.MAITY_I18N["ja"] = {
   "placements.reason.evicted": "退去させられました",
   "placements.reason.harness_missing": "ランナーに harness がインストールされていません",
   "placements.reason.harness_refused": "ランナーの設定が、この harness、モード、モデルを許可していません",
+  "placements.reason.hung": "応答が停止",
   "placements.reason.image_pull": "イメージを取得できませんでした",
   "placements.reason.join_failed": "参加に失敗しました",
   "placements.reason.oom_killed": "メモリ不足",
