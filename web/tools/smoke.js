@@ -13373,12 +13373,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         "presence: a stored call time in the future counts as none, so it calls at once " + prPosts.length);
       prWait(60000);
       expect(prPosts.length === 17, "presence: and a minute after that call " + prPosts.length);
+      // The clock set back an hour while the tab runs: its own last call is now in the future and
+      // counts as none, so the next minute of timer time calls again. A browser's timers run on
+      // elapsed time, not the wall clock, so the pending ones keep theirs here.
+      prClock -= 3600000;
+      prTimers.forEach((t) => { t.at -= 3600000; });
+      prWait(60000);
+      expect(prPosts.length === 18, "presence: a clock set back while running does not hold it " + prPosts.length);
       win.Maity.presence.stop();
       // Storage blocked: each tab counts alone, as before.
       win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
       win.Maity.presence.start(prHuman);
       prWait(60000);
-      expect(prPosts.length === 19, "presence: with storage blocked it calls at once and every minute " + prPosts.length);
+      expect(prPosts.length === 20, "presence: with storage blocked it calls at once and every minute " + prPosts.length);
       win.Maity.api.source = prSource;
       win.Maity.presence.stop();
       [win.Maity.api.post, win.setTimeout, win.clearTimeout, Date.now, win.addEventListener, win.removeEventListener, document.addEventListener, document.removeEventListener, win.localStorage] = prSaved;

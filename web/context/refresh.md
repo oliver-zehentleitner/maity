@@ -400,7 +400,9 @@ is not told. A hidden or idle tab sends nothing: a hidden one drops its timer at
 one at its next tick. The time of the last call is kept in `localStorage`
 (`maity-presence-sent`, removed on stop), so the session's tabs and page loads in this browser
 share the minute: a tab whose session called within it, from this tab, another or an earlier
-load, waits for that minute instead of calling again.
+load, waits for that minute instead of calling again. That is best effort, not a lock: two tabs
+that read the time at the same moment both call, each still at most once a minute, and the hub
+writes once.
 
 **Reason:** the hub counts a session present for two minutes after a write and writes at most
 once a minute, so a call a minute after the last lands while the last write's two minutes still
