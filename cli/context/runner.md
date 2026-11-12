@@ -2545,3 +2545,76 @@ answer: something in the clone may still be needed.
   one it read when it started there. Rejected: carrying the older
   placement's epoch over, which could make its first report later than
   the hub's and so `invalid` (spq4's review).
+
+## The runner installs and updates the harness tools and maity, only where its owner allows it per tool
+
+**Id:** 4c984f97-09b8-479b-bd1a-f56bb41057fd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); the owner's answers of 2026-11-12: req-r2egh0ry0c4c (older sessions restart at their next idle point; answer event 119533), req-vpcfh15h247c (local target only, ssh targets reported; answer event 119538), both relayed by the lead in 119605; docs/api.md §15.16
+**Revisit when:** an ssh target's owner wants the runner to manage its tools, a harness tool ships without an installer the runner can run in the user's space, or a tool's update needs a step only a person can do
+
+Not built yet (tsk-29nmydbzrg5z): this records the contract's decision;
+the runner and the dashboard follow in their own pull requests.
+
+Operators kept the runner's tools and `maity` current by hand, and
+sessions started by an older `maity` stayed on it until someone
+restarted them. The contract lets the runner do it, per tool and only
+when its owner says so in the runner's configuration (`install`,
+`update = "daily"`); without that it touches nothing, as before. The
+shape is the owner's (confirmed), and so are two points he answered for
+this contract: a session an older `maity` started restarts at its next
+idle point, never mid-step, and the runner manages only its own machine,
+reporting what it finds on an ssh target. The parts below that are not
+in his words are this design's (inferred).
+
+- **The installer is fixed in the runner's code**, per tool, never
+  taken from the configuration or the hub: a path or URL in a file the
+  runner reads would let whoever can edit it run any program as the
+  runner user, and the hub never grants anything to a runner. A new
+  tool's installer is a code change with its own review.
+- **Beside, never under.** A newer version goes in beside the one in
+  use and is used from the next start of a session, and only after it
+  answered its version; a running session keeps what it started with.
+  The previous version stays for `maity runner tools rollback`, a local
+  command, because a rollback is the operator's call on the machine.
+- **"Update now" is read, not pushed.** The hub stores the owner's
+  request on the runner, and the runner reads `GET /runner` after every
+  wake of its event wait. Every event belongs to a project, and a runner
+  without an attached project would never hear one; the wait's own
+  fallback brings the read within a minute anyway. The hub drops a
+  request only when the report that ends the attempt names it, its
+  `requested_at` exactly as the runner read it, as a removal by hand is
+  closed (161d5507). Rejected: dropping it once a report shows a check at
+  or after it, which compares the runner's clock with the hub's, and the
+  signing window allows minutes of skew: a check decided before the
+  request could erase it (v5vp's review).
+- **A rollback is a state of its own.** After `maity runner tools
+  rollback`, the tool reports `rolled_back` while the version in use is
+  older than `latest` (a second rollback back to `latest` reports
+  `current`), and while it is, the runner does not take the version it
+  left, or one that failed its version answer, on its own again; only a
+  newer version ends it.
+  Otherwise the daily check would undo the operator's rollback the same
+  day (v5vp's review).
+- **Only the owner asks**, and only for a tool the runner says it
+  updates (`updates_off` otherwise): the configuration is the owner's,
+  and project admins who use the runner do not change its software.
+- **Logins stay the owner's.** A tool that needs a login after its
+  install is reported `login_needed` and offered to no placement until
+  then; the runner never reads, writes or asks for a credential.
+
+Rejected:
+- An installer named in the configuration: the reason above.
+- Swapping a tool in place and restarting every session at once: an
+  agent mid-step would lose its work, and the owner ruled out a swap
+  under a running agent.
+- An event per attached project for "Update now": the reason above.
+- Project admins asking for an update: the runner's software is its
+  owner's, as its configuration is.
+- Restarting the older sessions at once, after the stop grace: faster,
+  but it can end a task mid-step (the owner's answer).
+- Installing on ssh targets too: a vendor's installer would run on a
+  machine whose owner did not set it up for that, with more ways to fail
+  (the owner's answer); a later card can add it.
