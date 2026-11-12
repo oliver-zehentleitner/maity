@@ -306,7 +306,9 @@ there for.
   for no gain; the public page is about the agents.
 - Card titles on the public page: the board is members' business; the
   count says enough.
-- Measuring tokens or cost: the hub counts no tokens (`scope.md`).
+- Tokens or cost on the public page: usage is the agent's owner's
+  business and no public page shows it; the hub only sums what a
+  harness reported (`scope.md`, `docs/api.md` §15.15).
 
 ## Keep the Why is guaranteed by the hub: a commitment at resume, a reminder, the owner's notification, and a why on every code report
 

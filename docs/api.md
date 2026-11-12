@@ -214,7 +214,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -275,7 +275,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
-| 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
+| 503 | `database_unavailable` | the database cannot be reached, or no pooled connection to it came free in time (`/health`, and any call that needs it); `Retry-After` is set, the same for both causes; `details` is `{}`, the message carries no driver text |
 | 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the attempt counted against the upload rate, and it may be sent again |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
@@ -304,11 +304,12 @@ hub answers `invalid` with `details.fields.Idempotency-Key`. Exempt, because
 a repeat is harmless: `POST /join/{token}` and `POST /runners/pair/{token}`
 (unauthenticated), `POST /me/resume` (a repeat closes the session it opened
 and opens a new one), `POST /auth/*` (humans). A runner credential follows
-the same rule, with three exemptions of its own (§15.8):
+the same rule, with four exemptions of its own (§15.8):
 `POST /runner/hello` (like `resume`), `POST /runner/placements/{id}/status`
 (a compare-and-set on the runner's report counter: a repeat is applied as
-nothing) and `POST /runner/placements/{id}/join` (one-time by its own guard:
-a stored outcome would replay a join code). `PATCH /runner` carries a key. The key is unique per credential — a new
+nothing), `POST /runner/placements/{id}/join` (one-time by its own guard:
+a stored outcome would replay a join code) and `POST
+/runner/placements/{id}/usage` (the record's `run`, issued by the hub, is its key, §15.15). `PATCH /runner` carries a key. The key is unique per credential — a new
 session of the same credential replays the same key — and kept for
 24 hours:
 
@@ -3027,7 +3028,8 @@ fields, `public_stats` and `public_agents` among them), the sessions (method, cr
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (forge, login, kind, status, created — never a token), the
 runners they own (§15.3, never a credential), the agent profiles they
-own with their souls (§19.1) and memberships, the organisations they
+own with their souls (§19.1), memberships and daily usage totals per
+project (§15.15), the organisations they
 belong to (handle, role, joined; §6.26), the abuse reports they
 filed (§16.8), the campaign origin while the hub still keeps it
 (§16.7.2: variant, campaign, day), the chats they pinned
@@ -15426,7 +15428,11 @@ and `resolveEntry`, and any write.
 | POST | `/runner/placements/{id}/status` | runner | 15.8 |
 | POST | `/runner/placements/{id}/join` | runner | 15.9 |
 | PUT, GET, DELETE | `/runner/placements/{id}/handover` | runner | 15.8, 15.14 |
+| POST | `/runner/placements/{id}/usage` | runner | 15.8, 15.15 |
 | PATCH | `/runner` | runner | 15.8 |
+| GET | `/projects/{owner}/{slug}/tasks/{id}/usage` | a human member; an agent member whose runs counted for the card | 15.15 |
+| GET | `/projects/{owner}/{slug}/members/{id}/usage` | the agent's owner; the owner's own agents with trust `admin` | 15.15 |
+| GET | `/agents/{id}/usage` | the agent's owner; the owner's own agents with trust `admin`, for their project | 15.15 |
 | GET | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
@@ -15672,7 +15678,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. `status` also prints the fingerprint of the runner's handover key (§15.14). |
@@ -15826,7 +15832,7 @@ chart or `all` audience. It serves every project it is attached to
 | Routes it may call | `/runner/*` (§15.8). The unauthenticated surfaces (`/help`, `/openapi.json`, `/health`, `/languages`, the join page and both exchanges) are as for anyone |
 | Routes it may not call | every `/projects/*` route answers `not_found`, as for a project the caller is not a member of, so a runner sees no card, message, request or member by construction; every other authenticated route (`/me`, `/me/resume`, `/runners/*`, `/agents/*`, `/requests`, `/auth/*`, `GET`/`POST /projects`) answers `forbidden` without `details.scope` |
 | Who may call `/runner/*` | runners only: a human or agent caller is `forbidden` there |
-| Idempotency | `PATCH /runner` carries `Idempotency-Key` (§1.5); `hello`, `status` and `join` are exempt (§15.8) |
+| Idempotency | `PATCH /runner` carries `Idempotency-Key` (§1.5); `hello`, `status`, `join` and `usage` are exempt (§15.8) |
 | Presence | computed like a member's (§5.3): `online` while its long-poll is open or after a call in the last 120 s, `away` up to 2 h, then `offline`. Never stored, never an event |
 
 ### 15.2 Pairing
@@ -16150,6 +16156,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`, `replaced`, `replace_failed` (§15.14) |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
+| `open_run` | supervised only: `{id, opened_at}` of the run the hub saw open, else `null`. `id` is opaque, issued by the hub, unique within the placement and never issued again; `opened_at` is the `reported_at` of the report that opened it (§15.7). The runner names `id` in the run's usage record (§15.15). A new `generation` sets it to `null` |
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
 | `session_hint` | from the runner's report: what the operator types to look at the session; never a secret by construction |
 | `logs_hint` | set by the hub: `maity runner logs <placement id>` |
@@ -16354,7 +16361,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `restarts` | integer | restarts in this generation |
 | `sessions` | integer | fresh sessions started in this generation; every other start resumes the placement's session (§15.14) |
 | `last_activity_at` | timestamp or `null` | the latest harness output or loop call the runner saw; clamped like `since`; a report changing only this field is sent at most once a minute and writes no event (§15.14) |
-| `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14) |
+| `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14). A report whose `state` is not `running` carries no `run` and ends an open run. A run opens only when an accepted report of the placement's current generation changes `run` to `open` while none is open: the hub then issues the run an id and keeps that report's `reported_at`, both on the placement as `open_run` (§15.5, §15.15), which the answer carries. A repeat (a `seq` not above the stored one, answered with the stored placement and its `open_run`) and a report changing only `last_activity_at` keep the open run's id and time, and a report for an older generation opens nothing. After a new generation, the first report of that generation with `run: open` opens a run, whatever `run` the stored report holds. Any accepted report that does not keep a run open ends it, whatever its generation |
 | `nudge` | `{id, outcome}` or absent | the outcome of the placement's latest nudge, `woken`, `resumed` or `left_running` (§15.14); a different `id` from the placement's current nudge is ignored |
 | `handover` | `{transcript: "received"}` or absent | on the new placement of a `full` replacement: the transcript is in the clone (§15.14); anywhere else `invalid` |
 | `retry_at` | timestamp or `null` | when the runner starts it again; `null` when it will not |
@@ -16549,6 +16556,7 @@ Runner credential, signed (§15.1).
 | PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
+| POST | `/runner/placements/{id}/usage` | `{run, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same body; supervised placements only, for the placement's open `run` (`run_closed` otherwise); no `Idempotency-Key`: the `run` is its key; §15.15 |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable). `Idempotency-Key` required |
 
 ```json
@@ -16577,6 +16585,7 @@ A placement as the runner reads it:
   "health": { "flapping": false,
               "settings": { "hang_after_minutes": 30, "reply_within_minutes": 10, "tool_call_max_minutes": 120 } },
   "nudge": null, "replace": null, "handover": null,
+  "open_run": null,
   "seq": 41
 }
 ```
@@ -16590,7 +16599,9 @@ A placement as the runner reads it:
   first start needs a pickup. `credential_expected: true`: the placement
   has a `credential_id`, so a missing file is `join_failed` with
   `detail: credential_missing`, never a silent second join. `seq` is
-  the highest report counter the hub has stored. Never in this shape:
+  the highest report counter the hub has stored. `open_run` is as in
+  §15.5: the id the runner names in a run's usage record (§15.15), here
+  and in the answer to every status report. Never in this shape:
   `briefing`, the join URL or code, `approval`, `created_by`.
 - **What a runner reads.** Its projects are those it is attached to plus
   those where it still has an active placement (a detached runner's
@@ -17891,6 +17902,219 @@ A nudge, a replacement and a flapping placement also emit
 **Not decided here.** Step 4 of the runner work, one agent per task with
 a fresh replacement after a review, builds on the replacement above and
 is a contract of its own.
+
+### 15.15 Usage: tokens and cost per run, card, instance and agent
+
+Card tsk-m6sq1g0xwwn5, runner step 3. The maintainer decided the design
+on 2026-11-11:
+- supervised placements only, for now (req-6f69nz9gdqq8);
+- a run during which the instance holds several cards counts in full
+  for each of them, marked as shared, and is never split
+  (req-j9pyk9p5q3b9);
+- no model name in a usage record (req-dqe2vaa5wkkg); a placement's
+  `model` (§15.5) and a session's (§5) stay as they are;
+- card totals for the project's human members and the agents whose runs
+  counted for the card (req-272525w91jvf, req-2rfzehtgytp0), nothing on
+  a public page;
+- instance and agent totals by the owner boundary, the same for humans
+  and agents: the agent's owner and the owner's own agents with trust
+  `admin`, nobody of another owner, so a human with `members:admin` who
+  does not own the agent, the project's owner included, reads none
+  (req-xgj91endejrk, req-cyee4wf84bs6);
+- a run counts for every card held at any time during it
+  (req-d5yq24ca6vh6), picked by hub time with a run id the hub issues,
+  its losses accepted as listed below (req-ej8gw7hcdmjj).
+
+Everything else in this section is the contract's own detail within that
+design.
+
+**What the runner reads.** A supervised run's harness writes
+machine-readable output, and the runner reads it already (§15.14,
+"Activity"). Where that output reports usage, the runner takes from the
+run's final result, or sums over its turns where there is no final
+total: input tokens, output tokens, tokens read from and written to the
+prompt cache, and a cost figure the harness computed itself. As with the
+reasons a run ends, a number is read only once it has been verified on
+a real run of that harness and version; anything else is left out,
+never guessed. An interactive placement reports no usage: its runner
+reads no stream from it. Prompts, replies, tool calls, file contents,
+account names, keys, the login method, the model the run used and the
+provider's request ids never leave the runner with a record.
+
+**The record.** `POST /runner/placements/{id}/usage`, runner credential
+(§15.8), one record per run, sent when the run's work has ended and
+before the runner reports the run's end (below, "When a record is
+taken"):
+
+| Field | Values | Meaning |
+|---|---|---|
+| `run` | an id the hub issued | the placement's `open_run.id` (§15.5), as the answer to the report that opened the run gave it (§15.7) |
+| `started_at`, `ended_at` | timestamps | the runner's own figures, shown as sent; they pick no card and are clamped for nothing |
+| `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens` | integers from 0 to 10^12, or `null` | `null`: the harness did not report it |
+| `cost` | `{amount, currency}` or `null` | the harness's own figure only: `amount` a decimal string from 0 to 10^9 with at most 6 decimals, `currency` an ISO 4217 code in capitals; `null` when the harness gives none |
+
+- Only the placement's runner sends it; for any other runner the
+  placement is `not_found`, as on every runner route (§15.8).
+- `201` with the stored record, which adds the hub's `received_at`. A
+  record for a placement whose `mode` is `interactive` is `invalid`
+  (`details.reason: interactive`). A placement that is closed takes no
+  record (`not_found`).
+- **A repeated record.** The call carries no `Idempotency-Key` (§1.5):
+  the `run` is its key, and a run has at most one record. A second
+  record for the same `run` with the same body answers `200` with the
+  stored record and changes nothing, so a resend after a lost answer is
+  no error while the run is still open (below). One with any other
+  number, time or cost is `conflict` (`details.reason: run_recorded`,
+  with the stored record in `details.record`): a runner that counts a
+  run twice shows it instead of hiding it. The hub never issues a `run`
+  twice within a placement, so no later run can be mistaken for it.
+- The record writes no event: one per run would fill the history. The
+  totals are read on demand.
+
+**When a record is taken.** The placement keeps `open_run` (§15.5): the
+id the hub issued for its open run and its `opened_at` (`run_opened_at`
+below), the hub time of the report that opened it (§15.7). It is new hub state on the
+placement, not a log. A run opens only on a transition: an accepted
+report of the placement's current generation that changes `run` to
+`open` while no run is open. A repeat, a report that changes only
+`last_activity_at` and a report for an older generation never open
+one, so the interval never restarts within a run. The run stays open
+until the placement's next accepted report, of any generation, that
+does not keep it open: `run: waiting`, or a `state` other than `running`
+(`rate_limited`, `exited`, `failed`, `stopped` and the rest), which
+carries no `run`; `open_run` is then `null`. A report repeating `run:
+open` keeps the run and its time; a supervised `running` report without
+`run` (as after a runner's own restart, `adopted`) leaves `open_run` as
+it is, and a runner that lost the id reads it from the placement
+(`GET /runner/placements`). A record is taken only when
+its `run` is the placement's open run; any other record — one that
+arrives after its run ended, or names a run the hub never opened — is
+`conflict` (`details.reason: run_closed`). The check and the store are
+one step, so a run has at most one record. The runner sends the report
+that ends a run only after its usage call has answered, or after it
+has given the call up following retries for at most 5 minutes. A record
+the hub never accepted is lost; after unanswered retries the runner
+cannot know whether its first send was stored, and a stored record
+stays in the totals. While it retries, the run stays open and silent, and
+the hub counts that silence as for any open run (§15.14). A record never lands on another run's cards, and a
+record refused as `run_closed` is lost from every total. A new generation (§15.5: a change of the
+spec, a restart, a rejoin) ends an open run at that moment: `open_run`
+becomes `null`, and the old generation's run takes no record
+(`run_closed`). A report of an older generation ends an open run like
+any other but never opens one (§15.7), so a run the old process opens
+before the runner acts on the new generation has no `open_run` either
+and its record is `run_closed`. The new generation's first report with
+`run: open` opens a run, whatever `run` the stored report still holds.
+
+**When the hub starts keeping usage.** The hub release that builds this
+section opens a holding, from the moment of its migration, for every
+card an instance holds at that moment, so cards claimed earlier count
+for later runs. The hub stores no `run` before that release, so the
+first report after the upgrade that carries `run` only stores it and
+opens nothing: a run already going then has no `open_run`, and its
+record is `run_closed`. The next change of `run` to `open` opens a run
+as above.
+
+**No price list in the hub.** The hub never turns tokens into money. A
+cost is shown only where the harness reported one, summed per currency;
+a total says how many of its runs had a cost (`runs_with_cost`), so a
+partial sum is never taken for the whole.
+
+**Which cards a run counts for.** The runner does not know which card an
+agent works on, and its clock picks nothing. When it stores the record,
+the hub records on the run every card the placement's instance held at
+any time between `run_opened_at` and the record's `received_at` (§6.5),
+both the hub's own times: the cards it held when the run opened and the
+ones it claimed before the record arrived, whether it then closed them,
+released them or handed them over. A report to `review`, or a card set
+`blocked`, keeps the claim (§6.5), so a card waiting in review keeps
+counting for every later run while its holder still holds it; a close
+(`done`, `cancelled`) or a release ends it. A run's work often ends a
+card before the run ends (a report with `done`, a release), so the cards
+held only when the record arrives would miss the very card the run
+finished. A run while the instance held no card counts for no card. A
+card has one holding instance at a time, so no run counts twice for one
+card, however many instances of an agent work at once.
+
+The card row keeps only its current claim, so the hub keeps a
+**holding** per card and instance — `{card, membership, instance, from,
+until}` — for this alone: new hub state, a table of its own, which the
+card's claim columns do not replace. Every change of a card's holding
+instance writes it, opening a holding or ending one at that moment:
+claim, takeover, cover, an `assign` that moves an expired claim to the
+assignee (§6.4), a rejoin with `replaces` (§6.5, §15.14), release, the
+removal of the holding member (§6.2), isolation, close and cancel. A
+claim that names no instance opens no holding until an instance holds
+it; a lease that runs out ends nothing, as it releases nothing, and
+neither does a placement that closes: a revoked instance keeps its
+claims until a `replaces` join, a takeover or a human moves them
+(§6.17). A holding is kept while it is open and for 30 days after its
+own `until`, then deleted; a record counts only the holdings still kept,
+so a run open for more than 30 days may miss a card it ended in its
+first days. A holding that touches [`run_opened_at`, `received_at`] at
+any point counts.
+- **A card's total** is the usage of the runs recorded for it. A run
+  recorded for two cards counts in full for each, and both cards show it
+  as shared (`shared_runs`); the hub never splits it, since any split
+  would be a guess.
+- **An instance's and an agent's totals** count each run once, whatever
+  it was recorded for. An agent's total adds its instances. A run counts
+  for the instance the placement had when the record was stored; an
+  instance replaced in place (§6.5, a rejoin with `replaces`) keeps its
+  totals under its own address, and the agent's total keeps both.
+
+**Sums and retention.** The hub keeps the records and, per day (UTC, by
+`received_at`), running totals per project and instance (the agent's
+instance), and per card and instance; a card's, an agent's and a
+project's totals add those. A record is folded 90 days after its `received_at`, once its run is
+no longer open (so a resend can never find it gone and count the run
+again), into
+those daily totals and deleted; the totals stay, still keyed by the
+agent's instance, so a deletion below finds them. The runs listed below
+are the records still kept.
+
+**Reading it.** Every total has one shape:
+
+```json
+{
+  "runs": 41, "shared_runs": 3,
+  "input_tokens": 1830000, "output_tokens": 212000,
+  "cache_read_tokens": 15400000, "cache_write_tokens": 920000,
+  "cost": [ { "currency": "USD", "amount": "38.214500" } ],
+  "runs_with_cost": 41,
+  "days": [ { "date": "2026-11-10", "runs": 12, "input_tokens": 540000, "…": "" } ]
+}
+```
+
+Each token total sums the runs that reported that number. `shared_runs`
+is in a card's total only. `days` covers the last 90 days, oldest first,
+and leaves out days without a run.
+
+| Endpoint | Who | Returns |
+|---|---|---|
+| `GET /projects/{owner}/{slug}/tasks/{id}/usage` | a human member of the project, and an agent member whose runs counted for the card; never through a public page | the card's total, and its runs still kept (`{run, instance, started_at, ended_at, the four token fields, cost, shared_with}`, newest first, paged §1.4); `shared_with` lists the other cards' ids the reader may read, else their number alone |
+| `GET /projects/{owner}/{slug}/members/{id}/usage` | the agent profile's owner, and an agent of the same owner with trust `admin` in this project; nobody of another owner, `members:admin` included | the member's total in this project, and `instances`: each instance's total with its address |
+| `GET /agents/{id}/usage` | the agent profile's owner, and an agent of the same owner with trust `admin` in a project, which reads that project's total only (an agent credential belongs to one project, §2.2); nobody of another owner | the agent's total across its projects, and `projects`: each project's total with its `full_name`, where the owner can still read it, else its id |
+
+For any other caller each answers as a read of what it cannot see does
+(`not_found` or `forbidden`, as the route's own read). A member that is
+no agent has no usage: its member endpoint answers `invalid`
+(`details.reason: agents_only`). A public page (§16.9), the swarm
+statistics (§6.22) and the project badge (§6.20) never show usage.
+
+**Deletion and the export.** Usage belongs to the agent profile.
+Deleting the profile (§6.3) deletes its records and every daily total of
+its instances, the folded ones included, so a card's total drops that
+agent's share too; deleting the account that owns it does the same
+(§2.9). Deleting a project deletes the
+records and totals of that project; the agent's totals in its other
+projects stay. The owner's export
+(`GET /me/export`, §2.9) lists, per agent profile they own, the agent's
+daily totals per project, not the runs.
+
+**Not decided here.** Interactive placements, which need the harness's
+own session log, are a card of their own. So is any price list, budget
+or limit: the hub stays out of pricing and billing.
 
 ## 16. Instance administration
 
@@ -22010,9 +22234,7 @@ device; the browser's own permission is per browser and is not stored.
   while I'm online in the web app"): while the human is present in the
   web app, notification mail of `immediate` items waits, and only what
   is still unread is mailed once they have left (§18.5, "Held while
-  present"). `false` mails as without it. Pending: this field,
-  `POST /me/presence` and `online_grace_minutes` (§16.2) arrive with
-  their implementation; until then nothing is held.
+  present"). `false` mails as without it.
 - **`POST /me/presence`** (no body, `204`): a dashboard tab says that the
   human is present. A human's cookie session only, with `X-CSRF-Token`
   (§2.1); an agent, a runner, a bridge or a call with `Maity-For` is

@@ -2150,6 +2150,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .broadcasts { margin-top: 24px; }
 .broadcasts-agents { display: grid; gap: 4px; border: 1px solid var(--border); padding: 8px; margin: 0; }
 .broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }
+/* As Allowed projects' boxes: a row tall enough that each box keeps axe's 24 px target (its own tab now, e2e). */
+.broadcasts-agents .check { min-height: 28px; }
+.broadcasts-agents input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 
 /* §16.13 The product line: at the end of every page the dashboard draws (js/product-line.js),
    never sticky, small and muted; wider than phone width it wraps between its parts, never sideways. */

@@ -264,6 +264,7 @@ def test_health_says_database_unavailable_without_driver_text(
     response = client.get("/api/v1/health")
     assert response.status_code == 503
     assert response.headers["Maity-Error"] == "database_unavailable"
+    assert response.headers["Retry-After"] == "5"
     assert response.json()["error"]["details"] == {}
     assert "sqlite" not in response.text.lower()
 
@@ -282,6 +283,7 @@ def test_any_call_that_needs_the_database_answers_database_unavailable(
     response = client.get("/api/v1/me", headers={"Authorization": f"Bearer {agent.value}"})
     assert response.status_code == 503
     assert response.headers["Maity-Error"] == "database_unavailable"
+    assert response.headers["Retry-After"] == "5"
     assert "sqlite" not in response.text.lower()
 
 

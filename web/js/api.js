@@ -726,11 +726,20 @@ window.Maity = window.Maity || {};
   // member or guest, to those trusts and the work roles; capabilities, admin,
   // owner, proxy and manager stay a human's.
   const AGENT_TRUSTS = ["member", "guest"];
-  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team"];
+  const AGENT_ROLES = ["coder", "reviewer", "tester", "designer", "ops", "writer", "red-team", "blue-team", "purple-team", "expert"];
   // Every built-in role (§2.3), as the hub's one list; and what a member may
   // give an agent of their own (§3.1: not ops, not proxy).
-  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team"];
+  const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
   const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // §2.3 "The expert" (routes/members.py): the role expert waits until the member holds no
+  // card and is assigned no open one; the fixture has no takeovers or covers to add.
+  function holdsCards(slug, target, body, path) {
+    if (body.role !== "expert" || target.role === "expert") return;
+    const items = (fixtures()[slug + "/tasks.json"] || { items: [] }).items;
+    if (items.some((t) => !["done", "cancelled"].includes(t.status) && (t.assigned_to === target.id || (t.claim && t.claim.holder === target.id)))) {
+      fail(409, "conflict", "the member holds cards or has cards on the way to it; settle them before the role is expert", path, { reason: "holds_cards" });
+    }
+  }
   function agentLimits(who, target, body, path) {
     const human = () => fail(403, "forbidden", "a human's change", path, { scope: "members:admin", reason: "humans_only" });
     if (who.kind !== "agent") return;
@@ -4752,6 +4761,36 @@ window.Maity = window.Maity || {};
           return target;
         }
       }
+      // §6.2 "An expert's fields": alone in their PATCH, by the agent's human owner or
+      // members:admin, only on an expert, at once (hub/routes/members.py _expert_fields).
+      if ("expert_for" in body || "expert_sources" in body) {
+        const given = Object.keys(body);
+        const own = ["expert_for", "expert_sources"].filter((k) => k in body);
+        if (given.length !== own.length) fail(400, "invalid", "set them alone", path, { fields: Object.fromEntries(own.map((k) => [k, "alone"])) });
+        const target = member(m[1], m[2], path);
+        if (who.member.kind === "agent") {
+          // An admin agent within §2.3 ᵃ (admin_agents.check_target): another agent with trust
+          // member or guest, never a human's membership and never its own.
+          if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+          if (target.kind !== "agent") fail(403, "forbidden", "an agent never changes a human's membership", path, { reason: "humans_only" });
+          if (target.id === who.member.id || !AGENT_TRUSTS.includes(target.trust)) {
+            fail(403, "forbidden", "an admin agent manages member and guest agents, never itself", path, { scope: "members:admin" });
+          }
+        } else if (!who.admin && !(target.kind === "agent" && target.owner_id === who.member.id)) {
+          fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        }
+        if (target.role !== "expert") fail(400, "invalid", "only an expert has these fields", path, { fields: Object.fromEntries(own.map((k) => [k, "expert_only"])) });
+        const errors = {};
+        if ("expert_for" in body && body.expert_for !== null && [...body.expert_for].length > 120) errors.expert_for = "string_too_long";
+        if ("expert_sources" in body) {
+          if ((body.expert_sources || []).length > 20) errors.expert_sources = "too_long";
+          else if ((body.expert_sources || []).some((a) => !/^[A-Za-z0-9._/-]{1,255}$/.test(a) || a.startsWith("..") || ("/" + a + "/").includes("/../"))) errors.expert_sources = "invalid_path";
+        }
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if ("expert_for" in body) target.expert_for = (body.expert_for || "").split(/\s+/).filter(Boolean).join(" ") || null;
+        if ("expert_sources" in body) target.expert_sources = [...new Set(body.expert_sources || [])];
+        return target;
+      }
       // §3.1 "The owner changes the role": the human who owns the agent, without
       // members:admin, sets its role alone while they could let it join now
       // (hub/routes/members.py _owner_sets_role), to a role a member join may give.
@@ -4772,6 +4811,8 @@ window.Maity = window.Maity || {};
             fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field: "role" });
           }
           if (base === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
+          holdsCards(m[1], target, body, path);
+          if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
           target.role = body.role;
           target.role_base = base;
           return target;
@@ -4820,6 +4861,7 @@ window.Maity = window.Maity || {};
         else if ((body.capabilities || []).some((c) => c !== "tag")) errors.capabilities = "unknown";
       }
       if (Object.keys(errors).length) fail(400, "invalid", "invalid fields", path, { fields: errors });
+      if ("role" in body) holdsCards(m[1], target, body, path);
       if (guarded(m[1], target)) {
         const consent = ("role" in body && body.role !== target.role) || ("trust" in body && body.trust !== target.trust)
           ? consentFor(m[1], who.member, "Change " + target.handle + " to " + [newTrust, newRole].join(" · "))
@@ -4831,7 +4873,11 @@ window.Maity = window.Maity || {};
       const foreign = held.length ? foreignConsent(m[1], who.member, target, who.member.handle + " asks to change " + held.join(", ") + " of " + target.handle + ".") : null;
       const applies = (k) => k in body && !held.includes(k);
       if (applies("trust")) target.trust = body.trust;
-      if (applies("role")) target.role = body.role;
+      if (applies("role")) {
+        // A role change away from expert clears its fields (§6.2 "An expert's fields").
+        if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
+        target.role = body.role;
+      }
       if ("reports_to" in body) target.reports_to = body.reports_to;
       if (applies("areas")) target.areas = [...new Set(body.areas)];
       if (applies("capabilities")) target.capabilities = [...new Set(body.capabilities)];
@@ -5526,6 +5572,21 @@ window.Maity = window.Maity || {};
     // unset, nothing waits for it.
     const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
     return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
+      // §5.4: the bundle is each single route's own answer for this caller, errors included; the
+      // route itself needs no session and stays open in a window. MAITY_FIXTURE_NO_BOOTSTRAP plays
+      // an older hub without it (404).
+      if (method === "GET" && asked === "/bootstrap") {
+        if (window.MAITY_FIXTURE_NO_BOOTSTRAP) fail(404, "not_found", "no such route", fullPath);
+        const project = query.get("project");
+        const ask = [["maintenance", "/maintenance"], ["session", "/auth/session"], ["me", "/me"]];
+        if (project) {
+          const base = "/projects/" + project;
+          ask.push(["head", base + "/events?after=latest&wait=0"], ["project", base], ["members", base + "/members"]);
+        }
+        return Promise.all(ask.map(([key, p]) => fromFixtures("GET", p).then((answer) => [key, { status: 200, body: answer }],
+          (err) => [key, { status: err.status || 500, body: { error: { code: err.code || "internal", message: err.message, details: err.details || {} } } }])))
+          .then((parts) => Object.fromEntries(parts));
+      }
       let path = asked;
       // §16.12: while a window runs the hub refuses nearly everything, before it asks who calls.
       const running = maintenanceView(false);
@@ -5636,6 +5697,59 @@ window.Maity = window.Maity || {};
 
   let skew = 0;
   let sessionBlocked = false;
+
+  // GET /bootstrap (docs/api.md §5.4): the boot's first reads in one call. prime() asks it and keeps
+  // its parts as one-shot answers for exactly those reads: the window, the session, /me and, for
+  // a project view, the project, its members and the event head. The boot's own calls stay where
+  // they are and take their answer from the part, through requestOnce's usual handling (the
+  // session's language, a 401, the 503 window, the time zone). An answer without parts (an older
+  // hub's 404, a limit, a refusal, no answer) keeps nothing: every read goes to its own route.
+  // unprime(token) ends them when that boot is done; they serve no read once `live()` says the
+  // drawing that asked is over; a newer prime replaces them; 15 s at most.
+  let primed = null;
+  let primes = 0;
+  const PRIMED_MS = 15000;
+  // What the fixture hub was asked from the page, in order (smoke counts the boot's calls).
+  const fixtureAsked = [];
+  function prime(project, live) {
+    const base = project ? "/projects/" + projectPath(project) : null;
+    const path = "/bootstrap" + (project ? "?project=" + projectPath(project) : "");
+    if (source === "fixtures") fixtureAsked.push("GET " + path);
+    const answer = (source === "fixtures" ? fromFixtures("GET", path) : fromApi("GET", path))
+      .then((parts) => (parts && parts.session && parts.me && parts.maintenance ? parts : null), () => null);
+    const paths = new Map([["/maintenance", "maintenance"], ["/auth/session", "session"], ["/me", "me"]]);
+    if (base) {
+      paths.set(base, "project");
+      paths.set(base + "/members", "members");
+      paths.set(base + "/events?after=latest&wait=0", "head");
+    }
+    primed = { token: ++primes, at: Date.now(), answer, paths, live: live || (() => true) };
+    return primed.token;
+  }
+  function unprime(token) {
+    if (primed && (token === undefined || primed.token === token)) primed = null;
+  }
+  // The part for this read, once, as a promise of its body or of the single route's ApiError; null
+  // when none is kept for it. `single` asks the route itself when the bundle brought no parts.
+  function fromPrimed(method, path, single) {
+    if (method !== "GET" || !primed || !primed.paths.has(path)) return null;
+    if (Date.now() - primed.at > PRIMED_MS || !primed.live()) { primed = null; return null; }
+    const key = primed.paths.get(path);
+    primed.paths.delete(path);
+    return primed.answer.then((parts) => {
+      const part = parts && parts[key];
+      if (!part) return single();
+      if (part.status >= 200 && part.status < 300) return part.body;
+      const e = (part.body && part.body.error) || {};
+      let details = e.details || {};
+      // A part carries no headers: the wait a 503 window's Retry-After gives comes from its end (§5.4).
+      if (part.status === 503 && details.until && !("retry_after" in details)) {
+        const wait = Math.ceil((Date.parse(details.until) - (Date.now() + skew)) / 1000);
+        if (Number.isFinite(wait)) details = Object.assign({}, details, { retry_after: Math.max(1, wait) });
+      }
+      throw new ApiError(e.message || e.code || ("HTTP " + part.status), part.status, path, e.code || null, details);
+    });
+  }
   const obsoleteSession = (path) => new ApiError("The session ended", 0, path, "aborted");
 
   // §5.1: every absolute time is shown in the account's zone, or the browser's without one. A GET
@@ -5665,9 +5779,12 @@ window.Maity = window.Maity || {};
     const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
-    const p = (source === "fixtures"
-      ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
-      : fromApi(method, path, body, raw, signal)).catch(told);
+    const single = () => {
+      if (source !== "fixtures") return fromApi(method, path, body, raw, signal);
+      fixtureAsked.push(method + " " + path);
+      return fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body);
+    };
+    const p = (fromPrimed(method, path, single) || single()).catch(told);
     if (path === "/auth/session") {
       // Only the newest session read of this session sets the language (review of #1524): an
       // older answer that comes back after it, a 401 above all, would switch a newer session's
@@ -5708,7 +5825,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
@@ -5745,6 +5862,10 @@ window.Maity = window.Maity || {};
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
     getAll,
+    // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
+    prime,
+    unprime,
+    fixtureAsked,
     post: (path, body) => request("POST", path, body || {}),
     put: (path, body) => request("PUT", path, body || {}),
     // PUT of an image as its raw bytes; type is the sniffed Content-Type.
