@@ -1366,7 +1366,7 @@ sets.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count on a pull request that changes code, and that the same holds for one that changes only docs until the maintainer answers req-8se88wy72g6s (as relayed by the review lead in its order 3654; 117419 itself was not readable for this entry); the maintainer's answer to req-8se88wy72g6s (2026-11-12, relayed by the lead in seq 118099): "im moment möchte ich: claude coded / grok, antigravity und chatgpt reviewen. und mindestens 2 reviews möchte ich haben, sollte das nicht einhaltbar sein besprichst du mit mir die situation und wir beschließen den weiteren verlauf." (for now Claude codes and Grok, Antigravity and ChatGPT review; at least two reviews; when that cannot be kept, the lead discusses the situation with him and they decide how to go on), given as the project's own practice, not one the platform imposes; card tsk-tc191z1765fy
-**Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, or the maintainer sets a number of vendors again
+**Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, or the maintainer changes the number of at least two reviews
 **See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
 
 A pull request is merged with two approvals of exactly the head that is
@@ -1390,16 +1390,16 @@ call (seq 104757, each named in the MERGE-READY, seq 113755). A leg counts only 
 head; a false sentence any reviewer finds blocks the merge, and so does a
 P1 or P2 from the second round on. The review lead's MERGE-READY names the
 two legs it counted and their vendors. Which of the reviews in hand
-count is the review lead's decision. The number, at least two reviews,
-is the maintainer's (req-8se88wy72g6s).
+count is the review lead's decision (seq 104757, its stand-in part
+replaced by req-8se88wy72g6s). The number, at least two reviews, is the
+maintainer's (req-8se88wy72g6s).
 
 **Reason:** one waiting leg less than three of three, so a pull request
 no longer waits for the slowest or an absent vendor, while every merge
 still has the view of two model families. The rule began on 2026-11-09 as
-the maintainer's interim while Grok was out. That it stayed after Grok
-was back is a reading of the review lead's rule of 2026-11-10, which
-counts a Grok leg as one of the two, and of the maintainer's correction of
-2026-11-12, which states the two-vendor rule as the team's.
+the maintainer's interim while Grok was out, and stayed after Grok was
+back: the maintainer's answer to req-8se88wy72g6s names Grok, Antigravity
+and ChatGPT as the reviewers.
 
 **Rejected alternatives:**
 - All three vendors on every head (c73e26c4): each pull request waited
@@ -2543,8 +2543,9 @@ below and the lead's announcement of the VERDICT rule (2026-11-04)
 - tsk-x8ctwgw2cmwc and tsk-rkp7pvkshta2 allow a merge with two of three on the maintainer's answer per pull
   request; c73e26c4-60b2-49e7-9df8-278fca4fcb2e required all three approvals before any merge (superseded on 2026-11-09 by
   96581882-bac8-4611-9124-cd4a2700c57a, two approvals from two vendors). Settled: under the two-vendor rule the
-  review lead decides which legs count and who stands in, and `CONTRIBUTING.md` marks both outage rules
-  superseded.
+  review lead decides which of the reviews in hand count; a missing leg goes to the lead, and the maintainer and
+  the lead agree how to go on, stand-ins included (req-8se88wy72g6s, 2026-11-12); `CONTRIBUTING.md` marks both
+  outage rules superseded.
 
 tsk-z3j36sy534ww was announced as in force and is written in `CONTRIBUTING.md`, marked as an exception to an
 older entry; that entry is not changed. Which version holds, there and in the first two items, is open.
