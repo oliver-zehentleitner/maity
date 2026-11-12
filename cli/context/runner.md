@@ -2242,10 +2242,10 @@ answer: something in the clone may still be needed.
 
 **Id:** 4c984f97-09b8-479b-bd1a-f56bb41057fd
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
-**Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); open with the owner: req-r2egh0ry0c4c (when the older sessions restart), req-vpcfh15h247c (ssh targets); docs/api.md §15.16
-**Revisit when:** the owner answers either request, a harness tool ships without an installer the runner can run in the user's space, or a tool's update needs a step only a person can do
+**Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); the owner's answers of 2026-11-12: req-r2egh0ry0c4c (older sessions restart at their next idle point), req-vpcfh15h247c (local target only, ssh targets reported); docs/api.md §15.16
+**Revisit when:** an ssh target's owner wants the runner to manage its tools, a harness tool ships without an installer the runner can run in the user's space, or a tool's update needs a step only a person can do
 
 Not built yet (tsk-29nmydbzrg5z): this records the contract's decision;
 the runner and the dashboard follow in their own pull requests.
@@ -2255,9 +2255,11 @@ sessions started by an older `maity` stayed on it until someone
 restarted them. The contract lets the runner do it, per tool and only
 when its owner says so in the runner's configuration (`install`,
 `update = "daily"`); without that it touches nothing, as before. The
-shape is the owner's (confirmed); the parts below that are not in it are
-this design's (inferred), and the two timing and scope points are open
-with the owner, so the entry stays open until those answers.
+shape is the owner's (confirmed), and so are two points he answered for
+this contract: a session an older `maity` started restarts at its next
+idle point, never mid-step, and the runner manages only its own machine,
+reporting what it finds on an ssh target. The parts below that are not
+in his words are this design's (inferred).
 
 - **The installer is fixed in the runner's code**, per tool, never
   taken from the configuration or the hub: a path or URL in a file the
@@ -2291,3 +2293,8 @@ Rejected:
 - An event per attached project for "Update now": the reason above.
 - Project admins asking for an update: the runner's software is its
   owner's, as its configuration is.
+- Restarting the older sessions at once, after the stop grace: faster,
+  but it can end a task mid-step (the owner's answer).
+- Installing on ssh targets too: a vendor's installer would run on a
+  machine whose owner did not set it up for that, with more ways to fail
+  (the owner's answer); a later card can add it.
