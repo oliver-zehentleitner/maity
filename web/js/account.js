@@ -301,6 +301,8 @@ window.Maity = window.Maity || {};
     { key: "notifications", path: "/account/notifications", label: () => M.t("menu.notifications") },
     { key: "security", path: "/account/security", label: () => M.t("menu.security"), human: true },
     { key: "orgs", path: "/account/orgs", label: () => M.t("menu.orgs"), human: true },
+    // What one reported and what became of it (§16.8, GET /me/reports, tsk-7ze5w6ymf7bw).
+    { key: "reports", path: "/account/reports", label: () => M.t("menu.reports") },
     { key: "linked", label: () => M.t("menu.linked_accounts"), later: true },
   ];
   const SECURITY = [
@@ -367,6 +369,8 @@ window.Maity = window.Maity || {};
     };
 
     const submit = h("button", { type: "submit" }, M.t("password.submit"));
+    // A sensitive call (§2.8.4): the second factor asked for here when the hub wants it.
+    const stepSlot = h("div", { class: "step-up-slot", hidden: true });
     const form = h("form", {
       class: "project-form",
       novalidate: true,
@@ -384,7 +388,10 @@ window.Maity = window.Maity || {};
         // first, so that it never meets the change (§2.1, §18.2).
         M.notify.halt();
         try {
-          await M.api.post("/auth/password", { current: current.input.value, new: fresh.input.value });
+          // The body checked above, kept: a field edited while the question waits is not sent
+          // unchecked when the call is made again (review of #1547).
+          const sent = { current: current.input.value, new: fresh.input.value };
+          await M.stepUp.run(() => M.api.post("/auth/password", sent), stepSlot, M.t("password.step_up"));
           all.forEach((f) => { f.input.value = ""; });
           status.done();
           append(status.el, h("span", { class: "ok" }, M.t("password.changed")));
@@ -395,6 +402,8 @@ window.Maity = window.Maity || {};
               fields.current ? [current, fields.current === "mismatch" ? M.t("password.mismatch") : String(fields.current)] : null,
               fields.new ? [fresh, fields.new === "too_short" ? atLeast() : String(fields.new)] : null,
             ].filter(Boolean));
+            status.done();
+          } else if (err.code === "cancelled") {
             status.done();
           } else if (err.code === "rate_limited") {
             status.fail(M.t("password.not_changed"), { message: M.t("password.rate") });
@@ -407,7 +416,7 @@ window.Maity = window.Maity || {};
           submit.disabled = false;
         }
       },
-    }, current.nodes, fresh.nodes, repeat.nodes, submit, status.el);
+    }, current.nodes, fresh.nodes, repeat.nodes, stepSlot, submit, status.el);
     const heading = h("h3", { id: "password-heading", tabindex: "-1" }, M.t("password.title"));
     return { el: [heading, h("p", { class: "muted" }, M.t("password.hint")), form], heading };
   }
@@ -527,6 +536,7 @@ window.Maity = window.Maity || {};
     else if (chosen === "settings") headings = await settingsTab(ctx, root);
     else if (chosen === "notifications") headings = await notificationsTab(ctx, root);
     else if (chosen === "security") headings = await securityTab(ctx, root, args[1]);
+    else if (chosen === "reports" && M.report) await M.report.mine(root);
     // The part a moved address asked for starts in sight, its heading focused. The view is put in
     // the page when this returns (js/app.js), before the timeout runs, so the focus holds.
     const wanted = wantedHeading;

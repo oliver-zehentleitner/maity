@@ -1,5 +1,6 @@
-"""docs/api.md §16.9, "The public views of a project": Board, Members and Organisation, pages
-of their own that follow the project's page and what it shows of its people and cards."""
+"""docs/api.md §16.9, "The public views of a project": Board, Team (at members) and
+Organisation, pages of their own that follow the project's page and what it shows of its
+people and cards."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, public_pages
+from maity_hub import clock, public_pages, render
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -66,13 +67,13 @@ def world(make_client: ClientFactory, migrated: Engine, settings: Any) -> World:
 
 
 def test_the_views_are_served_exactly_while_the_page_is(world: World) -> None:
-    for name in ("board", "members", "organisation"):
+    for name in ("board", "team", "organisation"):
         text = view(world.anyone, name)
         assert text is not None and "<script" not in text
         assert f'<link rel="canonical" href="https://hub.example{BASE}/{name}">' in text
     assert view(world.anyone, "inbox") is None
     world.owner.patch("/projects/maintainer/maity", {"public_page": "off"})
-    assert [view(world.anyone, n) for n in ("board", "members", "organisation")] == [None] * 3
+    assert [view(world.anyone, n) for n in ("board", "team", "organisation")] == [None] * 3
 
 
 def test_the_board_shows_id_title_status_and_label_and_never_a_body(world: World) -> None:
@@ -83,7 +84,10 @@ def test_the_board_shows_id_title_status_and_label_and_never_a_body(world: World
     text = view(world.anyone, "board") or ""
     assert "Shipped" in text and "Next up" in text and "Maybe" in text and done in text
     assert "secret body" not in text and "bug" in text
-    after = text.split("<h1>")[1]  # each id links its card's page, nothing else links
+    # Each id links its card's page, and nothing else links but the Report link (§16.9).
+    after = text.split("<h1>")[1].replace(
+        render.report_link(f"{BASE}/board").replace('" rel', '&amp;lang=en" rel'), ""
+    )
     assert after.count("<a ") == 3 and f'href="{BASE}/tasks/{done}"' in after
     assert text.index("proposed") < text.index("open") < text.index("done")
 
@@ -149,9 +153,19 @@ def test_a_holder_is_named_whatever_their_profile_and_a_held_one_is_a_member(
 
 def test_members_names_everyone_with_trust_and_role(world: World) -> None:
     world.anna.patch("/me", {"public_profile": False})
-    text = view(world.anyone, "members") or ""
+    text = view(world.anyone, "team") or ""
     assert '<a href="/anna">Human anna</a> (anna)' in text and "<h2>Others</h2>" not in text
     assert "presence" not in text and "<img" not in text
+
+
+def test_the_team_view_is_at_team_and_headed_team(world: World) -> None:
+    text = view(world.anyone, "team") or ""
+    assert "<h1>" in text and text.split("<h1>")[1].split("</h1>")[0].endswith(": Team")
+
+
+def test_members_serves_no_page_and_redirects_nowhere(world: World) -> None:
+    got = world.anyone.get(f"{BASE}/members", follow_redirects=False)
+    assert got.status_code == 200 and "<title>dashboard</title>" in got.text
 
 
 def test_organisation_shows_the_lines_and_names_everyone(world: World, migrated: Engine) -> None:
@@ -210,27 +224,27 @@ def test_a_card_removed_by_moderation_never_shows_its_title_on_the_board(world: 
 
 def test_the_views_are_in_the_sitemap(world: World) -> None:
     sitemap = world.anyone.get("/sitemap.xml").text
-    for name in ("board", "members", "organisation"):
+    for name in ("board", "team", "organisation"):
         assert f"https://hub.example{BASE}/{name}" in sitemap
 
 
 def test_an_isolated_agent_is_on_no_view_and_a_held_agent_has_no_name(world: World) -> None:
     world.owner.patch("/me", {"public_profile": True})
     agent = world.bot.get("/me").json()["member"]
-    assert f"({agent['handle']})" in (view(world.anyone, "members") or "")
+    assert f"({agent['handle']})" in (view(world.anyone, "team") or "")
     made = world.anna.post(
         "/reports", {"target": {"type": "profile", "id": agent["id"]}, "reason": "spam"}
     )
     assert made.status_code == 201, made.text
     path = f"/admin/reports/{made.json()['id']}/resolve"
     assert world.owner.post(path, {"action": "hide"}).status_code == 200
-    members = view(world.anyone, "members") or ""
+    members = view(world.anyone, "team") or ""
     assert f"({agent['handle']})" not in members and "× coder" in members  # a count, no name
     assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
     boxes = (view(world.anyone, "organisation") or "").count("<li>")
     isolate = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
     assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
-    members = view(world.anyone, "members") or ""
+    members = view(world.anyone, "team") or ""
     assert f"({agent['handle']})" not in members and "× coder" not in members
     assert (view(world.anyone, "organisation") or "").count("<li>") == boxes - 1  # no box
 
@@ -238,7 +252,7 @@ def test_an_isolated_agent_is_on_no_view_and_a_held_agent_has_no_name(world: Wor
 def test_an_agent_on_members_links_to_its_page_under_its_owner(world: World) -> None:
     world.owner.patch("/me", {"public_profile": True})
     handle = world.bot.get("/me").json()["member"]["handle"]
-    members = view(world.anyone, "members") or ""
+    members = view(world.anyone, "team") or ""
     assert f'<a href="/maintainer/agents/{handle}">' in members
     page = world.anyone.get(f"/maintainer/agents/{handle}")
     assert page.status_code == 200 and "<title>dashboard</title>" not in page.text

@@ -152,7 +152,11 @@ class AsUser:
         Links are listed, never followed."""
         if self.direct:
             found: list[tuple[str, str, int]] = []
-            for root, dirs, files in os.walk(path):  # does not descend into links
+
+            def unreadable(exc: OSError) -> None:
+                raise exc  # an unlisted directory would look empty
+
+            for root, dirs, files in os.walk(path, onerror=unreadable):  # no links followed
                 for name in dirs + files:
                     full = Path(root) / name
                     mode = full.lstat()
@@ -168,6 +172,18 @@ class AsUser:
             kind, size, where = item.split(" ", 2)
             entries.append((where, kind, int(size)))
         return entries
+
+    def inode(self, path: Path) -> int:
+        """The inode of `path` itself on the agents' side, a link not followed: `ls -di`,
+        which BSD, macOS and GNU all print the same way (POSIX follows no link named as an
+        operand without -H or -L)."""
+        if self.direct:
+            return os.lstat(path).st_ino
+        done = self.run(["ls", "-di", "--", str(path)])
+        number = done.stdout.split(maxsplit=1)[0] if done.stdout.strip() else ""
+        if done.returncode != 0 or not number.isdigit():
+            raise OSError(f"cannot read the inode of {path} on the agents' side")
+        return int(number)
 
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the

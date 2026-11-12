@@ -17,7 +17,19 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, state
-from . import capabilities, config, limitread, loop, operate, serve, stub, supervisor, targets
+from . import (
+    capabilities,
+    config,
+    install,
+    limitread,
+    loop,
+    operate,
+    serve,
+    stub,
+    supervisor,
+    targets,
+    trust,
+)
 from .asuser import RUNNER, AsUser
 
 STATE_FILE = serve.RUNNER_FILE
@@ -549,13 +561,30 @@ def cmd_status(args: argparse.Namespace) -> int:
         state.load_state(cfg.state_dir, name=serve.STATUS_FILE) if cfg.state_dir.is_dir() else {}
     )
     running = _alive(current.get("pid"))
+    # The supervisor's own record of each placement: its state and, while one runs, the
+    # line to attach to its session (the agents keep running without the service).
+    actual = (
+        state.load_state(cfg.state_dir, name=supervisor.ACTUAL_FILE)
+        if cfg.state_dir.is_dir()
+        else {}
+    )
+    placements = []
+    for placement in current.get("placements") or []:
+        if not isinstance(placement, dict):
+            continue
+        rec = actual.get(str(placement.get("id")))
+        rec = rec if isinstance(rec, dict) else {}
+        live = rec.get("state") in ("starting", "running")
+        hint = rec.get("session_hint") if live else None
+        placements.append({**placement, "state": rec.get("state"),
+                           "attach": hint if isinstance(hint, str) else None})  # fmt: skip
     view: dict[str, Any] = {
         "hub": paired.get("hub"),
         "runner_id": paired.get("runner_id"),
         "service": "running" if running else "not running",
         "connected": bool(current.get("connected")) and running,
         **{k: current.get(k) for k in ("session_id", "error", "retry_at", "updated_at")},
-        "placements": current.get("placements") or [],
+        "placements": placements,
     }
     if args.json:
         print(json.dumps(view, indent=2))
@@ -568,12 +597,14 @@ def cmd_status(args: argparse.Namespace) -> int:
         retry = f"; next try {show(view['retry_at'])}" if view["retry_at"] and running else ""
         print(f"last     {show(view['error'])}{retry}")
     for placement in view["placements"]:
-        if isinstance(placement, dict):
-            print(
-                f"placement {show(placement.get('id'))}  {show(placement.get('project'))}  "
-                f"generation {show(placement.get('generation'))}  "
-                f"desired {show(placement.get('desired'))}"
-            )
+        print(
+            f"placement {show(placement.get('id'))}  {show(placement.get('project'))}  "
+            f"generation {show(placement.get('generation'))}  "
+            f"desired {show(placement.get('desired'))}  "
+            f"state {show(placement.get('state') or '-')}"
+        )
+        if placement["attach"]:
+            print(f"  attach   {show(placement['attach'])}")
     return 0
 
 
@@ -593,6 +624,19 @@ def _operate(name: str) -> Any:
         try:
             result: int = getattr(operate, name)(cfg, args)
         except operate.Refused as exc:
+            raise Refused(str(exc)) from None
+        return result
+
+    return handler
+
+
+def _installer(command: Any) -> Any:
+    """install/uninstall, their refusals as this module's (exit 2)."""
+
+    def handler(args: argparse.Namespace) -> int:
+        try:
+            result: int = command(args)
+        except install.Refused as exc:
             raise Refused(str(exc)) from None
         return result
 
@@ -622,6 +666,11 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r = rsub.add_parser("limitread")
     r.add_argument("path")
     r.set_defaults(handler=lambda a: limitread.main([a.path]))
+    # Internal too: Claude Code's folder trust for a clone, recorded on the agents' side (trust).
+    r = rsub.add_parser("trust")
+    r.add_argument("home")
+    r.add_argument("clone")
+    r.set_defaults(handler=lambda a: trust.main([a.home, a.clone]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)
@@ -688,10 +737,57 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         "unit",
         help="print the systemd unit for running serve as a service",
         description="Print the systemd unit shipped with this package; its comments say how "
-        "to install it (`maity runner unit > /etc/systemd/system/maity-runner.service`).",
+        "to install it by hand (`maity runner unit > /etc/systemd/system/maity-runner.service`). "
+        "`sudo maity runner install` does those steps.",
         formatter_class=fmt,
     )
     r.set_defaults(handler=cmd_unit)
+
+    r = rsub.add_parser(
+        "install",
+        help="as root: set this machine up to run the runner as a systemd service",
+        description=f"Linux with systemd and tmux, as root. Creates the {install.USER} system "
+        f"user and {install.HOME} (state, workspaces), writes {install.CONFIG} and "
+        f"{install.UNIT_PATH} with the path of this maity, pairs as {install.USER}, enables the "
+        "service and runs `maity runner check`. Existing files are left as they are unless "
+        "--force. While the configuration is not one serve would accept (no [limits] or "
+        "[harness.<id>] yet), the service is enabled but not started, and what is missing is "
+        "listed. Running it again is safe: it creates only what is missing and pairs only an "
+        "unpaired runner; an already paired one needs no code. The paths are fixed; other paths "
+        "are the manual steps of `maity runner unit`. Anything on those paths that is not as "
+        "install would have made it (a link, another owner, a directory or a file of root's "
+        "others can write) stops it before any change; a mode that only differs from "
+        "install's is set back. The workspaces a kept configuration names are not checked.",
+        formatter_class=fmt,
+    )
+    r.add_argument("url", help="the pairing URL (https://<hub>/r/<token>)")
+    code = r.add_mutually_exclusive_group()
+    code.add_argument("--code", help="the single-use pairing code")
+    code.add_argument("--code-file", help="read the code from this file, or stdin with -")
+    r.add_argument("--force", action="store_true", help="rewrite the configuration and the unit")
+    r.set_defaults(handler=_installer(install.cmd_install))
+
+    r = rsub.add_parser(
+        "uninstall",
+        help="as root: stop and remove the runner's systemd service",
+        description=f"Stops and disables the service, ends the agents it started (`stop-all`) "
+        f"and removes {install.UNIT_PATH}; when stopping fails, nothing is removed unless "
+        f"--force. With --purge also {install.HOME} (state, credential, workspaces with any "
+        f"unpushed work), {install.CONFIG.parent} and the {install.USER} user, if install made "
+        f"them ({install.RECORD} says so); otherwise --purge refuses before any change "
+        f"while either directory exists. When it cannot tell that the agents stopped (no "
+        "configuration, one that does not load), it removes nothing either, and those are "
+        "checked before the service is disabled. --purge removes the account first, so a "
+        "failed userdel leaves the account, its files and the configuration for the next "
+        "--purge; the unit is already gone by then. "
+        "The hub keeps listing the runner until it is removed in the dashboard.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--purge", action="store_true", help="also remove state, workspaces and user")
+    r.add_argument(
+        "--force", action="store_true", help="go on when stopping the service or its agents fails"
+    )
+    r.set_defaults(handler=_installer(install.cmd_uninstall))
 
     def runner_cmd(name: str, summary: str, description: str) -> argparse.ArgumentParser:
         r: argparse.ArgumentParser = rsub.add_parser(

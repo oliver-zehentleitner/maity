@@ -14,6 +14,7 @@ changes a card or its notes calls `public_pages.touch` for the kind `card`.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from html import escape
 from typing import Any
 
@@ -118,7 +119,7 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
     content = (
         f'<p class="eyebrow"><a href="/{escape(full, quote=True)}/board">'
         f"{escape(project.name)}: Board</a></p>"
-        f"<h1>{escape(card.title)}</h1>"
+        f"<h1>{escape(card.title)}</h1>{render.report_link(f'/{full}/tasks/{card.id}')}"
         f'<p><span class="tag">{escape(card.id)}</span> '
         + " ".join(f'<span class="tag">{tag}</span>' for tag in tags)
         + "</p>"
@@ -190,13 +191,13 @@ def of_project(conn: Connection, project_id: str) -> list[str]:
     )
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     """Every card of a project that may have a page; `render_card` decides for each."""
     return list(
         conn.execute(
             select(t.card.c.id)
             .select_from(t.card.join(t.project, t.project.c.id == t.card.c.project_id))
-            .where(t.project.c.public_page == "on")
+            .where(t.project.c.public_page == "on", *public_pages.only(t.card.c.id, among))
             .order_by(t.card.c.id)
         ).scalars()
     )

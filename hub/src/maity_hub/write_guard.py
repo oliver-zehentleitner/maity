@@ -88,6 +88,12 @@ def _before(
 
 
 def _forget(conn: Any) -> None:
+    # An invalidated connection (a statement cancelled in the driver, a connection lost) takes
+    # its pooled connection and that `info` with it, so there is nothing to clear; reading
+    # `conn.info` there would ask SQLAlchemy to revalidate it inside the transaction and raise
+    # `PendingRollbackError` in place of what ended the transaction.
+    if conn.invalidated:
+        return
     conn.info.pop(_HELD, None)
 
 

@@ -41,6 +41,10 @@ class Settlement:
     # The hub's settings, for a kind whose `go` reads an instance setting (§6.25's transfer and
     # `max_projects_per_owner`); None where the hub closes the request itself.
     hub: Settings | None = None
+    # The answering caller, for a kind whose `go` makes the answerer a member and writes the
+    # change in their name as they become one (§3.4's invitation by handle: `closer` is None
+    # there, as a non-member has no membership to act as); None where the hub closes it.
+    answerer: Any = None
 
 
 class Stale(Exception):
@@ -166,6 +170,7 @@ def settle(
     *,
     reply_id: str | None = None,
     hub: Settings | None = None,
+    answerer: Any = None,
 ) -> None:
     """Settle the request's proposal, if it carries one, in the caller's transaction."""
     proposal = of(request)
@@ -183,5 +188,6 @@ def settle(
     )
     proposer = Actor(request.asked_by, request.asked_session_id, credential)
     _kind(request).settle(
-        conn, Settlement(request, proposal, outcome, proposer, approver, closer, reply_id, hub)
+        conn,
+        Settlement(request, proposal, outcome, proposer, approver, closer, reply_id, hub, answerer),
     )

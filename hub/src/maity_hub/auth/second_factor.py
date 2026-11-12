@@ -58,6 +58,7 @@ _CROCKFORD_READ = str.maketrans({"i": "1", "l": "1", "o": "0"})
 # What a second-factor and an enrolment session may call (§2.8.2, §2.8.5), below
 # `/api/v1`.
 SECOND_STEP_CALLS = {
+    ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/second-factor/verify"),
     ("POST", "/auth/second-factor/email"),  # under `via: email` (§2.8.8)
@@ -72,6 +73,7 @@ MOVED_ENROLMENT_CALLS = {
 }
 MOVED_ENROLMENT_CONFIRM = re.compile(r"/auth/sessions/[^/]+/confirm")
 ENROLMENT_CALLS = {
+    ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/logout"),
     ("POST", "/auth/reauthenticate"),
@@ -108,10 +110,14 @@ def owns_a_project(conn: Connection, human_id: str) -> bool:
     return found is not None
 
 
-def must_enrol(conn: Connection, hub: Settings, human_id: str) -> bool:
+def must_enrol(
+    conn: Connection, hub: Settings, human_id: str, *, current: str | None = None
+) -> bool:
     """`required_admins` for an instance admin or a project owner, or after a reset,
-    and no factor yet; never while the policy is `off` (§2.8.3, §2.8.5)."""
-    current = policy(conn, hub)
+    and no factor yet; never while the policy is `off` (§2.8.3, §2.8.5). `current` is the
+    policy when the caller has read it already."""
+    if current is None:
+        current = policy(conn, hub)
     if current == "off":
         return False
     factor = factor_of(conn, human_id)
@@ -134,15 +140,17 @@ def must_enrol(conn: Connection, hub: Settings, human_id: str) -> bool:
     )
 
 
-def asks(conn: Connection, hub: Settings, human_id: str) -> bool:
+def asks(conn: Connection, hub: Settings, human_id: str, *, current: str | None = None) -> bool:
     """Whether a sign-in of this human has a second step: TOTP when enrolled, and under
-    `email` the mail for everyone else who has, or once had, an address (§2.8.8)."""
-    current = policy(conn, hub)
+    `email` the mail for everyone else who has, or once had, an address (§2.8.8). `current`
+    is the policy when the caller has read it already."""
+    if current is None:
+        current = policy(conn, hub)
     if current == "off":
         return False
     if enrolled(factor_of(conn, human_id)):
         return True
-    return current == "email" and not must_enrol(conn, hub, human_id)
+    return current == "email" and not must_enrol(conn, hub, human_id, current=current)
 
 
 def via(conn: Connection, hub: Settings, human_id: str) -> str:
@@ -173,11 +181,12 @@ class SessionEnded(Exception):
 def state(conn: Connection, hub: Settings, row: Any) -> str:
     """The effective state of a live session: `full`, `second_factor`, `enrolment`, or
     `ended` / `expired` when the session has to end at this call."""
-    off = policy(conn, hub) == "off"
+    current = policy(conn, hub)  # read once: this runs before every dashboard call
+    off = current == "off"
     if row.state == "second_factor":
         if off:
             return "ended"  # §2.8.5: open second steps end when the policy turns off
-        if via(conn, hub, row.human_id) == mail_factor.VIA and policy(conn, hub) != "email":
+        if via(conn, hub, row.human_id) == mail_factor.VIA and current != "email":
             return "ended"  # switched away from `email`: the first factor is done again (§2.8.8)
         if clock.now() - row.created_at >= step_life(conn, hub, row):
             return "expired"
@@ -185,17 +194,17 @@ def state(conn: Connection, hub: Settings, row: Any) -> str:
     if not row.sign_in_complete:  # an enrolment session (§2.8.5)
         if off:
             return "ended"
-        if asks(conn, hub, row.human_id):
+        if asks(conn, hub, row.human_id, current=current):
             # The human enrolled elsewhere meanwhile, or the policy came to ask for a factor
             # they have (the mail): this sign-in never gave a code, so it ends rather than
             # becoming a full session without one.
             return "ended"
-        if must_enrol(conn, hub, row.human_id):
+        if must_enrol(conn, hub, row.human_id, current=current):
             return "enrolment"
         # The policy no longer asks and no factor exists: the sign-in completes as it is.
         sessions.complete_in_place(conn, row)
         return "full"
-    return "enrolment" if must_enrol(conn, hub, row.human_id) else "full"
+    return "enrolment" if must_enrol(conn, hub, row.human_id, current=current) else "full"
 
 
 def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str) -> None:
@@ -203,7 +212,11 @@ def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str
     side effect of the route (§2.8.2, §2.8.5)."""
     if caller.kind != "human" or caller.human_session is None:
         return
-    row = _session(conn, caller.human_session)
+    # The row authentication read in this transaction, after its writes locked it; `_session`
+    # only for a caller built without it.
+    row = caller.session_row
+    if row is None:
+        row = _session(conn, caller.human_session)
     current = state(conn, hub, row)
     if current == "full":
         return

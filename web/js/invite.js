@@ -133,14 +133,26 @@ window.Maity = window.Maity || {};
   // An invitation's state in words; the class keeps the hub's value.
   const STATE_WORDS = {
     open: () => M.t("invite.state.open"), used: () => M.t("invite.state.used"), revoked: () => M.t("invite.state.revoked"),
-    voided: () => M.t("invite.state.voided"), expired: () => M.t("invite.state.expired"),
+    voided: () => M.t("invite.state.voided"), declined: () => M.t("invite.state.declined"), expired: () => M.t("invite.state.expired"),
   };
   function stateOf(x) {
     if (x.used_at) return "used";
     if (x.revoked_at) return "revoked";
     if (x.voided_at) return "voided";
+    if (x.declined_at) return "declined"; // an invitation by handle the person said no to (§3.4)
     if (Date.parse(x.expires_at) <= M.api.now()) return "expired";
     return "open";
+  }
+
+  // The hub's refusals of a handle (§3.4 `details.fields.handle`), in words.
+  const HANDLE_REFUSALS = {
+    format: () => M.t("invite.handle.format"), unknown: () => M.t("invite.handle.unknown"),
+    not_a_person: () => M.t("invite.handle.not_a_person"), member: () => M.t("invite.handle.member"),
+    invited: () => M.t("invite.handle.invited"), with_address: () => M.t("invite.handle.with_address"),
+  };
+  function refused(fields) {
+    return Object.entries(fields).map(([f, r]) => (f === "via" && r === "no_join_host" ? M.t("invite.no_join_host")
+      : f === "handle" && Object.hasOwn(HANDLE_REFUSALS, r) ? HANDLE_REFUSALS[r]() : f + ": " + r)).join("; ");
   }
 
   // A join URL's host, as the person sees it in the link ("join.maity.team").
@@ -182,7 +194,13 @@ window.Maity = window.Maity || {};
     };
     trust.addEventListener("change", drawAhead);
     drawAhead();
+    // Whom (§3.4): a person's handle first, as people know it and need not give out their
+    // address; else an email address the link is bound to and mailed to; else nobody, a
+    // link for whoever holds it. A handle excludes the address, and an invitation by
+    // handle has no link, so the address and the join host's link step back while it is set.
+    const handle = h("input", { id: "invite-handle", type: "text", autocomplete: "off", spellcheck: "false", placeholder: M.t("invite.handle.placeholder") });
     const address = h("input", { id: "invite-address", type: "email", autocomplete: "off", placeholder: M.t("invite.address.placeholder") });
+    const handleOf = () => handle.value.trim().replace(/^@/, "");
     const ttl = h("select", { id: "invite-ttl" }, TTLS.map(([v, l]) => h("option", { value: String(v) }, l())));
     ttl.value = "86400";
     const note = h("textarea", { id: "invite-note", rows: "2", maxlength: "1024", placeholder: M.t("invite.note.placeholder") });
@@ -193,15 +211,22 @@ window.Maity = window.Maity || {};
     const joinHost = session.join_url ? hostOf(session.join_url) : null;
     const viaJoin = joinHost ? h("input", { type: "checkbox", id: "invite-via-join" }) : null;
     if (viaJoin) viaJoin.checked = true;
+    const byHandle = () => {
+      const named = handleOf() !== "";
+      address.disabled = named;
+      if (viaJoin) viaJoin.disabled = named;
+    };
+    handle.addEventListener("input", byHandle);
     const submit = h("button", { type: "submit" }, M.t("invite.create"));
     const form = h("form", {
       class: "invite-form inline-form",
       onsubmit: async (e) => {
         e.preventDefault();
         const body = { trust: trust.value, role: role.value, ttl_seconds: Number(ttl.value) };
-        if (address.value.trim()) body.address = address.value.trim();
+        if (handleOf()) body.handle = handleOf();
+        else if (address.value.trim()) body.address = address.value.trim();
         if (note.value.trim()) body.note = note.value.trim();
-        if (viaJoin) body.via = viaJoin.checked ? "join" : "public";
+        if (viaJoin && !body.handle) body.via = viaJoin.checked ? "join" : "public";
         // The hub counts the note in UTF-8 bytes (§3.4, 1 KiB), not characters.
         if (body.note && encodeURIComponent(body.note).replace(/%[0-9A-F]{2}/g, "x").length > 1024) {
           status.fail(M.t("invite.not_created"), { message: M.t("invite.note.too_long") });
@@ -215,19 +240,21 @@ window.Maity = window.Maity || {};
           made = await M.api.post(ctx.base + "/invitations", body);
         } catch (err) {
           submit.disabled = false;
-          status.fail(M.t("invite.not_created"), err.details && err.details.fields
-            ? { message: Object.entries(err.details.fields).map(([f, r]) => (f === "via" && r === "no_join_host" ? M.t("invite.no_join_host") : f + ": " + r)).join("; ") } : err);
+          status.fail(M.t("invite.not_created"), err.details && err.details.fields ? { message: refused(err.details.fields) } : err);
+          if (err.details && err.details.fields && err.details.fields.handle) handle.focus();
           return;
         }
         submit.disabled = false;
         status.done();
-        address.value = ""; note.value = "";
-        showOnce(made);
+        handle.value = ""; address.value = ""; note.value = "";
+        byHandle();
+        if (made.url) showOnce(made); else sent(made);
         await list();
       },
     },
     h("label", { for: "invite-trust" }, M.t("invite.trust")), trust,
     h("label", { for: "invite-role" }, M.t("invite.role")), role, roleHelp,
+    h("label", { for: "invite-handle" }, M.t("invite.handle")), handle, M.handles.explain("person", handle),
     h("label", { for: "invite-address" }, M.t("invite.address")), address,
     h("label", { for: "invite-ttl" }, M.t("invite.ttl")), ttl,
     h("label", { for: "invite-note" }, M.t("invite.note")), note,
@@ -251,6 +278,14 @@ window.Maity = window.Maity || {};
       window.setTimeout(() => title.focus(), 0);
     }
 
+    // An invitation by handle has no link (§3.4): the person answers it in their inbox.
+    function sent(made) {
+      const who = made.invitee || { handle: made.handle, display_name: made.handle };
+      const title = h("h3", { tabindex: "-1" }, M.t("invite.sent"));
+      append(clear(issued), title, h("p", null, M.t("invite.sent.hint", { name: who.display_name, handle: "@" + who.handle })));
+      window.setTimeout(() => title.focus(), 0);
+    }
+
     async function list() {
       let items;
       try {
@@ -264,12 +299,13 @@ window.Maity = window.Maity || {};
           const state = stateOf(x);
           return h("li", { class: "invite-item invite-" + state, "data-invitation": x.id },
             h("span", { class: "invite-state" }, Object.hasOwn(STATE_WORDS, state) ? STATE_WORDS[state]() : state), " ",
-            h("span", null, x.address ? M.t("invite.for_address", { what: M.trust.words(x), address: x.address }) : M.t("invite.for_link", { what: M.trust.words(x) })),
+            h("span", null, x.handle ? M.t("invite.for_handle", { what: M.trust.words(x), handle: "@" + x.handle })
+              : x.address ? M.t("invite.for_address", { what: M.trust.words(x), address: x.address }) : M.t("invite.for_link", { what: M.trust.words(x) })),
             // Which link went out (§3.4), where the hub lists it.
-            x.via === "join" && joinHost ? h("span", { class: "muted" }, " · ", M.t("invite.via", { host: joinHost }))
+            x.handle ? null : x.via === "join" && joinHost ? h("span", { class: "muted" }, " · ", M.t("invite.via", { host: joinHost }))
               : x.via === "public" && joinHost ? h("span", { class: "muted" }, " · ", M.t("invite.via_public")) : null,
             h("span", { class: "muted" }, " · ", M.t("invite.by", { who: ctx.nameOf(x.created_by) }), " · ",
-              state === "open" ? M.t("invite.until", { when: formatTime(x.expires_at) }) : formatTime(x.used_at || x.revoked_at || x.voided_at || x.expires_at)),
+              state === "open" ? M.t("invite.until", { when: formatTime(x.expires_at) }) : formatTime(x.used_at || x.revoked_at || x.voided_at || x.declined_at || x.expires_at)),
             state === "open" ? h("button", { type: "button", class: "small", "data-focus": "revoke:" + x.id, onclick: async (e) => {
               const b = e.target;
               b.disabled = true;

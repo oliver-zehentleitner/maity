@@ -1142,6 +1142,8 @@ window.MAITY_FIXTURES = {
         "areas": [],
         "capabilities": [],
         "display_name": "Guest Lead",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "guest",
         "id": "hum-guest",
         "joined_at": "2026-10-20T09:00:00Z",
@@ -1155,6 +1157,8 @@ window.MAITY_FIXTURES = {
         "areas": [],
         "capabilities": [],
         "display_name": "Spare",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "spare",
         "id": "agt-x",
         "joined_at": "2026-10-21T08:00:00Z",
@@ -1631,6 +1635,7 @@ window.MAITY_FIXTURES = {
           "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T10:12:00Z",
           "id": "crd-b-0003",
+          "instance": "wle2",
           "last_used_at": "2026-10-21T13:39:30Z",
           "last_used_via": "bearer",
           "member_id": "agt-b",
@@ -1649,6 +1654,7 @@ window.MAITY_FIXTURES = {
           "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T12:10:00Z",
           "id": "crd-c-0003",
+          "instance": "k3pa",
           "last_used_at": "2026-10-21T12:10:00Z",
           "last_used_via": null,
           "member_id": "agt-c",
@@ -1662,6 +1668,7 @@ window.MAITY_FIXTURES = {
           "client": "maity-cli/0.1.0",
           "created_at": "2026-10-21T09:40:00Z",
           "id": "crd-c-0002",
+          "instance": "q7rd",
           "last_used_at": "2026-10-21T12:05:00Z",
           "last_used_via": "bearer",
           "member_id": "agt-c",
@@ -3471,6 +3478,8 @@ window.MAITY_FIXTURES = {
         ],
         "capabilities": [],
         "display_name": "Maintainer",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "maintainer",
         "id": "hum-maintainer",
         "joined_at": "2026-10-21T08:00:00Z",
@@ -3494,6 +3503,8 @@ window.MAITY_FIXTURES = {
           "tag"
         ],
         "display_name": "Agent A",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "agent-a",
         "harness": "Claude Code",
         "id": "agt-a",
@@ -3534,6 +3545,8 @@ window.MAITY_FIXTURES = {
         "briefing": "You build the hub (hub/). First: the credential exchange of docs/api.md §3.",
         "capabilities": [],
         "display_name": "Agent B",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "agent-b",
         "harness": "Claude Code",
         "id": "agt-b",
@@ -3595,6 +3608,8 @@ window.MAITY_FIXTURES = {
         "briefing": null,
         "capabilities": [],
         "display_name": "Agent C",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "agent-c",
         "harness": "Pi",
         "id": "agt-c",
@@ -3653,6 +3668,8 @@ window.MAITY_FIXTURES = {
         "briefing": null,
         "capabilities": [],
         "display_name": "Agent D",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "agent-d",
         "handover": {
           "id": 6001,
@@ -3692,13 +3709,15 @@ window.MAITY_FIXTURES = {
         "briefing": null,
         "capabilities": [],
         "display_name": "Reviewer",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "reviewer",
         "harness": "Codex",
         "id": "agt-r",
         "joined_at": "2026-10-21T08:00:00Z",
         "kind": "agent",
         "last_seen_at": "2026-10-20T18:30:00Z",
-        "model": "unknown",
+        "model": null,
         "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer",
         "paused": null,
@@ -6342,6 +6361,7 @@ window.MAITY_FIXTURES = {
         "id": "prj-maity0000001",
         "name": "Maity",
         "open_requests": 7,
+        "public_page": "on",
         "role": "coder",
         "slug": "maity",
         "state": "build",
@@ -6352,6 +6372,7 @@ window.MAITY_FIXTURES = {
         "id": "prj-sample000001",
         "name": "Sample shop",
         "open_requests": 1,
+        "public_page": "off",
         "role": "coder",
         "slug": "sample",
         "state": "review",
@@ -6430,17 +6451,17 @@ window.MAITY_FIXTURES = {
       {
         "actor": {
           "avatar_url": null,
-          "display_name": "LV Agent",
-          "member_id": "agt-l1"
+          "display_name": "Agent Q",
+          "member_id": "agt-q"
         },
         "at": "2026-10-22T12:55:00Z",
         "id": "ntf-acr-6",
         "kind": "inbox",
         "project": {
-          "full_name": "lv/lasteverlm",
+          "full_name": "ada/elsewhere",
           "member": false,
-          "name": "lasteverLM",
-          "slug": "lasteverlm"
+          "name": "Elsewhere",
+          "slug": "elsewhere"
         },
         "read": false,
         "record": "acr-6",
@@ -6449,7 +6470,7 @@ window.MAITY_FIXTURES = {
           "id": "req-p001",
           "type": "request"
         },
-        "title": "LV Agent asks you: May I take over tsk-77?",
+        "title": "Agent Q asks you: Agent Q proposes a change to its soul",
         "url": "https://maity.team/requests/req-p001"
       },
       {
@@ -6483,6 +6504,7 @@ window.MAITY_FIXTURES = {
         "kinds": {
           "chat": true,
           "inbox": true,
+          "invitation": true,
           "mention": true,
           "security": true
         }
@@ -6499,12 +6521,16 @@ window.MAITY_FIXTURES = {
         "daily_at": "08:00",
         "disabled_at": null,
         "hard_failures": 0,
+        "hold_while_online": true,
         "kinds": {
           "chat": {
             "content": false,
             "mode": "daily"
           },
           "inbox": {
+            "mode": "immediate"
+          },
+          "invitation": {
             "mode": "immediate"
           },
           "mention": {
@@ -6519,7 +6545,7 @@ window.MAITY_FIXTURES = {
         "pending_address": null,
         "quiet_hours": null,
         "sign_in_link": true,
-        "timezone": "Europe/Vienna",
+        "timezone": null,
         "verified_at": "2026-10-01T09:12:00Z",
         "weekly_on": "mon"
       },
@@ -6527,7 +6553,8 @@ window.MAITY_FIXTURES = {
         "inbox",
         "chat",
         "mention",
-        "security"
+        "security",
+        "invitation"
       ],
       "mail_available": true,
       "not_listening": {
@@ -7575,6 +7602,8 @@ window.MAITY_FIXTURES = {
         ],
         "capabilities": [],
         "display_name": "Maintainer",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "maintainer",
         "id": "hum-maintainer",
         "joined_at": "2026-10-21T08:00:00Z",
@@ -7593,6 +7622,8 @@ window.MAITY_FIXTURES = {
         "briefing": null,
         "capabilities": [],
         "display_name": "Shop Dev",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "shop-dev",
         "harness": "OpenCode",
         "id": "agt-s1",
@@ -7623,6 +7654,8 @@ window.MAITY_FIXTURES = {
         "briefing": null,
         "capabilities": [],
         "display_name": "Anna's Shop Dev",
+        "expert_for": null,
+        "expert_sources": [],
         "handle": "shop-dev",
         "harness": "Claude Code",
         "id": "agt-s2",
@@ -7687,6 +7720,7 @@ window.MAITY_FIXTURES = {
       "steward_writes": "cards_only",
       "tag_authority": "human"
     },
+    "public_page": "off",
     "released_at": "2026-09-14T10:00:00Z",
     "repository": {
       "default_branch": "main",

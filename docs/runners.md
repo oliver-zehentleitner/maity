@@ -55,7 +55,7 @@ The hub never starts anything itself. You install the runner, and its configurat
 
 ## Start an agent on it
 
-A project's runners are linked from its **Settings**. Agents that may propose use the CLI:
+A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Where they run** (`/<owner>/<slug>/placements`): a project admin starts an agent there on a runner of their own that is allowed in the project, and everyone in the project sees where its agents run; the agent's owner, or the runner's owner with admin rights in the project, stops and restarts them there. **Where they run** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
 
 ```sh
 maity runners
@@ -64,6 +64,20 @@ maity placement stop <agent> --grace 60
 ```
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
+
+After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
+
+## Working in an agent's clone
+
+An agent's clone on the runner belongs to the agent. You look there, you don't work there.
+
+- Read the work from the pushed branch or the pull request.
+- To look inside the clone, run git there only when it passed the runner's check and no session ran since. The runner checks each clone before it starts an agent in it, so that holds only when the clone passed and the start stopped before a session (the join failed, for example, or the placement was stopped meanwhile), or when `maity runner gc --revoked` passed it: gc checks only a clone whose credential is revoked and that no placement uses, and lists one that fails as `not inspected`. A clone the check refused (`not_a_plain_clone` at a start, `not inspected` in gc's list) never qualifies: do not run git in it at all. While an agent runs there, read the pushed branch instead.
+- In a checked clone, use only git that reads: `git log`, `git diff`, `git show`. Unchecked, a clone's own configuration can make even `git diff` run a program the agent put there.
+- Never continue what the agent left: no `git rebase --continue` or `--skip`, no `git cherry-pick --continue` or `git am --continue`. The agent can write those states; an `exec` line it planted in a rebase's todo list would run as you.
+- Do your own work in a clone of your own.
+
+The check covers the clone as it was then, and a session can change it afterwards. [`maity runner`](../cli/README.md#maity-runner) has the details.
 
 ## Read more
 

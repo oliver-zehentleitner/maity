@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import os
+import re
 import shutil
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from maity import __version__, hub, state
+from maity import __version__, clonecheck, hub, proc, state
 from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
@@ -157,9 +159,14 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
+        clonecheck.GIT_INODE_ENV: str(os.lstat(clone / ".git").st_ino),
+        clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
+    private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
+    assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
+    assert clone not in private.parents
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER
@@ -428,6 +435,8 @@ def test_a_lost_pickup_answer_is_retried(world: Any, monkeypatch: pytest.MonkeyP
         (hub.HubError("used", code="pickup_used", status=409), (True, None), "pickup_used"),
         (hub.HubError("no", code="pickup_not_allowed", status=409), (True, None),
          "pickup_not_allowed"),
+        (hub.HubError("quota", code="instance_quota", status=409), (True, None),
+         "instance_quota"),
         (PICKUP, (False, "code_invalid"), "code_invalid"),
         (PICKUP, (False, None), None),
     ],
@@ -446,6 +455,135 @@ def test_a_join_that_fails_is_join_failed(
         "failed", "join_failed"
     )  # fmt: skip
     assert sup.records["plc-0003"].detail == detail
+
+
+def _forbidden(reason: str) -> hub.HubError:
+    err = hub.HubError("join: forbidden: no", code="forbidden", status=403)
+    err.details = {"reason": reason}
+    return err
+
+
+@pytest.mark.parametrize(
+    ("pickup", "detail"),
+    [
+        (_forbidden("member_agents_max"), "member_agents_max"),
+        (_forbidden("Not A Code"), "forbidden"),
+        (_forbidden("member_agents_max\n"), "forbidden"),
+        (hub.HubError("lf", code="instance_quota\n", status=409), None),
+        (hub.HubError("odd", code="Some Text", status=409), None),
+        (hub.HubError("int", code=cast(Any, 409), status=409), None),  # no string: not a crash
+    ],
+)
+def test_a_refused_pickup_reports_the_hubs_code_in_code_form(
+    world: Any, monkeypatch: pytest.MonkeyPatch, pickup: hub.HubError, detail: str | None
+) -> None:
+    sup, _, _, _, _ = world
+    sup.client = Pickups(pickup)
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert (sup.records["plc-0003"].reason, sup.records["plc-0003"].detail) == (
+        "join_failed", detail
+    )  # fmt: skip
+
+
+def test_serve_logs_each_new_state_of_a_placement_once(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    sup.client = Pickups(hub.HubError("quota", code="instance_quota", status=409))
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    settle(sup)
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    assert lines == [
+        "plc-0003: starting (generation 1)",
+        "plc-0003: failed join_failed instance_quota (generation 1)",
+    ]
+    assert not any("AAAA-BBBB-CCCC" in line or "/j/tok" in line for line in logs)
+
+
+def test_a_failed_clone_logs_why_and_reports_only_the_code(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, reports, _, logs = world
+
+    def fails(*args: Any, **kwargs: Any) -> None:
+        raise workspace.Refused("clone_failed", why="maity runs no git here: the clone is odd")
+
+    monkeypatch.setattr(workspace, "prepare", fails)
+    sup.update([placement(agent=NEW)])  # no clone yet: the start clones first
+    settle(sup)
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    assert "plc-0003: clone_failed: maity runs no git here: the clone is odd" in lines
+    assert "plc-0003: failed clone_failed (generation 1)" in lines
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail, rec.exit_code) == (
+        "failed", "clone_failed", None, None
+    )  # fmt: skip
+    assert "maity runs no git" not in repr(reports)
+
+
+# What a session of the agent could leave behind for the next one, or for a person's git: each
+# points git at another repository. The sandbox keeps `config.worktree` from it, not the others.
+PLANTED = {
+    "commondir": ("commondir", "../../other/.git\n"),
+    "worktrees": ("worktrees/elsewhere/gitdir", "/somewhere/else/.git\n"),
+    "config.worktree": ("config.worktree", "[core]\n\thooksPath = /tmp/h\n"),
+}
+
+
+@pytest.mark.parametrize("planted", sorted(PLANTED))
+def test_a_clone_with_a_planted_redirect_does_not_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch, planted: str
+) -> None:
+    """End to end: the start reads the existing clone as maity's own git and `gc` do, and
+    refuses it before the join and the harness; the report carries the codes, the log why.
+    Nothing tries again: the clone stays as it is until someone looks at it."""
+    sup, backend, reports, _, logs = world
+    sup.client = Pickups(PICKUP)
+    calls = joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    entry, text = PLANTED[planted]
+    (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
+    (place.path / ".git" / entry).write_text(text)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
+        "failed", "workspace_in_use", "not_a_plain_clone", None
+    )  # fmt: skip
+    assert calls == [] and backend.started == []
+    lines = [line for line in logs if line.startswith("plc-0003: ")]
+    assert any(line.startswith("plc-0003: workspace_in_use: .git/") for line in lines), lines
+    assert "plc-0003: failed workspace_in_use not_a_plain_clone (generation 1)" in lines
+    assert ".git/" not in repr(reports)
+    assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
+
+
+def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """What Claude Code's sandbox leaves in a clone it ran in (empty) is no plant."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    for entry in ("config.worktree", "objects/info/alternates"):
+        (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
+        (place.path / ".git" / entry).write_text("")
+    for entry in ("remotes", "info/.claude-sandbox-noreplace",
+                  "objects/info/.claude-sandbox-noreplace",
+                  "objects/info/commit-graphs/.claude-sandbox-noreplace"):  # fmt: skip
+        (place.path / ".git" / entry).mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
 
 
 def test_a_pickup_not_found_fails_the_join_without_a_detail(
@@ -492,7 +630,9 @@ def test_run_join_keeps_url_and_code_off_the_command_line(
 
     def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         seen["argv"], seen["input"], seen["env"] = command, kwargs["input"], kwargs["env"]
-        return subprocess.CompletedProcess(command, 1, "", "maity: join: code_invalid: wrong\n")
+        nonce = kwargs["env"]["MAITY_ERROR_LINE"]
+        line = f"maity: join: code_invalid: wrong\nmaity-error {nonce}: code_invalid\n"
+        return subprocess.CompletedProcess(command, 1, "", line)
 
     monkeypatch.setattr("maity.runner.supervisor.subprocess.run", fake_run)
     monkeypatch.setenv("MAITY_STATE_DIR", "/elsewhere")
@@ -503,7 +643,50 @@ def test_run_join_keeps_url_and_code_off_the_command_line(
     assert not any("SECRET-TOKEN" in a or "CODE-1234" in a for a in seen["argv"])
     assert seen["input"] == "https://h/j/SECRET-TOKEN\nCODE-1234\n"
     assert seen["env"]["MAITY_STATE_DIR"] == str(place.credential.parent)
+    assert re.fullmatch(r"[0-9a-f]{32}", seen["env"]["MAITY_ERROR_LINE"])
     assert "--no-resume" in seen["argv"] and "--join-file" in seen["argv"]
+
+
+FORGED = "0" * 32  # a nonce that is not the call's own
+
+
+@pytest.mark.parametrize(
+    ("stderr", "detail"),
+    [
+        ("maity: join: instance_quota: 2\nmaity-error {n}: instance_quota\n", "instance_quota"),
+        ("maity: join: forbidden: no\n  reason: member_join_limit\n"
+         "maity-error {n}: forbidden member_join_limit\n", "member_join_limit"),
+        ("maity: join: forbidden: refused\nmaity-error {n}: forbidden\n", "forbidden"),
+        ("maity: cannot reach https://h/j/SECRET-TOKEN: timed out\nmaity-error {n}: network\n",
+         "network"),
+        ("maity: join: odd: x\nmaity-error {n}: -\n", None),
+        # Only the last line, only in its exact form, and only with this call's own nonce.
+        ("Traceback (most recent call last):\n", None),
+        ("Traceback (most recent call last):\nValueError: cannot reach https://h/j/join: "
+         "dummysecret:\n", None),
+        ("maity: join: forbidden: refused\n  reason: dummysecret\n", None),
+        ("maity-error {n}: instance_quota\nTraceback (most recent call last):\n", None),
+        ("maity: join: code_invalid: wrong\n", None),
+        ("maity-error {n}: Not A Code\n", None),
+        ("maity-error {n}: " + "a" * 65 + "\n", None),
+        # 4hch: a message that ends in a forged marker, with a null or invalid code
+        ("maity: join: error: x\nmaity-error: dummysecret\n", None),
+        (f"maity: join: error: x\nmaity-error {FORGED}: dummysecret\n", None),
+        ("maity: join: error: x\nmaity-error {n}: dummysecret\nmaity-error {n}: -\n", None),
+    ],
+)  # fmt: skip
+def test_run_join_reports_the_hubs_code_from_the_error_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stderr: str, detail: str | None
+) -> None:
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonce = kwargs["env"]["MAITY_ERROR_LINE"]
+        return subprocess.CompletedProcess(command, 1, "", stderr.replace("{n}", nonce))
+
+    monkeypatch.setattr("maity.runner.supervisor.subprocess.run", fake_run)
+    place = workspace.Workspace(tmp_path / "c", "maity", "c")
+    assert supervisor.run_join(place, "https://h/j/SECRET-TOKEN", "CODE-1234", tmp_path) == (
+        False, detail
+    )  # fmt: skip
 
 
 def test_run_join_against_a_hub(tmp_path: Path, fake: Any) -> None:
@@ -670,6 +853,61 @@ def test_a_failed_clone(tmp_path: Path, origin_repo: Path) -> None:
     with pytest.raises(workspace.Refused) as failed:
         workspace.prepare(cfg, place, str(tmp_path / "missing"), "agt-3", "plc-0003")
     assert failed.value.reason == "clone_failed" and failed.value.exit_code
+    # git's own last line, for the runner's log; the report keeps the codes.
+    assert failed.value.why and "missing" in failed.value.why
+
+
+def test_a_clone_without_git_says_why(
+    tmp_path: Path, origin_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    monkeypatch.setattr(proc, "program", lambda name: None)
+    with pytest.raises(workspace.Refused) as failed:
+        workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    assert failed.value.reason == "clone_failed" and failed.value.exit_code is None
+    assert failed.value.why == "git is not installed"
+
+
+@pytest.mark.parametrize("source", ["stderr", "tool_error"])
+@pytest.mark.parametrize(
+    "url", ["https://user@mail:SECRET@host/o/r", "https://user:prefix@SECRET@host/o/r"]
+)
+def test_a_secret_in_what_the_clone_said_never_reaches_why(
+    tmp_path: Path, origin_repo: Path, monkeypatch: pytest.MonkeyPatch, source: str, url: str
+) -> None:
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if source == "tool_error":
+            raise proc.ToolError(f"cannot reach {url}")
+        return subprocess.CompletedProcess(command, 128, "", f"fatal: {url} not found\n")
+
+    monkeypatch.setattr(proc, "run", run)
+    with pytest.raises(workspace.Refused) as failed:
+        workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0003")
+    why = failed.value.why or ""
+    assert "SECRET" not in why and "https://host/o/r" in why
+
+
+@pytest.mark.parametrize(
+    ("text", "line"),
+    [
+        ("", None),
+        ("Cloning...\nfatal: could not read Username\n\n", "fatal: could not read Username"),
+        ("fatal: https://bob:s3cret@host/x/y not found", "fatal: https://host/x/y not found"),
+        # Up to the last @: a password may hold one, as may a user name.
+        ("fatal: https://user@mail:SECRET@host/o/r", "fatal: https://host/o/r"),
+        ("fatal: https://user:prefix@SECRET@host/o/r", "fatal: https://host/o/r"),
+        ("a\x1b[31mb", "a?[31mb"),
+        ("x" * 400, "x" * 300),
+    ],
+)
+def test_what_a_tool_said_is_one_masked_printable_line(text: str, line: str | None) -> None:
+    assert workspace.said(text) == line
 
 
 def test_hooks_and_fsmonitor_planted_in_a_clone_never_run(
@@ -1171,6 +1409,36 @@ def test_the_clone_allows_only_https_and_ssh(
     assert command[:3] == ["git", "-c", "protocol.allow=never"]
     assert "protocol.https.allow=always" in command and "protocol.file.allow=always" not in command
     assert allowed == ["https:ssh"]  # GIT_ALLOW_PROTOCOL outranks the `-c` settings
+
+
+@pytest.mark.parametrize(
+    ("error", "detail"),
+    [
+        ((409, "instance_quota", {"max": 2}), "instance_quota"),
+        ((403, "forbidden", {"reason": "member_agents_max", "max": 3}), "member_agents_max"),
+        ((403, "forbidden", {"reason": "Not A Code"}), "forbidden"),
+        # 4hch: a message ending in a forged marker, with a null or a non-code code
+        ((409, None, {}, "x\nmaity-error: dummysecret"), None),
+        ((409, "Not A Code", {}, f"x\nmaity-error {FORGED}: dummysecret"), None),
+        ((409, None, {}, "x\nmaity-error 0123456789abcdef0123456789abcdef: dummysecret"), None),
+        ((409, 409, {}, "m"), None),  # a code that is no string
+    ],
+)
+def test_run_join_reads_the_real_clis_error_line(
+    tmp_path: Path, fake: Any, error: tuple[Any, ...], detail: str | None
+) -> None:
+    """End to end: the child `maity join` writes `maity-error: …` from the hub's answer, and
+    the runner reads it; the hub's message text never becomes the detail."""
+    import fakehub
+
+    fake.join_error = error
+    clone = tmp_path / "clone"
+    (clone / ".git").mkdir(parents=True)
+    place = workspace.Workspace(clone, "maity", "clone")
+    url = f"{fake.url}/j/{fakehub.TOKEN}"
+    assert supervisor.run_join(place, url, fakehub.CODE, tmp_path) == (False, detail)
+    fake.join_error = None
+    assert supervisor.run_join(place, url, "WRONG-CODE-0000", tmp_path) == (False, "code_invalid")
 
 
 def test_run_join_imports_nothing_from_the_clone(tmp_path: Path, fake: Any) -> None:

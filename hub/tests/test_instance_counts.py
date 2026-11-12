@@ -4,6 +4,7 @@ as online and is a part of it, never added to it."""
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -152,6 +153,25 @@ def test_the_landing_counts_instances_and_dormant_ones_as_online(
     # dormant one.
     assert (found["instances"], found["instances_online"]) == (6, 4)
     assert found["agents_online"] == 3  # sub, leaf and the resting solo
+
+
+@pytest.mark.parametrize(("ago", "online"), [(121, 1), (180, 1), (181, 0)])
+def test_the_landing_counts_a_human_online_up_to_a_minute_past_the_stored_time(
+    setup: tuple[flow.Human, TestClient, str], migrated: Engine, ago: int, online: int
+) -> None:
+    """The stored `last_seen_at` may be up to a minute older than the latest call (§2.4)."""
+    owner, _, _ = setup
+    moment = clock.now()
+    clock.set_source(lambda: moment)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == owner.id)
+            .values(last_seen_at=moment - timedelta(seconds=ago))
+        )
+        landing_stats.reset()
+        found: dict[str, Any] = landing_stats.compute(conn)
+    assert found["people_online"] == online
 
 
 def test_the_resume_packet_carries_the_agents_own_manages(

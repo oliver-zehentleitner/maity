@@ -328,12 +328,12 @@ window.Maity = window.Maity || {};
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
     const ref = !linkable
       ? h("span", { class: "member-ref plain", title: name }, pic, label)
-      : h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
+      : h("a", { class: "member-ref", href: ctx.link("team", id), title: name, "data-member": id }, pic, label);
     // The #id is a link of its own beside the handle's, never inside it.
     return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
   }
   // Where an instance's #id leads: its member's page, Sessions, with it chosen.
-  const instanceHref = (ctx, memberId, instanceId) => ctx.link("members", memberId, "sessions", instanceId);
+  const instanceHref = (ctx, memberId, instanceId) => ctx.link("team", memberId, "sessions", instanceId);
   const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
   function instanceOf(x) {
     const src = typeof x === "string" ? { instance: x } : x;
@@ -368,7 +368,7 @@ window.Maity = window.Maity || {};
     ];
     const linkable = ctx.memberById && ctx.memberById[id] && !ctx.outsider && typeof ctx.link === "function";
     return linkable
-      ? h("a", { class: "member-chip", href: ctx.link("members", id), title: said, "aria-label": said, "data-member": id }, face)
+      ? h("a", { class: "member-chip", href: ctx.link("team", id), title: said, "aria-label": said, "data-member": id }, face)
       : h("span", { class: "member-chip plain", title: said }, face);
   }
 

@@ -13,11 +13,11 @@ window.Maity = window.Maity || {};
   const VIEWS = [
     { path: "", get label() { return M.t("nav.overview"); } },
     { path: "/board", get label() { return M.t("nav.board"); } },
-    { path: "/members", get label() { return M.t("nav.members"); } },
+    { path: "/team", get label() { return M.t("nav.members"); } },
     { path: "/organisation", get label() { return M.t("nav.organisation"); } },
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
-  const PROJECT_KINDS = ["project", "board", "members", "organisation", "why", "card"];
+  const PROJECT_KINDS = ["project", "board", "team", "organisation", "why", "card"];
   const COUNTERS = {
     get cards_done() { return M.t("visitor.stat.cards_done"); },
     get reviews_given() { return M.t("visitor.stat.reviews_given"); },
@@ -125,7 +125,7 @@ window.Maity = window.Maity || {};
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,
       ];
     },
-    members(d) {
+    team(d) {
       return [
         h("ul", null, d.shown.map((p) => h("li", null, who(p), " (" + p.handle + ") ", h("span", { class: "muted" }, M.trust.roleLabel(p.role))))),
         d.others.length ? [h("h2", null, M.t("visitor.others")),
@@ -187,7 +187,7 @@ window.Maity = window.Maity || {};
     if (parts[1] === "agents") return parts.length === 3;
     if (parts[2] === "tasks") return parts.length === 4;
     if (parts[2] === "overview") return parts.length === 3 || (parts.length === 4 && ["project", "swarm"].includes(parts[3]));
-    return parts.length === 2 || (parts.length === 3 && ["board", "members", "organisation", "why"].includes(parts[2]));
+    return parts.length === 2 || (parts.length === 3 && ["board", "team", "organisation", "why"].includes(parts[2]));
   }
 
   // The member Overview's addresses (§16.11) read the project's own page, the public overview
@@ -245,8 +245,14 @@ window.Maity = window.Maity || {};
       append(clear(header), h("div", { class: "bar" }, brand, signIn, tools));
     }
     const title = answer.kind === "card" ? d.title : d.name || base.slice(1);
+    // Report what this page shows (§16.8, tsk-7ze5w6ymf7bw), named as the page names it: a person by
+    // the handle, an agent by its global name `<owner>/<handle>`, a project by its full name, a card by
+    // its id with the project. Signed out, a link to the sign-in that comes back with the form open.
+    const report = M.report ? reportOf(answer, base) : null;
+    const reporting = report ? M.report.control(report.target, report.what, { signedOut: signedIn ? null : path }) : null;
     append(clear(main), h("section", { class: "view-visitor", "data-kind": answer.kind },
       h("h1", null, title),
+      reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
         href: base + v.path,
         class: "view-tab",
@@ -255,7 +261,18 @@ window.Maity = window.Maity || {};
       }, v.label))) : null,
       draw[answer.kind] ? draw[answer.kind](d, base) : null));
     document.title = title;
+    if (reporting && reporting.open && M.report.asked()) reporting.open();
     return true;
+  }
+
+  // What a page reports, and the word for its button; null where it names no one target.
+  function reportOf(answer, base) {
+    const parts = answer.path.split("/").filter(Boolean);
+    if (answer.kind === "person") return { target: { type: "profile", id: parts[0] }, what: "person" };
+    if (answer.kind === "agent") return { target: { type: "profile", id: parts[0] + "/" + parts[2] }, what: "agent" };
+    if (answer.kind === "card") return { target: { type: "card", id: parts[3], project: base.slice(1) }, what: "card" };
+    if (PROJECT_KINDS.includes(answer.kind)) return { target: { type: "project", id: base.slice(1) }, what: "project" };
+    return null;
   }
 
   M.visitor = { page };

@@ -17,6 +17,7 @@ does the owner's person page), and when a session in one of its public projects 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from datetime import timedelta
 from html import escape
 from typing import Any
@@ -166,14 +167,14 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     owner_link = f'<a href="/{escape(owner.handle, quote=True)}">{escape(owner.display_name)}</a>'
     # An agent always has a picture (§6.10), shown as a person's page shows theirs (§16.9).
     picture = avatars.public_urls(conn, [agent.id])[agent.id]
+    path = f"/{owner.handle}/agents/{agent.handle}"
     content = (
         f'<p class="eyebrow">{escape(owner.handle)}/agents/{escape(agent.handle)}</p>'
         f"{public_people.picture_html(picture, 128)}"
-        f"<h1>{escape(agent.display_name)}</h1>"
+        f"<h1>{escape(agent.display_name)}</h1>{render.report_link(path)}"
         f'<p>An agent of {owner_link}</p><ul class="facts">{"".join(facts)}</ul>'
         f"<h2>Projects</h2><ul>{projects}</ul>{counters}"
     )
-    path = f"/{owner.handle}/agents/{agent.handle}"
     body = render.page_document(
         lang="en",
         title=f"{agent.display_name} ({agent.handle})",
@@ -207,7 +208,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     ]
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     m = t.membership.c
     return list(
         conn.execute(
@@ -218,6 +219,7 @@ def targets(conn: Connection) -> list[str]:
                 m.agent_id.is_not(None),
                 m.active.is_(True),
                 m.isolated_since.is_(None),
+                *public_pages.only(m.agent_id, among),
             )
             .distinct()
             .order_by(m.agent_id)

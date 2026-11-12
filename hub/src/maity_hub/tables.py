@@ -101,6 +101,9 @@ human = Table(
     Column("handle", String(HANDLE), nullable=False, unique=True),
     Column("display_name", String(TITLE), nullable=False),
     Column("password_hash", String(255), nullable=False),  # scrypt, with parameters and salt
+    # Moves with every password change, `POST /auth/password` and a reset (§2.10): a reset
+    # link carries the generation it was made under and dies when it moves.
+    Column("password_generation", Integer, nullable=False, server_default="0"),
     Column("created_at", UtcDateTime, nullable=False),
     Column("last_login_at", UtcDateTime),  # the latest successful login (§16.1)
     Column("last_seen_at", UtcDateTime),
@@ -310,7 +313,16 @@ invitation = Table(
     Column("void_reason", String(16)),
     # `join` or `public`: the host of the link that went out (§3.4), as `join_link.via`.
     Column("via", String(16), nullable=False, server_default="public"),
+    # An invitation by handle (§3.4): the handle as the invitee held it at issue, the account
+    # it is bound to, and the personal consent request in which that person answers it. All
+    # three are set together or not at all; such an invitation has no address.
+    Column("handle", String(HANDLE)),
+    _ref("invitee_id", "human.id"),
+    _ref("request_id", "request.id"),
+    Column("declined_at", UtcDateTime),  # the invitee's `no` (§3.4)
     Index("ix_invitation_project_id_created_at", "project_id", "created_at"),
+    # The cap per invitee and day, and the account's own invitations on its deletion.
+    Index("ix_invitation_invitee_id_created_at", "invitee_id", "created_at"),
     **MYSQL_TABLE,
 )
 
@@ -425,6 +437,9 @@ human_session = Table(
     Column("mail_sent", Integer, nullable=False, server_default="0"),
     Column("mail_sent_at", UtcDateTime),  # when the newest mail went: its code lives 15 minutes
     Column("next", String(512)),
+    # Until when a dashboard tab of this session said the human is present (`POST
+    # /me/presence`, §18.4): the mail hold's input only, never shown as presence (§18.5).
+    Column("present_until", UtcDateTime),
     **MYSQL_TABLE,
 )
 
@@ -561,6 +576,33 @@ email_sign_in_day = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("day", String(10), primary_key=True),
     Column("wrong_codes", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# A link to reset a forgotten password (§2.10): `sha256(nonce)` of its signed token, single
+# use. `source` is the address it was asked from, so a new request voids only the earlier
+# unused link from the same one.
+password_reset = Table(
+    "password_reset",
+    metadata,
+    Column("nonce_hash", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("source", String(64), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# Each wrong TOTP or recovery code at a reset (§2.10), counted per human over the 24 hours
+# before each one, across every link; older rows count for nothing and may be dropped.
+password_reset_wrong = Table(
+    "password_reset_wrong",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_password_reset_wrong_human_at", "human_id", "at"),
     **MYSQL_TABLE,
 )
 
@@ -794,6 +836,11 @@ membership = Table(
     Column("subagents", Boolean, nullable=False, server_default=false()),
     Column("subagents_language", String(16)),
     Column("subagents_by", String(ID)),
+    # An expert's fields (§2.3 "The expert", §6.2): what it answers about, plain text of at
+    # most 120 characters, and the path prefixes it learned, at most 20; null for no text
+    # and no sources, and both null whenever the role is not `expert`.
+    Column("expert_for", String(480)),
+    Column("expert_sources", JSON_VALUE),
     Column("onboarded_at", UtcDateTime),
     # Its version (1 with the join, +1 on every change; 0 for a human), who wrote the
     # current text (a `hum-…` or `agt-…` id, null when unknown) and when (§6.2).
@@ -2689,7 +2736,8 @@ abuse_report = Table(
     _ref("account_id", "human.id", nullable=False, index=True),
     Column("target_type", String(16), nullable=False),  # profile, project, message, card
     Column("target_id", String(255), nullable=False),
-    Column("project_id", String(ID)),  # the target's project; null for a profile
+    Column("project_id", String(ID)),  # the target's project; for a profile, the project
+    # page it was reported from by its handle (§16.8), else null
     Column("reason", String(32), nullable=False),
     Column("text", Text),
     Column("snapshot", JSON_VALUE),

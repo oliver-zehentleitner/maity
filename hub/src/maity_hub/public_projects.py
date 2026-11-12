@@ -11,6 +11,7 @@ deleted. Whatever changes one of these calls `public_pages.touch` in its transac
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from html import escape
 from typing import Any
 
@@ -317,8 +318,9 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     entries = public_snapshot.ticker(conn, project)
     up = public_snapshot.online(conn, project.id)
     snapshot_html = public_snapshot.html(entries, up)
+    report = render.report_link(f"/{full}")
     content = (
-        f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
+        f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>{report}'
         f'<p class="tag">{escape(project.state)}</p>{about}{repository}{links_html}'
         f"{team_html}{snapshot_html}{statistics_html}"
     )
@@ -387,10 +389,12 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     ]
 
 
-def targets(conn: Connection) -> list[str]:
+def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:
     return list(
         conn.execute(
-            select(t.project.c.id).where(t.project.c.public_page == "on").order_by(t.project.c.id)
+            select(t.project.c.id)
+            .where(t.project.c.public_page == "on", *public_pages.only(t.project.c.id, among))
+            .order_by(t.project.c.id)
         ).scalars()
     )
 

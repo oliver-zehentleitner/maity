@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 PROJECT = "/projects/maintainer/maity"
@@ -314,6 +314,36 @@ def test_a_claim_in_flight_takes_no_card_once_its_member_became_an_expert(
     assert owner.get(f"{PROJECT}/tasks/{card}").json()["claim"] is None
 
 
+def test_a_request_in_flight_files_none_once_its_member_became_an_expert(
+    make_client: ClientFactory,
+    owner: flow.Human,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§2.3 "The expert": the request read its membership as a coder; the role change to
+    expert commits before the request takes the project lock. Under the lock the request
+    reads its row again and has no `requests:ask`, so no request is stored (#1531)."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub.routes import requests as requests_route
+
+    coder = flow.agent(make_client, owner)
+    reached, release = _paused(monkeypatch, "_locked", requests_route)
+    asked = _in_thread(
+        lambda: coder.post(f"{PROJECT}/requests", {"class": "info", "title": "Why?", "to": "owner"})
+    )
+    try:
+        assert reached.wait(10), "the request never reached the lock"
+        changed = owner.patch(f"{PROJECT}/members/{coder.id}", {"role": "expert"})
+        assert changed.status_code == 200, changed.text  # no card, nothing in the way
+    finally:
+        release.set()
+    refused = asked.result(timeout=10)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "requests:ask"}
+    assert owner.get(f"{PROJECT}/requests").json()["items"] == []
+
+
 def test_a_role_change_to_expert_waits_for_a_claim_in_flight_and_then_refuses(
     make_client: ClientFactory,
     owner: flow.Human,
@@ -393,3 +423,219 @@ def test_a_takeover_in_flight_to_its_caller_opens_none_once_the_caller_became_an
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"] == {"scope": "tasks:write"}
     assert owner.get(f"{PROJECT}/takeovers").json()["items"] == []
+
+
+# --- an expert's fields (§2.3 "The expert", §6.2) -------------------------------------------
+
+
+def _fields(who: Any, member_id: str, **body: Any) -> Any:
+    return who.patch(f"{PROJECT}/members/{member_id}", body)
+
+
+def test_the_owner_names_what_its_expert_answers_about_and_from_which_sources(
+    owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§6.2: `expert_for` and `expert_sources` on the membership, shown in the member view,
+    and `null` clears them."""
+    changed = _fields(
+        owner,
+        expert.id,
+        expert_for="  The API contract,\n its sections  ",
+        expert_sources=["docs/api.md", "context/", "docs/api.md"],
+    )
+    assert changed.status_code == 200, changed.text
+    view = changed.json()
+    assert view["expert_for"] == "The API contract, its sections"  # plain text, one line
+    assert view["expert_sources"] == ["docs/api.md", "context/"]
+    listed = owner.get(f"{PROJECT}/members").json()["items"]
+    [shown] = [m for m in listed if m["id"] == expert.id]
+    assert (shown["expert_for"], shown["expert_sources"]) == (
+        "The API contract, its sections",
+        ["docs/api.md", "context/"],
+    )
+    cleared = _fields(owner, expert.id, expert_for=None, expert_sources=None)
+    assert cleared.status_code == 200, cleared.text
+    assert (cleared.json()["expert_for"], cleared.json()["expert_sources"]) == (None, [])
+
+
+def test_only_an_expert_has_the_fields_and_a_role_change_away_clears_them(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§6.2: the fields belong to the role."""
+    coder = flow.agent(make_client, owner)
+    refused = _fields(owner, coder.id, expert_for="The API")
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"expert_for": "expert_only"}
+    assert (
+        _fields(owner, expert.id, expert_for="The API", expert_sources=["docs/"]).status_code == 200
+    )
+    moved = owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "coder"})
+    assert moved.status_code == 200, moved.text
+    assert (moved.json()["expert_for"], moved.json()["expert_sources"]) == (None, [])
+    back = owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "expert"})
+    assert (back.json()["expert_for"], back.json()["expert_sources"]) == (None, [])
+
+
+def test_who_sets_an_experts_fields(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent, migrated: Engine
+) -> None:
+    """§6.2: a human who owns the agent or holds `members:admin`, or an admin agent within
+    §2.3 ᵃ (the maintainer's decision of 2026-11-11), the fields alone; no other agent."""
+    own = expert.patch(f"{PROJECT}/members/{expert.id}", {"expert_for": "x"})
+    assert own.status_code == 403, own.text
+    assert own.json()["error"]["details"] == {"scope": "members:admin"}
+    coder = flow.agent(make_client, owner)
+    assert _fields(coder, expert.id, expert_for="x").status_code == 403
+    admin_agent = flow.agent(make_client, owner, role="admin")
+    by_agent = _fields(admin_agent, expert.id, expert_for="The API")
+    assert by_agent.status_code == 200, by_agent.text
+    assert by_agent.json()["expert_for"] == "The API"
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    member = flow.human(make_client, migrated, "colleague")
+    factory.membership(migrated, project_id, "member", human_id=member.id)
+    admin = flow.human(make_client, migrated, "deputy")
+    factory.membership(migrated, project_id, "admin", human_id=admin.id)
+    assert _fields(admin, expert.id, expert_for="The API").status_code == 200
+    refused = _fields(member, expert.id, expert_for="The API")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}
+    mixed = _fields(owner, expert.id, expert_for="The API", areas=["docs/"])
+    assert mixed.status_code == 400, mixed.text
+    assert mixed.json()["error"]["details"]["fields"] == {"expert_for": "alone"}
+
+
+def test_an_admin_agent_sets_the_fields_only_within_its_bounds(
+    make_client: ClientFactory, owner: flow.Human, expert: flow.Agent
+) -> None:
+    """§2.3 ᵃ on this path: never a human, never itself, never a member with trust admin;
+    a proxy with trust admin is no admin agent; a guest expert is in bounds."""
+    admin_agent = flow.agent(make_client, owner, role="admin")
+    admin_expert = flow.agent(make_client, owner, trust="admin", role="expert", areas=["docs/"])
+    proxy = flow.agent(make_client, owner, role="proxy")
+    guest_expert = flow.agent(make_client, owner, trust="guest", role="expert", areas=["docs/"])
+    members = owner.get(f"{PROJECT}/members").json()["items"]
+    [human] = [m for m in members if m["id"].startswith("hum-")]
+    peer = _fields(admin_agent, admin_expert.id, expert_for="x")
+    assert peer.status_code == 403, peer.text
+    assert peer.json()["error"]["details"] == {"scope": "members:admin"}
+    itself = _fields(admin_expert, admin_expert.id, expert_for="x")
+    assert itself.status_code == 403, itself.text
+    by_proxy = _fields(proxy, expert.id, expert_for="x")
+    assert by_proxy.status_code == 403, by_proxy.text
+    assert by_proxy.json()["error"]["details"] == {"scope": "members:admin"}
+    on_human = _fields(admin_agent, human["id"], expert_for="x")
+    assert on_human.status_code == 403, on_human.text
+    assert on_human.json()["error"]["details"]["reason"] == "humans_only"
+    guest = _fields(admin_agent, guest_expert.id, expert_sources=["docs/"])
+    assert guest.status_code == 200, guest.text
+
+
+def test_the_fields_of_another_owners_expert_change_at_once(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """§6.2, the maintainer's decision req-408xjbpth5te: whoever may set the fields sets them
+    alone, also on another owner's expert, with no consent request (unlike `areas`)."""
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    friend = flow.human(make_client, migrated, "friend")
+    lent = factory.agent(migrated, project_id, friend.id, role="expert").agent_id
+    admin_agent = flow.agent(make_client, owner, role="admin")
+    changed = _fields(admin_agent, lent, expert_sources=["docs/"])
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["expert_sources"] == ["docs/"]
+    assert _fields(owner, lent, expert_for="The API").status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("body", "field", "code"),
+    [
+        ({"expert_sources": ["../etc"]}, "expert_sources", "invalid_path"),
+        ({"expert_sources": ["docs/a b"]}, "expert_sources", "invalid_path"),
+        ({"expert_sources": [f"d{n}/" for n in range(21)]}, "expert_sources", None),
+        ({"expert_for": "x" * 121}, "expert_for", None),
+    ],
+)
+def test_an_experts_fields_are_bounded(
+    owner: flow.Human, expert: flow.Agent, body: dict[str, Any], field: str, code: str | None
+) -> None:
+    """§6.2: at most 120 characters and 20 sources, each a repository path."""
+    refused = _fields(owner, expert.id, **body)
+    assert refused.status_code == 400, refused.text
+    fields = refused.json()["error"]["details"]["fields"]
+    assert field in fields and (code is None or fields[field] == code)
+
+
+def test_a_field_write_in_flight_is_cleared_by_a_role_change_away_from_expert(
+    owner: flow.Human,
+    expert: flow.Agent,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§6.2: the fields exist only while the role is expert. The role change read the expert
+    with empty fields; a field PATCH commits before the change writes. The change takes the
+    project lock the field PATCH takes, reads the row again and clears what is there now,
+    instead of comparing against the empty fields it read first."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from maity_hub.routes import members as members_route
+
+    reached, release = _paused(monkeypatch, "validate_assignment", members_route)
+    change = _in_thread(lambda: owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "coder"}))
+    try:
+        assert reached.wait(10), "the role change never reached its check"
+        written = _fields(owner, expert.id, expert_for="Racing name", expert_sources=["docs/"])
+        assert written.status_code == 200, written.text
+    finally:
+        release.set()
+    changed = change.result(timeout=10)
+    assert changed.status_code == 200, changed.text
+    view = owner.get(f"{PROJECT}/members/{expert.id}").json()
+    assert (view["role"], view["expert_for"], view["expert_sources"]) == ("coder", None, [])
+
+
+def test_a_field_write_waits_for_a_role_change_away_from_expert_and_then_refuses(
+    owner: flow.Human,
+    expert: flow.Agent,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other order: the role change has written and not committed. It holds the project
+    lock, so the field PATCH waits there, then reads the new role and writes nothing, in one
+    run."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("SQLite serialises the two transactions; the race needs PostgreSQL")
+    from concurrent.futures import TimeoutError as Pending
+
+    from maity_hub.routes import members as members_route
+
+    runs: list[str] = []
+    real_fields = members_route._expert_fields
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        runs.append("fields")
+        return real_fields(*args, **kwargs)
+
+    monkeypatch.setattr(members_route, "_expert_fields", counted)
+    # Held after the change's write, before its commit: `member_view` runs after the UPDATE.
+    reached, release = _paused(monkeypatch, "member_view", members_route)
+    change = _in_thread(lambda: owner.patch(f"{PROJECT}/members/{expert.id}", {"role": "coder"}))
+    field = None
+    try:
+        assert reached.wait(10), "the role change never wrote"
+        field = _in_thread(lambda: _fields(owner, expert.id, expert_for="Too late"))
+        with pytest.raises(Pending):
+            field.result(timeout=1)  # held at the project lock the change holds
+    finally:
+        release.set()
+    assert change.result(timeout=10).status_code == 200
+    assert field is not None
+    refused = field.result(timeout=10)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"expert_for": "expert_only"}
+    view = owner.get(f"{PROJECT}/members/{expert.id}").json()
+    assert (view["role"], view["expert_for"]) == ("coder", None)
+    # Once: without the shared lock the field write held the project lock and waited for the
+    # member's row, the change then waited for the project lock, and the database broke that
+    # deadlock by rolling the field write back for a retry.
+    assert runs == ["fields"]

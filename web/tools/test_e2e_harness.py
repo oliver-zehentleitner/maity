@@ -218,6 +218,123 @@ def lock_cases(ns: dict) -> int:
     return sum(not ok for _, ok in cases)
 
 
+class FakePage:
+    """What Run.a11y asks of a page: its viewport, the colour scheme it emulates, axe answering
+    with no violations. It records every viewport and scheme it is given."""
+
+    def __init__(self, width: int, height: int, scheme: str):
+        self.viewport_size = {"width": width, "height": height}
+        self.start = (width, height)
+        self.scheme = scheme
+        self.sizes, self.schemes = [], []
+
+    def set_viewport_size(self, size: dict) -> None:
+        # The restore is the one call back to the step's own size, which no pass uses.
+        if getattr(self, "refuse", None) in ("viewport", "both") and (size["width"], size["height"]) == self.start:
+            raise RuntimeError("viewport refused")
+        self.viewport_size = dict(size)
+        self.sizes.append((size["width"], size["height"]))
+
+    def emulate_media(self, color_scheme: str | None = None, **_: object) -> None:
+        refuse = getattr(self, "refuse", None)
+        restoring = (self.viewport_size["width"], self.viewport_size["height"]) == self.start or (refuse == "both" and getattr(self, "runs", 0) >= 3)
+        if refuse in ("media", "both") and restoring:
+            raise RuntimeError("media refused")
+        if color_scheme is not None:
+            self.scheme = color_scheme
+            self.schemes.append(color_scheme)
+
+    def evaluate(self, expression: str, *args: object) -> object:
+        if "prefers-color-scheme: dark" in expression:
+            return self.scheme == "dark"
+        if "typeof window.axe" in expression:
+            return True
+        if "axe.run" in expression:
+            self.runs = getattr(self, "runs", 0) + 1
+            if self.runs == getattr(self, "fail_on", None):
+                raise RuntimeError("axe failed in pass %d" % self.runs)
+            return {"violations": []}
+        return None
+
+
+def a11y_cases() -> int:
+    """Run.a11y, taken out of e2e.py's syntax tree: its passes run at their own sizes and schemes,
+    and afterwards the page is back at the step's own (tsk-7eq8y3gymek2)."""
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    run = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Run")
+    method = next(n for n in run.body if isinstance(n, ast.FunctionDef) and n.name == "a11y")
+    consts = [n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in ("PASSES", "AXE_TAGS") for t in n.targets)]
+    namespace = {"Page": object}
+    exec(compile(ast.Module(body=consts + [method], type_ignores=[]), str(SOURCE), "exec"), namespace)
+    a11y = namespace["a11y"]
+
+    class Self:
+        axe = "/* axe */"
+        a11y_findings: list = []
+
+    cases = []
+    for width, height, scheme in ((390, 844, "dark"), (360, 780, "light"), (1280, 900, "light")):
+        page = FakePage(width, height, scheme)
+        with contextlib.redirect_stdout(io.StringIO()):
+            a11y(Self(), page, "a view")
+        passes = page.sizes[:3] == [(1280, 900), (390, 844), (1280, 900)] and page.schemes[:3] == ["light", "light", "dark"]
+        back = page.viewport_size == {"width": width, "height": height} and page.scheme == scheme
+        cases.append((f"a11y: the passes run, then the page is back at {width}x{height} {scheme}",
+                      passes and back, (page.sizes, page.schemes)))
+    # A pass that fails (axe throwing) still leaves the page as the step had it, and the error goes on (#1614 review).
+    for fail_on in (1, 2, 3):
+        page = FakePage(360, 780, "dark")
+        page.fail_on = fail_on
+        raised = None
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                a11y(Self(), page, "a view")
+        except RuntimeError as err:
+            raised = str(err)
+        back = page.viewport_size == {"width": 360, "height": 780} and page.scheme == "dark"
+        cases.append((f"a11y: axe failing in pass {fail_on} goes on as an error, the page back at 360x780 dark",
+                      raised == "axe failed in pass %d" % fail_on and back, (raised, page.viewport_size, page.scheme)))
+    # A restore the browser refuses (#1614 review): the other one is still tried, a pass error stays the error
+    # that goes on, and with no pass error the refusal itself is raised.
+    # Each start scheme differs from the one the passes leave (light after pass 1, dark after pass 3), so a
+    # refused scheme restore shows.
+    for fail_on, start, refuse, want, viewport_back, scheme_back in (
+        (1, "dark", "viewport", "axe failed in pass 1", False, True),
+        (1, "dark", "media", "axe failed in pass 1", True, False),
+        (None, "light", "viewport", "viewport refused", False, True),
+        (None, "light", "media", "media refused", True, False),
+    ):
+        page = FakePage(360, 780, start)
+        page.fail_on, page.refuse = fail_on, refuse
+        raised = None
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                a11y(Self(), page, "a view")
+        except RuntimeError as err:
+            raised = str(err)
+        got = (raised, page.viewport_size == {"width": 360, "height": 780}, page.scheme == start)
+        what = f"axe failing in pass {fail_on}" if fail_on else "no axe failure"
+        cases.append((f"a11y: {what}, the {refuse} restore refused: {want!r} goes on, the other restore still made",
+                      got == (want, viewport_back, scheme_back), got))
+    # Both restores refused with no pass error: the first refusal is raised, the second is printed (#1614 review).
+    page = FakePage(360, 780, "light")
+    page.refuse = "both"
+    out = io.StringIO()
+    raised = None
+    try:
+        with contextlib.redirect_stdout(out):
+            a11y(Self(), page, "a view")
+    except RuntimeError as err:
+        raised = str(err)
+    cases.append(("a11y: no axe failure, both restores refused: the first is raised, the second printed",
+                  raised == "viewport refused" and "media refused" in out.getvalue(), (raised, out.getvalue())))
+    failed = 0
+    for name, ok, detail in cases:
+        failed += not ok
+        print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {detail}"))
+    return failed
+
+
 def main() -> int:
     ns = load()
     cases = [
@@ -235,6 +352,7 @@ def main() -> int:
     failed += trace_cases(ns)
     failed += environment_cases(ns)
     failed += lock_cases(ns)
+    failed += a11y_cases()
     print("all ok" if not failed else f"{failed} failure(s)")
     return 1 if failed else 0
 

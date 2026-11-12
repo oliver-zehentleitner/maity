@@ -1315,7 +1315,13 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
         members = {
             row.agent_id: (row.subagents, row.subagents_language, row.subagents_by)
             for row in conn.execute(
-                select(t.membership).where(t.membership.c.agent_id.is_not(None))
+                # Named columns: a later migration adds more, which this revision lacks.
+                select(
+                    t.membership.c.agent_id,
+                    t.membership.c.subagents,
+                    t.membership.c.subagents_language,
+                    t.membership.c.subagents_by,
+                ).where(t.membership.c.agent_id.is_not(None))
             )
         }
         joins = {
@@ -1428,3 +1434,59 @@ def test_the_expert_migration_stops_on_a_project_role_named_expert(engine: Engin
         )
     migrate(engine)
     assert current_revision(engine) == head_revision(engine)
+
+
+def test_the_invite_by_handle_downgrade_revokes_what_an_older_hub_would_show_as_open(
+    engine: Engine,
+) -> None:
+    """§3.4: an older hub knows neither the invitation by handle nor `declined_at`, so the
+    downgrade revokes an open one at its run and a declined one at its `no`; a link
+    invitation and a used one by handle stay as they were."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import insert, text
+
+    from maity_hub import tables as t
+
+    migrate(engine)
+    now = datetime(2026, 11, 9, tzinfo=UTC)
+    declined_at = now + timedelta(hours=1)
+    with engine.begin() as conn:
+        for human_id in ("hum-a", "hum-b"):
+            conn.execute(
+                insert(t.human).values(
+                    id=human_id, handle=human_id[4:], display_name="X", password_hash="x",
+                    created_at=now,
+                )
+            )  # fmt: skip
+    from tests import factory
+
+    project_id = factory.project(engine, "p", owner_id="hum-a")
+    with engine.begin() as conn:
+        common = {
+            "project_id": project_id, "trust": "member", "role": "coder", "created_by": "hum-a",
+            "created_at": now, "expires_at": now + timedelta(days=1),
+        }  # fmt: skip
+        by_handle = {"handle": "b", "invitee_id": "hum-b"}
+        conn.execute(
+            insert(t.invitation).values(id="inv-open", token_hash="1", **common, **by_handle)
+        )
+        conn.execute(
+            insert(t.invitation).values(
+                id="inv-declined", token_hash="2", declined_at=declined_at, **common, **by_handle
+            )
+        )
+        conn.execute(
+            insert(t.invitation).values(
+                id="inv-used", token_hash="3", used_at=now, used_by="hum-b", **common, **by_handle
+            )
+        )
+        conn.execute(insert(t.invitation).values(id="inv-link", token_hash="4", **common))
+    downgrade(engine, _before(engine, "20261109200000_invite_by_handle"))
+    with engine.connect() as conn:
+        rows: dict[str, Any] = dict(
+            conn.execute(text("SELECT id, revoked_at FROM invitation ORDER BY id")).all()
+        )
+    assert rows["inv-open"] is not None
+    assert str(rows["inv-declined"])[:16] == declined_at.strftime("%Y-%m-%d %H:%M")
+    assert rows["inv-used"] is None and rows["inv-link"] is None

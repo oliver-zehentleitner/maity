@@ -10,6 +10,7 @@
     - {src: docs/README.md, title: Overview}
     - {src: docs/getting-started.md, title: Getting started}
     - {src: docs/install/quickstart.md, title: Quickstart}
+    - {src: docs/faq.md, title: FAQ}
 
 - group: How Maity works
   pages:

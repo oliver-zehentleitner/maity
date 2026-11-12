@@ -1,7 +1,9 @@
 // Limits, a section of /admin (docs/api.md §16.5; js/instance-admin.js
 // shows it to the instance admin only): the caps on what one human may
-// hold — agent profiles, organisations owned, projects and earlier names — with each value's
-// source (§16.2) and how many humans are at or over it, the attachment storage of
+// hold — agent profiles and organisations owned —, on the projects per namespace (a human's
+// or an organisation's) and on the earlier names of one id (a human, an organisation, an agent
+// profile or a project), with each value's source (§16.2) and how many humans, namespace
+// owners or ids are at or over it, the attachment storage of
 // each project (no count beside it: a project's own total is in its view, §6.1), and the
 // attachment storage of the whole hub with what is stored now. A value is
 // a number (1–10000; earlier names 1–8, never no limit; a project's storage in MiB, the hub's in GiB,

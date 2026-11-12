@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
@@ -139,6 +139,14 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     engine = engine_of(request)
 
     served_param = request.query_params.get("for")
+    if after_param == "latest" and wait == 0 and served_param is None:
+        # From now on, without the history; acknowledges nothing (§8.3). The same code builds
+        # the `head` part of `GET /bootstrap` (§5.4).
+        def head() -> dict[str, Any]:
+            with engine.begin() as conn:
+                return head_body(conn, caller, slug)
+
+        return JSONResponse(await run_in_threadpool(head))
 
     def start() -> tuple[Caller, Membership, int, bool]:
         with engine.begin() as conn:
@@ -168,7 +176,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     reader, mine, after, supervised = await run_in_threadpool(start)
     carried = reader.bridge is not None
     if after_param == "latest" and wait == 0:
-        # From now on, without the history; acknowledges nothing (§8.3).
+        # A bridge's read for an agent (`for`); without it, `head_body` above (§8.3).
         return answer([], after, superseded=False)
 
     def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int] | None:
@@ -211,6 +219,34 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             cursor = rows[-1].seq if rows else max(examined, since)
             return event_views(conn, rows, mine), cursor
 
+    def quiet(since: int) -> bool:
+        """Whether a later pass of the wait may skip its read (tsk-x1rsd4r6htcv): no event of
+        the project past `since`, and the reader as the read would find it, an agent's row
+        present and not isolated, a bridge's connection still carrying it. One statement
+        (two with the bridge's check) where the read costs four for an agent or a bridge and
+        two for a human, without `BEGIN IMMEDIATE` and the `long_poll` row. Under the project's lock
+        `seq` follows commit order (`events.emit`), and the read reads only `seq > since`,
+        so it could only answer nothing. Anything else is not quiet and reads in full,
+        which ends the wait or delivers exactly as it does without this check."""
+        with engine.begin() as conn:
+            if carried and not _still_carried(conn, reader):
+                return False
+            head = (
+                select(func.max(t.event.c.seq))
+                .where(t.event.c.project_id == mine.project.id)
+                .scalar_subquery()
+            )
+            if caller.kind == "agent":
+                found = conn.execute(
+                    select(t.membership, head.label("head")).where(t.membership.c.id == mine.id)
+                ).first()
+                if found is None or events.is_isolated(found):
+                    return False
+                top = found.head
+            else:
+                top = conn.execute(select(head)).scalar()
+            return top is None or top <= since
+
     if wait == 0:
         found = await run_in_threadpool(read, False, after)
         if found is None:
@@ -239,6 +275,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     try:
         deadline = time.monotonic() + wait
         since = after
+        passes = 0
         while True:
             if waiter.superseded:
                 # Nothing read, nothing delivered, the cursor where it was: the wait that
@@ -247,7 +284,13 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if await request.is_disconnected() or waiter.ended:
                 return answer([], since, superseded=False)
             waiter.event.clear()  # an event after this read wakes the next pass
-            found = await run_in_threadpool(read, True, since)
+            # The first pass reads; a later one first looks whether anything moved, after the
+            # clear above, so an event committed after the look still wakes the pause below.
+            if passes and await run_in_threadpool(quiet, since):
+                found = ([], since)
+            else:
+                found = await run_in_threadpool(read, True, since)
+            passes += 1
             if found is None:
                 return answer([], since, superseded=False)
             items, cursor = found
@@ -265,6 +308,59 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
     finally:
         closed()
         longpoll.registry.leave(waiter)
+
+
+SEQ_DIGITS = len(str(SEQ_MAX))
+
+
+def parse_seq(raw: str) -> int:
+    """One event's `seq` from the path, before anything is read (§8.9): `0` or ASCII digits
+    without a leading zero, at most 2⁶³ − 1. `068216` is invalid, not 68216."""
+    if (
+        not raw.isascii()
+        or not raw.isdigit()
+        or len(raw) > SEQ_DIGITS
+        or (len(raw) > 1 and raw[0] == "0")
+        or int(raw) > SEQ_MAX
+    ):
+        raise invalid({"seq": "not_a_seq"})
+    return int(raw)
+
+
+@router.get("/projects/{owner}/{slug}/events/{seq}")
+def read_event(slug: str, seq: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """One event by its `seq` (§8.9): exactly what `GET /events?after=<seq − 1>` would serve
+    this caller now, plus `conversation_id` for a caller who reads that conversation now. It
+    is the event list's own read, bounded to this one `seq`, so the rule is the list's and not
+    a copy of it (hub/context/events.md). Whoever may not read the event gets the `not_found`
+    of a `seq` nobody has. Reading acknowledges nothing, delivers nothing, wakes nobody and
+    does not count as listening (§5.3): it writes nothing.
+
+    A bridge reads for an agent with `Maity-For` only, which the caller already resolved
+    (§2.3). §8.9 gives this route the list's `Maity-For` rule and no `for` query, so a `for`
+    is refused rather than ignored: ignored, the bridge would get its own answer for the
+    agent's, a silent `404` or the bridge's view where it asked for the agent's."""
+    if "for" in request.query_params:  # before the seq: both come from the request alone
+        raise invalid({"for": "not_allowed"}, "this route reads no for; send Maity-For")
+    number = parse_seq(seq)
+    with engine_of(request).begin() as conn:
+        mine = membership(conn, caller, slug)  # not a member here: `not_found`, as for any seq
+        mine.require("project:read")
+        rows, _, _ = events.read(
+            conn, mine.project.id, mine.row, mine.principal_id, number - 1, 1, until=number
+        )
+        if not rows:
+            raise not_found()
+        view = event_views(conn, rows, mine)[0]
+        from maity_hub.routes import conversations  # it imports this module
+
+        conversation = rows[0].conversation_id
+        view["conversation_id"] = (
+            conversation
+            if conversation is not None and conversations.reads_messages(conn, mine, conversation)
+            else None
+        )
+        return JSONResponse(view)
 
 
 def _reader(
@@ -309,15 +405,28 @@ def _still_carried(conn: Connection, reader: Caller) -> bool:
 
 
 def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:
-    return JSONResponse(
-        {
-            "items": items,
-            "cursor": cursor,
-            "server_time": clock.rfc3339(clock.now()),
-            "superseded": superseded,
-            "cli_version": CLI_VERSION,
-        }
-    )
+    return JSONResponse(answer_body(items, cursor, superseded))
+
+
+def answer_body(items: list[dict[str, Any]], cursor: int, superseded: bool) -> dict[str, Any]:
+    return {
+        "items": items,
+        "cursor": cursor,
+        "server_time": clock.rfc3339(clock.now()),
+        "superseded": superseded,
+        "cli_version": CLI_VERSION,
+    }
+
+
+def head_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
+    """`?after=latest&wait=0` without `for` (§8.3): the head, no history, nothing
+    acknowledged. `read_events` answers that query with it, and it is the `head` part of
+    `GET /bootstrap` (§5.4)."""
+    mine = membership(conn, caller, slug)
+    mine.require("project:read")
+    after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
+    not_listening.called(conn, caller.session_id)
+    return answer_body([], after, superseded=False)
 
 
 def _acknowledge(conn: Connection, caller: Caller, after: int) -> None:

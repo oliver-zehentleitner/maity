@@ -123,6 +123,50 @@ def test_wait_on_429_waits_at_least_retry_after_within_the_deadline(
     assert captured.err.count("hub answered 429, retrying until the timeout") == 1
 
 
+def test_wait_on_database_unavailable_waits_at_least_retry_after(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A 503 `database_unavailable` (§1.3: unreachable or a used-up pool) carries Retry-After;
+    the wait keeps it like a 429's, never past the deadline, and reads on with the same cursor."""
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    busy = {"error": {"code": "database_unavailable", "message": "the database is unreachable"}}
+    replies = iter(
+        [
+            (503, busy, {"Retry-After": "5"}),  # longer than the first back-off
+            (503, busy, {"Retry-After": "1"}),  # shorter: the back-off wins
+            (503, busy, {"Retry-After": "3600"}),  # beyond the deadline
+        ]
+    )
+    calls: list[str] = []
+
+    def response(seen: fakehub.Seen) -> Any:
+        calls.append(seen.query)
+        return next(replies)
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT
+    # 5 (Retry-After), 4 (back-off), then the rest up to the deadline less the note's 5 seconds
+    assert clock.sleeps == [5, 4, 46]
+    assert all("after=17&" in query for query in calls)
+    assert state.load_state(joined)["cursor"] == 17
+    assert capsys.readouterr().err.count("hub answered 503, retrying until the timeout") == 1
+
+
+def test_wait_on_another_5xx_keeps_its_back_off_whatever_retry_after(
+    joined: Path, fake: fakehub.FakeHub, clock: Clock
+) -> None:
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    replies = iter(
+        [(502, "Bad Gateway", {"Retry-After": "40"}), (200, {"items": [], "cursor": 17})]
+    )
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: next(replies)
+    cli.main(["wait", "--timeout", "60"])
+    assert clock.sleeps[0] == 2
+
+
 def test_success_resets_backoff_and_retries_latest_cursor(
     joined: Path,
     fake: fakehub.FakeHub,
