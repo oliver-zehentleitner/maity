@@ -15949,6 +15949,7 @@ and `resolveEntry`, and any write.
 | GET | `/runners` | human | 15.3 |
 | GET, PATCH, DELETE | `/runners/{id}` | owner, `members:admin` in an attached project (GET) / owner | 15.3 |
 | POST | `/runners/{id}/revoke` | owner | 15.3 |
+| POST | `/runners/{id}/updates` | owner (not built yet, tsk-29nmydbzrg5z) | 15.3, 15.16 |
 | GET, POST | `/projects/{owner}/{slug}/runners` | `project:read` (agents: `agents:propose`) / `members:admin` + runner owner | 15.4 |
 | DELETE | `/projects/{owner}/{slug}/runners/{runner_id}` | `members:admin` / runner owner | 15.4 |
 | GET, POST | `/projects/{owner}/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner, `agents:propose` | 15.6 |
@@ -15968,6 +15969,7 @@ and `resolveEntry`, and any write.
 | PUT, GET, DELETE | `/runner/placements/{id}/handover` | runner | 15.8, 15.14 |
 | POST | `/runner/placements/{id}/usage` | runner | 15.8, 15.15 |
 | PATCH | `/runner` | runner | 15.8 |
+| GET | `/runner` | runner (not built yet, tsk-29nmydbzrg5z) | 15.8, 15.16 |
 | GET | `/projects/{owner}/{slug}/tasks/{id}/usage` | a human member; an agent member whose runs counted for the card | 15.15 |
 | GET | `/projects/{owner}/{slug}/members/{id}/usage` | the agent's owner; the owner's own agents with trust `admin` | 15.15 |
 | GET | `/agents/{id}/usage` | the agent's owner; the owner's own agents with trust `admin`, for their project | 15.15 |
@@ -16216,10 +16218,10 @@ try again then` and exits with 7, its own code, never 1.
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; both not built yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` after every wake (§15.16; not built yet, tsk-29nmydbzrg5z), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; both not built yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local, the free space of the file system holding the workspaces included (§15.5; not built yet, tsk-34gb7frfbsk7) |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
-| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. `status` also prints the fingerprint of the runner's handover key (§15.14) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7). |
+| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16; not built yet, tsk-29nmydbzrg5z). `status` also prints the fingerprint of the runner's handover key (§15.14) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7). |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
 | `maity dormant [--off] [--json]` | `PATCH /me` with `{"dormant": true}` (`false` with `--off`); prints `dormant: only @<handle>#<id> wakes this instance` or `awake`, read from this instance's entry in the answer's `instances` (an answer without it prints no line and the hint `the hub's answer does not show this instance; run maity resume to see whether it is dormant` on stderr, exit 0); with `--json`, the hub's answer. Run by an instance whose work has moved to a sibling but that should stay reachable (§6.17) |
@@ -16463,6 +16465,7 @@ rule of §13 before it writes anything.
 | `GET /runners` | human | the runners the caller owns, and the runners attached to projects where the caller has `members:admin`; ordered by `name`; `{items}` |
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
+| `POST /runners/{id}/updates` | the owner | `{tool}`; `202` with the runner view: asks the runner to look for a newer version of that tool now (`Update now`, §15.16); `conflict` (`details.reason: "updates_off"`) for a tool the runner does not update. Not built yet, tsk-29nmydbzrg5z |
 | `POST /runners/{id}/revoke` | the owner | `{"reason"?, "agents"?}`; revokes the live credential, ends its long-poll; returns the runner view with `on_runner_revoke` (below). What happens to its agents follows `on_runner_revoke` per attached project, or `agents` (below) |
 | `DELETE /runners/{id}` | the owner | `{"agents"?}`; revokes the credential, applies `on_runner_revoke` to its agents (below) per attached project, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the ids of the placements whose last report was `starting`, `running` or `stopping`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
 
@@ -16597,7 +16600,9 @@ owner choose):
   of the design); the hub accepts any of them that a runner advertises.
   `sandbox`: `on`, `off`, `n/a` — the harness's own OS sandbox.
   `available: false` comes with `reason` (`binary_not_found`,
-  `version_failed`).
+  `version_failed`, or `login_needed` for a tool the runner installed
+  that waits for its owner's login, §15.16; not built yet,
+  tsk-29nmydbzrg5z).
 - `harnesses[].default_mode` is the mode a placement gets when it names
   none. Which mode each adapter defaults to is the runner's (open: §12 5
   of the design).
@@ -16606,6 +16611,10 @@ owner choose):
   configuration and never reaches the hub (open: §12 2 of the design).
 - `projects` (top level) are the projects the runner is attached to,
   limited to those the caller is a member of.
+- `tools` is what the runner manages of its harness tools and of `maity`
+  itself, and `update_requests` (top level of the runner view) the
+  owner's open `Update now` requests (§15.16; not built yet,
+  tsk-29nmydbzrg5z). Absent from a runner that does not report them.
 - `handover_key` is the runner's public X25519 key for a `full`
   replacement (§15.14), `public` base64url without padding, 32 bytes;
   `fingerprint` is computed by the hub, never taken from the runner.
@@ -17022,6 +17031,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `oom_killed`, `evicted`, `image_pull` | `failed`, `exited` | Kubernetes only |
 | `stopped_by_hub` | `stopped` | `desired: stopped` was carried out |
 | `adopted` | `running` | the runner found the session after its own restart and took it over |
+| `updated` | `exited` | the runner ended a session that an older `maity` started, at its idle point, to start it again on the newer one; it resumes the session, outside the crash cap (§15.16; not built yet, tsk-29nmydbzrg5z) |
 | `orphaned` | `stopped` | the runner found a session it has no placement for and ended it |
 
 | `detail` | With |
@@ -17185,7 +17195,8 @@ Runner credential, signed (§15.1).
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
 | POST | `/runner/placements/{id}/usage` | `{run, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same body; supervised placements only, for the placement's open `run` (`run_closed` otherwise); no `Idempotency-Key`: the `run` is its key; §15.15 |
-| PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable). `Idempotency-Key` required |
+| PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable, a tool's version or state, §15.16). `Idempotency-Key` required |
+| GET | `/runner` | — | `200`, `{update_requests: [{tool, requested_at}]}`: the owner's open `Update now` requests (§15.16). Read after every wake of the event wait. Not built yet, tsk-29nmydbzrg5z |
 
 ```json
 {
@@ -18804,6 +18815,145 @@ daily totals per project, not the runs.
 **Not decided here.** Interactive placements, which need the harness's
 own session log, are a card of their own. So is any price list, budget
 or limit: the hub stays out of pricing and billing.
+
+### 15.16 Harness tools and maity on the runner
+
+Not built yet, tsk-29nmydbzrg5z. A runner can install and update the
+harness tools its placements need, and `maity` itself, each only when its
+owner allows it for that tool (the owner's decision of 2026-11-12). Without
+that, nothing changes from today: the runner uses what it finds and
+touches nothing.
+
+**The runner's configuration.** It is the runner's and never reaches the
+hub; the hub only sees what the runner advertises (§15.3).
+
+```toml
+[harness.<id>]
+install = true      # install the tool when it is missing; default false
+update = "daily"    # "daily" or "never"; default "never"
+
+[maity]
+update = "daily"    # maity itself; default "never"
+```
+
+- **Install.** A harness tool that the configuration lists, that has
+  `install = true` and that is missing is installed by the runner when it
+  starts, and again when the configuration is reloaded. Only with the
+  tool vendor's own installer, only into the runner user's own space,
+  never with elevated rights, and with the checksum check where the
+  installer offers one. Which installer belongs to which tool is fixed in
+  the runner's code, never taken from the configuration or the hub.
+  `maity` is never installed by the runner; it is what runs it.
+- **Update.** With `update = "daily"`, the runner looks for a newer
+  version once a day, and at once when the hub asks (`Update now`,
+  below). It installs the newer version beside the one in use, checks
+  that it runs (its version answer), and only then uses it for the next
+  start of a session. A session that runs keeps the version it started
+  with: the runner never swaps a tool under a running agent. The version
+  before stays on the machine, so the operator can go back to it on the
+  runner (`maity runner tools rollback <tool>`, no hub call). A newer
+  version that does not run is removed again, the version in use stays,
+  and the tool reports `failed`.
+- **Rollback.** `maity runner tools rollback <tool>` makes the kept
+  version the one new sessions start with; the version it left stays on
+  the machine as `previous_version`, so a second rollback goes back to
+  it. After a rollback the tool reports `rolled_back` when the version
+  now in use is older than `latest`, and `current` otherwise. While it
+  is `rolled_back`, the runner does not install the version it left, or
+  one that failed its version answer, again on its own, neither on the
+  daily check nor on `Update now`: it takes only a version newer than
+  those, which ends `rolled_back`. Taking the left version again is the
+  operator's second rollback. For example, with 2.1.320 in use, 2.1.308
+  kept and `latest` 2.1.320: a rollback starts new sessions on 2.1.308,
+  keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
+  daily check finds 2.1.320 again and leaves it. A second rollback
+  starts them on 2.1.320 again, keeps 2.1.308 and reports `current`. If
+  2.1.321 appears while it is `rolled_back`, the runner installs it as
+  any update and reports `current`.
+- **maity itself.** The same rules. After an update, the runner restarts
+  itself on the new version, takes over its sessions (`adopted`, §15.7),
+  and restarts each session that an older `maity` started, at that
+  session's next idle point: an interactive agent waiting in `maity
+  wait`, a supervised loop between runs, never mid-step (the owner's
+  answer to req-r2egh0ry0c4c, event 119533). The restart resumes the session
+  (§15.14) and reports `exited` with `reason: updated` (§15.7). Today
+  that restart is the operator's (docs/runners.md).
+- **Logins.** The runner never handles a login or a credential of a
+  tool. A tool that needs a login after its install reports
+  `login_needed` and is not offered to placements (`available: false`,
+  `reason: login_needed`, §15.3) until its owner has logged in on the
+  machine.
+- **Where.** On the runner's local target. On an `ssh` target the
+  runner only reports what it finds there, and manages nothing (the
+  owner's answer to req-vpcfh15h247c, event 119538).
+
+**What the runner reports.** `capabilities.tools` (§15.3), one entry
+per harness tool the configuration lists, and one for `maity`:
+
+```json
+"tools": [
+  { "id": "claude-code", "install": true, "update": "daily",
+    "version": "2.1.320", "previous_version": "2.1.308", "latest": "2.1.320",
+    "state": "current", "reason": null,
+    "checked_at": "2026-11-12T06:00:00Z", "updated_at": "2026-11-12T06:01:10Z",
+    "sessions_on_older": 1, "update_requested_at": null },
+  { "id": "maity", "install": false, "update": "daily",
+    "version": "0.1.0a10", "previous_version": "0.1.0a9", "latest": "0.1.0a10",
+    "state": "current", "reason": null,
+    "checked_at": "2026-11-12T06:00:00Z", "updated_at": "2026-11-12T06:00:40Z",
+    "sessions_on_older": 0, "update_requested_at": null }
+]
+```
+
+- `id`: a harness id (§15.3) or `maity`. `install`, `update`: the
+  configuration's values (`maity` always `install: false`).
+- `version`: what new sessions start with, `null` when the tool is not
+  there; `previous_version`: the version kept for a rollback, or `null`;
+  `latest`: the newest version the last check found, or `null` before
+  the first check or with `update: "never"`.
+- `state`: `current` (in use is the latest the runner knows of, or no
+  check has run), `rolled_back` (in use is older than `latest` after a
+  rollback; above), `missing` (not there and `install: false`),
+  `installing`, `updating`, `login_needed`, `failed`. `reason` with `failed` only:
+  `installer_failed`, `version_failed` (the new version does not run;
+  the one before is kept), `network`, `no_space`; `null` otherwise. The
+  lists are closed, as in §15.7.
+- `checked_at`: the last check for a newer version, `updated_at`: the
+  last change of `version`, both `null` until they happen.
+- `sessions_on_older`: how many running sessions still use an older
+  version than `version`; they move at their next restart.
+- `update_requested_at`: the `Update now` the runner carried out or is
+  carrying out, its `requested_at` exactly as the runner read it
+  (below), else `null`.
+
+Every string is printable ASCII of at most 200 characters, as for the
+rest of `capabilities`, and a version is never more than the tool's own
+version answer. The runner sends `PATCH /runner` (§15.8) when any of it
+changes.
+
+**Update now.** `POST /runners/{id}/updates` with `{tool}`, by the
+runner's owner only: the hub stores the request on the runner
+(`update_requests`) and answers `202` with the runner view. A tool the
+runner does not list in `capabilities.tools`, or lists with `update:
+"never"`, is `conflict` (`details.reason: "updates_off"`): the runner's
+configuration decides, and the runner checks again. A second request for
+the same tool replaces the first. The runner reads its requests with
+`GET /runner` (§15.8) after every wake of its event wait, so a request
+reaches it within a minute; a runner that is offline reads it when it is
+back. It carries out a request with the same rules as the daily check.
+The attempt is done when the tool's `state` is no longer `installing`
+or `updating`, whatever the outcome; the runner sends that report with
+`update_requested_at` naming the request, its `requested_at` exactly as
+it read it. The hub drops the stored request for that tool only when
+the two are equal, so a report decided before the runner saw a newer
+request leaves that one standing; no clock of the runner's is compared
+with the hub's. A request does not restart a session: a newer version
+is used from the next start on.
+
+**Seen by people.** The runner view (§15.3) carries `capabilities.tools`
+and `update_requests: [{tool, requested_at}]`; the dashboard's runners
+tab shows each tool's version, state and whether sessions still run an
+older one, with **Update now** for its owner.
 
 ## 16. Instance administration
 
