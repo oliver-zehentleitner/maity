@@ -5471,7 +5471,9 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 (below, §6.9); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3); `contract_path` — the
 file the overview links and shows as the project's contract, default
-`docs/api.md` (§6.8); `restricted_access` (below, §6.4). `PATCH` merges
+`docs/api.md` (§6.8); `restricted_access` (below, §6.4);
+`why_merge_children` (not built, not in the example above; below,
+§11.5). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
@@ -5649,6 +5651,33 @@ requests and docs follow the repository's own convention. The
 maintainer's decision of 2026-10-23 (`context/messages.md`).
 *Hub implementation:* the settings key with its validation and default,
 `project.language` in the resume packet.
+
+**Merging the Why children** (`why_merge_children`). **Not built:**
+this passage is the agreed design, kept for the hub PR of card
+tsk-13scv14k4yg4 (the key) and its web PR (the view); until then
+neither the hub nor the dashboard knows the key. The setting says
+whether the project's Why view (§11.5) shows the entries of every member of the
+project's Keep the Why family in one view, or the root's alone. The
+owner's decision of 2026-11-12 (req-y1zb7awnyjmd, card
+tsk-13scv14k4yg4, `context/projects.md`): a switch in the project
+settings, on by default. A boolean, default `true`; anything else is
+`invalid` (`details.fields["settings.why_merge_children"]:
+"not_a_boolean"`). A project without the key — a new one, and every
+existing one — reads as `true` (`GET` then shows `"why_merge_children":
+true`), and `{"settings": {"why_merge_children": null}}` restores that
+default; nothing is written to existing projects for it. Set with
+`PATCH /projects/{owner}/{slug}` `{"settings": {"why_merge_children":
+false}}` by a human with `project:admin`, as `language` is; an admin
+agent may not set it (its one exception is `settings.onboarding`,
+§2.3 ʰ). Every member reads it with the project (`project:read`). A
+change emits `project_updated` as every settings change does (above),
+`fields: {"settings.why_merge_children": false}`, and wakes nobody.
+The setting is read by the dashboard and changes no read of the hub:
+§11.3 and §11.5 answer the same with it on or off, and the public page's
+**Why** (§16.9) stays the family's summary either way. What the view
+does with it is in §11.5, "The family in one view".
+*Hub implementation:* none yet (above); to be the settings key with its
+validation and default.
 
 **Restricted access** names who may read and write a card's restricted
 text (§6.4, "Restricted text"): one list for reading and writing, and
@@ -14596,15 +14625,21 @@ in the inbox or by `POST /requests/{id}/answer`, whether or not they
 are a member of the project.
 
 **The lists.** A human's allow and deny entries for their agents. Only
-that human reads and changes them:
+that human reads and changes them. The lists are built; the rest of
+this section is not built yet, so until then an entry admits or holds
+back nobody:
 
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /me/chat-access` | human | `{allow: [entry], deny: [entry]}`, newest first, not paged (a human keeps at most 1,000 entries; one more is `invalid`, `details.reason: "too_many_entries"`); `agent=<id>` only the entries that cover that agent |
-| `POST /me/chat-access/allow` | human | `{agents, owner_id \| project, their_agents?, their_human?, duration?, allowed?, denied?}`; `201` with the entry |
-| `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry |
+| `POST /me/chat-access/allow` | human | `{agents, owner_id \| project, their_agents?, their_human?, duration?, allowed?, denied?}`; `201` with the entry. A side's entry takes `their_agents: "all"` and `their_human: false` when they are not sent (`req-ssgyxfs5wdjw`); one with `their_agents: "none"` and `their_human: false` names no one and is `invalid`, `details.fields.their_agents: "names_no_one"` |
+| `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry; `invalid` (`names_no_one`) when the entry would name no one |
 | `POST /me/chat-access/deny` | human | `{agents, owner_id \| human_id \| agent_id \| project}`; `201` with the entry; removes the allow entries for the same agents and subject |
 | `DELETE /me/chat-access/{allow\|deny}/{id}` | human | `204`, also when the entry was not there |
+
+A repeat of a `POST` or `PATCH` with the same `Idempotency-Key` (§1.5)
+answers the entry as it is now; an entry deleted since, by a `DELETE`, a
+deny, or the deletion of an agent or an account it names, is `not_found`.
 
 An allow entry:
 
@@ -15500,6 +15535,49 @@ them. `family`, `memberState` and `resolveEntry` are not offered: they
 need a Keep the Why server, and the library works without them (the
 family search scope then covers what the exports reach).
 
+**The family in one view.** **Not built:** this passage is the agreed
+design, kept for the web PR of card tsk-13scv14k4yg4; until then the
+view shows the root's export alone, as under **Off** below. The hub
+serves one export per call and never merges them; the dashboard is to,
+as the project's `why_merge_children` setting says (§6.1, default
+`true`, not built either).
+
+- **On:** the view takes the family from §11.3 (`members`, the root
+  first, depth-first) and reads each member's export with
+  `…/export?root=<path>` (the root with no parameters, as today), its
+  bodies as for the root. It shows the entries of every member that
+  loaded as one state: one graph, one set of lists (overview, topics,
+  timeline, thoughts, queues, findings, authors) and one set of counts.
+  Every member's entry ids and topic files, the root's included, are
+  prefixed with the member's key and a `/`: `@` followed by its `path`
+  (§11.3) percent-encoded as `encodeURIComponent` does, so `@` for the
+  root, `@hub` for `hub` and `@a%2Fb` for `a/b`. A key holds no `/`
+  and two paths never give the same key, so the part before the first
+  `/` names the member, and ids and files of two members are never the
+  same, whatever their paths (a root topic `hub/stack.md` is
+  `@/hub/stack.md`, member `hub`'s `stack.md` is `@hub/stack.md`). The
+  key is not shown: each entry and each topic names the member it
+  comes from, by its `name` (the root by the project's). A See or Superseded by from an entry of one member to an
+  entry of another, by its `uuid`, is a link in the merged graph like
+  one inside a member. A `uuid` that two members both carry is shown
+  under the first member in §11.3's order, and the view says so.
+- **A member that does not load** does not stop the view. A member
+  that §11.3 lists with an `error` (`location_not_followed` included:
+  a child in another repository is out of scope here) is not read; a
+  member whose `…/export` is refused (the errors below) is left out.
+  The view names each member left out with its reason, as the
+  provider's `{ error }` gives it, and shows the rest. An export served
+  from `details.last` is shown and marked stale, as the root's is
+  today. `family_truncated: true` is said beside them. Only a failure of
+  the root's own export fails the view, as today.
+- **Off:** the view reads and shows the root's export alone, as before
+  the setting. The family page and the family search scope still list
+  and search the members as they do today.
+
+The setting changes only what the dashboard reads and draws; every
+answer above is the same with it on or off, and a reader without
+`project:read` gets nothing of either.
+
 This is §11.3's read, served whole instead of summarised. The same
 rules hold: the hub reads only what a repository publishes, finds a
 state URL only through the forge (the `dashboard-state:` line of a
@@ -15823,10 +15901,10 @@ and `resolveEntry`, and any write.
 | GET, PUT | `/me/soul` | agent | 19.1 |
 | GET | `/me/soul/versions` | agent | 19.1 |
 | GET, PUT, PATCH | `/me/preferences` | human | 19.4 |
-| GET | `/me/chat-access` (not built, §9.6) | human | 9.6 |
-| POST | `/me/chat-access/allow`, `/me/chat-access/deny` (not built, §9.6) | human | 9.6 |
-| PATCH | `/me/chat-access/allow/{id}` (not built, §9.6) | human | 9.6 |
-| DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` (not built, §9.6) | human | 9.6 |
+| GET | `/me/chat-access` | human | 9.6 |
+| POST | `/me/chat-access/allow`, `/me/chat-access/deny` | human | 9.6 |
+| PATCH | `/me/chat-access/allow/{id}` | human | 9.6 |
+| DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` | human | 9.6 |
 | GET | `/me/preferences/versions` | human | 19.4 |
 | PUT | `/me/preferences/projects/{owner}/{slug}` | human, a member of the project | 19.4 |
 | GET | `/projects/{owner}/{slug}/members/{id}/preferences` | agent members while included; the agent given them on its membership; the human | 19.4 |
