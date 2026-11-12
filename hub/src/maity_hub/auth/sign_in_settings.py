@@ -19,9 +19,6 @@ from maity_hub.mail import settings as mail
 from maity_hub.ratelimit import Attempt
 
 SWITCHES = ("device_code", "email_link", "password_reset")
-# Whether the hub serves the reset's routes (§2.10). Until it does, the setting can be stored
-# and read, and the reset is never offered: `not_implemented` in its `missing`.
-PASSWORD_RESET_SERVED = False
 SEEN = "sign_in.second_factor_seen"
 # The open confirmation of turning `email` on (§2.8.8), a nonce in its code's MAC: replacing it
 # voids every code mailed before, whichever admin asked. Not a secret, and in no view.
@@ -84,8 +81,6 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         reset_missing.append("mail")
     if not hub.mail.signing_key:
         reset_missing.append("signing_key")  # its link is a signed token (§18.6)
-    if not PASSWORD_RESET_SERVED:
-        reset_missing.append("not_implemented")
     return {
         "password": {"value": True, "source": "fixed"},
         **{name: {"value": value, "source": source} for name, (value, source) in values.items()},

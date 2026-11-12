@@ -2131,8 +2131,8 @@ right now, `missing` why not: `switched_off` (the setting is `false`),
 `signing_key` (no `MAITY_MAIL_SIGNING_KEY`, which signs the links, §18.6),
 and `not_implemented` while the hub does not serve the sign-in link yet.
 `password_reset_available` and `password_reset_missing` say the same of
-the reset (§2.10), with `switched_off`, `mail`, `signing_key` and
-`not_implemented`. A change is not an
+the reset (§2.10), with `switched_off`, `mail` and `signing_key`.
+A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
@@ -3150,18 +3150,10 @@ this route for someone else; that remains §16.1.
 
 ### 2.10 Human: a forgotten password
 
-**Pending.** The hub stores and serves the settings of this section:
-`email.password_reset` (§18.4), the instance's `password_reset` with
-`MAITY_SIGN_IN_PASSWORD_RESET`, `password_reset_available` and
-`password_reset_missing` (§2.6.6), the budget
-`password_reset_max_per_hour` with its environment variable and counters
-(§16.2), and `password_reset` in `GET /auth/methods` (§2.6.1); the
-password generation moves with every password change. The three routes,
-the mail and the account record are not served yet (tsk-tadt2vw7589n,
-hub), nor is the page (tsk-yksxdpd2pk0m, web): until they are,
-`password_reset_missing` names `not_implemented`, so
-`password_reset_available` and `password_reset` in `GET /auth/methods`
-are `false`.
+**Pending.** The hub serves this section. The dashboard's parts are not
+there yet (tsk-yksxdpd2pk0m): the page `/sign-in/reset`, "Forgot
+password?" on the login page, the switch in the mail settings and the
+banner toward an authenticator app.
 
 The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
 in seq 109283): a human who forgot the password sets a new one through
@@ -5267,7 +5259,8 @@ server time back.
                                        "live version equals the tag"],
                 "onboarding": { "check_in_with": "coordinator", "version": 3,
                                 "by": { "kind": "agent", "id": "agt-a", "handle": "agent-a" },
-                                "updated_at": "2026-10-23T10:00:00Z" } },
+                                "updated_at": "2026-10-23T10:00:00Z" },
+                "why_merge_children": true },
   "attachments": { "used": 48213, "quota": 1073741824 },
   "rules_version": 7,
   "created_at": "2026-10-21T07:50:00Z"
@@ -5472,8 +5465,7 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `contract_files`, `contract_implementers` (§17.3); `contract_path` — the
 file the overview links and shows as the project's contract, default
 `docs/api.md` (§6.8); `restricted_access` (below, §6.4);
-`why_merge_children` (not built, not in the example above; below,
-§11.5). `PATCH` merges
+`why_merge_children` (below, §11.5). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
@@ -5652,10 +5644,11 @@ maintainer's decision of 2026-10-23 (`context/messages.md`).
 *Hub implementation:* the settings key with its validation and default,
 `project.language` in the resume packet.
 
-**Merging the Why children** (`why_merge_children`). **Not built:**
-this passage is the agreed design, kept for the hub PR of card
-tsk-13scv14k4yg4 (the key) and its web PR (the view); until then
-neither the hub nor the dashboard knows the key. The setting says
+**Merging the Why children** (`why_merge_children`). The hub keeps and
+serves the key; the dashboard does not read it yet (its web PR of card
+tsk-13scv14k4yg4 is to, §11.5 "The family in one view", **not
+built**), so until then the view shows the root's export alone whatever
+the setting says. The setting says
 whether the project's Why view (§11.5) shows the entries of every member of the
 project's Keep the Why family in one view, or the root's alone. The
 owner's decision of 2026-11-12 (req-y1zb7awnyjmd, card
@@ -5671,13 +5664,15 @@ false}}` by a human with `project:admin`, as `language` is; an admin
 agent may not set it (its one exception is `settings.onboarding`,
 §2.3 ʰ). Every member reads it with the project (`project:read`). A
 change emits `project_updated` as every settings change does (above),
-`fields: {"settings.why_merge_children": false}`, and wakes nobody.
-The setting is read by the dashboard and changes no read of the hub:
+`fields: {"settings.why_merge_children": false}`, and wakes nobody;
+the value is what the key reads as, so `null` announces `true`, and a
+`PATCH` that leaves it reading the same (`true` or `null` where it reads
+`true`) announces nothing. It bumps no `rules_version`. The setting is read by the dashboard and changes no read of the hub:
 §11.3 and §11.5 answer the same with it on or off, and the public page's
 **Why** (§16.9) stays the family's summary either way. What the view
 does with it is in §11.5, "The family in one view".
-*Hub implementation:* none yet (above); to be the settings key with its
-validation and default.
+*Hub implementation:* the settings key with its validation and default
+(`views.why_merge_children`), refused to agents with `humans_only`.
 
 **Restricted access** names who may read and write a card's restricted
 text (§6.4, "Restricted text"): one list for reading and writing, and
@@ -12015,7 +12010,7 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1; `settings.restricted_access` served per reader, `{mode, members}` or `{mode, included}`, §6.1 "Reading the setting"); never image bytes, never free text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1; `settings.why_merge_children` as it reads, `true` when removed, §6.1; `settings.restricted_access` served per reader, `{mode, members}` or `{mode, included}`, §6.1 "Reading the setting"); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
@@ -13825,13 +13820,16 @@ The conversation view:
   mark, as for a mention.
 
   Exactness: the counts leave out every message redacted before the hub's
-  pass starts. Exactness against a redaction that commits while a pass
-  runs is not promised: the nudge is a wake-up hint, and reading the chat
+  pass starts, unless the project wrote 2000 or more redactions between
+  two of the hub's reads of the chat for that agent; those may then stay
+  counted, as may a redaction that commits while a pass runs.
+  Exactness against those is not promised: the nudge is a wake-up hint, and reading the chat
   shows a redacted message only as its tombstone (§8.5), never its body.
   The hub reads at most a budget of messages (2000) per stay and call,
-  moving the read's end up to the newest message each time: while that
-  many or more new human messages arrive in a chat between passes, the
-  nudge may not come; with fewer, the read catches up and the nudge comes.
+  moving the read's end up to the newest message only once the read has
+  reached it: at any rate of new messages or redactions the read finishes
+  and the nudge comes, for a backlog of n events in the chat about n / 2000
+  passes later.
 
   Bounded on purpose:
   - one wake per agent and chat per read cycle, never sooner than the delay
@@ -15540,7 +15538,7 @@ design, kept for the web PR of card tsk-13scv14k4yg4; until then the
 view shows the root's export alone, as under **Off** below. The hub
 serves one export per call and never merges them; the dashboard is to,
 as the project's `why_merge_children` setting says (§6.1, default
-`true`, not built either).
+`true`; the hub keeps it, the dashboard does not read it yet).
 
 - **On:** the view takes the family from §11.3 (`members`, the root
   first, depth-first) and reads each member's export with
