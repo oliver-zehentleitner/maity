@@ -37,6 +37,11 @@ GIT_PATH = Path(".git", "maity", "git")
 # directory of the session's own could take its name; maity takes `.git` only as the one
 # with this inode, opened once (opened_git).
 GIT_INODE_ENV = "MAITY_GIT_INODE"
+# Where maity makes git's own repository for one run, outside the clone, in the runner's
+# directory for the agent, which the sandbox hides: git gets that repository as a path, and a
+# path through `.git` names whatever `.git` is when git opens it. Unset for Codex, whose
+# maity runs inside the sandbox with the agent's own rights: there `.git/maity` is used.
+GIT_PRIVATE_ENV = "MAITY_GIT_PRIVATE"
 # What git under the runner gets from maity's own environment. PATH is not among them: git
 # gets one of its own (git_path_env), so no variable set for maity
 # (`GIT_SSH_COMMAND=… maity report`, `PATH=…`) picks a program git starts; HOME reaches git
@@ -451,21 +456,28 @@ def placement_git(cwd: Path) -> Iterator[Pinned | None]:
     dot_git = root / ".git"
     with opened_git(root) as top:
         program = _recorded_git(root, top)  # the config is read by the same git, not PATH's
+        # The check reads `.git` by name: under an exchange it checks the replacement, and
+        # only what it accepts reaches git, a plain clone's keys, none of which runs a program.
         finding, entries = _inspect(root, LOCAL, program)
         if finding is not None:
             raise Refused(_refusal(root, finding))
         private = _private_dir(root, top)
         try:
-            _copy_refs(dot_git, private, top)
-            (private / "config").write_text(
-                "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
-            )
+            try:
+                _copy_refs(dot_git, private, top)
+                (private / "config").write_text(
+                    "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+                )
+            except OSError as exc:
+                raise Refused(f"git's own repository for this run cannot be made ({exc})") from None
             yield Pinned(
                 program,
                 {
                     **git_path_env(program),
                     "GIT_DIR": str(private),
                     "GIT_COMMON_DIR": str(private),
+                    # Data git reads, through the name `.git`: under an exchange, the
+                    # replacement's objects and index, which start no program.
                     "GIT_OBJECT_DIRECTORY": str(dot_git / "objects"),
                     "GIT_INDEX_FILE": str(dot_git / "index"),
                     "GIT_WORK_TREE": str(root),
@@ -606,7 +618,7 @@ def opened_git(root: Path) -> Iterator[int | None]:
     `.git` and put a directory of its own there. Where directories cannot be opened (Windows,
     local mode) the inode is checked by name and None is yielded."""
     value = os.environ.get(GIT_INODE_ENV, "")
-    if not value.isdigit():
+    if not (value.isascii() and value.isdigit()):
         raise Refused(
             f"{GIT_INODE_ENV} is not set, so the clone's .git is unknown; the runner sets it"
             " when it starts a session: restart the placement"
@@ -645,9 +657,20 @@ def _walks() -> bool:
 
 
 def _private_dir(root: Path, top: int | None) -> Path:
-    """A new directory in the clone's `.git/maity`, for one git run's own repository: made
-    through `.git`'s descriptor, with a name sandboxed code cannot read (`.git/maity` is
-    hidden from it), so a `.git` replaced afterwards has no directory of that name."""
+    """A new directory for one git run's own repository (its configuration, HEAD, refs). Under
+    a runner that sets GIT_PRIVATE_ENV, in that directory outside the clone: git opens it by
+    path, and no path through `.git` is safe once `.git` can be renamed. Otherwise (Codex,
+    whose maity has the agent's own rights) in the clone's `.git/maity`, made through `.git`'s
+    descriptor `top` where there is one."""
+    outside = os.environ.get(GIT_PRIVATE_ENV, "")
+    if outside:
+        where = Path(outside)
+        if not where.is_absolute() or where.is_symlink() or not where.is_dir():
+            raise Refused(f"{GIT_PRIVATE_ENV} names no directory of maity's own ({where})")
+        try:
+            return Path(tempfile.mkdtemp(prefix="git-", dir=where))
+        except OSError as exc:
+            raise Refused(f"git's own repository for this run cannot be made ({exc})") from None
     own = root / ".git" / "maity"
     if top is None:
         if own.is_symlink() or not own.is_dir():

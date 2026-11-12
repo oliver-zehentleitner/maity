@@ -160,9 +160,13 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
         clonecheck.GIT_INODE_ENV: str(os.lstat(clone / ".git").st_ino),
+        clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
+    private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
+    assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
+    assert clone not in private.parents
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER
