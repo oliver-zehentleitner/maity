@@ -402,7 +402,8 @@ one at its next tick. The time of the last call is kept in `localStorage`
 share the minute: a tab whose session called within it, from this tab, another or an earlier
 load, waits for that minute instead of calling again. That is best effort, not a lock: two tabs
 that read the time at the same moment both call, each still at most once a minute, and the hub
-writes once.
+writes once. A kept time later than now (the clock was set back since) counts as no call: kept,
+it would hold every tab of the session silent until the clock caught up with it.
 
 **Reason:** the hub counts a session present for two minutes after a write and writes at most
 once a minute, so a call a minute after the last lands while the last write's two minutes still

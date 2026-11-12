@@ -195,7 +195,7 @@ window.Maity = window.Maity || {};
 
     const cancel = h("button", { type: "button", onclick: () => hooks.cancel() }, M.t("placements.cancel"));
     const form = h("form", { class: "placement-new", "aria-labelledby": id("title") },
-      // Under the project tab's h2 (the only section that offers the form), one level down.
+      // Under the page's h2 (the Join an agent menu opens it under the page's head), one level down.
       h("h3", { id: id("title") }, M.t("placements.new.title")),
       h("p", { class: "hint" }, M.t("placements.new.hint")),
       field("agent", M.t("join.field.agent"), agent), fresh,
@@ -437,65 +437,10 @@ window.Maity = window.Maity || {};
     loaded = true;
     if (missed) reread();
     append(box, heading(),
-      opts.own ? null : h("p", { class: "muted" }, M.t("placements.hint")),
-      opts.own ? null : await starting(), list, status.el);
+      opts.own ? null : h("p", { class: "muted" }, M.t("placements.hint")), list, status.el);
+    // A start from the page's Join an agent menu lists its placement at once, not only on its event.
+    sections.set(box, reread);
     return box;
-
-    // Start on a runner: for a human with members:admin, over the runners of their own that
-    // are attached here with a live credential (§15.4, §15.6) and offer this project's
-    // repository (the hub's `repository_not_offered`); none, and the way to allow one.
-    async function starting() {
-      if (!ctx.canAdmin || ctx.me.kind !== "human") return null;
-      // A project without a repository: the hub refuses every placement, so no form.
-      const repo = ctx.project && ctx.project.repository && ctx.project.repository.url;
-      if (!repo) return h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository"));
-      let runners = [];
-      try {
-        runners = (await M.api.getAll(ctx.base + "/runners")).items
-          .filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
-      } catch (err) {
-        return h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message }));
-      }
-      if (!runners.length) {
-        return h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
-          { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) }));
-      }
-      const name = repositoryName(repo);
-      runners = runners.filter((a) => ((a.runner.capabilities || {}).repositories || []).some((p) => typeof p === "string" && fnmatch(name, p)));
-      if (!runners.length) {
-        return h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) }));
-      }
-      const slot = h("div", { class: "placement-new-slot" });
-      const open = h("button", { type: "button", class: "placement-new-open", "aria-expanded": "false" }, M.t("placements.new.open"));
-      const close = (refocus) => {
-        clear(slot);
-        open.hidden = false;
-        open.setAttribute("aria-expanded", "false");
-        if (refocus) open.focus();
-      };
-      open.addEventListener("click", () => {
-        const placed = new Set(items.filter((p) => p.active && p.agent.id).map((p) => p.agent.id));
-        const f = startForm(ctx, runners, placed, {
-          cancel: () => close(true),
-          // Only the form that sent it closes: one cancelled while its POST ran and opened anew
-          // keeps its draft and the focus; the placement made is listed and said all the same.
-          made: async (made) => {
-            const mine = f.form.parentNode === slot;
-            if (mine) close(false);
-            await reread();
-            append(clear(status.el), h("span", { class: "ok" }, M.t("placements.new.done",
-              { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })));
-            if (mine) status.el.focus();
-          },
-        });
-        append(clear(slot), f.form);
-        open.hidden = true;
-        open.setAttribute("aria-expanded", "true");
-        f.first.focus();
-      });
-      status.el.setAttribute("tabindex", "-1");
-      return h("div", { class: "placement-new-box" }, open, slot);
-    }
   }
 
   // The repository as a runner names it, and the hub's match of it against a runner's advertised
@@ -590,5 +535,45 @@ window.Maity = window.Maity || {};
     return p === tokens.length;
   }
 
-  M.placements = { section, fnmatch };
+  // Start on a runner, the second way of the Join an agent menu (tsk-vkyp71qp95n9; once a part
+  // of this list, which now shows only what runs): for a human with members:admin, over the
+  // runners of their own that are attached here with a live credential (§15.4, §15.6) and offer
+  // this project's repository (the hub's `repository_not_offered`); none, and why, with the way
+  // to allow one. Returns `{ node, first }`: the form and its first field, or a line saying why
+  // there is none (`first` null); null for whom it is not offered. hooks: `cancel()`,
+  // `made(placement)` after the hub's 201.
+  async function startBox(ctx, hooks) {
+    const why = (node) => ({ node, first: null });
+    // The menu offers this way to a human with members:admin only (`startOffered`).
+    if (!M.placements.startOffered(ctx)) return null;
+    // A project without a repository: the hub refuses every placement, so no form.
+    const repo = ctx.project && ctx.project.repository && ctx.project.repository.url;
+    if (!repo) return why(h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository")));
+    let runners = [];
+    let placed = new Set();
+    try {
+      const [attached, current] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements")]);
+      runners = attached.items.filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
+      placed = new Set(current.items.filter((p) => p.active && p.agent.id).map((p) => p.agent.id));
+    } catch (err) {
+      return why(h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message })));
+    }
+    if (!runners.length) {
+      return why(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
+        { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) })));
+    }
+    const name = repositoryName(repo);
+    runners = runners.filter((a) => ((a.runner.capabilities || {}).repositories || []).some((p) => typeof p === "string" && fnmatch(name, p)));
+    if (!runners.length) {
+      return why(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) })));
+    }
+    const f = startForm(ctx, runners, placed, hooks);
+    return { node: f.form, first: f.first };
+  }
+
+  // The sections drawn, each with its way to read the list again (`reread(box)`).
+  const sections = new WeakMap();
+  const reread = (box) => (sections.has(box) ? sections.get(box)() : Promise.resolve());
+  const startOffered = (ctx) => !!ctx.canAdmin && ctx.me.kind === "human";
+  M.placements = { section, startBox, startOffered, reread, fnmatch };
 })(window.Maity);

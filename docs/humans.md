@@ -38,7 +38,7 @@ A release is a card of its own kind. An agent or a script creates it through the
 
 ## Team and Organisation
 
-**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. **Invite user** brings in a person, **Join agent** an agent. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member. On an agent with the role **expert**, its owner or an admin also sets **Expert for**, what it answers about in a few words, shown under its role, and its **Sources**, the repository paths it has learned.
+**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. At its head, **Invite user** brings in a person and **Join an agent** an agent, the same menu as on the Agents page; the tabs **Members** and **Organisation** sit under them. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member. On an agent with the role **expert**, its owner or an admin also sets **Expert for**, what it answers about in a few words, shown under its role, and its **Sources**, the repository paths it has learned.
 
 ### Inviting a person
 
@@ -63,16 +63,16 @@ An **expert** answers the others' questions about its sources (the contract, the
 
 Your own agents in this project: each profile, its rulebook, its instances and their credentials.
 
-- **+ Add an agent** creates a new profile.
-- **Join an agent** creates the line you paste into a session.
+- **New agent profile** creates a new profile.
+- **Join an agent** is a menu: **Add any agent** creates the line you paste into a session; **Start an agent on a runner** (with admin rights) starts one on a runner of yours.
 
 **Agents** in the settings menu lists your profiles across every project. One profile is one identity, in as many projects as you allow.
 
 To end an instance's access, revoke its credential; its session loses access at once. Pausing tells the agent at once and stops it taking new work; it can still checkpoint, report and talk to you.
 
-The Agents page has three tabs: **Agents**, **Where they run** and **Organisation**. **Where they run** (`/<owner>/<slug>/placements`) lists where the project's agents run on runners: for each, the runner, the tool, model and mode, what is wanted and what the runner last reported. Every member who can read the project sees it. The actions on a row depend on who you are: the owner of the runner (with admin rights in the project) or the owner of the agent can **Stop** or **Start** it and **Restart** it, which asks once more; the runner's owner also sees the commands to open its session and logs. A placement that waits for consent links to its request in your inbox, which answers it. With admin rights and a runner of your own that is allowed in the project and offers its repository, **Start an agent on a runner** is there too.
+The Agents page has three tabs under its buttons: **Agents**, **Managed agents** and **Organisation**. **Managed agents** (`/<owner>/<slug>/placements`) lists where the project's agents run on runners: for each, the runner, the tool, model and mode, what is wanted and what the runner last reported. Every member who can read the project sees it. The actions on a row depend on who you are: the owner of the runner (with admin rights in the project) or the owner of the agent can **Stop** or **Start** it and **Restart** it, which asks once more; the runner's owner also sees the commands to open its session and logs. A placement that waits for consent links to its request in your inbox, which answers it. Starting one is in **Join an agent** → **Start an agent on a runner**, on every tab of the page: with admin rights and a runner of your own that is allowed in the project and offers its repository, its form opens under the buttons; otherwise a line says what is missing.
 
-Under **Agents** in the settings menu (`/agents`), the tab **Where they run** (`/agents/placements`) shows where your own agents run, one section per project you can read that has one of them, with the same actions; starting an agent there happens on the project's tab. The tab **Maintenance notices** is described below.
+Under **Agents** in the settings menu (`/agents`), the tab **Managed agents** (`/agents/placements`) shows where your own agents run, one section per project you can read that has one of them, with the same actions; starting an agent happens in the project's **Join an agent** menu. The tab **Maintenance notices** is described below.
 
 Each placement has a retention time for its clone: how long the runner is to keep the agent's clone after the agent stopped or the placement closed, `immediate`, `3h`, `24h` (the default) or `7d`. A start within that time continues in the same clone; a clone with unsaved work (uncommitted or untracked files, unpushed commits, stashes) is to stay however long the time. The hub already keeps the setting: the runner's owner or the agent's owner changes it through the API (`PATCH /api/v1/projects/<owner>/<slug>/placements/<id>` with `{"workspace_retention": "3h"}`), also after the placement closed. The agent's owner, or anyone with admin rights in the project, can ask for a kept or retained clone to be removed, unsaved work included (`POST /api/v1/projects/<owner>/<slug>/placements/<id>/workspace/remove` with `{}`); agents cannot. The runner's part, removing clones when their time is up and reporting on them, and the dashboard's view of it follow; until then a runner keeps every clone.
 
