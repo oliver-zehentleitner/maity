@@ -752,12 +752,17 @@ POLL_SLACK = 10.0  # seconds a long-poll leaves the hub to answer before the rea
 def _unread_note(session: Session, budget: float) -> None:
     """On a timeout, one line on stderr when chats hold unread messages: a group chat's
     messages wake nobody unless they mention you (§9.2), so a quiet wait can hide them. A
-    hint only, within what is left of --timeout: a hub that does not answer leaves it out."""
+    hint only, within what is left of --timeout: a hub that does not answer leaves it out.
+    `renew=false`: the read is part of waiting, so it renews no lease (§2.4, §9.3); a hub
+    that predates the parameter ignores it and renews as before."""
     if budget < 0.5:
         return
     try:
         page = session.client.call(
-            "GET", session.project_path("conversations"), query=[("limit", "50")], timeout=budget
+            "GET",
+            session.project_path("conversations"),
+            query=[("limit", "50"), ("renew", "false")],
+            timeout=budget,
         )
     except hub.HubError:
         return

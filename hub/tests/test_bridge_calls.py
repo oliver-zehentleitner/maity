@@ -293,3 +293,26 @@ def test_a_call_through_the_bridge_renews_what_it_holds_for_the_served_agent(
     with migrated.connect() as conn:
         renewed = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
     assert renewed is not None and renewed > clock.now()
+
+
+def test_the_conversation_list_with_renew_false_renews_nothing_through_the_bridge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`renew=false` withholds the renewal of what the bridge holds for the served agent
+    too, and only that (§9.3, §2.4)."""
+    served, bridge, _ = _pair(migrated, owner)
+    card = owner.post(f"{PROJECT}/tasks", {"title": "Carry the files"}).json()["id"]
+    calls = Calls(make_client(), bridge)
+    assert calls.post(f"{PROJECT}/tasks/{card}/claim", {}, served.agent_id).status_code == 200
+    past = clock.now() - timedelta(hours=1)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card).values(lease_until=past))
+    listed = calls.get(f"{PROJECT}/conversations?renew=false", served.agent_id)
+    assert listed.status_code == 200, listed.text
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    assert kept is not None and kept < clock.now()  # still in the past: not renewed
+    assert calls.get(f"{PROJECT}/conversations", served.agent_id).status_code == 200
+    with migrated.connect() as conn:
+        renewed = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    assert renewed is not None and renewed > clock.now()

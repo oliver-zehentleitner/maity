@@ -33,7 +33,7 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.deps import AnyCaller, engine_of, settings_of
+from maity_hub.deps import AnyCaller, ConversationsCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.models import Strict, Written, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -397,12 +397,16 @@ def _owned_agents(conn: Connection, mine: Membership, caller: Caller) -> list[st
 def list_conversations(
     slug: str,
     request: Request,
-    caller: AnyCaller,
+    caller: ConversationsCaller,
     observed: bool = False,
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    """Every conversation the caller is in, both kinds, newest activity first (§9.3)."""
+    """Every conversation the caller is in, both kinds, newest activity first (§9.3).
+    `renew=false` made the read renew no lease (`conversations_caller`); the answer is
+    the same either way."""
+    if request.query_params.get("renew", "true") not in ("true", "false"):
+        raise invalid({"renew": "not_a_boolean"})
     with engine_of(request).begin() as conn:
         mine = _reader(conn, caller, slug)
         items = []
