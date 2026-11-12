@@ -504,7 +504,11 @@ with the ancestor's `.git` moved away it loaded nothing from above. With
 the session's git variables set (`GIT_COMMON_DIR` naming the clone's
 `.git`), a run in the folder still loaded nothing from the clone. So the
 runner refuses a start when any directory above the folder has a `.git`
-entry. An entry beside the clone also counts as unsaved work before a
+entry. agy takes the work tree from `$PWD`, not the physical directory:
+started through a symbolic link inside a repository, at a folder that
+physically lay outside, it loaded the repository's rules, skills and MCP
+server; the reverse loaded nothing. So the folder's path must be its
+real path, and the walk then covers both. An entry beside the clone also counts as unsaved work before a
 removal: git in the clone cannot see it, and a retention expiry must not
 delete what the agent left there.
 
