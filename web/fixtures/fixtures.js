@@ -4172,7 +4172,8 @@ window.MAITY_FIXTURES = {
           ]
         },
         "enabled": true
-      }
+      },
+      "why_merge_children": true
     },
     "setup": {
       "cards": [],

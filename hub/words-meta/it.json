@@ -183,6 +183,14 @@
     "en": "fb2c1b804e84d045",
     "text": "c983d59315647b54"
   },
+  "mail.password_reset_body": {
+    "en": "5004d5be0f096351",
+    "text": "9028021e7adfdc56"
+  },
+  "mail.password_reset_subject": {
+    "en": "309d22a5ded75bbf",
+    "text": "e323a061f2cbe43d"
+  },
   "mail.settings": {
     "en": "00f94cee302bab0b",
     "text": "5979de9d3eb05779"
@@ -367,6 +375,10 @@
     "en": "ad5753822b4df1d6",
     "text": "fe116ac185d0c7ba"
   },
+  "notify.password_reset": {
+    "en": "ee4080c05d6b2f77",
+    "text": "55231d7abdfd0f88"
+  },
   "notify.reported": {
     "en": "d9954ef211d54ced",
     "text": "7d119f5e2565ac0e"
@@ -399,6 +411,10 @@
     "en": "bc7de30f70be93d7",
     "text": "4e39c5a42dff441c"
   },
+  "notify.tf_failed_reset": {
+    "en": "d0522e314340645f",
+    "text": "999f66b35dbc3f37"
+  },
   "notify.tf_instance_off": {
     "en": "a6da094fa8eb3d8c",
     "text": "c8fbfb057d38aea1"
@@ -426,6 +442,18 @@
   "notify.withdrew": {
     "en": "5479a39e9f32ab9d",
     "text": "feb32ecbec80e4f0"
+  },
+  "password_reset.mail": {
+    "en": "f093462bbd3fa2bf",
+    "text": "bba8d94054271a91"
+  },
+  "password_reset.mail_mailbox": {
+    "en": "abe4cadc2025a6b1",
+    "text": "888dea33ba5b7db2"
+  },
+  "password_reset.subject": {
+    "en": "8bddd8c317ff5d6a",
+    "text": "8dfea52a8fab9e8e"
   },
   "product.bug": {
     "en": "191903c61492ea38",

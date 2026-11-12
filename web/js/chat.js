@@ -188,10 +188,12 @@ window.Maity = window.Maity || {};
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
-      clear(ul);
+      const fresh = h("div");
       // A human pins (§9.3): the list is read again for the hub's order.
       const onPin = ctx.me.kind === "human" && pinColumn.isShown() ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
-      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(ul, listItem(ctx, chat, currentId, onPin)));
+      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(fresh, listItem(ctx, chat, currentId, onPin)));
+      M.dom.keepImages(ul, fresh);
+      append(clear(ul), Array.from(fresh.childNodes));
       none.hidden = mine.length > 0 || groups.length > 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);
