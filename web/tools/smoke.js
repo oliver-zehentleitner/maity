@@ -16466,6 +16466,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/agents/agt-x"); for (let k = 0; k < 6; k++) await tick();
   const pdX = main.querySelectorAll("li.agent-card").find((li) => li.getAttribute("data-agent") === "agt-x");
   expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: Your agents offers the deletion of a profile");
+  // The deletion is done when DELETE answers: its words and the list without the row show at once, while the
+  // lists are still being read again; a failed read shows under the words (tsk-m65g76c979jk).
+  const pdGetAll = win.Maity.api.getAll;
+  let pdReread = null;
+  win.Maity.api.getAll = (p, ...rest) => p === "/agents"
+    ? new Promise((resolve, reject) => { pdReread = () => reject(new win.Maity.api.ApiError("slow hub", 503, p, "unavailable", {})); })
+    : pdGetAll(p, ...rest);
+  byId("profile-delete-agt-x").value = "@spare"; byId("profile-delete-agt-x").dispatch("input");
+  pdX.querySelector("form.profile-delete").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  const pdRow = () => main.querySelectorAll("tr.agent-row").some((tr) => tr.getAttribute("data-agent") === "agt-x");
+  expect(pdReread && text(main).includes("The profile @spare was deleted; its memberships ended.") && !pdRow(),
+    "profile: on Your agents the deletion shows as soon as DELETE answers, before the lists are read again");
+  pdReread(); for (let k = 0; k < 8; k++) await tick();
+  expect(text(main).includes("The profile @spare was deleted; its memberships ended.") && text(main).includes("Your agents could not be read again: slow hub"),
+    "profile: a failed read after the deletion shows under its words");
+  win.Maity.api.getAll = pdGetAll;
   win.Maity.api.del = pdDel;
 
   // §6.26 at the end of fixture mode (it adds a project): out of an organisation into one's own namespace, at once.
