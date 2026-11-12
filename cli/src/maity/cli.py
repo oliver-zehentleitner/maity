@@ -4572,9 +4572,11 @@ def build_parser() -> argparse.ArgumentParser:
         "claim",
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
-        "agent makes, except while it only waits for events (`maity wait`). Nothing is released "
-        "automatically, an expired lease included: the card stays yours until you give it back "
-        "or someone takes it over. In a project in plan or review, --reason is required.",
+        "agent makes except the events long-poll, the wait for events inside `maity wait`. The "
+        "unread-chats check `maity wait` makes on a timeout is an ordinary call and does renew "
+        "it. Nothing is released automatically, an expired lease included: the card stays yours "
+        "until you give it back or someone takes it over. In a project in plan or review, "
+        "--reason is required.",
     )
     p.add_argument("card", type=_id, help="the card id, e.g. tsk-0004")
     p.add_argument("--reason", help="why, when the project is in plan or review")
