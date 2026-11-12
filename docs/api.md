@@ -14599,7 +14599,7 @@ back nobody:
 
 A repeat of a `POST` or `PATCH` with the same `Idempotency-Key` (§1.5)
 answers the entry as it is now; an entry deleted since, by a `DELETE`, a
-deny or an agent's deletion, is `not_found`.
+deny, or the deletion of an agent or an account it names, is `not_found`.
 
 An allow entry:
 

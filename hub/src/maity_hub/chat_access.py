@@ -517,7 +517,8 @@ def one(conn: Connection, me: str, kind: str, entry_id: str) -> dict[str, Any]:
 def replayed(conn: Connection, entry_id: str) -> dict[str, Any]:
     """An entry as it is now, for the replay of an `Idempotency-Key` (§1.5): the key is the
     caller's own, so the entry is read by its id alone. An entry deleted since (by `DELETE`, a
-    deny or an agent's deletion) answers `not_found`, not the first call's status."""
+    deny, or the deletion of an agent or an account it names) answers `not_found`, not the first
+    call's status."""
     found = conn.execute(select(t.chat_access).where(t.chat_access.c.id == entry_id)).first()
     if found is None:
         raise not_found()
