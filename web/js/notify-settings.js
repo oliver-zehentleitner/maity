@@ -652,7 +652,16 @@ window.Maity = window.Maity || {};
       if (opener && opener.focus) opener.focus();
     }
     function onKey(e) {
-      if (busy) return;
+      // Both buttons are disabled while the call runs, so Tab would leave this
+      // dialog. The status line holds the focus until the call ends; Escape
+      // still does nothing while it is pending.
+      if (busy) {
+        if (e.key === "Tab") {
+          if (e.preventDefault) e.preventDefault();
+          status.el.focus();
+        }
+        return;
+      }
       if (e.key === "Escape") {
         if (e.preventDefault) e.preventDefault();
         close();
@@ -670,6 +679,8 @@ window.Maity = window.Maity || {};
     dialog.addEventListener("keydown", onKey);
     cancel.addEventListener("keydown", onKey);
     confirm.addEventListener("keydown", onKey);
+    // The shim does not bubble, and this line is focused while the call runs.
+    status.el.addEventListener("keydown", onKey);
     cancel.addEventListener("click", () => { if (!busy) close(); });
     backdrop.addEventListener("click", (e) => { if (e.target === backdrop && !busy) close(); });
     confirm.addEventListener("click", async () => {
@@ -677,7 +688,9 @@ window.Maity = window.Maity || {};
       busy = true;
       cancel.disabled = true;
       confirm.disabled = true;
+      status.el.setAttribute("tabindex", "-1");
       status.busy(M.t("mine.leave.working"));
+      status.el.focus();
       try {
         await M.api.del(ctx.base + "/members/" + encodeURIComponent(ctx.me.id), undefined, { "idempotency-key": key });
       } catch (err) {
@@ -688,21 +701,23 @@ window.Maity = window.Maity || {};
         if (err.code === "invalid" && fields && fields.member === "last_owner") {
           status.el.textContent = M.t("mine.leave.last_owner");
           status.el.className = "send-status failed";
-          return;
-        }
-        if (err.code === "namespace_owner") {
+        } else if (err.code === "namespace_owner") {
           status.el.textContent = M.t("mine.leave.namespace");
           status.el.className = "send-status failed";
-          return;
+        } else {
+          status.fail(M.t("mine.leave.not_left"), err);
         }
-        status.fail(M.t("mine.leave.not_left"), err);
+        confirm.focus();
         return;
       }
       const mine = (ctx.projects || []).find((p) => p.full_name === ctx.slug);
       const projectId = mine && mine.id;
       if (projectId && M.tabs && M.tabs.managed(ctx)) {
         M.tabs.setOpen(ctx, projectId, false);
-        if (M.tabs.inStart(ctx, projectId)) {
+        // `null` means every membership (tabs.inStart). Writing a list here
+        // would drop that default. Only an explicit list that names this
+        // project is updated, and then without it.
+        if (Array.isArray(ctx.me.start_tabs) && ctx.me.start_tabs.includes(projectId)) {
           try { await M.tabs.startWith(ctx, projectId, false); } catch (ignored) { /* the membership has ended; /all still says so */ }
         }
       }
