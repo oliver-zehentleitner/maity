@@ -1209,7 +1209,8 @@ it would be told to `maity wait` under a runner that already wakes it.
 
 **Id:** 8d425d7d-6b2f-4af0-92e1-d1bc9b1a10cd
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 497f16bd-9dc7-4aca-b4d2-b3055c782410
 **Evidence:** confirmed
 **Source:** docs/api.md §15.11 (resume accepts `supervisor`); the coordinator's approval of the environment variable, 2026-10-23; the card "cli: remove the compatibility layers for old states and hubs" (tsk-hg1jm7e8233n)
 **Revisit when:** the runner resumes on the agent's behalf instead of the agent's own `maity resume`, or a harness drops the session environment before the agent's commands run
@@ -1845,7 +1846,7 @@ every call can run that way.
 **Evidence:** confirmed
 **Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself
 **See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-12
-**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory or `maity gh` start reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
+**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory starts reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
 
 At a session's start the runner records the inode of the clone's `.git`
 (`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
@@ -1902,8 +1903,8 @@ nor checks, so an update of Claude Code could reopen it unnoticed.
   filter ran outside the sandbox).
 
 **Known gap:** the state directory (the credential) is still taken
-through the name `.git`, and so is the record of the `maity gh` that
-pull request #1663 adds until it moves onto this check. Under a sandbox
+through the name `.git`. `maity gh` reads its record and compares the
+body-file walk through `opened_git`'s descriptor since #1663 (round 7). Under a sandbox
 that lets the agent rename `.git`, a later sandboxed command can also
 read the real `.git/maity` under its new name, because the deny applies
 to the path; only the harness can close that. Claude Code 2.1.322
@@ -2118,6 +2119,252 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
 
+## Only a supervised placement tells the hub it is supervised
+
+**Id:** 497f16bd-9dc7-4aca-b4d2-b3055c782410
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (the maintainer's runner test of 0.1.0a8, 2026-11-11: two interactive placements went away after each answer and missed later messages); `hub/src/maity_hub/rules.py` (`SUPERVISED`); `cli/src/maity/runner/adapters.py`
+**See:** runner.md#default-session-modes-claude-code-attachable-codex-woken-by-events — 46741392-ca22-48e6-9417-d509c67d31a8 — as of 2026-11-11
+**Revisit when:** the runner gets a way to wake an interactive session on an event, or the hub's supervised duty changes
+
+`adapters.launch` puts `MAITY_SUPERVISOR=maity-runner/<version>` into the
+session's environment only for a supervised (headless) placement, beside
+`MAITY_PLACEMENT` and `GIT_COMMON_DIR`; the agent's `maity resume` sends
+it as `supervisor`, as before (8d425d7d). An interactive placement gets no
+such variable, so the hub gives it the ordinary duty: wait with `maity
+wait`, which in Claude Code's interactive mode is a background command
+that wakes the session.
+
+**Reason:** the variable used to go into every session. The hub then told
+an interactive agent "do not start `maity wait`, end your turn, the runner
+wakes you", but only the supervised loop wakes a harness. The agent ended
+its turn, stopped listening, and never saw the next message.
+
+**Rejected alternatives:**
+- The runner types into an interactive session's pane when an event comes:
+  the pane is one a person may be attached to and typing in, and the
+  keystrokes race with what the agent is doing.
+- Keeping the variable and telling the hub the mode: a second field in the
+  resume and a hub change for what the runner already decides at launch.
+
+## Git in a sandboxed session works without writing `.git/config`
+
+**Id:** 82e70deb-7cf9-4ea1-be2f-137186b20b2d
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (the maintainer's runner test of 0.1.0a8, 2026-11-11: `git switch -c <b> origin/main` failed on `could not lock config file .git/config`, as did `push -u`; `branch -D` warned; a `.gitmodules` permission warning on fetch); git 2.47.3 with a held `config.lock`, checked locally and in `test_the_session_git_needs_no_configuration_write`
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
+**Revisit when:** the sandbox lets git write `.git/config` again, or git changes what `switch -c` or `push` store there
+
+The sandbox keeps `.git/config` unwritable on purpose: what it sets can
+run a program outside the sandbox. So the runner gives a session under
+Claude Code's or Codex's sandbox, by `GIT_CONFIG_COUNT`,
+`branch.autoSetupMerge=false` (a branch cut from a
+remote one stores no upstream), `push.default=current` (a plain `git push`
+pushes the branch to its own name) and `fetch.recurseSubmodules=false`
+(fetch does not read `.gitmodules`, which the sandbox replaces with an
+unreadable placeholder in a repository that has none). They override the
+clone's own values, which in a runner's clone are a plain clone's: the
+clone check refuses a key a plain clone has not. Without a sandbox none of
+this is set and the clone's configuration stands. The start prompt of a
+sandboxed Claude Code or Codex session names what still fails: `push -u`,
+`--set-upstream`, `--track` and `branch -m`. `maity report` reads a
+branch without an upstream as its own branch on the push remote
+(report.md).
+
+**Reason:** with these settings the plain commands an agent types work,
+without the agent having to remember a flag in every session.
+
+**Rejected alternatives:**
+- Letting the sandbox write `.git/config`: hooks, `core.fsmonitor` or an
+  alias there run code outside the sandbox the next time any git runs.
+- Only telling the agent the flags (`--no-track`, an explicit refspec): an
+  agent that forgets one fails, and a compaction loses the prompt's
+  details.
+- The three settings in every session, sandboxed or not (the first
+  version of #1663): without a sandbox they overrode a repository's own
+  tracking, push and submodule settings for no reason (review of #1663).
+- Deny rules for `push -u` and `--track`: the push itself happens before
+  the configuration write fails, so a deny would refuse a push that
+  works; the prompt names them instead.
+
+## The sandbox's placeholders are hidden in `.git/info/exclude`
+
+**Id:** c4c60f8e-d87f-44f6-bce6-97f2d5671af8
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (22 untracked files in a placed clone, 2026-11-11); `git status --porcelain --untracked-files=all` in a sandboxed `claude -p` run of 2.1.322 with the runner's settings in a scratch clone, 2026-11-11
+**Revisit when:** a Claude Code version adds or drops a placeholder, or the sandbox stops creating them
+
+Claude Code's sandbox puts an empty placeholder in the work tree's root
+for each protected path that is missing (`.bashrc`, `.gitconfig`,
+`.gitmodules`, `.mcp.json`, `.claude/skills` and others), and `git status`
+listed all 22 as untracked. Before a sandboxed Claude Code start the
+runner writes those of them (`adapters.CLAUDE_PLACEHOLDERS`) that are
+missing or an empty directory, root-anchored, into the clone's
+`.git/info/exclude` between two marker lines; the block is rebuilt at
+every start, every other line stays. The agent cannot write `info/` itself
+(GIT_PROTECTED), and inside the sandbox it cannot create those paths. A
+path with content (a file, a link, a directory with entries) is not
+listed: it is real, untracked work that `git status` must keep showing.
+
+**Rejected alternatives:**
+- Listing every path, whatever is there (the first version of #1663): a
+  real untracked `.gitmodules`, `.mcp.json` or `.claude/skills/…` then
+  vanished from `git status` (review of #1663).
+- An entry in the repository's `.gitignore`: it would be every project's
+  business, for files only this runner's sandbox creates.
+- `core.excludesFile` through the session's environment, pointing to a
+  file in the runner's state: the sandbox denies reading the runner's
+  state, so git inside it could not read the file (inferred, not run).
+
+## A placed Claude Code agent runs `maity` alone
+
+**Id:** 996b6f48-a8d7-4b81-b977-33cef46bc4cc
+**Type:** constraint
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3qb19f0r56zf (the runner test of 2026-11-11: after its first `maity resume`, a placed agent ran `maity` in pipes and chains, read "this clone has not joined a project", took the hub for broken and stopped without `maity wait`; its session transcript)
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
+**Revisit when:** Claude Code matches `excludedCommands` per part of a compound command, or the credential becomes readable inside the sandbox
+
+Claude Code's sandbox hides `.git/maity`, and only a command that matches
+`excludedCommands` (`maity *`) runs outside it. A pipe or a chain with
+`;`, `&&` or `||` is one command that does not match, so its `maity`
+runs inside and finds no credential. The start prompt of a Claude Code
+placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
+is set and no credential is readable, `maity` says that instead of "has not
+joined a project".
+
+**Reason:** the old message sent the agent to `maity join`, which it cannot
+do, and hid that the cause was the shape of its own command.
+
+**Rejected alternatives:**
+- Making the credential readable inside the sandbox: repository code an
+  allowed build or test command runs could then read it (ea36c196).
+- Rewriting the agent's command in a hook: hooks are switched off for
+  placements (`--setting-sources user`), and the harness owns the command.
+
+## Placed agents open their pull requests through `maity gh`, pinned to the clone's repository
+
+**Id:** 9f43804d-cfdc-4496-b07b-b01e65fc6410
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-mvywh1gykvpg (option o1), 2026-11-11, recorded on card tsk-3qb19f0r56zf: placed agents open their pull requests themselves, scoped to the project's repository; the shape (a maity command instead of gh rules) by the lead on #1663, messages 113208 and 113224
+**Revisit when:** the runner gets a forge credential per placement or per repository (tsk-anek9pkb5r82), or a harness's sandbox can deny reading a file to one command and allow it to another
+
+Every placed session denies `gh` and `gh *` (`adapters.GH_DENIED`);
+under the harness's sandbox, which the rules rely on, no placed session
+runs gh (without it, see the second known gap). A repository's grant sets `pull_requests = true`,
+and its agents then run `maity gh pr create` and `maity gh pr view`
+(`maity/ghpr.py`). Like every `maity` call, it runs outside the harness's
+sandbox. It takes only the options it knows, with no abbreviations, so
+bundles such as `-dR` are refused. It does not take `--repo`, a URL, or an
+option gh would read a file with. It starts gh with `--repo=` set to the
+repository the runner wrote into `.git/maity/pull_requests` at launch, and
+it gives gh only the environment it names (`ghpr.ENV_PASSED`: `HOME`,
+the locale, the temporary directory, proxies and certificates), so no
+variable names another repository, configuration or login, or a program
+to start. gh runs in an empty directory of its own, never in the clone,
+and maity names the branch (`--head`, the pull request to view), read
+with its own pinned git, so gh's git reads nothing of the clone's `.git`.
+maity reads a `--body-file` itself and passes it to gh on standard input. `maity gh pr view` never
+uses gh's own text view: without `--json` it asks gh for a fixed list of fields (`ghpr.VIEW_FIELDS`,
+plus `comments` with `--comments`) and prints them as text itself. gh's text view builds its query
+by gh's version, and an older gh (2.46, a distribution's package) asks for `projectCards`, which the
+forge now refuses, so every plain `gh pr view` failed on such a runner (the E2E of #1663). An `allow` entry naming gh is not applied:
+`maity runner check` warns about it and names `pull_requests`, and the
+runner still starts. Codex is refused for a repository whose grant has
+`allow` or `pull_requests`. Codex cannot honour a command allowlist, and
+its `maity` runs inside its sandbox, where `maity gh` reaches neither the
+login nor the forge's API.
+
+**Reason:** before this, an agent could push but could not open its pull
+request, and the card's test needs it to. The forge login on the machine
+belongs to the account all agents push as, and it reaches every
+repository that account may. Only code that parses the command can pin
+the repository. A glob rule cannot.
+
+**Rejected alternatives:**
+- gh allowed through `allow` rules, with `--repo`, `-R` and `--hostname`
+  denied (this PR's first version): `-dR other/repo` bundles the flag past
+  every glob, `gh pr view <URL>` names another repository, and `-F` reads
+  any file the agent names, so a rule never pins anything (review of #1663).
+- For `pr view`, requiring a newer gh in `maity runner check` instead of
+  naming the fields: runners use their distribution's gh, and the next
+  field the forge retires would break the text view again (#1663's E2E).
+- Granting all of `gh`, or api.github.com: `gh api` and any tool could
+  then act on every repository the account reaches. The sandbox network
+  gets no api.github.com, and `maity runner check` warns when a grant
+  adds it.
+- Hiding gh's configuration from the sandbox (denyRead): `git push` in
+  the sandbox authenticates through `gh auth git-credential`, which reads
+  that file, so pushing would stop working.
+- A per-repository token: none exists on the machine, and arranging one is
+  the operator's business (tsk-anek9pkb5r82).
+- The runner or a person opening the pull request for the agent (the
+  fallback offered for the test): the maintainer chose that agents do it
+  themselves.
+
+maity reads a body file through descriptors only. It works out on the
+text alone which names lead from the clone's root to the file, refusing a
+path that leaves the clone. It opens the clone's root, then each
+directory on the way from the one before with `O_NOFOLLOW` and
+`O_DIRECTORY`, refusing a link and the clone's `.git` (by device and
+inode, so a case-insensitive volume's `.GIT` is caught too). It opens the
+last name with `O_NOFOLLOW` and `O_NONBLOCK` and reads only a regular file
+with one link. Reason: maity runs outside the sandbox, and any name maity
+looks up twice can point elsewhere the second time. This covers every
+directory and file below the clone's root. `.git` itself is the one
+`clonecheck.opened_git` checked against the inode the runner recorded at
+the start (#1683): the walk compares with that descriptor, and the
+runner's record is read through it, never through the name `.git` again
+(round 5 had exchanged `.git` for a decoy). Round 3 swapped a
+directory between a check and an open by name. Round 4 exchanged a
+directory with a link between the open, the resolve and the stat, and
+maity read the clone's credential and a file the sandbox hides (review
+of #1663, rounds 3 and 4). Where the system has no `dir_fd` or
+`O_NOFOLLOW` (Windows), maity takes no body file at all and points to
+`--body`. Rejected: checking the resolved path and then opening it by
+name (racy); opening once and then comparing the inode with the path
+resolved again (the path can point elsewhere at each lookup); asking the
+kernel for the descriptor's path (`/proc/self/fd`, `F_GETPATH`): it
+differs per system and its parents would still be checked by name or
+need the same walk; refusing every link in the clone (a work tree may
+hold links); a lock (sandboxed code does not take it); on Windows,
+keeping the check by name (it is racy, and refusing costs only the
+switch to `--body`).
+
+**Known gap:** the login stays readable in the sandbox, because `git push`
+needs it. So code that an allowed command runs (tests, builds) can read
+it and push to any repository the account may push to. `maity gh` closes
+gh's paths and keeps the forge's API out of the sandbox, but not this one.
+It stays open until tsk-anek9pkb5r82 lands, either as a push outside the
+sandbox with the same pin or as a credential scoped to the project's
+repository.
+
+**Known gap:** without the harness's sandbox (opencode, Claude Code off
+Linux or without bwrap and socat), nothing keeps repository code from
+running gh or rewriting `.git/maity/pull_requests`: the deny rules are no
+boundary there. On an ssh target, gh must be at the path the runner found
+on its own host, or `maity gh` refuses.
+
+Closed gap (review of #1663, round 5): under the harness's sandbox, code
+that can write the clone's root could exchange `.git` with a directory
+of its own, and with it the record that names gh. Since #1683
+(tsk-er1nymh4te1h) the runner records `.git`'s inode at launch and maity
+opens `.git` once from the root's descriptor, refusing a different one;
+`maity gh` reads the record and compares the walk through that
+descriptor.
+
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
 **Id:** 20fe2a78-29ec-49fa-b428-0a785db95d14
@@ -2298,3 +2545,76 @@ answer: something in the clone may still be needed.
   one it read when it started there. Rejected: carrying the older
   placement's epoch over, which could make its first report later than
   the hub's and so `invalid` (spq4's review).
+
+## The runner installs and updates the harness tools and maity, only where its owner allows it per tool
+
+**Id:** 4c984f97-09b8-479b-bd1a-f56bb41057fd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); the owner's answers of 2026-11-12: req-r2egh0ry0c4c (older sessions restart at their next idle point; answer event 119533), req-vpcfh15h247c (local target only, ssh targets reported; answer event 119538), both relayed by the lead in 119605; docs/api.md §15.16
+**Revisit when:** an ssh target's owner wants the runner to manage its tools, a harness tool ships without an installer the runner can run in the user's space, or a tool's update needs a step only a person can do
+
+Not built yet (tsk-29nmydbzrg5z): this records the contract's decision;
+the runner and the dashboard follow in their own pull requests.
+
+Operators kept the runner's tools and `maity` current by hand, and
+sessions started by an older `maity` stayed on it until someone
+restarted them. The contract lets the runner do it, per tool and only
+when its owner says so in the runner's configuration (`install`,
+`update = "daily"`); without that it touches nothing, as before. The
+shape is the owner's (confirmed), and so are two points he answered for
+this contract: a session an older `maity` started restarts at its next
+idle point, never mid-step, and the runner manages only its own machine,
+reporting what it finds on an ssh target. The parts below that are not
+in his words are this design's (inferred).
+
+- **The installer is fixed in the runner's code**, per tool, never
+  taken from the configuration or the hub: a path or URL in a file the
+  runner reads would let whoever can edit it run any program as the
+  runner user, and the hub never grants anything to a runner. A new
+  tool's installer is a code change with its own review.
+- **Beside, never under.** A newer version goes in beside the one in
+  use and is used from the next start of a session, and only after it
+  answered its version; a running session keeps what it started with.
+  The previous version stays for `maity runner tools rollback`, a local
+  command, because a rollback is the operator's call on the machine.
+- **"Update now" is read, not pushed.** The hub stores the owner's
+  request on the runner, and the runner reads `GET /runner` after every
+  wake of its event wait. Every event belongs to a project, and a runner
+  without an attached project would never hear one; the wait's own
+  fallback brings the read within a minute anyway. The hub drops a
+  request only when the report that ends the attempt names it, its
+  `requested_at` exactly as the runner read it, as a removal by hand is
+  closed (161d5507). Rejected: dropping it once a report shows a check at
+  or after it, which compares the runner's clock with the hub's, and the
+  signing window allows minutes of skew: a check decided before the
+  request could erase it (v5vp's review).
+- **A rollback is a state of its own.** After `maity runner tools
+  rollback`, the tool reports `rolled_back` while the version in use is
+  older than `latest` (a second rollback back to `latest` reports
+  `current`), and while it is, the runner does not take the version it
+  left, or one that failed its version answer, on its own again; only a
+  newer version ends it.
+  Otherwise the daily check would undo the operator's rollback the same
+  day (v5vp's review).
+- **Only the owner asks**, and only for a tool the runner says it
+  updates (`updates_off` otherwise): the configuration is the owner's,
+  and project admins who use the runner do not change its software.
+- **Logins stay the owner's.** A tool that needs a login after its
+  install is reported `login_needed` and offered to no placement until
+  then; the runner never reads, writes or asks for a credential.
+
+Rejected:
+- An installer named in the configuration: the reason above.
+- Swapping a tool in place and restarting every session at once: an
+  agent mid-step would lose its work, and the owner ruled out a swap
+  under a running agent.
+- An event per attached project for "Update now": the reason above.
+- Project admins asking for an update: the runner's software is its
+  owner's, as its configuration is.
+- Restarting the older sessions at once, after the stop grace: faster,
+  but it can end a task mid-step (the owner's answer).
+- Installing on ssh targets too: a vendor's installer would run on a
+  machine whose owner did not set it up for that, with more ways to fail
+  (the owner's answer); a later card can add it.
