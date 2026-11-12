@@ -6322,8 +6322,7 @@ member does not make that retry `not_found`. The key stays optional on
 `DELETE`. A second `DELETE` by a caller who is still a member answers
 200 with the removed member as it is.
 
-Only the dashboard's confirmation comes with the later web change of
-tsk-z1khn7tkpyqk.
+The dashboard asks for this in Settings → Mine (docs/humans.md).
 
 **Across owners.** An agent may report to a member of another owner
 only with a human's consent (the maintainer's decision of 2026-10-22).

@@ -1878,9 +1878,102 @@ window.Maity = window.Maity || {};
   // counted in characters (code points) as the hub counts them.
   const BRIEFING_CHARS = 16 * 1024;
 
-  // [method, pattern, handler(match, body, path, query)]. One row per
+  // A successful DELETE of a membership, by Idempotency-Key (§1.5, §6.2 "Leaving
+  // a project"): the fixture hub has no store for every call, only this one, so a
+  // retry of leaving replays the stored 200 after the caller is no member.
+  const memberDeleteReplay = new Map();
+  const OUTSIDE_STAY = ["coder", "designer", "writer", "blue-team", "expert"];
+  // `members` or `anyone`, as the hub reads an unset value (§6.1): `anyone` while the
+  // page is served, `members` otherwise. The fixture has no moderation hold to add.
+  function ownersMode(p) {
+    const set = p.policy && p.policy.agent_owners;
+    if (set === "members" || set === "anyone") return set;
+    return p.public_page === "on" && p.state !== "archived" ? "anyone" : "members";
+  }
+  function outsideStays(agent, p) {
+    const roles = (p.policy && p.policy.outside_roles) || ["coder"];
+    const base = agent.role_base || agent.role;
+    return (agent.trust === "member" || agent.trust === "guest") && roles.includes(agent.role) && OUTSIDE_STAY.includes(base);
+  }
+  // The human namespace owner, or an owner of the organisation that owns the project (§6.25, §6.26).
+  function namespaceBlocks(slug, targetId) {
+    const owner = (project(slug, "").owner) || {};
+    if (owner.id === targetId) return true;
+    if (typeof owner.id !== "string" || !owner.id.startsWith("org-")) return false;
+    const members = (orgsData().members || {})[owner.id] || [];
+    return (members.find((x) => x.id === targetId) || {}).role === "owner";
+  }
+  function headerOf(headers, name) {
+    if (!headers) return "";
+    const want = name.toLowerCase();
+    const found = Object.keys(headers).find((k) => k.toLowerCase() === want);
+    return found ? headers[found] : "";
+  }
+  function deleteMember(m, body, path, query, headers) {
+    const key = headerOf(headers, "idempotency-key");
+    const call = "DELETE /projects/" + m[1] + "/members/" + m[2];
+    if (key) {
+      const stored = memberDeleteReplay.get(key);
+      if (stored) {
+        if (stored.call !== call) fail(409, "idempotency_mismatch", "A different request was already sent under this key.", path);
+        return stored.body;
+      }
+    }
+    const who = caller(m[1], path);
+    const leaving = who.member.kind === "human" && who.member.id === m[2];
+    if (!who.admin && !leaving) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+    const list = file(m[1], "members.json", path);
+    list.removed = list.removed || [];
+    // A human who already left is no member: a repeat without the same key is not_found (§6.2).
+    if (leaving && !me().projects.some((p) => p.slug === m[1])) fail(404, "not_found", "Not found", path);
+    // A second DELETE by a caller who is still a member answers 200 with the removed member.
+    if (!leaving) {
+      const gone = list.removed.find((x) => x.id === m[2]);
+      if (gone) return gone;
+    }
+    if (namespaceBlocks(m[1], m[2])) {
+      fail(409, "namespace_owner", "the project's namespace owner is not removed", path, { projects: [fullOf(m[1])] });
+    }
+    const target = member(m[1], m[2], path);
+    if (!leaving) {
+      agentLimits(who.member, target, null, path);
+      const consent = consentFor(m[1], who.member, "Remove " + target.handle);
+      if (consent) return consent;
+      if (target.trust === "owner" && who.member.kind === "human" && trustIn(m[1]) !== "owner") {
+        fail(403, "forbidden", "only an owner removes an owner", path, { reason: "owner_only" });
+      }
+    }
+    if (target.trust === "owner" && list.items.filter((x) => x.trust === "owner").length === 1) {
+      fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
+    }
+    const at = nowIso();
+    ((fixtures()[m[1] + "/credentials.json"] || {})[target.id] || { items: [] }).items.forEach((c) => {
+      if (!c.revoked_at) { c.revoked_at = at; c.revoked_by = me().member.id; c.revoked_reason = "member_removed"; c.session_id = null; }
+    });
+    file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
+    if (leaving) {
+      const p = project(m[1], path);
+      const mode = ownersMode(p);
+      list.items.forEach((x) => {
+        if (x.kind !== "agent" || x.owner_id !== target.id || x.isolated) return;
+        if (mode === "anyone" && outsideStays(x, p)) return;
+        x.isolated = { reason: "The agent's owner is no longer a member of this project.", since: at, by: "hub" };
+      });
+      const data = me();
+      data.projects = data.projects.filter((row) => row.slug !== m[1] && row.id !== p.id);
+      if (Array.isArray(data.member.start_tabs)) data.member.start_tabs = data.member.start_tabs.filter((id) => id !== p.id);
+    }
+    list.items = list.items.filter((x) => x !== target);
+    list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
+    const removed = Object.assign({}, target, { removed_at: at });
+    list.removed.push(removed);
+    if (key) memberDeleteReplay.set(key, { call, body: JSON.parse(JSON.stringify(removed)) });
+    return removed;
+  }
+
+  // [method, pattern, handler(match, body, path, query, headers)]. One row per
   // endpoint the views use; the patterns match the path below /api/v1
-  // without the query string.
+  // without the query string. `headers` is set on a call that sends one.
   const routes = [
     // §6.27: a person or an organisation as this signed-in human may see
     // them; an alias answers with the current handle; whoever shows the
@@ -4969,39 +5062,9 @@ window.Maity = window.Maity || {};
       list.push(req);
       return Object.assign({}, req);
     }],
-    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
-      const who = caller(m[1], path);
-      if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
-      const list = file(m[1], "members.json", path);
-      // A second DELETE answers 200 with the removed member as it is.
-      list.removed = list.removed || [];
-      const gone = list.removed.find((x) => x.id === m[2]);
-      if (gone) return gone;
-      if ((project(m[1], path).owner || {}).id === m[2]) {
-        fail(409, "namespace_owner", "the project's namespace owner is not removed", path, { projects: [fullOf(m[1])] });
-      }
-      const target = member(m[1], m[2], path);
-      agentLimits(who.member, target, null, path);
-      const consent = consentFor(m[1], who.member, "Remove " + target.handle);
-      if (consent) return consent;
-      if (target.trust === "owner" && who.member.kind === "human" && trustIn(m[1]) !== "owner") {
-        fail(403, "forbidden", "only an owner removes an owner", path, { reason: "owner_only" });
-      }
-      if (target.trust === "owner" && list.items.filter((x) => x.trust === "owner").length === 1) {
-        fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
-      }
-      // Its credentials revoked, its claims released (§6.2).
-      const at = nowIso();
-      ((fixtures()[m[1] + "/credentials.json"] || {})[target.id] || { items: [] }).items.forEach((c) => {
-        if (!c.revoked_at) { c.revoked_at = at; c.revoked_by = me().member.id; c.revoked_reason = "member_removed"; c.session_id = null; }
-      });
-      file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
-      list.items = list.items.filter((x) => x !== target);
-      list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
-      const removed = Object.assign({}, target, { removed_at: at });
-      list.removed.push(removed);
-      return removed;
-    }],
+    // §6.2: members:admin removes someone; a human naming their own id leaves, any
+    // trust, a guest included, with no members:admin and outside owner_only.
+    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, deleteMember],
     // §6.2 "Isolation": a human with members:admin isolates an agent member
     // with a reason, or lifts it; a repeat answers the member unchanged.
     ["POST", /^\/projects\/([^/]+)\/members\/([^/]+)\/isolate$/, (m, body, path) => isolate(m, body, path, true)],
@@ -5565,7 +5628,7 @@ window.Maity = window.Maity || {};
     }],
   ];
 
-  function fromFixtures(method, fullPath, body) {
+  function fromFixtures(method, fullPath, body, headers) {
     const q = fullPath.indexOf("?");
     const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
@@ -5610,7 +5673,7 @@ window.Maity = window.Maity || {};
         if (verb !== method) continue;
         const match = pattern.exec(path);
         // Hand out copies, like a network answer would.
-        if (match) return JSON.parse(JSON.stringify(handler(match, body || {}, fullPath, query)));
+        if (match) return JSON.parse(JSON.stringify(handler(match, body || {}, fullPath, query, headers || null)));
       }
       return fail(404, "not_found", "No fixture for " + method + " " + path, fullPath);
     });
@@ -5639,7 +5702,7 @@ window.Maity = window.Maity || {};
 
   // signal: an AbortSignal that cancels the request (a held long-poll the
   // page no longer wants, js/notify.js).
-  async function fromApi(method, path, body, raw, signal) {
+  async function fromApi(method, path, body, raw, signal, headers) {
     const init = {
       method,
       credentials: "same-origin",
@@ -5659,6 +5722,11 @@ window.Maity = window.Maity || {};
     } else if (body !== undefined) {
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(body);
+    }
+    if (headers) {
+      Object.keys(headers).forEach((name) => {
+        if (headers[name] != null && headers[name] !== "") init.headers[name] = headers[name];
+      });
     }
     let res;
     try {
@@ -5758,9 +5826,9 @@ window.Maity = window.Maity || {};
   // refused before this) and no change of the zone was saved while it was on its way; a saved
   // change of the settings sets it from their answer.
   let zoneSaves = 0;
-  function request(method, path, body, raw, signal) {
+  function request(method, path, body, raw, signal, headers) {
     const saves = zoneSaves;
-    const answer = requestOnce(method, path, body, raw, signal);
+    const answer = requestOnce(method, path, body, raw, signal, headers);
     const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
     if (method === "GET" && path === "/me") {
       return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
@@ -5770,7 +5838,7 @@ window.Maity = window.Maity || {};
     }
     return answer;
   }
-  function requestOnce(method, path, body, raw, signal) {
+  function requestOnce(method, path, body, raw, signal, headers) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
@@ -5782,9 +5850,9 @@ window.Maity = window.Maity || {};
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
     const single = () => {
-      if (source !== "fixtures") return fromApi(method, path, body, raw, signal);
+      if (source !== "fixtures") return fromApi(method, path, body, raw, signal, headers);
       fixtureAsked.push(method + " " + path);
-      return fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body);
+      return fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body, headers);
     };
     const p = (fromPrimed(method, path, single) || single()).catch(told);
     if (path === "/auth/session") {
@@ -5899,6 +5967,9 @@ window.Maity = window.Maity || {};
     },
     patch: (path, body) => request("PATCH", path, body || {}),
     // A body only where the route takes one (DELETE /orgs/{org}, its confirm).
-    del: (path, body) => request("DELETE", path, body),
+    // headers: a call that sends one, such as Idempotency-Key on leaving a project (§1.5).
+    del: (path, body, headers) => request("DELETE", path, body, undefined, undefined, headers),
+    // The live fixture store, so a test can set a caller and put the same objects back.
+    fixturesLive: () => (source === "fixtures" ? fixtures() : null),
   };
 })(window.Maity);

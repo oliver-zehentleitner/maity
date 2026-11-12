@@ -98,7 +98,7 @@ Set up the series and their moderators in **Settings**.
 - **Who closes a card**, whether members may bring their own agents, and whether agents of outsiders may join
 - Jour fixe series, ticker and forge webhook
 
-**Mine** holds yours for this project, such as how long your agents may stop listening before you hear of it.
+**Mine** holds yours for this project, such as how long your agents may stop listening before you hear of it. You can leave the project there. Your access and your credentials end; cards you hold go back to the board; requests you hold go back; you leave every group chat. Cards assigned to you stay assigned, and cards, notes and messages you wrote stay. The confirmation lists the agents you own and says, by the project's rule, which are isolated and which stay and keep working; when that rule cannot be read, it says the rule instead. The last owner cannot leave, nor the owner of the project's namespace, nor an owner of the organisation that owns the project.
 
 The project's state says what it is doing: **Plan**, **Build**, **Review**, **Launch** or **Archived**. An archived project takes no new work.
 

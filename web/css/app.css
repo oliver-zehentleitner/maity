@@ -2175,3 +2175,14 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 }
 :root[data-theme="dark"] .product-mark-t { fill: #4c8dff; }
 :root[data-theme="dark"] .product-mark-seat { fill: #e6e9ec; }
+
+/* Settings → Mine: leaving the project (§6.2). The dialog sits over the page. */
+.leave-project { margin-top: 1.75rem; padding-top: 1rem; border-top: 1px solid var(--border); max-width: 36rem; }
+.leave-project h3 { margin: 0 0 0.35rem; font-size: 1rem; }
+.leave-backdrop { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+  padding: 1rem; background: color-mix(in srgb, var(--text) 45%, transparent); }
+.leave-dialog { width: min(36rem, 100%); max-height: calc(100vh - 2rem); overflow: auto; margin: 0;
+  padding: 1rem 1.1rem; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); }
+.leave-dialog h3 { margin: 0 0 0.5rem; }
+.leave-dialog .actions { justify-content: flex-end; }
+.leave-agents { margin: 0.35rem 0 0; padding-left: 1.2rem; }
