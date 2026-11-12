@@ -664,7 +664,8 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
     change = f"tf_{data.get('change')}"
-    if change not in catalog.section("notify", "en") or change in ("tf_changed", "tf_failed"):
+    alarms = ("tf_changed", "tf_failed", "tf_failed_reset")  # not changes; other placeholders
+    if change not in catalog.section("notify", "en") or change in alarms:
         change = "tf_changed"
     return where.say(change, by=data.get("by"))
 
