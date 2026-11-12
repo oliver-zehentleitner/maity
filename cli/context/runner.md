@@ -2523,8 +2523,9 @@ looks at each interactive session once a minute.
 **Source:** card tsk-34gb7frfbsk7 (disks of runner machines filled with the clones of agents that no longer ran there); the owner's answer to req-fdfb49yzqnhv, verbatim: "ich bin für eine zeitspanne die der workspace noch liegen bleiben darf zb 3h oder 24h falls doch noch was daraus benötigt wird oder "sofort entfernen" das soll eine option sein bitte"; the lead's decision on unsaved work (2026-11-12); docs/api.md §15.5
 **Revisit when:** a placement can save an agent's unsaved work somewhere other than its clone, or the owner asks for unsaved work to go too after the retention time
 
-Not built yet (tsk-34gb7frfbsk7): this records the contract's decision;
-the hub and the runner follow in their own pull requests.
+Partly built (tsk-34gb7frfbsk7): this records the contract's decision. The
+hub's part is in; the runner's clock, checks and removal, and the
+dashboard's view, follow in their own pull requests.
 
 A clone stays on the runner until the operator removes it, and the
 clones of agents that no longer run there fill the disk. The contract
