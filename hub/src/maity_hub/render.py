@@ -1089,6 +1089,56 @@ def door_document(
     )
 
 
+# A stored public page (§16.9) as `page_document` wrote it: its title, description, canonical
+# link and robots line in the head, its content in `<main class="wrap">`. The app shell takes
+# the same parts out (shell.py), and so does the frame below.
+STORED_PAGE = re.compile(
+    r"<title>(?P<title>.*?)</title>(?P<meta><meta name=\"description\"[^>]*>)?"
+    r"(?P<canonical><link rel=\"canonical\"[^>]*>)(?P<robots><meta name=\"robots\"[^>]*>)?.*"
+    r"<main class=\"wrap\">(?P<main>.*)</main></body>",
+    re.DOTALL,
+)
+_STORED_LANG = re.compile(r'<html lang="(?P<lang>[^"]*)">')
+
+
+def stored_in_frame(
+    stored: str,
+    *,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    lang: str | None,
+    accept_language: str | None,
+) -> str | None:
+    """A stored public page in the frame of §16.7.5, put around it when it is served: the
+    landing page's header and footer in the visitor's language (`?lang`, else the reader's),
+    the stored content between them as it was stored, never parsed again. The content keeps
+    its own language, and the frame says its own where that differs. No language switch in the
+    footer and no `hreflang` links: the page exists in one language, its content's. None when
+    `stored` is not of the shape `page_document` writes: the caller serves it bare."""
+    found = STORED_PAGE.search(stored)
+    tagged = _STORED_LANG.search(stored)
+    if found is None or tagged is None:
+        return None
+    page_lang = unescape(tagged["lang"])
+    model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    frame = public_frame(model, page_lang)
+    # The stored head parts are already escaped; only the title passes `_document`'s escape.
+    head = (found["meta"] or "") + found["canonical"] + (found["robots"] or "") + frame.head
+    return _document(
+        lang=page_lang,
+        title=unescape(found["title"]),
+        description="",
+        head=head,
+        body=frame.header
+        + f'<main><div class="stored-page"><div class="wrap">{found["main"]}</div></div></main>'
+        + frame.footer,
+        languages=[],
+        style=frame.style,
+    )
+
+
 # --- a form page outside the app (§2.7.1) ---------------------------------------------------
 
 FORM_STYLE = """
