@@ -627,15 +627,28 @@ class Supervisor:
         attached = backend.attached(session.name)
         digest = backend.pane_digest(session.name)
         if below != IDLE or attached is not False or digest is None:
+            # A line typed but never sent is dropped: it stays typed, and it does not count.
             rec.pane, rec.quiet_since, rec.nudged_at, rec.unsent = digest, None, None, False
             return
-        if rec.unsent:  # the line did not show in time: measured now, before its Enter
-            try:
+        if rec.unsent and rec.nudged_at is not None:  # the line did not show in time
+            if digest == rec.pane:  # still not: its Enter waits until it shows
+                reply = _minutes(
+                    ((p.get("health") or {}).get("settings") or {}).get("reply_within_minutes"),
+                    REPLY_WITHIN_MINUTES,
+                )
+                if now - rec.nudged_at >= reply:
+                    self.log(f"{session.name}: the nudge's line did not show in "
+                             f"{reply / 60:.0f} min; ending it to resume its session")  # fmt: skip
+                    backend.terminate(session)
+                    rec.hung_at = now
+                return
+            try:  # it shows now: measured before its Enter
                 backend.submit(session.name)
             except TmuxError as exc:
                 self.log(f"{session.name}: cannot send the nudge: {exc}")
                 return
             rec.pane, rec.nudged_at, rec.unsent = digest, now, False
+            rec.nudges += 1  # a nudge counts once its Enter is sent
             return
         if rec.quiet_since is None or digest != rec.pane:
             rec.pane, rec.quiet_since, rec.nudged_at = digest, now, None
@@ -661,8 +674,9 @@ class Supervisor:
                 self.log(f"{session.name}: cannot nudge: {exc}")
                 return
             rec.nudged_at = now
-            rec.nudges += 1
-            rec.pane, rec.unsent = shown, shown is None
+            if shown is not None:  # a nudge counts once its Enter is sent
+                rec.nudges += 1
+            rec.pane, rec.unsent = (digest, True) if shown is None else (shown, False)
             self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
                      "nudged in its pane")  # fmt: skip
             return

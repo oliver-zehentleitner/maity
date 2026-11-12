@@ -2082,7 +2082,10 @@ looks at each interactive session once a minute.
   (fkyb's review, from the sandbox runtime's source, not seen live): such
   a bridge is not counted as work, or the check would never fire under
   the sandbox the runner turns on wherever bwrap and socat are present.
-  Only a socat listening on a `claude-` socket counts as the bridge; an
+  Only a socat listening on a socket whose own name is
+  `claude-<kind>-<id>.sock` counts as the bridge (rejected: `/claude-`
+  anywhere in the path, which exempted a service in a `claude-`
+  directory; hcrb's review); an
   agent's own socat on another socket is a tool, and so is any process
   below a bridge but its own forks (hcrb's review).
 - A missing process alone is not enough: an agent writing a long answer
@@ -2108,7 +2111,14 @@ looks at each interactive session once a minute.
   first. Rejected: keeping the hash from before the nudge, which took the
   late echo for an answer and nudged forever; and taking the baseline at
   the next look after Enter had gone out, which made a reply the baseline
-  again (both fkyb's reviews).
+  again (both fkyb's reviews). A line that has still not shown at that
+  look keeps its Enter back until a look sees it, so its own late echo is
+  never an answer; one that never shows within `reply_within_minutes`
+  ends the session. A nudge counts toward the cap only once its Enter is
+  sent: a held-back line dropped because a person attached or work began
+  stays typed and does not count. Rejected: counting at typing, which
+  ended a session for "three answered nudges" after zero Enters (fkyb's
+  review).
 - Since Enter itself changes a live harness's pane, only a session that
   does not react at all is ended after `reply_within_minutes`. An agent
   that answers every nudge but never goes back to its wait would be

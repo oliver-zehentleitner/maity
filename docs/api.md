@@ -17633,7 +17633,8 @@ tsk-cbz655mvt4ss). The runner checks such a session itself, with or
 without the hub's ask, at most once a minute:
 
 - **Not listening** means the harness has no process below it but its
-  own helpers (the `socat UNIX-LISTEN:…/claude-…` bridges of Claude Code's sandbox),
+  own helpers (the `socat UNIX-LISTEN:…/claude-<kind>-<id>.sock` bridges of Claude
+  Code's sandbox: the socket's own name, not a directory above it),
   neither a `maity wait` nor a tool it runs (however quiet: a long build
   or migration keeps it busy), and what the pane shows has not changed.
   The runner compares a hash of the pane; it keeps, logs and sends none
@@ -17644,8 +17645,12 @@ without the hub's ask, at most once a minute:
   and to go back to its wait loop, then sends it with Enter. It measures
   the pane once the line shows and before Enter, so whatever the harness
   does with the line, an answer included, is a change. A line that does
-  not show within a few seconds gets its Enter only at the next look,
-  after that look has measured the pane. An answer starts the
+  not show within a few seconds gets its Enter at the first later look
+  that sees it, after that look has measured the pane; one that has not
+  shown `reply_within_minutes` after it was typed ends the session as
+  below. A client attached, a process below the harness or an unreadable
+  pane before that Enter drops the nudge: its line stays typed, unsent,
+  and it does not count. A nudge counts once its Enter is sent. An answer starts the
   count again, but after `3` answered nudges with no `maity wait` seen in
   between, the next quiet spell of `hang_after_minutes` ends the session
   as below, without another nudge.

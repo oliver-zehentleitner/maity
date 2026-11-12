@@ -1730,6 +1730,8 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert tmux.below(f"  100     1 claude\n{bridge}  800   100 bwrap -- sh\n", 100) == tmux.WORKING
     assert not tmux.is_helper("socat TCP-LISTEN:8080 TCP:x:1") and not tmux.is_helper("")
     assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/app.sock,fork EXEC:./server")  # the agent's
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-project/app.sock,fork EXEC:cat")
+    assert tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-socks-ab12.sock,fork TCP:localhost:1080")
     fork = (
         "  710   700 socat UNIX-LISTEN:/tmp/claude-http-1.sock,fork,reuseaddr TCP:localhost:3128\n"
     )
@@ -1834,6 +1836,54 @@ def test_a_line_that_shows_late_is_not_taken_for_an_answer(
     assert backend.submitted == 1
     minutes(world, 10)
     assert backend.terminated == [SESSION] and len(backend.typed) == 1
+
+
+def test_a_held_back_line_dropped_by_an_attach_does_not_count(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A person attaching before the held-back line's Enter drops it: no Enter is sent and
+    it does not count toward `NUDGE_CAP`, so the cap never ends a session for nudges it
+    was never sent (fkyb's review: "answered 3 nudges" after zero Enters)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    for n in range(1, supervisor.NUDGE_CAP + 2):
+        assert len(backend.typed) == n and sup.records["plc-0003"].nudges == 0, n
+        backend.attach = True
+        minutes(world, 1)
+        backend.attach = False
+        minutes(world, 31)
+    assert backend.submitted == 0 and backend.terminated == []
+
+
+def test_a_line_still_not_shown_gets_no_enter(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A line that has not shown by the next look keeps its Enter back, so its own late
+    echo never counts as an answer; one that never shows within `reply_within_minutes`
+    means the harness took nothing: the session is ended (fkyb's nit)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    minutes(world, 5)
+    assert backend.submitted == 0 and backend.terminated == []
+    minutes(world, 6)
+    assert backend.submitted == 0 and backend.terminated == [SESSION]
+
+
+def test_a_stalled_line_that_shows_later_is_then_measured(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 33)
+    assert backend.submitted == 0
+    backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, three looks late
+    minutes(world, 1)
+    assert backend.submitted == 1 and sup.records["plc-0003"].nudges == 1
+    minutes(world, 10)
+    assert backend.terminated == [SESSION]
 
 
 def test_an_answer_after_a_late_line_counts(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shlex
 import subprocess
 from collections.abc import Callable, Sequence
@@ -83,6 +84,10 @@ def is_wait(args: str) -> bool:
 WAITING, WORKING, IDLE = "waiting", "working", "idle"
 
 
+# The socket of a sandbox bridge: its own file name, never a directory above it, names it.
+BRIDGE_SOCKET = re.compile(r"claude-[a-z]+-[A-Za-z0-9_-]+\.sock")
+
+
 def is_helper(args: str) -> bool:
     """Whether a child of the harness is one of its own long-lived helpers rather than a tool
     it runs: Claude Code's sandbox on Linux keeps a `socat UNIX-LISTEN:…/claude-…sock` bridge
@@ -93,7 +98,11 @@ def is_helper(args: str) -> bool:
         bool(words)
         and os.path.basename(words[0]) == "socat"
         and any(
-            word.startswith("UNIX-LISTEN:") and "/claude-" in word.split(",", 1)[0]
+            word.startswith("UNIX-LISTEN:")
+            and BRIDGE_SOCKET.fullmatch(
+                os.path.basename(word[len("UNIX-LISTEN:") :].split(",", 1)[0])
+            )
+            is not None
             for word in words[1:]
         )
     )
