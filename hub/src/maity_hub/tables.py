@@ -848,6 +848,10 @@ membership = Table(
     Column("briefing_by", String(ID)),
     Column("briefing_updated_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
+    # The project's newest event seq when the membership was made, 0 for none: where its
+    # notifications begin, since joining never replays a project's history (§18.2). Written
+    # with the row (`events.newest_seq`), so no read looks for it in the event log.
+    Column("joined_seq", BIG_ID, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
     # True while the membership exists, NULL once removed: a removed member

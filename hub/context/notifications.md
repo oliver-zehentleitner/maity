@@ -1228,5 +1228,43 @@ written with the message costs one insert per human named and makes the read an 
 - Backfilling in the worker after startup: the bell would miss chats and mentions of the window
   until it finished.
 
-Still open: the join position (`items.scope`, the highest `seq` at the member's join) scans the
-project's events on PostgreSQL on every read; it is not part of this change.
+Not part of this change: the join position (`items.scope`, the highest `seq` at the member's join),
+which scanned the project's events on PostgreSQL on every read; stored with the membership since
+ed1bae10-a417-4c3e-881e-617cf0b3b805.
+
+## A membership stores where its notifications begin (`joined_seq`); the bell no longer finds it in the event log
+
+**Id:** ed1bae10-a417-4c3e-881e-617cf0b3b805
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-vtb7e62njk52 (the lead's follow-up to fc79a4a6-4b27-40f3-abd9-e7edb7ddd066, preferring a stored value over an index); EXPLAIN on PostgreSQL showed a sequential scan of `event` per bell read from `items.scope`'s `max(event.seq)` joined on `at <= joined_at`; `tests/test_notifications_load.py` `test_a_poll_costs_the_same_however_many_messages_are_not_the_human_s`, which now checks every statement of the bell that reads `event`, red on PostgreSQL against the previous `items.scope`
+**See:** notifications.md#a-messages-possible-recipients-are-written-with-it-to-notification_recipient-the-bell-reads-them-by-index-instead-of-matching-json-text — fc79a4a6-4b27-40f3-abd9-e7edb7ddd066 — as of 2026-11-12
+**Revisit when:** a membership can be made by a path that does not go through `events.newest_seq` under the project's lock, a removed membership is reactivated instead of a new row being made, or the bell's statements on PostgreSQL scan `event` again
+
+Joining never replays a project's history (§18.2): a member's items begin after the project's
+newest event at the join. Every path that makes a membership (project creation, an invitation's
+accept, an organisation owner's kept membership, an agent's join) stores that seq as
+`membership.joined_seq`, read with `events.newest_seq` (one step down the index `(project_id,
+seq)`) under the project's lock the caller holds, so no event of the project lands between the
+read and the insert. A second join after a removal makes a new row and so a new position. The
+column is NOT NULL without a default: a path that forgets it fails at the insert instead of
+replaying history.
+
+The migration fills it for every membership there, removed ones too, with the query the bell ran
+until then (`max(event.seq)` of the project at or before `joined_at`, 0 for none), so no item
+moves. It goes in batches of 500 memberships, fills only rows still without a value and adds the
+column only when missing; on MariaDB each batch commits alone, on PostgreSQL and SQLite it stays
+in the chain's one transaction, as in fc79a4a6.
+
+**Reason:** the position never changes after the join, so finding it again on every read was a
+cost without a purpose; stored, the read takes it with the membership row it loads anyway.
+
+**Rejected alternatives:**
+- An index on `event (project_id, at)`: the read stays a lookup per project on every poll, and
+  it depends on `at` rising with `seq`, which only `emit`'s clamp keeps per project.
+- Walking `(project_id, seq)` backwards until `at <= joined_at`: the walk grows with the events
+  since the join, so a long-standing member pays the most.
+- A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
+  path that forgets the value.
+

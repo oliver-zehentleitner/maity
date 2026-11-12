@@ -102,26 +102,11 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
             select(t.project).where(t.project.c.id.in_({m.project_id for m in members}))
         )
     }
-    # Joining never replays a project's history (§18.2): the highest seq at the join.
-    joined = dict(
-        conn.execute(
-            select(t.membership.c.id, func.coalesce(func.max(t.event.c.seq), 0))
-            .select_from(t.membership)
-            .outerjoin(
-                t.event,
-                and_(
-                    t.event.c.project_id == t.membership.c.project_id,
-                    t.event.c.at <= t.membership.c.joined_at,
-                ),
-            )
-            .where(t.membership.c.id.in_([m.id for m in members]))
-            .group_by(t.membership.c.id)
-        ).all()
-    )
     for member in members:
         project = projects[member.project_id]
         found.memberships.append(Membership(project, member, "human"))
-        found.joined_seq[project.id] = int(joined[member.id])
+        # Joining never replays a project's history (§18.2): the seq stored with the join.
+        found.joined_seq[project.id] = int(member.joined_seq)
     return found
 
 

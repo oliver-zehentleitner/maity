@@ -260,9 +260,12 @@ def test_a_poll_costs_the_same_however_many_messages_are_not_the_human_s(
 ) -> None:
     """The messages that may make an item of the human are read from
     `notification_recipient` (hub/context/notifications.md fc79a4a6), not found by matching
-    every message's JSON as text: the bell reads as many statements with 2,000 messages
-    between agents in the window as with 20,000, and on PostgreSQL none of them scans `event`
-    whole."""
+    every message's JSON as text, and the human's join position is stored with the membership
+    (`joined_seq`), not found again with `max(event.seq)` before `joined_at`: the bell reads as
+    many statements with 2,000 messages between agents in the window as with 20,000, and on
+    PostgreSQL none of the statements that read `event` scans it whole."""
+    import re
+
     from sqlalchemy import select
 
     agent = flow.agent(make_client, owner)
@@ -316,9 +319,10 @@ def test_a_poll_costs_the_same_however_many_messages_are_not_the_human_s(
     scans = []
     with migrated.connect() as conn:
         for statement, parameters in many:
-            # The statements that read event rows to classify; the join position's lookup
-            # (`items.scope`) reads none and is a cost of its own, not of the messages.
-            if statement.lstrip().upper().startswith("SELECT") and "event.payload" in statement:
+            # Every statement that reads `event`: the ones that classify messages and, before
+            # `joined_seq`, the join position's lookup in `items.scope`.
+            reads_event = re.search(r"\b(FROM|JOIN) event\b", statement)
+            if statement.lstrip().upper().startswith("SELECT") and reads_event:
                 plan = conn.exec_driver_sql(f"EXPLAIN {statement}", parameters).scalars().all()
                 if any("Seq Scan on event " in line for line in plan):
                     scans.append("\n".join([statement, *plan]))
@@ -352,3 +356,54 @@ def test_a_message_writes_a_recipient_row_per_human_it_may_notify(
         (owner.id, True, False),
         (owner.id, False, True),
     ]
+
+
+def test_a_membership_stores_where_its_notifications_begin(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """Joining never replays a project's history (§18.2): each membership stores the
+    project's newest seq at its making (`joined_seq`), on every path that makes one, and a
+    human invited again after a removal begins from the second join."""
+    from sqlalchemy import func, select
+
+    from maity_hub import invitations
+    from tests.test_invitations import accept, issue, token_of
+
+    invitations.PER_PROJECT.reset()
+
+    def newest() -> int:
+        with migrated.connect() as conn:
+            return int(conn.execute(select(func.max(t.event.c.seq))).scalar() or 0)
+
+    def stored(**principal: str) -> list[int]:
+        column = t.membership.c.human_id if "human_id" in principal else t.membership.c.agent_id
+        with migrated.connect() as conn:
+            return list(
+                conn.execute(
+                    select(t.membership.c.joined_seq)
+                    .where(column == next(iter(principal.values())))
+                    .order_by(t.membership.c.id)
+                ).scalars()
+            )
+
+    [created] = stored(human_id=owner.id)  # the project's first membership: the creator's
+    assert created < newest()
+    before_agent = newest()
+    agent = flow.agent(make_client, owner)
+    assert stored(agent_id=agent.id) == [before_agent]
+    said = agent.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "before anna"},
+    )
+    assert said.status_code in (200, 201), said.text
+    anna = flow.human(make_client, migrated, "anna")
+    first = issue(owner)
+    before_anna = newest()
+    assert accept(anna, token_of(first)).status_code == 201
+    assert stored(human_id=anna.id) == [before_anna]
+    assert owner.delete(f"/projects/maintainer/maity/members/{anna.id}").status_code == 200
+    again = issue(owner)
+    before_again = newest()
+    assert accept(anna, token_of(again)).status_code == 201
+    assert stored(human_id=anna.id) == [before_anna, before_again]
+    assert before_again > before_anna
