@@ -2095,7 +2095,10 @@ answer: something in the clone may still be needed.
 - Removal by hand is for people only (the profile's owner or a project
   admin): it deletes unsaved work. A request stays until a report names
   it, so a report the runner decided before seeing it cannot drop it
-  (spq4's review). `removed` is accepted in any state of the placement,
+  (spq4's review). The runner reads `remove_requested_at` on every
+  placement it may remove, active under `desired: stopped` or closed, and
+  names it in its report; `removed` clears the request whatever it names,
+  because nothing is left to remove. `removed` is accepted in any state of the placement,
   because a start that arrives during the removal would otherwise find
   neither a credential nor a way to rejoin.
 - A closed placement stays listed to its runner as long as its clone is
