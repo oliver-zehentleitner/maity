@@ -892,22 +892,24 @@ checklist they reach every reviewer through the rules they already read.
 **Source:** the owner's answer to req-y1zb7awnyjmd, 2026-11-12, as card tsk-13scv14k4yg4 quotes it ("a switch in the project settings, default on"); the library check in note nte-1xahaw51wtjw on that card; contract `docs/api.md` §6.1 "Merging the Why children", §11.5 "The family in one view"
 **Revisit when:** the vendored Keep the Why library gets a family layer the host can hand member states to without merging, or children in other repositories are followed
 
-The project's Why view showed only the root export, so the entries of
-`hub/`, `cli/` and `web/` were missing from its graph, lists and
+The project's Why view shows only the root export, so the entries of
+`hub/`, `cli/` and `web/` are missing from its graph, lists and
 counts, although the hub already reads the whole family (§11.3) and
-serves each member's export (§11.5). A project setting,
+serves each member's export (§11.5). Decided, not built yet (the hub
+and web PRs of the card follow the contract): a project setting,
 `settings.why_merge_children`, on by default for new and existing
-projects, has the dashboard read every member's export and show them
-as one state. A member that fails is named with its reason and left
-out. With the setting off, the view is the root's alone, as before.
+projects, is to have the dashboard read every member's export and show
+them as one state. A member that fails is to be named with its reason
+and left out. With the setting off, the view stays the root's alone.
 The hub's reads do not change with it.
 
 **Reason:** the owner wants the family seen as one, and the vendored
 library already supports it: `mergeStates` in `ktw-core.js` turns
 member states into one state that its pages, timeline and graph read,
-prefixing a member's files and ids so that the same name in two
-members stays two, and its graph links entries across members by
-`uuid`. So the merge stays in the dashboard, where the library runs,
+prefixing a member's files and ids, and its graph links entries across
+members by `uuid`. The host gives every member, the root included, a
+key that holds no `/` (`@` and its percent-encoded `path`), so the
+prefixed ids and files of two members can never be the same. So the merge stays in the dashboard, where the library runs,
 and the hub keeps serving one export per call. A switch keeps the old
 view for a project whose members are unrelated enough that one graph
 says less than the root's.
@@ -922,3 +924,7 @@ says less than the root's.
   lists and counts stayed the root's, and the card asks for all three.
 - Prefixing by the member's `name`, as the library does by default:
   two members may have the same name; their `path` (§11.3) is unique.
+- Prefixing by the member's `path` and leaving the root unprefixed, as
+  the contract first said: a root topic `hub/stack.md` and member
+  `hub`'s `stack.md` get the same id, and the graph keys its nodes by
+  it, so one overwrites the other (reviewer finding at #1698).

@@ -5262,7 +5262,7 @@ server time back.
               "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
               "lease_seconds": 7200, "signing": "optional" },
   "absence": null,
-  "settings": { "language": "en", "why_merge_children": true,
+  "settings": { "language": "en",
                 "release_checklist": ["CHANGELOG has a section for this version",
                                        "live version equals the tag"],
                 "onboarding": { "check_in_with": "coordinator", "version": 3,
@@ -5472,7 +5472,8 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `contract_files`, `contract_implementers` (§17.3); `contract_path` — the
 file the overview links and shows as the project's contract, default
 `docs/api.md` (§6.8); `restricted_access` (below, §6.4);
-`why_merge_children` (below, §11.5). `PATCH` merges
+`why_merge_children` (not built, not in the example above; below,
+§11.5). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
@@ -5651,15 +5652,18 @@ maintainer's decision of 2026-10-23 (`context/messages.md`).
 *Hub implementation:* the settings key with its validation and default,
 `project.language` in the resume packet.
 
-**Merging the Why children** (`why_merge_children`) says whether the
-project's Why view (§11.5) shows the entries of every member of the
+**Merging the Why children** (`why_merge_children`). **Not built:**
+this passage is the agreed design, kept for the hub PR of card
+tsk-13scv14k4yg4 (the key) and its web PR (the view); until then
+neither the hub nor the dashboard knows the key. The setting says
+whether the project's Why view (§11.5) shows the entries of every member of the
 project's Keep the Why family in one view, or the root's alone. The
 owner's decision of 2026-11-12 (req-y1zb7awnyjmd, card
 tsk-13scv14k4yg4, `context/projects.md`): a switch in the project
 settings, on by default. A boolean, default `true`; anything else is
 `invalid` (`details.fields["settings.why_merge_children"]:
 "not_a_boolean"`). A project without the key — a new one, and every
-existing one — reads as `true` (`GET` shows `"why_merge_children":
+existing one — reads as `true` (`GET` then shows `"why_merge_children":
 true`), and `{"settings": {"why_merge_children": null}}` restores that
 default; nothing is written to existing projects for it. Set with
 `PATCH /projects/{owner}/{slug}` `{"settings": {"why_merge_children":
@@ -5672,7 +5676,8 @@ The setting is read by the dashboard and changes no read of the hub:
 §11.3 and §11.5 answer the same with it on or off, and the public page's
 **Why** (§16.9) stays the family's summary either way. What the view
 does with it is in §11.5, "The family in one view".
-*Hub implementation:* the settings key with its validation and default.
+*Hub implementation:* none yet (above); to be the settings key with its
+validation and default.
 
 **Restricted access** names who may read and write a card's restricted
 text (§6.4, "Restricted text"): one list for reading and writing, and
@@ -15524,9 +15529,12 @@ them. `family`, `memberState` and `resolveEntry` are not offered: they
 need a Keep the Why server, and the library works without them (the
 family search scope then covers what the exports reach).
 
-**The family in one view.** The hub serves one export per call and
-never merges them; the dashboard does, as the project's
-`why_merge_children` setting says (§6.1, default `true`).
+**The family in one view.** **Not built:** this passage is the agreed
+design, kept for the web PR of card tsk-13scv14k4yg4; until then the
+view shows the root's export alone, as under **Off** below. The hub
+serves one export per call and never merges them; the dashboard is to,
+as the project's `why_merge_children` setting says (§6.1, default
+`true`, not built either).
 
 - **On:** the view takes the family from §11.3 (`members`, the root
   first, depth-first) and reads each member's export with
@@ -15534,10 +15542,16 @@ never merges them; the dashboard does, as the project's
   bodies as for the root. It shows the entries of every member that
   loaded as one state: one graph, one set of lists (overview, topics,
   timeline, thoughts, queues, findings, authors) and one set of counts.
-  Each member's entry ids and topic files are prefixed with the
-  member's `path` (the root's are not), so the same file or entry id in
-  two members stays two. Each entry and each topic names the member it
-  comes from. A See or Superseded by from an entry of one member to an
+  Every member's entry ids and topic files, the root's included, are
+  prefixed with the member's key and a `/`: `@` followed by its `path`
+  (§11.3) percent-encoded as `encodeURIComponent` does, so `@` for the
+  root, `@hub` for `hub` and `@a%2Fb` for `a/b`. A key holds no `/`
+  and two paths never give the same key, so the part before the first
+  `/` names the member, and ids and files of two members are never the
+  same, whatever their paths (a root topic `hub/stack.md` is
+  `@/hub/stack.md`, member `hub`'s `stack.md` is `@hub/stack.md`). The
+  key is not shown: each entry and each topic names the member it
+  comes from, by its `name` (the root by the project's). A See or Superseded by from an entry of one member to an
   entry of another, by its `uuid`, is a link in the merged graph like
   one inside a member. A `uuid` that two members both carry is shown
   under the first member in §11.3's order, and the view says so.
