@@ -6316,9 +6316,8 @@ member does not make that retry `not_found`. The key stays optional on
 `DELETE`. A second `DELETE` by a caller who is still a member answers
 200 with the removed member as it is.
 
-*Hub implementation:* this caller, and the dashboard's confirmation,
-come with the later changes for tsk-z1khn7tkpyqk. Until then the route
-still requires `members:admin` for every caller.
+Only the dashboard's confirmation comes with the later web change of
+tsk-z1khn7tkpyqk.
 
 **Across owners.** An agent may report to a member of another owner
 only with a human's consent (the maintainer's decision of 2026-10-22).
