@@ -65,6 +65,12 @@ class El extends Node_ {
   constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = { setProperty(k, v) { this[k] = v; } }; }
   setAttribute(k, v) { this.attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return k === "class" ? this.className : this.attrs[k]; }
+  // class is kept on className, as a browser's class attribute is.
+  getAttributeNames() {
+    const names = Object.keys(this.attrs).filter((name) => name !== "class");
+    if (this.className) names.push("class");
+    return names;
+  }
   removeAttribute(k) { delete this.attrs[k]; }
   get classList() {
     const names = () => this.className.split(" ").filter(Boolean);
@@ -9410,7 +9416,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const AVL = win.Maity.avatar;
   const ioBox = document.createElement("div");
   body.appendChild(ioBox);
-  const ioUrl = { id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=abc" };
+  // A URL this page has not loaded yet: one already loaded and off the page is reused,
+  // and would not be a placeholder the observer watches (tsk-4pgj07raakw7).
+  const ioUrl = { id: "agt-a", avatar_url: "/api/v1/avatars/agt-a?v=obs" };
   const ioSeen = AVL(ioUrl, 24);
   const ioAway = AVL(ioUrl, 24);
   const offFirst = !ioLive.has(ioSeen) && !ioLive.has(ioAway);
@@ -9444,6 +9452,93 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   delete Node_.prototype.isConnected;
   delete win.IntersectionObserver;
   delete win.WeakRef;
+
+  // A redraw keeps an <img> whose src and other attributes are unchanged (tsk-4pgj07raakw7).
+  {
+    const img = (src, extra) => win.Maity.dom.h("img", Object.assign({ src, alt: "", class: "brand-lockup" }, extra || {}));
+    const oldA = img("brand/maity-lockup.svg");
+    const oldB = img("brand/maity-lockup-dark.svg");
+    const old = win.Maity.dom.h("div", null, oldA, oldB);
+    const freshA = img("brand/maity-lockup.svg");
+    const freshB = img("brand/other.svg");
+    const fresh = win.Maity.dom.h("div", null, freshA, freshB);
+    win.Maity.dom.keepImages(old, fresh);
+    const kept = fresh.querySelectorAll("img");
+    expect(kept[0] === oldA && kept[1] === freshB && kept[1] !== oldB,
+      "keepImages: the same src and attributes keeps that old image; a different src takes the fresh one");
+    const altOld = img("brand/maity-lockup.svg", { alt: "one" });
+    const altFresh = img("brand/maity-lockup.svg", { alt: "two" });
+    const altBox = win.Maity.dom.h("div", null, altFresh);
+    win.Maity.dom.keepImages(win.Maity.dom.h("div", null, altOld), altBox);
+    expect(altBox.querySelector("img") === altFresh, "keepImages: a different alt takes the fresh image");
+    const classOld = img("brand/maity-lockup.svg", { class: "one" });
+    const classFresh = img("brand/maity-lockup.svg", { class: "two" });
+    const classBox = win.Maity.dom.h("div", null, classFresh);
+    win.Maity.dom.keepImages(win.Maity.dom.h("div", null, classOld), classBox);
+    expect(classBox.querySelector("img") === classFresh, "keepImages: a different class takes the fresh image");
+    const handled = img("brand/maity-lockup.svg", { onclick: () => {} });
+    const handledBox = win.Maity.dom.h("div", null, handled);
+    win.Maity.dom.keepImages(win.Maity.dom.h("div", null, img("brand/maity-lockup.svg")), handledBox);
+    expect(handledBox.querySelector("img") === handled, "keepImages: an image with a handler is never swapped");
+  }
+  await win.Maity.api.patch("/agents/agt-a", { avatar_motif: "owl" });
+  await win.Maity.api.patch("/agents/agt-d", { avatar_motif: "fox" });
+  await go("#/agents"); for (let k = 0; k < 8; k++) await tick();
+  // The identicon's class is set with setAttribute; the shim's class match reads className,
+  // which h() sets and createElementNS does not. Any svg, then the picture it is waiting on.
+  main.querySelectorAll("table.agents-list svg").forEach((svg) => {
+    const pic = win.Maity.avatar.picture(svg);
+    if (pic) pic.dispatch("load");
+  });
+  const agentImgs = () => main.querySelectorAll("table.agents-list img");
+  const agentsBefore = agentImgs();
+  const lockupsBefore = header.querySelectorAll(".brand img");
+  const createEl = document.createElement;
+  const madeImgs = [];
+  document.createElement = (tag) => {
+    const el = createEl(tag);
+    if (String(tag).toLowerCase() === "img") madeImgs.push(el);
+    return el;
+  };
+  try {
+    await win.Maity.redraw();
+    for (let k = 0; k < 8; k++) await tick();
+  } finally {
+    document.createElement = createEl;
+  }
+  const agentsAfter = agentImgs();
+  const lockupsAfter = header.querySelectorAll(".brand img");
+  expect(agentsBefore.length >= 2 && agentsBefore.length === agentsAfter.length
+    && agentsBefore.every((node, i) => node === agentsAfter[i]) && madeImgs.every((el) => agentsAfter.indexOf(el) < 0),
+    "agents: drawing /agents again keeps the list's images and creates none (" + agentsBefore.length + " -> " + agentsAfter.length + ", new " + madeImgs.length + ")");
+  expect(lockupsBefore.length === 2 && lockupsBefore.every((node, i) => node === lockupsAfter[i]),
+    "header: drawing the same view again keeps the lockup images");
+  await win.Maity.api.patch("/agents/agt-a", { avatar_motif: null });
+  await win.Maity.api.patch("/agents/agt-d", { avatar_motif: null });
+  {
+    const loneUrl = "/api/v1/avatars/reusegone01?v=1";
+    const loneKey = win.Maity.avatar.sized(loneUrl, 24);
+    const loneBox = document.createElement("div");
+    body.appendChild(loneBox);
+    const lone = win.Maity.avatar({ id: "reusegone01", avatar_url: loneUrl }, 24);
+    loneBox.appendChild(lone);
+    const loneImg = win.Maity.avatar.picture(lone);
+    if (loneImg) loneImg.dispatch("load");
+    const remembered = win.Maity.avatar.cached(loneKey) && loneBox.querySelector("img") === loneImg;
+    body.removeChild(loneBox);
+    const stay = document.createElement("div");
+    body.appendChild(stay);
+    for (let i = 0; i < win.Maity.avatar.REUSE_MAX; i++) {
+      const id = "reusestay" + i;
+      const ph = win.Maity.avatar({ id, avatar_url: "/api/v1/avatars/" + id + "?v=1" }, 24);
+      stay.appendChild(ph);
+      const pic = win.Maity.avatar.picture(ph);
+      if (pic) pic.dispatch("load");
+    }
+    expect(remembered && !win.Maity.avatar.cached(loneKey) && win.Maity.avatar.held() <= win.Maity.avatar.REUSE_MAX,
+      "avatars: reuse releases an image that left the page and holds at most its bound (" + win.Maity.avatar.held() + ")");
+    body.removeChild(stay);
+  }
 
   // sign out, sign in
   profileButton().click(); await tick();
@@ -12612,10 +12707,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
   await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
   // The project as a mark after the who line, its name on hover (no line of its own).
+  // Read from the list now on the page: a redraw moves an unchanged <img> into the new row.
+  const chShown = main.querySelectorAll(".chat-list a.conv");
   const chMark = (a) => a.querySelector(".conv-sub .conv-project");
-  expect(chLinks.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chLinks[0]).getAttribute("title") === "Maity"
-    && chMark(chLinks[6]).getAttribute("title") === "Maity"
-    && chMark(Array.from(chLinks).find((a) => a.getAttribute("href") === "#/chats/maintainer/sample/agt-s1")).getAttribute("title") === "Sample shop",
+  expect(chShown.length === 7 && chShown.every((a) => chMark(a) && chMark(a).querySelector(".project-mark")) && chMark(chShown[0]).getAttribute("title") === "Maity"
+    && chMark(chShown[6]).getAttribute("title") === "Maity"
+    && chMark(Array.from(chShown).find((a) => a.getAttribute("href") === "#/chats/maintainer/sample/agt-s1")).getAttribute("title") === "Sample shop",
     "chats: each row's project is a mark after the who line, its name on hover");
   // One read across projects (§9.3, GET /me/conversations), not one per project; its failure is said.
   const mcReads = [];

@@ -52,7 +52,7 @@ window.Maity = window.Maity || {};
       // A redraw keeps the keyboard on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
-      clear(ul);
+      const fresh = h("div");
       const all = [];
       Object.keys(read).forEach((slug) => read[slug].chats.forEach((chat) => all.push({ slug, chat, key: slug + "/" + chat.id })));
       ordered(all).forEach((x) => {
@@ -68,8 +68,10 @@ window.Maity = window.Maity || {};
         const who = a && a.querySelector(".conv-sub");
         if (who) append(who, h("span", { class: "conv-project", title: name }, M.projectMark(x.slug, name, (pctx.projectViews || {})[x.slug], "small")));
         if (a) append(a, h("span", { class: "visually-hidden" }, ", ", M.t("chats.in_project", { project: name })));
-        append(ul, li);
+        append(fresh, li);
       });
+      M.dom.keepImages(ul, fresh);
+      append(clear(ul), Array.from(fresh.childNodes));
       none.hidden = all.length > 0 || Object.keys(read).length === 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);

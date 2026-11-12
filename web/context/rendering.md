@@ -108,7 +108,8 @@ picture from a third-party avatar service — it would send member ids out.
 **Revisit when:** the hub serves a board's avatars without queueing (one read for all of them, or a picture inside the list's answer), or browsers lazy-load images that are not yet on the page
 **See:** rendering.md#a-members-picture-is-generated-from-its-id-as-svg-nodes-unless-an-avatar-the-page-may-load-exists — f6560be2-4153-4d19-adc7-6fdc8589991f — as of 2026-11-09
 
-`M.avatar` returns the identicon every time. When the member carries an
+`M.avatar` returns the identicon every time a picture for that sized URL is not
+already loaded (bc1ada13-2b42-4ac6-8af7-5d7eb3742fd4). When the member carries an
 `avatar_url` the page may load, it loads that picture once the identicon
 is within 200 px of the screen (IntersectionObserver; without one, at
 once). It asks for the smallest size the hub serves (§6.10, Sizes: 32, 64,
@@ -1504,3 +1505,50 @@ every page for one value `/me` can carry. Rendering times on the hub: the contra
 API and leaves display to the dashboard. Keeping the browser's local clock for day boundaries
 while formatting in the account's zone: a message at 23:50 in the account's zone could then sit
 under the next day's separator.
+
+## A redraw keeps an `<img>` whose src and attributes are unchanged; every redraw site goes through `M.dom.keepImages`
+
+**Id:** bc1ada13-2b42-4ac6-8af7-5d7eb3742fd4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-4pgj07raakw7, the lead's go 2026-11-12
+**Revisit when:** a redraw updates a tree in place, or the hub sends a view's pictures inside the list so a page draws no separate image
+**See:** rendering.md#an-avatar-shows-the-generated-picture-at-once-and-loads-the-hubs-picture-only-near-the-screen-at-the-size-shown — 4db0d863-545e-46bb-b031-b5c9bbbfacb8 — as of 2026-11-12
+
+`M.dom.keepImages(old, fresh)` runs before a fresh tree replaces an old one.
+For every `<img>` in the fresh tree whose `src` equals an `<img>` in the old
+one, in document order and with each old node used once, the old node takes
+the fresh node's place, but only when every other attribute matches as well.
+A different `src` (an avatar whose `?v=` moved), or a different alt, class,
+width or any other attribute, keeps the fresh node. An `<img>` that `h()`
+gave an `on*` handler is never swapped: listeners cannot be compared, and
+`h()` marks those nodes. The header keeps its `h1.brand` when that heading
+is still there with the same link href and the same tag, so the first
+drawing keeps `index.html`'s lockups when they match; `keepImages` then
+does the switcher's logos and the profile. The same call runs in `render()`
+before the view replaces `main`, in `renderSwitcher`, and at the local
+redraws that rebuild a list of pictures: the agents list, a project's agent
+cards, the fleet, the members list, the organisation, and both chat lists.
+
+`M.avatar` still returns the identicon first. It does not start a second
+load for a sized URL that is already loaded, or in flight, in an `<img>` it
+made. While that load is in flight, the image moves into the newest
+placeholder that is still attached when it arrives. Once it has loaded and
+is no longer on the page, that same node is used again. The map that
+remembers them holds at most 64 sized URLs, and a loaded image that has
+left the page is the first one dropped.
+
+**Reason:** Firefox aborts the load of an `<img>` that a redraw removes
+(`NS_BINDING_ABORTED`) and the new `<img>` with the same `src` starts it
+again. That was every lockup and every avatar, on each change of view, each
+reload and each quiet refresh. The bytes were already on the way, or
+already here; the new node was the whole cost. Keeping the node leaves the
+load running. A handler cannot be seen on the fresh node, so those images
+stay new. The reuse map has to be bounded, or a long session would keep
+every picture it had ever shown.
+
+**Rejected alternatives:** skipping the header rebuild on a content-only
+redraw. Out of scope: the header's DOM is cheap, and the images were the
+cost. A virtual-DOM or morph library. None is allowed; the stack is plain
+JS.
