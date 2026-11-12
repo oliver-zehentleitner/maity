@@ -16610,7 +16610,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
 | `desired` | `running`, `stopped` |
-| `generation` | starts at 1; incremented on every change of the spec, every restart and every `rejoin`; the runner reports which generation it acted on |
+| `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` workspace report does not increment it, as the next start makes a new clone anyway (§15.5); the runner reports which generation it acted on |
 | `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked: the runner removes the old credential file and picks up a new join |
 | `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
 | `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
@@ -16670,7 +16670,10 @@ clone Z. It is the only thing the hub asks of a runner.
 - **Revocation stops the placement.** Revoking the agent credential
   named by an active placement's `credential_id`, by any path (§10, the
   leak path of §2.2, member removal), sets `desired: stopped` in the
-  same transaction; it does not close the placement.
+  same transaction; it does not close the placement. The one exception
+  is `workspace_removed`: the credential's file went with the clone, so
+  the placement keeps its `desired` and rejoins at its next start
+  (§15.5).
 
 **Closing.** A placement closes in one of two ways, by cause:
 
