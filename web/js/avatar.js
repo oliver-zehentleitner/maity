@@ -122,12 +122,14 @@ window.Maity = window.Maity || {};
   // The picture for a placeholder that is still waiting for it (smoke tests only).
   const pending = new WeakMap();
 
-  // One <img> per sized URL this page has asked for. A redraw must not start
-  // that load again: while it is in flight the pending image moves into the
-  // newest placeholder still attached when it loads; once it has loaded and
-  // is no longer on the page, that same node is used again. The map is
-  // bounded. A loaded image that has left the page is dropped first, so the
-  // map cannot grow with every redraw (context/rendering.md).
+  // One loaded picture per sized URL. Every place that shows it gets its
+  // own <img>: a node that is on the page stays there, and another place
+  // gets a clone, which the browser serves from cache. A redraw reuses the
+  // node only when it is off the page. While a load is in flight, every
+  // placeholder still in a tree when it arrives is filled. The map drops
+  // only a loaded image that has left the page, never a load that has not
+  // finished, so the map can sit above its bound until one of those can go
+  // (context/rendering.md).
   const REUSE_MAX = 64;
   const made = new Map();
   let turn = 0;
@@ -146,11 +148,17 @@ window.Maity = window.Maity || {};
     }
     return false;
   }
-  // The view being drawn replaces main. An image still showing in the header
-  // stays there; one in main is the copy this redraw is about to throw away.
-  function inContent(node) {
-    const main = document.getElementById("main");
-    return !!(main && main.contains && node && main.contains(node));
+  function applySize(img, px) {
+    img.setAttribute("width", String(px));
+    img.setAttribute("height", String(px));
+  }
+  // A second <img> for a picture this page already has. cloneNode copies
+  // the src without a new load; listeners are not copied, so the clone
+  // does not run the load that already finished.
+  function cloneImage(img, px) {
+    const copy = img.cloneNode(false);
+    applySize(copy, px);
+    return copy;
   }
   function remember(url, entry) {
     if (made.has(url)) made.delete(url);
@@ -159,47 +167,71 @@ window.Maity = window.Maity || {};
       let drop = null;
       for (const [key, item] of made) {
         if (key === url) continue;
-        if (!drop) drop = key;
+        // In flight, or still showing: dropping it would leave a placeholder
+        // that never fills, or take a picture off the page.
         if (item.state === "loaded" && item.img && !onPage(item.img)) { drop = key; break; }
       }
       if (!drop) break;
       made.delete(drop);
     }
   }
-  // The newest placeholder this load should land in. Only ones still on the
-  // page are kept besides the newest, so a parked previous tree is not held.
-  function noteTarget(entry, shown) {
+  // Placeholders waiting on this load. One not inserted yet is kept until
+  // the load (a view builds them, then mounts them). One that had a parent
+  // and lost it has been discarded.
+  function noteTarget(entry, shown, px) {
     const live = [];
     const prev = entry.targets || [];
     for (let i = 0; i < prev.length; i++) {
-      if (prev[i] && prev[i] !== shown && onPage(prev[i])) live.push(prev[i]);
+      const item = prev[i];
+      if (!item || item.el === shown) continue;
+      if (item.el.parentNode) { item.mounted = true; live.push(item); continue; }
+      if (!item.mounted) live.push(item);
     }
-    live.push(shown);
-    while (live.length > 8) live.shift();
+    live.push({ el: shown, px, mounted: !!shown.parentNode });
     entry.targets = live;
     pending.set(shown, entry.img);
   }
-  function newestAttached(entry) {
-    const list = entry.targets || [];
-    for (let i = list.length - 1; i >= 0; i--) if (list[i] && list[i].parentNode) return list[i];
-    return null;
-  }
-  // The loaded node to put in the new tree, or "keep" when it is already in
-  // use and must not be taken (and must not be loaded a second time).
-  function consider(url) {
+  // An <img> for a picture that has already loaded. The remembered node is
+  // used only when it is off the page and has not already been handed out
+  // in this turn. Otherwise a clone, so a place that is showing it keeps it.
+  function placeLoaded(entry, px) {
     beginTurn();
+    remember(entry.url, entry);
+    const img = entry.img;
+    if (!onPage(img) && entry.handed !== turn) {
+      applySize(img, px);
+      entry.handed = turn;
+      return img;
+    }
+    return cloneImage(img, px);
+  }
+  function fill(entry) {
+    const targets = entry.targets || [];
+    entry.targets = [];
+    const placeable = [];
+    for (let i = 0; i < targets.length; i++) {
+      pending.delete(targets[i].el);
+      if (targets[i].el && targets[i].el.parentNode) placeable.push(targets[i]);
+    }
+    let usedOriginal = onPage(entry.img);
+    for (let i = 0; i < placeable.length; i++) {
+      const item = placeable[i];
+      let node;
+      if (!usedOriginal) {
+        applySize(entry.img, item.px);
+        entry.handed = turn;
+        node = entry.img;
+        usedOriginal = true;
+      } else {
+        node = cloneImage(entry.img, item.px);
+      }
+      item.el.parentNode.replaceChild(node, item.el);
+    }
+  }
+  function imageFor(url, px) {
     const entry = made.get(url);
     if (!entry || entry.state !== "loaded" || !entry.img) return null;
-    if (entry.turn !== turn) {
-      entry.placed = false;
-      entry.turn = turn;
-    }
-    if (entry.placed && !onPage(entry.img)) return "keep";
-    if (entry.img.parentNode && onPage(entry.img) && !inContent(entry.img)) return "keep";
-    entry.placed = true;
-    entry.turn = turn;
-    remember(url, entry);
-    return entry.img;
+    return placeLoaded(entry, px);
   }
   function beginLoad(url, shown, px) {
     let img;
@@ -208,35 +240,34 @@ window.Maity = window.Maity || {};
     } catch (refused) {
       return null; // not an image the page may load: the generated one stays
     }
-    const entry = { img, state: "flight", targets: [], placed: false, turn };
+    const entry = { url, img, state: "flight", targets: [], handed: 0 };
     const done = (ok) => {
       if (made.get(url) !== entry) return;
-      const targets = entry.targets || [];
-      for (let i = 0; i < targets.length; i++) pending.delete(targets[i]);
-      if (!ok) { made.delete(url); return; }
+      if (!ok) {
+        const targets = entry.targets || [];
+        for (let i = 0; i < targets.length; i++) pending.delete(targets[i].el);
+        entry.targets = [];
+        made.delete(url);
+        return;
+      }
       entry.state = "loaded";
-      entry.placed = false;
-      const target = newestAttached(entry);
-      if (target && target.parentNode) target.parentNode.replaceChild(img, target);
+      fill(entry);
     };
     img.addEventListener("load", () => done(true));
     img.addEventListener("error", () => done(false));
-    noteTarget(entry, shown);
+    noteTarget(entry, shown, px);
     remember(url, entry);
     img.setAttribute("src", url);
-    if (entry.state === "loaded") {
-      entry.placed = true;
-      return img;
-    }
+    if (entry.state === "loaded") return placeLoaded(entry, px);
     return null;
   }
   function claim(url, shown, px) {
     const entry = made.get(url);
-    if (entry && entry.state === "flight") { noteTarget(entry, shown); return null; }
+    if (entry && entry.state === "flight") { noteTarget(entry, shown, px); return null; }
     if (entry && entry.state === "loaded") {
-      const node = consider(url);
-      if (node && node !== "keep" && shown.parentNode) shown.parentNode.replaceChild(node, shown);
-      return node && node !== "keep" ? node : null;
+      const node = placeLoaded(entry, px);
+      if (node && shown.parentNode) shown.parentNode.replaceChild(node, shown);
+      return node;
     }
     return beginLoad(url, shown, px);
   }
@@ -245,14 +276,15 @@ window.Maity = window.Maity || {};
   // carries a picture the page may load (h() allows only the hub's own images), it is loaded
   // at the size shown and takes the generated one's place once it has arrived. One that
   // does not load (a 404 once the access is gone, §6.10) leaves the generated one. A sized
-  // URL already loaded, or in flight, is not requested again.
+  // URL already loaded, or in flight, is not requested again. A loaded one is an
+  // <img> at this place's size: the remembered node when it is off the page, a
+  // clone when that node is already showing somewhere.
   M.avatar = function (member, size) {
     const px = size || 24;
     const shown = identicon(member && member.id ? member.id : "?", px);
     const url = member && member.avatar_url ? sized(member.avatar_url, px) : null;
     if (!url || !M.dom.isOwnImage(url)) return shown;
-    const reused = consider(url);
-    if (reused === "keep") return shown;
+    const reused = imageFor(url, px);
     if (reused) return reused;
     let ready = null;
     whenSeen(shown, () => { ready = claim(url, shown, px); });

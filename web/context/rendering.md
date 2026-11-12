@@ -115,7 +115,8 @@ is within 200 px of the screen (IntersectionObserver; without one, at
 once). It asks for the smallest size the hub serves (§6.10, Sizes: 32, 64,
 128, 256) that covers the shown size on this screen, with the device pixel
 ratio capped at 2. The loaded image takes the identicon's place with the
-same size and class rules. A picture that does not load leaves the
+same size and class rules. Each place that shows that picture gets its own
+image, at the size that place asked for. A picture that does not load leaves the
 identicon. A logo or banner is loaded as given, without a size. `h()`
 allows the sized address and no other parameter. The observer watches
 only placeholders that are on the page. One that is not (built before its
@@ -1512,7 +1513,7 @@ under the next day's separator.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-4pgj07raakw7, the lead's go 2026-11-12
+**Source:** card tsk-4pgj07raakw7, the lead's go 2026-11-12; the review of that card, 2026-11-12
 **Revisit when:** a redraw updates a tree in place, or the hub sends a view's pictures inside the list so a page draws no separate image
 **See:** rendering.md#an-avatar-shows-the-generated-picture-at-once-and-loads-the-hubs-picture-only-near-the-screen-at-the-size-shown — 4db0d863-545e-46bb-b031-b5c9bbbfacb8 — as of 2026-11-12
 
@@ -1523,21 +1524,33 @@ the fresh node's place, but only when every other attribute matches as well.
 A different `src` (an avatar whose `?v=` moved), or a different alt, class,
 width or any other attribute, keeps the fresh node. An `<img>` that `h()`
 gave an `on*` handler is never swapped: listeners cannot be compared, and
-`h()` marks those nodes. The header keeps its `h1.brand` when that heading
-is still there with the same link href and the same tag, so the first
-drawing keeps `index.html`'s lockups when they match; `keepImages` then
-does the switcher's logos and the profile. The same call runs in `render()`
-before the view replaces `main`, in `renderSwitcher`, and at the local
-redraws that rebuild a list of pictures: the agents list, a project's agent
-cards, the fleet, the members list, the organisation, and both chat lists.
+`h()` marks those nodes. `keptBrand` keeps the header's `h1.brand` when that
+heading is still there with the same link href and the same tag.
+`renderHeader` asks for the signed-in home (`/all`). The brand `index.html`
+ships points at `/`, and a signed-out header builds a new brand, so neither
+of those is that element. The lockup `<img>` nodes from `index.html` stay
+on the first signed-in header because `keepImages` finds the same src and
+the same other attributes. `keepImages` also keeps the switcher's logos and
+the profile. The same call runs in `render()` before the view replaces
+`main`, in `renderSwitcher`, and at the local redraws that rebuild a list
+of pictures: the agents list, a project's agent cards, the fleet, the
+members list, the organisation, and both chat lists.
 
-`M.avatar` still returns the identicon first. It does not start a second
-load for a sized URL that is already loaded, or in flight, in an `<img>` it
-made. While that load is in flight, the image moves into the newest
-placeholder that is still attached when it arrives. Once it has loaded and
-is no longer on the page, that same node is used again. The map that
-remembers them holds at most 64 sized URLs, and a loaded image that has
-left the page is the first one dropped.
+`M.avatar` returns the identicon while that sized URL is not loaded yet. It
+does not start a second load for one that is already loaded, or in flight.
+Every placeholder that is still in a tree when the load arrives becomes its
+own `<img>`: the loaded node fills one of them, and each other place gets a
+clone (`cloneNode`), which the browser serves from cache. A node that is on
+the page is never moved, including one in the header and one in `main` that
+a later draw did not replace (a chat list that then loads its messages, a
+new message, a placeholder the observer claims). A redraw reuses the
+remembered node only when it is off the page. The width and height of each
+image are the size that place asked for. At a device pixel ratio of 1, 16 px
+and 24 px ask for the same `s=32` URL, and each image still has the size its
+place asked. The map drops only a loaded image that has left the page. A
+load that has not finished is left to fill its placeholders, so the map can
+sit above 64 sized URLs until a loaded image that has left the page can be
+dropped.
 
 **Reason:** Firefox aborts the load of an `<img>` that a redraw removes
 (`NS_BINDING_ABORTED`) and the new `<img>` with the same `src` starts it
@@ -1545,10 +1558,21 @@ again. That was every lockup and every avatar, on each change of view, each
 reload and each quiet refresh. The bytes were already on the way, or
 already here; the new node was the whole cost. Keeping the node leaves the
 load running. A handler cannot be seen on the fresh node, so those images
-stay new. The reuse map has to be bounded, or a long session would keep
-every picture it had ever shown.
+stay new. One shared node cannot sit in two places: the header's picture
+and a row in `main` are both on the page at once, and moving the node
+empties the place that had it. A clone of a picture that has already loaded
+does not start that request again. The reuse map has to be bounded, or a
+long session would keep every picture it had ever shown, but dropping a
+load that has not finished leaves its placeholders as identicons for good.
 
 **Rejected alternatives:** skipping the header rebuild on a content-only
 redraw. Out of scope: the header's DOM is cheap, and the images were the
 cost. A virtual-DOM or morph library. None is allowed; the stack is plain
-JS.
+JS. One shared `<img>` moved into the newest placeholder. The other places
+stayed identicons, and a later draw pulled the image out of a place that
+was still showing it. Evicting the oldest entry whenever nothing loaded had
+left the page. A load in flight was dropped and its placeholders never
+filled. Keying the map by the presentation size as well as the URL. Two
+sizes that share one `s=` would start two loads of the same bytes. Setting
+the size only on the shared node. A 16 px place kept the 24 px width of the
+node it reused.

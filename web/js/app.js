@@ -196,9 +196,13 @@ window.Maity = window.Maity || {};
   }
 
   // The lockup already in the header, when the link still goes where this
-  // drawing's does and the heading's tag is the same. The <img> nodes stay,
-  // so the first paint keeps index.html's lockups and a redraw does not
-  // load them again. The accessible name is brought up to date on the kept link.
+  // drawing's does and the heading's tag is the same. renderHeader asks for
+  // the signed-in home. The brand index.html ships points at "/", and a
+  // signed-out header builds a new brand with brandTitle, so neither is kept
+  // here. A later signed-in redraw keeps the element. The lockup <img>
+  // nodes, including the ones index.html shipped, stay when keepImages finds
+  // the same src and the same other attributes. The accessible name is
+  // brought up to date on the kept link.
   function keptBrand(previous, signedIn, tag) {
     const old = previous && previous.querySelector ? previous.querySelector(".brand") : null;
     if (!old || old.tagName !== (tag || "h1").toUpperCase()) return null;
