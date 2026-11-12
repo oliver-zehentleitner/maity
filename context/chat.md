@@ -162,7 +162,9 @@ group chat: leaving ends the row, being added again starts a new one, and
 an at-most-one marker (`here`) keeps a single open stay per member. Each
 row stores `window_after`, the project's highest event seq at that join;
 the participant's window, `unread` and the default page of `…/messages`
-count only messages after it.
+count only messages after it. An agent's row also stores
+`unread_nudged_through`, the open read cycle of the unread nudge
+(hub/context/events.md 56357b6b).
 
 **Reason:** the window is "the chat from the latest join on" (§9.2), and
 messages are events ordered by seq, so a seq bound needs no clock and
