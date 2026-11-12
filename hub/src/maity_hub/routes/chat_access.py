@@ -8,13 +8,17 @@ from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
+from sqlalchemy import Connection
 
-from maity_hub import chat_access
+from maity_hub import chat_access, idempotency
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import forbidden, humans_only
 from maity_hub.models import Strict
 
 router = APIRouter()
+
+# A repeat with the same `Idempotency-Key` answers what the first call answered (§1.5).
+idempotency.LOADERS["chat_access"] = idempotency.plain(chat_access.replayed)
 
 CACHE = "private, no-store"
 
@@ -74,10 +78,13 @@ def create_allow(body: AllowIn, request: Request, caller: AnyCaller) -> JSONResp
     me = _caller(caller)
     sent = _sent(body)
     chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"))
-    with engine_of(request).begin() as conn:
+
+    def action(conn: Connection) -> idempotency.Outcome:
         entry_id = chat_access.create_allow(conn, me, sent)
         entry = chat_access.one(conn, me, chat_access.ALLOW, entry_id)
-    return JSONResponse(entry, status_code=201)
+        return idempotency.Outcome(201, "chat_access", entry_id, entry)
+
+    return idempotency.run(engine_of(request), request, caller, action)
 
 
 @router.patch("/me/chat-access/allow/{entry_id}")
@@ -85,10 +92,14 @@ def patch_allow(
     entry_id: str, body: AllowPatch, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     me = _caller(caller)
-    with engine_of(request).begin() as conn:
-        chat_access.patch_allow(conn, me, entry_id, _sent(body))
+    sent = _sent(body)
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        chat_access.patch_allow(conn, me, entry_id, sent)
         entry = chat_access.one(conn, me, chat_access.ALLOW, entry_id)
-    return JSONResponse(entry)
+        return idempotency.Outcome(200, "chat_access", entry_id, entry)
+
+    return idempotency.run(engine_of(request), request, caller, action)
 
 
 @router.post("/me/chat-access/deny")
@@ -96,10 +107,13 @@ def create_deny(body: DenyIn, request: Request, caller: AnyCaller) -> JSONRespon
     me = _caller(caller)
     sent = _sent(body)
     chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"), sent.get("human_id"))
-    with engine_of(request).begin() as conn:
+
+    def action(conn: Connection) -> idempotency.Outcome:
         entry_id = chat_access.create_deny(conn, me, sent)
         entry = chat_access.one(conn, me, chat_access.DENY, entry_id)
-    return JSONResponse(entry, status_code=201)
+        return idempotency.Outcome(201, "chat_access", entry_id, entry)
+
+    return idempotency.run(engine_of(request), request, caller, action)
 
 
 @router.delete("/me/chat-access/allow/{entry_id}")

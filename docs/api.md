@@ -14592,8 +14592,8 @@ back nobody:
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /me/chat-access` | human | `{allow: [entry], deny: [entry]}`, newest first, not paged (a human keeps at most 1,000 entries; one more is `invalid`, `details.reason: "too_many_entries"`); `agent=<id>` only the entries that cover that agent |
-| `POST /me/chat-access/allow` | human | `{agents, owner_id \| project, their_agents?, their_human?, duration?, allowed?, denied?}`; `201` with the entry |
-| `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry |
+| `POST /me/chat-access/allow` | human | `{agents, owner_id \| project, their_agents?, their_human?, duration?, allowed?, denied?}`; `201` with the entry. A side's entry takes `their_agents: "all"` and `their_human: false` when they are not sent (`req-ssgyxfs5wdjw`); one with `their_agents: "none"` and `their_human: false` names no one and is `invalid`, `details.fields.their_agents: "names_no_one"` |
+| `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry; `invalid` (`names_no_one`) when the entry would name no one |
 | `POST /me/chat-access/deny` | human | `{agents, owner_id \| human_id \| agent_id \| project}`; `201` with the entry; removes the allow entries for the same agents and subject |
 | `DELETE /me/chat-access/{allow\|deny}/{id}` | human | `204`, also when the entry was not there |
 

@@ -307,3 +307,96 @@ def test_the_export_carries_the_lists(anna: flow.Human, ben: flow.Human, migrate
     second = deny(anna, agents=[mine], human_id=ben.id).json()
     exported = anna.get("/me/export").json()["chat_access"]
     assert exported == {"allow": [first], "deny": [second]}
+
+
+def test_an_entry_that_names_no_one_is_refused(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    mine = profile(migrated, anna.id, "anna-a")
+    nobody = allow(anna, agents=[mine], owner_id=ben.id, their_agents="none")
+    assert fields(nobody)["fields"] == {"their_agents": "names_no_one"}
+    made = allow(anna, agents=[mine], owner_id=ben.id, their_agents="none", their_human=True)
+    assert made.status_code == 201, made.text
+    patched = anna.patch(f"/me/chat-access/allow/{made.json()['id']}", {"their_human": False})
+    assert fields(patched)["fields"] == {"their_agents": "names_no_one"}
+    assert listed(anna)["allow"][0]["their_human"] is True
+
+
+def test_another_humans_deny_leaves_my_entries_alone(
+    anna: flow.Human, ben: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    carl = flow.human(make_client, migrated, "carl")
+    mine = profile(migrated, anna.id, "anna-a")
+    carls = profile(migrated, carl.id, "carl-a")
+    kept = allow(anna, agents=[mine], owner_id=ben.id, their_agents="none", their_human=True)
+    assert kept.status_code == 201, kept.text
+    assert deny(carl, agents=[carls], owner_id=ben.id).status_code == 201
+    assert [e["id"] for e in listed(anna)["allow"]] == [kept.json()["id"]]
+
+
+def test_a_repeat_with_the_same_key_replays(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    mine = profile(migrated, anna.id, "anna-a")
+    headers = {"X-CSRF-Token": anna.csrf, "Idempotency-Key": "chat-access-key-0001"}
+    body = {"agents": [mine], "owner_id": ben.id}
+    first = anna.client.post("/api/v1/me/chat-access/allow", json=body, headers=headers)
+    again = anna.client.post("/api/v1/me/chat-access/allow", json=body, headers=headers)
+    assert first.status_code == again.status_code == 201, again.text
+    assert again.headers.get("idempotent-replayed") == "true"
+    assert again.json() == first.json()
+    assert _entries(migrated) == 1
+
+
+def test_a_key_is_checked_and_not_reused_for_another_call(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    mine = profile(migrated, anna.id, "anna-a")
+    path = "/api/v1/me/chat-access/allow"
+    short = {"X-CSRF-Token": anna.csrf, "Idempotency-Key": "short"}
+    refused = anna.client.post(path, json={"agents": [mine], "owner_id": ben.id}, headers=short)
+    assert fields(refused)["fields"] == {"Idempotency-Key": "length"}
+    headers = {"X-CSRF-Token": anna.csrf, "Idempotency-Key": "chat-access-key-0002"}
+    made = anna.client.post(path, json={"agents": [mine], "owner_id": ben.id}, headers=headers)
+    assert made.status_code == 201, made.text
+    other = {"agents": "all", "owner_id": ben.id}
+    reused = anna.client.post(path, json=other, headers=headers)
+    assert reused.status_code == 409 and reused.json()["error"]["code"] == "idempotency_mismatch"
+    assert _entries(migrated) == 1
+
+
+def test_two_writes_at_once_keep_the_cap(
+    anna: flow.Human, ben: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1691: the count and the insert run under the human's row lock, so a second
+    write of the same human waits for the first and then sees its entry (PostgreSQL's READ
+    COMMITTED would otherwise let both pass the count)."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import threading
+
+    from maity_hub.errors import ApiError
+
+    mine = profile(migrated, anna.id, "anna-a")
+    monkeypatch.setattr(chat_access, "MAX_ENTRIES", 1)
+    chat_access.lock_rows(migrated, anna.id, ben.id)
+    body = {"agents": [mine], "owner_id": ben.id}
+    outcome: list[str] = []
+
+    def second() -> None:
+        try:
+            with migrated.begin() as conn:
+                chat_access.create_allow(conn, anna.id, dict(body))
+            outcome.append("made")
+        except ApiError as error:
+            outcome.append(str((error.details or {}).get("reason")))
+
+    with migrated.begin() as conn:
+        chat_access.create_allow(conn, anna.id, dict(body))
+        racer = threading.Thread(target=second)
+        racer.start()
+        racer.join(1.0)
+        assert racer.is_alive()  # it waits for this write's lock
+    racer.join(10)
+    assert outcome == ["too_many_entries"]
+    assert _entries(migrated) == 1

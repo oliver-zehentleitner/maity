@@ -59,7 +59,10 @@ def _agents(conn: Connection, me: str, raw: Any) -> tuple[bool, list[str]]:
     a = t.agent_profile.c
     mine = set(
         conn.execute(
-            select(a.id).where(a.id.in_(ids), a.owner_id == me, a.deleted_at.is_(None))
+            select(a.id)
+            .where(a.id.in_(ids), a.owner_id == me, a.deleted_at.is_(None))
+            .order_by(a.id)
+            .with_for_update(read=True)  # a deletion of one waits for this write, or is seen
         ).scalars()
     )
     if mine != set(ids):
@@ -79,7 +82,10 @@ def _their_agents(conn: Connection, owner_id: str, raw: Any) -> tuple[str, list[
     a = t.agent_profile.c
     theirs = set(
         conn.execute(
-            select(a.id).where(a.id.in_(ids), a.owner_id == owner_id, a.deleted_at.is_(None))
+            select(a.id)
+            .where(a.id.in_(ids), a.owner_id == owner_id, a.deleted_at.is_(None))
+            .order_by(a.id)
+            .with_for_update(read=True)
         ).scalars()
     )
     if theirs != set(ids):
@@ -107,9 +113,9 @@ def _human(conn: Connection, me: str, raw: Any, field: str) -> str:
         raise invalid({field: "self"}, "your own side needs no entry")
     write_guard.share(conn, raw)
     h = t.human.c
-    found = conn.execute(
-        select(h.deleted_at, h.suspended_at, h.account_status).where(h.id == raw)
-    ).first()
+    # A suspended account stays a side one may name: an entry is the owner's own word about
+    # that person, and a suspension ends; deletion and an account not yet active do not.
+    found = conn.execute(select(h.deleted_at, h.account_status).where(h.id == raw)).first()
     if found is None or found.deleted_at is not None or found.account_status != "active":
         raise invalid({field: "not_found"}, f"no such person for {field}")
     return raw
@@ -120,7 +126,9 @@ def _agent(conn: Connection, me: str, raw: Any) -> str:
     if not isinstance(raw, str):
         raise invalid({"agent_id": "format"}, "agent_id is an agent id")
     a = t.agent_profile.c
-    found = conn.execute(select(a.owner_id).where(a.id == raw, a.deleted_at.is_(None))).first()
+    found = conn.execute(
+        select(a.owner_id).where(a.id == raw, a.deleted_at.is_(None)).with_for_update(read=True)
+    ).first()
     if found is None:
         raise invalid({"agent_id": "not_found"}, "no such agent")
     if found.owner_id == me:
@@ -176,6 +184,13 @@ def _until(duration: str | None, at: datetime) -> datetime | None:
     return None if duration is None else at + DURATIONS[duration]
 
 
+def _lock(conn: Connection, me: str) -> None:
+    """The caller's human row, locked for update before its entries are read or counted: two
+    writes of the same human run one after the other, so the cap holds and a deny sees an
+    allow written at the same time (SQLite's `BEGIN IMMEDIATE` already serialises them)."""
+    conn.execute(select(t.human.c.id).where(t.human.c.id == me).with_for_update()).first()
+
+
 def _room(conn: Connection, me: str) -> None:
     """At most `MAX_ENTRIES` entries per human (§9.6): one more is `invalid`."""
     c = t.chat_access.c
@@ -183,6 +198,16 @@ def _room(conn: Connection, me: str) -> None:
     if count >= MAX_ENTRIES:
         raise ApiError(
             400, "invalid", f"at most {MAX_ENTRIES} entries", {"reason": "too_many_entries"}
+        )
+
+
+def _names_someone(their_agents: str, their_human: bool) -> None:
+    """A side's allow entry that covers none of its agents and not its human names no one:
+    `invalid`, as the hub deletes such an entry when it comes to that (§9.6, "Records")."""
+    if their_agents == NONE and not their_human:
+        raise invalid(
+            {"their_agents": "names_no_one"},
+            "the entry covers none of that side's agents and not its human",
         )
 
 
@@ -199,6 +224,7 @@ def _one_subject(body: dict[str, Any], allowed: Iterable[str]) -> str:
 
 def create_allow(conn: Connection, me: str, body: dict[str, Any]) -> str:
     """`POST /me/chat-access/allow` (§9.6): a new allow entry of `me`, its id."""
+    _lock(conn, me)
     subject = _one_subject(body, ("owner_id", "project"))
     agents_all, own = _agents(conn, me, body.get("agents"))
     now = clock.now()
@@ -222,6 +248,7 @@ def create_allow(conn: Connection, me: str, body: dict[str, Any]) -> str:
         if not isinstance(human, bool):
             raise invalid({"their_human": "format"}, "their_human is true or false")
         values.update(owner_id=owner_id, their_agents=mode, their_human=human)
+        _names_someone(mode, human)
     else:
         for field in ("their_agents", "their_human"):
             if body.get(field) is not None:
@@ -236,23 +263,37 @@ def create_allow(conn: Connection, me: str, body: dict[str, Any]) -> str:
 def patch_allow(conn: Connection, me: str, entry_id: str, body: dict[str, Any]) -> None:
     """`PATCH /me/chat-access/allow/{id}` (§9.6). A `duration` sent starts the time again from
     now; one not sent keeps `until`. `their_agents` and `their_human` only on a side's entry."""
-    row = _row(conn, me, ALLOW, entry_id, lock=True)
+    _lock(conn, me)
+    # The agents are checked, and their rows held shared, before the entry's row is locked:
+    # an agent's deletion takes its row first and the entry's after, so this order cannot
+    # wait on it in a cycle.
+    row = _row(conn, me, ALLOW, entry_id)
     values: dict[str, Any] = {}
+    own: list[str] | None = None
+    theirs: list[str] | None = None
     if "agents" in body:
         agents_all, own = _agents(conn, me, body["agents"])
         values["agents_all"] = agents_all
-        _replace_agents(conn, entry_id, OWN, own)
     if ("their_agents" in body or "their_human" in body) and row.owner_id is None:
         field = "their_agents" if "their_agents" in body else "their_human"
         raise invalid({field: "project_entry"}, "a project entry names no side")
     if "their_agents" in body:
         mode, theirs = _their_agents(conn, row.owner_id, body["their_agents"])
         values["their_agents"] = mode
+    row = _row(conn, me, ALLOW, entry_id, lock=True)
+    if own is not None:
+        _replace_agents(conn, entry_id, OWN, own)
+    if theirs is not None:
         _replace_agents(conn, entry_id, THEIRS, theirs)
     if "their_human" in body:
         if not isinstance(body["their_human"], bool):
             raise invalid({"their_human": "format"}, "their_human is true or false")
         values["their_human"] = body["their_human"]
+    if row.owner_id is not None:
+        _names_someone(
+            values.get("their_agents", row.their_agents),
+            values.get("their_human", row.their_human),
+        )
     if "duration" in body:
         duration = _duration(body["duration"])
         values.update(duration=duration, until=_until(duration, clock.now()))
@@ -267,6 +308,7 @@ def create_deny(conn: Connection, me: str, body: dict[str, Any]) -> str:
     """`POST /me/chat-access/deny` (§9.6): a new deny entry, its id. It removes the caller's
     allow entries for the same agents and subject: a side's or a project's. An allow for all
     agents stays when the deny names some of them, since a deny wins over it anyway."""
+    _lock(conn, me)
     subject = _one_subject(body, ("owner_id", "human_id", "agent_id", "project"))
     agents_all, own = _agents(conn, me, body.get("agents"))
     values: dict[str, Any] = {
@@ -299,9 +341,10 @@ def _narrow_allows(
 ) -> None:
     c, g = t.chat_access.c, t.chat_access_agent.c
     allows = conn.execute(
-        select(c.id, c.agents_all).where(
-            c.human_id == me, c.kind == ALLOW, getattr(c, column) == value
-        )
+        select(c.id, c.agents_all)
+        .where(c.human_id == me, c.kind == ALLOW, getattr(c, column) == value)
+        .order_by(c.id)
+        .with_for_update()
     ).all()
     for entry in allows:
         if agents_all:
@@ -314,11 +357,12 @@ def _narrow_allows(
                 g.entry_id == entry.id, g.side == OWN, g.agent_id.in_(agents)
             )
         )
-    _prune(conn)
+    _prune(conn, [entry.id for entry in allows])
 
 
 def delete_entry(conn: Connection, me: str, kind: str, entry_id: str) -> None:
     """`DELETE /me/chat-access/{allow|deny}/{id}`: also when the entry was not there."""
+    _lock(conn, me)
     c = t.chat_access.c
     found = conn.execute(
         select(c.id).where(c.id == entry_id, c.human_id == me, c.kind == kind)
@@ -345,29 +389,38 @@ def _replace_agents(conn: Connection, entry_id: str, side: str, agents: list[str
 
 
 def _drop(conn: Connection, entry_ids: list[str]) -> None:
+    """Delete entries with their agent rows. The entries' rows are locked first, in the order
+    `PATCH` locks them, so a change of one waits for this or this for it, never both."""
     if not entry_ids:
         return
+    c = t.chat_access.c
+    conn.execute(select(c.id).where(c.id.in_(entry_ids)).order_by(c.id).with_for_update()).all()
     conn.execute(delete(t.chat_access_agent).where(t.chat_access_agent.c.entry_id.in_(entry_ids)))
     conn.execute(delete(t.chat_access).where(t.chat_access.c.id.in_(entry_ids)))
 
 
-def _prune(conn: Connection) -> None:
-    """Delete the entries left with no agent on the owner's side, and turn a side's listed
-    agents that are all gone into `none`; such an entry that no longer names the side's human
-    either names no one and goes too (§9.6, "Records")."""
+def _prune(conn: Connection, entry_ids: list[str]) -> None:
+    """Of `entry_ids`, the entries a removal just touched and no others: delete those left with
+    no agent on the owner's side, and turn a side's listed agents that are all gone into `none`;
+    such an entry that no longer names the side's human either names no one and goes too
+    (§9.6, "Records")."""
+    if not entry_ids:
+        return
     c, g = t.chat_access.c, t.chat_access_agent.c
+    touched = c.id.in_(entry_ids)
     own = select(g.entry_id).where(g.entry_id == c.id, g.side == OWN).exists()
     theirs = select(g.entry_id).where(g.entry_id == c.id, g.side == THEIRS).exists()
-    empty = conn.execute(select(c.id).where(c.agents_all.is_(False), ~own)).scalars().all()
+    empty = conn.execute(select(c.id).where(touched, c.agents_all.is_(False), ~own)).scalars()
     _drop(conn, list(empty))
     conn.execute(
         update(t.chat_access)
-        .where(c.their_agents == LIST, ~theirs)
+        .where(touched, c.their_agents == LIST, ~theirs)
         .values(their_agents=NONE)
         .execution_options(synchronize_session=False)
     )
     nobody = conn.execute(
         select(c.id).where(
+            touched,
             c.kind == ALLOW,
             c.owner_id.is_not(None),
             c.their_agents == NONE,
@@ -396,9 +449,10 @@ def forget_human(conn: Connection, human_id: str) -> None:
 def forget_agent(conn: Connection, agent_id: str) -> None:
     """A deleted agent profile (§6.3): taken out of every entry; a deny of it goes."""
     c, g = t.chat_access.c, t.chat_access_agent.c
+    named = list(conn.execute(select(g.entry_id).where(g.agent_id == agent_id)).scalars())
     conn.execute(delete(t.chat_access_agent).where(g.agent_id == agent_id))
     _drop(conn, list(conn.execute(select(c.id).where(c.subject_agent_id == agent_id)).scalars()))
-    _prune(conn)
+    _prune(conn, sorted(set(named)))
 
 
 # Reads ---------------------------------------------------------------------------------------
@@ -437,6 +491,15 @@ def listing(conn: Connection, me: str, agent: str | None = None) -> dict[str, li
 
 def one(conn: Connection, me: str, kind: str, entry_id: str) -> dict[str, Any]:
     return render(conn, [_row(conn, me, kind, entry_id)])[0]
+
+
+def replayed(conn: Connection, entry_id: str) -> dict[str, Any]:
+    """An entry as its write answered, for the replay of an `Idempotency-Key` (§1.5): the key
+    is the caller's own, so the entry is read by its id alone."""
+    found = conn.execute(select(t.chat_access).where(t.chat_access.c.id == entry_id)).first()
+    if found is None:
+        raise not_found()
+    return render(conn, [found])[0]
 
 
 def render(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
