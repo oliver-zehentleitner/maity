@@ -548,8 +548,8 @@
     "text": "b02acf1f08395c22"
   },
   "agents.add.open": {
-    "en": "8bfa1fd2e7ff996d",
-    "text": "514b9500d209ff75"
+    "en": "7c68c424c84fcbf3",
+    "text": "4ba7d30a9b9615b2"
   },
   "agents.add.option": {
     "en": "b14edc540361935f",
@@ -714,6 +714,10 @@
   "agents.intro": {
     "en": "eb3c55d425e3efcc",
     "text": "1b033b85c9c23047"
+  },
+  "agents.join.any": {
+    "en": "0a199db71af3f5a8",
+    "text": "6d2fad8533ea7341"
   },
   "agents.join.failed": {
     "en": "d9eda7d9dc411b60",
@@ -9879,10 +9883,6 @@
     "en": "2f7a76878d6dadc5",
     "text": "1a7e56fa1dfe6f5e"
   },
-  "members.heading": {
-    "en": "6bbc51529519435c",
-    "text": "69e7bbb61f621407"
-  },
   "members.hint": {
     "en": "2681cebe50567b43",
     "text": "0f863541e54bdd6a"
@@ -9970,10 +9970,6 @@
   "members.isolation_windows": {
     "en": "8fee5ccb4310c99e",
     "text": "404019cb627b634c"
-  },
-  "members.join_agent": {
-    "en": "a599aef6756e93e3",
-    "text": "63a1159c8bb0c5a6"
   },
   "members.ktw.by": {
     "en": "69a64ea949d68464",
@@ -13083,6 +13079,10 @@
     "en": "ddd0aac4da02e11d",
     "text": "07eb5c682d996951"
   },
+  "placements.new.reading": {
+    "en": "2070173fea584607",
+    "text": "89142e373f3844be"
+  },
   "placements.new.reason": {
     "en": "ea28e950a716a823",
     "text": "4cdd211f7c3838df"
@@ -13364,8 +13364,8 @@
     "text": "206b13286c33b685"
   },
   "placements.title": {
-    "en": "9f2a9104deb2bd4f",
-    "text": "2ac35e2be7ad1089"
+    "en": "d838ed6f9f0689d2",
+    "text": "73e748a7747a2392"
   },
   "placements.waiting": {
     "en": "f12f57758c8d2420",

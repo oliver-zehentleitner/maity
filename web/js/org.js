@@ -208,7 +208,7 @@ window.Maity = window.Maity || {};
         onclick: () => { if (face === f) return; face = f; keepFace(f); draw(); } }, (f === "paths" ? M.t("org.face.paths") : M.t("org.face.tree")))));
       append(clear(box), face === "paths" ? M.paths.draw(ctx, paths) : drawTree(ctx));
     };
-    append(root, M.teamTabs(ctx, "organisation"), h("h2", null, M.t("team.tab.organisation")),
+    append(root, M.teamHead(ctx, "organisation"),
       h("p", { class: "muted" }, M.t("org.intro", { preset: ctx.project.policy.preset })), faces, status.el, box);
     draw();
     ctx.onEvents((events) => {

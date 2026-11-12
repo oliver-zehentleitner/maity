@@ -733,9 +733,19 @@ window.Maity = window.Maity || {};
   // the list with that member's Manage row open, for an admin.
   // The Team page's tabs (context/members.md f0ca2279): Members, this
   // list, and Organisation (js/org.js), each at its own project view.
-  M.teamTabs = (ctx, chosen) => h("nav", { class: "view-tabs team-tabs", "aria-label": M.t("team.tabs.label") },
-    [["team", M.t("team.tab.members")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
-      h("a", { href: ctx.link(k), class: "view-tab", "aria-current": k === chosen ? "page" : null }, label)));
+  M.teamTabs = (ctx, chosen) => M.tabBar("team-tabs", M.t("team.tabs.label"),
+    [["team", ctx.link("team"), M.t("team.tab.members")], ["organisation", ctx.link("organisation"), M.t("team.tab.organisation")]], chosen);
+
+  // The Team page's head (js/page-head.js, tsk-vkyp71qp95n9), as the Agents page's: the heading,
+  // Invite user and Join an agent at the right end, the tabs under them. Join an agent is the same
+  // menu as there, its panels opening here. A guest brings no agent (§3.1). Returns the nodes.
+  M.teamHead = (ctx, chosen) => {
+    const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
+      ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
+    const { memberAdds, mayAdd } = M.bringing(ctx);
+    const menu = ctx.me.kind === "human" && mayAdd ? M.joinMenu(ctx, { member: memberAdds }) : null;
+    return [M.pageHead({ title: M.t("members.title"), actions: [inviteUser, menu ? menu.el : null], tabs: M.teamTabs(ctx, chosen) }), menu ? menu.slot : null];
+  };
 
   M.views.members = async function (ctx, root, args) {
     if (args && args[0] && M.memberPage) { await M.memberPage.page(ctx, root, args[0], args[1], args[2]); return; }
@@ -1059,12 +1069,7 @@ window.Maity = window.Maity || {};
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
     // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations page with this project
     // chosen, an agent on this project's Agents with the join panel open (2026-11-01). A guest brings no agent (§3.1).
-    const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
-      ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
-    const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
-      ? h("a", { class: "button primary members-join-agent", href: "/" + M.api.projectPath(ctx.slug) + "/agents/join" }, M.t("members.join_agent")) : null;
-    append(root, M.teamTabs(ctx, "team"), h("h2", null, M.t("members.heading")),
-      inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
+    append(root, M.teamHead(ctx, "team"),
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),
         ctx.canAdmin ? [" ", M.t("members.hint.admin")] : null,
       // A guest brings no agent (§3.1): no way there said to them.
