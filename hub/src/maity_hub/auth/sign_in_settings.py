@@ -1,6 +1,7 @@
-"""The instance's sign-in methods (docs/api.md §2.6.6): device codes and sign-in links by
-mail, each switched by the environment or the instance admin, the environment winning,
-and the second factor's policy (§2.8.5). The password cannot be switched off."""
+"""The instance's sign-in methods (docs/api.md §2.6.6): device codes, sign-in links by
+mail and the reset of a forgotten password by mail (§2.10), each switched by the environment
+or the instance admin, the environment winning, and the second factor's policy (§2.8.5). The
+password cannot be switched off."""
 
 from __future__ import annotations
 
@@ -10,14 +11,17 @@ from typing import Any
 from sqlalchemy import Connection
 
 from maity_hub import instance_settings as store
-from maity_hub.auth import device_codes, email_links, mail_factor
+from maity_hub.auth import device_codes, email_links, mail_factor, password_resets
 from maity_hub.config import SECOND_FACTOR_POLICIES, Settings
 from maity_hub.db import xact_lock
 from maity_hub.errors import invalid
 from maity_hub.mail import settings as mail
 from maity_hub.ratelimit import Attempt
 
-SWITCHES = ("device_code", "email_link")
+SWITCHES = ("device_code", "email_link", "password_reset")
+# Whether the hub serves the reset's routes (§2.10). Until it does, the setting can be stored
+# and read, and the reset is never offered: `not_implemented` in its `missing`.
+PASSWORD_RESET_SERVED = False
 SEEN = "sign_in.second_factor_seen"
 # The open confirmation of turning `email` on (§2.8.8), a nonce in its code's MAC: replacing it
 # voids every code mailed before, whichever admin asked. Not a secret, and in no view.
@@ -45,6 +49,7 @@ def _environment(hub: Settings, name: str) -> bool | str | None:
     return {
         "device_code": hub.sign_in_device_code,
         "email_link": hub.sign_in_email_link,
+        "password_reset": hub.sign_in_password_reset,
         "second_factor": hub.sign_in_second_factor,
     }[name]
 
@@ -70,11 +75,24 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         link_missing.append("signing_key")
     # The second factor seals its secrets with the instance key (§2.8.1).
     missing = [*link_missing, *([] if hub.secret_key else ["secret_key"])]
+    # The reset is offered under `second_factor: email` too: it asks an enrolled human for the
+    # TOTP code, and says to a human whose factor is the mail that one mailbox is both (§2.10).
+    reset_missing = []
+    if not values["password_reset"][0]:
+        reset_missing.append("switched_off")
+    if not (resolved.complete and resolved.enabled):
+        reset_missing.append("mail")
+    if not hub.mail.signing_key:
+        reset_missing.append("signing_key")  # its link is a signed token (§18.6)
+    if not PASSWORD_RESET_SERVED:
+        reset_missing.append("not_implemented")
     return {
         "password": {"value": True, "source": "fixed"},
         **{name: {"value": value, "source": source} for name, (value, source) in values.items()},
         "email_link_available": not link_missing,
         "missing": missing,
+        "password_reset_available": not reset_missing,
+        "password_reset_missing": reset_missing,
     }
 
 
@@ -146,6 +164,9 @@ def _settled(conn: Connection, hub: Settings, by: str) -> None:
         device_codes.void_open(conn)
     if not email_link_enabled(conn, hub):
         email_links.void_open(conn)
+    if not password_reset_enabled(conn, hub):
+        # Turning the reset off voids every open reset link at once (§2.10).
+        password_resets.void_open(conn)
     note_second_factor(conn, hub, by)
 
 
@@ -180,3 +201,9 @@ def email_link_enabled(conn: Connection, hub: Settings) -> bool:
     """Under `email` the mailbox is the second factor, so it cannot be the first too (§2.8.8)."""
     values = resolve(conn, hub)
     return bool(values["email_link"][0]) and values["second_factor"][0] != "email"
+
+
+def password_reset_enabled(conn: Connection, hub: Settings) -> bool:
+    """The instance's switch alone; whether a reset can be sent at all is `view`'s
+    `password_reset_available`."""
+    return bool(resolve(conn, hub)["password_reset"][0])

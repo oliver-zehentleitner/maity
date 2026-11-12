@@ -6241,6 +6241,51 @@ newest are the ones looked for.
 - The first 50 in the column's order: that order is by rank and creation,
   so it would show old closed cards and hide the ones just closed.
 
+## Report is one small button where a reader sees the thing, one inline form for all, and the account's Reports tab is where its outcome shows
+
+**Id:** 99ce8e16-8bec-4c41-981c-b03c8a976404
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-7ze5w6ymf7bw (the hub side, `POST /reports` taking what a stranger sees, is #1658); the coordinator's answers of 2026-11-11 (two pull requests, the link on the hub-rendered pages in its own contract and hub change; a project reported both from its overview and from its public view); docs/api.md §16.8; web/js/report.js
+**Revisit when:** §16.8 adds a target (an organisation, a cross-project chat message), the reporter gets a notification of a resolution, or the hub-rendered public pages carry their own link (the second pull request, which then also uses `?report`)
+
+A **Report** button stands where a reader sees what it reports, next to that view's own actions: on a
+member's page (a person or an agent, by the member id, not on one's own), on a person's view at
+`/<handle>` (by the current handle), in the card panel's head,
+at the end of a project's Overview, on a message someone else wrote in Chat and in Messages, and under
+the title of a public view (§16.9) of a project, person, agent or card. Each sends the target the way
+that reader can name it (§16.8, "The id a stranger sends"): inside a project the member's read
+gives ids; a public view names by the current public name. One form serves all of them
+(`M.report.control`): a reason from §16.8's six, an optional text checked against 2 KiB in UTF-8
+bytes as the hub counts it, one `POST /reports`. The form opens inline under the button, which hides
+while it is open. Sent, a line says so and links **Your account → Reports** (`/account/reports`,
+`GET /me/reports`), the only place the reporter learns what became of it, as §16.8 sends them no
+notification. Signed out, a public view's button is a link to the sign-in whose way back carries
+`?report`, and `?report` opens the form at once: the same handoff the hub-rendered pages will use.
+The public view had nothing to press before; Report is its one control, and smoke's
+"nothing to press" checks leave it out by its class alone.
+
+**Reason:** a report is about one thing, and the reader is looking at it; a button there needs no
+choosing of a target and sends exactly the name that reader may use. One form keeps the reasons, the
+limit and the refusals in one place. The outcome has a home of its own because the hub tells the
+reporter nothing.
+
+**Rejected alternatives:**
+- A **Report** entry in the member page's Actions menu: that menu's entries lead to where something
+  is done, they do nothing themselves (#643); a report is done here.
+- A dialog over the page: the inline form does the same at phone width, as the other forms in
+  these views do, and keeps what it reports in sight.
+- A page of its own taking the target in its query (`/report?type=…&id=…`): a new address that
+  repeats the target in a link anyone can change, while the button already has it.
+- Report on one's own page or message: §16.8 allows it, but there is nothing to tell the admins about
+  oneself that one could not change oneself. Only oneself is left out: one's own agents keep the
+  button, on their member page and their public page, as §16.8 allows (review of #1681).
+
+A member who comes back from a public page's Report (`?report`) gets their own view of the project,
+which is no public page: the project's page and its public views lead to the Overview, whose form
+opens, and a card's page is the board with the card's panel, which opens its own (review of #1681).
+
 ## A human leaves a project from Settings → Mine, confirmed in a dialog that lists their agents
 
 **Id:** 8526141d-87da-4d63-81c6-a3c7db25715d

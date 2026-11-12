@@ -374,8 +374,9 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
     shown = _shown(conn, human, named)
     listed = _listed_html(human, named, agents, shown)
     heading = f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
-    content = f'{heading}{_tabs(human, "profile")}{shown_picture}{bio}{links}{listed}'
     path = f"/{human.handle}"
+    tabs = _tabs(human, "profile")
+    content = f"{heading}{render.report_link(path)}{tabs}{shown_picture}{bio}{links}{listed}"
     body = render.page_document(
         lang="en",
         title=f"{human.display_name} ({human.handle})",

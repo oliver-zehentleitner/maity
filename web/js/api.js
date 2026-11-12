@@ -1239,6 +1239,10 @@ window.Maity = window.Maity || {};
   // renames of the last 24 hours are counted, three at most; the handles of the orgs, of the
   // fixture people and the reserved first segments are taken.
   const selfRenames = [];
+  // The reports filed from this tab (§16.8, POST /reports), newest first, for GET /me/reports.
+  const ownReports = [];
+  // A text's length in UTF-8 bytes, as the hub counts a report's text (§16.8: at most 2 KiB).
+  const utf8Length = (s) => { let n = 0; for (const ch of s) { const c = ch.codePointAt(0); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; } return n; };
   function renameSelf(mm, wanted, path) {
     if (typeof wanted !== "string" || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(wanted)) fail(400, "invalid", "handle", path, { fields: { handle: "format" } });
     if (wanted === mm.handle) return;
@@ -2784,6 +2788,26 @@ window.Maity = window.Maity || {};
       Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null, avatar_motif: null });
       return agent;
     }],
+    // §16.8 A report by whoever is signed in: a target of the four types, one of the six reasons, a
+    // text of at most 2 KiB; 3 per target per account for good (`rate_limited`, no Retry-After). Read
+    // back by the reporter in GET /me/reports, newest first, status and action only.
+    ["POST", /^\/reports$/, (m, body, path) => {
+      const t = body && body.target;
+      if (!t || typeof t !== "object" || !["profile", "project", "message", "card"].includes(t.type)) fail(400, "invalid", "the request does not validate", path, { fields: { "target.type": "unknown" } });
+      if (typeof t.id !== "string" || !t.id) fail(400, "invalid", "the request does not validate", path, { fields: { "target.id": "missing" } });
+      if (["message", "card"].includes(t.type) && typeof t.project !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { "target.project": "missing" } });
+      if (!["spam", "abuse", "illegal", "prompt_injection", "impersonation", "other"].includes(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "unknown" } });
+      if ("text" in body && (typeof body.text !== "string" || utf8Length(body.text) > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
+      const key = t.type + " " + t.id + " " + (t.project || "");
+      if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "this target was reported 3 times already", path, {});
+      const made = { id: "rpt-f" + String(ownReports.length + 1).padStart(4, "0"), created_at: nowIso() };
+      ownReports.unshift(Object.assign({ key, target: { type: t.type, id: t.id, project: t.project || null }, reason: body.reason, status: "open", action: null }, made));
+      return made;
+    }],
+    ["GET", /^\/me\/reports$/, () => ({
+      items: ownReports.map((r) => ({ id: r.id, created_at: r.created_at, target: r.target, reason: r.reason, status: r.status, action: r.action })),
+      next_cursor: null,
+    })],
     // §16.8 Abuse reports for the instance admin: open ones first, each newest
     // first; one with its snapshot; resolved (again) with an action and a note.
     ["GET", /^\/admin\/reports$/, (m, body, path, query) => {

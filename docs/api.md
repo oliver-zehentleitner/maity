@@ -2126,10 +2126,12 @@ the environment wins and a `PATCH` of a value it sets is `invalid` with
 `fixed`). `email_link_available` says whether the login page offers it
 right now, `missing` why not: `switched_off` (the setting is `false`),
 `mail` (the mail settings are not complete and enabled),
-`second_factor_email` (the second factor is `email`, §2.8.8), and
-`not_implemented` while the hub does not serve the sign-in link yet.
+`second_factor_email` (the second factor is `email`, §2.8.8),
+`signing_key` (no `MAITY_MAIL_SIGNING_KEY`, which signs the links, §18.6),
+and `not_implemented` while the hub does not serve the sign-in link yet.
 `password_reset_available` and `password_reset_missing` say the same of
-the reset (§2.10), with `switched_off`, `mail` and `not_implemented`. A change is not an
+the reset (§2.10), with `switched_off`, `mail`, `signing_key` and
+`not_implemented`. A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
@@ -3147,15 +3149,18 @@ this route for someone else; that remains §16.1.
 
 ### 2.10 Human: a forgotten password
 
-**Pending.** Nothing in this section is served yet: the three routes,
-the page, `email.password_reset`, the instance's `password_reset`, the
-budget `password_reset_max_per_hour` with its environment variable and
-counters, and the password generation come with tsk-tadt2vw7589n (hub)
-and tsk-yksxdpd2pk0m (web), and so do the fields that announce them:
-`password_reset` in `GET /auth/methods` (§2.6.1), and `password_reset`,
-`password_reset_available` and `password_reset_missing` in the sign-in
-settings (§2.6.6). Until then those responses do not carry them, and the
-hub refuses the new settings fields as unknown.
+**Pending.** The hub stores and serves the settings of this section:
+`email.password_reset` (§18.4), the instance's `password_reset` with
+`MAITY_SIGN_IN_PASSWORD_RESET`, `password_reset_available` and
+`password_reset_missing` (§2.6.6), the budget
+`password_reset_max_per_hour` with its environment variable and counters
+(§16.2), and `password_reset` in `GET /auth/methods` (§2.6.1); the
+password generation moves with every password change. The three routes,
+the mail and the account record are not served yet (tsk-tadt2vw7589n,
+hub), nor is the page (tsk-yksxdpd2pk0m, web): until they are,
+`password_reset_missing` names `not_implemented`, so
+`password_reset_available` and `password_reset` in `GET /auth/methods`
+are `false`.
 
 The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
 in seq 109283): a human who forgot the password sets a new one through
@@ -3366,6 +3371,9 @@ page say the first (above), since there a reset is under way.
 **Rules every method keeps.** §2.6.5 applies: transport, `Sec-Fetch-Site`
 (the three calls refuse `cross-site` and `same-site`, `forbidden`), and
 `humans_only` for an agent or runner credential. The limits are §2.6.4's.
+A maintenance window (§16.12) refuses the three calls like any other:
+a reset is not the sign-in an admin needs to end the window, and
+`complete` writes.
 
 ## 3. Join
 
@@ -20644,6 +20652,24 @@ public, whatever its page says; a project's page still names its own
 members (above). Without `public_page: on` the address
 answers as for an unknown handle (below).
 
+**A report link.** What a stranger can see, they can report from where
+they see it (§16.8; card tsk-7ze5w6ymf7bw). The page of a project and each
+of its public views, a card's page, an agent's page and a person's page
+carry, right under their title, a link **Report** to `/login?next=`
+followed by the page's own path with `?report`, percent-encoded as one
+value (`/login?next=%2Facme%2Fwidget%3Freport` for `/acme/widget`); like
+every link of these pages to the sign-in, it also says the page's language
+(§16.7.4). A reader signs in there and comes back to the same address in
+the dashboard, which shows them that page (§16.11) with its report form
+open, the target named as "The id a stranger sends" (§16.8) says. The link
+is the same for every reader, carries no id, token or name the page does
+not already show, and has `rel="nofollow"`. It is no part of the page's
+description (below), so a search snippet shows
+the page and not its controls. A person's agents page and an
+organisation's page carry none: each agent on the list has its own page,
+and an organisation is not a target yet (§16.8, "Follow-up"). The word is
+English, as the pages' other fixed text.
+
 **What is never served.** A page answers the app shell (§16.11), the
 one answer of every path that names nothing, before any ETag of the
 page is considered, while it is off; for an unknown name;
@@ -20710,7 +20736,8 @@ ugc"`. The landing and legal pages (§16.7) use the same renderer with
 §16.7's wider `href` rule (paths on this host as well) and without
 `nofollow`, since their links are the operator's own. Each page carries its own `<title>`, a `<meta
 name="description">` from the first 160 characters of its rendered
-text (cut first, then escaped), and a `<link rel="canonical">` with
+text, the Report link ("A report link", above) left out (cut first,
+then escaped), and a `<link rel="canonical">` with
 its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
 `Cache-Control: public, max-age=60`, an `ETag`,
 `Content-Security-Policy: default-src 'none'; style-src
@@ -21101,8 +21128,8 @@ Not refused:
   `POST /auth/logout` and `GET /auth/session`, and the two reads the
   sign-in page is drawn from, `GET /auth/methods` (§2.6.1) and
   `GET /auth/pages/sign_in` (§16.7.4); every other call of such
-  a session is refused like anyone's, and registration (§2.7) is
-  refused;
+  a session is refused like anyone's, and registration (§2.7) and a
+  password reset (§2.10) are refused;
 - `GET /me` (§5.1), read only, so the web knows who looks at the full
   page: for an instance admin (`instance_admin: true`) the full page
   carries **End maintenance now** (`POST /admin/maintenance/end`) and a

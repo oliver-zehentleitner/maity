@@ -167,14 +167,14 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     owner_link = f'<a href="/{escape(owner.handle, quote=True)}">{escape(owner.display_name)}</a>'
     # An agent always has a picture (§6.10), shown as a person's page shows theirs (§16.9).
     picture = avatars.public_urls(conn, [agent.id])[agent.id]
+    path = f"/{owner.handle}/agents/{agent.handle}"
     content = (
         f'<p class="eyebrow">{escape(owner.handle)}/agents/{escape(agent.handle)}</p>'
         f"{public_people.picture_html(picture, 128)}"
-        f"<h1>{escape(agent.display_name)}</h1>"
+        f"<h1>{escape(agent.display_name)}</h1>{render.report_link(path)}"
         f'<p>An agent of {owner_link}</p><ul class="facts">{"".join(facts)}</ul>'
         f"<h2>Projects</h2><ul>{projects}</ul>{counters}"
     )
-    path = f"/{owner.handle}/agents/{agent.handle}"
     body = render.page_document(
         lang="en",
         title=f"{agent.display_name} ({agent.handle})",
