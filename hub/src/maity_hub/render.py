@@ -16,10 +16,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from html import escape, unescape
-from typing import Any
-from urllib.parse import urlsplit
+from typing import Any, NamedTuple
+from urllib.parse import quote, urlsplit
 
 from maity_hub import catalog, landing_files, product_line
 from maity_hub.landing import (
@@ -911,6 +911,41 @@ def chrome(
     return _frame(setting, legal, chosen, drawn, tags)
 
 
+class Frame(NamedTuple):
+    """The frame of a public page the hub renders itself (§16.7.5): the landing page's header
+    and footer from the frame's model, and the `<head>` links of the stylesheets that draw them,
+    `landing.css` and `public-pages.css`. `style` is the inline fallback while a stylesheet is
+    missing (a hub built without the landing assets), else empty."""
+
+    header: str
+    footer: str
+    head: str
+    style: str
+
+
+def public_frame(model: dict[str, Any], lang: str) -> Frame:
+    """The frame for a page in `lang`, from `chrome`'s model. The mark comes without its
+    `style` attributes, which a policy without inline styles would block: `public-pages.css`
+    colours it. Where the frame's words are in another language than the page (the landing page
+    has no `lang`), header and footer say theirs."""
+    nav = "".join(
+        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
+        for item in model["header"]["nav"]
+    )
+    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
+    header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
+    mark = landing_files.svg("mark.svg")
+    header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
+    if model["language"] != lang:
+        header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
+        footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
+    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
+    head = "".join(
+        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
+    )
+    return Frame(header, footer, head, "" if all(sheets) else STYLE)
+
+
 def legal_document(
     *,
     page: str,
@@ -944,11 +979,7 @@ def legal_document(
         if len(languages) > 1
         else []
     )
-    nav = "".join(
-        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
-        for item in model["header"]["nav"]
-    )
-    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
+    frame = public_frame(model, lang)
     # The legal pages that are set, this one marked; a draft's own page is there before it is set.
     toc = "".join(
         f'<a href="/{target}?lang={escape(lang, quote=True)}"'
@@ -959,25 +990,21 @@ def legal_document(
     )
     banner = f'<p class="note">{escape(words["preview"])}</p>' if version is None else ""
     body = (
-        _site_header(model, nav, cta, None) + f'<main><div class="legal-page"><div class="wrap">'
+        frame.header + f'<main><div class="legal-page"><div class="wrap">'
         f'<nav class="legal-toc" aria-label="{escape(words["legal"], quote=True)}">{toc}</nav>'
         f"{banner}<h1>{escape(title)}</h1>"
         f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}</div></div></main>'
-        + _landing_footer(model, on_landing=False)
+        + frame.footer
     )
     head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">'
-    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
-    head += "".join(
-        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
-    )
     return _document(
         lang=lang,
         title=title,
         description="",
-        head=head,
+        head=head + frame.head,
         body=body,
         languages=languages,
-        style="" if all(sheets) else STYLE,
+        style=frame.style,
     )
 
 
@@ -990,6 +1017,38 @@ DOOR_CSP = (
     + "'; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; "
     "frame-ancestors 'none'"
 )
+
+
+def framed_document(
+    *,
+    section: str,
+    page: Callable[[str, dict[str, str]], tuple[str, str]],
+    canonical: str,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    lang: str | None,
+    accept_language: str | None,
+) -> str:
+    """A public page the hub renders itself in the frame of §16.7.5: the landing page's header
+    and footer around the page, in the design of `public-pages.css`. The page is in the frame's
+    language where the catalog's `section` has words in it, else in English. The footer keeps
+    the landing page's language switch, as the landing footer is drawn 1:1 on every signed-out
+    page: its links (`?lang=…`) reopen this page in that language. `page(lang, words)` gives the
+    title and the content (HTML of escaped text and elements) in that language."""
+    model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
+    chosen = model["language"] if catalog.speaks(section, model["language"]) else "en"
+    title, content = page(chosen, catalog.section(section, chosen))
+    frame = public_frame(model, chosen)
+    return _document(
+        lang=chosen,
+        title=title,
+        description="",
+        head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">' + frame.head,
+        body=frame.header + f"<main>{content}</main>" + frame.footer,
+        languages=[one["tag"] for one in model["footer"]["languages"]],
+        style=frame.style,
+    )
 
 
 def door_document(
@@ -1010,39 +1069,73 @@ def door_document(
     person's, not the address's. `content` is HTML of escaped text and elements."""
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
     model["footer"]["languages"] = []
-    nav = "".join(
-        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
-        for item in model["header"]["nav"]
-    )
-    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
-    header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
-    # The mark without its style attributes, which the policy would block: public-pages.css
-    # colours it (`.site-header .mark rect`, …), as on the dashboard's framed pages.
-    mark = landing_files.svg("mark.svg")
-    header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
-    if model["language"] != lang:  # the frame's words are in a language the landing page has
-        header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
-        footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
+    frame = public_frame(model, lang)
     # The panel without a pitch, as the dashboard draws it for its own pages of this kind
     # (web/js/auth-pages.js, door()): public-pages.css shows the art large, and hides the panel
     # at phone width.
     body = (
-        header + '<main><div class="door-page">'
+        frame.header + '<main><div class="door-page">'
         '<aside class="door-panel" aria-hidden="true"></aside>'
-        f'<section class="door-form"><div>{content}</div></section></div></main>' + footer
-    )
-    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
-    head = "".join(
-        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
+        f'<section class="door-form"><div>{content}</div></section></div></main>' + frame.footer
     )
     return _document(
         lang=lang,
         title=title,
         description="",
-        head=head,
+        head=frame.head,
         body=body,
         languages=[],
-        style="" if all(sheets) else STYLE,
+        style=frame.style,
+    )
+
+
+# A stored public page (§16.9) as `page_document` wrote it: its title, description, canonical
+# link and robots line in the head, its content in `<main class="wrap">`. The app shell takes
+# the same parts out (shell.py), and so does the frame below.
+STORED_PAGE = re.compile(
+    r"<title>(?P<title>.*?)</title>(?P<meta><meta name=\"description\"[^>]*>)?"
+    r"(?P<canonical><link rel=\"canonical\"[^>]*>)(?P<robots><meta name=\"robots\"[^>]*>)?.*"
+    r"<main class=\"wrap\">(?P<main>.*)</main></body>",
+    re.DOTALL,
+)
+_STORED_LANG = re.compile(r'<html lang="(?P<lang>[^"]*)">')
+
+
+def stored_in_frame(
+    stored: str,
+    *,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    lang: str | None,
+    accept_language: str | None,
+) -> str | None:
+    """A stored public page in the frame of §16.7.5, put around it when it is served: the
+    landing page's header and footer in the visitor's language (`?lang`, else the reader's),
+    the stored content between them as it was stored, never parsed again. The content keeps
+    its own language, and the frame says its own where that differs. No language switch in the
+    footer and no `hreflang` links: the page exists in one language, its content's. None when
+    `stored` is not of the shape `page_document` writes: the caller serves it bare."""
+    found = STORED_PAGE.search(stored)
+    tagged = _STORED_LANG.search(stored)
+    if found is None or tagged is None:
+        return None
+    page_lang = unescape(tagged["lang"])
+    model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    frame = public_frame(model, page_lang)
+    # The stored head parts are already escaped; only the title passes `_document`'s escape.
+    head = (found["meta"] or "") + found["canonical"] + (found["robots"] or "") + frame.head
+    return _document(
+        lang=page_lang,
+        title=unescape(found["title"]),
+        description="",
+        head=head,
+        body=frame.header
+        + f'<main><div class="stored-page"><div class="wrap">{found["main"]}</div></div></main>'
+        + frame.footer,
+        languages=[],
+        style=frame.style,
     )
 
 
@@ -1104,14 +1197,27 @@ def text_of(html: str) -> str:
     return " ".join(unescape(_TAG.sub(" ", html)).split())
 
 
+# The report link's paragraph (`report_link`): no part of a page's description (§16.9).
+_REPORT_LINK = re.compile(r'<p class="report-link">.*?</p>')
+
+
+def report_link(path: str) -> str:
+    """The link under a public page's title to report what it shows (docs/api.md §16.9, "A report
+    link"; §16.8): to the sign-in, whose way back is the same address with `?report`, where the
+    dashboard opens its report form. The same for every reader; it names nothing the page does not.
+    """
+    back = quote(f"{path}?report", safe="")
+    return f'<p class="report-link"><a href="/login?next={back}" rel="nofollow">Report</a></p>'
+
+
 def page_document(
     *, lang: str, title: str, canonical: str, content: str, indexed: bool = True
 ) -> str:
     """A public page: its own `<title>`, a `<meta name="description">` from the first 160
-    characters of its text (cut first, then escaped) and the absolute canonical link (§16.9);
-    `indexed=False` adds `noindex`. `content` is the HTML of the page's body, already made of
-    escaped text and elements."""
-    description = text_of(content)[:DESCRIPTION_MAX]
+    characters of its text (cut first, then escaped), the Report link left out, and the absolute
+    canonical link (§16.9); `indexed=False` adds `noindex`. `content` is the HTML of the page's
+    body, already made of escaped text and elements."""
+    description = text_of(_REPORT_LINK.sub("", content))[:DESCRIPTION_MAX]
     robots = "" if indexed else '<meta name="robots" content="noindex">'
     return _document(
         lang=lang,

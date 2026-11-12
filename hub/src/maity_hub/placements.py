@@ -56,6 +56,7 @@ REASONS: dict[str, tuple[str, ...]] = {
     "workspace_in_use": ("failed",),
     "join_failed": ("failed",),
     "crash_loop": ("failed",),
+    "hung": ("exited", "failed"),  # §15.14: the runner ended a run that produced nothing
     "quota": ("rate_limited", "exited", "failed"),
     "agent_credential_revoked": ("failed",),
     "oom_killed": ("failed", "exited"),
@@ -92,6 +93,8 @@ DETAILS: dict[str, tuple[str, str]] = {
     "stale_index_lock": ("state", "starting"),
     "sandbox_unavailable": ("state", "running"),
     "hot_loop": ("reason", "crash_loop"),
+    "idle": ("reason", "hung"),
+    "tool": ("reason", "hung"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),

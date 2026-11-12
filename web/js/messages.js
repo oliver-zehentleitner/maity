@@ -178,8 +178,15 @@ window.Maity = window.Maity || {};
         // Its mentions are links where they stand (the one renderer, js/markdown.js).
         x.body ? h("div", { class: "md" }, M.markdown(x.body, M.ids.where(ctx), { mentions: x.mentions, hrefOf: (id) => ctx.link("team", id), ctx })) : null,
         M.attachments ? M.attachments.render(ctx, { attachments: x.attachments, body: x.body || "" }, canDelete) : null,
-        ctx.canAdmin ? h("div", { class: "actions" },
-          h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(x) }, M.t("messages.remove"))) : null);
+        (() => {
+          // Report someone else's message (§16.8, tsk-7ze5w6ymf7bw): its seq with the project.
+          const reporting = M.report && from !== ctx.me.id && ctx.me.kind === "human"
+            ? M.report.control({ type: "message", id: String(x.seq), project: ctx.slug }, "message") : null;
+          if (!ctx.canAdmin && !reporting) return null;
+          return [h("div", { class: "actions" },
+            ctx.canAdmin ? h("button", { type: "button", class: "small", "aria-label": M.t("messages.remove.label"), onclick: () => remove(x) }, M.t("messages.remove")) : null,
+            reporting ? [" ", reporting.button] : null), reporting ? reporting.slot : null];
+        })());
     }
 
     // A page, newest first: the first one of a filter (reset), or the next

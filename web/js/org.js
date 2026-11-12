@@ -203,10 +203,15 @@ window.Maity = window.Maity || {};
     let face = storedFace();
     const faces = h("div", { class: "org-faces", role: "group", "aria-label": M.t("org.face.label") });
     const draw = () => {
-      append(clear(faces), ["tree", "paths"].map((f) => h("button", { type: "button", class: "org-face",
+      const nextFaces = h("div");
+      append(nextFaces, ["tree", "paths"].map((f) => h("button", { type: "button", class: "org-face",
         "data-face": f, "aria-pressed": face === f ? "true" : "false",
         onclick: () => { if (face === f) return; face = f; keepFace(f); draw(); } }, (f === "paths" ? M.t("org.face.paths") : M.t("org.face.tree")))));
-      append(clear(box), face === "paths" ? M.paths.draw(ctx, paths) : drawTree(ctx));
+      const fresh = face === "paths" ? M.paths.draw(ctx, paths) : drawTree(ctx);
+      M.dom.keepImages(faces, nextFaces);
+      M.dom.keepImages(box, fresh);
+      append(clear(faces), Array.from(nextFaces.childNodes));
+      append(clear(box), fresh);
     };
     append(root, M.teamTabs(ctx, "organisation"), h("h2", null, M.t("team.tab.organisation")),
       h("p", { class: "muted" }, M.t("org.intro", { preset: ctx.project.policy.preset })), faces, status.el, box);

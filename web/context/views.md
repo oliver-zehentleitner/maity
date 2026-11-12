@@ -6240,3 +6240,103 @@ newest are the ones looked for.
   not only from the drawing, and changes what the board offers.
 - The first 50 in the column's order: that order is by rank and creation,
   so it would show old closed cards and hide the ones just closed.
+
+## Report is one small button where a reader sees the thing, one inline form for all, and the account's Reports tab is where its outcome shows
+
+**Id:** 99ce8e16-8bec-4c41-981c-b03c8a976404
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-7ze5w6ymf7bw (the hub side, `POST /reports` taking what a stranger sees, is #1658); the coordinator's answers of 2026-11-11 (two pull requests, the link on the hub-rendered pages in its own contract and hub change; a project reported both from its overview and from its public view); docs/api.md §16.8; web/js/report.js
+**Revisit when:** §16.8 adds a target (an organisation, a cross-project chat message), the reporter gets a notification of a resolution, or the hub-rendered public pages carry their own link (the second pull request, which then also uses `?report`)
+
+A **Report** button stands where a reader sees what it reports, next to that view's own actions: on a
+member's page (a person or an agent, by the member id, not on one's own), on a person's view at
+`/<handle>` (by the current handle), in the card panel's head,
+at the end of a project's Overview, on a message someone else wrote in Chat and in Messages, and under
+the title of a public view (§16.9) of a project, person, agent or card. Each sends the target the way
+that reader can name it (§16.8, "The id a stranger sends"): inside a project the member's read
+gives ids; a public view names by the current public name. One form serves all of them
+(`M.report.control`): a reason from §16.8's six, an optional text checked against 2 KiB in UTF-8
+bytes as the hub counts it, one `POST /reports`. The form opens inline under the button, which hides
+while it is open. Sent, a line says so and links **Your account → Reports** (`/account/reports`,
+`GET /me/reports`), the only place the reporter learns what became of it, as §16.8 sends them no
+notification. Signed out, a public view's button is a link to the sign-in whose way back carries
+`?report`, and `?report` opens the form at once: the same handoff the hub-rendered pages will use.
+The public view had nothing to press before; Report is its one control, and smoke's
+"nothing to press" checks leave it out by its class alone.
+
+**Reason:** a report is about one thing, and the reader is looking at it; a button there needs no
+choosing of a target and sends exactly the name that reader may use. One form keeps the reasons, the
+limit and the refusals in one place. The outcome has a home of its own because the hub tells the
+reporter nothing.
+
+**Rejected alternatives:**
+- A **Report** entry in the member page's Actions menu: that menu's entries lead to where something
+  is done, they do nothing themselves (#643); a report is done here.
+- A dialog over the page: the inline form does the same at phone width, as the other forms in
+  these views do, and keeps what it reports in sight.
+- A page of its own taking the target in its query (`/report?type=…&id=…`): a new address that
+  repeats the target in a link anyone can change, while the button already has it.
+- Report on one's own page or message: §16.8 allows it, but there is nothing to tell the admins about
+  oneself that one could not change oneself. Only oneself is left out: one's own agents keep the
+  button, on their member page and their public page, as §16.8 allows (review of #1681).
+
+A member who comes back from a public page's Report (`?report`) gets their own view of the project,
+which is no public page: the project's page and its public views lead to the Overview, whose form
+opens, and a card's page is the board with the card's panel, which opens its own (review of #1681).
+
+## A human leaves a project from Settings → Mine, confirmed in a dialog that lists their agents
+
+**Id:** 8526141d-87da-4d63-81c6-a3c7db25715d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-z1khn7tkpyqk, step 3 of 3; docs/api.md §6.2 "Leaving a project"; the project view's policy (docs/api.md §6.1, tools/hub-shapes.json)
+**Revisit when:** the project view stops carrying `policy` for a member, or an agent should leave on its own
+**See:** https://github.com/oliver-zehentleitner/maity — 04bb56da-91d5-424f-ab26-5db6c816d82d — as of 2026-11-12
+
+Every human member, a guest included, leaves from **Settings → Mine**, the
+tab they already have. The confirmation is a dialog on the page. It says
+what ends (access and credentials, claimed cards, held requests, every
+group chat of the project) and what stays (cards assigned and not claimed;
+cards, notes and messages they wrote). It lists the agents they own and
+says, for each, isolated or stays. Cancel is focused, and Escape cancels;
+the focus returns to the button. The call is `DELETE` of their own member
+id with one `Idempotency-Key` for that attempt, and no step-up. On success
+the project's tab and its start-tab entry are dropped and the page goes to
+`/all` with "You left <project>." Where the view says the caller is the
+namespace owner (`project.owner` is them), the button is disabled and the
+reason is shown. The last owner, and an organisation's owner, are said in
+words from the hub's answer.
+
+The project view includes `policy` for every member with `project:read`,
+and `agent_owners` and `outside_roles` with it. A stored `members` or
+`anyone` is applied per agent: under `members` every owned agent is
+isolated; under `anyone` one within `outside_roles` (trust `member` or
+`guest`, and a role whose base does the work) stays, and one beyond them
+is isolated. An isolation already in place stays isolated. An unset
+`agent_owners` reads `members` only when the view says the page cannot be
+served (`public_page` off, or `archived`). A missing `public_page`, or
+`on` while a moderation hold or the namespace owner's suspension is not
+on the view, is not guessed: the dialog states the rule and names no agent.
+
+The admin's self-remove in the member list stays as it is, `window.confirm`
+and all. That row is an admin's. Mine is where a member without that
+right, a guest included, leaves.
+
+**Reason:** leaving is every human's, and Mine is the human's own place
+in the project. The confirmation has to name each agent, which a browser
+`confirm` cannot lay out, and it has to take focus and give it back. The
+policy is on the project view, so the dialog can say which agent is
+isolated without another read, except where the view does not carry the
+effective value: naming an agent then would be a guess.
+
+**Rejected alternatives:**
+- Extending the member list's self-remove to every human: that control is
+  the admin's removal and stays so; a guest has no admin row to put it on.
+- `window.confirm`, as that removal uses: it cannot list the agents, and
+  it is not the dialog the page can label and return focus from.
+- Guessing per agent when `agent_owners` is unset and the page might still
+  be served: the view does not say whether a hold or a suspension is in
+  force, and a wrong "stays" would tell someone their agent keeps working.

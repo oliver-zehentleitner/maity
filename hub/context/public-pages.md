@@ -641,7 +641,8 @@ placed in it, so a crawler and a reader without scripts still read the page and 
 The row, its removal and the sitemap stay as they were; a page is still a row, and the decision between page and
 shell still falls in the shell's route. A failed read of `data` leaves the page's text standing instead of the login.
 The marker on the shell counts for the first drawing only; a later visit to the login inside the same load is the
-login, not this page.
+login, not this page. Superseded for `?as=public` by c0868c32 (2026-11-12): it answers the page in the frame of the
+pages without a session, no longer bare. The answer inside the shell is unchanged.
 
 **Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
 the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
@@ -851,3 +852,62 @@ page's number still counts you, without your name (card tsk-en9mm6x2v3s0).
 - Leaving the person out of the instance-wide counts as well: no project is named there, so nothing points at
   anyone, and the landing page would need a filter of its own.
 - A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.
+
+## The hub's own signed-out pages take their frame from one function, and `/explore` is in the frame's language
+
+**Id:** cb025c0e-ce40-4638-bd81-e8034e3e66e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (step 2 of tsk-zp0vqj9wm37x), the lead's build order of 2026-11-12 ("one shared signed-out frame … from the shared parts in render.py, not copied per page") and the lead's go on the plan for its first pull request; the started branch agent-d/kg22-explore-layout, taken over; contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-12
+
+`render.public_frame(model, lang)` builds the header, the footer, the stylesheet links and the inline fallback of
+a page the hub renders itself, from the model of `chrome`. The legal pages, the mail link pages and `/explore` use
+it; `render.framed_document` puts a page's content in it. The following pull requests put the stored public pages
+on the same frame. `/explore` takes its words from the catalogue's `explore` section in the model's language,
+and English where the catalogue has no words in that language; the frame then says its own `lang`.
+
+**Reason:** the frame's rules already live once in `chrome` (scope.md, 41837936). The parts each page added
+around it (the header's links, the button, the two stylesheets and their fallback, and on the mail link pages the
+mark without its `style` attributes) were copied into each page, and a page the next card adds would have copied
+them again. The legal pages now drop the mark's `style` attributes as well; `public-pages.css` colours it, so they
+look the same. A page whose
+words come from the catalogue can follow the reader's language like the frame around it, so the two say the same
+language.
+
+**Rejected alternatives:**
+- One copy of the header and footer code per page (the state before for the legal and mail link pages): the copies
+  drift. A change to the mark or to the stylesheets would have to be made in every page.
+- `/explore` in English, with the frame forced to English to match (the first cut on the started branch): a
+  German reader then left a German landing page for an English frame. With the words in the catalogue there was
+  no reason left to keep it.
+
+## A stored public page gets its frame when it is served, not when it is rendered
+
+**Id:** c0868c32-a98a-46d9-ab65-f6ad9583848a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (PR 2 of 4), the lead's go of 2026-11-12 on the serve-time frame and its three
+conditions (the stored page stays untrusted data inside the frame, the cache tag covers the frame, the contract says
+the frame is applied when the page is served); contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — cb025c0e-ce40-4638-bd81-e8034e3e66e7 — as of 2026-11-12
+
+`public_pages.answer` puts `render.public_frame` around a stored page when it answers `?as=public`
+(`render.stored_in_frame`). The row of `public_page` keeps the page as `page_document` wrote it. The frame takes
+the title, the description, the canonical link and the content out of it by the pattern the app shell already uses
+(`render.STORED_PAGE`), and inserts the content unparsed. The answer's `ETag` is the digest of the bytes served,
+not the stored row's tag. The policy adds `'self'` for the frame's stylesheets and fonts. A row of another shape
+is served bare, as before.
+
+**Reason:** the frame changes with the landing page, the legal pages, the counters, the reader's language and a
+deploy of the stylesheets. None of these is an input of a stored page. Applied when served, the frame has one
+source, and no page is rendered again for it.
+
+**Rejected alternatives:**
+- The frame in the stored page, at render time: every change to the landing page, the legal pages or the counters
+  would have to render every stored page again. The frame's language would also be fixed when the page is rendered,
+  not chosen by the reader.
+- The stored row's tag (with the banner) as the `ETag`: a changed frame would answer `304` to a cache holding
+  the old one.

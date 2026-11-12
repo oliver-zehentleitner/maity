@@ -12,6 +12,7 @@ from sqlalchemy import Connection, func, insert, select, update
 from maity_hub import (
     allowed_projects,
     avatars,
+    chat_access,
     clock,
     events,
     handles,
@@ -346,3 +347,4 @@ def delete_profile(
     from maity_hub import cross_chats
 
     cross_chats.profile_left(conn, agent_id, by, "membership_removed")
+    chat_access.forget_agent(conn, agent_id)  # out of every allow and deny entry (§9.6)

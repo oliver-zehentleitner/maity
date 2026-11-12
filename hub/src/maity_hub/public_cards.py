@@ -119,7 +119,7 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
     content = (
         f'<p class="eyebrow"><a href="/{escape(full, quote=True)}/board">'
         f"{escape(project.name)}: Board</a></p>"
-        f"<h1>{escape(card.title)}</h1>"
+        f"<h1>{escape(card.title)}</h1>{render.report_link(f'/{full}/tasks/{card.id}')}"
         f'<p><span class="tag">{escape(card.id)}</span> '
         + " ".join(f'<span class="tag">{tag}</span>' for tag in tags)
         + "</p>"

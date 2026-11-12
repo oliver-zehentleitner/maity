@@ -188,10 +188,12 @@ window.Maity = window.Maity || {};
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
-      clear(ul);
+      const fresh = h("div");
       // A human pins (§9.3): the list is read again for the hub's order.
       const onPin = ctx.me.kind === "human" && pinColumn.isShown() ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
-      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(ul, listItem(ctx, chat, currentId, onPin)));
+      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(fresh, listItem(ctx, chat, currentId, onPin)));
+      M.dom.keepImages(ul, fresh);
+      append(clear(ul), Array.from(fresh.childNodes));
       none.hidden = mine.length > 0 || groups.length > 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);
@@ -362,12 +364,17 @@ window.Maity = window.Maity || {};
       { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("team", id) : null), ctx }));
     // The message an event's link opened the chat at stays marked (o.target, reveal() below).
     const target = o.target && String(msg.seq) === o.target ? " seq-target" : "";
+    // Report someone else's message to the instance's admins (§16.8, tsk-7ze5w6ymf7bw): its seq with
+    // the project; members only, a message is on no public page.
+    const reporting = M.report && !own && !removed && ctx.slug && ctx.me.kind === "human"
+      ? M.report.control({ type: "message", id: String(msg.seq), project: ctx.slug }, "message") : null;
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "") + target, "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
         M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
         onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.quote.label"), onclick: () => onQuote(msg) }, M.t("chat.quote")) : null,
-        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null));
+        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null,
+        reporting ? [reporting.button, reporting.slot] : null));
   }
 
   // The newest page of a conversation, and nothing before it (the

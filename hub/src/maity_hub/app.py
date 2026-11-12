@@ -94,6 +94,7 @@ from maity_hub.routes import (
     board,
     bridges,
     briefing_view,
+    chat_access,
     contract_text,
     conversations,
     cross_chats,
@@ -115,6 +116,7 @@ from maity_hub.routes import (
     notifications,
     overview,
     pages,
+    password_reset,
     placements,
     preferences,
     project_images,
@@ -263,6 +265,10 @@ def start_once(engine: Engine, settings: Settings) -> None:
             from maity_hub.auth import email_links
 
             email_links.void_open(conn)
+        if not sign_in.password_reset_enabled(conn, settings):
+            from maity_hub.auth import password_resets
+
+            password_resets.void_open(conn)
         # A second factor the environment switched off is told, once (§2.8.5).
         source = sign_in.resolve(conn, settings)["second_factor"][1]
         sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
@@ -513,6 +519,7 @@ def create_app(
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(cross_chats.router, prefix=prefix)
+    app.include_router(chat_access.router, prefix=prefix)  # §9.6, the lists
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
@@ -527,6 +534,7 @@ def create_app(
     app.include_router(joins.page_router)  # /join/{token}, before the app shell
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(email_sign_in.router, prefix=prefix)
+    app.include_router(password_reset.router, prefix=prefix)
     app.include_router(email_sign_in.page_router)
     app.include_router(mail_links.page_router)  # /mail/*, likewise
     app.include_router(register_page.page_router)  # the registration's link page, likewise

@@ -101,6 +101,9 @@ human = Table(
     Column("handle", String(HANDLE), nullable=False, unique=True),
     Column("display_name", String(TITLE), nullable=False),
     Column("password_hash", String(255), nullable=False),  # scrypt, with parameters and salt
+    # Moves with every password change, `POST /auth/password` and a reset (§2.10): a reset
+    # link carries the generation it was made under and dies when it moves.
+    Column("password_generation", Integer, nullable=False, server_default="0"),
     Column("created_at", UtcDateTime, nullable=False),
     Column("last_login_at", UtcDateTime),  # the latest successful login (§16.1)
     Column("last_seen_at", UtcDateTime),
@@ -573,6 +576,33 @@ email_sign_in_day = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("day", String(10), primary_key=True),
     Column("wrong_codes", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# A link to reset a forgotten password (§2.10): `sha256(nonce)` of its signed token, single
+# use. `source` is the address it was asked from, so a new request voids only the earlier
+# unused link from the same one.
+password_reset = Table(
+    "password_reset",
+    metadata,
+    Column("nonce_hash", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("source", String(64), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# Each wrong TOTP or recovery code at a reset (§2.10), counted per human over the 24 hours
+# before each one, across every link; older rows count for nothing and may be dropped.
+password_reset_wrong = Table(
+    "password_reset_wrong",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_password_reset_wrong_human_at", "human_id", "at"),
     **MYSQL_TABLE,
 )
 
@@ -1965,6 +1995,9 @@ conversation_participant = Table(
     _membership_ref("membership_id", nullable=False, index=True),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("window_after", BIG_ID, nullable=False),
+    # The `newest_seq` of the last `chat_unread` written for this stay (§9.2): its read cycle
+    # is open while the read mark is below it. Written with the nudge, under the project lock.
+    Column("unread_nudged_through", BIG_ID),
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
@@ -2037,6 +2070,66 @@ conversation_meat_proxy = Table(
     Column("conversation_id", String(ID), nullable=False),
     Column("meat_proxy", Boolean, nullable=False),
     PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
+# A human's allow and deny entries for their agents (docs/api.md §9.6, "The lists"): who may
+# chat with them. `human_id` keeps the list; only that human reads and changes it. An allow
+# names a side (`owner_id`, with `their_agents` and `their_human`) or a project; a deny names
+# exactly one of a side, a human, an agent or a project. `agents_all` is the owner's `agents:
+# "all"`; otherwise the agents are `chat_access_agent` rows, as are the listed `their_agents`.
+# Deleted with the account, in its export; the agents, humans and projects it names are taken
+# out of it when they go.
+chat_access = Table(
+    "chat_access",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("kind", String(8), nullable=False),  # allow, deny
+    Column("agents_all", Boolean, nullable=False),
+    _ref("owner_id", "human.id"),  # a side: that human with their agents
+    _ref("subject_human_id", "human.id"),  # a deny of one human
+    _ref("subject_agent_id", "agent_profile.id"),  # a deny of one agent
+    _ref("project_id", "project.id"),
+    Column("their_agents", String(8)),  # all, list, none; null for a project or a deny
+    Column("their_human", Boolean),  # null for a project or a deny
+    Column("duration", String(8)),  # hour, day, week; null for no end
+    Column("until", UtcDateTime),
+    Column("allowed", String(1000)),
+    Column("denied", String(1000)),
+    _ref("by", "human.id", nullable=False),
+    Column("since", UtcDateTime, nullable=False),
+    Index("ix_chat_access_human", "human_id", "kind", "since"),
+    Index("ix_chat_access_owner", "owner_id"),
+    Index("ix_chat_access_subject_human", "subject_human_id"),
+    Index("ix_chat_access_subject_agent", "subject_agent_id"),
+    Index("ix_chat_access_project", "project_id"),
+    CheckConstraint("kind IN ('allow', 'deny')", name="kind"),
+    CheckConstraint(
+        "(CASE WHEN owner_id IS NULL THEN 0 ELSE 1 END)"
+        " + (CASE WHEN subject_human_id IS NULL THEN 0 ELSE 1 END)"
+        " + (CASE WHEN subject_agent_id IS NULL THEN 0 ELSE 1 END)"
+        " + (CASE WHEN project_id IS NULL THEN 0 ELSE 1 END) = 1",
+        name="one_subject",
+    ),
+    CheckConstraint(
+        "kind = 'deny' OR (subject_human_id IS NULL AND subject_agent_id IS NULL)",
+        name="allow_subject",
+    ),
+    **MYSQL_TABLE,
+)
+
+# The agents an entry of `chat_access` names: on the owner's side (`own`) and, for an allow of
+# a side with listed agents, on the other side (`theirs`).
+chat_access_agent = Table(
+    "chat_access_agent",
+    metadata,
+    _ref("entry_id", "chat_access.id", nullable=False),
+    Column("side", String(8), nullable=False),  # own, theirs
+    _ref("agent_id", "agent_profile.id", nullable=False),
+    PrimaryKeyConstraint("entry_id", "side", "agent_id"),
+    Index("ix_chat_access_agent_agent", "agent_id"),
+    CheckConstraint("side IN ('own', 'theirs')", name="side"),
     **MYSQL_TABLE,
 )
 

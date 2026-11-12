@@ -4172,7 +4172,8 @@ window.MAITY_FIXTURES = {
           ]
         },
         "enabled": true
-      }
+      },
+      "why_merge_children": true
     },
     "setup": {
       "cards": [],
@@ -6521,6 +6522,7 @@ window.MAITY_FIXTURES = {
         "daily_at": "08:00",
         "disabled_at": null,
         "hard_failures": 0,
+        "hold_while_online": true,
         "kinds": {
           "chat": {
             "content": false,

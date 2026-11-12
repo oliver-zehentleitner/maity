@@ -576,6 +576,42 @@ def test_check_requires_the_sandbox_when_configured(
     assert any("no OS sandbox" in line and line.startswith("error") for line in lines(capsys))
 
 
+@pytest.mark.parametrize(
+    ("platform", "tools", "said", "code"),
+    [
+        ("linux", ("bwrap", "socat"), "ok     harness claude-code: OS sandbox (bwrap, socat)", 0),
+        ("darwin", ("sandbox-exec",), "ok     harness claude-code: OS sandbox (sandbox-exec)", 0),
+        ("darwin", ("bwrap", "socat"), "error  harness claude-code: no OS sandbox "
+         "(sandbox-exec missing)", 1),
+        ("freebsd14", ("bwrap", "socat", "sandbox-exec"), "error  harness claude-code: no OS "
+         "sandbox on freebsd14; agents run unsandboxed", 1),
+    ],
+)  # fmt: skip
+def test_check_names_claude_codes_sandbox_for_the_platform(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    tools: tuple[str, ...],
+    said: str,
+    code: int,
+) -> None:
+    """Seatbelt on macOS, bubblewrap and socat on Linux; anywhere else `check` says that the
+    agents run unsandboxed, and `require_sandbox` makes that an error."""
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", "2.1.318")
+    for tool in tools:
+        fake_tool(bin_dir, tool)
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
+    monkeypatch.setattr(sys, "platform", platform)
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    found = [line for line in lines(capsys) if "sandbox" in line and "checked" not in line]
+    assert found == [said], found
+
+
 def test_check_refuses_a_loose_state_dir(
     paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

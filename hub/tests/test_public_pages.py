@@ -3,6 +3,7 @@ shows: the switch, the session, `?as=public`, the headers, the ETag, the rate li
 
 from __future__ import annotations
 
+from html import escape
 from typing import Any
 
 import pytest
@@ -60,12 +61,94 @@ def test_a_visitor_gets_the_stored_page_with_the_headers_of_the_contract(
     assert "<h1>OZ Team</h1>" in got.text
     assert got.headers["content-type"].startswith("text/html")
     assert got.headers["cache-control"] == "public, max-age=60"
+    # In its frame (§16.7.5): the landing page's stylesheets and fonts, still no script.
     assert got.headers["content-security-policy"] == (
-        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
+        "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
+        "img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
     )
     assert got.headers["x-content-type-options"] == "nosniff"
-    assert got.headers["vary"] == "Cookie"
+    assert got.headers["vary"] == "Cookie, Accept-Language"
     assert "set-cookie" not in got.headers
+    assert got.headers["etag"] == public_pages.etag_of(got.text)
+
+
+def test_the_frame_is_put_around_the_stored_page_when_it_is_served(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.9, §16.7.5: the landing page's header and footer around the content as stored; the
+    row itself is not rendered again or changed."""
+    client = visitor(make_client)
+    store(migrated)
+    with migrated.connect() as conn:
+        [row] = conn.execute(select(t.public_page)).all()
+    page = client.get(PATH).text
+    content = row.body.split('<main class="wrap">', 1)[1].rsplit("</main>", 1)[0]
+    assert f'<div class="stored-page"><div class="wrap">{content}</div></div>' in page
+    assert page.index('<header class="site-header dz">') < page.index(content)
+    assert page.index(content) < page.index('<footer class="site-footer">')
+    assert '<html lang="en">' in page and "<title>OZ Team</title>" in page
+    assert '<link rel="canonical" href="https://hub.example/oz-team">' in page
+    assert "/assets/landing/public-pages.css?v=" in page and "<script" not in page
+    # One language, the content's: no switch in the footer, no hreflang links.
+    assert 'href="?lang=' not in page and "hreflang" not in page
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.public_page.c.body)).scalar_one() == row.body
+
+
+def test_the_stored_content_stays_data_inside_the_frame(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """What a member wrote was escaped when the page was rendered; the frame never unescapes it."""
+    client = visitor(make_client)
+    words = '<script>alert(1)</script> & "quoted"'
+    store(
+        migrated,
+        body=render.page_document(
+            lang="en",
+            title=words,
+            canonical="https://hub.example/oz-team",
+            content=f"<h1>{escape(words)}</h1>",
+        ),
+    )
+    page = client.get(PATH).text
+    assert "<script" not in page
+    assert "<h1>&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;quoted&quot;</h1>" in page
+    assert "<title>&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;quoted&quot;</title>" in page
+
+
+def test_the_page_keeps_its_language_and_the_frame_follows_the_reader(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = visitor(make_client)
+    store(migrated)
+    english = client.get(PATH)
+    german = client.get(PATH, params={"lang": "de"})
+    assert '<html lang="en">' in german.text
+    assert '<header lang="de" class="site-header dz">' in german.text
+    assert '<footer lang="de" class="site-footer">' in german.text
+    assert 'lang="de"' not in english.text
+    # The frame is part of the answer, and so of its tag (§16.9).
+    assert german.headers["etag"] == public_pages.etag_of(german.text)
+    assert german.headers["etag"] != english.headers["etag"]
+    stale = client.get(
+        PATH, params={"lang": "de"}, headers={"If-None-Match": english.headers["etag"]}
+    )
+    assert stale.status_code == 200
+    same = client.get(
+        PATH, params={"lang": "de"}, headers={"If-None-Match": german.headers["etag"]}
+    )
+    assert same.status_code == 304
+
+
+def test_a_stored_page_of_another_shape_is_served_bare(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = visitor(make_client)
+    store(migrated, body="<!doctype html><title>old</title><p>kept</p>")
+    got = client.get(PATH)
+    assert got.text == "<!doctype html><title>old</title><p>kept</p>"
+    assert got.headers["content-security-policy"] == public_pages.CSP
+    assert got.headers["vary"] == "Cookie"
     assert got.headers["etag"] == public_pages.etag_of(got.text)
 
 
