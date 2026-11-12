@@ -12,13 +12,27 @@ from sqlalchemy import Engine, select
 
 from maity_hub import clock, public_pages
 from maity_hub import tables as t
+from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_public_project_views import BASE, TASKS, World, view
+from tests.statements import count_statements
+from tests.test_public_project_views import BASE, TASKS, World, pages, view
 from tests.test_reports import report
 
 
 @pytest.fixture
 def world(make_client: ClientFactory, migrated: Engine, settings: Any) -> World:
+    public_pages.configure(replace(settings, public_pages=True))
+    return World(make_client, migrated)
+
+
+@pytest.fixture
+def counting_world(
+    make_client: ClientFactory, migrated: Engine, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> World:
+    """`world` for the statement counts: no app runs the public-pages worker, whose
+    background renders would land in the count (hcrb on #1700). A change still renders its
+    pages at once, through `touch`."""
+    monkeypatch.setattr(public_pages.Worker, "start", lambda self: None)
     public_pages.configure(replace(settings, public_pages=True))
     return World(make_client, migrated)
 
@@ -263,3 +277,157 @@ def test_every_kind_reads_one_target_by_the_rule_of_its_whole_list(world: World)
     world.owner.patch("/projects/maintainer/maity", {"public_page": "off"})
     after = check(before)
     assert not after["project"] and not after["card"], after
+
+
+def _remove_agent(world: World) -> None:
+    gone = world.owner.client.delete(
+        f"/api/v1/agents/{world.bot.id}?cascade=true", headers={"X-CSRF-Token": world.owner.csrf}
+    )
+    assert gone.status_code == 200, gone.text
+
+
+def test_a_removed_member_is_off_every_card_page_that_named_them(world: World) -> None:
+    """A member's removal takes their name off the card pages that named them, as holder or
+    as a note's author, and leaves the others as they were (hub/context/public-pages.md
+    fe966f9c)."""
+    held = world.owner.post(TASKS, {"title": "Held by the bot"}).json()["id"]
+    assert world.bot.post(f"{TASKS}/{held}/claim", {}).status_code == 200
+    noted = world.owner.post(TASKS, {"title": "Noted by the bot"}).json()["id"]
+    assert world.bot.post(f"{TASKS}/{noted}/notes", {"body": "bot-words"}).status_code == 201
+    other = world.owner.post(TASKS, {"title": "Nothing of the bot"}).json()["id"]
+    handle = world.bot.get("/me").json()["member"]["handle"]
+    assert all(f"({handle})" in (page(world, c) or "") for c in (held, noted))
+    with world.migrated.connect() as conn:
+        before = conn.execute(
+            select(t.public_page.c.path, t.public_page.c.body).where(
+                t.public_page.c.path.like(f"%/tasks/{other}%")
+            )
+        ).all()
+    assert before
+    _remove_agent(world)
+    assert all(f"({handle})" not in (page(world, c) or "") for c in (held, noted))
+    assert "bot-words" in (page(world, noted) or "")  # the note stays, its author unnamed
+    with world.migrated.connect() as conn:
+        after = conn.execute(
+            select(t.public_page.c.path, t.public_page.c.body).where(
+                t.public_page.c.path.like(f"%/tasks/{other}%")
+            )
+        ).all()
+    assert after == before
+
+
+@pytest.mark.parametrize("way", ["removed", "isolated"])
+def test_a_card_held_in_review_or_blocked_loses_its_holder_when_they_go(
+    make_client: ClientFactory, world: World, way: str
+) -> None:
+    """A removal or an isolation gives the member's cards back before its event, which then
+    no longer finds them by their holder; a card in `review` or `blocked` keeps its status, so
+    no card event renders it either. Its page is touched with the release (`tell_released`)
+    and names no holder after it (fp3y on #1700)."""
+    agent = flow.agent(pages(make_client), world.owner, role="coder")
+    handle = agent.get("/me").json()["member"]["handle"]
+    held = {}
+    for status in ("review", "blocked"):
+        card_id = world.owner.post(TASKS, {"title": f"Held in {status}"}).json()["id"]
+        assert agent.post(f"{TASKS}/{card_id}/claim", {}).status_code == 200
+        with world.migrated.begin() as conn:
+            conn.execute(t.card.update().where(t.card.c.id == card_id).values(status=status))
+            public_pages.touch(conn, "card", card_id)
+        assert data(world, card_id).json()["data"]["holder"]["handle"] == handle
+        held[status] = card_id
+    path = f"/projects/maintainer/maity/members/{agent.id}"
+    gone = (
+        world.owner.delete(path)
+        if way == "removed"
+        else world.owner.post(f"{path}/isolate", {"reason": "it broke main"})
+    )
+    assert gone.status_code == 200, gone.text
+    for status, card_id in held.items():
+        shown = data(world, card_id).json()["data"]
+        assert shown["status"] == status and shown["holder"] is None, shown
+        assert f"({handle})" not in (page(world, card_id) or "")
+
+
+def test_without_a_public_page_a_removal_costs_nothing_per_held_card(
+    make_client: ClientFactory, counting_world: World
+) -> None:
+    """Off a public page there is no card page to touch: a removal of a member holding three
+    cards in `review` reads as many statements as one holding one (spq4 on #1700)."""
+    world = counting_world
+    assert (
+        world.owner.patch("/projects/maintainer/maity", {"public_page": "off"}).status_code == 200
+    )
+
+    def removal(cards: int) -> int:
+        agent = flow.agent(pages(make_client), world.owner, role="coder")
+        for n in range(cards):
+            card_id = world.owner.post(TASKS, {"title": f"Review {n}"}).json()["id"]
+            assert agent.post(f"{TASKS}/{card_id}/claim", {}).status_code == 200
+            with world.migrated.begin() as conn:
+                conn.execute(t.card.update().where(t.card.c.id == card_id).values(status="review"))
+        path = f"/projects/maintainer/maity/members/{agent.id}"
+        answers: list[Any] = []
+        count = count_statements(world.migrated, lambda: answers.append(world.owner.delete(path)))
+        assert answers[0].status_code == 200, answers[0].text
+        return count
+
+    removal(1)  # the first removal reads what later ones find cached
+    assert removal(3) == removal(1)
+
+
+def test_a_removed_member_is_off_the_page_of_a_done_card_they_held(world: World) -> None:
+    """A done card keeps its holder (`cards.open_claims` leaves it out of the release), so
+    only `public_cards.naming` finds its page by the holder after a removal."""
+    card_id = world.owner.post(TASKS, {"title": "Done by the bot"}).json()["id"]
+    assert world.bot.post(f"{TASKS}/{card_id}/claim", {}).status_code == 200
+    with world.migrated.begin() as conn:
+        conn.execute(t.card.update().where(t.card.c.id == card_id).values(status="done"))
+        public_pages.touch(conn, "card", card_id)
+    handle = world.bot.get("/me").json()["member"]["handle"]
+    assert f"({handle})" in (page(world, card_id) or "")
+    _remove_agent(world)
+    assert f"({handle})" not in (page(world, card_id) or "")
+
+
+def test_a_removed_editor_is_off_the_card_page_of_the_note_they_edited(
+    make_client: ClientFactory, world: World
+) -> None:
+    ben = flow.human(pages(make_client), world.migrated, "ben")
+    factory.membership(world.migrated, world.project_id, "admin", human_id=ben.id)
+    card_id = world.owner.post(TASKS, {"title": "Edited by ben"}).json()["id"]
+    note = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "from anna"}).json()
+    edited = ben.patch(
+        f"{TASKS}/{card_id}/notes/{note['id']}",
+        {"body": "from anna, cleaned", "reason": "typo", "base_version": 1},
+    )
+    assert edited.status_code == 200, edited.text
+    assert "(ben)" in (page(world, card_id) or "")
+    removed = world.owner.delete(f"/projects/maintainer/maity/members/{ben.id}")
+    assert removed.status_code == 200, removed.text
+    assert "(ben)" not in (page(world, card_id) or "")
+
+
+def test_a_member_s_removal_does_not_grow_with_the_project_s_cards(
+    make_client: ClientFactory, counting_world: World
+) -> None:
+    """A public project's card pages are not all removed and rendered again for one member
+    (tsk-m65g76c979jk: 31,871 statements on a project with many cards). Three removals in a
+    row, each with one more deleted profile behind it: nine cards more before the third add
+    nothing to what the second added to the first."""
+    world = counting_world
+    agents = [flow.agent(pages(make_client), world.owner, role="coder") for _ in range(3)]
+
+    def removal(agent: flow.Agent, cards: int) -> int:
+        for n in range(cards):
+            world.card(status="open", title=f"Card {n}")
+        world.touch()
+        return count_statements(
+            world.migrated,
+            lambda: world.owner.client.delete(
+                f"/api/v1/agents/{agent.id}?cascade=true",
+                headers={"X-CSRF-Token": world.owner.csrf},
+            ),
+        )
+
+    first, second, third = removal(agents[0], 3), removal(agents[1], 0), removal(agents[2], 9)
+    assert third - second == second - first, (first, second, third)

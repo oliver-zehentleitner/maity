@@ -814,8 +814,48 @@ fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the 
 the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
 change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
 `changed` fields still renders the project page with its dependents, since a member's name stands on the card
-pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+pages they hold; narrowed since to the card pages that name the member (fe966f9c-3557-4473-a0d6-14aa4d714a43).
+Rejected: naming the fields a page shows instead (an allowlist), because a field added later
 would silently leave a stale name on a public page; a field missing from the list only costs a render.
+
+## A member change takes off and renders only the card pages that name that member
+
+**Id:** fe966f9c-3557-4473-a0d6-14aa4d714a43
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-m65g76c979jk: on maity.team on 2026-11-12, `DELETE /agents/{id}?cascade=true` took 56.86 s in the maintainer's browser, its `Server-Timing` 31,871 statements and 44.7 s in the database (relayed by the lead in seq 118556); measured locally with public pages on, every card of the project added 17 statements to the delete (5 cards 412, 20 cards 667), and none with this change (330 for both); the lead's go for a set-based fix with the same result (seq 118556); `public_cards.render_card` names only the claim holder, the notes' authors and their latest editors
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-12
+**See:** public-pages.md#a-page-that-shows-people-is-rendered-again-with-them-through-dependents-and-the-member-events — dd4a04fc-9382-4966-b77e-0d9aba7c9fcb — as of 2026-11-12
+**Revisit when:** a card page shows a member in another way than as holder, note author or note editor (an assignee, a mention, a reviewer)
+
+A `member_joined` or shown `member_updated` of a public project still touches the project's page with its
+dependents, but the dependents are `public_projects.member_dependents`: the views, the organisation, the
+agent and person pages as before, and of the card pages only those that name the member under any membership
+the principal held in the project (`public_cards.naming`: claim holder, note author, latest note editor; the
+editor is in JSON, so the project's few edited notes are matched in Python, as for a person's cards).
+`events.emit` hands that list to `public_pages.touch` as `others`, read only when pages are rendered at all.
+A removal and an isolation give the member's cards back (`isolation.release_claims`) before their event, so
+the holder is no longer there to be found: a card that left `in_progress` is rendered by its own status event,
+and one that kept its status (`review`, `blocked`, `open`) is touched by `isolation.tell_released` after the
+member's event, under the project lock that event took (a review found the gap on #1700; a test holds both).
+Every page that named the member is still taken off in the writer's transaction and rendered after its commit;
+every other card page is left as it is, since it shows nothing of the member. A test holds the statement
+count of a profile's deletion independent of the project's cards.
+
+**Reason:** a project's dependents include every card page, so each member change in a public project locked,
+deleted and re-rendered every card page of the project in the request: with about 1,850 card pages the
+deletion of one agent profile sent 31,871 statements, and the same held for every removal, join and shown
+change of a member. 721bcdfa had already taken card events off this path; its last paragraph kept the member
+events on it because a member's name stands on the card pages they hold, which is true only of those pages.
+
+**Rejected alternatives:**
+- Removing all dependents in one statement and rendering them in the background: a removal would no longer
+  be back when the answer arrives (deafb243), and most of those pages never changed.
+- Leaving the card pages to the snapshot worker for member changes: a removed name would stay on a card page
+  until the run, which §16.9 does not allow for a removal.
+- Narrowing by the `changed` fields of the event: 721bcdfa rejected an allowlist of shown fields, and the cost
+  is in the number of pages, not in which field changed.
 
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
