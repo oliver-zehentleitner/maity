@@ -6240,3 +6240,58 @@ newest are the ones looked for.
   not only from the drawing, and changes what the board offers.
 - The first 50 in the column's order: that order is by rank and creation,
   so it would show old closed cards and hide the ones just closed.
+
+## A human leaves a project from Settings → Mine, confirmed in a dialog that lists their agents
+
+**Id:** 8526141d-87da-4d63-81c6-a3c7db25715d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-z1khn7tkpyqk, step 3 of 3; docs/api.md §6.2 "Leaving a project"; the project view's policy (docs/api.md §6.1, tools/hub-shapes.json)
+**Revisit when:** the project view stops carrying `policy` for a member, or an agent should leave on its own
+**See:** https://github.com/oliver-zehentleitner/maity — 04bb56da-91d5-424f-ab26-5db6c816d82d — as of 2026-11-12
+
+Every human member, a guest included, leaves from **Settings → Mine**, the
+tab they already have. The confirmation is a dialog on the page. It says
+what ends (access and credentials, claimed cards, held requests, every
+group chat of the project) and what stays (cards assigned and not claimed;
+cards, notes and messages they wrote). It lists the agents they own and
+says, for each, isolated or stays. Cancel is focused, and Escape cancels;
+the focus returns to the button. The call is `DELETE` of their own member
+id with one `Idempotency-Key` for that attempt, and no step-up. On success
+the project's tab and its start-tab entry are dropped and the page goes to
+`/all` with "You left <project>." Where the view says the caller is the
+namespace owner (`project.owner` is them), the button is disabled and the
+reason is shown. The last owner, and an organisation's owner, are said in
+words from the hub's answer.
+
+The project view includes `policy` for every member with `project:read`,
+and `agent_owners` and `outside_roles` with it. A stored `members` or
+`anyone` is applied per agent: under `members` every owned agent is
+isolated; under `anyone` one within `outside_roles` (trust `member` or
+`guest`, and a role whose base does the work) stays, and one beyond them
+is isolated. An isolation already in place stays isolated. An unset
+`agent_owners` reads `members` only when the view says the page cannot be
+served (`public_page` off, or `archived`). A missing `public_page`, or
+`on` while a moderation hold or the namespace owner's suspension is not
+on the view, is not guessed: the dialog states the rule and names no agent.
+
+The admin's self-remove in the member list stays as it is, `window.confirm`
+and all. That row is an admin's. Mine is where a member without that
+right, a guest included, leaves.
+
+**Reason:** leaving is every human's, and Mine is the human's own place
+in the project. The confirmation has to name each agent, which a browser
+`confirm` cannot lay out, and it has to take focus and give it back. The
+policy is on the project view, so the dialog can say which agent is
+isolated without another read, except where the view does not carry the
+effective value: naming an agent then would be a guess.
+
+**Rejected alternatives:**
+- Extending the member list's self-remove to every human: that control is
+  the admin's removal and stays so; a guest has no admin row to put it on.
+- `window.confirm`, as that removal uses: it cannot list the agents, and
+  it is not the dialog the page can label and return focus from.
+- Guessing per agent when `agent_owners` is unset and the page might still
+  be served: the view does not say whether a hold or a suspension is in
+  force, and a wrong "stays" would tell someone their agent keeps working.
