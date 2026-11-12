@@ -2047,6 +2047,35 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const srLabel = await srOffered();
   expect(srLabel === "Start an agent on a runner" && !srBox().querySelector(".placement-new-none") && !srBox().querySelector("section.placements .placement-new-open"),
     "placements: a project admin with a runner of their own here is offered Start an agent on a runner in Join an agent, not in the list " + srLabel);
+  // A start whose runners come back after Add any agent was chosen draws nothing (review of #1706):
+  // the panel the reader chose stays alone, the focus where it went.
+  {
+    const raceAll = win.Maity.api.getAll;
+    let raceRelease = null;
+    win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/runners" && !raceRelease
+      ? new Promise((r) => { raceRelease = r; }).then(() => raceAll(p)) : raceAll(p));
+    const raceProto = Object.getPrototypeOf(srMenu()), raceFocus = raceProto.focus;
+    raceProto.focus = function () { document.activeElement = this; };
+    srMenu().click(); await tick(); srItem().click(); await tick();
+    const reading = !!main.querySelector('.join-menu-slot .placement-new-slot p[role="status"]');
+    srMenu().click(); await tick(); main.querySelector('.page-head .menu [data-key="any"]').click();
+    for (let k = 0; k < 6; k++) await tick();
+    const focused = document.activeElement;
+    raceRelease(); for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.getAll = raceAll;
+    const raceKept = document.activeElement === focused && focused === byId("join-agent");
+    raceProto.focus = raceFocus; document.activeElement = undefined;
+    expect(reading && !srForm() && !main.querySelector(".join-menu-slot .placement-new-slot").childNodes.length && !main.querySelector(".join-panel").hidden && raceKept,
+      "placements: a start whose runners answer after Add any agent was chosen draws no form beside the join panel, the focus stays on its first field");
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+    // On a tab without the page's own panel, Add any agent closes New agent profile's form, as a start does (review of #1706).
+    main.querySelector(".page-head button.agent-add-open").click(); await tick();
+    const profileOpen = !!main.querySelector("form.agent-new");
+    srMenu().click(); await tick(); main.querySelector('.page-head .menu [data-key="any"]').click(); for (let k = 0; k < 6; k++) await tick();
+    expect(profileOpen && !main.querySelector("form.agent-new") && main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden,
+      "placements: Add any agent on Managed agents closes the open New agent profile form");
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  }
   const srProto = Object.getPrototypeOf(srMenu()), srFocus = srProto.focus;
   srProto.focus = function () { document.activeElement = this; };
   await srOpen();

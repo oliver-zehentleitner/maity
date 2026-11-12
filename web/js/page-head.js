@@ -47,9 +47,12 @@ window.Maity = window.Maity || {};
     status.el.setAttribute("tabindex", "-1");
     let J = null;
     let menu = null;
+    // Each choice and each close starts a new round: a start whose reads come back after another
+    // choice won draws nothing (review of #1706).
+    let round = 0;
     const offerStart = !!(M.placements && M.placements.startOffered(ctx));
 
-    function closeStart() { clear(startSlot); }
+    function closeStart() { round += 1; clear(startSlot); }
     function closeAll(refocus) {
       closeStart();
       if (J && !opts.any) J.close(false);
@@ -59,6 +62,8 @@ window.Maity = window.Maity || {};
     async function openAny() {
       closeStart();
       if (opts.any) { opts.any(menu.button); return; }
+      // The page's other form (New agent profile) closes, as a start closes it (review of #1706).
+      if (opts.closeAny) opts.closeAny();
       if (!J) {
         try {
           J = await M.join.mount(ctx, {
@@ -80,21 +85,23 @@ window.Maity = window.Maity || {};
       if (J && !opts.any) J.close(false);
       if (opts.closeAny) opts.closeAny();
       append(clear(startSlot), h("p", { class: "muted", role: "status" }, M.t("placements.new.reading")));
+      const mine = ++round;
       let form = null;
       const box = await M.placements.startBox(ctx, {
         cancel: () => closeAll(true),
         // Only the form that sent it closes (review of #1558): one cancelled while its POST ran and
         // opened anew keeps its draft and the focus; the placement made is said all the same.
         made: async (made) => {
-          const mine = !!form && startSlot.contains(form);
-          if (mine) closeStart();
+          const sender = !!form && startSlot.contains(form);
+          if (sender) closeStart();
           if (opts.started) await opts.started(made);
           append(clear(status.el), h("span", { class: "ok" }, M.t("placements.new.done",
             { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })), " ",
           h("a", { href: ctx.link("placements") }, M.t("placements.title")));
-          if (mine) status.el.focus();
+          if (sender) status.el.focus();
         },
       });
+      if (mine !== round) return;
       if (box) form = box.node;
       if (!box) { closeStart(); return; }
       // The form brings its own heading and Cancel (js/placements.js); a line saying why there is
