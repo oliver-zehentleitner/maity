@@ -1,3 +1,0 @@
-### Added
-
-- Contract: `GET /bootstrap` (§5.4) gives the dashboard's first reads in one round trip: the maintenance window, the session, `GET /me` and, with `?project={owner}/{slug}`, the project, its members and the event head. Each part is `{status, body}`, exactly what its single route answers the same caller, errors included; it needs no sign-in, is open during a maintenance window, is never compressed and is not cached. The pending, second-factor and enrolment reach lists (§2.7.5, §2.8.2, §2.8.5), the window's exemptions (§16.12), compression (§1.1) and the index (§12) name it. No route yet.

@@ -8919,6 +8919,14 @@
     "en": "f241302d339e4d2b",
     "text": "8b4eb9e83215a051"
   },
+  "mail.hold_while_online": {
+    "en": "8d0b00032d7d5518",
+    "text": "d4295c816b500773"
+  },
+  "mail.hold_while_online.hint": {
+    "en": "f1d2648294abaf30",
+    "text": "ebf2bb766bbba31d"
+  },
   "mail.incomplete": {
     "en": "a59a9d67fb8f3578",
     "text": "d4e127932d7920c2"

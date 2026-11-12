@@ -2359,6 +2359,8 @@
   "mail.quiet.to": "Tot",
   "mail.sign_in_link": "Een inloglink per e-mail toestaan",
   "mail.sign_in_link.hint": "Uitzetten maakt een link die al verstuurd is ongeldig.",
+  "mail.hold_while_online": "Geen e-mail zolang ik online ben in de webapp",
+  "mail.hold_while_online.hint": "E-mail van wat 'Meteen' uitgaat wacht zolang je het dashboard gebruikt. Een paar minuten nadat je het hebt verlaten, wordt alleen gemaild wat je nog niet hebt gelezen.",
   "mail.time.invalid": "Een tijd als UU:MM, van 00:00 tot 23:59.",
   "mail.timezone": "Tijdzone",
   "mail.timezone.unknown": "De hub kent deze tijdzone niet. Gebruik een naam zoals Europe/Vienna.",

@@ -2338,6 +2338,8 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.field.sign_in_max_per_hour": "每小时登录邮件数",
   "mail.field.tls": "连接安全",
   "mail.field.username": "SMTP 用户名",
+  "mail.hold_while_online": "我在网页应用中在线时不发送邮件",
+  "mail.hold_while_online.hint": "“立即”发送的邮件会在你使用控制台期间暂缓。离开几分钟后，只会发送你还没读过的内容。",
   "mail.incomplete": "邮件配置不完整：{missing}。",
   "mail.keys": "签名密钥：{signing}。实例加密密钥：{secret}。密钥在环境中配置。",
   "mail.kind.chat": "聊天消息",

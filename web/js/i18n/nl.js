@@ -2387,6 +2387,8 @@ window.MAITY_I18N["nl"] = {
   "mail.field.sign_in_max_per_hour": "Inlogmails per uur",
   "mail.field.tls": "Verbindingsbeveiliging",
   "mail.field.username": "SMTP-gebruikersnaam",
+  "mail.hold_while_online": "Geen e-mail zolang ik online ben in de webapp",
+  "mail.hold_while_online.hint": "E-mail van wat 'Meteen' uitgaat wacht zolang je het dashboard gebruikt. Een paar minuten nadat je het hebt verlaten, wordt alleen gemaild wat je nog niet hebt gelezen.",
   "mail.incomplete": "E-mailconfiguratie is onvolledig: {missing}.",
   "mail.keys": "Ondertekeningssleutel: {signing}. Versleutelingssleutel van de instantie: {secret}. Sleutels worden in de omgeving ingesteld.",
   "mail.kind.chat": "Chatberichten",

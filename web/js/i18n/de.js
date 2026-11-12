@@ -2387,6 +2387,8 @@ window.MAITY_I18N["de"] = {
   "mail.field.sign_in_max_per_hour": "Anmeldemails pro Stunde",
   "mail.field.tls": "Verbindungssicherheit",
   "mail.field.username": "SMTP-Benutzername",
+  "mail.hold_while_online": "Keine Mail, solange ich in der Web-App online bin",
+  "mail.hold_while_online.hint": "Mails mit „Sofort“ warten, solange du das Dashboard nutzt. Ein paar Minuten nachdem du es verlassen hast, geht nur noch, was du nicht gelesen hast.",
   "mail.incomplete": "Die Mail-Konfiguration ist unvollständig: {missing}.",
   "mail.keys": "Signaturschlüssel: {signing}. Verschlüsselungsschlüssel der Instanz: {secret}. Schlüssel werden in der Umgebung konfiguriert.",
   "mail.kind.chat": "Chat-Nachrichten",

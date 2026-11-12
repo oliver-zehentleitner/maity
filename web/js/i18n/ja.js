@@ -2338,6 +2338,8 @@ window.MAITY_I18N["ja"] = {
   "mail.field.sign_in_max_per_hour": "1 時間あたりのサインインメール数",
   "mail.field.tls": "接続のセキュリティ",
   "mail.field.username": "SMTP ユーザー名",
+  "mail.hold_while_online": "Web アプリにオンラインの間はメールを送らない",
+  "mail.hold_while_online.hint": "「すぐに」で送るメールは、ダッシュボードを使っている間は待機します。離れてから数分後、まだ読んでいないものだけがメールで届きます。",
   "mail.incomplete": "メール設定が未完了です: {missing}。",
   "mail.keys": "署名キー: {signing}。インスタンスの暗号化キー: {secret}。キーは環境変数で設定します。",
   "mail.kind.chat": "チャットのメッセージ",

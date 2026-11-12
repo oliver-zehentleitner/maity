@@ -2359,6 +2359,8 @@
   "mail.quiet.to": "Bis",
   "mail.sign_in_link": "Anmelde-Link per Mail erlauben",
   "mail.sign_in_link.hint": "Ausschalten macht einen bereits gesendeten Link ungültig.",
+  "mail.hold_while_online": "Keine Mail, solange ich in der Web-App online bin",
+  "mail.hold_while_online.hint": "Mails mit „Sofort“ warten, solange du das Dashboard nutzt. Ein paar Minuten nachdem du es verlassen hast, geht nur noch, was du nicht gelesen hast.",
   "mail.time.invalid": "Eine Uhrzeit als HH:MM, von 00:00 bis 23:59.",
   "mail.timezone": "Zeitzone",
   "mail.timezone.elsewhere": "Sammelmails und Ruhezeiten richten sich nach deiner Zeitzone, {zone}; du stellst sie unter {link} ein.",

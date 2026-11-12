@@ -2315,6 +2315,8 @@
   "mail.quiet.to": "終了",
   "mail.sign_in_link": "メールでのサインインリンクを許可する",
   "mail.sign_in_link.hint": "オフにすると、すでに送ったリンクは無効になります。",
+  "mail.hold_while_online": "Web アプリにオンラインの間はメールを送らない",
+  "mail.hold_while_online.hint": "「すぐに」で送るメールは、ダッシュボードを使っている間は待機します。離れてから数分後、まだ読んでいないものだけがメールで届きます。",
   "mail.time.invalid": "時刻は HH:MM の形式で、00:00 から 23:59 までです。",
   "mail.timezone": "タイムゾーン",
   "mail.timezone.unknown": "ハブが知らないタイムゾーンです。Europe/Vienna のような名前を使ってください。",

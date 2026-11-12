@@ -2315,6 +2315,8 @@
   "mail.quiet.to": "종료",
   "mail.sign_in_link": "메일 로그인 링크 허용",
   "mail.sign_in_link.hint": "끄면 이미 보낸 링크가 무효가 됩니다.",
+  "mail.hold_while_online": "웹 앱에 접속해 있는 동안 메일 보내지 않기",
+  "mail.hold_while_online.hint": "'즉시'로 보내는 메일은 대시보드를 사용하는 동안 대기합니다. 대시보드를 떠나고 몇 분 뒤, 읽지 않은 것만 메일로 보냅니다.",
   "mail.time.invalid": "00:00부터 23:59까지 HH:MM 형식의 시각이어야 해요.",
   "mail.timezone": "시간대",
   "mail.timezone.unknown": "허브가 모르는 시간대예요. Europe/Vienna 같은 이름을 쓰세요.",
