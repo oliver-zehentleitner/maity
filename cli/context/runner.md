@@ -1777,6 +1777,81 @@ every call can run that way.
 - A copy of the check in the CLI beside the runner's: two lists of
   allowed keys drift apart.
 
+## maity takes the clone's `.git` only as the directory the runner recorded
+
+**Id:** e44249f8-15d0-4104-8940-5ff48decd412
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** review of #1663, round 5 (a `.git` exchanged with a decoy under bwrap with the runner's deny list); review of #1683 (a learned private name and a decoy's clean filter under bwrap); reproduction on main 5abda036 for tsk-er1nymh4te1h, 2026-11-12: a decoy `.git` whose `maity/git` named a script made maity run it outside the sandbox (7 calls on `maity checkpoint`'s path); under Claude Code 2.1.322's own sandbox `mv .git` failed with EBUSY, because Claude Code bind-mounts the clone's `.git` itself
+**See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-12
+**Revisit when:** a harness's sandbox denies renaming the clone's `.git` through a setting the runner sets, the runner starts sessions without setting `MAITY_GIT_INODE` or `MAITY_GIT_PRIVATE`, Codex's maity starts running outside its sandbox, maity's state directory or `maity gh` start reading `.git` through a descriptor, or git can be given a repository by descriptor instead of by path
+
+At a session's start the runner records the inode of the clone's `.git`
+(`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
+runner cannot read it itself). Before maity starts git there, it opens
+the clone's root, then `.git` from it once, without following a link,
+and refuses a directory with another inode. It reads the recorded git
+and copies the refs through that descriptor, so a `.git` renamed after
+the check is not read. git's own repository for the run (its
+configuration, HEAD, refs) is made outside the clone, in the runner's
+directory for the agent, which the sandbox hides (`MAITY_GIT_PRIVATE`);
+for Codex, whose maity runs inside its sandbox with the agent's own
+rights, the runner sets the value `clone`, and it stays in `.git/maity`,
+made through the descriptor. A directory inside the clone, a link or a
+relative path is refused. Without the inode or that variable maity runs
+no git: a session started by an older runner needs a restart. On
+Windows (local mode) no directory opens, so the inode is compared by
+name. The check of the clone (`_inspect`) and the objects
+and index git reads still go through the name `.git`: under an exchange
+the check reads the replacement and passes on only a plain clone's keys,
+none of which starts a program, and objects and the index are data.
+
+**Reason:** the sandbox denies the agent `.git/maity` and the paths that
+redirect git, not renaming `.git` itself, and the clone's root is
+writable. A directory of the session's own named `.git` then held a
+`maity/git` that maity ran outside the sandbox. Claude Code blocks that
+rename today with a mount of its own, which the runner neither asks for
+nor checks, so an update of Claude Code could reopen it unnoticed.
+
+**Rejected alternatives:**
+- Denying writes to `.git`: the whole directory turns read-only, and
+  commit, fetch and push write refs, the index, objects and logs there.
+- Making `.git` a mount point in the sandbox settings (a rename then
+  fails with EBUSY): the settings cannot ask for it.
+- Recording the device too: `ls -di` prints only the inode on every
+  system, and a decoy cannot come from another file system, since a
+  directory cannot be renamed across one.
+- Falling back to the name when the variable is missing: the fallback
+  would be the hole again, for every session older than the runner.
+- git's own repository under a random name in `.git/maity`: git opens
+  it by a path through `.git`, and the name can be learned. A sandboxed
+  command started while `.git` was renamed sees the real `.git/maity`
+  under its new name, puts `.git` back and watches for new names; a
+  decoy with that name gave git a clean filter that ran outside the
+  sandbox (review of #1683).
+- Handing git `/proc/self/fd` paths with `pass_fds`: Linux only, and a
+  runner on macOS has no such path into an open directory.
+- Pinning more keys with `-c`: configuration can start programs
+  through many keys, filters among them.
+- Taking an unset `MAITY_GIT_PRIVATE` as Codex: a session whose
+  variable is lost, or a runner that forgets it, would put git's
+  repository back under `.git/maity`, opened by a path through `.git`;
+  the runner names Codex's case instead, and maity refuses an unset
+  variable under the runner (review of #1683 round 2: unset, a decoy's
+  filter ran outside the sandbox).
+
+**Known gap:** the state directory (the credential) is still taken
+through the name `.git`, and so is the record of the `maity gh` that
+pull request #1663 adds until it moves onto this check. Under a sandbox
+that lets the agent rename `.git`, a later sandboxed command can also
+read the real `.git/maity` under its new name, because the deny applies
+to the path; only the harness can close that. Claude Code 2.1.322
+refuses the rename (EBUSY) with a mount of its own. Codex's git
+repository stays in `.git/maity` by name: Codex's maity runs in its
+sandbox, so a decoy's program runs there too (review of #1683 round 2,
+in a Codex-like bwrap: once inside, never outside).
+
 ## A headless placement is offered no tool for asking a person
 
 **Id:** e71f0da3-46ed-4276-b88a-3fcd6af905bf

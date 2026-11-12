@@ -37,6 +37,10 @@ window.Maity = window.Maity || {};
     // One's own agents in the project (js/agents-page.js), the component of
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
+    // Where they run (js/agents-page.js, §16.11's `placements`, tsk-3s3eb6bsp15n): the Agents
+    // page's second tab, so no tab of its own in this row; its list reads itself again on a
+    // placement event (js/placements.js).
+    { route: "placements", view: "projectPlacements", get label() { return M.t("placements.title"); }, tab: false, current: "agents" },
     { route: "chat", get label() { return M.t("nav.chat"); } },
     // The hub's listing (§8.8), new messages from the feed, in place (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
@@ -2169,7 +2173,19 @@ window.Maity = window.Maity || {};
     }
   }
 
+  // A drawing, and the end of its boot's bundle on every way out (review of #1672): a failure
+  // page, the second factor's step, the setup, a window's full page, a visitor's page and a pending
+  // account all return early; their parts end with the drawing, not 15 s later.
   async function render(how) {
+    const boot = { primed: null };
+    try {
+      return await drawing(how, boot);
+    } finally {
+      if (boot.primed) M.api.unprime(boot.primed);
+    }
+  }
+
+  async function drawing(how, boot) {
     const seq = ++renderSeq;
     const wrote = writes;
     const reuse = how === SWITCH && kept && !sessionEnded && kept.epoch === (M.sessionEpoch || 0)
@@ -2225,9 +2241,17 @@ window.Maity = window.Maity || {};
     // second factor and for a session cookie that outlived its session.
     // Not for the invitation and registration pages, which read the session themselves (review
     // of #1524): an early read there was one more, and its late answer could still set a language.
-    let first = null;
-    try { first = parseRoute().scope; } catch { /* the drawing below says why */ }
+    let firstWhere = null;
+    try { firstWhere = parseRoute(); } catch { /* the drawing below says why */ }
+    const first = firstWhere ? firstWhere.scope : null;
     const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    // The three waves (the window and the session, then /me, then the project's head, project and
+    // members) come in one GET /bootstrap (§5.4, tsk-j591fzgnmspf): the reads below take their
+    // answers from its parts, in the same order and with the same handling; an older hub's 404
+    // leaves them to their own routes. They end once the context is read (below), at the latest
+    // when the drawing returns (render), and serve no read once a newer drawing has started.
+    const primed = reuse || ownRead ? null : M.api.prime(first === "project" ? firstWhere.slug : null, () => seq === renderSeq);
+    boot.primed = primed;
     const early = reuse || ownRead ? null : M.api.get("/auth/session");
     if (early) early.catch(() => {});
     await M.maintenance.fresh();
@@ -2336,6 +2360,8 @@ window.Maity = window.Maity || {};
       const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
+      // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
+      if (primed) M.api.unprime(primed);
       ctx.projectViews = views;
       ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;

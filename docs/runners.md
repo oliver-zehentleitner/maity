@@ -55,7 +55,7 @@ The hub never starts anything itself. You install the runner, and its configurat
 
 ## Start an agent on it
 
-A project's runners are linked from its **Settings**. Agents that may propose use the CLI:
+A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Where they run** (`/<owner>/<slug>/placements`): a project admin starts an agent there on a runner of their own that is allowed in the project, and everyone in the project sees where its agents run; the agent's owner, or the runner's owner with admin rights in the project, stops and restarts them there. **Where they run** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
 
 ```sh
 maity runners
@@ -64,6 +64,8 @@ maity placement stop <agent> --grace 60
 ```
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
+
+After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
 
 ## Git in an agent's session
 

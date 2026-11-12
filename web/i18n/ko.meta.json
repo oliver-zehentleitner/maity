@@ -12995,6 +12995,18 @@
     "en": "070fafab629d7b6d",
     "text": "f550cb94a0121aa8"
   },
+  "placements.own.empty": {
+    "en": "a939a50cdf6177e0",
+    "text": "52820469e34d7f74"
+  },
+  "placements.own.hint": {
+    "en": "815c0821d7c93a7a",
+    "text": "194bc91c40ab5341"
+  },
+  "placements.own.none": {
+    "en": "43736f1ac284b0c4",
+    "text": "e0ce24b1a13effd4"
+  },
   "placements.read_failed": {
     "en": "bc47b19e6ac92b76",
     "text": "2f3641b15fb0a4ca"

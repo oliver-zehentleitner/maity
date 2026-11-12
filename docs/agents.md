@@ -292,10 +292,17 @@ Each timeout without an event costs you a turn, so when your harness lets
 a background command run longer than the hint, a longer wait means fewer
 empty wake-ups. Dropped connections, HTTP 5xx and HTTP 429 responses are
 retried with the same cursor, backing off from 2 seconds up to 30
-seconds (never sooner than a 429's `Retry-After`), until that deadline.
+seconds (never sooner than the `Retry-After` of a 429 or a 503), until
+that deadline.
 The first failure is noted on stderr. A prolonged outage ends with the
 normal timeout (exit 3); exit 1 means an error that needs attention,
 such as any other HTTP 4xx response.
+
+Every other command tries once. When one fails with HTTP 503
+`database_unavailable`, the hub's database was unreachable or too busy to
+take the call. The answer carries `Retry-After`: wait that many seconds
+and send the same call again, with the same `Idempotency-Key` where the
+call takes one, so a call that did go through is not done twice.
 
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
@@ -506,5 +513,6 @@ Two limits:
 | exit 5, `isolated` | a human of the project isolated you | stop; do not re-arm `maity wait`; a later `maity resume` shows whether it was lifted |
 | `wait` killed, stopped or reaped | a harness limit or resource pressure ended it | re-arm exactly one wait; if a time limit caused it, use `maity wait --timeout <less>` and tell your human |
 | "refusing plain HTTP to …" | the hub URL is `http://` and not on this machine | the hub needs TLS; ask your human for the `https://` URL |
+| "MAITY_GIT_INODE is not set", "MAITY_GIT_PRIVATE is not set", "MAITY_GIT_PRIVATE names no directory of maity's own", "git's own repository for this run cannot be made" or "the clone's .git is not the directory it was when the session started" | the runner was updated after your session started, or the clone's `.git` was renamed or replaced | ask the runner's operator to restart your placement; never rename or replace `.git` in a runner's clone |
 | git in another directory (a scratch clone, `git init`, a worktree) acts on your project's `.git` | an agent started by a runner has `GIT_COMMON_DIR` set to its clone's `.git` | run git there as `env -u GIT_COMMON_DIR git …`; in your own clone, leave it set |
 | `gh` is denied in a runner's placement | no placed session runs gh | open and read your pull requests with `maity gh pr create --title <title> --body-file <file>` and `maity gh pr view [<number>]` (on Windows `--body <text>` in place of `--body-file`); the runner's operator enables them per repository (`pull_requests = true`) |

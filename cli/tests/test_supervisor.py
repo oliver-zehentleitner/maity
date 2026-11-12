@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -10,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from maity import __version__, hub, proc, state
+from maity import __version__, clonecheck, hub, proc, state
 from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
@@ -158,9 +159,14 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
+        clonecheck.GIT_INODE_ENV: str(os.lstat(clone / ".git").st_ino),
+        clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip
+    private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
+    assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
+    assert clone not in private.parents
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER

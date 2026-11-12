@@ -1344,7 +1344,8 @@ page to its own code.
 
 **Id:** 5273b057-4d96-41b8-bd5f-e52f8828450c
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 8426bc5b-c714-4cb1-82c0-eeda3c0215e9
 **Evidence:** inferred
 **Source:** the maintainer's inbox decision to show the agents' lifecycle beyond spawn (tsk-dkgmeb3gx4nd), 2026-10-25; docs/api.md §15.5–§15.7, §15.10; the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the designer answers on the row layout, the hub lets the dashboard know runner ownership in the placement itself, or placements get a page of their own
@@ -1371,6 +1372,53 @@ place that answers requests, and its audit.
 humans too and has no room for the reported state. A modal confirmation
 for restart: one more click inline does the same at phone width. Asking
 the hub for each credential to decide on `rejoin`: the view has them.
+
+## Where they run is the Agents page's second tab; on /agents it is a tab of one's own agents per project, beside Maintenance notices
+
+**Id:** 8426bc5b-c714-4cb1-82c0-eeda3c0215e9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat, 2026-11-11 (card tsk-3s3eb6bsp15n: the section becomes its own tab between Agents and Organisation; then the same for /agents, with Maintenance notices a tab too); the coordinator confirmed the reading of "between Agents and Organisation" the same day; contract `docs/api.md` §16.11 (#1661)
+**Revisit when:** `/agents` merges into `/<me>/agents` (tsk-zrjxhxanfwzd), or the per-project reads of the /agents tab are found slow for a human with many projects (context/routing.md, `GET /me/placements`)
+**See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-11
+
+What the earlier entry decided about the rows still holds: stop at once,
+restart asked once more, consent left to the inbox. What changed is
+where the list stands. The project's Agents page has its own tab row,
+which read Agents | Organisation, and now reads Agents | Where they run |
+Organisation. Where they run opens `/<owner>/<slug>/placements`, the
+project view §16.11 names. It has no tab in the project's top row, which
+has no Organisation either, so Agents stays marked there, as Team stays
+marked for its own Organisation. The Agents page no longer reads the
+placements at all. The tab row shows even without `js/org.js`; only its
+Organisation entry needs it. The view is open to every member who reads
+the project, and an agent sees the list without the human's tab row.
+
+`/agents` gets the same treatment: Agents at `/agents`, Where they run at
+`/agents/placements` and Maintenance notices at `/agents/maintenance`. The
+last of these was the part under the list, and its heading becomes the
+tab's `h2`. Where they run there is one section per project the human
+reads where one of their agents is a member. Each section reads
+`GET …/placements` once the tab opens and lists only those agents'
+placements, with the same per-row actions. It offers no start form,
+since starting stays on the project's tab, where the runners attached to
+that project are known. The sections' heading ids get a suffix, so that
+several stand on one page.
+
+**Reason:** the maintainer asked for a tab. The only row where Agents and
+Organisation stand side by side is the Agents page's own, so that is
+where the tab goes. One list across projects needs one read per project
+because the contract has no cross-project read (context/routing.md).
+
+**Rejected alternatives:**
+- A tab in the project's top row after Agents. That row has no
+  Organisation for it to stand before, and a second agents tab there
+  would split one subject over two places.
+- A start form on `/agents`: it would first have to ask which project,
+  and that question is the project's tab.
+- Every placement of each project on `/agents`: the page is about one's
+  own agents, and the project's tab already shows the rest.
 
 ## An agent is started on a runner from Agents' Where they run, on one's own live runners only
 
@@ -5863,7 +5911,8 @@ inferred, the card did not discuss them.
 
 **Id:** 63c48583-5f47-4beb-93be-d4426d45f57b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
 **Evidence:** confirmed
 **Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
 **Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
@@ -5887,6 +5936,50 @@ answers reported; allowing those would have meant a harness exception that could
 failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
 and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
 outside `M.api`: a second client with its own error handling.
+
+## The boot reads one GET /bootstrap and answers its own reads from the parts; an older hub's 404 leaves them to their routes
+
+**Id:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-j591fzgnmspf (the web part of tsk-x4z69ff785y6, the owner's decision of 2026-11-11); the route `GET /bootstrap`, docs/api.md §5.4, on main since #1656; context/performance.md b77c193d, which named this entry's Revisit when as come; web/js/api.js `prime`, web/js/app.js `render`; the boot cases in web/tools/smoke.js and e2e `bootstrap_boot`
+**Revisit when:** the route is measured against the waves (b77c193d), a boot read is added that the bundle does not carry, or every hub the dashboard talks to answers `/bootstrap` (then the fallback can go)
+**See:** views.md#the-boot-reads-the-window-and-the-session-together-me-still-after-the-session — 63c48583-5f47-4beb-93be-d4426d45f57b — as of 2026-11-11
+
+The hub now answers the window, the session and `/me` in one read, and on a project view also the
+project, its members and the event head (63c48583's trigger). A cold drawing (no kept session, not
+the invitation or registration page) first asks `GET /bootstrap`, with `?project=<owner>/<slug>` on
+a project view. `M.api.prime` keeps its parts as one-shot answers for exactly the boot's own reads.
+Those reads stay where they were, in the same order (the window, the session, `/me`, then
+`loadContext`). Each takes its answer from its part, through `requestOnce`'s usual handling:
+the session's language and CSRF token, a 401 that ends the session, the 503 window (its
+`retry_after` taken from `details.until`, since a part has no headers), and `/me`'s time zone.
+An error part becomes the ApiError the single call would have thrown. The parts end once the boot
+has read its context (`unprime`), and at the latest when the drawing returns, whichever way it
+ends (a failure page, the second factor's step, the setup, a window's full page, a visitor's page, a
+pending account): `render` is a small wrapper that calls the drawing and unprimes in a `finally`.
+They serve no read once a newer drawing has started (the `live` check `prime` is given), are
+replaced by a newer drawing's, and last 15 seconds at most. So a poll never gets an old one, and a
+part nobody asked for (the window read a minute ago, a visitor's page) is dropped. The wrapper,
+not a `try/finally` inside the drawing, because that would re-indent the whole drawing, which
+other pull requests touch (review of #1672). An answer
+without parts (an older hub's 404, a limit, a refusal, no answer) keeps nothing, and every read
+goes to its own route as before. `/bootstrap` is a public path: it needs no session.
+
+**Reason:** the order of handling is what 63c48583 kept, because each answer decides whether the
+next matters. Answering the same calls from the bundle keeps that order and all the handling that
+hangs on those calls, while the round trips become one. The fallback keeps a newer dashboard
+working against a hub from before #1656.
+
+**Rejected alternatives:**
+- A boot path of its own that reads the bundle and sets the session, language, window and
+  context itself: a second client beside `M.api`, with the error handling 63c48583 already
+  rejected for a separate `/me` fetch.
+- Keeping the parts until they are asked, without an end: a later poll of `/me` or of the members
+  would get the boot's answer instead of a fresh one.
+- Asking `/bootstrap` on a switch inside the project too: such a switch reuses the kept session,
+  `/me` and project, and reads only the head; the bundle would read more than it saves.
 
 ## A handle field's hint is a sentence of fixed words, with no handle or address filled in
 
