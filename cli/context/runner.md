@@ -496,6 +496,18 @@ now. Resuming with `-c` is enough, because agy scopes it to the working
 directory and the folder is per placement (a headless `-c` continued the
 folder's conversation in the test).
 
+The folder must not lie inside a git work tree either: agy then loads
+the configuration of every directory up to that tree's root. In a test
+(2026-11-12), a folder that was no repository, below a repository with
+agy rules and an MCP server, loaded those rules and started the server;
+with the ancestor's `.git` moved away it loaded nothing from above. With
+the session's git variables set (`GIT_COMMON_DIR` naming the clone's
+`.git`), a run in the folder still loaded nothing from the clone. So the
+runner refuses a start when any directory above the folder has a `.git`
+entry. An entry beside the clone also counts as unsaved work before a
+removal: git in the clone cannot see it, and a retention expiry must not
+delete what the agent left there.
+
 **Rejected alternatives:**
 - The clone as the working directory, or added with `--add-dir`: the
   repository's agy configuration loads and runs unsandboxed code.
@@ -509,6 +521,9 @@ folder's conversation in the test).
   with any release; anything besides the clone is refused instead.
 - Cleaning the folder before a start: it could delete the agent's work;
   the runner deletes nothing and names what it found.
+- Checking only the folder itself: an ancestor work tree's
+  configuration loads all the same (review of the contract, confirmed by
+  the test above).
 - Resuming with `--conversation <id>` from the previous run's JSON: the
   supervised loop would have to read and keep it, for no gain over `-c`
   in a folder of its own.
