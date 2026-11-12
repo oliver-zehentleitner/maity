@@ -626,8 +626,14 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
 .card.wanted { box-shadow: 0 0 0 2px var(--accent); }
 /* An id in text (js/ids.js), linked or not: the id as written, in the code
    face, never broken across lines; underlined only on hover, so a dense
-   paragraph with several ids stays quiet (the designer's pass part 3). */
+   paragraph with several ids stays quiet (the designer's pass part 3). With
+   a project's full name before it (`owner/slug/req-…`), wider than a
+   phone's line, the name wraps (at its slashes and hyphens, anywhere in a
+   word longer than the line) and the id after it stays whole, so the
+   reference never widens a chat bubble or the page (tsk-e9d52pfhvk3v). */
 .id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }
+.id-ref-full { white-space: normal; overflow-wrap: anywhere; }
+.id-ref-id { white-space: nowrap; }
 a.id-ref { text-decoration: none; }
 a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .request-id { white-space: nowrap; }

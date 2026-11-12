@@ -197,7 +197,9 @@ window.Maity = window.Maity || {};
   }
 
   // A card as an entry names it: its reference, title and status (the hub's word).
-  const cardLine = (cardRef, task) => M.t("inbox.card", { ref: cardRef, title: task.title, status: task.status.replace("_", " ") });
+  // The reference goes through the same markup as every other one (M.ids.plain), so a long
+  // full name wraps and the id stays whole (tsk-e9d52pfhvk3v); the translation places it.
+  const cardLine = (cardRef, task) => M.tn("inbox.card", { ref: M.ids.plain(cardRef), title: task.title, status: task.status.replace("_", " ") });
 
   // The member ids of the reader's own agent profiles (GET /agents), read once
   // per view: who Talk may go to across projects and for personal requests.
@@ -321,7 +323,7 @@ window.Maity = window.Maity || {};
       req.to ? [h("dt", null, M.t("inbox.fact.to")), h("dd", null, addressee(ctx, req))] : null,
       h("dt", null, M.t("inbox.fact.asked")), h("dd", null, formatTime(req.created_at)),
       req.task
-        ? [h("dt", null, M.t("inbox.fact.card")), h("dd", null, req.personal
+        ? [h("dt", null, M.t("inbox.fact.card")), h("dd", { class: "card-ref" }, req.personal
           ? cardLine(M.ids.ref(req.project && req.project.full_name, req.task.id, true), req.task)
           : h("a", { href: ctx.projectLink(req.slug, "tasks", req.task.id) }, cardLine(M.ids.ref(req.slug, req.task.id, ctx.scope !== "project"), req.task)))]
         : null,

@@ -63,6 +63,17 @@ window.Maity = window.Maity || {};
   // writes the prefix.
   const ref = (full, id, outside) => (outside && full ? full + "/" + id : id);
 
+  // A reference's text as it is drawn. With a project's full name before
+  // it (`owner/slug/req-…`, §6.25) it can be wider than a phone's line: the
+  // name wraps at its slashes and hyphens, or anywhere in a word longer
+  // than the line, and the id after it stays whole (.id-ref-full in
+  // app.css, tsk-e9d52pfhvk3v). The text reads, copies and links as written.
+  function label(text) {
+    const cut = text.lastIndexOf("/");
+    return cut < 0 ? [text] : [text.slice(0, cut + 1), h("span", { class: "id-ref-id" }, text.slice(cut + 1))];
+  }
+  const kindOf = (text) => "id-ref" + (text.includes("/") ? " id-ref-full" : "");
+
   // A text as strings and links. `at`: {slug, repository, outside}; without
   // a slug ids stay text (there is no page to open), without a GitHub
   // repository numbers do.
@@ -106,9 +117,10 @@ window.Maity = window.Maity || {};
       if (!href && !kind) continue;
       if (m.index > from) out.push(s.slice(from, m.index));
       // An id with nowhere to open still reads as one, never broken.
-      if (!href) out.push(h("span", { class: "id-ref" }, m[0]));
+      const said = !href || !kind || m[1] ? m[0] : kind === "tsk" || kind === "req" ? ref(slug, id, at.outside) : id;
+      if (!href) out.push(h("span", { class: kindOf(said) }, label(said)));
       else out.push(kind
-        ? h("a", { class: "id-ref", href }, m[1] ? m[0] : kind === "tsk" || kind === "req" ? ref(slug, id, at.outside) : id)
+        ? h("a", { class: kindOf(said), href }, label(said))
         : h("a", { class: "id-ref", href, rel: "noopener noreferrer", target: "_blank" }, m[0]));
       from = m.index + m[0].length;
     }
@@ -128,9 +140,13 @@ window.Maity = window.Maity || {};
     const parts = link(String(text).trim(), at);
     // Card, request and member ids only: a lone #12 in backticks stays code.
     const a = parts.length === 1 && typeof parts[0] !== "string" && parts[0].tagName === "A" && parts[0].textContent.charAt(0) !== "#" ? parts[0] : null;
-    if (a) { const said = a.textContent; a.textContent = ""; a.appendChild(h("code", null, said)); }
+    if (a) { const said = a.textContent; a.textContent = ""; a.appendChild(h("code", null, label(said))); }
     return a;
   }
 
-  M.ids = { link, refs, only, where, ref, forgeBase };
+  // A reference as plain drawn text, not a link, for a place that sits inside a
+  // link already (the inbox's Card row): the same wrapping markup as link().
+  const plain = (text) => h("span", { class: kindOf(String(text)) }, label(String(text)));
+
+  M.ids = { link, refs, only, where, ref, plain, forgeBase };
 })(window.Maity);
