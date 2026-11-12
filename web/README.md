@@ -90,6 +90,10 @@ them, `GET /me/notifications?limit=0` gives the counts, per project too
   bell and on the other tabs' line.
 - **Tab title.** It starts with `(<total>) ` while anything asks for the
   human.
+- **No wait for the counts.** A page draws without waiting for this read,
+  with the counts read so far, and the header follows when it answers.
+  The inbox reads its list after this read, so that its count of open
+  requests starts from counts no newer than the list.
 
 **Theme.** **System** (the default: the browser's light or dark),
 **Light** or **Dark**, kept per browser (`localStorage`, `maity.theme`; without storage the pick holds for

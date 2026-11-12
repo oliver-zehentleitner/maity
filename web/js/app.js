@@ -1604,6 +1604,16 @@ window.Maity = window.Maity || {};
     }
   }
 
+  // Everything in the header that shows M.notify's counts: the switcher, Chat, the bell, the tabs
+  // and the tab title. After a counts read, the page's own (render) or a later round (refreshCounts).
+  function renderCounts(ctx) {
+    renderSwitcher(ctx);
+    renderChat(ctx);
+    renderBell(ctx);
+    renderTabCounts(ctx);
+    document.title = M.notify.title(baseTitle);
+  }
+
   // The Chat button follows the counts too, keeping the focus if it had it.
   function renderChat(ctx) {
     const old = document.getElementById("header").querySelector("a.chat-button");
@@ -1866,12 +1876,8 @@ window.Maity = window.Maity || {};
         const names = (list) => (list || []).map((p) => p.full_name).join(" ");
         const moved = names(fresh.projects) !== names(ctx.projects);
         ctx.projects = fresh.projects;
-        renderSwitcher(ctx);
-        renderChat(ctx);
-        renderBell(ctx);
-        renderTabCounts(ctx);
+        renderCounts(ctx);
         if (moved) tabsChanged(ctx);
-        document.title = M.notify.title(baseTitle);
         // While the banner stands, or when `sessions_rev` moved (a sign-in,
         // an end elsewhere): the banner is built again, so an approved
         // session ending elsewhere shows at once (§2.6.5).
@@ -1963,7 +1969,7 @@ window.Maity = window.Maity || {};
   // Set by a quiet reload of the inbox, shown once by the next watch().
   let quietNote = null;
 
-  function watch(ctx, where, item, main) {
+  function watch(ctx, where, item, main, countsRead, live) {
     // The inbox count as §18.2 keeps it (counts.inbox, by_project's inbox),
     // which counts the personal requests the list holds; /me's open_requests
     // does not. Until the counts are read: open_requests.
@@ -1971,6 +1977,8 @@ window.Maity = window.Maity || {};
     const openNow = () => (where.scope === "all"
       ? (notified() ? M.notify.state.counts.inbox || 0 : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0))
       : (() => { const p = ctx.projects.find((x) => x.full_name === ctx.slug); return p ? (notified() ? M.notify.projectCount(p).requests : p.open_requests) : undefined; })());
+    // Where the count is offered (the inbox), its list was read after the page's own counts read
+    // answered (render): the count starts there, and a later difference is a change.
     let seen = openNow();
     const countLine = h("div");
     const changeLine = h("div");
@@ -2005,7 +2013,10 @@ window.Maity = window.Maity || {};
       }
     }
     const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, M.t("watch.refresh_failed", { message: err.message })));
-    if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: notifyError.message }))); notifyError = null; }
+    const notifyFailed = (err) => append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: err.message })));
+    if (notifyError) { notifyFailed(notifyError); notifyError = null; }
+    // The page's own counts read, said here when it fails, also after the page was drawn.
+    countsRead.then((err) => { if (err && live()) notifyFailed(err); });
     // A hidden tab asks nothing; shown again, it reads what it missed.
     let missed = false;
     const poll = () => { missed = false; return counts().then(() => clear(failLine), failed); };
@@ -2214,6 +2225,8 @@ window.Maity = window.Maity || {};
     let where = { scope: "unknown" };
     let ctx;
     let keptSlug = null;
+    // The page's own counts read (below): it answers with its failure, or null.
+    let countsRead = null;
     // The invitation's token is in its path: no referrer before this drawing asks anything
     // (GET /maintenance below), also when the tab came here from another view, whose shell had
     // no header for it, and while a maintenance window stands (§16.13).
@@ -2353,12 +2366,15 @@ window.Maity = window.Maity || {};
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
       if (moved) { M.route.go(moved, { replace: true }); return; }
-      // Notifications never stop the page: a failed read is said in the
-      // notice (watch), and the counts stay as /me has them.
+      // Notifications never stop the page, and hold up only the inbox's list (below): the counts
+      // read runs beside the page's reads, the page draws with the counts M.notify has so far
+      // (until the first read, /me's), and the header follows when the read answers
+      // (tsk-hyfqc0sp2bvc: ~2 s on prod). A failed read is said in the notice (watch), and the
+      // counts stay as they were.
+      countsRead = M.notify.read().then(() => null, (err) => err);
       // The project's own reads are kept only for a switch inside the same project.
       keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
-      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
-        M.notify.read().catch((err) => { notifyError = err; })]);
+      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me)]);
       ctx = loaded;
       // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
       if (primed) M.api.unprime(primed);
@@ -2382,6 +2398,9 @@ window.Maity = window.Maity || {};
     if (seq !== renderSeq) return;
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
+    // The counts that come after the header was drawn: the header shows them at once, while the
+    // view may still be loading.
+    countsRead.then(() => { if (seq === renderSeq) renderCounts(ctx); });
     const empty = where.scope === "all" && !ctx.projects.length;
     const known = ["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
@@ -2390,6 +2409,14 @@ window.Maity = window.Maity || {};
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
     const root = h("section", { class: "view view-" + viewName });
+    // The inbox reads its list after the page's own counts read answered, so that watch's count
+    // starts from counts that are no newer than the list: a request that comes between the two is
+    // in the list, or a change on the next round, never in neither (4hch at #1582). Its header
+    // draws before; every other page does not wait at all.
+    if (where.scope === "all" || where.route === "inbox") {
+      await countsRead;
+      if (seq !== renderSeq) return;
+    }
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:
@@ -2452,7 +2479,7 @@ window.Maity = window.Maity || {};
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
     ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
-    watch(ctx, where, known ? item : null, main);
+    watch(ctx, where, known ? item : null, main, countsRead, () => seq === renderSeq);
     if (reuse) keepFresh(seq, reuse, keptSlug, keptSlug ? null : ctx.keptProject || null);
     let label = M.t("not_found.title");
     if (empty) label = M.t("view.no_projects");
@@ -2473,7 +2500,8 @@ window.Maity = window.Maity || {};
     else if (known) label = item.label + " · " + ctx.project.name;
     baseTitle = label + " · Maity";
     document.title = M.notify.title(baseTitle);
-    if (M.notify.state.counts) startBrowserNotifications(ctx);
+    // Browser notifications start once counts are known: the page's read, or an earlier one.
+    countsRead.then(() => { if (seq === renderSeq && M.notify.state.counts) startBrowserNotifications(ctx); });
     setFavicon(where.scope === "project" ? ctx.slug : null, where.scope === "project" ? ctx.project : null);
   }
 
