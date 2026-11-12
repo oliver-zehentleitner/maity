@@ -1145,8 +1145,9 @@ link**; when that read fails, the password alone.
   `password_reset`, asks for an address (the login's, to start from) and
   answers one sentence whatever the address. The mail's link opens
   `/sign-in/reset#<token>` (`?token=` in fixture mode), drawn before the
-  session is read, signed in or not: it drops the token from the address,
-  checks it, names the account ("Set a new password for … (…)") and asks
+  session is read, signed in or not: it drops the token from the address
+  and keeps it for a redraw of the page (the frame's language, a language
+  picked in its footer) until another page is drawn, checks it, names the account ("Set a new password for … (…)") and asks
   for the new password twice; with TOTP also the app's code or, by its
   switch, a recovery code; with the mail as the second factor it says a
   reset needs no code and links to Security. A link that does not work, for

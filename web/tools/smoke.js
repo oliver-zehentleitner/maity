@@ -10158,6 +10158,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)" && !byId("reset-code") && !main.querySelector(".reset-mail-factor")
       && JSON.stringify(fpPosts) === JSON.stringify([["/auth/password-reset/check", { token: "reset-plain" }]]),
       "reset: the page asks the hub about the token once and names whom the password is for; no code without a second factor " + JSON.stringify([win.location.hash, fpPosts, text(main).slice(0, 300)]));
+    // A redraw finds the token gone from the address, as over http(s) (the frame's language
+    // arriving, a language chosen in its footer): the same form, the link read again (#1714 review).
+    await go("#/sign-in/reset"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)" && !main.querySelector(".reset-dead")
+      && JSON.stringify(fpPosts.map((x) => x[1].token)) === JSON.stringify(["reset-plain", "reset-plain"]),
+      "reset: a redraw without the token in the address keeps the link's form " + JSON.stringify([win.location.hash, fpPosts]));
+    fpPosts.length = 1;
     fpSet("short", "short"); fpForm().dispatch("submit"); await tick();
     expect(fpPosts.length === 1 && text(fpForm()).includes("a password has at least 12 characters"), "reset: a short password is refused before sending");
     fpSet("a long new password", "a long new passwort"); fpForm().dispatch("submit"); await tick();
@@ -10166,11 +10173,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(fpPosts[1]) === JSON.stringify(["/auth/password-reset/complete", { token: "reset-plain", new: "a long new password" }])
       && !fpForm() && text(fpH1()) === "Your password is set" && main.querySelector('article.reset-page a[href="#/login"]'),
       "reset: complete sends the token and the new password, says the sessions ended and links to the login, signing nobody in");
+    win.Maity.redraw(); for (let k = 0; k < 6; k++) await tick();
+    expect(!fpForm() && text(fpH1()) === "Your password is set" && fpPosts.length === 2, "reset: a redraw after the password is set still says so, and asks nothing");
     await go("#/login"); await go("#/sign-in/reset?token=reset-plain"); for (let k = 0; k < 6; k++) await tick();
     expect(!fpForm() && main.querySelector(".reset-dead") && main.querySelector('article.reset-page a[href="#/login"]'),
       "reset: a used link says it does not work, and where to ask for a new one");
     await go("#/login"); await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
-    expect(!fpForm() && main.querySelector(".reset-dead"), "reset: a page without a token says the link does not work");
+    expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.filter((x) => x[0].endsWith("/check")).length === 2,
+      "reset: a page without a token, reached from another page, says the link does not work and asks nothing");
     await go("#/login"); await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
     expect(fpForm() && !byId("reset-code") && main.querySelector(".reset-mail-factor")
       && text(main.querySelector(".reset-mail-factor")).startsWith("This mailbox is your second factor too")

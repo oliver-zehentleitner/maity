@@ -83,10 +83,17 @@ window.Maity = window.Maity || {};
     return t || null;
   }
 
+  // The link's token once read, and whether the password is set: a redraw of the page (the
+  // frame's language arriving, a language chosen in its footer) finds the fragment gone and
+  // must still show the same form, or the same "set". Kept until another page is drawn.
+  let held = null;
+
   // /sign-in/reset#<token>: read before any session, signed in or not, since the reset ends
   // every session anyway and signs nobody in.
   async function page(main, header) {
-    const token = tokenFromAddress();
+    const fresh = tokenFromAddress();
+    if (fresh) held = { token: fresh, done: false };
+    const token = held ? held.token : null;
     bar(header);
     document.title = M.t("reset.title") + " · Maity";
     const box = h("article", { class: "reset-page" });
@@ -103,6 +110,7 @@ window.Maity = window.Maity || {};
       append(box, heading, h("p", { class: "reset-dead" }, M.t("reset.dead")), newLink());
     };
     if (!token) { dead(); return; }
+    if (held.done) { setDone(box); return; }
     status.busy(M.t("reset.reading"));
     let who;
     try {
@@ -114,6 +122,15 @@ window.Maity = window.Maity || {};
     }
     status.done();
     form(box, heading, token, who, newLink);
+  }
+
+  // Set: every session ended, the way to the login.
+  function setDone(box) {
+    clear(box);
+    const done = h("h1", { tabindex: "-1" }, M.t("reset.done.title"));
+    append(box, done, h("p", null, M.t("reset.done.sessions")),
+      h("p", null, h("a", { class: "btn btn-primary", href: "/login" }, M.t("reset.done.sign_in"))));
+    window.setTimeout(() => done.focus(), 0);
   }
 
   function form(box, heading, token, who, newLink) {
@@ -168,11 +185,8 @@ window.Maity = window.Maity || {};
           return;
         }
         password.value = ""; repeat.value = ""; code.value = "";
-        clear(box);
-        const done = h("h1", { tabindex: "-1" }, M.t("reset.done.title"));
-        append(box, done, h("p", null, M.t("reset.done.sessions")),
-          h("p", null, h("a", { class: "btn btn-primary", href: "/login" }, M.t("reset.done.sign_in"))));
-        window.setTimeout(() => done.focus(), 0);
+        if (held && held.token === token) held.done = true;
+        setDone(box);
       },
     },
     who.factor === "email" ? h("p", { class: "flag reset-mail-factor" }, M.tn("reset.mail_factor", {
@@ -188,5 +202,8 @@ window.Maity = window.Maity || {};
     window.setTimeout(() => password.focus(), 0);
   }
 
-  M.passwordReset = { forgot, page, PAGE };
+  // Another page drawn: a later /sign-in/reset without a token is no link, not the last one.
+  function leave() { held = null; }
+
+  M.passwordReset = { forgot, page, leave, PAGE };
 })(window.Maity);

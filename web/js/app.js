@@ -2302,7 +2302,8 @@ window.Maity = window.Maity || {};
       if (where.scope === "invite" && M.invite && !held) { M.siteChrome.leave(); await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       // The reset reads no session: it ends every one and signs nobody in (§2.10).
-      if (where.scope === "reset" && M.passwordReset && !held) { M.siteChrome.leave(); await M.passwordReset.page(main, document.getElementById("header")); return; }
+      if (where.scope !== "reset" && M.passwordReset) M.passwordReset.leave();
+      if (where.scope === "reset" && M.passwordReset && !held) { await M.passwordReset.page(main, document.getElementById("header")); return; }
       let session;
       try {
         session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));

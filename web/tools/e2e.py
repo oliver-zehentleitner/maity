@@ -3047,12 +3047,19 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
         expect(page.locator("#reset-code")).to_have_count(0)
         run.shot(page, "reset-page-1280")
         run.a11y(page, "reset: the page")
+        # A redraw (the frame's language arriving, a language picked in its footer) finds the
+        # fragment gone: the page keeps the link's form (#1714 review).
+        page.evaluate("() => window.Maity.redraw()")
+        expect(page.locator("article.reset-page h1")).to_have_text("Set a new password for Owner (owner)")
+        expect(page.locator(".reset-dead")).to_have_count(0)
         new_password = "e2e new owner password"
         page.locator("#reset-password").fill(new_password)
         page.locator("#reset-repeat").fill(new_password)
         form.get_by_role("button", name="Set password", exact=True).click()
         expect(page.locator("article.reset-page h1")).to_have_text("Your password is set")
         expect(page.locator("header .me-name")).to_have_count(0)
+        page.evaluate("() => window.Maity.redraw()")
+        expect(page.locator("article.reset-page h1")).to_have_text("Your password is set")
         run.shot(page, "reset-done")
         # The same link a second time does not work, and the page says where to ask for a new one.
         # (From another page: the same path with only a fragment would not load the page again.)
