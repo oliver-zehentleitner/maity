@@ -17633,7 +17633,7 @@ tsk-cbz655mvt4ss). The runner checks such a session itself, with or
 without the hub's ask, at most once a minute:
 
 - **Not listening** means the harness has no process below it but its
-  own helpers (the `socat UNIX-LISTEN:` bridges of Claude Code's sandbox),
+  own helpers (the `socat UNIX-LISTEN:…/claude-…` bridges of Claude Code's sandbox),
   neither a `maity wait` nor a tool it runs (however quiet: a long build
   or migration keeps it busy), and what the pane shows has not changed.
   The runner compares a hash of the pane; it keeps, logs and sends none
@@ -17643,8 +17643,9 @@ without the hub's ask, at most once a minute:
   one fixed line into the pane, telling the agent it stopped listening
   and to go back to its wait loop, then sends it with Enter. It measures
   the pane once the line shows and before Enter, so whatever the harness
-  does with the line, an answer included, is a change; a line that shows
-  only later is measured at the next look instead. An answer starts the
+  does with the line, an answer included, is a change. A line that does
+  not show within a few seconds gets its Enter only at the next look,
+  after that look has measured the pane. An answer starts the
   count again, but after `3` answered nudges with no `maity wait` seen in
   between, the next quiet spell of `hang_after_minutes` ends the session
   as below, without another nudge.

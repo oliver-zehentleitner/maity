@@ -72,6 +72,7 @@ class FakeTmux:
     screen: str | None = "> "
     typed: list[tuple[str, str]] = field(default_factory=list)
     answer: str | None = None  # what the harness shows on Enter; None: it does not react
+    submitted: int = 0
 
     def sessions(self) -> dict[str, tmux.Session]:
         return dict(self.live)
@@ -90,6 +91,7 @@ class FakeTmux:
         self.screen = f"{self.screen}{text}"  # the line shows in the pane
 
     def submit(self, name: str) -> None:
+        self.submitted += 1
         if self.answer is not None:
             self.screen = f"{self.screen}{self.answer}"
 
@@ -1727,6 +1729,7 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert tmux.below(f"  100     1 claude\n{bridge}", 100) == tmux.IDLE  # the sandbox's own
     assert tmux.below(f"  100     1 claude\n{bridge}  800   100 bwrap -- sh\n", 100) == tmux.WORKING
     assert not tmux.is_helper("socat TCP-LISTEN:8080 TCP:x:1") and not tmux.is_helper("")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/app.sock,fork EXEC:./server")  # the agent's
     assert tmux.waits_below(listing, 1) and not tmux.waits_below(listing, 999)
     assert tmux.is_wait("/usr/bin/python3 -m maity wait")
     assert not tmux.is_wait("maity waiting") and not tmux.is_wait("notmaity wait")
@@ -1813,16 +1816,31 @@ def test_an_answer_right_after_the_nudge_starts_the_count_again(world: Any) -> N
 def test_a_line_that_shows_late_is_not_taken_for_an_answer(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A stalled screen echoes the nudge only after the short window: the next look takes the
-    baseline, so the late echo does not start the count again and the session is ended."""
+    """A stalled screen echoes the nudge only after the short window: Enter waits for the
+    next look, which measures the pane first; a session that then does not react is ended."""
     sup, backend, _, _, _ = world
     interactive(world)
     monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
     minutes(world, 30)
-    assert len(backend.typed) == 1
+    assert len(backend.typed) == 1 and backend.submitted == 0  # Enter waits for the line
     backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, a tick late
+    minutes(world, 1)
+    assert backend.submitted == 1
     minutes(world, 10)
     assert backend.terminated == [SESSION] and len(backend.typed) == 1
+
+
+def test_an_answer_after_a_late_line_counts(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The late line's baseline is taken before its Enter, so the answer to it is a change
+    (fkyb's delta review: a genuine answer must never become the baseline)."""
+    sup, backend, _, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"
+    minutes(world, 11)
+    assert backend.submitted == 1 and backend.terminated == []
 
 
 def test_an_answer_shown_before_the_first_capture_after_enter_counts(world: Any) -> None:

@@ -85,13 +85,17 @@ WAITING, WORKING, IDLE = "waiting", "working", "idle"
 
 def is_helper(args: str) -> bool:
     """Whether a child of the harness is one of its own long-lived helpers rather than a tool
-    it runs: Claude Code's sandbox on Linux keeps a `socat UNIX-LISTEN:…` bridge per proxy for
-    the whole session, at its prompt too."""
+    it runs: Claude Code's sandbox on Linux keeps a `socat UNIX-LISTEN:…/claude-…sock` bridge
+    per proxy for the whole session, at its prompt too. A socat of the agent's own, on any
+    other socket, is a tool."""
     words = args.split()
     return (
         bool(words)
         and os.path.basename(words[0]) == "socat"
-        and any(word.startswith("UNIX-LISTEN:") for word in words[1:])
+        and any(
+            word.startswith("UNIX-LISTEN:") and "/claude-" in word.split(",", 1)[0]
+            for word in words[1:]
+        )
     )
 
 

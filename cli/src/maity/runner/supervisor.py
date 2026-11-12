@@ -221,11 +221,12 @@ class Record:
     hung_exits: list[float] = field(default_factory=list)  # for the crash cap (§15.14)
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
+    unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
         self.idle_checked_at = self.pane = self.quiet_since = self.nudged_at = None
-        self.nudges = 0
+        self.nudges, self.unsent = 0, False
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -626,10 +627,15 @@ class Supervisor:
         attached = backend.attached(session.name)
         digest = backend.pane_digest(session.name)
         if below != IDLE or attached is not False or digest is None:
-            rec.pane, rec.quiet_since, rec.nudged_at = digest, None, None
+            rec.pane, rec.quiet_since, rec.nudged_at, rec.unsent = digest, None, None, False
             return
-        if rec.nudged_at is not None and rec.pane is None:  # the line did not show in time
-            rec.pane = digest
+        if rec.unsent:  # the line did not show in time: measured now, before its Enter
+            try:
+                backend.submit(session.name)
+            except TmuxError as exc:
+                self.log(f"{session.name}: cannot send the nudge: {exc}")
+                return
+            rec.pane, rec.nudged_at, rec.unsent = digest, now, False
             return
         if rec.quiet_since is None or digest != rec.pane:
             rec.pane, rec.quiet_since, rec.nudged_at = digest, now, None
@@ -649,13 +655,14 @@ class Supervisor:
             try:  # the baseline is the pane with the line typed, before Enter: any answer counts
                 backend.type_text(session.name, NUDGE_LINE)
                 shown = self._typed(backend, session.name, digest)
-                backend.submit(session.name)
+                if shown is not None:
+                    backend.submit(session.name)
             except TmuxError as exc:
                 self.log(f"{session.name}: cannot nudge: {exc}")
                 return
             rec.nudged_at = now
             rec.nudges += 1
-            rec.pane = shown
+            rec.pane, rec.unsent = shown, shown is None
             self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
                      "nudged in its pane")  # fmt: skip
             return
@@ -670,8 +677,8 @@ class Supervisor:
         """The pane once the nudge's line shows, before Enter: what "unchanged" is measured
         against from then on, so whatever the harness does with the line, an answer
         included, is a change. A line that does not show within the window (a stalled
-        screen, a slow read) leaves no baseline: the next look takes one, so its late echo
-        is not taken for an answer."""
+        screen, a slow read) gives None: its Enter waits for the next look, which measures
+        the pane first, so neither its late echo nor an answer becomes the baseline."""
         for _ in range(TYPED_TRIES):
             digest = backend.pane_digest(name)
             if digest != before:

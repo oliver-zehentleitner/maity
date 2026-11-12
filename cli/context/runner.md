@@ -2082,6 +2082,8 @@ looks at each interactive session once a minute.
   (fkyb's review, from the sandbox runtime's source, not seen live): such
   a bridge is not counted as work, or the check would never fire under
   the sandbox the runner turns on wherever bwrap and socat are present.
+  Only a socat listening on a `claude-` socket counts as the bridge; an
+  agent's own socat on another socket is a tool.
 - A missing process alone is not enough: an agent writing a long answer
   has no child process for a while. An unchanged pane alone is not enough
   either: an agent waiting for events shows nothing new. The processes
@@ -2101,9 +2103,11 @@ looks at each interactive session once a minute.
   at the next look (the first version) or at the first capture after
   Enter (round 2); a reply already on screen by then became the baseline.
   If the line does not show within the short window (a stalled screen, a
-  slow read), the next look takes the baseline: keeping the hash from
-  before the nudge took the late echo for an answer and nudged forever
-  (fkyb's review).
+  slow read), Enter waits for the next look, which measures the pane
+  first. Rejected: keeping the hash from before the nudge, which took the
+  late echo for an answer and nudged forever; and taking the baseline at
+  the next look after Enter had gone out, which made a reply the baseline
+  again (both fkyb's reviews).
 - Since Enter itself changes a live harness's pane, only a session that
   does not react at all is ended after `reply_within_minutes`. An agent
   that answers every nudge but never goes back to its wait would be
