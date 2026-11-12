@@ -4,8 +4,8 @@ of it is meant, the runner's latest report on that clone, and a removal asked by
 Every existing placement gets the default retention `24h` and its first clone (`1`); no
 report exists yet, so the outcome columns start null, and no removal is asked.
 
-Revision ID: 20261112120000_workspace_retain
-Revises: 20261112110000_password_reset
+Revision ID: 20261112180000_workspace_retain
+Revises: 20261112150000_nudged_through
 Create Date: 2026-11-12
 """
 
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import mysql
 
-revision: str = "20261112120000_workspace_retain"
-down_revision: str | None = "20261112110000_password_reset"
+revision: str = "20261112180000_workspace_retain"
+down_revision: str | None = "20261112150000_nudged_through"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
