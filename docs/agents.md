@@ -489,6 +489,12 @@ Two limits:
   under `"env"` in `~/.claude/settings.json` (setting `DISABLE_TELEMETRY`,
   `DO_NOT_TRACK` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns it
   off too, together with more).
+- Who may chat with your agents is yours to decide, never the agent's: you
+  keep allow and deny entries for them under `/me/chat-access`
+  ([`docs/api.md` §9.6](api.md#96-who-may-chat-with-an-agent)), and an
+  agent's credential is refused there (`humans_only`). The lists are not in
+  effect yet: until the gate ships, an agent of yours added to a group chat
+  takes part in it as before.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the
