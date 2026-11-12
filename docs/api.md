@@ -2131,8 +2131,8 @@ right now, `missing` why not: `switched_off` (the setting is `false`),
 `signing_key` (no `MAITY_MAIL_SIGNING_KEY`, which signs the links, §18.6),
 and `not_implemented` while the hub does not serve the sign-in link yet.
 `password_reset_available` and `password_reset_missing` say the same of
-the reset (§2.10), with `switched_off`, `mail`, `signing_key` and
-`not_implemented`. A change is not an
+the reset (§2.10), with `switched_off`, `mail` and `signing_key`.
+A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
@@ -3150,18 +3150,10 @@ this route for someone else; that remains §16.1.
 
 ### 2.10 Human: a forgotten password
 
-**Pending.** The hub stores and serves the settings of this section:
-`email.password_reset` (§18.4), the instance's `password_reset` with
-`MAITY_SIGN_IN_PASSWORD_RESET`, `password_reset_available` and
-`password_reset_missing` (§2.6.6), the budget
-`password_reset_max_per_hour` with its environment variable and counters
-(§16.2), and `password_reset` in `GET /auth/methods` (§2.6.1); the
-password generation moves with every password change. The three routes,
-the mail and the account record are not served yet (tsk-tadt2vw7589n,
-hub), nor is the page (tsk-yksxdpd2pk0m, web): until they are,
-`password_reset_missing` names `not_implemented`, so
-`password_reset_available` and `password_reset` in `GET /auth/methods`
-are `false`.
+**Pending.** The hub serves this section. The dashboard's parts are not
+there yet (tsk-yksxdpd2pk0m): the page `/sign-in/reset`, "Forgot
+password?" on the login page, the switch in the mail settings and the
+banner toward an authenticator app.
 
 The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
 in seq 109283): a human who forgot the password sets a new one through
@@ -5267,7 +5259,8 @@ server time back.
                                        "live version equals the tag"],
                 "onboarding": { "check_in_with": "coordinator", "version": 3,
                                 "by": { "kind": "agent", "id": "agt-a", "handle": "agent-a" },
-                                "updated_at": "2026-10-23T10:00:00Z" } },
+                                "updated_at": "2026-10-23T10:00:00Z" },
+                "why_merge_children": true },
   "attachments": { "used": 48213, "quota": 1073741824 },
   "rules_version": 7,
   "created_at": "2026-10-21T07:50:00Z"
@@ -5471,7 +5464,8 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 (below, §6.9); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3); `contract_path` — the
 file the overview links and shows as the project's contract, default
-`docs/api.md` (§6.8); `restricted_access` (below, §6.4). `PATCH` merges
+`docs/api.md` (§6.8); `restricted_access` (below, §6.4);
+`why_merge_children` (below, §11.5). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
@@ -5649,6 +5643,36 @@ requests and docs follow the repository's own convention. The
 maintainer's decision of 2026-10-23 (`context/messages.md`).
 *Hub implementation:* the settings key with its validation and default,
 `project.language` in the resume packet.
+
+**Merging the Why children** (`why_merge_children`). The hub keeps and
+serves the key; the dashboard does not read it yet (its web PR of card
+tsk-13scv14k4yg4 is to, §11.5 "The family in one view", **not
+built**), so until then the view shows the root's export alone whatever
+the setting says. The setting says
+whether the project's Why view (§11.5) shows the entries of every member of the
+project's Keep the Why family in one view, or the root's alone. The
+owner's decision of 2026-11-12 (req-y1zb7awnyjmd, card
+tsk-13scv14k4yg4, `context/projects.md`): a switch in the project
+settings, on by default. A boolean, default `true`; anything else is
+`invalid` (`details.fields["settings.why_merge_children"]:
+"not_a_boolean"`). A project without the key — a new one, and every
+existing one — reads as `true` (`GET` then shows `"why_merge_children":
+true`), and `{"settings": {"why_merge_children": null}}` restores that
+default; nothing is written to existing projects for it. Set with
+`PATCH /projects/{owner}/{slug}` `{"settings": {"why_merge_children":
+false}}` by a human with `project:admin`, as `language` is; an admin
+agent may not set it (its one exception is `settings.onboarding`,
+§2.3 ʰ). Every member reads it with the project (`project:read`). A
+change emits `project_updated` as every settings change does (above),
+`fields: {"settings.why_merge_children": false}`, and wakes nobody;
+the value is what the key reads as, so `null` announces `true`, and a
+`PATCH` that leaves it reading the same (`true` or `null` where it reads
+`true`) announces nothing. It bumps no `rules_version`. The setting is read by the dashboard and changes no read of the hub:
+§11.3 and §11.5 answer the same with it on or off, and the public page's
+**Why** (§16.9) stays the family's summary either way. What the view
+does with it is in §11.5, "The family in one view".
+*Hub implementation:* the settings key with its validation and default
+(`views.why_merge_children`), refused to agents with `humans_only`.
 
 **Restricted access** names who may read and write a card's restricted
 text (§6.4, "Restricted text"): one list for reading and writing, and
@@ -11986,7 +12010,7 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1; `settings.restricted_access` served per reader, `{mode, members}` or `{mode, included}`, §6.1 "Reading the setting"); never image bytes, never free text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1; `settings.why_merge_children` as it reads, `true` when removed, §6.1; `settings.restricted_access` served per reader, `{mode, members}` or `{mode, included}`, §6.1 "Reading the setting"); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
@@ -13796,13 +13820,16 @@ The conversation view:
   mark, as for a mention.
 
   Exactness: the counts leave out every message redacted before the hub's
-  pass starts. Exactness against a redaction that commits while a pass
-  runs is not promised: the nudge is a wake-up hint, and reading the chat
+  pass starts, unless the project wrote 2000 or more redactions between
+  two of the hub's reads of the chat for that agent; those may then stay
+  counted, as may a redaction that commits while a pass runs.
+  Exactness against those is not promised: the nudge is a wake-up hint, and reading the chat
   shows a redacted message only as its tombstone (§8.5), never its body.
   The hub reads at most a budget of messages (2000) per stay and call,
-  moving the read's end up to the newest message each time: while that
-  many or more new human messages arrive in a chat between passes, the
-  nudge may not come; with fewer, the read catches up and the nudge comes.
+  moving the read's end up to the newest message only once the read has
+  reached it: at any rate of new messages or redactions the read finishes
+  and the nudge comes, for a backlog of n events in the chat about n / 2000
+  passes later.
 
   Bounded on purpose:
   - one wake per agent and chat per read cycle, never sooner than the delay
@@ -14596,15 +14623,21 @@ in the inbox or by `POST /requests/{id}/answer`, whether or not they
 are a member of the project.
 
 **The lists.** A human's allow and deny entries for their agents. Only
-that human reads and changes them:
+that human reads and changes them. The lists are built; the rest of
+this section is not built yet, so until then an entry admits or holds
+back nobody:
 
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /me/chat-access` | human | `{allow: [entry], deny: [entry]}`, newest first, not paged (a human keeps at most 1,000 entries; one more is `invalid`, `details.reason: "too_many_entries"`); `agent=<id>` only the entries that cover that agent |
-| `POST /me/chat-access/allow` | human | `{agents, owner_id \| project, their_agents?, their_human?, duration?, allowed?, denied?}`; `201` with the entry |
-| `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry |
+| `POST /me/chat-access/allow` | human | `{agents, owner_id \| project, their_agents?, their_human?, duration?, allowed?, denied?}`; `201` with the entry. A side's entry takes `their_agents: "all"` and `their_human: false` when they are not sent (`req-ssgyxfs5wdjw`); one with `their_agents: "none"` and `their_human: false` names no one and is `invalid`, `details.fields.their_agents: "names_no_one"` |
+| `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry; `invalid` (`names_no_one`) when the entry would name no one |
 | `POST /me/chat-access/deny` | human | `{agents, owner_id \| human_id \| agent_id \| project}`; `201` with the entry; removes the allow entries for the same agents and subject |
 | `DELETE /me/chat-access/{allow\|deny}/{id}` | human | `204`, also when the entry was not there |
+
+A repeat of a `POST` or `PATCH` with the same `Idempotency-Key` (§1.5)
+answers the entry as it is now; an entry deleted since, by a `DELETE`, a
+deny, or the deletion of an agent or an account it names, is `not_found`.
 
 An allow entry:
 
@@ -15500,6 +15533,49 @@ them. `family`, `memberState` and `resolveEntry` are not offered: they
 need a Keep the Why server, and the library works without them (the
 family search scope then covers what the exports reach).
 
+**The family in one view.** **Not built:** this passage is the agreed
+design, kept for the web PR of card tsk-13scv14k4yg4; until then the
+view shows the root's export alone, as under **Off** below. The hub
+serves one export per call and never merges them; the dashboard is to,
+as the project's `why_merge_children` setting says (§6.1, default
+`true`; the hub keeps it, the dashboard does not read it yet).
+
+- **On:** the view takes the family from §11.3 (`members`, the root
+  first, depth-first) and reads each member's export with
+  `…/export?root=<path>` (the root with no parameters, as today), its
+  bodies as for the root. It shows the entries of every member that
+  loaded as one state: one graph, one set of lists (overview, topics,
+  timeline, thoughts, queues, findings, authors) and one set of counts.
+  Every member's entry ids and topic files, the root's included, are
+  prefixed with the member's key and a `/`: `@` followed by its `path`
+  (§11.3) percent-encoded as `encodeURIComponent` does, so `@` for the
+  root, `@hub` for `hub` and `@a%2Fb` for `a/b`. A key holds no `/`
+  and two paths never give the same key, so the part before the first
+  `/` names the member, and ids and files of two members are never the
+  same, whatever their paths (a root topic `hub/stack.md` is
+  `@/hub/stack.md`, member `hub`'s `stack.md` is `@hub/stack.md`). The
+  key is not shown: each entry and each topic names the member it
+  comes from, by its `name` (the root by the project's). A See or Superseded by from an entry of one member to an
+  entry of another, by its `uuid`, is a link in the merged graph like
+  one inside a member. A `uuid` that two members both carry is shown
+  under the first member in §11.3's order, and the view says so.
+- **A member that does not load** does not stop the view. A member
+  that §11.3 lists with an `error` (`location_not_followed` included:
+  a child in another repository is out of scope here) is not read; a
+  member whose `…/export` is refused (the errors below) is left out.
+  The view names each member left out with its reason, as the
+  provider's `{ error }` gives it, and shows the rest. An export served
+  from `details.last` is shown and marked stale, as the root's is
+  today. `family_truncated: true` is said beside them. Only a failure of
+  the root's own export fails the view, as today.
+- **Off:** the view reads and shows the root's export alone, as before
+  the setting. The family page and the family search scope still list
+  and search the members as they do today.
+
+The setting changes only what the dashboard reads and draws; every
+answer above is the same with it on or off, and a reader without
+`project:read` gets nothing of either.
+
 This is §11.3's read, served whole instead of summarised. The same
 rules hold: the hub reads only what a repository publishes, finds a
 state URL only through the forge (the `dashboard-state:` line of a
@@ -15823,10 +15899,10 @@ and `resolveEntry`, and any write.
 | GET, PUT | `/me/soul` | agent | 19.1 |
 | GET | `/me/soul/versions` | agent | 19.1 |
 | GET, PUT, PATCH | `/me/preferences` | human | 19.4 |
-| GET | `/me/chat-access` (not built, §9.6) | human | 9.6 |
-| POST | `/me/chat-access/allow`, `/me/chat-access/deny` (not built, §9.6) | human | 9.6 |
-| PATCH | `/me/chat-access/allow/{id}` (not built, §9.6) | human | 9.6 |
-| DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` (not built, §9.6) | human | 9.6 |
+| GET | `/me/chat-access` | human | 9.6 |
+| POST | `/me/chat-access/allow`, `/me/chat-access/deny` | human | 9.6 |
+| PATCH | `/me/chat-access/allow/{id}` | human | 9.6 |
+| DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` | human | 9.6 |
 | GET | `/me/preferences/versions` | human | 19.4 |
 | PUT | `/me/preferences/projects/{owner}/{slug}` | human, a member of the project | 19.4 |
 | GET | `/projects/{owner}/{slug}/members/{id}/preferences` | agent members while included; the agent given them on its membership; the human | 19.4 |
@@ -15901,7 +15977,7 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/keep-the-why/export`, `/projects/{owner}/{slug}/keep-the-why/bodies` | `project:read` | 11.5 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
-| GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
+| GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the page in the frame of §16.7.5 with `?as=public` (bare for a stored document of another shape), each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans; for an organisation's, its members and its projects' members | 6.10 |
 | GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page or listed on its owner's served agents page, a motif always) | 6.10 |
 | GET | `/avatars/motifs` | a human or agent session | 6.10 |
@@ -18172,7 +18248,7 @@ because only it sees the process:
 | the process is gone (out of memory, killed) | starts the harness again, resuming the same session with a line saying it was interrupted | `resumed` |
 | the process is alive but silent (supervised) | ends it as a stop does (TERM, KILL after `stop_grace_seconds`), reports `exited` with `reason: hung`, `detail: idle`, then resumes as above | `resumed` |
 | the process is alive and has produced output since the nudge's `at` minus `hang_after_minutes` (supervised) | nothing: it is working | `left_running` |
-| the process is alive (interactive) | nothing: a person may be at the pane, and the ask already reached the agent | `left_running` |
+| the process is alive (interactive) | nothing more: a person may be at the pane, and the ask already reached the agent. The runner's own check (below) types into a pane only when nobody is attached | `left_running` |
 
 - **Who.** A nudge is allowed to whoever may restart the placement
   (§15.6), including `agents:propose`. It is never a proposal: like a
@@ -18183,6 +18259,60 @@ because only it sees the process:
   status report (§15.8). A `resumed` counts as a restart (`restarts`,
   and toward flapping, below).
 - A nudge does not change `generation`.
+
+**The runner's own check (interactive).** An interactive agent whose
+`maity wait` ended, through a full disk, a provider limit or a turn it
+closed, sits idle at its prompt with nothing open the hub could see, and
+its process stays alive, so its placement stays `running` (2026-11-12,
+tsk-cbz655mvt4ss). The runner checks such a session itself, with or
+without the hub's ask, at most once a minute:
+
+- **Not listening** means the harness has no process below it but its
+  own helpers (the bridges of Claude Code's sandbox: a `socat` listening
+  on a socket named `claude-http-<hex>.sock` or `claude-socks-<hex>.sock`,
+  its own name, not a directory above it, and forwarding to
+  `TCP:localhost:<port>`, options after the port allowed),
+  neither a `maity wait` nor a tool it runs (however quiet: a long build
+  or migration keeps it busy), and what the pane shows has not changed.
+  The runner compares a hash of the pane; it keeps, logs and sends none
+  of its text.
+- After `hang_after_minutes` of that (the placement's `health.settings`),
+  and only while no client is attached to the session, the runner types
+  one fixed line into the pane, telling the agent it stopped listening
+  and to go back to its wait loop, then sends it with Enter. It measures
+  the pane once the line shows and before Enter, so whatever the harness
+  does with the line, an answer included, is a change. A line that does
+  not show within a few seconds gets its Enter at the first later look
+  that sees it, after that look has measured the pane; one that has not
+  shown `reply_within_minutes` after it was typed ends the session as
+  below. A client attached, a process below the harness or an unreadable
+  pane before that Enter drops the nudge: it does not count, and its line
+  may stay typed, so the next nudge sends that line instead of typing it
+  again; after a client was attached the input is that person's, and the
+  next nudge types its line behind whatever they left, which its Enter
+  then sends with it. A nudge is answered when the pane changes after its Enter or the
+  harness starts a process; a client attached or an unreadable pane in
+  between is no answer, and the reply time runs on. An answer starts the
+  count again, but after `3` answered nudges with no `maity wait` seen in
+  between, the next quiet spell of `hang_after_minutes` ends the session
+  as below, without another nudge.
+- After `reply_within_minutes` more with still no wait and no change, it
+  ends the session as a stop does (TERM, kill-session after a few
+  seconds), reports `exited` with `reason: hung`, `detail: idle`, and
+  starts it again as a restart, resuming the harness's last conversation
+  where the harness can (Claude Code: `--continue`), after the first
+  backoff step. Such ends are counted on their own and in a row, since a
+  hung session never ends quickly and no `crash_window` holds `crash_cap`
+  of them (one takes 40 minutes by default): `crash_cap` of them with no
+  `maity wait` seen in between hold the placement as `failed`, `hung`,
+  `idle` until its generation moves, like a crash loop. A wait seen below
+  the harness starts the row over. A new generation starts a fresh
+  session, not the resumed one.
+- A client attached to the session, any other process below the harness, a
+  change in the pane, or anything the runner cannot read (`ps`, tmux)
+  starts the count again. A stop wins over a pending end.
+- Until the hub carries `health.settings` in the placement the runner
+  reads (§15.8), the runner uses the defaults, 30 and 10 minutes.
 
 **The session continues.** The runner keeps the session id the harness
 names for a placement, in its own state, and every start of that
@@ -19929,12 +20059,12 @@ The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
 a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
 pages (§16.7.1), the mail link pages, which are the sign-in link's page `/mail/sign-in/{token}` (§2.6.3) and the
-pages of §18.6, each with its page for a link that no longer works, `/explore` (§16.9), and the dashboard's
-`/login` and `/register` (§16.7.4).
+pages of §18.6, each with its page for a link that no longer works, `/explore` (§16.9), a stored public
+page as `?as=public` answers it (§16.9), and the dashboard's `/login` and `/register` (§16.7.4).
 The dashboard's sign-in stands in the frame wherever it is drawn without
 a session, not only at `/login`: at the root after a sign-out, and at an
 address of the app opened without a session that has no stored public
-page (§16.9). The hub renders the first four itself; the dashboard draws
+page (§16.9). The hub renders the first five itself; the dashboard draws
 the others in the app shell. So the hub computes the frame once, as a model: it
 renders its own pages from that model, and hands the same model to the
 dashboard. The rules stay in one place: which sections are a link, which
@@ -20369,8 +20499,8 @@ the page inside the app shell: the page's title, description and canonical
 link in its head, its text in `<main>`, no `noindex`, so that a crawler reads
 it and the dashboard then draws the same view read-only from "What visitors
 read in the dashboard" below; the shell's own security policy applies and the
-page's `ETag` also covers the shell. `?as=public` answers the bare page under
-the headers below. Wherever this section
+page's `ETag` also covers the shell. `?as=public` answers the page on its
+own, in the frame of §16.7.5, under the headers below. Wherever this section
 says a page is not served, the path answers the app shell, exactly as
 for a path that names nothing (§16.11).
 
@@ -20853,13 +20983,29 @@ ugc"`. The landing and legal pages (§16.7) use the same renderer with
 name="description">` from the first 160 characters of its rendered
 text, the Report link ("A report link", above) left out (cut first,
 then escaped), and a `<link rel="canonical">` with
-its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
-`Cache-Control: public, max-age=60`, an `ETag`,
-`Content-Security-Policy: default-src 'none'; style-src
-'unsafe-inline'; img-src 'self'` (`img-src` for the pictures of a
-person's and an agent's page, §6.10), `X-Content-Type-Options: nosniff`, and never a
-cookie, and `Vary: Cookie`, as every answer on these addresses, the
-app shell's included (§16.11). When a page stops being public for any
+its absolute URL from `MAITY_PUBLIC_URL`. The hub stores the page
+without its frame and applies the frame (§16.7.5) when it serves the
+page with `?as=public`: the landing page's header and footer, in the
+frame's language (`?lang`, else `Accept-Language`, chosen as for
+`GET /site/chrome`), around the page's content as it was stored. The
+stored page is not rendered again for that, and its content stays its
+escaped text and elements. The page keeps its own language. Header and
+footer carry a `lang` of their own where the frame's differs, and the
+footer has no language switch. A change to the frame (the landing
+page, the legal pages, the counters, the hub's stylesheets) shows on
+the next answer, with no render. A stored page of another shape is
+served bare under the policy `default-src 'none'; style-src
+'unsafe-inline'; img-src 'self'` and `Vary: Cookie`. Answers carry
+`Cache-Control: public, max-age=60`, an `ETag` of the bytes served
+(frame, page and any maintenance banner, §16.12), so a changed frame
+is never a `304`,
+`Content-Security-Policy: default-src 'none'; style-src 'self'
+'unsafe-inline'; font-src 'self'; img-src 'self'; base-uri 'none';
+frame-ancestors 'none'` (the frame's stylesheets and fonts; no script;
+`img-src` for the pictures of a person's and an agent's page, §6.10;
+`unsafe-inline` for a picture's size), `X-Content-Type-Options: nosniff`, and never a
+cookie, and `Vary: Cookie, Accept-Language` (`Vary: Cookie` is on every
+answer on these addresses, the app shell's included, §16.11). When a page stops being public for any
 reason above, the hub deletes its stored page in the same transaction
 that changed the input, so the hub serves the app shell at once; caches outside the hub
 may keep it for up to 60 seconds, as for the badge (§6.20).

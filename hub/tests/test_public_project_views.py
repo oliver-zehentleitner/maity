@@ -84,9 +84,11 @@ def test_the_board_shows_id_title_status_and_label_and_never_a_body(world: World
     text = view(world.anyone, "board") or ""
     assert "Shipped" in text and "Next up" in text and "Maybe" in text and done in text
     assert "secret body" not in text and "bug" in text
-    # Each id links its card's page, and nothing else links but the Report link (§16.9).
-    after = text.split("<h1>")[1].replace(
-        render.report_link(f"{BASE}/board").replace('" rel', '&amp;lang=en" rel'), ""
+    # Each id links its card's page, and nothing else in the page links but the Report link (§16.9).
+    after = (
+        text.split("<h1>")[1]
+        .split("</main>")[0]
+        .replace(render.report_link(f"{BASE}/board").replace('" rel', '&amp;lang=en" rel'), "")
     )
     assert after.count("<a ") == 3 and f'href="{BASE}/tasks/{done}"' in after
     assert text.index("proposed") < text.index("open") < text.index("done")

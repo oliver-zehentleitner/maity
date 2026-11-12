@@ -300,8 +300,10 @@ def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> Finding | None:
             return Finding(f".git/{shown} is not a plain clone's", where)
         if top == "info" and rest and ("/" in rest or rest not in INFO_FILES):
             return Finding(f".git/{shown} is not a plain clone's", where)
-        if where in ALTERNATES:
-            return Finding(f".git/{where} exists", where)
+        # Any case: on a case-insensitive file system (macOS's APFS, Windows) git opens
+        # `objects/info/Alternates` as `alternates`.
+        if where.lower() in ALTERNATES:
+            return Finding(f".git/{shown} exists", where)
         if where == "config" and size > CONFIG_MAX:
             return Finding(f"its .git/config is larger than {CONFIG_MAX // 1024} KiB")
     return None

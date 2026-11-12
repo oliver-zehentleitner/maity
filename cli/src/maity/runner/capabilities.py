@@ -83,19 +83,32 @@ def probe(harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER) ->
     return Probe(found, ascii_text(match.group(0) if match else lines[0], 80), None)
 
 
+def claude_sandbox_tools(platform: str | None = None) -> tuple[str, ...] | None:
+    """What Claude Code's OS sandbox needs on the agents' PATH on this platform: bubblewrap
+    and socat on Linux, Seatbelt's `sandbox-exec` on macOS (part of the system). None where
+    Claude Code has no OS sandbox, so its agents run unsandboxed (cli/context/runner.md)."""
+    platform = sys.platform if platform is None else platform
+    if platform.startswith("linux"):
+        return ("bwrap", "socat")
+    if platform == "darwin":
+        return ("sandbox-exec",)
+    return None
+
+
 def sandbox_available(
     harness: config.Harness, path: str | None = None, as_user: AsUser = RUNNER
 ) -> bool:
     """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
-    needs bubblewrap and socat on Linux (§6.1), found on the agents' PATH. Codex's is tried
-    once per binary (`codex sandbox -- true`): a host where it cannot start is not
+    needs its tools (`claude_sandbox_tools`, §6.1) found on the agents' PATH. Codex's is
+    tried once per binary (`codex sandbox -- true`): a host where it cannot start is not
     advertised as sandboxed. Nothing else is switched on yet."""
     if harness.id == "codex":
         binary = which(harness.binary or "codex", path, as_user)
         return binary is not None and _codex_sandbox_starts(binary, as_user.user)
-    if harness.id != "claude-code" or not sys.platform.startswith("linux"):
+    tools = claude_sandbox_tools()
+    if harness.id != "claude-code" or tools is None:
         return False
-    return all(which(tool, path, as_user) for tool in ("bwrap", "socat"))
+    return all(which(tool, path, as_user) for tool in tools)
 
 
 def which(name: str, path: str | None, as_user: AsUser = RUNNER) -> str | None:

@@ -1049,9 +1049,12 @@ window.Maity = window.Maity || {};
       const paused = { title: M.t("members.col.paused"), cell: (m) => pausedText(m) || "—" };
       const ktw = { title: M.t("members.col.ktw"), cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
+      const fresh = h("div");
+      append(fresh, mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
         h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
           : [h("h3", { id: "members-agent" }, M.t("members.agents", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
+      M.dom.keepImages(box, fresh);
+      append(clear(box), Array.from(fresh.childNodes));
     }
 
     // The Chat button may start a group chat with anyone (§9.2).

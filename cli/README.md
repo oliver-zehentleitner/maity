@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a9 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a10 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -980,6 +980,22 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   generation moves.
 - **Stops.** A stop waits `stop_grace_seconds` (capped by
   `stop_grace_max`), then sends SIGTERM, and ends the session 10 s later.
+- **An interactive agent that stopped listening.** Once a minute the
+  runner looks at each interactive session: does any process run below
+  the harness (a `maity wait`, or a tool however quiet; not the sandbox's
+  own `socat` bridges), and did the pane change (a hash, never its text)?
+  With neither for `hang_after_minutes` and no client attached, it types
+  one line into the pane telling the agent to go back to its wait loop,
+  and sends it. Any answer counts as a change. If the pane is still as it
+  was before Enter `reply_within_minutes` later, or after three answered
+  nudges with no `maity wait` in between, it ends the session, reports
+  `exited`/`hung`/`idle`, and starts it again; Claude Code resumes its
+  last conversation (`--continue`). `crash_cap` such ends in a row,
+  with no `maity wait` seen in between, hold the placement as
+  `failed`/`hung`. The minutes are
+  30 and 10 until the hub sends the owner's health settings. Attaching
+  to the session pauses the check, so the runner never types while you
+  are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
   known placement is adopted, not restarted. A session whose placement
   is gone ends after `stop_grace_max`.
@@ -1024,7 +1040,8 @@ project's own harness configuration is never loaded:
   loads the clone's project hooks and MCP configuration (a Claude Code
   configuration directory per placement would avoid that). This is a
   known limit: do not start your own `claude` in a runner workspace. Where
-  bubblewrap and socat are on the agents' `PATH`, its OS sandbox is
+  its OS sandbox's tools are on the agents' `PATH` (bubblewrap and socat
+  on Linux, Seatbelt's `sandbox-exec` on macOS), the sandbox is
   switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
@@ -1126,7 +1143,10 @@ Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
 `~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
 configuration, and the runner's own configuration and state. Any other
-secret there, such as an `.env` file of your own, stays readable. In the
+secret there, such as an `.env` file of your own, stays readable. On
+macOS the list does not cover the Keychain, where Claude Code and, by
+default, `gh` keep their logins: a sandboxed command may reach it
+(`docs/runners.md`, macOS). In the
 `single` layout the agents' home is the operator's. The forge login
 (`gh`, a credential helper) stays readable on purpose, because pushing
 needs it.

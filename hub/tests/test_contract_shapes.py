@@ -32,6 +32,7 @@ PAGE = ('{ "items": [ ... ], "next_cursor": "..." }', {"items", "next_cursor"})
 SHAPES: dict[str, tuple[str, set[str]]] = {
     "/me": ("### 5.1 `GET /me`", {"member", "projects", "maintenance", "server_time"}),
     "/bootstrap": ("### 5.4 `GET /bootstrap`", {"maintenance", "session", "me"}),
+    "/me/chat-access": ("| `GET /me/chat-access` | human |", {"allow", "deny"}),
     "/me/contact-of": PAGE,
     "/me/contacts": PAGE,
     "/projects/{}/{}": (

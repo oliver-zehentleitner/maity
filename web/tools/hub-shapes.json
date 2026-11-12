@@ -480,7 +480,8 @@
        },
        "enabled": "boolean"
       }
-     }
+     },
+     "why_merge_children": "boolean"
     }
    },
    "setup": {
