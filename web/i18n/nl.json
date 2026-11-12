@@ -3521,6 +3521,7 @@
   "placements.reason.evicted": "verdrongen",
   "placements.reason.harness_missing": "de harness is niet geïnstalleerd op de runner",
   "placements.reason.harness_refused": "de configuratie van de runner staat deze harness, modus of dit model niet toe",
+  "placements.reason.hung": "reageerde niet meer",
   "placements.reason.image_pull": "de image kon niet worden opgehaald",
   "placements.reason.join_failed": "deelname is mislukt",
   "placements.reason.oom_killed": "geen geheugen meer",

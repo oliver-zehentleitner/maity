@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine
 
+from maity_hub import public_pages
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_join_host import join_client
@@ -199,6 +201,10 @@ def test_a_legal_page_has_the_landing_pages_header_and_footer(
     owner.patch(LEGAL, {"privacy": {**IMPRINT, "de": {"title": "Datenschutz", "markdown": "x"}}})
     page = make_client().get("/privacy", params={"lang": "en"}).text
     assert '<header class="site-header dz">' in page and 'class="theme-toggle"' not in page
+    # The mark without its `style` attributes, as on the mail link pages: public-pages.css
+    # colours it.
+    header = page.split('<header class="site-header dz">', 1)[1].split("</header>", 1)[0]
+    assert 'class="mark"' in header and " style=" not in header
     # The header links lead to the landing page's sections, not to the legal page's.
     assert 'href="/?lang=en#s0">Start</a>' in page and 'href="#s0"' not in page
     assert 'class="signin" href="/login?lang=en"' in page
@@ -246,3 +252,30 @@ def test_every_picture_the_public_pages_stylesheet_names_is_served(
         assert answer.status_code == 200, name
         assert answer.headers["content-type"].startswith("image/svg+xml"), name
         assert "<script" not in answer.text, name
+
+
+def test_explore_is_in_the_language_of_its_frame(
+    owner: flow.Human, make_client: ClientFactory, settings: Any
+) -> None:
+    """§16.7.5, §16.9: `/explore` draws the frame's model like the legal pages, and the page is
+    in the frame's language (the reader's, or `?lang`), its words from the catalog; the footer
+    keeps the landing page's language switch, whose links reopen `/explore` in that language."""
+    public_pages.configure(replace(settings, public_pages=True))
+    publish(owner)
+    owner.patch(LEGAL, {"imprint": IMPRINT})
+    flow.project(owner, public_page="on")
+    reader = make_client(public_pages=True)
+    page = reader.get("/explore", headers={"Accept-Language": "de"}).text
+    assert '<html lang="de"' in page and '<header class="site-header dz">' in page
+    assert (
+        "<h1>Öffentliche Projekte</h1>" in page and "<title>Öffentliche Projekte auf Maity" in page
+    )
+    assert '<span class="go">Projekt öffnen <span aria-hidden="true">→</span></span>' in page
+    assert '<header class="site-header dz" lang=' not in page  # frame and page agree
+    assert '<footer class="site-footer">' in page and "Maity, Austria" in page
+    assert '<p class="langs"><a href="?lang=en" lang="en">English</a>' in page
+    assert '<a href="?lang=de" lang="de">Deutsch</a>' in page and 'hreflang="de"' in page
+    assert 'href="/maintainer/maity"' in page
+    english = reader.get("/explore?lang=en", headers={"Accept-Language": "de"}).text
+    assert '<html lang="en"' in english and "<h1>Public projects</h1>" in english
+    assert 'href="/?lang=en#s0">Start</a>' in english and ">Los</a>" not in english

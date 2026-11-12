@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
+    chat_access,
     clock,
     contacts,
     invitations,
@@ -567,6 +568,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
     contacts.forget(conn, human_id)  # both ways (§6.29)
+    chat_access.forget_human(conn, human_id)  # the lists, and every entry naming them (§9.6)
     conn.execute(
         delete(t.conversation_meat_proxy).where(t.conversation_meat_proxy.c.human_id == human_id)
     )

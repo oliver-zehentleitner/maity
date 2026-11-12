@@ -3543,6 +3543,7 @@ window.MAITY_I18N["it"] = {
   "placements.reason.evicted": "espulsa",
   "placements.reason.harness_missing": "l'harness non è installato sul runner",
   "placements.reason.harness_refused": "la configurazione del runner non consente questo harness, questa modalità o questo modello",
+  "placements.reason.hung": "non rispondeva più",
   "placements.reason.image_pull": "non è stato possibile scaricare l'immagine",
   "placements.reason.join_failed": "adesione non riuscita",
   "placements.reason.oom_killed": "memoria esaurita",
