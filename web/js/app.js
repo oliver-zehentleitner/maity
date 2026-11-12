@@ -195,6 +195,27 @@ window.Maity = window.Maity || {};
         h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg" + M.assetQuery("brand/maity-lockup-dark.svg"), alt: "", width: "94", height: "28" })));
   }
 
+  // The lockup already in the header, when the link still goes where this
+  // drawing's does and the heading's tag is the same. renderHeader asks for
+  // the signed-in home. The brand index.html ships points at "/", and a
+  // signed-out header builds a new brand with brandTitle, so neither is kept
+  // here. A later signed-in redraw keeps the element. The lockup <img>
+  // nodes, including the ones index.html shipped, stay when keepImages finds
+  // the same src and the same other attributes. The accessible name is
+  // brought up to date on the kept link.
+  function keptBrand(previous, signedIn, tag) {
+    const old = previous && previous.querySelector ? previous.querySelector(".brand") : null;
+    if (!old || old.tagName !== (tag || "h1").toUpperCase()) return null;
+    const link = old.querySelector("a.brand-home");
+    if (!link) return null;
+    const home = signedIn === undefined ? !!M.api.session() : signedIn;
+    if (link.getAttribute("href") !== M.route.href(home ? "/all" : "/")) return null;
+    const label = home ? M.t("header.brand.signed_in") : M.t("header.brand.signed_out");
+    if (link.getAttribute("aria-label") !== label) link.setAttribute("aria-label", label);
+    if (link.getAttribute("title") !== label) link.setAttribute("title", label);
+    return old;
+  }
+
   // Light, dark, or as the system has it; per browser (js/theme.js). The
   // header's menu is for pages without a session (the maintainer's
   // instruction): signed in, the theme is chosen in Your account.
@@ -1650,6 +1671,7 @@ window.Maity = window.Maity || {};
     if (!old) return;
     const fresh = switcher(ctx);
     const scrolled = old.scrollLeft;
+    M.dom.keepImages(old, fresh);
     old.parentNode.insertBefore(fresh, old);
     old.remove();
     fresh.scrollLeft = scrolled;
@@ -1657,7 +1679,11 @@ window.Maity = window.Maity || {};
   }
 
   function renderHeader(ctx, current) {
-    const header = clear(document.getElementById("header"));
+    const header = document.getElementById("header");
+    // Park what is there, then build. The lockups stay when the link matches;
+    // keepImages moves the other images (switcher logos, the profile) across.
+    const previous = h("div");
+    while (header.firstChild) previous.appendChild(header.firstChild);
     const absence = ctx.scope === "project" ? ctx.project.absence : null;
     const mayConfigure = ctx.scope === "project" && (ctx.canAdmin || ctx.isOwner);
     // Views lead to the project's Settings tab too (the overview's Set the
@@ -1705,9 +1731,11 @@ window.Maity = window.Maity || {};
         { label: M.t("menu.sign_out"), onSelect: logout },
       ].filter(Boolean),
     });
-    append(header,
+    const brand = keptBrand(previous, true) || brandTitle(true);
+    const fresh = h("div");
+    append(fresh,
       h("div", { class: "bar" },
-        brandTitle(true),
+        brand,
         ctx.scope === "project"
           ? [projectMark(ctx.slug, ctx.project.name, ctx.project), h("span", { class: "project" }, ctx.project.name, privateMark(ctx.project))]
           : h("span", { class: "project" }, ({ new: M.t("header.new"), account: M.t("header.account"), orgs: M.t("header.orgs"), agents: M.t("header.agents"), runners: M.t("header.runners"), invitations: M.t("header.invitations"),
@@ -1751,6 +1779,8 @@ window.Maity = window.Maity || {};
       // at a glance. The @ covers chat mentions only; those in project messages and on cards stay in the bell and on the
       // other tabs' line, which is why the maintainer kept the removal (chat 103539).
       ctx.scope === "project" && current !== "chat" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
+    M.dom.keepImages(previous, fresh);
+    while (fresh.firstChild) header.appendChild(fresh.firstChild);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
@@ -2461,6 +2491,7 @@ window.Maity = window.Maity || {};
       append(clear(root), errorBox(err));
     }
     if (seq !== renderSeq) return;
+    M.dom.keepImages(main, root);
     append(clear(main), root);
     // A view's own tab rows that scroll sideways (the account's, js/account.js), set up now that
     // they are in the page and have a width: the current tab in sight, the fade on the side with more.

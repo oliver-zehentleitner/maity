@@ -4496,6 +4496,34 @@ def explore_layout(run: Run, browser) -> None:
     context.close()
 
 
+def stored_page_layout(run: Run, browser) -> None:
+    """A stored public page on its own (`?as=public`) in the frame of §16.7.5, put around it when it
+    is served (tsk-tp97v64vpy5z): the landing page's header and footer around the page as stored,
+    the stylesheets loaded, nothing wider than the window, no policy refusal, axe clean."""
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            where = f"/owner/e2e-alpha?as=public at {width}x{height} {scheme}"
+            context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            seen = context.new_page()
+            refused: list[str] = []
+            seen.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+            answer = seen.goto(f"{run.base}/owner/e2e-alpha?as=public")
+            assert answer is not None and answer.status == 200, f"{where}: {answer.status if answer else None}"
+            expect(seen.locator("header.site-header")).to_be_visible()
+            expect(seen.locator("footer.site-footer")).to_be_visible()
+            expect(seen.locator("main .stored-page h1")).to_be_visible()
+            assert seen.locator("script").count() == 0, f"{where}: a script on the page"
+            sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
+            assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
+            wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{where}: {wide} px wider than the window"
+            assert not refused, f"{where}: {refused}"
+            run.shot(seen, f"stored-page-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(seen, "/owner/e2e-alpha?as=public")
+            context.close()
+
+
 def visitor_step(run: Run, page: Page) -> None:
     """A browser without a session never ends at the login on a public address (tsk-jj1tfre7n6zb)."""
     run.step("public pages: a visitor reaches them, a dashboard address links them from the login")
@@ -4522,6 +4550,7 @@ def visitor_step(run: Run, page: Page) -> None:
     guest.goto(f"{run.base}/explore")
     expect(guest.locator("h1")).to_have_text("Public projects")
     explore_layout(run, page.context.browser)
+    stored_page_layout(run, page.context.browser)
     guest.locator('a[href="/owner/e2e-alpha"]').click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
     expect(guest.locator("#login-email")).to_have_count(0)

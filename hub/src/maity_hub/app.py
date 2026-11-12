@@ -116,6 +116,7 @@ from maity_hub.routes import (
     notifications,
     overview,
     pages,
+    password_reset,
     placements,
     preferences,
     project_images,
@@ -533,6 +534,7 @@ def create_app(
     app.include_router(joins.page_router)  # /join/{token}, before the app shell
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(email_sign_in.router, prefix=prefix)
+    app.include_router(password_reset.router, prefix=prefix)
     app.include_router(email_sign_in.page_router)
     app.include_router(mail_links.page_router)  # /mail/*, likewise
     app.include_router(register_page.page_router)  # the registration's link page, likewise
