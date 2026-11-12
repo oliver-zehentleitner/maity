@@ -5,6 +5,8 @@ oldest such message, while one of its instances listens."""
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from datetime import timedelta
@@ -16,6 +18,7 @@ from sqlalchemy import event as sqlalchemy_event
 
 from maity_hub import chat_unread, clock, listening, not_listening
 from maity_hub import tables as t
+from maity_hub.events import emit, transaction
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -45,6 +48,18 @@ class Room:
         response = who.post(f"{CHATS}/{self.chat}/messages", {"body": body})
         assert response.status_code == 201, response.text
         return int(response.json()["seq"])
+
+    def redact(self, seq: int) -> None:
+        """A redaction as the hub writes it: the tombstone and its `event_redacted`, together."""
+        response = self.owner.post(f"{PROJECT}/events/{seq}/redact", {"reason": "a test"})
+        assert response.status_code == 200, response.text
+
+    def settle(self) -> None:
+        """Both agents' read marks past what came with the chat (its creation event), so a
+        test with a tiny budget counts its own messages' rows only."""
+        self.say(self.owner, "before the test")
+        for agent in self.agents:
+            self.read(agent)
 
     def read(self, who: Any) -> None:
         response = who.get(f"{CHATS}/{self.chat}/messages")
@@ -361,32 +376,39 @@ def test_offline_agents_read_no_message_however_much_is_unread(room: Room) -> No
         assert not [s for s, p in seen if _reads_messages(s, p)]
 
 
-def test_a_listening_agent_reads_no_message_before_the_delay_and_no_body_at_all(
-    room: Room,
+def test_a_listening_agent_reads_each_message_once_and_no_body_at_all(
+    room: Room, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The rows are read once, within the budget, before the delay if they are there by then;
+    no later pass reads them again, and no statement reads a body (tsk-tgh0st6p2zag: the
+    aggregate that let the pass skip the read before the delay went over the whole range)."""
     r = room
-    first, _ = r.agents
+    first, second = r.agents
     for n in range(40):
         r.say(r.owner, f"long message {n} " + "x" * 2000)
+    r.read(second)  # one agent's read is counted
+    count = _RowCount(monkeypatch)
     r.at(9)
-    with _Statements(r.engine) as seen:
-        assert chat_unread.sweep(r.engine) == []
-    # Before the delay only the aggregate runs: no message row is selected.
-    assert not [s for s, p in seen if _reads_messages(s, p) and "min(" not in s.lower()]
+    assert chat_unread.sweep(r.engine) == []
+    # Read once, though not due yet: the 40 messages and the chat's creation, the event rows
+    # the read goes over (tsk-tgh0st6p2zag: the limit counts every event row of the range).
+    assert count.rows == 41
+    r.at(9.5)
+    assert chat_unread.sweep(r.engine) == [] and count.rows == 41
     r.at(11)
     with _Statements(r.engine) as seen:
         chat_unread.sweep(r.engine)
     assert [n.payload["unread"] for n in r.nudges(first)] == [40]
+    assert count.rows == 41  # the nudge came from what was read before
     assert not [s for s, _ in seen if _BARE_PAYLOAD.search(s)]
-    # Nor any projection of the payload but the mentions and a nudge's newest_seq (review of
-    # #1490, P3): a body projection beside the mentions slipped through the bare check.
+    # Nor any projection of the payload but the mentions, a nudge's newest_seq and a
+    # redaction's target seq (review of #1490, P3): never a body.
     assert not [s for s, p in seen if _names_body(s, p)]
-    assert _payload_keys(seen) <= {"mentions", "newest_seq"}
+    assert _payload_keys(seen) <= {"mentions", "newest_seq", "seq"}
     # The open cycle reads no message on the next passes either.
     r.at(12)
-    with _Statements(r.engine) as seen:
-        assert chat_unread.sweep(r.engine) == []
-    assert not [s for s, p in seen if _reads_messages(s, p)]
+    chat_unread.sweep(r.engine)
+    assert count.rows == 41
 
 
 # Each clause below has its own test (review of #1490, e5zv P3).
@@ -526,10 +548,10 @@ def test_one_failing_stay_does_not_stop_the_others(
     r.at(11)
     real = chat_unread.due
 
-    def due(conn: Any, stay: Any, listens: Any = None) -> Any:
+    def due(conn: Any, stay: Any, listens: Any = None, extend: bool = True) -> Any:
         if stay.agent_id == first.id:
             raise RuntimeError("a broken stay")
-        return real(conn, stay, listens)
+        return real(conn, stay, listens, extend)
 
     monkeypatch.setattr(chat_unread, "due", due)
     chat_unread.sweep(r.engine)
@@ -594,7 +616,7 @@ def test_a_backlog_that_mentions_the_agents_is_read_once_not_each_minute(
         before = count.rows
         assert chat_unread.sweep(r.engine) == []
         per_pass.append(count.rows - before)
-    assert per_pass == [10, 0, 0]  # five rows per agent, once
+    assert per_pass == [12, 0, 0]  # per agent the five messages and the chat's creation, once
     r.say(r.owner, "and one without a mention")
     r.at(24)
     before = count.rows
@@ -608,7 +630,7 @@ def test_a_long_backlog_is_read_over_several_passes_and_counted_exactly(
 ) -> None:
     r = room
     first, second = r.agents
-    r.read(second)
+    r.settle()
     seqs = [r.say(r.owner, f"line {n}") for n in range(7)]
     r.read(second)  # only the first agent's backlog is read
     monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
@@ -634,6 +656,7 @@ def test_a_redaction_inside_the_range_read_starts_the_read_over(
 ) -> None:
     r = room
     first, second = r.agents
+    r.settle()
     gone = r.say(r.owner, "taken back")
     kept = r.say(r.owner, "stays")
     r.read(second)
@@ -641,11 +664,12 @@ def test_a_redaction_inside_the_range_read_starts_the_read_over(
     monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 1)
     r.at(11)
     assert chat_unread.sweep(r.engine) == []  # read "taken back" only, not at the end yet
-    with r.engine.begin() as conn:
-        conn.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
-    for minute in (12, 13):
+    r.redact(gone)
+    for minute in range(12, 20):  # one event row a pass: the redacted message is one of them
         r.at(minute)
         chat_unread.sweep(r.engine)
+        if r.nudges(first):
+            break
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
 
@@ -719,8 +743,7 @@ def test_a_redaction_between_the_read_and_the_write_is_not_counted(
         found = real(conn, stay, after, upto, limit)
         if found and not done:  # the first read of the pass, outside the lock
             done.append(True)
-            with r.engine.begin() as other:  # committed by another writer meanwhile
-                other.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
+            r.redact(gone)  # committed by another writer (the API) meanwhile
         return found
 
     monkeypatch.setattr(chat_unread, "_rows_after", rows_then_redact)
@@ -739,6 +762,7 @@ def test_a_redaction_while_a_cached_read_extends_its_bound_is_not_counted(
     if r.engine.dialect.name != "postgresql":
         pytest.skip("a concurrent commit during the read needs PostgreSQL")
     first, second = r.agents
+    r.settle()
     gone = r.say(r.owner, "taken back")
     r.read(second)
     monkeypatch.setattr(chat_unread, "SCAN_BATCH", 1)
@@ -750,19 +774,479 @@ def test_a_redaction_while_a_cached_read_extends_its_bound_is_not_counted(
     r.at(12)
     kept = r.say(r.owner, "stays")
     r.read(second)
-    real = chat_unread._counts
+    real = chat_unread._newest_seq
     armed: list[bool] = [True]
 
-    def counts_then_redact(conn: Any, stay: Any, mark: int, upto: int) -> Any:
-        found = real(conn, stay, mark, upto)
-        if armed and stay.agent_id == first.id:  # once, right after the check
+    def newest_then_redact(conn: Any, stay: Any) -> Any:
+        found = real(conn, stay)
+        if armed and stay.agent_id == first.id:  # once, after the redaction check, as it extends
             armed.clear()
-            with r.engine.begin() as other:  # committed by another writer meanwhile
-                other.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
+            r.redact(gone)  # committed by another writer (the API) meanwhile
         return found
 
-    monkeypatch.setattr(chat_unread, "_counts", counts_then_redact)
+    monkeypatch.setattr(chat_unread, "_newest_seq", newest_then_redact)
     r.at(23)
     chat_unread.sweep(r.engine)
     [nudge] = r.nudges(first)
     assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, kept)
+
+
+def test_messages_arriving_faster_than_the_budget_still_lead_to_a_nudge(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1490, delta 4: a bound that grew on every call before the read reached it
+    kept a full batch each pass while new messages kept coming, and no nudge ever went out.
+    Now pass 0 reads two of the first three, pass 1 the third, and the nudge covers those."""
+    r = room
+    first, second = r.agents
+    r.settle()
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    sent: list[int] = []
+    for n in range(5):
+        r.at(11 * n)
+        sent += [r.say(r.owner, f"pass {n} line {k}") for k in range(3)]  # > the budget
+        r.read(second)  # only the first agent's read is under test
+        r.at(11 * n + 11)
+        chat_unread.sweep(r.engine)
+        if r.nudges(first):
+            break
+    [nudge] = r.nudges(first)
+    assert n == 1
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, sent[0])
+    assert nudge.payload["newest_seq"] == sent[2]
+
+
+def test_a_read_that_ends_on_redacted_rows_still_finishes(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rows after the last one read may all be redacted: the read counts them as read
+    and finishes, so the bound can grow again."""
+    r = room
+    first, second = r.agents
+    kept = r.say(r.owner, "stays")
+    gone = r.say(r.owner, "taken back")
+    r.read(second)
+    with r.engine.begin() as conn:
+        conn.execute(update(t.event).where(t.event.c.seq == gone).values(redacted=True))
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["newest_seq"]) == (1, kept)
+
+
+def _event_rows_read(engine: Engine, seen: list[tuple[str, Any]]) -> int:
+    """The event rows PostgreSQL touches for the SELECTs in `seen`, by EXPLAIN ANALYZE: rows
+    each scan of `event` returned or removed by a filter, times its loops, with sequential
+    scans turned off."""
+
+    def walk(node: dict[str, Any]) -> int:
+        own = 0
+        if node.get("Relation Name") == "event":
+            touched = node.get("Actual Rows", 0) + node.get("Rows Removed by Filter", 0)
+            own = int(touched * node.get("Actual Loops", 1))
+        return own + sum(walk(child) for child in node.get("Plans", []))
+
+    total = 0
+    with engine.connect() as conn:
+        # The work an index plan does: on a table this small the planner may scan it whole
+        # instead, which would measure the table, not the pass.
+        conn.exec_driver_sql("SET enable_seqscan = off")
+        for statement, params in seen:
+            if not statement.lstrip().upper().startswith("SELECT") or "event" not in statement:
+                continue
+            plan = conn.exec_driver_sql("EXPLAIN (ANALYZE, FORMAT JSON) " + statement, params)
+            found: Any = plan.scalar()
+            total += walk(found[0]["Plan"])
+    return total
+
+
+def test_the_database_work_of_a_pass_does_not_grow_with_the_unread_history(room: Room) -> None:
+    """tsk-tgh0st6p2zag (1): a backlog that never leads to a nudge (every message mentions the
+    agent) is read once; after that, a pass touches as many event rows at 400 unread messages as
+    at 10. The aggregates over the unread range it replaces grew with it."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("EXPLAIN ANALYZE's row counts are PostgreSQL's")
+    first, second = r.agents
+    with r.engine.begin() as conn:  # only the first agent's stay is measured
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == second.id)
+            .values(paused_since=clock.now())
+        )
+    template = r.say(r.owner, f"@{r.handle(first)} on you")
+
+    def clone(n: int) -> None:  # more of the same message, as the hub would store them
+        columns = [c.name for c in t.event.columns if c.name != "seq"]
+        listed = ", ".join(columns)
+        with r.engine.begin() as conn:
+            for _ in range(n):
+                conn.exec_driver_sql(
+                    f"INSERT INTO event ({listed}) SELECT {listed} FROM event WHERE seq = %(s)s",
+                    {"s": template},
+                )
+
+    def measured_pass(minute: float) -> int:
+        r.at(minute)
+        chat_unread.sweep(r.engine)  # reads what is new
+        r.at(minute + 1)
+        with _Statements(r.engine) as seen:
+            assert chat_unread.sweep(r.engine) == []
+        return _event_rows_read(r.engine, seen)
+
+    clone(9)
+    at_ten = measured_pass(11)
+    clone(390)
+    at_four_hundred = measured_pass(13)
+    assert r.nudges(first) == []
+    assert at_four_hundred == at_ten, (at_ten, at_four_hundred)
+
+
+def _clone(engine: Engine, template: int, n: int) -> None:
+    """n more copies of the event `template`, as the hub would store them."""
+    columns = [c.name for c in t.event.columns if c.name != "seq"]
+    listed = ", ".join(columns)
+    with engine.begin() as conn:
+        for _ in range(n):
+            conn.exec_driver_sql(
+                f"INSERT INTO event ({listed}) SELECT {listed} FROM event WHERE seq = %(s)s",
+                {"s": template},
+            )
+        conn.exec_driver_sql("ANALYZE event")
+
+
+@pytest.mark.parametrize("workload", ["mentions", "agents", "redacted", "nudges"])
+def test_the_first_pass_over_a_backlog_touches_rows_by_the_budget_not_the_backlog(
+    room: Room, monkeypatch: pytest.MonkeyPatch, workload: str
+) -> None:
+    """tsk-tgh0st6p2zag (1), review of #1512 R1 (4hch): with a budget of 5, the first pass over
+    a backlog of 50 events that never count touches as many event rows as over 400: messages
+    that mention the agent, an agent's messages, redacted messages, and another agent's nudges
+    (which the open-cycle check read in full each minute)."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("EXPLAIN ANALYZE's row counts are PostgreSQL's")
+    first, second = r.agents
+    if workload == "mentions":
+        template = r.say(r.owner, f"@{r.handle(first)} on you")
+    elif workload == "agents":
+        template = r.say(second, "an agent's message")
+    elif workload == "redacted":
+        template = r.say(r.owner, "taken back")
+        r.redact(template)
+    else:
+        r.say(r.owner, "for the second agent")
+        r.read(first)
+        r.at(11)
+        chat_unread.sweep(r.engine)
+        [nudge] = r.nudges(second)
+        template = int(nudge.seq)
+    with r.engine.begin() as conn:  # only the first agent's stay is measured
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == second.id)
+            .values(paused_since=clock.now())
+        )
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 5)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 5)
+
+    def first_pass(minute: float) -> int:
+        chat_unread.reset()  # as after a restart: nothing read yet
+        r.at(minute)
+        with _Statements(r.engine) as seen:
+            chat_unread.sweep(r.engine)
+        return _event_rows_read(r.engine, seen)
+
+    _clone(r.engine, template, 50)
+    at_fifty = first_pass(30)
+    _clone(r.engine, template, 350)
+    at_four_hundred = first_pass(31)
+    assert r.nudges(first) == []
+    assert at_four_hundred == at_fifty, (at_fifty, at_four_hundred)
+
+
+@pytest.mark.parametrize("per_pass", [2, 3])
+def test_later_redactions_do_not_keep_the_read_from_finishing(
+    room: Room, monkeypatch: pytest.MonkeyPatch, per_pass: int
+) -> None:
+    """Review of #1512 R1 (4hch): before every pass, later messages are written and redacted,
+    a full batch of redactions (2) or more than one (3) each time, none of them in the range
+    read. The read of the first three still finishes and the nudge counts them; it used to
+    stop for good."""
+    r = room
+    first, second = r.agents
+    r.settle()
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    originals = [r.say(r.owner, f"original {k}") for k in range(3)]
+    for n in range(8):
+        for k in range(per_pass):
+            r.redact(r.say(r.owner, f"later {n}.{k}"))
+        r.read(second)  # only the first agent's read is under test
+        r.at(11 + n)
+        chat_unread.sweep(r.engine)
+        if r.nudges(first):
+            break
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, originals[0])
+    assert nudge.payload["newest_seq"] == originals[-1]
+
+
+def test_events_about_the_chat_do_not_hold_the_cycle_open_and_no_nudge_comes_twice(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1512, delta 1 (fmzu): two title changes before every pass fill the open-cycle
+    check's batch (`conversation_updated` shares the chat as subject). It used to count as open
+    on every full batch, so no nudge ever came; now the check's bound waits for its read, the
+    nudge comes, and the passes after it send no second one."""
+    r = room
+    first, second = r.agents
+    r.settle()
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    said = r.say(r.owner, "a question for whoever reads it")
+    for n in range(10):
+        for k in range(2):
+            renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": f"go/no-go {n}.{k}"})
+            assert renamed.status_code == 200, renamed.text
+        r.read(second)  # only the first agent's nudge is under test
+        r.at(11 + n)
+        chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (1, said)
+
+
+_OTHER_WORKER = """
+import sys
+from datetime import datetime
+from sqlalchemy import create_engine
+from maity_hub import chat_unread, clock
+url, conversation_id, membership_id, moment = sys.argv[1:5]
+at = datetime.fromisoformat(moment)
+clock.set_source(lambda: at)
+engine = create_engine(url)
+# The listening registry of the test hub lives in the first process's memory; that the agent
+# listens is not what this race is about, so the second worker sees it listening too.
+chat_unread._listening = lambda conn, membership_id: True
+for _ in range(5):  # its own caches, read from nothing: call until it writes
+    seq = chat_unread.check(engine, conversation_id, int(membership_id))
+    if seq is not None:
+        print(seq)
+        break
+"""
+
+
+def test_a_nudge_another_process_wrote_is_seen_under_the_lock(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reviews of #1512, deltas 2 and 4 (4hch): a second worker process, with its own caches,
+    writes the nudge just before this process's call under the lock, and then three title
+    changes commit, more than a budget of 2. The call must see that nudge and write none: one
+    nudge, not two counting the same messages. Two title changes before make an open-cycle
+    check that reads the event log fall behind first, as in 4hch's reproduction."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("a second process on the same database needs PostgreSQL")
+    first, second = r.agents
+    r.settle()
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    said = [r.say(r.owner, f"line {k}") for k in range(3)]
+    r.read(second)  # only the first agent's nudge is under test
+    r.at(11)
+    chat_unread.sweep(r.engine)  # reads two of the three
+
+    def rename(label: str) -> None:
+        renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": label})
+        assert renamed.status_code == 200, renamed.text
+
+    for k in range(2):
+        rename(f"renamed {k}")
+    r.read(second)
+    real_check = chat_unread.check
+    moment = r.now + timedelta(minutes=13)
+    written: list[str] = []
+
+    def other_worker_first(engine: Engine, conversation_id: str, membership_id: int) -> Any:
+        if not written:
+            url = engine.url.render_as_string(hide_password=False)
+            done = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    _OTHER_WORKER,
+                    url,
+                    conversation_id,
+                    str(membership_id),
+                    moment.isoformat(),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=120,
+            )
+            written.append(done.stdout.strip())
+            for k in range(3):  # after the other's nudge, before this lock
+                rename(f"renamed again {k}")
+        return real_check(engine, conversation_id, membership_id)
+
+    monkeypatch.setattr(chat_unread, "check", other_worker_first)
+    for minute in (12, 13, 14):
+        r.read(second)
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    assert written and written[0], "the other process wrote no nudge"
+    [nudge] = r.nudges(first)
+    assert int(nudge.seq) == int(written[0])
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, said[0])
+
+
+@pytest.mark.parametrize("order", ["here_first", "there_first"])
+def test_nudges_in_another_chat_do_not_hold_this_chats_nudge_back(
+    room: Room, monkeypatch: pytest.MonkeyPatch, order: str
+) -> None:
+    """Review of #1512, delta 3 (e5kk): the check under the lock read the project's nudges above
+    this chat's bound and counted a full batch as open, so once another chat of the project had
+    written SCAN_BUDGET nudges, this chat never got one. It reads this chat's events only.
+    `here_first` is 4hch's sequence (98184): the message here is the old one, the other chat's
+    two nudges come later, and the passes after them write nothing new."""
+    r = room
+    first, second = r.agents
+    monkeypatch.setattr(chat_unread, "SCAN_BATCH", 2)
+    monkeypatch.setattr(chat_unread, "SCAN_BUDGET", 2)
+    said = r.say(r.owner, "and one here") if order == "here_first" else 0
+    r.read(second)
+    created = r.owner.post(
+        CHATS,
+        {"title": "Another chat", "participants": [r.guest.id, first.id, second.id]},
+    )
+    assert created.status_code == 201, created.text
+    other = created.json()["id"]
+    sent = r.owner.post(f"{CHATS}/{other}/messages", {"body": "over there"})
+    assert sent.status_code == 201, sent.text
+    if order == "there_first":
+        r.read(first)  # this chat holds nothing unread for the first agent yet
+    for minute in (11, 12, 13):  # a budget of 2: the other chat's reads take a few passes
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    there = [n for n in r.nudges() if n.subject_id == other]
+    assert len(there) == 2  # one per agent: a full batch of the project's nudges
+    if order == "there_first":
+        said = r.say(r.owner, "and one here")
+        r.read(second)
+    for minute in range(22, 30):
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    here = [n for n in r.nudges(first) if n.subject_id == r.chat]
+    assert [(n.payload["unread"], n.payload["oldest_seq"]) for n in here] == [(1, said)]
+
+
+def test_the_upgrade_fills_the_open_cycle_from_the_nudges_written(room: Room) -> None:
+    """Review of #1512, delta 4: the open cycle is stored per stay. The migration that adds the
+    column fills it from the nudges already written, so an open cycle survives the upgrade and
+    no second nudge follows it; stays without a nudge stay empty."""
+    from maity_hub.db import downgrade, migrate
+
+    r = room
+    first, second = r.agents
+    said = r.say(r.owner, "a question")
+    r.read(second)
+    r.at(11)
+    chat_unread.sweep(r.engine)
+    [nudge] = r.nudges(first)
+    assert nudge.payload["newest_seq"] == said
+
+    def stored() -> dict[str, Any]:
+        p, m = t.conversation_participant.c, t.membership.c
+        with r.engine.connect() as conn:
+            rows = conn.execute(
+                select(m.agent_id, p.unread_nudged_through)
+                .join(t.membership, m.id == p.membership_id)
+                .where(p.conversation_id == r.chat, m.agent_id.is_not(None))
+            )
+            return {row.agent_id: row.unread_nudged_through for row in rows}
+
+    before = stored()
+    assert before == {first.id: said, second.id: None}
+    downgrade(r.engine, "20261108230000_expert_role")
+    migrate(r.engine)
+    assert stored() == before
+    chat_unread.reset()
+    r.at(25)
+    chat_unread.sweep(r.engine)
+    assert len(r.nudges(first)) == 1  # the cycle is still open: no second nudge
+
+
+def test_a_second_workers_nudge_behind_a_budget_of_title_events_is_seen(
+    room: Room, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of #1512, delta 4 (4hch, 98267), at the production budget: 2100 of the other
+    agent's nudges make a log-reading open-cycle check fall behind for a pass (they are about
+    the chat, not in its message range), a second worker process writes this agent's nudge,
+    and 2000 title events commit before this process's call takes the lock. One nudge."""
+    r = room
+    if r.engine.dialect.name != "postgresql":
+        pytest.skip("a second process on the same database needs PostgreSQL")
+    assert chat_unread.SCAN_BUDGET == 2000  # unchanged constants
+    first, second = r.agents
+    said = [r.say(r.owner, f"line {k}") for k in range(3)]
+    r.read(second)  # only the first agent's nudge is under test
+    r.at(1)
+    chat_unread.sweep(r.engine)  # reads all three, before the delay
+    with transaction(r.engine) as conn:
+        project_id = conn.execute(
+            select(t.conversation.c.project_id).where(t.conversation.c.id == r.chat)
+        ).scalar_one()
+        others = emit(
+            conn,
+            project_id,
+            "chat_unread",
+            [f"member:{second.id}"],
+            {"conversation": {"id": r.chat}, "unread": 1, "oldest_seq": 1, "newest_seq": 1},
+            subject=("conversation", r.chat),
+        )
+    _clone(r.engine, others, 2099)
+    renamed = r.owner.patch(f"{CHATS}/{r.chat}", {"title": "renamed"})
+    assert renamed.status_code == 200, renamed.text
+    with r.engine.connect() as conn:
+        title_event = conn.execute(
+            select(t.event.c.seq)
+            .where(t.event.c.kind == "conversation_updated", t.event.c.subject_id == r.chat)
+            .order_by(t.event.c.seq.desc())
+            .limit(1)
+        ).scalar_one()
+    real_check = chat_unread.check
+    moment = r.now + timedelta(minutes=12)
+    written: list[str] = []
+
+    def other_worker_first(engine: Engine, conversation_id: str, membership_id: int) -> Any:
+        if not written:
+            url = engine.url.render_as_string(hide_password=False)
+            done = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    _OTHER_WORKER,
+                    url,
+                    conversation_id,
+                    str(membership_id),
+                    moment.isoformat(),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=300,
+            )
+            written.append(done.stdout.strip())
+            _clone(r.engine, title_event, 2000)  # after the other's nudge, before this lock
+        return real_check(engine, conversation_id, membership_id)
+
+    monkeypatch.setattr(chat_unread, "check", other_worker_first)
+    for minute in (11, 12, 13):
+        r.at(minute)
+        chat_unread.sweep(r.engine)
+    assert written and written[0], "the other process wrote no nudge"
+    [nudge] = r.nudges(first)
+    assert int(nudge.seq) == int(written[0])
+    assert (nudge.payload["unread"], nudge.payload["oldest_seq"]) == (3, said[0])
