@@ -4403,7 +4403,8 @@ def two_signatures_step(run: Run, page: Page) -> None:
 def explore_layout(run: Run, browser) -> None:
     """`/explore` in the frame of the hub's public pages (§16.7.5, tsk-zp0vqj9wm37x) at 1280 x 900 and
     390 x 844, light and dark: the landing page's header and footer, the project as one card that is
-    one link, the stylesheets loaded, nothing wider than the window and no policy refusal."""
+    one link, the stylesheets loaded, nothing wider than the window, no policy refusal, axe clean;
+    and in German for a German reader (tsk-tp97v64vpy5z)."""
     for width, height in ((1280, 900), (390, 844)):
         for scheme in ("light", "dark"):
             where = f"/explore at {width}x{height} {scheme}"
@@ -4427,7 +4428,17 @@ def explore_layout(run: Run, browser) -> None:
             assert wide <= 0, f"{where}: {wide} px wider than the window"
             assert not refused, f"{where}: {refused}"
             run.shot(seen, f"explore-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(seen, "/explore")
             context.close()
+    # The page is in the frame's language, its words from the hub's catalogue (tsk-tp97v64vpy5z).
+    context = browser.new_context(viewport={"width": 390, "height": 844}, locale="de-DE")
+    seen = context.new_page()
+    seen.goto(f"{run.base}/explore")
+    expect(seen.locator("html")).to_have_attribute("lang", "de")
+    expect(seen.locator("h1")).to_have_text("Öffentliche Projekte")
+    run.shot(seen, "explore-390-light-de")
+    context.close()
 
 
 def visitor_step(run: Run, page: Page) -> None:
