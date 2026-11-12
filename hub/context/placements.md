@@ -473,3 +473,74 @@ instance in place.
   agent would read another owner's spend; the maintainer chose the
   owner boundary, the same for humans and agents, and accepted that the
   project's owner then reads no other owner's totals.
+
+## A clone's outcome is stored in columns of the placement, not as one JSON value
+
+**Id:** 8bd25a9e-5811-4259-8ed2-dd6ad720379f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of docs/api.md §15.5 "The workspace after a stop" (tsk-34gb7frfbsk7), 2026-11-12
+**Revisit when:** the hub gets a portable way to select on a value inside a JSON column, or a placement keeps a history of its clones
+
+The runner's latest report on a placement's clone is kept in the
+placement's own columns (`workspace_state`, `workspace_reason`,
+`workspace_unsaved`, `workspace_size_bytes`, `workspace_removes_at`,
+`workspace_outcome_epoch`, `workspace_reported_at`), beside
+`workspace_retention`, `workspace_epoch` and `remove_requested_at`.
+`workspace_outcome` in the views is built from them; `remove_requested` is
+whether `remove_requested_at` is set.
+
+**Reason:** both closed lists select on the clone's state in SQL: the
+runner's `closed=true` lists closed placements of any age unless their
+clone was reported removed, and the people's `closed=true` adds older
+closed placements whose clone is held. Those lists grow with every closed
+placement, so they are filtered in the database, and the hub selects on
+no value inside a JSON column anywhere at run time: SQLite, PostgreSQL and
+MariaDB each spell that differently. The timestamps are compared and
+shown as real timestamps, and the request is cleared by comparing the
+time the runner names with the stored one as the views print it.
+
+**Rejected alternatives:**
+- One JSON column like `reported`, the runner's status report: the state
+  would have to be read out of the JSON in every list query, or the lists
+  filtered in Python over every closed placement ever made.
+- A JSON column plus a separate state column for the queries: two places
+  for one fact, which a write could let drift apart.
+- A table of clones per placement: one outcome per placement is all the
+  contract asks for; the epoch already tells a late report from a current
+  one.
+
+## Readings of the workspace contract the hub took on its own
+
+**Id:** a95d5019-73d6-4d5e-9915-58d97c3c0f2f
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** implementation of docs/api.md §15.5, §15.6, §15.8 (tsk-34gb7frfbsk7), 2026-11-12; raised with the card's lead for a decision
+**Revisit when:** the lead or the contract settles any of the points below
+
+Where the contract's sentences pull apart, the hub took the reading that
+removes nothing a person might still need, and the question stays open:
+- **A `workspace_removed` revocation does not stop the placement.** §15.5's
+  "Revocation stops the placement" names every path; its workspace bullet
+  says a start that came in meanwhile "joins anew" with `rejoin` set. A
+  stop would undo that start, so this one revocation leaves `desired`
+  as it is (`leaks.revoke(stops_placements=False)`).
+- **`rejoin` set by a removal bumps no `generation`.** The field table
+  says every `rejoin` does; the route's own rule names only `rejoin` and
+  `workspace_epoch`, and a new generation would restart a running agent.
+- **The runner's closed list leaves out `runner_revoked` and
+  `runner_removed`.** A re-paired runner keeps its id, so the list would
+  otherwise offer it clones the contract calls the operator's.
+- **Every active placement that names a credential revoked by a removal
+  rejoins.** The contract named only the reported placement. A stopped
+  successor that took the credential over would then keep it, revoked,
+  without `rejoin`, and its next start would be refused
+  (`credential_issued`) with no way out but a restart with `rejoin`
+  (review of tsk-34gb7frfbsk7). Only the credential is gone, so their
+  own clones and epochs stay.
+- **`workspace_retention` alone can be changed on a closed or closing
+  placement.** The clock runs on after the close, and a change of the
+  time moves the deadline; any other change there stays
+  `invalid_transition`.
