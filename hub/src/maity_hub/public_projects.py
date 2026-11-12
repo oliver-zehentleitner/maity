@@ -439,6 +439,24 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     page: served, named and shown alike), its agents' pages, and the person pages that list it
     or its agents: its human members' and the owners' of its agent members, who need not be
     members themselves (§16.9)."""
+    from maity_hub import public_cards
+
+    return _dependents(conn, project_id, public_cards.of_project(conn, project_id))
+
+
+def member_dependents(
+    conn: Connection, project_id: str, principal_id: str
+) -> list[tuple[str, str]]:
+    """`dependents` for a change of one member: the same pages, but of the card pages only those
+    that name the member, as its claim holder, a note's author or its latest editor. No other
+    card page shows a member, so none other changes; a project's card pages are too many to
+    remove and render again for every member change (hub/context/public-pages.md fe966f9c)."""
+    from maity_hub import public_cards
+
+    return _dependents(conn, project_id, public_cards.naming(conn, project_id, principal_id))
+
+
+def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tuple[str, str]]:
     from maity_hub import public_agents, public_cards
 
     m = t.membership.c
@@ -453,7 +471,7 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     ).scalar()
     return [
         (VIEWS, project_id),
-        *[(public_cards.KIND, card) for card in public_cards.of_project(conn, project_id)],
+        *[(public_cards.KIND, card) for card in cards],
         *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],

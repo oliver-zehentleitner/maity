@@ -935,7 +935,9 @@ def scenario(run: Run, page: Page) -> None:
     expect(page.locator("header.site-header .signin")).to_have_text("Sign in")
     expect(page.locator("footer.site-footer nav.foot-col").first).to_be_visible()
     expect(page.locator("#header")).to_be_hidden()
-    assert page.locator(".door-page").evaluate("e => getComputedStyle(e).display") == "grid"
+    # site-chrome.js adds public-pages.css as a <link> at run time, after the frame's text stands:
+    # a waiting check, as a one-time read of the computed style can come before the sheet applies.
+    expect(page.locator(".door-page")).to_have_css("display", "grid")
     run.shot(page, "sign-in")
     run.a11y(page, "sign-in")
     page.locator("#login-email").fill(OWNER_EMAIL)

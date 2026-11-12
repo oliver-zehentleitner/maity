@@ -421,7 +421,17 @@ window.Maity = window.Maity || {};
       read = { profiles, views };
       render(words);
     };
-    const redraw = (answer, said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
+    // A deletion is done when DELETE answers: its words and the list without the profile
+    // show at once, from what was read last, and the lists are read again behind them; a
+    // failed read shows under the words (tsk-m65g76c979jk).
+    const redraw = (answer, said) => {
+      if (answer && answer.deleted_at && read) {
+        read = { profiles: read.profiles.filter((a) => a.id !== answer.id), views: read.views };
+        opened.delete(answer.id);
+        render(said);
+      }
+      return draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
+    };
     redrawing = redraw;
     function render(words) {
       const { profiles, views } = read;
