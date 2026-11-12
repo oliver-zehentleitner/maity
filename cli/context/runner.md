@@ -2066,9 +2066,12 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
 **Source:** card tsk-34gb7frfbsk7 (disks of runner machines filled with the clones of agents that no longer ran there); the owner's answer to req-fdfb49yzqnhv, verbatim: "ich bin für eine zeitspanne die der workspace noch liegen bleiben darf zb 3h oder 24h falls doch noch was daraus benötigt wird oder "sofort entfernen" das soll eine option sein bitte"; the lead's decision on unsaved work (2026-11-12); docs/api.md §15.5
 **Revisit when:** a placement can save an agent's unsaved work somewhere other than its clone, or the owner asks for unsaved work to go too after the retention time
 
-A clone used to stay on the runner until the operator removed it, and
-the clones of agents that no longer ran there filled the disk. Now a
-stop starts a retention time, chosen per placement (`immediate`, `3h`,
+Not built yet (tsk-34gb7frfbsk7): this records the contract's decision;
+the hub and the runner follow in their own pull requests.
+
+A clone stays on the runner until the operator removes it, and the
+clones of agents that no longer run there fill the disk. The contract
+has a stop start a retention time, chosen per placement (`immediate`, `3h`,
 `24h` by default, `7d`); after it, the runner removes the clone, and a
 start within it continues in the same clone. The time is the owner's
 answer: something in the clone may still be needed.
@@ -2085,5 +2088,16 @@ answer: something in the clone may still be needed.
   choice, with "remove immediately" among it.
 - The runner removes only on the hub's word (a stopped or closed
   placement it lists), never because a placement is missing from its
-  list, and under the checks of `maity runner gc`. The removed clone's
-  credential is revoked, so nothing carries over to a later start.
+  list, and under the checks of `maity runner gc` plus a process check
+  and stashes, because the service runs on while it removes. The removed
+  clone's credential is revoked, so nothing carries over to a later
+  start.
+- Removal by hand is for people only (the profile's owner or a project
+  admin): it deletes unsaved work. A request stays until a report names
+  it, so a report the runner decided before seeing it cannot drop it
+  (spq4's review). `removed` is accepted in any state of the placement,
+  because a start that arrives during the removal would otherwise find
+  neither a credential nor a way to rejoin.
+- A closed placement stays listed to its runner as long as its clone is
+  held, not for 30 days: a kept clone outlives any window, and it is the
+  clone that fills the disk.
