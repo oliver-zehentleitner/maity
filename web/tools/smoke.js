@@ -13069,6 +13069,119 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
   expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
     "settings: settings/mine shows one's own settings, its tab marked, not the project's");
+  // Leaving the project from Mine (§6.2): the namespace owner is stopped up front; a member and a
+  // guest confirm, and the dialog says which of their agents are isolated or stay. The live fixture
+  // store is set for each caller and put back, so the pages after this keep what they had.
+  expect(btn(main, "Leave project") && btn(main, "Leave project").disabled
+    && text(main.querySelector(".leave-project")).includes("You own this project's namespace. Transfer the project or close it first."),
+    "leave: the namespace owner sees Leave project disabled, with the reason");
+  {
+    const fx = win.Maity.api.fixturesLive();
+    const project = fx["maity/project.json"];
+    const savedOwner = JSON.parse(JSON.stringify(project.owner));
+    const savedMode = project.policy.agent_owners;
+    const savedMembers = JSON.parse(JSON.stringify(fx["maity/members.json"]));
+    const savedProjects = JSON.parse(JSON.stringify(fx["me.json"].projects));
+    const savedStart = fx["me.json"].member.start_tabs;
+    const projectId = savedProjects.find((p) => p.slug === "maity").id;
+    const leaveDel = win.Maity.api.del;
+    const resetLeave = () => {
+      fx["maity/members.json"] = JSON.parse(JSON.stringify(savedMembers));
+      fx["me.json"].projects = JSON.parse(JSON.stringify(savedProjects));
+      fx["me.json"].member.start_tabs = savedStart;
+      project.owner = JSON.parse(JSON.stringify(savedOwner));
+      project.policy.agent_owners = savedMode;
+      win.Maity.api.del = leaveDel;
+    };
+    const setCaller = (trust, agentOwners) => {
+      resetLeave();
+      project.owner = { id: "hum-other", handle: "other" };
+      if (agentOwners !== undefined) project.policy.agent_owners = agentOwners;
+      fx["maity/members.json"].items.find((x) => x.id === "hum-maintainer").trust = trust;
+      fx["me.json"].projects.find((p) => p.slug === "maity").trust = trust;
+    };
+    const leaveDialog = () => main.querySelector(".leave-dialog");
+    const fateOf = (name) => {
+      let found = null;
+      leaveDialog().querySelectorAll(".leave-agent").forEach((row) => { if (text(row).includes(name)) found = row.getAttribute("data-fate"); });
+      return found;
+    };
+    const leaveOpen = async () => {
+      await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 6; k++) await tick();
+      const button = btn(main, "Leave project");
+      button.click(); for (let k = 0; k < 2; k++) await tick();
+      return button;
+    };
+    setCaller("member");
+    await leaveOpen();
+    const beforeEscape = win.Maity.api.fixtureAsked.length;
+    expect(leaveDialog() && leaveDialog().querySelector(".leave-rule") && !leaveDialog().querySelector(".leave-agent")
+      && text(leaveDialog()).includes("cannot be read from here"),
+      "leave: when the policy cannot be read, the dialog states the rule and names no agent");
+    leaveDialog().dispatch("keydown", { key: "Escape" });
+    expect(!main.querySelector(".leave-dialog") && win.location.hash === "#/maintainer/maity/settings/mine"
+      && !win.Maity.api.fixtureAsked.slice(beforeEscape).some((p) => p.startsWith("DELETE ")),
+      "leave: Escape cancels and sends nothing");
+    setCaller("member", "anyone");
+    const opener = await leaveOpen();
+    expect(!opener.disabled && fateOf("Agent A") === "isolated" && fateOf("Agent B") === "stays" && fateOf("Reviewer") === "isolated",
+      "leave: a member's dialog lists owned agents, isolated or staying " + fateOf("Agent A") + "/" + fateOf("Agent B") + "/" + fateOf("Reviewer"));
+    let returned = 0;
+    opener.focus = () => { returned += 1; };
+    btn(leaveDialog(), "Cancel").click();
+    expect(returned === 1 && !main.querySelector(".leave-dialog") && win.location.hash === "#/maintainer/maity/settings/mine",
+      "leave: cancel closes the dialog, returns focus, and stays on Mine");
+    opener.click(); for (let k = 0; k < 2; k++) await tick();
+    const keys = [];
+    let failedOnce = false;
+    const deletesBefore = win.Maity.api.fixtureAsked.filter((p) => p === "DELETE /projects/maintainer/maity/members/hum-maintainer").length;
+    win.Maity.api.del = (p, b, h) => {
+      keys.push(h && (h["idempotency-key"] || h["Idempotency-Key"]));
+      if (!failedOnce) { failedOnce = true; return Promise.reject(new win.Maity.api.ApiError("down", 0, p)); }
+      return leaveDel(p, b, h);
+    };
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(leaveDialog() && text(leaveDialog()).includes("Not left:"), "leave: a failed attempt stays on the dialog");
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 6; k++) await tick();
+    // The shim assigns the hash and does not fire hashchange; a browser does (smoke, the rename).
+    win.onhashchange(); for (let k = 0; k < 8; k++) await tick();
+    const deletesAfter = win.Maity.api.fixtureAsked.filter((p) => p === "DELETE /projects/maintainer/maity/members/hum-maintainer").length;
+    expect(keys.length === 2 && keys[0] && keys[0] === keys[1] && /^[0-9a-f-]{36}$/.test(keys[0])
+      && deletesAfter === deletesBefore + 1 && win.location.hash === "#/all"
+      && main.querySelector(".notice") && text(main.querySelector(".notice")).includes("You left Maity."),
+      "leave: confirm sends DELETE for one's own id, keeps the key for the retry, and routes to /all " + win.location.hash);
+    const again = await win.Maity.api.del("/projects/maintainer/maity/members/hum-maintainer").catch((e) => e);
+    const replay = await win.Maity.api.del("/projects/maintainer/maity/members/hum-maintainer", undefined, { "idempotency-key": keys[0] });
+    expect(again.code === "not_found" && replay && replay.id === "hum-maintainer" && replay.removed_at,
+      "leave: a repeat without the key is not_found; the same key replays the stored answer");
+    setCaller("guest", "anyone");
+    await leaveOpen();
+    expect(fateOf("Agent A") === "isolated" && fateOf("Agent B") === "stays",
+      "leave: a guest sees Leave project and the same per-agent list");
+    let guestPath = null;
+    win.Maity.api.del = (p, b, h) => { guestPath = p; return leaveDel(p, b, h); };
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 6; k++) await tick();
+    win.onhashchange(); for (let k = 0; k < 8; k++) await tick();
+    expect(guestPath === "/projects/maintainer/maity/members/hum-maintainer" && win.location.hash === "#/all"
+      && main.querySelector(".notice") && text(main.querySelector(".notice")).includes("You left Maity."),
+      "leave: a guest's confirm deletes their own id and routes to /all");
+    setCaller("owner");
+    fx["maity/members.json"].items.forEach((x) => {
+      if (x.kind === "human" && x.id !== "hum-maintainer" && x.trust === "owner") x.trust = "member";
+    });
+    await leaveOpen();
+    btn(leaveDialog(), "Leave Maity").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(leaveDialog() && text(leaveDialog()).includes("You are the last owner. Make someone else an owner first.")
+      && win.location.hash === "#/maintainer/maity/settings/mine",
+      "leave: the last owner is told in words and stays");
+    resetLeave();
+    project.owner = { id: "org-oz00team0001", handle: "oz-team" };
+    const orgNo = await win.Maity.api.del("/projects/maintainer/maity/members/hum-maintainer").catch((e) => e);
+    expect(orgNo.code === "namespace_owner", "leave: an owner of the organisation that owns the project is refused");
+    resetLeave();
+    win.Maity.tabs.setOpen({ me: fx["me.json"].member, projects: fx["me.json"].projects }, projectId, true);
+    nlPatches.length = 0;
+  }
   // Memory (§19): filters ask the hub, an entry says where and who, Delete with a reason leaves its row; souls of one's own agents.
   {
     await go("#/maintainer/maity/memory"); for (let k = 0; k < 6; k++) await tick();
