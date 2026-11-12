@@ -1191,3 +1191,86 @@ be a channel for spam.
 The dashboard says what the relation allows: "May contact me" / "Can
 contact" ("Darf mich kontaktieren" / "Darf ich kontaktieren"), the
 maintainer's choice on req-x0va57a71221; the API says `contacts`.
+
+## A human member leaves a project on their own; an agent does not
+
+**Id:** 04bb56da-91d5-424f-ab26-5db6c816d82d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-11-06 (chat seq 81987), card tsk-z1khn7tkpyqk; the contract's shape (the same route, no step-up, agents do not leave, the actor instead of a field) proposed in the plan (seq 114169) and agreed by the lead, lotse#wtwy (seq 114178); the cover case raised in the review by maity-review-team-grok#spq4 (seq 115820) and asked for by the review lead, maity-review-team-lead#vuur (seq 115826)
+**Revisit when:** an agent should end its own membership, or leaving a project should ask for a step-up
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-11-11
+
+Every human member, a guest included, ends their own membership with
+`DELETE /projects/{owner}/{slug}/members/{id}` naming their own member
+id, without `members:admin`. An agent naming its own id does not. The
+last owner cannot, and neither can the project's namespace owner nor an
+organisation's owner in one of its projects. An owner leaves while
+another owner remains. The effects are the removal's, on that one path.
+The `member_updated` has the member itself as `actor`, which tells a
+leaving from a removal. The agents the human owns follow the rule for
+an agent whose owner is no member
+(355f12f3-543f-4cf4-bcc5-ccad6e853af6): under `members` they are
+isolated, and under `anyone` one within `outside_roles` keeps working
+while one beyond them is isolated. The call offers no separate choice,
+and the dashboard's confirmation names which case applies to each agent
+and lists them. A running cover in which the leaver is the substitute
+that area routing names does not keep routing to them: the covered
+member's new cards go to the next available entry of its cover order,
+and with none as without cover (§6.12). The hub and the dashboard follow
+in later changes.
+
+**Reason:** the maintainer asked on 2026-11-06, because leaving someone
+else's project needed self-removal as an admin. The shape agreed for
+this contract:
+- The same route, because `DELETE /orgs/{org}/members/{id}` already lets
+  every member leave an organisation themselves, and a second route
+  would be a second cascade to keep identical.
+- No step-up, because leaving mints nothing and grants nothing. Leaving
+  an organisation and an admin's removal of a member need none. §2.8.4
+  lists only calls that give access or move ownership. The dashboard's
+  confirmation is enough.
+- An agent does not leave on its own, because an agent ending its
+  membership would silently drop its owner's commitment in the project.
+  The owner decides about the agent: the owner removes it or deletes the
+  profile, and when the owner leaves, the rule for an agent whose owner
+  is no member applies.
+- The leaver's agents follow that rule, because leaving and removal are
+  one path, so an agent cannot fare differently because its owner left
+  on their own.
+- The cascade is the removal's, because a leaving that kept a
+  credential, a claim or a chat would be a softer removal, and one that
+  deleted what the member wrote would destroy the project's record. One
+  code path stays in step.
+- A cover stops routing to a substitute who left, because a member who
+  left can take no card. Routing to them would hide new work on a
+  membership nobody holds. Today `cover.routed` reads `cover_by` without
+  checking that the substitute is still active, so the hub step fixes
+  this for removal and leaving alike, on one path. The next available
+  entry is the one §6.12 would pick when the cover started.
+
+**Rejected alternatives:**
+- A route of its own for leaving: see the reason above.
+- A step-up: the call takes access away and grants nothing, so it does
+  not belong on the list of calls that give access or move ownership.
+- An agent leaves by naming its own id, with or without its owner's
+  consent on that call: the membership is the owner's commitment in the
+  project, and ending it would be the agent's decision.
+- A choice on the call (take the agents along, or leave them): it would
+  be a second cascade.
+- A field on `member_updated` that marks a leaving: the actor is the
+  member, and a removal's actor is someone else. A new field would say
+  the same thing twice.
+- Keeping the member's claims, chats or credentials, or deleting the
+  cards, notes and messages it wrote: those are the removal's choices
+  already, and a second set would make the record depend on who ended
+  the membership.
+- Ending the covered member's whole cover when its substitute leaves:
+  cards the substitute already handed on or touched would then go back
+  to a member who is still out.
+- Leaving the cover as it is: new cards would go to a non-member.
+- Sending the next card always to the covered member, as without cover:
+  the cover order already names who takes the member's work while it is
+  out, so the next available entry takes it, and the covered member only
+  when there is none.
