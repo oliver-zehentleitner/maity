@@ -1335,7 +1335,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         actor=change.actor,
         subject=("member", view["id"]),
     )
-    isolation.tell_released(conn, released, change.actor)
+    isolation.tell_released(conn, released, change.actor, change.project)
     # The chain never names a former member: nor does a join still to be used.
     reported = conn.execute(
         select(t.membership.c.id).where(
