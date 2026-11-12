@@ -6249,9 +6249,9 @@ ends their own membership with this `DELETE`, naming their own member
 id, and needs no `members:admin`. There is no other route. An agent
 naming its own id does not leave: the call stays as it is for that
 caller, `members:admin`, and for an admin agent §2.3 ᵃ, always via a
-human's consent. Its owner removes it, or deletes the profile (§6.3),
-or it goes when that owner's membership ends ("An agent whose owner is
-no member").
+human's consent. Its owner removes it or deletes the profile (§6.3).
+When that owner's membership ends, it is isolated or kept as "An agent
+whose owner is no member" says.
 
 The limits of a removal stay. The last `owner` cannot leave (`invalid`,
 `details.fields.member: last_owner`), as for a removal. The project's
@@ -6268,16 +6268,25 @@ trust:admin`, §7) or, for an owner's round and a proxy's call, back to
 the addressee (§7, §20.7), revokes the open joins it created, clears
 every `reports_to` that names it and resets every seat that names it
 (above), takes it out of every group chat (`reason: membership_removed`,
-§9.2) and closes its placements (`membership_removed`, §15.5). A card
-assigned to the member, and not claimed by it, stays assigned. Cards,
-notes and messages it wrote stay, as the project's record.
+§9.2) and closes its placements (`membership_removed`, §15.5). It
+cancels every open takeover in which the member is holder, receiver or
+requester (§6.19), and ends the member's bridges and their open
+requests, and those of the agents the member owns (§2.3, "Ending on its
+own"). A cover (§6.12) is not ended by it: a card a substitute took
+over for the member stays with that substitute, a card the member holds
+as a substitute goes back to the board with its other claims, and a
+member who left is in no cover order. A card assigned to the member,
+and not claimed by it, stays assigned. Cards, notes and messages it
+wrote stay, as the project's record.
 
 Agents it owns follow the removal ("An agent whose owner is no member",
 which already says removed or left). Under `policy.agent_owners:
 members` the hub isolates them (`isolated.by: "hub"`) and the owner
-gets that notice. Under `anyone` they stay and keep working. The call
-offers no other choice. The dashboard's confirmation names which of the
-two applies and lists the agents.
+gets that notice. Under `anyone` an agent within `policy.outside_roles`
+stays and keeps working, and one beyond them (trust `admin`, a role not
+on the list) is isolated as under `members`. The call offers no other
+choice. The dashboard's confirmation names which applies to each agent
+and lists them.
 
 It emits `member_updated` to `all` with `removed_at` set, and the
 cascade's usual events (above). The `actor` of that `member_updated` is
