@@ -2131,9 +2131,10 @@ looks at each interactive session once a minute.
   Enter, which did the same after three unanswered Enters with a person
   attaching in between (v5vp's review); clearing the input before typing,
   which could throw away what a person typed there. Once a person was
-  attached, the input is theirs: the next nudge types afresh rather than
-  sending a draft they may have left (fkyb's review), at the price of a
-  second copy if they left the line as it was.
+  attached, the input is theirs: the next nudge types afresh behind
+  whatever they left instead of pressing Enter on it alone (fkyb's
+  review); like any nudge, it then sends a draft they left together with
+  its line, and a second copy if they left the line as it was.
 - Since Enter itself changes a live harness's pane, only a session that
   does not react at all is ended after `reply_within_minutes`. An agent
   that answers every nudge but never goes back to its wait would be

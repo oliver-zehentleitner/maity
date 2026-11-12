@@ -1861,7 +1861,7 @@ def test_a_held_back_line_dropped_by_an_attach_does_not_count(
     """A person attaching before the held-back line's Enter drops it: no Enter is sent and
     it does not count toward `NUDGE_CAP` (fkyb's review: "answered 3 nudges" after zero
     Enters). What the input holds then is the person's: the next nudge types afresh and
-    never sends a draft they left (fkyb's review)."""
+    never presses Enter on a draft they left without its own line (fkyb's review)."""
     sup, backend, _, _, _ = world
     interactive(world)
     monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))

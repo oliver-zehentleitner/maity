@@ -17654,7 +17654,8 @@ without the hub's ask, at most once a minute:
   pane before that Enter drops the nudge: it does not count, and its line
   may stay typed, so the next nudge sends that line instead of typing it
   again; after a client was attached the input is that person's, and the
-  next nudge types afresh. A nudge is answered when the pane changes after its Enter or the
+  next nudge types its line behind whatever they left, which its Enter
+  then sends with it. A nudge is answered when the pane changes after its Enter or the
   harness starts a process; a client attached or an unreadable pane in
   between is no answer, and the reply time runs on. An answer starts the
   count again, but after `3` answered nudges with no `maity wait` seen in
