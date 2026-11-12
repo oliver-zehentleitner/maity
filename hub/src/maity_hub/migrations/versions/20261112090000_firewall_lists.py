@@ -4,7 +4,7 @@
 Nothing to copy: nobody had entries before.
 
 Revision ID: 20261112090000_firewall_lists
-Revises: 20261111150000_present_until
+Revises: 20261112110000_password_reset
 Create Date: 2026-11-12
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql
 
 revision: str = "20261112090000_firewall_lists"
-down_revision: str | None = "20261111150000_present_until"
+down_revision: str | None = "20261112110000_password_reset"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
