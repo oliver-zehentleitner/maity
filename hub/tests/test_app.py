@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import os
+import re
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -101,7 +106,8 @@ def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_
     for path in ("/", "/a/b/c", "/maintainer/maity/board"):
         page = client.get(path).text
         assert page.index("<head>") + len("<head>") == page.index('<base href="/assets/">'), path
-        assert 'src="js/app.js"' in page  # the file itself stays relative (fixture mode)
+        # The file itself stays relative (fixture mode), named under its version.
+        assert 'src="js/app.js?v=' in page
     assert client.get("/assets/js/app.js").text == "// dashboard"
 
 
@@ -220,6 +226,79 @@ def test_a_range_is_selected_by_the_etag_alone(client: TestClient, web_dir: Path
         whole = client.get("/assets/css/app.css", headers={"If-Range": stale} | asked)
         assert whole.status_code == 200 and whole.text == content, stale
     assert client.get("/assets/css/app.css", headers=asked).status_code == 206
+    # A suffix range gets the tail; past the end, two ranges or another unit get the whole body.
+    tail = client.get("/assets/css/app.css", headers={"Range": "bytes=-4"} | IDENTITY)
+    assert tail.status_code == 206 and tail.text == content[-4:]
+    assert (
+        tail.headers["content-range"]
+        == f"bytes {len(content) - 4}-{len(content) - 1}/{len(content)}"
+    )
+    huge = "9" * 4301
+    for ignored in (
+        f"bytes={len(content)}-",
+        "bytes=5-2",
+        "bytes=0-1,4-5",
+        "items=0-1",
+        "bytes=-",
+        # Too many digits for `int()`: also the whole body, not a 500.
+        f"bytes=0-{huge}",
+        f"bytes={huge}-",
+        f"bytes=-{huge}",
+    ):
+        whole = client.get("/assets/css/app.css", headers={"Range": ignored} | IDENTITY)
+        assert whole.status_code == 200 and whole.text == content, ignored
+
+
+def test_a_matching_etag_is_a_304_before_any_range(client: TestClient, web_dir: Path) -> None:
+    """RFC 9110 §13.2.2: If-None-Match is evaluated before Range, a huge one included (review of
+    #1543, delta 1)."""
+    _css(web_dir)
+    etag = client.get("/assets/css/app.css", headers=IDENTITY).headers["etag"]
+    for asked in ("bytes=0-9", "bytes=0-" + "9" * 4301, "bytes=" + "9" * 4301 + "-"):
+        answer = client.get(
+            "/assets/css/app.css", headers={"If-None-Match": etag, "Range": asked} | IDENTITY
+        )
+        assert answer.status_code == 304, asked[:20]
+        assert answer.headers["etag"] == etag and "content-range" not in answer.headers
+
+
+def test_a_head_ignores_a_range_and_sends_no_body(client: TestClient, web_dir: Path) -> None:
+    """A range only on a GET (RFC 9110 §14.2); a HEAD says the whole length and hands the server
+    no body (review of #1543, delta 1)."""
+    content = _css(web_dir)
+    head = client.head("/assets/css/app.css", headers={"Range": "bytes=0-9"} | IDENTITY)
+    assert head.status_code == 200 and "content-range" not in head.headers
+    assert head.headers["content-length"] == str(len(content.encode()))
+    # What the app hands the server, below the test client, which drops a HEAD's body itself.
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "HEAD",
+        "scheme": "http",
+        "path": "/assets/css/app.css",
+        "raw_path": b"/assets/css/app.css",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"range", b"bytes=0-9"),
+            (b"accept-encoding", b"identity"),
+        ],
+        "client": ("127.0.0.1", 50000),
+        "server": ("testserver", 80),
+    }
+    asyncio.run(client.app(scope, receive, send))  # type: ignore[arg-type]
+    assert sent[0]["status"] == 200
+    assert b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body") == b""
 
 
 def test_a_small_file_has_one_form(client: TestClient, web_dir: Path) -> None:
@@ -250,6 +329,195 @@ def test_a_changed_file_with_the_same_time_and_size_gets_a_new_etag(
     response = client.get("/assets/js/app.js", headers={"If-None-Match": old})
     assert response.status_code == 200 and response.text == "// two"
     assert response.headers["etag"] != old
+
+
+IMMUTABLE = "public, max-age=31536000, immutable"
+_VERSIONED = re.compile(r'src="js/app\.js\?v=([0-9a-f]{16})"')
+
+
+def _version_in_shell(client: TestClient) -> str:
+    found = _VERSIONED.search(client.get("/").text)
+    assert found is not None
+    return found[1]
+
+
+def _versions_block(page: str) -> dict[str, str]:
+    found = re.search(r'<script type="application/json" id="maity-assets">(.*?)</script>', page)
+    assert found is not None
+    versions: dict[str, str] = json.loads(found[1])
+    return versions
+
+
+def test_a_file_asked_for_under_its_version_is_kept_for_good(
+    client: TestClient, web_dir: Path
+) -> None:
+    # docs/api.md §1 and §16.11: the shell names each file with `?v=<version>`, the first 16
+    # hex digits of the SHA-256 of the body sent; that request may be cached for good.
+    content = "// app\n" * 300  # with a gzip form
+    (web_dir / "js").mkdir()
+    (web_dir / "js" / "app.js").write_text(content)
+    version = _version_in_shell(client)
+    assert version == hashlib.sha256(content.encode()).hexdigest()[:16]
+    for headers in (IDENTITY, GZIP):
+        kept = client.get(f"/assets/js/app.js?v={version}", headers=headers)
+        assert kept.status_code == 200 and kept.text == content
+        assert kept.headers["cache-control"] == IMMUTABLE
+        again = client.get(
+            f"/assets/js/app.js?v={version}",
+            headers={"If-None-Match": kept.headers["etag"]} | headers,
+        )
+        assert again.status_code == 304 and again.headers["cache-control"] == IMMUTABLE
+    # Without a version, the file as #1518 serves it: revalidated.
+    assert client.get("/assets/js/app.js").headers["cache-control"] == "no-cache"
+
+
+def test_a_version_that_does_not_name_the_body_sent_is_never_kept_for_good(
+    client: TestClient, web_dir: Path
+) -> None:
+    (web_dir / "js").mkdir()
+    (web_dir / "js" / "app.js").write_text("// app")
+    version = _version_in_shell(client)
+    digest = hashlib.sha256(b"// app").hexdigest()
+    for query in (
+        "v=" + "0" * 16,
+        "v=" + version.upper(),
+        "v=" + version[:15],
+        "v=" + digest[:32],  # the ETag's digits, not the version
+        "v=" + version + "%20",
+        f"v={version}&v={version}",
+        f"v=0&v={version}",
+        "v=",
+        "w=" + version,
+    ):
+        answer = client.get(f"/assets/js/app.js?{query}")
+        assert answer.status_code == 200 and answer.text == "// app", query
+        assert answer.headers["cache-control"] == "no-cache", query
+
+
+def test_a_pod_with_other_files_answers_another_version_revalidated(
+    client: TestClient, web_dir: Path
+) -> None:
+    # A rolling deploy: the shell came from a pod with other files than the one that answers.
+    target = web_dir / "js" / "app.js"
+    target.parent.mkdir()
+    target.write_text("// old")
+    old = _version_in_shell(client)
+    target.write_text("// the new one")  # this pod now has the new file
+    stale = client.get(f"/assets/js/app.js?v={old}")
+    assert stale.status_code == 200 and stale.text == "// the new one"
+    assert stale.headers["cache-control"] == "no-cache"  # never pinned under the old name
+    new = _version_in_shell(client)
+    assert new != old
+    assert client.get(f"/assets/js/app.js?v={new}").headers["cache-control"] == IMMUTABLE
+    # The other way round: a new shell's version at a pod that still has the old file.
+    target.write_text("// old")
+    behind = client.get(f"/assets/js/app.js?v={new}")
+    assert behind.text == "// old" and behind.headers["cache-control"] == "no-cache"
+
+
+def test_an_immutable_answer_is_always_the_body_its_version_names(
+    client: TestClient, web_dir: Path
+) -> None:
+    # Review of #1543 (fmzu): the digest checked and the bytes sent are one snapshot.
+    from maity_hub import shell
+
+    target = web_dir / "js" / "app.js"
+    target.parent.mkdir()
+    target.write_bytes(b"// one")
+    old = _version_in_shell(client)
+    # 1. Six other bytes with the same time and size: the process keeps its snapshot, and an
+    # answer under the old version is that snapshot, never the bytes now on disk.
+    stamp = target.stat().st_mtime_ns
+    target.write_bytes(b"// two")
+    os.utime(target, ns=(stamp, stamp))
+    kept = client.get(f"/assets/js/app.js?v={old}", headers=IDENTITY)
+    assert kept.headers["cache-control"] == IMMUTABLE
+    assert hashlib.sha256(kept.content).hexdigest()[:16] == old and kept.content == b"// one"
+    # A range is of the same bytes.
+    part = client.get(f"/assets/js/app.js?v={old}", headers={"Range": "bytes=3-5"} | IDENTITY)
+    assert part.status_code == 206 and part.content == b"one"
+    # 2. The file replaced after the answer was chosen, before its body is sent.
+    files = shell.AssetFiles(directory=web_dir)
+    full_path, found = files.lookup_path("js/app.js")
+    assert found is not None
+    scope = {"type": "http", "method": "GET", "query_string": f"v={old}".encode(), "headers": []}
+    answer = files.file_response(full_path, found, scope)
+    target.write_bytes(b"// three, longer")
+    assert answer.headers["cache-control"] == IMMUTABLE and answer.body == b"// one"
+
+
+def test_a_stylesheet_names_its_fonts_and_pictures_under_their_versions(
+    client: TestClient, web_dir: Path
+) -> None:
+    (web_dir / "css" / "fonts").mkdir(parents=True)
+    (web_dir / "brand").mkdir()
+    font = web_dir / "css" / "fonts" / "a.woff2"
+    font.write_bytes(b"font one")
+    (web_dir / "brand" / "x.svg").write_text("<svg/>")
+    (web_dir / "css" / "app.css").write_text(
+        '@font-face { src: url("fonts/a.woff2") format("woff2"); }\n'
+        ".m { mask: url('../brand/x.svg'); background: url(data:image/png;base64,AA==); }\n"
+        ".o { background: url(/assets/brand/x.svg) url(fonts/none.woff2) url(fonts/a.woff2#f); }\n"
+    )
+    v = {
+        path: hashlib.sha256(body).hexdigest()[:16]
+        for path, body in (("font", b"font one"), ("svg", b"<svg/>"))
+    }
+    sheet = client.get("/assets/css/app.css", headers=IDENTITY)
+    assert f'url("fonts/a.woff2?v={v["font"]}")' in sheet.text
+    assert f"url('../brand/x.svg?v={v['svg']}')" in sheet.text
+    # Anything else stays as written: data:, an absolute path, a missing file, a fragment.
+    for kept in (
+        "url(data:image/png;base64,AA==)",
+        "url(/assets/brand/x.svg)",
+        "url(fonts/none.woff2)",
+        "url(fonts/a.woff2#f)",
+    ):
+        assert kept in sheet.text, kept
+    assert (
+        client.get(f"/assets/css/fonts/a.woff2?v={v['font']}").headers["cache-control"] == IMMUTABLE
+    )
+    # The stylesheet's version is that of the body sent, and moves with its font's.
+    version = hashlib.sha256(sheet.content).hexdigest()[:16]
+    assert client.get(f"/assets/css/app.css?v={version}").headers["cache-control"] == IMMUTABLE
+    font.write_bytes(b"font two, longer")
+    moved = client.get("/assets/css/app.css", headers=IDENTITY)
+    assert moved.headers["etag"] != sheet.headers["etag"]
+    assert f'url("fonts/a.woff2?v={v["font"]}")' not in moved.text
+    assert client.get(f"/assets/css/app.css?v={version}").headers["cache-control"] == "no-cache"
+
+
+def test_the_shell_names_its_files_and_lists_those_loaded_later(
+    client: TestClient, web_dir: Path
+) -> None:
+    for path, body in (
+        ("js/app.js", "// app"),
+        ("js/i18n/de.js", "// de"),
+        ("vendor/keep-the-why/ktw-core.js", "// ktw"),
+        ("brand/a<b.svg", "<svg/>"),
+        ("brand/.hidden.svg", "<svg/>"),
+    ):
+        (web_dir / path).parent.mkdir(parents=True, exist_ok=True)
+        (web_dir / path).write_text(body)
+    (web_dir / "index.html").write_text(
+        '<!doctype html><html><head><meta charset="utf-8"><title>dashboard</title>'
+        '<link rel="stylesheet" href="css/missing.css"></head>'
+        '<body><script src="js/app.js"></script></body></html>'
+    )
+    page = client.get("/").text
+    assert 'href="css/missing.css"' in page  # no file, no version
+    later = _versions_block(page)
+    digest = {
+        name: hashlib.sha256(body.encode()).hexdigest()[:16]
+        for name, body in (("de", "// de"), ("ktw", "// ktw"), ("svg", "<svg/>"))
+    }
+    assert later == {
+        "brand/a<b.svg": digest["svg"],
+        "js/i18n/de.js": digest["de"],
+        "vendor/keep-the-why/ktw-core.js": digest["ktw"],
+    }
+    assert "a<b" not in page and "a\\u003cb" in page  # nothing in the block closes a tag
+    assert page.index('id="maity-assets"') < page.index("</head>")
 
 
 def test_the_middleware_leaves_the_dashboards_files_to_assetfiles() -> None:
