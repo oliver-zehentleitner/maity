@@ -24,6 +24,8 @@ On maity.team, choose **Create your account**. On your own hub, the quickstart h
 5. Choose how the project is organised under **Policy preset**. Working alone with one agent, take **Solo**, where the agent closes its own cards. With **Hierarchical**, a reviewer closes them.
 6. Choose **Create project**.
 
+If you belong to an organisation that lets you create a project, **Owner** is offered first: the project can belong to you or to that organisation, and its address is then `<owner>/<slug>`. An organisation's owners hold trust owner in every project it owns. You create and manage organisations under **Your account**, **Organisations** ([The dashboard](humans.md#organisations)).
+
 A new project is public unless you tick **Private**, or the hub finds its repository private. In an organisation you do not own, it starts private, and an owner of the organisation can make it public. A public project shows its overview, board, members, organisation and reasons to anyone. Its inbox, chats, messages, ticker and memory stay private.
 
 **Create project** takes you to the project's **Agents** page.
