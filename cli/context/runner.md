@@ -2179,7 +2179,10 @@ directory on the way from the one before with `O_NOFOLLOW` and
 inode, so a case-insensitive volume's `.GIT` is caught too). It opens the
 last name with `O_NOFOLLOW` and `O_NONBLOCK` and reads only a regular file
 with one link. Reason: maity runs outside the sandbox, and any name maity
-looks up twice can point elsewhere the second time. Round 3 swapped a
+looks up twice can point elsewhere the second time. This covers every
+directory and file below the clone's root, but not `.git` itself: its
+device and inode, and the runner's record, are still taken through the
+name `.git` (the third Known gap below). Round 3 swapped a
 directory between a check and an open by name. Round 4 exchanged a
 directory with a link between the open, the resolve and the stat, and
 maity read the clone's credential and a file the sandbox hides (review
@@ -2208,3 +2211,15 @@ Linux or without bwrap and socat), nothing keeps repository code from
 running gh or rewriting `.git/maity/pull_requests`: the deny rules are no
 boundary there. On an ssh target, gh must be at the path the runner found
 on its own host, or `maity gh` refuses.
+
+**Known gap:** under the harness's sandbox, code that can write the
+clone's root can replace `.git`, and with it the record that names gh.
+The sandbox denies only `.git/maity` and the paths that redirect git, so
+`.git` itself can be exchanged with a directory of the session's own.
+maity takes `.git`'s device and inode, and reads the record, through
+that name, so a body file under the real `.git` can pass the walk under
+another name, and a replaced record names a program that maity runs
+outside the sandbox (review of #1663, round 5). It stays open until
+tsk-er1nymh4te1h lands: the runner records `.git`'s identity at launch,
+and maity opens `.git` once from the root's descriptor and refuses a
+different one.

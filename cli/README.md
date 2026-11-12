@@ -967,7 +967,8 @@ finds it under `HOME` (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and
 listed, a URL, or a body file reached through a link, a FIFO, a file with
 other hard links, outside the clone or under its `.git` is refused, and
 the refusal lists what is allowed. On Windows maity takes no body file
-(`--body` only), since it cannot open one there without following links. Under the harness's sandbox no placed session can run gh itself,
+(`--body` only), since it cannot open one there without following
+links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
 check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the
@@ -984,6 +985,9 @@ Open gaps:
   code can run gh or rewrite the runner's record of the repository.
 - On an ssh target, gh must be at the path the runner found on its own
   host, or `maity gh` refuses.
+- Even under the sandbox, code that can write the clone's root can
+  replace its `.git`, and with it the runner's record of the repository
+  and gh (tsk-er1nymh4te1h).
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,

@@ -44,6 +44,9 @@ ENV_PASSED = (
     "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy",
 )  # fmt: skip
 ENV_SET = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1"}
+# Whether this system can open a name in a directory's descriptor without following a link:
+# the body file's walk needs both. Windows has neither, and there maity takes no body file.
+WALKS = os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW")
 
 ALLOWED = (
     "maity gh pr create --title <title> (--body <text> | --body-file <file in this clone>)"
@@ -156,7 +159,7 @@ def body_file(root: Path, given: str) -> bytes:
     the last one without following a link and without blocking (a FIFO): a regular file
     with no other hard link, of at most BODY_MAX bytes (cli/context/runner.md 9f43804d)."""
     names = _in_clone(root, given)
-    if os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"):  # Windows
+    if not WALKS:  # Windows
         raise Refused(
             f"--body-file {given}: this system cannot open a file without following links;"
             " give the text with --body"

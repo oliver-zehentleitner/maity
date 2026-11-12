@@ -41,7 +41,7 @@ runs_gh = pytest.mark.skipif(
 # The tests that read a body file: maity walks to it through descriptors (`dir_fd`,
 # O_NOFOLLOW), which Windows lacks, so there it refuses `--body-file` (tested below).
 walks = pytest.mark.skipif(
-    os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"),
+    not ghpr.WALKS,
     reason="no dir_fd or O_NOFOLLOW here, so maity refuses every --body-file",
 )
 
@@ -378,8 +378,9 @@ def test_a_directory_exchanged_with_a_link_on_every_lookup_never_yields_the_secr
     for _ in range(20):
         try:
             assert ghpr.body_file(clone.resolve(), "d/body.md") == b"harmless\n"
-        except ghpr.Refused:
-            pass
+        except ghpr.Refused as exc:
+            assert "a link" in str(exc) or "not a directory" in str(exc), exc  # the walk's own
+    assert calls > 0  # the walk ran: its lookups went through the flipping wrappers
 
 
 @walks
@@ -424,6 +425,17 @@ def test_without_a_descriptor_walk_a_body_file_is_refused(
     """Windows has no `dir_fd`: maity cannot walk to the file without following a link, so it
     takes no body file there; `--body` still works."""
     (placed["clone"] / "body.md").write_text("Card tsk-x\n")
-    monkeypatch.setattr(os, "supports_dir_fd", set())
+    monkeypatch.setattr(ghpr, "WALKS", False)
     err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "body.md"], capsys)
     assert "give the text with --body" in err and ran(placed) is None
+
+
+def test_a_recorded_git_that_does_not_run_is_maitys_refusal(
+    placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The branch is read with the git the runner recorded; when that is no program, maity
+    refuses (exit 4) and names why, instead of failing as a general error."""
+    (placed["clone"] / clonecheck.GIT_PATH).write_text(str(tmp_path / "no-git") + "\n")
+    code = cli.main(["gh", "pr", "create", "--title", "t", "--body", "b"])
+    assert code == cli.EXIT_REFUSED
+    assert "maity runs no git here" in capsys.readouterr().err and ran(placed) is None
