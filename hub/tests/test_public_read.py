@@ -10,8 +10,10 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import public_pages
+from maity_hub import public_pages, public_projects
 from maity_hub import tables as t
+from maity_hub.routes import pages
+from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_public_project_views import World
 from tests.test_reports import report
@@ -273,3 +275,39 @@ def test_the_old_members_path_has_no_page(world: World) -> None:
     world.touch()
     assert read(world, f"{BASE}/team")["kind"] == "team"
     assert world.anyone.get(f"{ROUTE}/{BASE}/members").status_code == 404
+
+
+def test_explore_draws_the_projects_as_cards_in_the_frame(world: World) -> None:
+    """§16.7.5, §16.9: `/explore` stands in the landing page's header and footer, with the
+    stylesheets that draw them, and shows each project as one card that is one link."""
+    got = world.anyone.get("/explore")
+    html = got.text
+    assert '<header class="site-header dz">' in html and '<footer class="site-footer">' in html
+    assert "/assets/landing/public-pages.css?v=" in html and "<script" not in html
+    assert got.headers["content-security-policy"] == pages.LEGAL_CSP
+    assert "Accept-Language" in got.headers["vary"]
+    assert '<section class="hero dz xhero"><div class="wrap"><p class="eyebrow">Explore</p>' in html
+    assert (
+        '<li><a class="xcard" href="/maintainer/maity">'
+        '<span class="pmark" aria-hidden="true">M</span><b>Maity</b><small>maintainer/maity</small>'
+        '<span class="go">Open project <span aria-hidden="true">→</span></span></a></li>'
+    ) in html
+    # No count is shown (tsk-tp97v64vpy5z), so no figure can be 0.
+    assert "public project<" not in html and "public projects<" not in html
+    # No inline style: the policy would block it (the mark's colours come from the sheet).
+    assert ' style="' not in html.split("<body", 1)[1]
+    flow.project(world.owner, "second", public_page="on")
+    assert world.anyone.get("/explore").text.count('class="xcard"') == 2
+
+
+def test_explore_says_so_when_no_project_has_a_page(world: World) -> None:
+    world.owner.patch(f"/projects/{BASE}", {"public_page": "off"})
+    html = world.anyone.get("/explore").text
+    assert '<p class="empty-note">No project has a public page yet.</p>' in html
+    assert 'class="xgrid"' not in html and 'class="xcard"' not in html
+
+
+def test_a_monogram_is_the_names_first_letter() -> None:
+    assert public_projects.monogram("a/web", "maity web") == "M"
+    assert public_projects.monogram("a/web", "2 · ünd") == "Ü"
+    assert public_projects.monogram("a/x9", "42") == "X"

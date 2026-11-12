@@ -553,6 +553,18 @@ def test_workspace_in_use_takes_its_details(setup: Setup, detail: str) -> None:
     assert get(setup, body["id"])["reported"]["detail"] == detail
 
 
+@pytest.mark.parametrize(("state", "detail"), [("exited", "idle"), ("failed", "tool")])
+def test_hung_takes_its_details(setup: Setup, state: str, detail: str) -> None:
+    """§15.14: a runner that ended a silent run reports `hung` (tsk-cbz655mvt4ss)."""
+    body = placed(setup)
+    taken = report(setup, body, 1, state=state, reason="hung", detail=detail)
+    assert taken.status_code == 200, taken.text
+    assert get(setup, body["id"])["reported"]["reason"] == "hung"
+    refused = report(setup, body, 2, state="running", reason="hung", detail="idle")
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"reason": "not_with_state"}
+
+
 def test_since_is_clamped_to_hub_time(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, since="2999-01-01T00:00:00Z")

@@ -67,6 +67,12 @@ New agent profiles are created by a human in the dashboard, never from the CLI.
 
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
 
+## When an agent goes quiet
+
+An interactive agent listens by running `maity wait`. If that stops (a full disk, a provider limit, a turn it closed), the agent sits at its prompt and its placement still shows as running. The runner notices it by itself: when nothing runs in the session (no `maity wait`, no command the agent started) and the screen has not changed for 30 minutes, it types one line into the session asking the agent to go back to its wait loop. Any answer counts. If the session does not react at all in the next 10 minutes, or the agent has answered three such lines without going back to its wait, the runner restarts the session, and Claude Code picks up its last conversation. **Where they run** then shows the restart as `hung`. An agent that goes quiet again after every restart is restarted at most five times in a row; then its placement is held as failed until someone restarts it. Once it runs its wait again, the count starts over. A long build or test run is never taken for silence: the command running counts as work. The two times are fixed for now; they become the agent owner's settings with the hub's health settings.
+
+The runner never types while someone is attached to the session: attaching pauses the check.
+
 ## Clones after a stop
 
 The hub keeps a retention time per placement (`workspace_retention`: `immediate`, `3h`, `24h` by default, `7d`), and the agent's owner or a project admin can ask for a kept clone to be removed (`POST /projects/<owner>/<slug>/placements/<id>/workspace/remove`). Removing clones when their time is up is the runner's part, and it is not built yet: today the runner keeps every clone until you remove it (`maity runner gc --revoked`).

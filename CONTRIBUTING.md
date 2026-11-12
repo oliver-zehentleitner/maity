@@ -354,9 +354,9 @@ does not name the exception; which wording holds is open there.
   tsk-g3entm5r2rez and tsk-rkp7pvkshta2 (the maintainer's answer per pull
   request to merge with two of three, the third review caught up later)
   assumed three of three. A pull request now needs two approvals on the
-  exact head from agents of two vendors that did not write the code; when
-  a vendor team is out, the review lead decides which legs count and who
-  stands in (context/process.md, 96581882).
+  exact head from agents of two vendors that did not write the code; a
+  missing leg goes to the lead, and the maintainer and the lead agree how
+  to go on (req-8se88wy72g6s; context/process.md, 96581882).
 - A stack is merged from the bottom within minutes: the review lead
   reports MERGE-READY for it in one message, bottom to top, and a conflict
   is resolved three-way with the merged step's last head as the base, and

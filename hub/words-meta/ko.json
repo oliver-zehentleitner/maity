@@ -1,4 +1,28 @@
 {
+  "explore.heading": {
+    "en": "1a72c10edf3e3765",
+    "text": "06c5d57f7edc6d08"
+  },
+  "explore.kicker": {
+    "en": "e3abd89f854ecdf2",
+    "text": "49bdac938e321a9a"
+  },
+  "explore.none": {
+    "en": "b030b5edca8f86f8",
+    "text": "5521e089cc7ebcbe"
+  },
+  "explore.open": {
+    "en": "eca2e87363143ae9",
+    "text": "fd59fcdf3657fccd"
+  },
+  "explore.sub": {
+    "en": "19981b2e2ab90512",
+    "text": "9938879950a6a523"
+  },
+  "explore.title": {
+    "en": "bd0224ac466d10fc",
+    "text": "3ddfb4c0f1688ece"
+  },
   "factor.advice_password": {
     "en": "d3f377764b058242",
     "text": "6e7a0e085b79149d"
@@ -158,6 +182,14 @@
   "mail.only": {
     "en": "fb2c1b804e84d045",
     "text": "e7bb6620102409f9"
+  },
+  "mail.password_reset_body": {
+    "en": "5004d5be0f096351",
+    "text": "b23324a79c63a9bc"
+  },
+  "mail.password_reset_subject": {
+    "en": "309d22a5ded75bbf",
+    "text": "5d04528b2e3c2e27"
   },
   "mail.settings": {
     "en": "00f94cee302bab0b",
@@ -343,6 +375,10 @@
     "en": "ad5753822b4df1d6",
     "text": "58f3bb771d4d6c41"
   },
+  "notify.password_reset": {
+    "en": "ee4080c05d6b2f77",
+    "text": "937b78f607ad24f0"
+  },
   "notify.reported": {
     "en": "d9954ef211d54ced",
     "text": "89b01eb6580c32b2"
@@ -375,6 +411,10 @@
     "en": "bc7de30f70be93d7",
     "text": "c735d4ef1bbe07b1"
   },
+  "notify.tf_failed_reset": {
+    "en": "d0522e314340645f",
+    "text": "a763897eb8eb954d"
+  },
   "notify.tf_instance_off": {
     "en": "a6da094fa8eb3d8c",
     "text": "8124a9473fd131ec"
@@ -402,6 +442,18 @@
   "notify.withdrew": {
     "en": "5479a39e9f32ab9d",
     "text": "97cfc2d438909cae"
+  },
+  "password_reset.mail": {
+    "en": "f093462bbd3fa2bf",
+    "text": "02889b6e92709dc0"
+  },
+  "password_reset.mail_mailbox": {
+    "en": "abe4cadc2025a6b1",
+    "text": "d90f2a2f21db2094"
+  },
+  "password_reset.subject": {
+    "en": "8bddd8c317ff5d6a",
+    "text": "1699208f62822fe7"
   },
   "product.bug": {
     "en": "191903c61492ea38",

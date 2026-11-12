@@ -37,6 +37,7 @@ PREFIXES = {
     "notification_position": "npos",
     "link": "lnk",
     "forge_link": "fgl",
+    "chat_access": "cha",
     "history": "hst",
     "note": "nte",
     "pending_registration": "preg",
