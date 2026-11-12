@@ -17641,9 +17641,13 @@ without the hub's ask, at most once a minute:
 - After `hang_after_minutes` of that (the placement's `health.settings`),
   and only while no client is attached to the session, the runner types
   one fixed line into the pane, telling the agent it stopped listening
-  and to go back to its wait loop. It measures the pane again once that
-  line shows, so an answer after that measurement is a change; a line
-  that shows only later is measured at the next look instead.
+  and to go back to its wait loop, then sends it with Enter. It measures
+  the pane once the line shows and before Enter, so whatever the harness
+  does with the line, an answer included, is a change; a line that shows
+  only later is measured at the next look instead. An answer starts the
+  count again, but after `3` answered nudges with no `maity wait` seen in
+  between, the next quiet spell of `hang_after_minutes` ends the session
+  as below, without another nudge.
 - After `reply_within_minutes` more with still no wait and no change, it
   ends the session as a stop does (TERM, kill-session after a few
   seconds), reports `exited` with `reason: hung`, `detail: idle`, and

@@ -71,6 +71,7 @@ class FakeTmux:
     attach: bool | None = False
     screen: str | None = "> "
     typed: list[tuple[str, str]] = field(default_factory=list)
+    answer: str | None = None  # what the harness shows on Enter; None: it does not react
 
     def sessions(self) -> dict[str, tmux.Session]:
         return dict(self.live)
@@ -84,9 +85,13 @@ class FakeTmux:
     def pane_digest(self, name: str) -> str | None:
         return self.screen
 
-    def type_line(self, name: str, line: str) -> None:
-        self.typed.append((name, line))
-        self.screen = f"{self.screen}{line}"  # the line shows in the pane
+    def type_text(self, name: str, text: str) -> None:
+        self.typed.append((name, text))
+        self.screen = f"{self.screen}{text}"  # the line shows in the pane
+
+    def submit(self, name: str) -> None:
+        if self.answer is not None:
+            self.screen = f"{self.screen}{self.answer}"
 
     def start(self, name: str, cwd: Path, argv: Sequence[str], env: dict[str, str],
               placement: str, generation: int) -> None:  # fmt: skip
@@ -1812,12 +1817,53 @@ def test_a_line_that_shows_late_is_not_taken_for_an_answer(
     baseline, so the late echo does not start the count again and the session is ended."""
     sup, backend, _, _, _ = world
     interactive(world)
-    monkeypatch.setattr(backend, "type_line", lambda name, line: backend.typed.append((name, line)))
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
     minutes(world, 30)
     assert len(backend.typed) == 1
     backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, a tick late
     minutes(world, 10)
     assert backend.terminated == [SESSION] and len(backend.typed) == 1
+
+
+def test_an_answer_shown_before_the_first_capture_after_enter_counts(world: Any) -> None:
+    """The baseline is the pane with the line typed, before Enter: an answer the harness
+    shows at once is a change, never part of the baseline (hcrb's delta review)."""
+    sup, backend, _, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    minutes(world, 30)
+    assert len(backend.typed) == 1
+    minutes(world, 10)
+    assert backend.terminated == [] and sup.records["plc-0003"].nudges == 1
+
+
+def test_answered_nudges_without_a_wait_end_it_at_the_cap(world: Any) -> None:
+    """An agent that answers every nudge but never goes back to its wait is not listening:
+    after `NUDGE_CAP` answered nudges, its next quiet spell ends it as `hung`/`idle`."""
+    sup, backend, reports, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    minutes(world, 30)
+    for n in range(2, supervisor.NUDGE_CAP + 1):
+        minutes(world, 31)
+        assert len(backend.typed) == n and backend.terminated == [], n
+    minutes(world, 31)
+    assert backend.terminated == [SESSION] and len(backend.typed) == supervisor.NUDGE_CAP
+    backend.exit(SESSION, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "idle")
+
+
+def test_a_wait_starts_the_answered_nudges_over(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    minutes(world, 30)
+    minutes(world, 31)
+    assert sup.records["plc-0003"].nudges == 2
+    backend.below = tmux.WAITING  # it went back to its wait loop
+    minutes(world, 1)
+    assert sup.records["plc-0003"].nudges == 0
 
 
 def test_an_answer_after_the_first_look_starts_the_count_again(world: Any) -> None:

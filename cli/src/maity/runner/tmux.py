@@ -312,11 +312,19 @@ class Tmux:
             return None
         return below(done.stdout, session.pid)
 
-    def type_line(self, name: str, line: str) -> None:
-        """Type one line into the session's pane and press Enter: `-l` sends it literally,
+    def type_text(self, name: str, text: str) -> None:
+        """Type text into the session's pane without pressing Enter: `-l` sends it literally,
         so no word of it is read as a key name."""
-        self._check(self._tmux("send-keys", "-t", name, "-l", line))
+        self._check(self._tmux("send-keys", "-t", name, "-l", text))
+
+    def submit(self, name: str) -> None:
+        """Press Enter in the session's pane."""
         self._check(self._tmux("send-keys", "-t", name, "Enter"))
+
+    def type_line(self, name: str, line: str) -> None:
+        """Type one line into the session's pane and press Enter."""
+        self.type_text(name, line)
+        self.submit(name)
 
     def environment_of(self, name: str) -> dict[str, str]:
         """The environment a session's processes get (for tests and `check`)."""

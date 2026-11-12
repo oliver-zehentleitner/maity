@@ -127,6 +127,7 @@ IDLE_EVERY = 60.0
 HANG_AFTER_MINUTES = 30
 REPLY_WITHIN_MINUTES = 10
 TYPED_TRIES, TYPED_PAUSE = 10, 0.2  # up to 2 s for the nudge's line to show in the pane
+NUDGE_CAP = 3  # nudges answered in a row without a `maity wait`: the next quiet spell ends it
 NUDGE_LINE = (
     "maity runner: you have not been listening for a while: no `maity wait` ran and nothing "
     "changed on this screen. Run `maity resume` if you lost track, then go back to your wait "
@@ -219,10 +220,12 @@ class Record:
     hung_at: float | None = None
     hung_exits: list[float] = field(default_factory=list)  # for the crash cap (§15.14)
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
+    nudges: int = 0  # nudges answered since a `maity wait` was last seen
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
         self.idle_checked_at = self.pane = self.quiet_since = self.nudged_at = None
+        self.nudges = 0
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -601,12 +604,14 @@ class Supervisor:
         self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
     ) -> None:
         """The runner's own check of an interactive session (§15.14). The agent stopped
-        listening when the harness has no process below it at all (no `maity wait`, no tool
-        it runs, however quiet) and its pane is unchanged, for `hang_after_minutes`. Nobody
-        attached: one line typed into the pane. Still the same `reply_within_minutes` later:
-        the session is ended and started again, resuming it, reported `exited`, `hung`,
-        `idle`. A person attached, any process below the harness, a changed pane, or
-        anything the runner cannot read starts the count again."""
+        listening when the harness has no process below it but its own helpers (no `maity
+        wait`, no tool it runs, however quiet) and its pane is unchanged, for
+        `hang_after_minutes`. Nobody attached: one line typed into the pane and sent. A pane
+        still as it was before Enter `reply_within_minutes` later (the harness did not even
+        take the line), or a quiet spell after `NUDGE_CAP` answered nudges with no wait in
+        between: the session is ended and started again, resuming it, reported `exited`,
+        `hung`, `idle`. A person attached, any other process below the harness, a changed
+        pane, or anything the runner cannot read starts the count again."""
         if rec.hung_at is not None:  # ended for it: kill-session if TERM was not enough
             if now - rec.hung_at >= KILL_AFTER:
                 backend.kill(session.name)
@@ -616,14 +621,14 @@ class Supervisor:
             return
         rec.idle_checked_at = now
         below = backend.activity(session)
-        if below == WAITING:  # it listens again: the idle ends in a row start over
-            rec.hung_exits = []
+        if below == WAITING:  # it listens again: the idle ends and nudges in a row start over
+            rec.hung_exits, rec.nudges = [], 0
         attached = backend.attached(session.name)
         digest = backend.pane_digest(session.name)
         if below != IDLE or attached is not False or digest is None:
             rec.pane, rec.quiet_since, rec.nudged_at = digest, None, None
             return
-        if rec.nudged_at is not None and rec.pane is None:  # the line showed only late
+        if rec.nudged_at is not None and rec.pane is None:  # the line did not show in time
             rec.pane = digest
             return
         if rec.quiet_since is None or digest != rec.pane:
@@ -635,13 +640,22 @@ class Supervisor:
         if rec.nudged_at is None:
             if now - rec.quiet_since < hang:
                 return
-            try:
-                backend.type_line(session.name, NUDGE_LINE)
+            if rec.nudges >= NUDGE_CAP:
+                self.log(f"{session.name}: answered {rec.nudges} nudges without going back to "
+                         "its wait; ending it to resume its session")  # fmt: skip
+                backend.terminate(session)
+                rec.hung_at = now
+                return
+            try:  # the baseline is the pane with the line typed, before Enter: any answer counts
+                backend.type_text(session.name, NUDGE_LINE)
+                shown = self._typed(backend, session.name, digest)
+                backend.submit(session.name)
             except TmuxError as exc:
                 self.log(f"{session.name}: cannot nudge: {exc}")
                 return
             rec.nudged_at = now
-            rec.pane = self._typed(backend, session.name, digest)
+            rec.nudges += 1
+            rec.pane = shown
             self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
                      "nudged in its pane")  # fmt: skip
             return
@@ -653,10 +667,11 @@ class Supervisor:
         rec.hung_at = now
 
     def _typed(self, backend: Tmux, name: str, before: str) -> str | None:
-        """The pane right after the nudge, once the typed line shows: what "unchanged" is
-        measured against from then on, so the agent's answer to it is a change. A line that
-        does not show within the window (a stalled screen, a slow read) leaves no baseline:
-        the next look takes one, so its late echo is not taken for an answer."""
+        """The pane once the nudge's line shows, before Enter: what "unchanged" is measured
+        against from then on, so whatever the harness does with the line, an answer
+        included, is a change. A line that does not show within the window (a stalled
+        screen, a slow read) leaves no baseline: the next look takes one, so its late echo
+        is not taken for an answer."""
         for _ in range(TYPED_TRIES):
             digest = backend.pane_digest(name)
             if digest != before:

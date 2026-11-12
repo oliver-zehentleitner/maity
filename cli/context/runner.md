@@ -2094,12 +2094,23 @@ looks at each interactive session once a minute.
   default times, and the window is 30, so five never fit and the cap was
   never reached (fkyb's review). A `maity wait` seen below the harness
   starts the row over: the resume worked.
-- The pane is measured again right after the typed line shows, not at the
-  next look a minute later, so an answer that comes within that minute
-  counts as a change instead of becoming the new baseline. If the line
-  does not show within that short window (a stalled screen, a slow read),
-  the next look takes the baseline: keeping the hash from before the nudge
-  took the late echo for an answer and nudged forever (fkyb's review).
+- The baseline after a nudge is the pane with the line typed and before
+  Enter, so whatever the harness does with the line, a reply included, is
+  a change: a session must never be ended 10 minutes after a genuine reply
+  (the lead's decision on hcrb's review). Rejected: measuring after Enter,
+  at the next look (the first version) or at the first capture after
+  Enter (round 2); a reply already on screen by then became the baseline.
+  If the line does not show within the short window (a stalled screen, a
+  slow read), the next look takes the baseline: keeping the hash from
+  before the nudge took the late echo for an answer and nudged forever
+  (fkyb's review).
+- Since Enter itself changes a live harness's pane, only a session that
+  does not react at all is ended after `reply_within_minutes`. An agent
+  that answers every nudge but never goes back to its wait would be
+  nudged forever, so after three answered nudges with no `maity wait`
+  seen in between its next quiet spell ends it, without another nudge.
+  Rejected: resetting on any change without a cap (an agent that only
+  answers stays deaf for good).
 - A new generation clears the resume flag: it may change the harness, the
   model or the mode, and §15.14 wants a fresh session then.
 - A live tool below the harness keeps the session out of the check for as
