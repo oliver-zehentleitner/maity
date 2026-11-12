@@ -364,6 +364,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(refuses("https://evil.example/x.png") && refuses("blob:https://evil.example/x") && refuses("//evil.example/x.png")
     && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maintainer/maity/logo?v=%22f1%22"),
     "dom: an image is a local file or the hub's own image, never another origin, not even https");
+  // A local file under its version, as the shell names it (js/assets.js, §16.11): `?v=` and 16 hex digits, nothing else.
+  expect(!refuses("brand/maity-lockup.svg?v=0123456789abcdef") && refuses("brand/maity-lockup.svg?v=0123456789ABCDEF")
+    && refuses("brand/maity-lockup.svg?v=0123456789abcde") && refuses("brand/maity-lockup.svg?x=0123456789abcdef")
+    && refuses("brand/maity-lockup.svg?v=0123456789abcdef&v=0") && refuses("https://evil.example/x.svg?v=0123456789abcdef")
+    && refuses("javascript:x/y?v=0123456789abcdef") && refuses("brand/x.svg#?v=0123456789abcdef"),
+    "dom: a local file may carry its version, and only that");
   let cur = main.querySelector(".current");
   expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Review") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
   expect(cur && !btn(cur, "Later (stays open)") && btn(cur, "Later"), "local Later button present");
@@ -5762,6 +5768,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await asked.i18n.ready;
     expect(asked.i18n.language === "de" && asked.i18n.explicit() === "de" && !("maity.language" in asked.kept),
       "language: ?lang= is the visitor's choice, and nothing is stored for it");
+  }
+  // A file a script loads later is asked for under the version the hub lists in the shell's
+  // `#maity-assets` block (js/assets.js, docs/api.md §16.11, tsk-0pp41wxp6f75); without the block
+  // (fixture mode) or for a file it does not list, under its plain name.
+  {
+    const V = "0123456789abcdef";
+    const withBlock = (text) => {
+      const page = { document: { getElementById: (id) => (id === "maity-assets" && text !== null ? { textContent: text } : null) }, JSON, Object };
+      page.window = page;
+      vm.runInContext(fs.readFileSync(path.join(WEB, "js/assets.js"), "utf8"), vm.createContext(page), { filename: "js/assets.js" });
+      return page.Maity.assetQuery;
+    };
+    const listed = withBlock(JSON.stringify({ "js/i18n/de.js": V, "brand/x.svg": "ABCDEF0123456789", "vendor/a.js": V + "0", "brand/p.svg": 7 }));
+    expect(listed("js/i18n/de.js") === "?v=" + V && listed("js/i18n/fr.js") === "",
+      "assets: a listed file gets ?v=<version>, an unlisted one its plain name");
+    expect(listed("brand/x.svg") === "" && listed("vendor/a.js") === "" && listed("brand/p.svg") === "" && listed("constructor") === "",
+      "assets: only 16 lower hex digits are a version, and only the block's own keys count");
+    expect(withBlock(null)("js/i18n/de.js") === "" && withBlock("{not json")("js/i18n/de.js") === "" && withBlock("[1]")("0") === "",
+      "assets: no block (file://), a block that does not parse or is no object: plain names");
+    // js/i18n.js asks for a catalog under its version.
+    const added = [];
+    const page = {
+      MAITY_I18N: { en: {} }, MAITY_I18N_LANGUAGES: ["en", "de"],
+      location: { search: "", protocol: "https:" }, navigator: { languages: ["en"] },
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      document: { documentElement: { lang: "" }, baseURI: "https://hub.example/assets/", currentScript: { src: "https://hub.example/assets/js/i18n.js?v=" + V },
+        createElement: () => ({}), head: { appendChild: (el) => added.push(el) } },
+      setTimeout, clearTimeout, AbortController, URLSearchParams, URL, Intl, Promise, Object, console,
+    };
+    page.window = page;
+    page.Maity = { assetQuery: (p) => (p === "js/i18n/de.js" ? "?v=" + V : "") };
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), vm.createContext(page), { filename: "js/i18n.js" });
+    page.Maity.i18n.follow("de");
+    await tick();
+    expect(added.length === 1 && added[0].src === "https://hub.example/assets/js/i18n/de.js?v=" + V,
+      "assets: js/i18n.js asks for a catalog under its version, beside its own address");
   }
   // Before sign-in the page takes the landing page's own language, from GET /site/chrome
   // (tsk-jh94ax9pphxs): the hub chooses it from the raw ?lang=, Accept-Language, the landing

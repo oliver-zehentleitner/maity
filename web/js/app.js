@@ -191,8 +191,8 @@ window.Maity = window.Maity || {};
     const label = home ? M.t("header.brand.signed_in") : M.t("header.brand.signed_out");
     return h(tag || "h1", { class: "brand" },
       h("a", { class: "brand-home", href: home ? "/all" : "/", "aria-label": label, title: label },
-        h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "", width: "94", height: "28" }),
-        h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "", width: "94", height: "28" })));
+        h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg" + M.assetQuery("brand/maity-lockup.svg"), alt: "", width: "94", height: "28" }),
+        h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg" + M.assetQuery("brand/maity-lockup-dark.svg"), alt: "", width: "94", height: "28" })));
   }
 
   // The lockup already in the header, when the link still goes where this
@@ -2564,7 +2564,7 @@ window.Maity = window.Maity || {};
     const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, M.t("page.failed.again"));
     const signIn = err.status === 401
       ? h("button", { type: "button", onclick: () => { M.route.go("/login"); } }, M.t("page.failed.sign_in")) : null;
-    const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file, alt: "", width: "40", height: "40" });
+    const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file + M.assetQuery("brand/" + file), alt: "", width: "40", height: "40" });
     const technical = (text) => h("span", { translate: "no" }, text);
     return h("div", { class: "page-failed", role: "alert" },
       mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
