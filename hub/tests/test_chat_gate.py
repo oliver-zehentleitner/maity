@@ -55,7 +55,8 @@ def view(who: Any, chat_id: str) -> Any:
 
 def item(chat: dict[str, Any], member_id: str) -> dict[str, Any]:
     [found] = [p for p in chat["participants"] if p["member_id"] == member_id]
-    return found
+    shown: dict[str, Any] = found
+    return shown
 
 
 def reason(response: Any) -> Any:
