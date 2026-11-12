@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -458,3 +459,17 @@ def test_the_agents_user_records_it_through_sudo(
         str(ctx.clone.resolve()): {KEY: True}
     }
     assert not (Path.home() / ".claude.json").exists()  # never the runner's own
+
+
+def test_the_inode_of_a_path_reads_the_same_through_sudo(tmp_path: Path, fake_sudo: Path) -> None:
+    """The runner records `.git`'s inode at a start (adapters.launch); the agents' side may be
+    closed to the runner, so it is read there with `ls -di`, a link not followed."""
+    real = tmp_path / "dot-git"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    for path in (real, link):
+        assert AsUser("maity-agent").inode(path) == AsUser().inode(path) == os.lstat(path).st_ino
+    assert "ls -di --" in fake_sudo.read_text()
+    with pytest.raises(OSError, match="inode"):
+        AsUser("maity-agent").inode(tmp_path / "missing")
