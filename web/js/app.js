@@ -355,6 +355,7 @@ window.Maity = window.Maity || {};
     M.api.endSession();
     renderSeq++;
     M.notify.halt();
+    M.presence.stop();
     stopTimers();
     if (M.clearChatDrafts) M.clearChatDrafts();
     // As a sign-out does: the next human in this tab starts with their own settings.
@@ -480,8 +481,9 @@ window.Maity = window.Maity || {};
   // out (H on #461); anything else, and none, is the root.
   async function logout(back) {
     const after = safeNext(back);
-    // The held long-poll goes before the session does (§18.2).
+    // The held long-poll goes before the session does (§18.2), and the presence calls with it.
     M.notify.halt();
+    M.presence.stop();
     // Signing out on purpose is no session that ended under the page.
     sessionEnded = true;
     kept = null;
@@ -2333,6 +2335,8 @@ window.Maity = window.Maity || {};
         renderPending(main);
         return;
       }
+      // The tab's presence for the mail hold (§18.4); js/presence.js decides whether this page sends it.
+      M.presence.start(me);
       if (where.scope === null || where.scope === "login") {
         const next = where.scope === "login" ? routeNext() : null;
         M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });

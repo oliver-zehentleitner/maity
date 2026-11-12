@@ -2359,6 +2359,8 @@
   "mail.quiet.to": "À",
   "mail.sign_in_link": "Autoriser un lien de connexion par e-mail",
   "mail.sign_in_link.hint": "Le désactiver annule un lien déjà envoyé.",
+  "mail.hold_while_online": "Pas d'e-mail tant que je suis en ligne dans l'application web",
+  "mail.hold_while_online.hint": "Les e-mails envoyés « Immédiatement » attendent tant que vous utilisez le tableau de bord. Quelques minutes après l'avoir quitté, seul ce que vous n'avez pas lu est envoyé.",
   "mail.time.invalid": "Une heure au format HH:MM, de 00:00 à 23:59.",
   "mail.timezone": "Fuseau horaire",
   "mail.timezone.unknown": "Le hub ne connaît pas ce fuseau horaire. Utilisez un nom comme Europe/Vienna.",

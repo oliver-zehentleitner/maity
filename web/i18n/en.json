@@ -2367,6 +2367,8 @@
   "mail.quiet.to": "To",
   "mail.sign_in_link": "Allow a sign-in link by mail",
   "mail.sign_in_link.hint": "Turning it off voids a link that was already sent.",
+  "mail.hold_while_online": "No mail while I'm online in the web app",
+  "mail.hold_while_online.hint": "Mail of what goes out At once waits while you use the dashboard. A few minutes after you have left it, only what you have not read is mailed.",
   "mail.time.invalid": "A time as HH:MM, from 00:00 to 23:59.",
   "mail.timezone": "Time zone",
   "mail.timezone.elsewhere": "The digests and quiet hours follow your time zone, {zone}, which you set under {link}.",
