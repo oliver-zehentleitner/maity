@@ -17636,7 +17636,7 @@ without the hub's ask, at most once a minute:
   own helpers (the bridges of Claude Code's sandbox: a `socat` listening
   on a socket named `claude-http-<hex>.sock` or `claude-socks-<hex>.sock`,
   its own name, not a directory above it, and forwarding to
-  `TCP:localhost:<port>`),
+  `TCP:localhost:<port>`, options after the port allowed),
   neither a `maity wait` nor a tool it runs (however quiet: a long build
   or migration keeps it busy), and what the pane shows has not changed.
   The runner compares a hash of the pane; it keeps, logs and sends none
@@ -17653,7 +17653,8 @@ without the hub's ask, at most once a minute:
   below. A client attached, a process below the harness or an unreadable
   pane before that Enter drops the nudge: it does not count, and its line
   may stay typed, so the next nudge sends that line instead of typing it
-  again. A nudge is answered when the pane changes after its Enter or the
+  again; after a client was attached the input is that person's, and the
+  next nudge types afresh. A nudge is answered when the pane changes after its Enter or the
   harness starts a process; a client attached or an unreadable pane in
   between is no answer, and the reply time runs on. An answer starts the
   count again, but after `3` answered nudges with no `maity wait` seen in

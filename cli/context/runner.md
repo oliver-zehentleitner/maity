@@ -2085,7 +2085,10 @@ looks at each interactive session once a minute.
   Only a socat with the bridge's whole shape counts: it listens on a
   socket whose own name is `claude-http-<hex>.sock` or
   `claude-socks-<hex>.sock` and forwards to `TCP:localhost:<port>` (or
-  127.0.0.1), as the sandbox runtime builds it. Rejected: `/claude-`
+  127.0.0.1; the runtime adds keepalive options after the port, so only
+  the address before the first comma is compared), as the sandbox runtime
+  builds it. A first version compared the whole word and took the real
+  bridge for work (fkyb's review). Rejected: `/claude-`
   anywhere in the path, which exempted a service in a `claude-`
   directory (hcrb's review); any `claude-<word>-<id>.sock`, which
   exempted an agent's own service named like that (v5vp's review); an
@@ -2127,7 +2130,10 @@ looks at each interactive session once a minute.
   "three answered nudges" after zero Enters (fkyb's review); counting at
   Enter, which did the same after three unanswered Enters with a person
   attaching in between (v5vp's review); clearing the input before typing,
-  which could throw away what a person typed there.
+  which could throw away what a person typed there. Once a person was
+  attached, the input is theirs: the next nudge types afresh rather than
+  sending a draft they may have left (fkyb's review), at the price of a
+  second copy if they left the line as it was.
 - Since Enter itself changes a live harness's pane, only a session that
   does not react at all is ended after `reply_within_minutes`. An agent
   that answers every nudge but never goes back to its wait would be

@@ -86,7 +86,8 @@ WAITING, WORKING, IDLE = "waiting", "working", "idle"
 
 # A sandbox bridge as Claude Code's sandbox runtime builds it: its socket's own file name
 # (never a directory above it) is claude-http- or claude-socks- and a hex id, and it
-# forwards to a proxy on the loopback.
+# forwards to a proxy on the loopback (the target word may carry options after the port,
+# `TCP:localhost:3128,keepalive,…`, as the runtime builds it).
 BRIDGE_SOCKET = re.compile(r"claude-(?:http|socks)-[0-9a-f]+\.sock")
 BRIDGE_TARGET = re.compile(r"TCP:(?:localhost|127\.0\.0\.1):[0-9]+")
 
@@ -108,7 +109,7 @@ def is_helper(args: str) -> bool:
             is not None
             for word in words[1:]
         )
-        and any(BRIDGE_TARGET.fullmatch(word) is not None for word in words[1:])
+        and any(BRIDGE_TARGET.fullmatch(word.split(",", 1)[0]) is not None for word in words[1:])
     )
 
 

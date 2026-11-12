@@ -612,8 +612,10 @@ class Supervisor:
         still as it was before Enter `reply_within_minutes` later (the harness did not even
         take the line), or a quiet spell after `NUDGE_CAP` answered nudges with no wait in
         between: the session is ended and started again, resuming it, reported `exited`,
-        `hung`, `idle`. A person attached, any other process below the harness, a changed
-        pane, or anything the runner cannot read starts the count again."""
+        `hung`, `idle`. Before a nudge's Enter, a person attached, any other process below
+        the harness, a changed pane, or anything the runner cannot read starts the count
+        again; after it, a change or a process is the answer, and a person attached or an
+        unreadable look leaves the nudge waiting while the reply time runs on."""
         if rec.hung_at is not None:  # ended for it: kill-session if TERM was not enough
             if now - rec.hung_at >= KILL_AFTER:
                 backend.kill(session.name)
@@ -633,8 +635,9 @@ class Supervisor:
                     rec.nudges += 1
                 elif below != WAITING:  # a look it cannot use: the nudge still waits for one
                     return
-            # A line typed but never sent is dropped; it may still sit in the input.
-            rec.left_typed = rec.left_typed or rec.unsent
+            # A line typed but never sent is dropped; it may still sit in the input, unless a
+            # person is at the pane: what is there then is theirs, the next nudge types afresh.
+            rec.left_typed = (rec.left_typed or rec.unsent) and attached is False
             rec.pane, rec.quiet_since, rec.nudged_at, rec.unsent = digest, None, None, False
             return
         if rec.unsent and rec.nudged_at is not None:  # the line did not show in time

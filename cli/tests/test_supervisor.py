@@ -1738,6 +1738,16 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert not tmux.is_helper(
         "socat UNIX-LISTEN:/tmp/claude-app-0123abcd.sock,fork TCP:localhost:80"
     )
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-http-xyz.sock,fork TCP:localhost:80")
+    # the runtime's own argv: options follow the port on the target (fkyb's review)
+    real = (
+        "socat UNIX-LISTEN:/tmp/claude-{}-0123456789abcdef.sock,fork,reuseaddr"
+        " TCP:localhost:{},keepalive,keepidle=10,keepintvl=5,keepcnt=3"
+    )
+    assert tmux.is_helper(real.format("http", 3128)) and tmux.is_helper(real.format("socks", 1080))
+    assert (
+        tmux.below(f"  100     1 claude\n  700   100 {real.format('http', 3128)}\n", 100) == "idle"
+    )
     assert tmux.is_helper(
         "socat UNIX-LISTEN:/tmp/claude-socks-89abcdef01234567.sock,fork TCP:localhost:1080"
     )
@@ -1850,8 +1860,8 @@ def test_a_held_back_line_dropped_by_an_attach_does_not_count(
 ) -> None:
     """A person attaching before the held-back line's Enter drops it: no Enter is sent and
     it does not count toward `NUDGE_CAP` (fkyb's review: "answered 3 nudges" after zero
-    Enters). Its line may still sit in the input, so the next nudge sends it instead of
-    typing a second copy behind it (v5vp's review)."""
+    Enters). What the input holds then is the person's: the next nudge types afresh and
+    never sends a draft they left (fkyb's review)."""
     sup, backend, _, _, _ = world
     interactive(world)
     monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
@@ -1862,8 +1872,7 @@ def test_a_held_back_line_dropped_by_an_attach_does_not_count(
     backend.attach = False
     assert sup.records["plc-0003"].nudges == 0
     minutes(world, 31)
-    assert len(backend.typed) == 1 and backend.submitted == 1  # sent, not typed again
-    assert sup.records["plc-0003"].nudges == 0 and backend.terminated == []
+    assert len(backend.typed) == 2 and backend.terminated == []
 
 
 def test_a_line_still_not_shown_gets_no_enter(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1895,6 +1904,27 @@ def test_a_stalled_line_that_shows_later_is_then_measured(
     assert backend.terminated == []  # `reply_within_minutes` runs from its Enter
     minutes(world, 1)
     assert backend.terminated == [SESSION]
+
+
+def test_a_dropped_line_is_sent_not_typed_twice(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A held-back line dropped by a look the runner cannot read, with nobody attached,
+    still sits in the input: the next nudge sends it instead of typing a second copy
+    behind it, and the one after that types again (v5vp's and fkyb's reviews)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    screen, backend.screen = backend.screen, None  # one unreadable look
+    minutes(world, 1)
+    backend.screen = screen
+    minutes(world, 31)
+    assert len(backend.typed) == 1 and backend.submitted == 1  # sent, not typed again
+    backend.screen = f"{backend.screen} ● on it"  # answered
+    minutes(world, 1)
+    minutes(world, 31)
+    assert len(backend.typed) == 2  # the next nudge types its line again
 
 
 @pytest.mark.parametrize("reset", [{"attach": True}, {"screen": None}])
