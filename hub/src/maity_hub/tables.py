@@ -1406,7 +1406,7 @@ placement = Table(
     # The clone after a stop or a close (§15.5): how long the runner keeps it, which clone
     # of the placement is meant, and the runner's latest report on it. Columns, not one
     # JSON value: both closed lists select on the state in SQL (context/placements.md).
-    Column("workspace_retention", String(8), nullable=False, server_default="24h"),
+    Column("workspace_retention", String(16), nullable=False, server_default="24h"),
     Column("workspace_epoch", Integer, nullable=False, server_default="1"),
     Column("workspace_state", String(16)),
     Column("workspace_reason", String(32)),

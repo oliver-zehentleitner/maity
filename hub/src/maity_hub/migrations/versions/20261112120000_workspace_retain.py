@@ -39,7 +39,7 @@ def upgrade() -> None:
     with op.batch_alter_table("placement", schema=None) as batch_op:
         batch_op.add_column(
             sa.Column(
-                "workspace_retention", sa.String(length=8), nullable=False, server_default="24h"
+                "workspace_retention", sa.String(length=16), nullable=False, server_default="24h"
             )
         )
         batch_op.add_column(
