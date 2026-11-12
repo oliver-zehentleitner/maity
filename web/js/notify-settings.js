@@ -283,6 +283,9 @@ window.Maity = window.Maity || {};
       const showQuiet = () => { quietFrom.disabled = !quiet.checked; quietTo.disabled = !quiet.checked; };
       quiet.addEventListener("change", showQuiet);
       showQuiet();
+      // §18.4, §18.5: the mail of what goes out At once waits while this human is in the dashboard.
+      const hold = h("input", { type: "checkbox", id: "mail-hold-while-online" });
+      hold.checked = email.hold_while_online !== false;
       const signIn = h("input", { type: "checkbox", id: "mail-sign-in-link" });
       signIn.checked = email.sign_in_link !== false;
       const errors = {
@@ -317,6 +320,7 @@ window.Maity = window.Maity || {};
           if (weeklyOn.value !== email.weekly_on) patch.weekly_on = weeklyOn.value;
           const hours = quiet.checked ? { from: quietFrom.value, to: quietTo.value } : null;
           if (JSON.stringify(hours) !== JSON.stringify(email.quiet_hours || null)) patch.quiet_hours = hours;
+          if (hold.checked !== (email.hold_while_online !== false)) patch.hold_while_online = hold.checked;
           if (signIn.checked !== (email.sign_in_link !== false)) patch.sign_in_link = signIn.checked;
           if (!Object.keys(patch).length) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("notify.unchanged"))); return; }
           button.disabled = true;
@@ -352,6 +356,8 @@ window.Maity = window.Maity || {};
         h("label", { class: "check", for: "mail-quiet" }, quiet, " " + M.t("mail.quiet.on")),
         h("label", { for: "mail-quiet-from" }, M.t("mail.quiet.from")), quietFrom,
         h("label", { for: "mail-quiet-to" }, M.t("mail.quiet.to")), quietTo, errors.quiet_hours),
+      h("label", { class: "check", for: "mail-hold-while-online" }, hold, " " + M.t("mail.hold_while_online")),
+      h("p", { class: "hint" }, M.t("mail.hold_while_online.hint")),
       h("label", { class: "check", for: "mail-sign-in-link" }, signIn, " " + M.t("mail.sign_in_link")),
       h("p", { class: "hint" }, M.t("mail.sign_in_link.hint")),
       button);

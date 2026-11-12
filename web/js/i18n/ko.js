@@ -2338,6 +2338,8 @@ window.MAITY_I18N["ko"] = {
   "mail.field.sign_in_max_per_hour": "시간당 로그인 메일 수",
   "mail.field.tls": "연결 보안",
   "mail.field.username": "SMTP 사용자 이름",
+  "mail.hold_while_online": "웹 앱에 접속해 있는 동안 메일 보내지 않기",
+  "mail.hold_while_online.hint": "'즉시'로 보내는 메일은 대시보드를 사용하는 동안 대기합니다. 대시보드를 떠나고 몇 분 뒤, 읽지 않은 것만 메일로 보냅니다.",
   "mail.incomplete": "메일 설정이 완전하지 않습니다: {missing}.",
   "mail.keys": "서명 키: {signing}. 인스턴스 암호화 키: {secret}. 키는 환경 설정에서 지정합니다.",
   "mail.kind.chat": "채팅 메시지",
