@@ -18084,7 +18084,11 @@ The `maity wait` and `git` that local mode runs are stopped with it.
 - **At the hub.** A stop sends nothing to the hub; there is no call that
   ends a session (§5.3). Between runs local mode's own `maity wait`
   long-polls are the session's `/events` calls: they keep it `online`
-  and renew its claim leases (§6.5). Once local mode is stopped, the lead
+  and renew no claim lease (§2.4, §8.3). Before a lease runs out, the
+  holder's `claim_lease_expiring` (§6.5; not built yet,
+  tsk-p55zyn4pz0wd) wakes that wait like any event for the session, and
+  the run it starts renews with `maity claim renew` or releases the
+  card. Once local mode is stopped, the lead
   sees the agent go `away` and then `offline` (§5.3), and its claim
   leases lapse as any agent's do. After 10 minutes with an event waiting
   for it, the session is not listening and the hub emits
