@@ -88,18 +88,34 @@ def parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:  # type:
     return gh
 
 
-def granted(root: Path) -> tuple[str, str]:
-    """The repository and gh the runner recorded for the clone at `root`; Refused when its
-    grant has no pull requests or the record is not one the runner writes."""
-    where = root / PULL_REQUESTS_PATH
-    try:
+def _record(root: Path, dot_git: int | None) -> bytes:
+    """The runner's pull-request record. Under a placement it is read from the `.git` that
+    `clonecheck.opened_git` checked, through its descriptor, never by the name `.git` again:
+    sandboxed code can rename `.git` and put one of its own there. Without descriptors
+    (`dot_git` None: Windows) it is read by name, from a `.git` checked by inode."""
+    if dot_git is None:
+        where = root / PULL_REQUESTS_PATH
         mode = where.lstat()
         if not stat.S_ISREG(mode.st_mode) or mode.st_size > 4096:
             raise OSError("not a plain file")
-        lines = where.read_bytes().decode("utf-8").splitlines()
+        return where.read_bytes()
+    folder = os.O_RDONLY | clonecheck.NOFOLLOW | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(PULL_REQUESTS_PATH.parts[1], folder, dir_fd=dot_git)
+    try:
+        return clonecheck._read_regular(PULL_REQUESTS_PATH.parts[2], fd, 4096)
+    finally:
+        os.close(fd)
+
+
+def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
+    """The repository and gh the runner recorded for the clone at `root` (`_record`);
+    Refused when its grant has no pull requests or the record is not one the runner
+    writes."""
+    try:
+        lines = _record(root, dot_git).decode("utf-8").splitlines()
     except FileNotFoundError:
         lines = []
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError, clonecheck.Refused):
         raise Refused(f"the runner's record {PULL_REQUESTS_PATH} is not readable") from None
     if not lines:
         raise Refused(
@@ -150,12 +166,13 @@ def _open_at(directory: int, name: str, flags: int, given: str) -> int:
         raise Refused(f"--body-file {given}: cannot be read ({exc.strerror})") from None
 
 
-def body_file(root: Path, given: str) -> bytes:
+def body_file(root: Path, given: str, dot_git: int | None = None) -> bytes:
     """The file's content, read through descriptors only. maity runs outside the sandbox,
     and any name it looked up twice could point elsewhere the second time (a directory
     exchanged with a link by code the sandbox runs). So the clone's root is opened once,
     each directory on the way is opened from the one before without following a link and
-    refused when it is the clone's `.git` (device and inode), and the file is opened from
+    refused when it is the clone's `.git` (device and inode of the `.git` that
+    `clonecheck.opened_git` checked, `dot_git`), and the file is opened from
     the last one without following a link and without blocking (a FIFO): a regular file
     with no other hard link, of at most BODY_MAX bytes (cli/context/runner.md 9f43804d)."""
     names = _in_clone(root, given)
@@ -167,10 +184,14 @@ def body_file(root: Path, given: str) -> bytes:
     folder = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     fd = os.open(root, folder)
     try:
-        try:
-            git: os.stat_result | None = os.stat(".git", dir_fd=fd, follow_symlinks=False)
-        except OSError:
-            git = None
+        git: os.stat_result | None
+        if dot_git is not None:
+            git = os.fstat(dot_git)
+        else:
+            try:
+                git = os.stat(".git", dir_fd=fd, follow_symlinks=False)
+            except OSError:
+                git = None
         for index, name in enumerate(names):
             last = index == len(names) - 1
             flags = os.O_RDONLY | os.O_NONBLOCK if last else folder
@@ -212,7 +233,7 @@ def current_branch(root: Path) -> str:
 
 
 def command(
-    args: argparse.Namespace, root: Path, repository: str, gh: str
+    args: argparse.Namespace, root: Path, repository: str, gh: str, dot_git: int | None = None
 ) -> tuple[list[str], bytes | None]:
     """gh's argument list, built here option by option (`--name=value`, so no value is read
     as an option), with the recorded repository, and what goes to its standard input. The
@@ -221,7 +242,7 @@ def command(
     if args.gh_command == "create":
         argv.append(f"--title={args.title}")
         if args.body_file is not None:
-            stdin = body_file(root, args.body_file)
+            stdin = body_file(root, args.body_file, dot_git)
         else:
             stdin = args.body.encode("utf-8")
             if len(stdin) > BODY_MAX:
@@ -273,8 +294,12 @@ def run(args: argparse.Namespace) -> int:
         raise Refused(str(exc)) from None
     if root is None:
         raise Refused("maity gh runs only in a session a runner placed; " + ALLOWED)
-    repository, gh = granted(root)
-    argv, stdin = command(args, root, repository, gh)
+    try:
+        with clonecheck.opened_git(root) as dot_git:
+            repository, gh = granted(root, dot_git)
+            argv, stdin = command(args, root, repository, gh, dot_git)
+    except clonecheck.Refused as exc:
+        raise Refused(str(exc)) from None
     with tempfile.TemporaryDirectory(prefix="maity-gh-") as empty:
         done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built above
             argv, input=stdin, cwd=empty, env=gh_env(os.environ, gh), check=False

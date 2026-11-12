@@ -985,9 +985,6 @@ Open gaps:
   code can run gh or rewrite the runner's record of the repository.
 - On an ssh target, gh must be at the path the runner found on its own
   host, or `maity gh` refuses.
-- Even under the sandbox, code that can write the clone's root can
-  replace its `.git`, and with it the runner's record of the repository
-  and gh (tsk-er1nymh4te1h).
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,

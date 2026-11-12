@@ -70,6 +70,11 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     (clone / ghpr.PULL_REQUESTS_PATH).write_text(f"{REPOSITORY}\n{gh}\n")
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    # As the runner starts a session (#1683): the .git it recorded, git's own directory.
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    private = tmp_path / "agent" / "git"
+    private.mkdir(parents=True)
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
     monkeypatch.chdir(clone)
     return {"clone": clone, "log": log, "gh": str(gh)}
 
@@ -439,3 +444,66 @@ def test_a_recorded_git_that_does_not_run_is_maitys_refusal(
     code = cli.main(["gh", "pr", "create", "--title", "t", "--body", "b"])
     assert code == cli.EXIT_REFUSED
     assert "maity runs no git here" in capsys.readouterr().err and ran(placed) is None
+
+
+# A selector and a head, so no git runs: the record alone decides (maity's own git would
+# refuse the decoy too, and hide whether the record was read from it).
+@pytest.mark.parametrize(
+    "subcommand",
+    [["pr", "view", "7"], ["pr", "create", "--title", "t", "--body", "b", "--head", "x"]],
+)
+def test_a_git_exchanged_for_a_decoy_is_refused_before_its_record_is_read(
+    placed: dict[str, Any], tmp_path: Path, subcommand: list[str]
+) -> None:
+    """Sandboxed code renames the clone's `.git` and puts a directory of its own there, with
+    a record naming another repository and another gh. maity reads the record only from the
+    `.git` the runner recorded at the start (`clonecheck.opened_git`), so it runs nothing."""
+    clone: Path = placed["clone"]
+    os.rename(clone / ".git", clone / ".git-moved")
+    decoy = tmp_path / "decoy-gh"
+    decoy.write_text(f"#!{sys.executable}\nopen({str(tmp_path / 'decoy-ran')!r}, 'w')\n")
+    decoy.chmod(0o755)
+    (clone / ".git" / "maity").mkdir(parents=True)
+    (clone / ghpr.PULL_REQUESTS_PATH).write_text(f"github.com/attacker/other\n{decoy}\n")
+    assert cli.main(["gh", *subcommand]) == 4
+    assert ran(placed) is None and not (tmp_path / "decoy-ran").exists()
+
+
+def test_the_record_is_read_through_the_checked_git(placed: dict[str, Any]) -> None:
+    """With the `.git` the runner recorded in place, the record is read from its descriptor:
+    a record that is a link is refused even though the name would resolve."""
+    clone: Path = placed["clone"]
+    record = clone / ghpr.PULL_REQUESTS_PATH
+    elsewhere = clone.parent / "record"
+    elsewhere.write_text(record.read_text())
+    record.unlink()
+    record.symlink_to(elsewhere)
+    assert cli.main(["gh", "pr", "view"]) == 4
+    assert ran(placed) is None
+
+
+def test_a_body_under_the_checked_git_is_refused_after_a_rename(placed: dict[str, Any]) -> None:
+    """The walk compares each directory with the `.git` `opened_git` checked, by its
+    descriptor: renamed after the check, with a decoy under the old name, the real one is
+    still no body's way."""
+    clone: Path = placed["clone"]
+    with clonecheck.opened_git(clone) as dot_git:
+        os.rename(clone / ".git", clone / ".git-moved")
+        (clone / ".git").mkdir()
+        with pytest.raises(ghpr.Refused, match="under the clone's .git"):
+            ghpr.body_file(clone, ".git-moved/maity/pull_requests", dot_git)
+
+
+def test_the_record_comes_from_the_checked_git_after_a_rename(
+    placed: dict[str, Any], tmp_path: Path
+) -> None:
+    """Renamed after `opened_git`'s check, with a decoy `.git` under the old name, the record
+    is still the runner's: it is read through the checked descriptor, not by name."""
+    clone: Path = placed["clone"]
+    with clonecheck.opened_git(clone) as dot_git:
+        os.rename(clone / ".git", clone / ".git-moved")
+        (clone / ".git" / "maity").mkdir(parents=True)
+        (clone / ghpr.PULL_REQUESTS_PATH).write_text(
+            f"github.com/attacker/other\n{sys.executable}\n"
+        )
+        assert ghpr.granted(clone, dot_git) == (REPOSITORY, placed["gh"])
