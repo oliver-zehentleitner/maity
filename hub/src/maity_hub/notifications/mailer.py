@@ -53,7 +53,7 @@ NEVER_MAILED = ("registration_pending", "mail_disabled")
 SIGN_IN_ALERT = records.SIGN_IN
 # A takeover under way: a security mail of its own at once, whatever the mode, never held
 # by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
-AT_ONCE = ("second_factor_changed", "second_factor_failed")
+AT_ONCE = ("second_factor_changed", "second_factor_failed", "password_reset")
 
 
 _SCHEME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-")
@@ -194,7 +194,10 @@ def for_human(
     # Security mails of their own; quiet hours do not hold them (§2.6.5, §18.4).
     for item in pending:
         if item.record_type in AT_ONCE:
-            _two_factor_mail(conn, row, item, prefs, public_url, local)
+            told = (
+                _password_reset_mail if item.record_type == "password_reset" else _two_factor_mail
+            )
+            told(conn, row, item, prefs, public_url, local)
         elif item.record_type == SIGN_IN_ALERT and modes.get("security") == "immediate":
             _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
         else:
@@ -553,6 +556,39 @@ def _two_factor_mail(
         human_id=row.human_id,
         to=row.address,
         subject=f"[Maity] {item.title}",
+        body=body,
+    )
+
+
+def _password_reset_mail(
+    conn: Connection,
+    row: Any,
+    item: Item,
+    prefs: dict[str, Any],
+    public_url: str,
+    local: datetime,
+) -> None:
+    """A completed reset (§2.10): when and from where, that every session has ended, and what
+    to do if it was not the human. At once whatever the mode, so no unsubscribe link."""
+    words = catalog.section("mail", prefs["language"])
+    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    data = record.data or {}
+    unknown = catalog.section("notify", prefs["language"])
+    body = words["password_reset_body"].format(
+        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
+        browser=data.get("browser") or unknown["a_browser"],
+        os=data.get("os") or unknown["unknown_os"],
+        ip=data.get("ip") or "?",
+        agents=f"{public_url}/agents",
+    )
+    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
+    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    outbox.enqueue(
+        conn,
+        kind="security",
+        human_id=row.human_id,
+        to=row.address,
+        subject=f"[Maity] {words['password_reset_subject']}",
         body=body,
     )
 

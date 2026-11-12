@@ -68,6 +68,7 @@
       "check_in_with": "coordinator"
     },
     "restricted_access": null,
+    "why_merge_children": true,
     "ticker": {
       "enabled": true,
       "contract_files": [

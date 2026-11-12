@@ -249,6 +249,12 @@ def absence(project: Any) -> dict[str, Any] | None:
 NO_IMAGE = {"available": False, "source": None}
 
 
+def why_merge_children(project: Any) -> bool:
+    """Whether the project's Why view shows its Keep the Why family in one view (§6.1, §11.5):
+    `true` unless the project stored `false`, so every existing project reads as on."""
+    return (project.settings or {}).get("why_merge_children") is not False
+
+
 def project_language(project: Any) -> str:
     """The working language of a new or existing project (§6.1)."""
     language = (project.settings or {}).get("language")
@@ -304,6 +310,7 @@ def project_view(
             **(project.settings or {}),
             "language": project_language(project),
             "onboarding": onboarding.settings(project),
+            "why_merge_children": why_merge_children(project),
         },
         "rules_version": project.rules_version,
         "created_at": ts(project.created_at),

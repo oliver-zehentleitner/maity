@@ -401,6 +401,31 @@ nudge toward TOTP over a gate.
   admin's second-factor reset or the operator, since their own removal is refused under `off`
   (review of the contract PR).
 
+## The reset's request limits are buckets of their own, and an empty code is no guess
+
+**Id:** 0e98bef7-6601-4f00-b10c-6c1a4c19222e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.4 ("as `POST /auth/email-link`"), §2.10; tsk-tadt2vw7589n; `hub/src/maity_hub/auth/password_resets.py` `RequestLimits`, `hub/src/maity_hub/routes/password_reset.py` `_code_right`
+**See:** auth.md#a-forgotten-password-is-reset-by-mail-also-where-the-mail-is-the-second-factor — 2caa97c3-3a24-401b-a29f-02579a503559 — as of 2026-11-12
+
+`POST /auth/password-reset` has the numbers of the sign-in link's request (10 per hour per
+source address, 3 per 15 minutes and 10 per day per address and source), counted in limiters
+of its own. At `complete`, an enrolled human's call without a TOTP or recovery code is refused
+like a wrong code, but neither compared nor counted.
+
+**Reason:** the reset has its own mail budget so that anonymous reset requests stop nothing but
+reset mails (2caa97c3); one set of request buckets shared with the sign-in link would undo that
+one step earlier, since reset requests from an address would then refuse its sign-in links. A
+call without a code is no guess at the factor: counting it would let a client that has not yet
+asked for the code, or a mailbox reader who never tries one, spend the human's five wrong codes
+of the day and raise the alarm for nothing.
+
+**Rejected alternatives:**
+- The sign-in link's own limiters, shared: one kind of request would refuse the other.
+- An empty code counted as a wrong one: alarms that say nothing about the factor.
+
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 
 **Id:** 659d15cb-6c9b-4e06-8fec-164368951df4
