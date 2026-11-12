@@ -1152,6 +1152,8 @@ def scenario(run: Run, page: Page) -> None:
     run.shot(page, "switched-to-alpha")
     no_problems(run, "switcher")
 
+    warm_load_step(run, page)
+
     run.step("everything waiting, across projects (/all)")
     switcher.get_by_role("link", name=re.compile("^All projects")).click()
     expect(page).to_have_url(re.compile(r"/all$"))
@@ -1303,6 +1305,52 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+DASHBOARD_FILE = re.compile(r"/assets/(?:brand|css|js|vendor)/")
+VERSIONED = re.compile(r"\?v=[0-9a-f]{16}$")
+
+
+def warm_load_step(run: Run, page: Page) -> None:
+    """docs/api.md §16.11 (tsk-0pp41wxp6f75): the shell names every dashboard file under its
+    version, so a reload in the same browser asks the network for none of them: no 304s."""
+    run.step("a warm load asks the network for no unchanged dashboard file")
+    named = page.evaluate(
+        """() => [...document.querySelectorAll("script[src], link[href], img[src]")]
+          .map((e) => e.getAttribute("src") || e.getAttribute("href"))"""
+    )
+    files = [n for n in named if re.match(r"(?:brand|css|js|vendor)/", n)]
+    plain = [n for n in files if not VERSIONED.search(n)]
+    assert files and not plain, f"named without a version: {plain}"
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Network.enable")
+    from_cache: set[str] = set()
+    answered: list[tuple[str, str, int, bool]] = []
+    cdp.on("Network.requestServedFromCache", lambda e: from_cache.add(e["requestId"]))
+    cdp.on(
+        "Network.responseReceived",
+        lambda e: answered.append(
+            (
+                e["requestId"],
+                e["response"]["url"],
+                e["response"]["status"],
+                bool(e["response"].get("fromDiskCache")),
+            )
+        ),
+    )
+    page.reload()
+    expect(page.locator("header .project")).to_have_text("E2E Alpha")
+    page.wait_for_load_state("networkidle")
+    files_seen = [a for a in answered if DASHBOARD_FILE.search(a[1])]
+    asked = [
+        f"{status} {url}"
+        for request, url, status, disk in files_seen
+        if not disk and request not in from_cache
+    ]
+    cdp.detach()
+    assert files_seen, "the reload loaded no dashboard file"
+    assert not asked, f"a warm load still asked the network: {asked}"
+    no_problems(run, "warm load")
 
 
 def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
@@ -2554,8 +2602,13 @@ def language_choice_step(run: Run, browser) -> None:
         context.set_default_timeout(TIMEOUT_MS)
         page = context.new_page()
         watch_page(run, page)
+        catalogs: list[str] = []
+        page.on("request", lambda r: catalogs.append(r.url) if "/js/i18n/" in r.url else None)
         page.goto(f"{run.base}{path}?lang=de")
         expect(page.locator("html")).to_have_attribute("lang", "de")
+        # A catalog loaded later is asked for under its version, as the shell names it (§16.11).
+        assert any("/js/i18n/de.js?v=" in url for url in catalogs), catalogs
+        assert all(VERSIONED.search(url) for url in catalogs), catalogs
         page.locator(field).fill("kim@e2e.example")
         page.locator(picker).select_option("fr")
         expect(page.locator("html")).to_have_attribute("lang", "fr")

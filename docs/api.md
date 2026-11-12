@@ -113,7 +113,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   account and changes with the picture), and the app
   shell (§16.11), which is `no-cache`: it holds no data and must follow
   a deploy, and the dashboard's files under `/assets/` (§16.11),
-  `no-cache` with an `ETag` of the file's content, for the same reason.
+  `no-cache` with an `ETag` of the file's content, for the same reason,
+  except under the version the shell names them with, which is
+  `public, max-age=31536000, immutable`.
   The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
@@ -18094,7 +18096,11 @@ The `maity wait` and `git` that local mode runs are stopped with it.
 - **At the hub.** A stop sends nothing to the hub; there is no call that
   ends a session (§5.3). Between runs local mode's own `maity wait`
   long-polls are the session's `/events` calls: they keep it `online`
-  and renew its claim leases (§6.5). Once local mode is stopped, the lead
+  and renew no claim lease (§2.4, §8.3). Before a lease runs out, the
+  holder's `claim_lease_expiring` (§6.5; not built yet,
+  tsk-p55zyn4pz0wd) wakes that wait like any event for the session, and
+  the run it starts renews with `maity claim renew` or releases the
+  card. Once local mode is stopped, the lead
   sees the agent go `away` and then `offline` (§5.3), and its claim
   leases lapse as any agent's do. After 10 minutes with an event waiting
   for it, the session is not listening and the hub emits
@@ -21347,7 +21353,20 @@ and a request with another or no digest gets the current file with
 dashboard's files under `/assets/` (`css/`, `js/`, `brand/`, `vendor/`)
 are answered `Cache-Control: no-cache` with a strong `ETag` taken from
 the file's content; a request whose `If-None-Match` matches gets `304`
-without a body. Only
+without a body. The shell names each of these files it loads with
+`?v=<version>`, the first 16 hex digits of the SHA-256 of the body the
+hub sends for it (a stylesheet's `url()`s to such files carry their
+versions the same way, so the stylesheet's own version changes with
+theirs), and lists the versions of the files a script loads later by a
+name it builds (under `brand/`, `js/i18n/` and `vendor/`) as a JSON
+object of path to version in `<script type="application/json"
+id="maity-assets">`, a data block that is never run. A request whose only
+`v` is the version of the body the hub would send gets that body with
+`Cache-Control: public, max-age=31536000, immutable`; any other request,
+with another version, several or none, gets the current file as above,
+`no-cache`, so a file is never kept for good under a name that is not
+its own, also while two hubs with different files answer side by side.
+Only
 the built files under
 `/assets/` are served; the repository's `web/` tree as such is not, so
 an old file path (`/js/…`, `/css/…`) and the development files
