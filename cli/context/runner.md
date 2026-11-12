@@ -1799,8 +1799,9 @@ for Codex, whose maity runs inside its sandbox with the agent's own
 rights, the runner sets the value `clone`, and it stays in `.git/maity`,
 made through the descriptor. A directory inside the clone, a link or a
 relative path is refused. Without the inode or that variable maity runs
-no git: a session started by an older runner needs a restart. On Windows (local mode) no directory opens, so the inode is
-compared by name. The check of the clone (`_inspect`) and the objects
+no git: a session started by an older runner needs a restart. On
+Windows (local mode) no directory opens, so the inode is compared by
+name. The check of the clone (`_inspect`) and the objects
 and index git reads still go through the name `.git`: under an exchange
 the check reads the replacement and passes on only a plain clone's keys,
 none of which starts a program, and objects and the index are data.

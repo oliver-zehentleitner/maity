@@ -913,7 +913,8 @@ def test_without_a_private_directory_maity_runs_no_git(
         proc.run([*proc.GIT, "status"], placed)
 
 
-@pytest.mark.parametrize("how", ["in the clone", "a link", "relative"])
+@pytest.mark.parametrize("how", ["in the clone", "the clone through a linked parent", "a link",
+                                 "relative"])  # fmt: skip
 def test_a_private_directory_that_is_not_the_runners_is_refused(
     placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, how: str
 ) -> None:
@@ -924,6 +925,11 @@ def test_a_private_directory_that_is_not_the_runners_is_refused(
     if how == "in the clone":
         (placed / "work").mkdir()
         value = str(placed / "work")
+    elif how == "the clone through a linked parent":  # only resolving the path finds the clone
+        (placed / "work").mkdir()
+        parent = tmp_path / "linked"
+        parent.symlink_to(placed, target_is_directory=True)
+        value = str(parent / "work")
     elif how == "a link":
         link = tmp_path / "link"
         link.symlink_to(Path(os.environ[clonecheck.GIT_PRIVATE_ENV]), target_is_directory=True)
