@@ -354,8 +354,8 @@ def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     launch = adapters.launch(ctx)
     codex_home = Path(launch.env["CODEX_HOME"])
     # Codex runs maity inside its sandbox, which cannot write the runner's directory: git's own
-    # repository stays in `.git/maity` (clonecheck._private_dir).
-    assert clonecheck.GIT_PRIVATE_ENV not in launch.env
+    # repository stays in `.git/maity`, named so, never by leaving the variable out.
+    assert launch.env[clonecheck.GIT_PRIVATE_ENV] == clonecheck.IN_CLONE
     assert codex_home.parent == ctx.agent_dir
     assert (codex_home / "auth.json").resolve() == (home / "codex" / "auth.json").resolve()
     assert (ctx.clone / ".git" / "maity").is_dir()

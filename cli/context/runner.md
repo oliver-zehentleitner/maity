@@ -1796,9 +1796,10 @@ the check is not read. git's own repository for the run (its
 configuration, HEAD, refs) is made outside the clone, in the runner's
 directory for the agent, which the sandbox hides (`MAITY_GIT_PRIVATE`);
 for Codex, whose maity runs inside its sandbox with the agent's own
-rights, it stays in `.git/maity`, made through the descriptor. Without
-the inode maity runs no git: a session started by an older runner needs
-a restart. On Windows (local mode) no directory opens, so the inode is
+rights, the runner sets the value `clone`, and it stays in `.git/maity`,
+made through the descriptor. A directory inside the clone, a link or a
+relative path is refused. Without the inode or that variable maity runs
+no git: a session started by an older runner needs a restart. On Windows (local mode) no directory opens, so the inode is
 compared by name. The check of the clone (`_inspect`) and the objects
 and index git reads still go through the name `.git`: under an exchange
 the check reads the replacement and passes on only a plain clone's keys,
@@ -1831,6 +1832,12 @@ nor checks, so an update of Claude Code could reopen it unnoticed.
   runner on macOS has no such path into an open directory.
 - Pinning more keys with `-c`: configuration can start programs
   through many keys, filters among them.
+- Taking an unset `MAITY_GIT_PRIVATE` as Codex: a session whose
+  variable is lost, or a runner that forgets it, would put git's
+  repository back under `.git/maity`, opened by a path through `.git`;
+  the runner names Codex's case instead, and maity refuses an unset
+  variable under the runner (review of #1683 round 2: unset, a decoy's
+  filter ran outside the sandbox).
 
 **Known gap:** the state directory (the credential) is still taken
 through the name `.git`, and so is the record of the `maity gh` that
@@ -1838,7 +1845,10 @@ pull request #1663 adds until it moves onto this check. Under a sandbox
 that lets the agent rename `.git`, a later sandboxed command can also
 read the real `.git/maity` under its new name, because the deny applies
 to the path; only the harness can close that. Claude Code 2.1.322
-refuses the rename (EBUSY) with a mount of its own.
+refuses the rename (EBUSY) with a mount of its own. Codex's git
+repository stays in `.git/maity` by name: Codex's maity runs in its
+sandbox, so a decoy's program runs there too (review of #1683 round 2,
+in a Codex-like bwrap: once inside, never outside).
 
 ## A headless placement is offered no tool for asking a person
 

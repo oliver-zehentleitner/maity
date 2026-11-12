@@ -39,9 +39,11 @@ GIT_PATH = Path(".git", "maity", "git")
 GIT_INODE_ENV = "MAITY_GIT_INODE"
 # Where maity makes git's own repository for one run, outside the clone, in the runner's
 # directory for the agent, which the sandbox hides: git gets that repository as a path, and a
-# path through `.git` names whatever `.git` is when git opens it. Unset for Codex, whose
-# maity runs inside the sandbox with the agent's own rights: there `.git/maity` is used.
+# path through `.git` names whatever `.git` is when git opens it. For Codex, whose maity
+# runs inside the sandbox with the agent's own rights, the runner sets IN_CLONE: there
+# `.git/maity` is used. Unset under the runner, maity runs no git.
 GIT_PRIVATE_ENV = "MAITY_GIT_PRIVATE"
+IN_CLONE = "clone"
 # What git under the runner gets from maity's own environment. PATH is not among them: git
 # gets one of its own (git_path_env), so no variable set for maity
 # (`GIT_SSH_COMMAND=… maity report`, `PATH=…`) picks a program git starts; HOME reaches git
@@ -436,13 +438,14 @@ def placement_git(cwd: Path) -> Iterator[Pinned | None]:
     clone, after checking that clone and that `cwd` lies in it; None outside such a session.
 
     git does not read the clone's `.git` for its configuration, HEAD or refs: it reads a
-    repository maity writes for this run under `.git/maity`: for Claude Code a directory
-    its sandbox keeps the agent from writing; Codex runs maity inside its sandbox, with the
-    agent's own rights. Its configuration is maity's own, with no system or global one and
-    the clone's entries maity checked passed on through the environment, so a configuration
-    changed after the check is never read. Objects, the index and the work tree are the
-    clone's: data git reads, nothing it runs. The directory is removed after the run. git is
-    the one the runner found (GIT_PATH), with a PATH of its own."""
+    repository maity writes for this run in the runner's directory for the agent, outside
+    the clone and hidden from the sandbox (_private_dir); for Codex, which runs maity inside
+    its sandbox with the agent's own rights, under `.git/maity`. Its configuration is maity's
+    own, with no system or global one and the clone's entries maity checked passed on through
+    the environment, so a configuration changed after the check is never read. Objects, the
+    index and the work tree are the clone's: data git reads, nothing it runs. The directory
+    is removed after the run. git is the one the runner found (GIT_PATH), with a PATH of its
+    own."""
     root = placement_root(cwd)
     if root is None:
         yield None
@@ -657,15 +660,22 @@ def _walks() -> bool:
 
 
 def _private_dir(root: Path, top: int | None) -> Path:
-    """A new directory for one git run's own repository (its configuration, HEAD, refs). Under
-    a runner that sets GIT_PRIVATE_ENV, in that directory outside the clone: git opens it by
-    path, and no path through `.git` is safe once `.git` can be renamed. Otherwise (Codex,
-    whose maity has the agent's own rights) in the clone's `.git/maity`, made through `.git`'s
-    descriptor `top` where there is one."""
+    """A new directory for one git run's own repository (its configuration, HEAD, refs): in
+    the directory GIT_PRIVATE_ENV names, outside the clone, since git opens it by path and no
+    path through `.git` is safe once `.git` can be renamed. With IN_CLONE (Codex, whose maity
+    has the agent's own rights) in the clone's `.git/maity`, made through `.git`'s descriptor
+    `top` where there is one. Unset, maity runs no git: a lost variable must not put git's
+    repository back under `.git`."""
     outside = os.environ.get(GIT_PRIVATE_ENV, "")
-    if outside:
+    if not outside:
+        raise Refused(
+            f"{GIT_PRIVATE_ENV} is not set, so git has no repository of maity's own; the runner"
+            " sets it when it starts a session: restart the placement"
+        )
+    if outside != IN_CLONE:
         where = Path(outside)
-        if not where.is_absolute() or where.is_symlink() or not where.is_dir():
+        if (not where.is_absolute() or where.is_symlink() or not where.is_dir()
+                or _within(where.resolve(), root)):  # fmt: skip
             raise Refused(f"{GIT_PRIVATE_ENV} names no directory of maity's own ({where})")
         try:
             return Path(tempfile.mkdtemp(prefix="git-", dir=where))

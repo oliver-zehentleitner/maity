@@ -726,7 +726,7 @@ def test_without_a_directory_outside_the_private_repository_is_made_through_the_
     `.git/maity` is made through the descriptor of the recorded `.git`, never by name."""
     from maity import proc
 
-    monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV)
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, clonecheck.IN_CLONE)
     made: list[Any] = []
     real_mkdir = os.mkdir
 
@@ -896,3 +896,62 @@ def test_a_private_directory_that_cannot_be_used_is_maitys_refusal(
         monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(closed))
         with pytest.raises(proc.ToolError, match="cannot be made"):
             proc.run([*proc.GIT, "status"], placed)
+
+
+@pytest.mark.parametrize("how", ["unset", "empty"])
+def test_without_a_private_directory_maity_runs_no_git(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    """A lost variable never puts git's repository back under `.git` (review of #1683)."""
+    from maity import proc
+
+    if how == "unset":
+        monkeypatch.delenv(clonecheck.GIT_PRIVATE_ENV)
+    else:
+        monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, "")
+    with pytest.raises(proc.ToolError, match="restart the placement"):
+        proc.run([*proc.GIT, "status"], placed)
+
+
+@pytest.mark.parametrize("how", ["in the clone", "a link", "relative"])
+def test_a_private_directory_that_is_not_the_runners_is_refused(
+    placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    """Inside the clone the sandbox could write it; a link or a relative path could name
+    anywhere."""
+    from maity import proc
+
+    if how == "in the clone":
+        (placed / "work").mkdir()
+        value = str(placed / "work")
+    elif how == "a link":
+        link = tmp_path / "link"
+        link.symlink_to(Path(os.environ[clonecheck.GIT_PRIVATE_ENV]), target_is_directory=True)
+        value = str(link)
+    else:  # the runner's own directory, but named from wherever maity happens to run
+        value = os.path.relpath(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, value)
+    with pytest.raises(proc.ToolError, match="names no directory"):
+        proc.run([*proc.GIT, "status"], placed)
+
+
+def test_a_repository_that_cannot_be_filled_is_maitys_refusal(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity import proc
+
+    def failing(*args: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(clonecheck, "_copy_refs", failing)
+    with pytest.raises(proc.ToolError, match="cannot be made"):
+        proc.run([*proc.GIT, "status"], placed)
+
+
+def test_an_inode_in_other_digits_is_refused(placed: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`str.isdigit` takes a superscript two, which `int` then refuses: ASCII digits only."""
+    from maity import proc
+
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, "\u00b2")
+    with pytest.raises(proc.ToolError, match="restart the placement"):
+        proc.run([*proc.GIT, "status"], placed)
