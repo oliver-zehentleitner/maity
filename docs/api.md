@@ -16598,6 +16598,9 @@ owner choose):
   `sandbox`: `on`, `off`, `n/a` — the harness's own OS sandbox.
   `available: false` comes with `reason` (`binary_not_found`,
   `version_failed`).
+- `harnesses[].default_mode` is the mode a placement gets when it names
+  none. Which mode each adapter defaults to is the runner's (open: §12 5
+  of the design).
 - `antigravity` (not built yet, tsk-ydpnmpdzpc0a) is Google's Antigravity
   CLI, `agy`. Its confinement is `allowlist`: its own permission rules,
   with its terminal sandbox around the commands no rule allows.
@@ -16635,9 +16638,6 @@ owner choose):
     where it cannot start. Where it is `off`, the runner starts agy only
     as far as its configuration allows a harness to run without its
     sandbox (`sandbox_unavailable`, §15.7).
-- `harnesses[].default_mode` is the mode a placement gets when it names
-  none. Which mode each adapter defaults to is the runner's (open: §12 5
-  of the design).
 - `models` are names the runner offers; how the agents get model access
   (a login on the host, keys, a cluster Secret) is the runner's
   configuration and never reaches the hub (open: §12 2 of the design).
