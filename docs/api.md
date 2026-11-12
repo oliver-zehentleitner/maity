@@ -17650,7 +17650,7 @@ without the hub's ask, at most once a minute:
   shown `reply_within_minutes` after it was typed ends the session as
   below. A client attached, a process below the harness or an unreadable
   pane before that Enter drops the nudge: its line stays typed, unsent,
-  and it does not count. A nudge counts once its Enter is sent. An answer starts the
+  and it does not count; a later nudge is typed behind it. A nudge counts once its Enter is sent. An answer starts the
   count again, but after `3` answered nudges with no `maity wait` seen in
   between, the next quiet spell of `hang_after_minutes` ends the session
   as below, without another nudge.

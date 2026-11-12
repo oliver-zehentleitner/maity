@@ -1731,6 +1731,7 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert not tmux.is_helper("socat TCP-LISTEN:8080 TCP:x:1") and not tmux.is_helper("")
     assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/app.sock,fork EXEC:./server")  # the agent's
     assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-project/app.sock,fork EXEC:cat")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-myapp.sock,fork EXEC:cat")
     assert tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-socks-ab12.sock,fork TCP:localhost:1080")
     fork = (
         "  710   700 socat UNIX-LISTEN:/tmp/claude-http-1.sock,fork,reuseaddr TCP:localhost:3128\n"
@@ -1882,7 +1883,9 @@ def test_a_stalled_line_that_shows_later_is_then_measured(
     backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, three looks late
     minutes(world, 1)
     assert backend.submitted == 1 and sup.records["plc-0003"].nudges == 1
-    minutes(world, 10)
+    minutes(world, 9)
+    assert backend.terminated == []  # `reply_within_minutes` runs from its Enter
+    minutes(world, 1)
     assert backend.terminated == [SESSION]
 
 
