@@ -2299,11 +2299,13 @@ window.Maity = window.Maity || {};
     try {
       where = parseRoute();
       const held = M.maintenance.running();
+      // The reset reads no session: it ends every one and signs nobody in (§2.10).
+      if (where.scope === "reset" && M.passwordReset && !held) { await M.passwordReset.page(main, document.getElementById("header")); return; }
+      // Any other drawing ends the reset's kept link (js/password-reset.js), before any page
+      // returns early: the invitation, registration, a maintenance window's page, the rest.
+      if (M.passwordReset) M.passwordReset.leave();
       if (where.scope === "invite" && M.invite && !held) { M.siteChrome.leave(); await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
-      // The reset reads no session: it ends every one and signs nobody in (§2.10).
-      if (where.scope !== "reset" && M.passwordReset) M.passwordReset.leave();
-      if (where.scope === "reset" && M.passwordReset && !held) { await M.passwordReset.page(main, document.getElementById("header")); return; }
       let session;
       try {
         session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
@@ -2428,6 +2430,8 @@ window.Maity = window.Maity || {};
       else if (writes === wrote && kept === reuse) reuse.project = ctx.keptProject || null;
     } catch (err) {
       if (seq !== renderSeq) return;
+      // An address that does not parse, or a page that failed, is no reset either.
+      if (M.passwordReset) M.passwordReset.leave();
       // The page could not load: the header with the lockup stays, the
       // failure stands where the loader stood, with a way to try again.
       M.siteChrome.leave();

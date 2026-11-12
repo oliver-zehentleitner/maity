@@ -10256,6 +10256,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const fpLast = fpPosts[fpPosts.length - 1][1];
     expect(fpLast.recovery_code === "ABCD-EFGH-JKMN" && !("code" in fpLast) && text(fpH1()) === "Your password is set",
       "reset: a recovery code is sent as recovery_code and sets the password");
+    await go("#/register"); for (let k = 0; k < 4; k++) await tick();
+    await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(fpH1()) !== "Your password is set" && main.querySelector(".reset-dead"), "reset: after a set password and /register, a page without a token is no link, not \"set\"");
+    // Registration and an invitation draw themselves before the rest: leaving to either ends the
+    // kept link too, so /sign-in/reset without a token afterwards is no link (#1714 review, v5vp).
+    for (const away of ["#/register", "#/invite/open-xxxxxxxxxxxxxxxx1"]) {
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      const fpWas = fpPosts.length;
+      await go(away); for (let k = 0; k < 4; k++) await tick();
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(fpWas && !fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas,
+        "reset: after " + away + " a page without a token is no link and asks nothing " + JSON.stringify([fpWas, fpPosts.length, !!fpForm()]));
+    }
+    // A maintenance window that holds the reset page, and an address that does not parse, end it too.
+    {
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      const fpRunning = win.Maity.maintenance.running;
+      win.Maity.maintenance.running = () => true;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      win.Maity.maintenance.running = fpRunning;
+      const fpWas = fpPosts.length;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas,
+        "reset: after a maintenance window held the page, a page without a token is no link " + JSON.stringify([fpWas, fpPosts.length]));
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      await go("#/%E0%A4%A"); for (let k = 0; k < 4; k++) await tick();
+      const fpWas2 = fpPosts.length;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas2,
+        "reset: after an address that does not parse, a page without a token is no link " + JSON.stringify([fpWas2, fpPosts.length]));
+    }
     win.Maity.api.post = fpPost;
     await go("#/login"); for (let k = 0; k < 4; k++) await tick();
   }
