@@ -143,7 +143,7 @@ window.MAITY_I18N["ja"] = {
   "agents.add.hint": "プロジェクトのエージェント画面を、このプロフィールを選択した状態で参加パネル付きで開きます。すでに参加しているプロジェクトでは、このコマンドで別のインスタンスを開始するか、既存のインスタンスを置き換えます。",
   "agents.add.label": "プロジェクトに追加",
   "agents.add.none": "エージェントを迎え入れられるプロジェクトに参加していません。",
-  "agents.add.open": "+ エージェントを追加",
+  "agents.add.open": "新しいエージェントプロフィール",
   "agents.add.option": "{name} ({full})",
   "agents.add.submit": "プロジェクトに追加",
   "agents.allowed.add": "追加",
@@ -195,6 +195,7 @@ window.MAITY_I18N["ja"] = {
     "other": "アクティブなインスタンス {active} 件 / {count} 件"
   },
   "agents.intro": "すべてのプロジェクトにわたるエージェントのプロフィールです。それぞれが1つのアイデンティティで、画像、ハンドル、保有するメンバーシップを持ちます。プロジェクトに追加すると、そこに参加コマンドが作られます。",
+  "agents.join.any": "任意のエージェントを追加",
   "agents.join.failed": "参加を準備できませんでした: {reason}",
   "agents.join.none": "エージェントを迎え入れられるプロジェクトに参加していません。",
   "agents.join.open": "エージェントを参加させる",
@@ -2576,7 +2577,6 @@ window.MAITY_I18N["ja"] = {
   "members.edit.trust": "信頼レベル",
   "members.filter.mine": "自分のエージェントのみ",
   "members.filter.mine_none": "このプロジェクトに、あなたのエージェントはいません。",
-  "members.heading": "メンバー",
   "members.hint": "{project} の全員です。人間が先で、それぞれにチャットがあります。",
   "members.hint.admin": "行を管理すると、ロールの変更、エージェントの認証情報の確認と失効、ブリーフィングの編集、一時停止、メンバーの取り除きができます。",
   "members.humans": {
@@ -2603,7 +2603,6 @@ window.MAITY_I18N["ja"] = {
   "members.isolation_windows": {
     "other": "{count} 回の隔離の後、非表示になったもの: {ranges}。"
   },
-  "members.join_agent": "エージェントを参加させる",
   "members.ktw.by": "{when} までに確認",
   "members.ktw.confirmed": "確認済み ({ago})",
   "members.ktw.late": "Keep the Why が期限内に確認されませんでした",
@@ -3425,6 +3424,7 @@ window.MAITY_I18N["ja"] = {
   "placements.new.none_link": "このプロジェクトの「ランナー」",
   "placements.new.open": "ランナーでエージェントを起動",
   "placements.new.profile": "新しいエージェントのプロフィールとチームでの位置づけ",
+  "placements.new.reading": "ランナーを読み込み中…",
   "placements.new.reason": "理由（任意）",
   "placements.new.reason_required": "理由（プロジェクトが {state} の間は必須）",
   "placements.new.runner": "ランナー",
@@ -3495,7 +3495,7 @@ window.MAITY_I18N["ja"] = {
   "placements.stop": "停止",
   "placements.stop.label": "{name} を停止",
   "placements.stopping": "停止しています…",
-  "placements.title": "実行場所",
+  "placements.title": "管理対象のエージェント",
   "placements.waiting": "ランナーが世代 {generation} に対応するのを待っています",
   "placements.waiting.last": "ランナーが世代 {generation} に対応するのを待っています (直近: {last})",
   "placements.wanted": "求められている状態",
