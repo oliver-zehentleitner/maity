@@ -25,6 +25,18 @@ def world(make_client: ClientFactory, migrated: Engine, settings: Any) -> World:
     return World(make_client, migrated)
 
 
+@pytest.fixture
+def counting_world(
+    make_client: ClientFactory, migrated: Engine, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> World:
+    """`world` for the statement counts: no app runs the public-pages worker, whose
+    background renders would land in the count (hcrb on #1700). A change still renders its
+    pages at once, through `touch`."""
+    monkeypatch.setattr(public_pages.Worker, "start", lambda self: None)
+    public_pages.configure(replace(settings, public_pages=True))
+    return World(make_client, migrated)
+
+
 def page(world: World, card_id: str) -> str | None:
     return view(world.anyone, f"tasks/{card_id}")
 
@@ -337,10 +349,11 @@ def test_a_card_held_in_review_or_blocked_loses_its_holder_when_they_go(
 
 
 def test_without_a_public_page_a_removal_costs_nothing_per_held_card(
-    make_client: ClientFactory, world: World
+    make_client: ClientFactory, counting_world: World
 ) -> None:
     """Off a public page there is no card page to touch: a removal of a member holding three
     cards in `review` reads as many statements as one holding one (spq4 on #1700)."""
+    world = counting_world
     assert (
         world.owner.patch("/projects/maintainer/maity", {"public_page": "off"}).status_code == 200
     )
@@ -395,12 +408,13 @@ def test_a_removed_editor_is_off_the_card_page_of_the_note_they_edited(
 
 
 def test_a_member_s_removal_does_not_grow_with_the_project_s_cards(
-    make_client: ClientFactory, world: World
+    make_client: ClientFactory, counting_world: World
 ) -> None:
     """A public project's card pages are not all removed and rendered again for one member
     (tsk-m65g76c979jk: 31,871 statements on a project with many cards). Three removals in a
     row, each with one more deleted profile behind it: nine cards more before the third add
     nothing to what the second added to the first."""
+    world = counting_world
     agents = [flow.agent(pages(make_client), world.owner, role="coder") for _ in range(3)]
 
     def removal(agent: flow.Agent, cards: int) -> int:
