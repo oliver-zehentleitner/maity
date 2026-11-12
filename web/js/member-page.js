@@ -110,6 +110,10 @@ window.Maity = window.Maity || {};
     }) : null;
     if (menu) menu.el.className = "menu-box member-actions-menu";
     const availability = M.availabilityNodes ? M.availabilityNodes(ctx, m) : null;
+    // Report this person or agent to the instance's admins (§16.8, tsk-7ze5w6ymf7bw), by the member id
+    // the project's read gives; not oneself, and from a human (the dashboard's reader).
+    const reporting = M.report && ctx.me.kind === "human" && m.id !== ctx.me.id
+      ? M.report.control({ type: "profile", id: m.id }, m.kind === "agent" ? "agent" : "person") : null;
     const heading = h("h2", { id: "member-heading", tabindex: "-1" }, m.display_name, " ", h("span", { class: "mono muted" }, "@" + M.dom.handleOf(ctx, m)));
     const el = h("div", { class: "member-head" },
       h("div", { class: "member-head-face" }, M.avatar(m, 64),
@@ -122,8 +126,8 @@ window.Maity = window.Maity || {};
         total ? h("p", { class: "muted member-manages" }, M.t("manages.total", { text: total })) : null, availability),
       h("div", { class: "member-head-actions" },
         chat ? h("a", { class: "button primary member-chat", href: chat }, M.t("members.chat")) : null,
-        menu ? menu.el : null));
-    return { el, heading };
+        menu ? menu.el : null, reporting ? reporting.button : null));
+    return { el, heading, reportSlot: reporting ? reporting.slot : null };
   }
 
   // Activity: what the member did among the project's latest events.
@@ -274,7 +278,7 @@ window.Maity = window.Maity || {};
       h("a", { href: ctx.link("team", m.id, k), class: "member-tab", "aria-current": k === chosen ? "page" : null }, label())));
     const body = h("section", { class: "member-section", "aria-label": TABS.find(([k]) => k === chosen)[1]() });
     const head = header(ctx, m, claims);
-    append(root, crumb, head.el, tabs, body);
+    append(root, crumb, head.el, head.reportSlot, tabs, body);
     // Opened by a member's link: the heading takes the focus; a tab's own link keeps it on the tabs.
     if (!tab) window.setTimeout(() => head.heading.focus(), 0);
     if (chosen === "activity") await activity(ctx, m, body);

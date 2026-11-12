@@ -51,6 +51,7 @@ class MailEnvironment:
     max_per_hour: int | None = None
     security_max_per_hour: int | None = None
     sign_in_max_per_hour: int | None = None
+    password_reset_max_per_hour: int | None = None
     registration_max_per_hour: int | None = None
     online_grace_minutes: int | None = None
     signing_key: bytes | None = field(default=None, repr=False)
@@ -145,6 +146,9 @@ def parse(env: dict[str, str]) -> MailEnvironment:
         max_per_hour=_number(env, "MAITY_MAIL_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         security_max_per_hour=_number(env, "MAITY_MAIL_SECURITY_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         sign_in_max_per_hour=_number(env, "MAITY_MAIL_SIGN_IN_MAX_PER_HOUR", 1, MAX_PER_HOUR),
+        password_reset_max_per_hour=_number(
+            env, "MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR", 1, MAX_PER_HOUR
+        ),
         registration_max_per_hour=_number(
             env, "MAITY_MAIL_REGISTRATION_MAX_PER_HOUR", 1, MAX_PER_HOUR
         ),

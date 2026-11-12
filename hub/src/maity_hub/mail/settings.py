@@ -45,6 +45,7 @@ VALUE_FIELDS = (
     "max_per_hour",
     "security_max_per_hour",
     "sign_in_max_per_hour",
+    "password_reset_max_per_hour",
     "registration_max_per_hour",
     "online_grace_minutes",
 )
@@ -59,6 +60,9 @@ DEFAULTS: dict[str, object] = {
     "max_per_hour": 500,
     "security_max_per_hour": 100,
     "sign_in_max_per_hour": 60,
+    # Reset mails (§2.10), a budget of their own: anonymous requests spend it, so it must stop
+    # nothing but reset mails, not the mail factor's, which `sign_in_max_per_hour` sends.
+    "password_reset_max_per_hour": 30,
     "registration_max_per_hour": 30,
     # How long after a human stopped being present their held mail still waits (§18.5).
     "online_grace_minutes": 5,
@@ -207,6 +211,8 @@ def counters(conn: Connection) -> dict[str, int]:
         "security_queued": int(queued),
         "sign_in_sent_last_hour": recent.get(("sign_in", "sent"), 0),
         "sign_in_dropped_last_hour": recent.get(("sign_in", "dropped"), 0),
+        "password_reset_sent_last_hour": recent.get(("password_reset", "sent"), 0),
+        "password_reset_dropped_last_hour": recent.get(("password_reset", "dropped"), 0),
         "registration_sent_last_hour": recent.get(("registration", "sent"), 0),
         "registration_dropped_last_hour": recent.get(("registration", "dropped"), 0),
         "failed_last_hour": sum(n for (_, outcome), n in recent.items() if outcome == "failed"),
@@ -328,6 +334,11 @@ store.register(
     ),
     store.Setting(
         "mail.sign_in_max_per_hour", _whole(1, MAX_PER_HOUR), DEFAULTS["sign_in_max_per_hour"]
+    ),
+    store.Setting(
+        "mail.password_reset_max_per_hour",
+        _whole(1, MAX_PER_HOUR),
+        DEFAULTS["password_reset_max_per_hour"],
     ),
     store.Setting(
         "mail.registration_max_per_hour",

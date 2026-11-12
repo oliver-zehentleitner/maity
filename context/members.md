@@ -1216,10 +1216,12 @@ isolated, and under `anyone` one within `outside_roles` keeps working
 while one beyond them is isolated. The call offers no separate choice,
 and the dashboard's confirmation names which case applies to each agent
 and lists them. A running cover in which the leaver is the substitute
-that area routing names does not keep routing to them: the covered
-member's new cards go to the next available entry of its cover order,
-and with none as without cover (§6.12). The hub and the dashboard follow
-in later changes.
+that area routing names does not keep routing to them: each new card of
+the covered member goes to the first entry of its cover order, as it
+stands after the removal, that §6.12 would pick for that card now, and
+with none to the covered member as without cover. The cover itself runs
+on (ef231375-7a0f-40f2-8c62-251b8962c80c). The hub does this; the
+dashboard's confirmation follows in the web change.
 
 **Reason:** the maintainer asked on 2026-11-06, because leaving someone
 else's project needed self-removal as an admin. The shape agreed for
@@ -1247,8 +1249,9 @@ this contract:
   left can take no card. Routing to them would hide new work on a
   membership nobody holds. Today `cover.routed` reads `cover_by` without
   checking that the substitute is still active, so the hub step fixes
-  this for removal and leaving alike, on one path. The next available
-  entry is the one §6.12 would pick when the cover started.
+  this for removal and leaving alike, on one path. The entry is the
+  first one §6.12 would pick for that card now, from the cover order as
+  it stands after the removal.
 
 **Rejected alternatives:**
 - A route of its own for leaving: see the reason above.
@@ -1274,3 +1277,47 @@ this contract:
   the cover order already names who takes the member's work while it is
   out, so the next available entry takes it, and the covered member only
   when there is none.
+
+## A running cover keeps naming the substitute it started with after that membership ends
+
+**Id:** ef231375-7a0f-40f2-8c62-251b8962c80c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the hub step of cards tsk-z1khn7tkpyqk and tsk-n5hqcbcg3xvw; the point the contract review left open, of what `covered_by` shows and who `cover_ended` names once the substitute's membership has ended
+**Revisit when:** a removal should retarget a running cover, or `covered_by` should name who the next card would go to
+**See:** members.md#a-human-member-leaves-a-project-on-their-own-an-agent-does-not — 04bb56da-91d5-424f-ab26-5db6c816d82d — as of 2026-11-12
+
+When the substitute of a running cover is removed or leaves, the cover
+row is not rewritten. `covered_by` keeps naming the substitute the cover
+started with (`cover_by`), including after that membership has ended.
+Each new card of the covered member is chosen apart from that field, from
+the cover order as it stands after the removal. When the covered member
+returns, `cover_ended` is the one `cover.end` already emits: one event
+per substitute that an item of this cover names (`cover.by`, same
+`since`). A new card routed to a later entry names that entry, so that
+entry is told. The original substitute is told when an item of the cover
+still names them, or when nothing of the cover was moved at all — then
+the event names the original `cover_by`, the one told when the cover
+started. A later card means something was moved, so that fallback does
+not also name the original.
+
+**Reason:** which entry may take a card depends on the card, so there is
+no single next substitute to store on the membership, and an emptied
+substitutes list is `wait` while the cover still runs. `covered_by` is
+how a reader sees that a cover is running. `cover.end` already tells
+whoever an item of the cover names; a second rule for a substitute who
+left would be a second cascade on the one removal path.
+
+**Rejected alternatives:**
+- Retarget `cover_by`, and so `covered_by`, to the next entry that could
+  take a card. Rejected because the next entry depends on the card, and
+  rewriting the cover would be a second cascade. With no entry left there
+  is still a cover, and nothing honest to point `cover_by` at.
+- Clear `covered_by` while the cover runs, so the view matches a new card
+  that went back to the member. Rejected because the cover has not ended,
+  and a null `covered_by` would say there is none.
+- Always emit `cover_ended` to the original substitute as well, even when
+  no item of the cover names them. Rejected because the return already
+  tells whoever the cover's items name, and the fallback for nothing
+  moved already names the one the cover started with.

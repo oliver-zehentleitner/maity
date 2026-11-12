@@ -2175,3 +2175,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 }
 :root[data-theme="dark"] .product-mark-t { fill: #4c8dff; }
 :root[data-theme="dark"] .product-mark-seat { fill: #e6e9ec; }
+/* Report to the instance's admins (§16.8, js/report.js): a small button where a view keeps its
+   actions, the form opening under it; Your account → Reports as a plain list. */
+.report-row { margin: 16px 0 0; }
+.report-form { margin-top: 8px; max-width: 40rem; }
+.report-form select, .report-form textarea { width: 100%; box-sizing: border-box; }
+.report-sent { margin-top: 8px; }
+.report-list { list-style: none; margin: 0; padding: 0; }
+.report-item { padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
