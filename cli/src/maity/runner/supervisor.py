@@ -34,7 +34,7 @@ from .. import __version__, clonecheck, hub, onboarding, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
-from .tmux import IDLE, Session, Tmux, TmuxError, session_name
+from .tmux import IDLE, WAITING, Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
 PICKUP_RETRY = 15.0
@@ -489,7 +489,7 @@ class Supervisor:
         rec.target = target.name
         if rec.generation != generation:
             rec.generation, rec.restarts, rec.crashes, rec.retry_at = generation, 0, [], None
-            rec.hung_exits = []
+            rec.hung_exits, rec.resume = [], False
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
             rec.exit_code = None
@@ -616,6 +616,8 @@ class Supervisor:
             return
         rec.idle_checked_at = now
         below = backend.activity(session)
+        if below == WAITING:  # it listens again: the idle ends in a row start over
+            rec.hung_exits = []
         attached = backend.attached(session.name)
         digest = backend.pane_digest(session.name)
         if below != IDLE or attached is not False or digest is None:
@@ -662,10 +664,12 @@ class Supervisor:
     def _hung_exit(self, rec: Record, now: float, code: int | None) -> None:
         """The end of a session the idle check ended: `exited`, `hung`, `idle` (§15.7),
         restarted after the first backoff step and resumed. These ends are counted on their
-        own, since a hung session never ends quickly: `crash_cap` of them within
-        `crash_window` hold the placement as `failed`, `hung`, `idle`, like a crash loop."""
+        own and in a row: a hung session never ends quickly, so no `crash_window` would hold
+        `crash_cap` of them (one takes 40 minutes by default). `crash_cap` idle ends with no
+        `maity wait` seen in between hold the placement as `failed`, `hung`, `idle`; a wait
+        seen below the harness starts the row over."""
         policy = self.cfg.limits.restart
-        rec.hung_exits = [t for t in rec.hung_exits if now - t < policy.crash_window] + [now]
+        rec.hung_exits = [*rec.hung_exits, now]
         rec.hung_at = None
         rec.calm()
         rec.resume = True

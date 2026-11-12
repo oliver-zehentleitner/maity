@@ -3518,6 +3518,7 @@
   "placements.reason.evicted": "évincé",
   "placements.reason.harness_missing": "le harness n'est pas installé sur le runner",
   "placements.reason.harness_refused": "la configuration du runner n'autorise pas ce harness, ce mode ou ce modèle",
+  "placements.reason.hung": "ne répondait plus",
   "placements.reason.image_pull": "l'image n'a pas pu être téléchargée",
   "placements.reason.join_failed": "le fait de rejoindre le projet a échoué",
   "placements.reason.oom_killed": "mémoire insuffisante",

@@ -3540,6 +3540,7 @@ window.MAITY_I18N["es"] = {
   "placements.reason.evicted": "desalojado",
   "placements.reason.harness_missing": "el harness no está instalado en el runner",
   "placements.reason.harness_refused": "la configuración del runner no permite este harness, modo o modelo",
+  "placements.reason.hung": "dejó de responder",
   "placements.reason.image_pull": "no se pudo descargar la imagen",
   "placements.reason.join_failed": "falló la incorporación",
   "placements.reason.oom_killed": "sin memoria",

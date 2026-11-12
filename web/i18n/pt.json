@@ -3518,6 +3518,7 @@
   "placements.reason.evicted": "removido à força (evicted)",
   "placements.reason.harness_missing": "o harness não está instalado no runner",
   "placements.reason.harness_refused": "a configuração do runner não permite este harness, modo ou modelo",
+  "placements.reason.hung": "deixou de responder",
   "placements.reason.image_pull": "não foi possível baixar a imagem",
   "placements.reason.join_failed": "o ingresso falhou",
   "placements.reason.oom_killed": "sem memória",

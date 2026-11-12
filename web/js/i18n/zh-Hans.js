@@ -3450,6 +3450,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.reason.evicted": "已被驱逐",
   "placements.reason.harness_missing": "运行器上未安装 harness",
   "placements.reason.harness_refused": "运行器的配置不允许此 harness、模式或模型",
+  "placements.reason.hung": "无响应",
   "placements.reason.image_pull": "无法拉取镜像",
   "placements.reason.join_failed": "加入失败",
   "placements.reason.oom_killed": "内存不足",

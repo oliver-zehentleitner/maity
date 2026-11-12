@@ -64,12 +64,20 @@ class Session:
 def is_wait(args: str) -> bool:
     """Whether a process's command line is a `maity wait`: a word naming the maity command,
     `maity` itself or a path ending in it (`python -m maity`, a venv's `bin/maity`), followed by
-    `wait`. A shell running such a line counts too: it holds the wait as long as it runs."""
+    `wait`, with maity's own `--for AGENT` (or `--for=AGENT`) allowed in between. A shell
+    running such a line counts too: it holds the wait as long as it runs."""
     words = args.split()
-    return any(
-        os.path.basename(word) == "maity" and following == "wait"
-        for word, following in zip(words, words[1:], strict=False)
-    )
+    for i, word in enumerate(words):
+        if os.path.basename(word) != "maity":
+            continue
+        rest = words[i + 1 :]
+        if rest[:1] == ["--for"]:
+            rest = rest[2:]
+        elif rest[:1] and rest[0].startswith("--for="):
+            rest = rest[1:]
+        if rest[:1] == ["wait"]:
+            return True
+    return False
 
 
 WAITING, WORKING, IDLE = "waiting", "working", "idle"

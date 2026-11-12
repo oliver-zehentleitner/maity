@@ -1714,6 +1714,9 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert tmux.is_wait("/usr/bin/python3 -m maity wait")
     assert not tmux.is_wait("maity waiting") and not tmux.is_wait("notmaity wait")
     assert not tmux.is_wait("vim maity.wait") and not tmux.is_wait("maity resume")
+    assert tmux.is_wait("maity --for agent-b wait --batch")
+    assert tmux.is_wait("/v/bin/maity --for=agent-b wait")
+    assert not tmux.is_wait("maity --for wait") and not tmux.is_wait("maity --for agent-b say")
 
 
 def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
@@ -1799,26 +1802,80 @@ def test_an_answer_after_the_first_look_starts_the_count_again(world: Any) -> No
     assert backend.terminated == [] and len(backend.typed) == 1
 
 
-def test_idle_ends_count_toward_their_own_cap(world: Any) -> None:
-    """A hung session never ends quickly, so the quick-exit crash count never sees it: idle
-    ends are counted on their own, and `crash_cap` of them within `crash_window` hold the
-    placement as `failed`, `hung`, `idle` (§15.7)."""
+def hung_round(world: Any) -> None:
+    """One idle end with the default times: the nudge after 30 quiet minutes, the end 10
+    later, the session's exit."""
+    sup, backend, _, _, _ = world
+    before = len(backend.terminated)
+    minutes(world, 40)
+    assert len(backend.terminated) == before + 1
+    backend.exit(SESSION, 143)
+    sup.tick()
+
+
+def resumed(world: Any) -> None:
+    sup, _, _, clock, _ = world
+    clock.now += 60
+    settle(sup)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    sup.tick()
+
+
+def test_idle_ends_in_a_row_reach_their_own_cap(world: Any) -> None:
+    """A hung session never ends quickly, and with the default times one idle end takes 40
+    minutes, so no `crash_window` holds five of them: idle ends are counted in a row, and
+    `crash_cap` of them hold the placement as `failed`, `hung`, `idle` (§15.7)."""
     sup, backend, reports, clock, _ = world
-    interactive(world, health={"settings": {"hang_after_minutes": 1, "reply_within_minutes": 1}})
+    interactive(world)
     cap = sup.cfg.limits.restart.crash_cap
+    assert cap * 40 * 60 > sup.cfg.limits.restart.crash_window  # the case a window misses
     for n in range(1, cap + 1):
-        minutes(world, 2)  # the nudge after one minute, the end after one more
-        assert backend.terminated == [SESSION] * n, n
-        backend.exit(SESSION, 143)
-        sup.tick()
+        hung_round(world)
         if n < cap:
-            assert states(reports)[-1] == ("exited", "hung", "idle")
-            clock.now += 60
-            settle(sup)
-            clock.now += supervisor.RUNNING_AFTER
-            sup.tick()
-            sup.tick()
+            assert states(reports)[-1] == ("exited", "hung", "idle"), n
+            resumed(world)
     assert states(reports)[-1] == ("failed", "hung", "idle")
     clock.now += 3600
     sup.tick()
     assert len(backend.started) == cap  # held: no start after the cap
+
+
+def test_a_wait_between_idle_ends_starts_the_row_over(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    interactive(world)
+    cap = sup.cfg.limits.restart.crash_cap
+    for _ in range(cap - 1):
+        hung_round(world)
+        resumed(world)
+    backend.below = tmux.WAITING  # the resumed agent listened for a while
+    minutes(world, 5)
+    backend.below = tmux.IDLE
+    minutes(world, 1)  # quiet from this look on
+    for _ in range(cap - 1):
+        hung_round(world)
+        assert states(reports)[-1] == ("exited", "hung", "idle")
+        resumed(world)
+    assert len(sup.records["plc-0003"].hung_exits) == cap - 1
+
+
+def test_a_new_generation_does_not_resume_the_hung_session(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A generation move may change the harness, model or mode: a fresh session (§15.14)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    hung_round(world)
+    assert sup.records["plc-0003"].resume
+    seen: list[bool] = []
+    context = sup._context
+
+    def spy(*args: Any) -> Any:
+        seen.append(args[-1])
+        return context(*args)
+
+    monkeypatch.setattr(sup, "_context", spy)
+    sup.update([placement(mode="interactive", health=HEALTH, generation=2)])
+    settle(sup)
+    assert len(backend.started) == 2 and seen == [False]
+    assert sup.records["plc-0003"].hung_exits == []

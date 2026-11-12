@@ -2007,11 +2007,23 @@ looks at each interactive session once a minute.
   either: an agent waiting for events shows nothing new. The processes
   come from `ps -A -ww`. The pane is compared by hash, so its text is never
   kept, logged or sent.
-- Idle ends are counted on their own toward `crash_cap` within
-  `crash_window` and then hold the placement as `failed`/`hung`/`idle`:
-  a hung session never ends quickly, so the quick-exit crash count never
-  saw it. The pane is measured again right after the typed line shows, so
-  the agent's answer counts as a change.
+- Idle ends are counted on their own and in a row toward `crash_cap`,
+  then hold the placement as `failed`/`hung`/`idle`: a hung session never
+  ends quickly, so the quick-exit crash count never saw it. Rejected:
+  counting them within `crash_window`. One end takes 40 minutes with the
+  default times, and the window is 30, so five never fit and the cap was
+  never reached (spq4's review). A `maity wait` seen below the harness
+  starts the row over: the resume worked.
+- The pane is measured again right after the typed line shows, not at the
+  next look a minute later, so an answer that comes within that minute
+  counts as a change instead of becoming the new baseline.
+- A new generation clears the resume flag: it may change the harness, the
+  model or the mode, and §15.14 wants a fresh session then.
+- A live tool below the harness keeps the session out of the check for as
+  long as it runs. An interactive session gets no `tool_call_max_minutes`
+  backstop (`hung`/`tool`) yet: a tool that hangs forever there is not
+  ended. Rejected: treating a quiet tool like an idle prompt, which ended
+  a long build after 40 minutes.
 - After `hang_after_minutes`, the runner types one fixed line into the
   pane, and only while no client is attached: a person at the pane would
   have the runner type into their session. After `reply_within_minutes`

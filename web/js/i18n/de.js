@@ -3559,6 +3559,7 @@ window.MAITY_I18N["de"] = {
   "placements.reason.evicted": "verdrängt",
   "placements.reason.harness_missing": "das Harness ist auf dem Runner nicht installiert",
   "placements.reason.harness_refused": "die Konfiguration des Runners erlaubt dieses Harness, diesen Modus oder dieses Modell nicht",
+  "placements.reason.hung": "reagierte nicht mehr",
   "placements.reason.image_pull": "das Image konnte nicht geladen werden",
   "placements.reason.join_failed": "Beitreten fehlgeschlagen",
   "placements.reason.oom_killed": "Speicher erschöpft",

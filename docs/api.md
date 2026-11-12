@@ -17647,10 +17647,13 @@ without the hub's ask, at most once a minute:
   seconds), reports `exited` with `reason: hung`, `detail: idle`, and
   starts it again as a restart, resuming the harness's last conversation
   where the harness can (Claude Code: `--continue`), after the first
-  backoff step. Such ends are counted on their own, since a hung session
-  never ends quickly: `crash_cap` of them within `crash_window` hold the
-  placement as `failed`, `hung`, `idle` until its generation moves, like
-  a crash loop.
+  backoff step. Such ends are counted on their own and in a row, since a
+  hung session never ends quickly and no `crash_window` holds `crash_cap`
+  of them (one takes 40 minutes by default): `crash_cap` of them with no
+  `maity wait` seen in between hold the placement as `failed`, `hung`,
+  `idle` until its generation moves, like a crash loop. A wait seen below
+  the harness starts the row over. A new generation starts a fresh
+  session, not the resumed one.
 - A client attached to the session, any process below the harness, a
   change in the pane, or anything the runner cannot read (`ps`, tmux)
   starts the count again. A stop wins over a pending end.

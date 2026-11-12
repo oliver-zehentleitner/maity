@@ -988,8 +988,9 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   agent to go back to its wait loop. With still neither
   `reply_within_minutes` later, it ends the session, reports
   `exited`/`hung`/`idle`, and starts it again; Claude Code resumes its
-  last conversation (`--continue`). `crash_cap` such ends within
-  `crash_window` hold the placement as `failed`/`hung`. The minutes are
+  last conversation (`--continue`). `crash_cap` such ends in a row,
+  with no `maity wait` seen in between, hold the placement as
+  `failed`/`hung`. The minutes are
   30 and 10 until the hub sends the owner's health settings. Attaching
   to the session pauses the check, so the runner never types while you
   are there. Needs `ps` where the agents run.
