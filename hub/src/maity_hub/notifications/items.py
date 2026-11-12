@@ -808,6 +808,26 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record_type=row.type,
                 )
             )
+        elif row.type == "password_reset":
+            items.append(
+                Item(
+                    kind="security",
+                    at=row.at,
+                    record=row.n,
+                    title=_cut(
+                        where.say(
+                            "password_reset",
+                            browser=data.get("browser") or where.say("a_browser"),
+                            os=data.get("os") or where.say("unknown_os"),
+                            ip=data.get("ip") or "?",
+                        )
+                    ),
+                    target={"type": "settings", "id": "security"},
+                    url=_url(where, "/account/security"),
+                    read=row.read_at is not None,
+                    record_type=row.type,
+                )
+            )
         elif row.type == "email_address_changed":
             items.append(
                 Item(

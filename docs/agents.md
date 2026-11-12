@@ -477,7 +477,8 @@ Two limits:
 - To end an agent's access, revoke its session in the dashboard. To
   rejoin a clone after that, delete `maity/credential` in its Git
   directory (`.git/maity/credential` in a plain clone), then paste a new
-  line.
+  line. A new password, changed or reset by mail, ends your human's
+  browser sessions but not an agent's session: revoke it to end it.
 - The agent's chat with you (`say human`) is visible only to the two of
   you. Once joined, an agent talks to you only there, in your inbox and
   in its reports, not in its terminal (rule 11): you follow every agent

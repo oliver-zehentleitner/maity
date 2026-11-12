@@ -1,6 +1,6 @@
-"""docs/api.md §2.10, the settings step of tsk-tadt2vw7589n: the instance's switch and the
-human's, the reset mails' own budget, and the password generation with what a new password
-voids. The routes come in the next step; until then the reset is never offered."""
+"""docs/api.md §2.10, the settings of the reset: the instance's switch and the human's, the
+reset mails' own budget, and the password generation with what a new password voids. The
+routes and the mail are tests/test_password_reset.py."""
 
 from __future__ import annotations
 
@@ -61,24 +61,9 @@ def signed_in(client: Any, handle: str = "ada") -> dict[str, str]:
 # --- the instance's switch (§2.6.6) ------------------------------------------------------
 
 
-def test_the_reset_is_never_offered_while_its_routes_are_not_served(
+def test_the_methods_offer_the_reset_as_the_settings_say(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    client, human = setup(make_client, migrated)
-    assert client.get("/api/v1/auth/methods").json()["password_reset"] is False
-    with migrated.begin() as conn:
-        got = sign_in_settings.view(conn, client.app.state.settings)
-    assert got["password_reset"] == {"value": True, "source": "default"}
-    assert (got["password_reset_available"], got["password_reset_missing"]) == (
-        False,
-        ["not_implemented"],
-    )
-
-
-def test_with_its_routes_served_the_methods_offer_it_as_the_settings_say(
-    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(sign_in_settings, "PASSWORD_RESET_SERVED", True)
     client, human = setup(make_client, migrated)
     methods = client.get("/api/v1/auth/methods").json()
     assert methods["password_reset"] is True
