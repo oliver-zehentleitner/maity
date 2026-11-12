@@ -8,5 +8,5 @@
   `/explore` take their frame from one function.
 - hub: `/explore` is in the frame's language (`?lang`, else the reader's
   `Accept-Language`), its words from the hub's catalogue in all ten
-  languages, and no longer English under a frame in another language. Its
+  languages, and no longer a bare English page. Its
   footer keeps the landing page's language switch. It shows no count.

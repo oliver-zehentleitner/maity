@@ -201,6 +201,10 @@ def test_a_legal_page_has_the_landing_pages_header_and_footer(
     owner.patch(LEGAL, {"privacy": {**IMPRINT, "de": {"title": "Datenschutz", "markdown": "x"}}})
     page = make_client().get("/privacy", params={"lang": "en"}).text
     assert '<header class="site-header dz">' in page and 'class="theme-toggle"' not in page
+    # The mark without its `style` attributes, as on the mail link pages: public-pages.css
+    # colours it.
+    header = page.split('<header class="site-header dz">', 1)[1].split("</header>", 1)[0]
+    assert 'class="mark"' in header and " style=" not in header
     # The header links lead to the landing page's sections, not to the legal page's.
     assert 'href="/?lang=en#s0">Start</a>' in page and 'href="#s0"' not in page
     assert 'class="signin" href="/login?lang=en"' in page

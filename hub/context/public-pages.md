@@ -868,8 +868,10 @@ on the same frame. `/explore` takes its words from the catalogue's `explore` sec
 and English where the catalogue has no words in that language; the frame then says its own `lang`.
 
 **Reason:** the frame's rules already live once in `chrome` (scope.md, 41837936). The parts each page added
-around it (the header's links, the button, the mark without its `style` attributes, the two stylesheets and their
-fallback) were copied into each page, and a page the next card adds would have copied them again. A page whose
+around it (the header's links, the button, the two stylesheets and their fallback, and on the mail link pages the
+mark without its `style` attributes) were copied into each page, and a page the next card adds would have copied
+them again. The legal pages now drop the mark's `style` attributes as well; `public-pages.css` colours it, so they
+look the same. A page whose
 words come from the catalogue can follow the reader's language like the frame around it, so the two say the same
 language.
 
