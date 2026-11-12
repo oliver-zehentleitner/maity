@@ -121,6 +121,16 @@ APPROVED_FILE = "approved.json"
 LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
+# The idle check of an interactive session (§15.14): a pane is read at most once per IDLE_EVERY;
+# the minutes come from the placement's `health.settings`, these are the contract's defaults.
+IDLE_EVERY = 60.0
+HANG_AFTER_MINUTES = 30
+REPLY_WITHIN_MINUTES = 10
+NUDGE_LINE = (
+    "maity runner: you have not been listening for a while: no `maity wait` ran and nothing "
+    "changed on this screen. Run `maity resume` if you lost track, then go back to your wait "
+    "loop."
+)
 LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
 LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
@@ -199,6 +209,18 @@ class Record:
     joined_generation: int | None = None  # the generation this runner last joined for
     target: str | None = None  # where it runs; kept, so a `target: null` placement stays put
     limits_unknown: int = 0  # provider limits in a row without a reset time (§15.7 backoff)
+    # The idle check of an interactive session (§15.14): when it was last read, a hash of
+    # its pane then, since when it is quiet, when it was nudged, when it was ended for it.
+    idle_checked_at: float | None = None
+    pane: str | None = None
+    quiet_since: float | None = None
+    nudged_at: float | None = None
+    hung_at: float | None = None
+    resume: bool = False  # the next start resumes the harness's session (after `hung`)
+
+    def calm(self) -> None:
+        """Forget the idle check: a new start, or an agent that is listening again."""
+        self.idle_checked_at = self.pane = self.quiet_since = self.nudged_at = None
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -223,6 +245,13 @@ def changed(pid: str, rec: Record) -> str:
     words = [w for w in (rec.state, rec.reason, rec.detail) if w]
     restarts = f", restart {rec.restarts}" if rec.restarts else ""
     return f"{pid}: {' '.join(words)} (generation {rec.generation}{restarts})"
+
+
+def _minutes(value: Any, default: int) -> float:
+    """A `health.settings` value in seconds: an integer from 1 to 1440 (§15.14), else the
+    default."""
+    good = isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 1440
+    return float(value if good else default) * 60
 
 
 @dataclass
@@ -491,6 +520,8 @@ class Supervisor:
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
+            elif rec.state == "running" and p.get("mode") == "interactive":
+                self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
             self._exited(rec, mine, now, backend, target)
@@ -511,6 +542,7 @@ class Supervisor:
         self, rec: Record, session: Session, p: dict[str, Any], now: float, backend: Tmux
     ) -> None:
         if rec.state != "stopping":
+            rec.hung_at = None
             grace = min(int(p.get("stop_grace_seconds") or 0), self.cfg.limits.stop_grace_max)
             rec.enter(now, "stopping", deadline_at=now + grace, kill_at=None)
         elif rec.kill_at is None and now >= (rec.deadline_at or now):
@@ -526,8 +558,12 @@ class Supervisor:
         backend.kill(session.name)
         code = session.exit_status
         if rec.state == "stopping":
+            rec.hung_at = None
             rec.enter(now, "stopped", "stopped_by_hub", exit_code=code, deadline_at=None,
                       kill_at=None)  # fmt: skip
+            return
+        if rec.hung_at is not None:  # the runner ended it for not listening
+            self._hung_exit(rec, now, code)
             return
         # An adopted session's start is unknown: its exit is not counted as a quick one.
         started = (
@@ -556,6 +592,79 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _idle(
+        self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
+    ) -> None:
+        """The runner's own check of an interactive session (§15.14): no `maity wait` below
+        its pane and the pane unchanged for `hang_after_minutes` means the agent stopped
+        listening. Nobody attached: one line typed into the pane. Still the same
+        `reply_within_minutes` later: the session is ended and started again, resuming it,
+        reported `exited`, `hung`, `idle`. A person attached, a wait running, a changed pane,
+        or anything the runner cannot read starts the count again."""
+        if rec.hung_at is not None:  # ended for it: kill-session if TERM was not enough
+            if now - rec.hung_at >= KILL_AFTER:
+                backend.kill(session.name)
+                self._hung_exit(rec, now, None)
+            return
+        if rec.idle_checked_at is not None and now - rec.idle_checked_at < IDLE_EVERY:
+            return
+        rec.idle_checked_at = now
+        waiting = backend.waiting(session)
+        attached = backend.attached(session.name)
+        digest = backend.pane_digest(session.name)
+        if waiting is None or attached is None or digest is None or waiting or attached:
+            rec.pane, rec.quiet_since, rec.nudged_at = digest, None, None
+            return
+        if rec.quiet_since is None or rec.pane is None:
+            # The first look, or the first after the nudge typed into the pane: the line
+            # changed it, so this is what "unchanged" is measured against from now on.
+            rec.pane = digest
+            rec.quiet_since = rec.quiet_since or now
+            return
+        if digest != rec.pane:
+            rec.pane, rec.quiet_since, rec.nudged_at = digest, now, None
+            return
+        settings = (p.get("health") or {}).get("settings") or {}
+        hang = _minutes(settings.get("hang_after_minutes"), HANG_AFTER_MINUTES)
+        reply = _minutes(settings.get("reply_within_minutes"), REPLY_WITHIN_MINUTES)
+        if rec.nudged_at is None:
+            if now - rec.quiet_since < hang:
+                return
+            try:
+                backend.type_line(session.name, NUDGE_LINE)
+            except TmuxError as exc:
+                self.log(f"{session.name}: cannot nudge: {exc}")
+                return
+            rec.nudged_at, rec.pane = now, None
+            self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
+                     "nudged in its pane")  # fmt: skip
+            return
+        if now - rec.nudged_at < reply:
+            return
+        self.log(f"{session.name}: still not listening {reply / 60:.0f} min after the nudge; "
+                 "ending it to resume its session")  # fmt: skip
+        backend.terminate(session)
+        rec.hung_at = now
+
+    def _hung_exit(self, rec: Record, now: float, code: int | None) -> None:
+        """The end of a session the idle check ended: `exited`, `hung`, `idle` (§15.7), a
+        restart like any other exit, so the crash cap holds; the next start resumes it."""
+        started = (
+            rec.started_at
+            if rec.started_at is not None
+            else now - self.cfg.limits.restart.quick_exit
+        )
+        decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
+        rec.hung_at = None
+        rec.calm()
+        rec.resume = True
+        if decision.crash_loop:
+            rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
+                      retry_at=None)  # fmt: skip
+        else:
+            rec.enter(now, "exited", "hung", detail="idle", exit_code=code,
+                      crashes=decision.crashes, retry_at=decision.retry_at)  # fmt: skip
 
     def _rate_limited(self, rec: Record, now: float, target: Target) -> None:
         """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
@@ -678,6 +787,7 @@ class Supervisor:
         if join and self.client is None:
             return 0
         retrying = rec.state in ("exited", "rate_limited")
+        rec.calm()
         rec.enter(now, "starting", retry_at=None, started_at=now)
         if retrying:
             rec.restarts += 1
@@ -735,7 +845,7 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            launch = adapters.launch(self._context(p, harness, place, target))
+            launch = adapters.launch(self._context(p, harness, place, target, rec.resume))
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
@@ -769,6 +879,7 @@ class Supervisor:
         hint = target.attach_hint(name)
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
+            rec.resume = False
         self.log(f"{name}: started generation {p['generation']}")
         found = target.probes.get(harness.id)
         warning = capabilities.unchecked(harness.id, found.version if found else None)
@@ -833,6 +944,7 @@ class Supervisor:
         harness: config.Harness,
         place: workspace.Workspace,
         target: Target | None = None,
+        resume: bool = False,
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
@@ -862,6 +974,7 @@ class Supervisor:
             workspaces=target.workspaces.resolve() if target.as_user.here else target.workspaces,
             as_user=target.as_user,
             agent_path=target.agent_path,
+            resume=resume,
         )
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:

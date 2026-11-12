@@ -65,6 +65,12 @@ maity placement stop <agent> --grace 60
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
+## When an agent goes quiet
+
+An interactive agent listens by running `maity wait`. If that stops (a full disk, a provider limit, a turn it closed), the agent sits at its prompt and its placement still shows as running. The runner notices it by itself: when no `maity wait` runs in the session and the screen has not changed for 30 minutes, it types one line into the session asking the agent to go back to its wait loop. If nothing changes in the next 10 minutes, it restarts the session, and Claude Code picks up its last conversation. **Where they run** then shows the restart as `hung`. The owner of the agent sets both times in the agent's health settings.
+
+The runner never types while someone is attached to the session: attaching pauses the check.
+
 ## Working in an agent's clone
 
 An agent's clone on the runner belongs to the agent. You look there, you don't work there.

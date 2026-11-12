@@ -1981,3 +1981,42 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
   tool's message, which is outside the contract.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
+
+## The runner nudges an interactive agent that stopped listening, then resumes it
+
+**Id:** 20fe2a78-29ec-49fa-b428-0a785db95d14
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-cbz655mvt4ss (the lead asked for it after both placed agents on a VM went silent at once on 2026-11-12 while their placements reported `running`; the "no client attached" guard confirmed by the lead); `cli/src/maity/runner/supervisor.py` (`_idle`), `tmux.py`; docs/api.md §15.14
+**Revisit when:** the hub's half of §15.14 (check-in, nudge) is routed, or a harness gives the runner a machine-readable signal that its session waits for input
+
+An interactive agent listens by running `maity wait`. When that ends (a
+full disk, a provider limit, a turn the agent closed), the agent sits at
+its prompt, its process stays alive, and its placement stays `running`.
+Nothing noticed it: the hub's check-in and nudge are not routed yet, and
+§15.14 had the runner leave an interactive session alone. Now the runner
+looks at each interactive session once a minute.
+- **Not listening** means two things together: no `maity wait` among the
+  processes below the pane (`ps -A -ww`), and the pane unchanged. A wait
+  alone is not enough, because a working agent has none open. An unchanged
+  pane alone is not enough either, because an agent waiting for events
+  shows nothing new. The pane is compared by hash, so its text is never
+  kept, logged or sent.
+- After `hang_after_minutes`, the runner types one fixed line into the
+  pane, and only while no client is attached: a person at the pane would
+  have the runner type into their session. After `reply_within_minutes`
+  more, it ends the session and reports `exited`/`hung`/`idle`. It
+  starts the session again with Claude Code's `--continue`, so the
+  conversation survives, and the restart counts toward the crash cap.
+- Anything the runner cannot read (no `ps`, a tmux error) starts the
+  count again. The runner never acts on a guess.
+- `-ww`: without a terminal, ps cuts the command line at 80 columns, and
+  `maity wait` behind a long venv path fell past the cut. The real-tmux
+  test found it.
+- Rejected: restarting at once without the typed line. A typed line costs
+  the agent nothing, while a restart costs it its tool state. For Codex
+  and opencode a restart still starts a new conversation.
+- Rejected: asking the hub whether the instance listens. The runner's
+  credential reads no members, and the processes are on the runner's side
+  anyway.

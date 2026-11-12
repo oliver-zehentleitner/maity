@@ -17613,7 +17613,7 @@ because only it sees the process:
 | the process is gone (out of memory, killed) | starts the harness again, resuming the same session with a line saying it was interrupted | `resumed` |
 | the process is alive but silent (supervised) | ends it as a stop does (TERM, KILL after `stop_grace_seconds`), reports `exited` with `reason: hung`, `detail: idle`, then resumes as above | `resumed` |
 | the process is alive and has produced output since the nudge's `at` minus `hang_after_minutes` (supervised) | nothing: it is working | `left_running` |
-| the process is alive (interactive) | nothing: a person may be at the pane, and the ask already reached the agent | `left_running` |
+| the process is alive (interactive) | nothing more: a person may be at the pane, and the ask already reached the agent. The runner's own check (below) types into a pane only when nobody is attached | `left_running` |
 
 - **Who.** A nudge is allowed to whoever may restart the placement
   (§15.6), including `agents:propose`. It is never a proposal: like a
@@ -17624,6 +17624,31 @@ because only it sees the process:
   status report (§15.8). A `resumed` counts as a restart (`restarts`,
   and toward flapping, below).
 - A nudge does not change `generation`.
+
+**The runner's own check (interactive).** An interactive agent whose
+`maity wait` ended, through a full disk, a provider limit or a turn it
+closed, sits idle at its prompt with nothing open the hub could see, and
+its process stays alive, so its placement stays `running` (2026-11-12,
+tsk-cbz655mvt4ss). The runner checks such a session itself, with or
+without the hub's ask, at most once a minute:
+
+- **Not listening** means no `maity wait` runs among the processes below
+  the session's pane, and what the pane shows has not changed. The
+  runner compares a hash of the pane; it keeps, logs and sends none of
+  its text.
+- After `hang_after_minutes` of that (the placement's `health.settings`),
+  and only while no client is attached to the session, the runner types
+  one fixed line into the pane, telling the agent it stopped listening
+  and to go back to its wait loop.
+- After `reply_within_minutes` more with still no wait and no change, it
+  ends the session as a stop does (TERM, kill-session after a few
+  seconds), reports `exited` with `reason: hung`, `detail: idle`, and
+  starts it again as a restart, resuming the harness's last conversation
+  where the harness can (Claude Code: `--continue`). It counts toward
+  the crash cap and flapping like any exit.
+- A client attached to the session, a `maity wait` running, a change in
+  the pane, or anything the runner cannot read (`ps`, tmux) starts the
+  count again. A stop wins over a pending end.
 
 **The session continues.** The runner keeps the session id the harness
 names for a placement, in its own state, and every start of that

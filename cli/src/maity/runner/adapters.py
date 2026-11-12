@@ -29,6 +29,13 @@ START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
     "comes first. Then work as `docs/agents.md` and the rules in the packet say."
 )
+# An interactive session the runner ended because its agent stopped listening (§15.14) starts
+# again on the same conversation with this line, where the harness can resume one.
+RESUME_PROMPT = (
+    "The runner ended and resumed this session: you had stopped listening (no `maity wait` "
+    "ran and nothing changed on screen). Run `maity resume`, then carry on with your work and "
+    "your wait loop."
+)
 # Supervised runs end with the turn: the loop starts the next one on the next event.
 SUPERVISED_PROMPT = (
     START_PROMPT + " Handle what is waiting for you, checkpoint what you hold, then end your "
@@ -96,6 +103,7 @@ class Context:
     workspaces: Path | None = None  # the root of every clone, for sandboxes that can carve
     as_user: AsUser = AsUser()  # who the agents run as (§7.6)
     agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
+    resume: bool = False  # interactive: continue the harness's last conversation (§15.14)
 
 
 @dataclass(frozen=True)
@@ -260,6 +268,8 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
         base += ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
+        if ctx.resume:  # `--continue`: the clone's latest conversation, with its context
+            return Launch([*base, "--continue", RESUME_PROMPT], env)
         return Launch([*base, START_PROMPT], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).

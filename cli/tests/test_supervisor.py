@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -64,9 +65,27 @@ class FakeTmux:
     started: list[tuple[str, list[str], dict[str, str]]] = field(default_factory=list)
     terminated: list[str] = field(default_factory=list)
     killed: list[str] = field(default_factory=list)
+    # The idle check: what `ps`, `display-message` and `capture-pane` would say.
+    waits: bool | None = False
+    attach: bool | None = False
+    screen: str | None = "> "
+    typed: list[tuple[str, str]] = field(default_factory=list)
 
     def sessions(self) -> dict[str, tmux.Session]:
         return dict(self.live)
+
+    def waiting(self, session: tmux.Session) -> bool | None:
+        return self.waits
+
+    def attached(self, name: str) -> bool | None:
+        return self.attach
+
+    def pane_digest(self, name: str) -> str | None:
+        return self.screen
+
+    def type_line(self, name: str, line: str) -> None:
+        self.typed.append((name, line))
+        self.screen = f"{self.screen}{line}"  # the line shows in the pane
 
     def start(self, name: str, cwd: Path, argv: Sequence[str], env: dict[str, str],
               placement: str, generation: int) -> None:  # fmt: skip
@@ -1529,3 +1548,214 @@ def test_a_configured_old_name_still_matches_through_the_aliases(world: Any) -> 
 )
 def test_a_placement_without_a_namespaced_project_is_dropped(change: dict[str, Any]) -> None:
     assert not supervisor.valid(placement(**change))
+
+
+# --- the idle check of an interactive session (§15.14, tsk-cbz655mvt4ss) ---------------------
+
+HEALTH = {"settings": {"hang_after_minutes": 30, "reply_within_minutes": 10}}
+SESSION = "maity_maity_agent-3"
+
+
+def interactive(world: Any, **overrides: Any) -> None:
+    """An interactive placement, started and `running`, its idle check at its first look."""
+    sup, _, reports, clock, _ = world
+    recorded(sup.cfg)
+    overrides.setdefault("health", HEALTH)
+    sup.update([placement(mode="interactive", **overrides)])
+    settle(sup)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, None)
+    sup.tick()  # the first look: quiet from here
+
+
+def minutes(world: Any, n: int) -> None:
+    """Let `n` minutes pass, one idle check a minute."""
+    sup, _, _, clock, _ = world
+    for _ in range(n):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+
+
+def test_an_agent_that_stopped_listening_is_nudged_then_resumed_as_hung(world: Any) -> None:
+    sup, backend, reports, clock, logs = world
+    interactive(world)
+    minutes(world, 29)
+    assert backend.typed == []  # quiet, but not for `hang_after_minutes` yet
+    minutes(world, 1)
+    assert backend.typed == [(SESSION, supervisor.NUDGE_LINE)]
+    assert any("nudged in its pane" in line for line in logs)
+    minutes(world, 9)
+    assert backend.terminated == []  # `reply_within_minutes` from the nudge
+    minutes(world, 1)
+    assert backend.terminated == [SESSION] and len(backend.typed) == 1
+    backend.exit(SESSION, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "idle")
+    assert sup.records["plc-0003"].resume
+    clock.now += 600
+    settle(sup)
+    assert len(backend.started) == 2 and reports.sent[-1][1]["restarts"] == 1
+    assert not sup.records["plc-0003"].resume  # consumed by the start that resumed it
+
+
+def test_a_session_that_outlives_the_term_is_killed_and_reported_hung(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    interactive(world)
+    minutes(world, 30 + 10)
+    assert backend.terminated == [SESSION]
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert SESSION in backend.killed
+    assert states(reports)[-1] == ("exited", "hung", "idle")
+
+
+def test_an_attached_client_blocks_the_typing(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    backend.attach = True  # a person may be at the pane
+    minutes(world, 60)
+    assert backend.typed == [] and backend.terminated == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"waits": True},  # a `maity wait` runs below the pane: listening
+        {"waits": None},  # `ps` could not say: nothing is done on a guess
+        {"attach": None},
+        {"screen": None},
+    ],
+    ids=["waiting", "ps-unknown", "attach-unknown", "screen-unknown"],
+)
+def test_a_listening_or_unreadable_session_is_left_alone(
+    world: Any, change: dict[str, Any]
+) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    for key, value in change.items():
+        setattr(backend, key, value)
+    minutes(world, 60)
+    assert backend.typed == [] and backend.terminated == []
+
+
+def test_a_changing_pane_starts_the_count_again(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 25)
+    backend.screen = "> working"  # the agent is at work, no wait open
+    minutes(world, 25)
+    assert backend.typed == []
+    minutes(world, 6)
+    assert len(backend.typed) == 1
+
+
+def test_an_agent_that_answers_the_nudge_is_not_ended(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 31)
+    assert len(backend.typed) == 1
+    backend.waits = True  # it read the line and runs its wait loop again
+    minutes(world, 30)
+    assert backend.terminated == [] and len(backend.typed) == 1
+
+
+def test_the_owners_minutes_apply_and_bad_ones_fall_back(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    health = {"settings": {"hang_after_minutes": 5, "reply_within_minutes": True}}
+    interactive(world, health=health)
+    minutes(world, 4)
+    assert backend.typed == []
+    minutes(world, 1)
+    assert len(backend.typed) == 1  # 5 minutes, the owner's
+    minutes(world, 9)
+    assert backend.terminated == []  # `True` is no number of minutes: the default 10
+    minutes(world, 1)
+    assert backend.terminated == [SESSION]
+
+
+def test_a_supervised_placement_has_no_idle_check(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    recorded(sup.cfg)
+    sup.update([placement(health=HEALTH)])
+    settle(sup)
+    minutes(world, 60)
+    assert backend.typed == [] and backend.terminated == []
+
+
+def test_a_stop_during_the_idle_end_is_a_stop(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    interactive(world)
+    minutes(world, 30 + 10)
+    assert backend.terminated == [SESSION]
+    sup.update([placement(mode="interactive", health=HEALTH, desired="stopped")])
+    sup.tick()
+    backend.exit(SESSION, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("stopped", "stopped_by_hub", None)
+    assert not sup.records["plc-0003"].resume
+
+
+def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
+    listing = (
+        "  100     1 /usr/bin/claude --settings x\n"
+        "  200   100 /bin/bash -c maity wait --batch --timeout 540\n"
+        "  300   200 /home/a/.venv/bin/python /home/a/.venv/bin/maity wait --batch\n"
+        "  400     1 /usr/bin/python -m maity wait\n"  # another session's
+        "  500   100 /usr/bin/grep maity-wait\n"
+    )
+    assert tmux.waits_below(listing, 100)
+    assert not tmux.waits_below(listing, 500)
+    assert tmux.waits_below(listing, 1) and not tmux.waits_below(listing, 999)
+    assert tmux.is_wait("/usr/bin/python3 -m maity wait")
+    assert not tmux.is_wait("maity waiting") and not tmux.is_wait("notmaity wait")
+    assert not tmux.is_wait("vim maity.wait") and not tmux.is_wait("maity resume")
+
+
+def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    answers = {"display-message": "1\n", "capture-pane": "> hello\n",
+               "ps": "  7     1 sh\n  8     7 maity wait\n"}  # fmt: skip
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        word = next((w for w in answers if w in argv), None)
+        return subprocess.CompletedProcess(list(argv), 0, answers.get(word or "", ""), "")
+
+    backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path, run=run)
+    session = tmux.Session(SESSION, False, None, 7, "plc-0003", 1)
+    assert backend.attached(SESSION) is True
+    assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
+    assert backend.waiting(session) is True
+    assert backend.waiting(replace(session, pid=None)) is None
+    backend.type_line(SESSION, "a line; with -t words")
+    assert calls[-2][-4:] == ["-t", SESSION, "-l", "a line; with -t words"]
+    assert calls[-1][-3:] == ["-t", SESSION, "Enter"]
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None or shutil.which("ps") is None,
+                    reason="needs tmux and ps")  # fmt: skip
+def test_real_tmux_idle_reads(tmp_path: Path) -> None:
+    # A long path, so `maity wait` sits past the 80 columns ps cuts at without a terminal.
+    fake = tmp_path / ("d" * 120) / "bin" / "maity"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\nsleep 600\n")
+    fake.chmod(0o755)
+    socket = tmp_path / "t.sock"
+    backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
+                        tmp_path / "logs")  # fmt: skip
+    try:
+        backend.start(SESSION, tmp_path, ["sh"], {}, "plc-0003", 1)
+        session = backend.sessions()[SESSION]
+        assert backend.attached(SESSION) is False
+        assert backend.waiting(session) is False
+        before = backend.pane_digest(SESSION)
+        backend.type_line(SESSION, f"{fake} wait --batch")
+        for _ in range(50):
+            if backend.waiting(session):
+                break
+            subprocess.run(["sleep", "0.1"], check=False)
+        assert backend.waiting(session) is True
+        assert backend.pane_digest(SESSION) != before
+    finally:
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)

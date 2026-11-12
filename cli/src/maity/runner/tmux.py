@@ -15,6 +15,7 @@ tokens, never shell strings, except the `pipe-pane` command, whose one path is q
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shlex
 import subprocess
@@ -58,6 +59,39 @@ class Session:
     pid: int | None
     placement: str | None
     generation: int | None
+
+
+def is_wait(args: str) -> bool:
+    """Whether a process's command line is a `maity wait`: a word naming the maity command,
+    `maity` itself or a path ending in it (`python -m maity`, a venv's `bin/maity`), followed by
+    `wait`. A shell running such a line counts too: it holds the wait as long as it runs."""
+    words = args.split()
+    return any(
+        os.path.basename(word) == "maity" and following == "wait"
+        for word, following in zip(words, words[1:], strict=False)
+    )
+
+
+def waits_below(listing: str, root: int) -> bool:
+    """Whether a process below `root` (the pane's process) is a `maity wait`, from the
+    `pid ppid args` lines of `ps`."""
+    children: dict[int, list[tuple[int, str]]] = {}
+    for line in listing.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
+            continue
+        args = parts[2] if len(parts) > 2 else ""
+        children.setdefault(int(parts[1]), []).append((int(parts[0]), args))
+    seen, queue = {root}, [root]
+    while queue:
+        for pid, args in children.get(queue.pop(), []):
+            if pid in seen:
+                continue
+            if is_wait(args):
+                return True
+            seen.add(pid)
+            queue.append(pid)
+    return False
 
 
 def attach_words(socket: Path, name: str, as_user: AsUser) -> list[str]:
@@ -201,6 +235,50 @@ class Tmux:
             self._check(self._tmux("kill-session", "-t", name))
         except TmuxError:
             pass  # already gone
+
+    # --- the idle check (§15.14): what an interactive session shows -------------------------
+
+    def attached(self, name: str) -> bool | None:
+        """Whether a client is attached to the session, so a person may be at the pane;
+        None when tmux could not say."""
+        try:
+            out = self._check(
+                self._tmux("display-message", "-p", "-t", name, "#{session_attached}")
+            )
+        except TmuxError:
+            return None
+        value = out.strip()
+        return int(value) > 0 if value.isdigit() else None
+
+    def pane_digest(self, name: str) -> str | None:
+        """A hash of what the session's pane shows now, to tell whether it changed; the text
+        itself is never kept, logged or sent. None when tmux could not say."""
+        try:
+            out = self._check(self._tmux("capture-pane", "-p", "-t", name))
+        except TmuxError:
+            return None
+        return hashlib.sha256(out.encode("utf-8", "replace")).hexdigest()
+
+    def waiting(self, session: Session) -> bool | None:
+        """Whether a `maity wait` runs among the processes below the session's pane, read
+        where the session runs; None when that could not be read."""
+        if session.pid is None:
+            return None
+        try:
+            # `-ww`: the whole command line; ps cuts it at the terminal's width otherwise,
+            # and `maity wait` can sit past that behind a long path.
+            done = self._exec(["ps", "-A", "-ww", "-o", "pid=,ppid=,args="])
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if done.returncode != 0:
+            return None
+        return waits_below(done.stdout, session.pid)
+
+    def type_line(self, name: str, line: str) -> None:
+        """Type one line into the session's pane and press Enter: `-l` sends it literally,
+        so no word of it is read as a key name."""
+        self._check(self._tmux("send-keys", "-t", name, "-l", line))
+        self._check(self._tmux("send-keys", "-t", name, "Enter"))
 
     def environment_of(self, name: str) -> dict[str, str]:
         """The environment a session's processes get (for tests and `check`)."""
