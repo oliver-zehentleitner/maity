@@ -2112,4 +2112,7 @@ answer: something in the clone may still be needed.
   final `removed` per placement. A placement that starts again gets a new
   clone, so either its own later removal could not be reported, or a
   late retry about the old clone could revoke the new clone's
-  credential (v5vp's review).
+  credential (v5vp's review). The runner makes a removed clone's
+  successor only after the hub took the `removed` report, under the epoch
+  of that answer; a clone made earlier would carry the old epoch and all
+  its reports would be dropped (spq4's review).
