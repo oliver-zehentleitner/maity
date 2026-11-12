@@ -94,6 +94,7 @@ from maity_hub.routes import (
     board,
     bridges,
     briefing_view,
+    chat_access,
     contract_text,
     conversations,
     cross_chats,
@@ -518,6 +519,7 @@ def create_app(
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(cross_chats.router, prefix=prefix)
+    app.include_router(chat_access.router, prefix=prefix)  # §9.6, the lists
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
