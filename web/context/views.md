@@ -6413,3 +6413,33 @@ alike (§2.10); the page cannot know which, and must not guess one.
   instead of the link's page.
 - Saying "expired" or "used" for a dead link: the hub does not tell them
   apart, and a guess would be wrong half the time.
+
+## The banner toward an authenticator app: Later kept per session in the browser, its reads kept until a write that moves them
+
+**Id:** 7edef2ad-504b-4a50-983c-daa9eb37f88c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.10 ("Toward an authenticator app": every page, Later until the next sign-in, enrolling ends it); the card tsk-yksxdpd2pk0m; the dashboard's implementation, 2026-11-12
+**Revisit when:** the hub keeps "Later" itself, or `GET /me` or `/bootstrap` starts to carry the second factor's `via`
+
+"Later" stores the current session's id in the browser's storage; the
+banner stays away while the session is that one, so the next sign-in, a
+new session, shows it again. Where the browser keeps nothing it holds for
+the page load. What the banner stands on (`GET /auth/second-factor`,
+`/auth/methods`, `/me/notification-settings`) is read once and again
+only after a write of this tab to the mail settings, the second factor or
+the instance's sign-in settings.
+
+**Reason:** the contract ties "Later" to the sign-in and gives the hub no
+field for it, and a session's id is exactly what changes at a sign-in.
+The banner is on every page, and three reads on every page switch would
+be three calls on every click for something that changes only through
+those writes.
+
+**Rejected alternatives:**
+- `sessionStorage`: it ends with the tab, not with the sign-in; a new tab
+  of the same session would show the banner again.
+- Reading the three on every page: the cost above, for nothing new.
+- Re-reading after any write: the inbox and the board write all the time,
+  and none of their writes moves the banner.

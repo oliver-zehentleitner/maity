@@ -2999,6 +2999,23 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         page.locator("form.second-factor").get_by_role("button", name="Verify", exact=True).click()
         expect(page.locator("header .me")).to_contain_text("Owner")
         no_problems(run, "mail factor: the code")
+        # Toward an authenticator app (§2.10): the mail is the factor and a reset by mail could
+        # reach the owner, so the banner says the mailbox alone is enough; Later until the next sign-in.
+        banner = page.locator(".factor-banner")
+        expect(banner).to_contain_text("Your sign-in rests on your mailbox alone: whoever reads it can reset your password and sign in.")
+        expect(banner.get_by_role("link", name="Set up an authenticator app", exact=True)).to_have_attribute("href", "/account/security")
+        page.set_viewport_size({"width": 390, "height": 844})
+        wide = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        assert wide[0] <= wide[1], f"the authenticator banner widens the page at 390 px: {wide}"
+        run.shot(page, "mail-factor-banner-390")
+        page.set_viewport_size({"width": 1280, "height": 900})
+        run.a11y(page, "mail factor: the banner toward an authenticator app")
+        banner.get_by_role("button", name="Later", exact=True).click()
+        expect(banner).to_have_count(0)
+        page.reload()
+        expect(page.locator("header .me")).to_contain_text("Owner")
+        expect(page.locator(".factor-banner")).to_have_count(0)
+        no_problems(run, "mail factor: the banner toward an authenticator app")
         context.close()
 
         run.step("mail factor: a session from before the switch is asked for a mailed code")

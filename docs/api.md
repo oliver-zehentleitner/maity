@@ -3152,9 +3152,6 @@ this route for someone else; that remains §16.1.
 
 ### 2.10 Human: a forgotten password
 
-**Pending.** The hub and the dashboard serve this section, except the
-dashboard's banner toward an authenticator app (tsk-yksxdpd2pk0m).
-
 The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
 in seq 109283): a human who forgot the password sets a new one through
 a link to the verified address. `POST /auth/password` (§2.1) needs the
