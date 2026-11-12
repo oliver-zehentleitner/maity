@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import clock, events, group_chats, idempotency, namespace, paging
+from maity_hub import chat_gate, clock, events, group_chats, idempotency, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
@@ -150,7 +150,14 @@ def _readers(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
 
 def _views(conn: Connection, rows: list[Any], slug: str, reader: Any) -> list[dict[str, Any]]:
     now, readers = _now(conn, rows), _readers(conn, rows)
-    return [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+    found = [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+    if reader is not None and getattr(reader, "kind", None) == "agent":
+        for row, view in zip(rows, found, strict=True):
+            # An agent waiting in the thread for its owner's yes reads the round without
+            # the thread's text (§9.6).
+            if row.conversation_id and chat_gate.waiting(conn, row.conversation_id, reader.id):
+                view.update(statement=None, posts=[])
+    return found
 
 
 def _round(conn: Connection, mine: Any, round_id: str) -> Any:

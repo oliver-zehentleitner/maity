@@ -606,7 +606,7 @@ def hidden_redactions(
     - with `membership`, `ticker:<seq>` for each decision item, and for the notice of
       one, whose request it may not read now: no item, no placeholder, no notice;
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
-      chat's event in the batch names: the owner reads along (§9.2);
+      chat's event in the batch names, waiting or not: the owner reads along (§9.2, §9.6);
     - with `membership`, `watching:<seq>` for each event its private list holds it on (§6.4);
     - with `membership`, `restricted:<seq>` for each `restricted_changed` it reads now: on
       the event's private list and in the project's restricted-access set (§6.4);
@@ -713,11 +713,11 @@ def _owned_in_chats(conn: Connection, rows: Sequence[Any], membership: Any) -> s
     if membership is None or membership.human_id is None:
         return set()
     named = {
-        token.removeprefix("member:")
+        chat_agent(token)
         for r in rows
         if r.conversation_id is not None and r.conversation_id.startswith("cnv-")
         for token in (r.audience or [])
-        if token.startswith("member:agt-")
+        if chat_agent(token)
     }
     if not named:
         return set()
@@ -727,6 +727,17 @@ def _owned_in_chats(conn: Connection, rows: Sequence[Any], membership: Any) -> s
         )
     ).scalars()
     return {f"owns:{agent_id}" for agent_id in owned}
+
+
+def chat_agent(token: Any) -> str:
+    """The agent a group chat's audience token names, `member:agt-…` or a waiting agent's
+    `waiting:agt-…` (§9.6), whose owner reads along by it; else ``."""
+    if not isinstance(token, str):
+        return ""
+    for prefix in ("member:", "waiting:"):
+        if token.startswith(f"{prefix}agt-"):
+            return token.removeprefix(prefix)
+    return ""
 
 
 def _names_team(audience: list[str], principal: str) -> bool:
@@ -836,7 +847,7 @@ def readable_by(
             _names_team(audience, principal)
             or (
                 f"outside:{row.conversation_id}" not in hidden
-                and any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
+                and any(f"owns:{chat_agent(token)}" in hidden for token in audience)
             )
             # A round's thread names `trust:owner`: every human owner reads along (§20.5).
             or (

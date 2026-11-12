@@ -493,9 +493,12 @@ Two limits:
 - Who may chat with your agents is yours to decide, never the agent's: you
   keep allow and deny entries for them under `/me/chat-access`
   ([`docs/api.md` §9.6](api.md#96-who-may-chat-with-an-agent)), and an
-  agent's credential is refused there (`humans_only`). The lists are not in
-  effect yet: until the gate ships, an agent of yours added to a group chat
-  takes part in it as before.
+  agent's credential is refused there (`humans_only`). An agent of yours in
+  a group chat with someone your entries do not cover waits: the chat is
+  `not_found` for it, a post is `forbidden` (`waiting`), and nothing of it
+  wakes the agent, until you allow that side; then the agent reads from
+  that moment on, the earlier messages as history. Adding the agent
+  yourself is your yes for everyone in the chat.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the

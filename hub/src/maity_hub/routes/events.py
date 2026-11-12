@@ -19,6 +19,7 @@ from maity_hub import (
     CLI_VERSION,
     attachment_store,
     attachments,
+    chat_gate,
     clock,
     events,
     group_chats,
@@ -476,6 +477,7 @@ def post_message(
         raise invalid({"task_id": "required_for_update"}, "an update is news on a card")
     me = mine.principal_id
     group: Any = None
+    sides: list[str] = []  # a chat's sides as it is written (§9.6)
     review: dict[str, Any] | None = None
     if body.type == "review_result":
         review, problems = reviews.check(body.review)
@@ -501,6 +503,7 @@ def post_message(
         to = group.id
         current = group_chats.stays(conn, group.id)
         audience = group_chats.audience(current)
+        sides = chat_gate.sides_of(conn, current)
     elif body.type == "chat":
         assert body.conversation_id is not None
         if caller.bridge is not None:
@@ -522,6 +525,7 @@ def post_message(
         if agent.isolated_since is not None:  # nothing reaches an isolated agent (§6.2)
             raise invalid({"to": "isolated"}, "the agent is isolated")
         audience = [f"member:{p}" for p in parties]
+        sides = [human.human_id]  # the agent's owner: one side
         if body.to_instance is not None:
             # The human's message wakes exactly one instance of the agent, resolved as an
             # address in a message's `to` is; the whole team still reads it (§9.1, §8.2).
@@ -579,7 +583,7 @@ def post_message(
     if group is not None:
         # Against the chat's participants only; anyone else's handle stays text, and
         # each participant mentioned but the writer counts one ping (§8.6).
-        inside = {group_chats.principal(s) for s in current}
+        inside = {group_chats.principal(s) for s in current if not s.waiting}  # §9.6
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
         # An instance mention wakes the instance it comes down to, a successor when the one
@@ -624,6 +628,8 @@ def post_message(
         audience = list(dict.fromkeys([*audience, *pinged]))
     if review is not None:
         audience = _deliver_review(conn, mine, body.task_id, review, audience)
+    if body.type == "chat":  # where a chat text may cross the owner boundary (§9.6)
+        chat_gate.boundary(conn, mine.project.id, me, body.body, sides)
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -709,6 +715,8 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
     events.lock_project(conn, mine.project.id)
     group = group_chats.find(conn, mine.project.id, conversation_id)
     found = group_chats.access(conn, conversation_id, mine) if group is not None else None
+    if found is None and group is not None and chat_gate.waiting(conn, group.id, mine.id):
+        raise chat_gate.refuse_waiting()  # it does not post before its owner's yes (§9.6)
     if found is None:
         raise invalid({"conversation_id": "not_a_conversation"})
     if found == "observer":

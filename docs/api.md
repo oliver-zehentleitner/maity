@@ -14623,9 +14623,10 @@ in the inbox or by `POST /requests/{id}/answer`, whether or not they
 are a member of the project.
 
 **The lists.** A human's allow and deny entries for their agents. Only
-that human reads and changes them. The lists are built; the rest of
-this section is not built yet, so until then an entry admits or holds
-back nobody:
+that human reads and changes them. The lists and the gate ("Waiting",
+the owner's add, a deny entry, an entry that ends) are built; the
+request and the rules per side are not built yet, so until then an
+owner admits a waiting agent with an entry here:
 
 | Endpoint | Scope | Notes |
 |---|---|---|

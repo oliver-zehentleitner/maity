@@ -385,6 +385,10 @@ def create(
         )
     )
     announce(conn, project_id, (served.id, bridge.id), actor)
+    if cross:  # the bridge's owner is a side in the served member's chats now (§9.6)
+        from maity_hub import chat_gate
+
+        chat_gate.served(conn, served.id)
     return conn.execute(select(t.bridge).where(t.bridge.c.id == bridge_id)).one()
 
 
@@ -411,6 +415,10 @@ def end(
         .values(ended_at=clock.now(), ended_by=by, end_reason=reason, live=None)
     )
     on_commit(conn, lambda: longpoll.registry.end_bridge(row.id))
+    if row.cross_owner:  # its owner is no side in the served member's chats any more (§9.6)
+        from maity_hub import chat_gate
+
+        chat_gate.served(conn, row.served)
     if actor is not None:
         announce(conn, row.project_id, _active(conn, (row.served, row.bridge)), actor)
     return conn.execute(select(t.bridge).where(t.bridge.c.id == row.id)).one()

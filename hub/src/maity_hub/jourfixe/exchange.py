@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock, group_chats
+from maity_hub import chat_gate, clock, group_chats
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
@@ -109,6 +109,20 @@ def _participants(conn: Connection, round_row: Any) -> list[str]:
     return [i["member_id"] for i in round_row.invited if i["member_id"] in now]
 
 
+def _admitted(conn: Connection, round_row: Any) -> list[str]:
+    """`_participants` without the agents that wait in the thread for their owner's yes: they
+    are not eligible for a step, so no step names or wakes them (§9.6)."""
+    found = _participants(conn, round_row)
+    if not round_row.conversation_id:
+        return found
+    waiting = {
+        group_chats.principal(s)
+        for s in group_chats.stays(conn, round_row.conversation_id)
+        if s.waiting
+    }
+    return [m for m in found if m not in waiting]
+
+
 # --- the thread (§20.5) -----------------------------------------------------------------------
 
 
@@ -134,12 +148,18 @@ def _post_message(
 ) -> int:
     """One message in the round's thread, to its participants; it wakes nobody."""
     conversation = group_chats.find(conn, round_row.project_id, round_row.conversation_id)
+    current = group_chats.stays(conn, conversation.id)
     # The participants, and every human owner, or an owner's series' `circle_owner`, who
-    # reads along (§20.5).
-    audience = [
-        *group_chats.audience(group_chats.stays(conn, conversation.id)),
-        *circle.owners(round_row),
-    ]
+    # reads along (§20.5); a waiting agent as `waiting:` (§9.6).
+    audience = [*group_chats.audience(current), *circle.owners(round_row)]
+    author = principal_ids(conn, [actor.membership_id] if actor and actor.membership_id else [])
+    chat_gate.boundary(  # where a chat text may cross the owner boundary (§9.6)
+        conn,
+        round_row.project_id,
+        next(iter(author.values()), ""),
+        body,
+        chat_gate.sides_of(conn, current),
+    )
     payload = {
         "type": "chat",
         "to": conversation.id,
@@ -304,7 +324,7 @@ def submit_post(
     ):
         raise _state(round_row, step["kind"] if step else None, "that step is not open")
     me = mine.principal_id
-    if me not in step["eligible"] or me not in _participants(conn, round_row):
+    if me not in step["eligible"] or me not in _admitted(conn, round_row):
         raise refused("not_eligible", "you may not post in this step")
     too_long([("body", body["body"], POST_BYTES)])
     topic_id = body["topic_id"]
@@ -453,7 +473,7 @@ def _close_current(conn: Connection, round_row: Any) -> None:
     if round_row.statement is None:  # no statement, no exchange (§20.5)
         _close_exchange(conn, round_row, opened)
         return
-    current = _participants(conn, round_row)
+    current = _admitted(conn, round_row)
     candidates: list[tuple[str, list[str], list[str], dict[str, Any] | None]] = [
         (kind, *_eligible(round_row, kind, current), None) for kind in CHAIN.get(done["kind"], ())
     ]

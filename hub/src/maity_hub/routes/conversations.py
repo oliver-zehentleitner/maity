@@ -20,6 +20,7 @@ from sqlalchemy import Connection, func, select
 
 from maity_hub import (
     attachments,
+    chat_gate,
     chat_meat_proxy,
     conversation_list,
     events,
@@ -906,6 +907,8 @@ def send_message(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked(conn, caller, slug, conversation_id)
         if group_chats.is_group(conversation_id):
+            if chat_gate.waiting(conn, conversation_id, mine.id):
+                raise chat_gate.refuse_waiting()  # it does not post before its owner's yes
             _group(conn, mine, conversation_id)  # not_found for anyone without access
         else:
             _party(conn, mine, conversation_id, hidden=False)
