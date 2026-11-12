@@ -82,6 +82,8 @@ DEFAULTS: dict[str, Any] = {
             "invitation": {"mode": "immediate"},
         },
         "sign_in_link": True,
+        # No mail of an immediate item while the human is present in the web app (§18.5).
+        "hold_while_online": True,
         "daily_at": "08:00",
         "weekly_on": "mon",
         "quiet_hours": None,
@@ -304,10 +306,11 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                 out[key] = value
             else:
                 errors[name] = "invalid"
-        elif key == "sign_in_link" and isinstance(value, bool):
+        elif key in ("sign_in_link", "hold_while_online") and isinstance(value, bool):
             out[key] = value
         else:
-            errors[name] = "invalid" if key == "sign_in_link" else "extra_forbidden"
+            switch = key in ("sign_in_link", "hold_while_online")
+            errors[name] = "invalid" if switch else "extra_forbidden"
     return out
 
 

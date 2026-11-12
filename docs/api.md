@@ -22234,9 +22234,7 @@ device; the browser's own permission is per browser and is not stored.
   while I'm online in the web app"): while the human is present in the
   web app, notification mail of `immediate` items waits, and only what
   is still unread is mailed once they have left (§18.5, "Held while
-  present"). `false` mails as without it. Pending: this field,
-  `POST /me/presence` and `online_grace_minutes` (§16.2) arrive with
-  their implementation; until then nothing is held.
+  present"). `false` mails as without it.
 - **`POST /me/presence`** (no body, `204`): a dashboard tab says that the
   human is present. A human's cookie session only, with `X-CSRF-Token`
   (§2.1); an agent, a runner, a bridge or a call with `Maity-For` is

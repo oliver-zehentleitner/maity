@@ -1134,12 +1134,13 @@ shipped, the kind's settings could be changed only through the API (§18.4).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
+**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11) and their approval of the contract's wording on req-a2wck5jr9xpb (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); hub/src/maity_hub/notifications/presence.py, mailer.py (`held`), auth/caller.py (`seen`), deps.py (`presence_caller`); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
 **Revisit when:** the maintainer reads the contract and wants urgent requests mailed while present, or the dashboard gets a live connection that every tab holds
 
 `email.hold_while_online` (default `true`) holds the mail of `immediate` items while one of
 the human's live sessions has a `present_until` in the future, and `online_grace_minutes`
-(default 5, an instance mail setting) after that; the next pass mails what is still unread.
+(default 5, an instance mail setting) after that; the next pass mails what is still unread,
+an item the hourly cap held over an hour's end included.
 A dashboard tab calls `POST /me/presence` every 60 seconds while it is visible and had input
 within 10 minutes. The hub moves `present_until` to two minutes ahead only when that moves it
 by at least a minute, so it writes at most once a minute per session: every present tab calls
@@ -1154,6 +1155,16 @@ writes no `last_seen_at` and shows nobody online, so nobody reads it as presence
 mail, the mails sent at once whatever the mode and the mail of a suspension are never held.
 An urgent request is an `inbox` item and is held: the present human sees it in the bell.
 Digests keep their moment.
+
+In the hub the call authenticates as any cookie call, the CSRF check included, but with
+`seen=False`: the session's liveness is read, not written, and no `last_seen_at` of the
+session, the human or a membership moves. A request with `Authorization` or `Maity-For` is
+refused (`humans_only`) before any credential is looked up, so a refused agent's call writes
+no presence either. The ten calls a minute count in the process (`Limiter(local=True)`), since
+a shared count writes a row per call on PostgreSQL. The mailer leaves a held item in
+`mailable`: `waiting` keeps the passes deriving until the grace ends, as an unread immediate
+item already did while it waited for its window. A suspension ends the account's sessions,
+and the hold excludes the `urgent` item as well.
 
 **Rejected alternatives:**
 - A `present=1|0` flag on the bell's long-poll (the first plan): the long-poll runs only while
