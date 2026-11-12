@@ -14,7 +14,7 @@ there anyway); on PostgreSQL and SQLite it stays inside the chain's one transact
 downgrade drops the column; the hub before it reads the position from the log again.
 
 Revision ID: 20261112190000_join_seq
-Revises: 20261112170000_notif_recipients
+Revises: 20261112180000_workspace_retain
 Create Date: 2026-11-12
 """
 
@@ -27,7 +27,7 @@ from alembic import op
 from maity_hub.types import BIG_ID
 
 revision: str = "20261112190000_join_seq"
-down_revision: str | None = "20261112170000_notif_recipients"
+down_revision: str | None = "20261112180000_workspace_retain"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
