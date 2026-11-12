@@ -18,7 +18,7 @@ A pull request that mixes unrelated work makes it harder to tell which behavior 
 
 ## Ask different reviewers to check the same commit
 
-Our project requires an approval from each of three reviewer vendors: Antigravity, Grok and ChatGPT. Each review starts in a fresh context. The approvals and the automated `ci-ok` check must refer to the exact commit being merged. This is our project's quality rule, not a fixed number of reviewers imposed on every Maity project.
+Our project requires approvals from reviewers of two different vendors, out of Antigravity, Grok and ChatGPT; the review lead decides which reviews count. Each review starts in a fresh context. The approvals and the automated `ci-ok` check must refer to the exact commit being merged. This is our project's quality rule, not a fixed number of reviewers imposed on every Maity project.
 
 **How it works.** Give reviewers the full base and head commit IDs and the scope to inspect. Wait for all requested results before pushing the collected fixes, then have the reviewers check the delta. Maity's completion report records the head, and a review-result message carries the head it judged and its verdict. Those records let you compare what was reviewed with what will merge ([completion reports](../api.md#66-completion-report), [review messages](../api.md#84-posting-messages)).
 
