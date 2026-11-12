@@ -2056,3 +2056,34 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
   tool's message, which is outside the contract.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
+
+## A stopped agent's clone stays for its retention time, then the runner removes it
+
+**Id:** 161d5507-5b44-45d6-8bec-cacd58de58a2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-34gb7frfbsk7 (disks of runner machines filled with the clones of agents that no longer ran there); the owner's answer to req-fdfb49yzqnhv, verbatim: "ich bin für eine zeitspanne die der workspace noch liegen bleiben darf zb 3h oder 24h falls doch noch was daraus benötigt wird oder "sofort entfernen" das soll eine option sein bitte"; the lead's decision on unsaved work (2026-11-12); docs/api.md §15.5
+**Revisit when:** a placement can save an agent's unsaved work somewhere other than its clone, or the owner asks for unsaved work to go too after the retention time
+
+A clone used to stay on the runner until the operator removed it, and
+the clones of agents that no longer ran there filled the disk. Now a
+stop starts a retention time, chosen per placement (`immediate`, `3h`,
+`24h` by default, `7d`); after it, the runner removes the clone, and a
+start within it continues in the same clone. The time is the owner's
+answer: something in the clone may still be needed.
+- Unsaved work (uncommitted or untracked files, unpushed commits,
+  stashes) keeps the clone however long the retention, shown with its
+  size, and the owner can have it removed by hand. The runner never
+  throws away work nobody has looked at. Rejected: removing it anyway
+  once the time is up, because the owner chose the time; the owner's
+  reason for the time was that something might still be needed.
+- Rejected: removing the clone only when the placement closes (the first
+  draft). The owner asked for a time after a stop, and a stopped
+  placement that is never deleted would keep its clone for good.
+- Rejected: one fixed time for every placement. The owner asked for a
+  choice, with "remove immediately" among it.
+- The runner removes only on the hub's word (a stopped or closed
+  placement it lists), never because a placement is missing from its
+  list, and under the checks of `maity runner gc`. The removed clone's
+  credential is revoked, so nothing carries over to a later start.

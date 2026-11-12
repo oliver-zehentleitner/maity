@@ -1,9 +1,11 @@
 ### Added
 
-- contract: §15.5, a runner removes a placement's clone after the placement closes, so the clones of agents that
-  no longer run there do not fill the disk. A stop, a start, a restart, a rejoin and an adoption keep it. The
-  runner removes it only for a placement the hub lists as closed (`GET /runner/placements?closed=true`), under the
-  checks of `maity runner gc`; uncommitted or untracked files, unpushed commits and stashes keep it. It reports
-  the outcome with `POST /runner/placements/{id}/workspace`, shown as the placement's `workspace_outcome` and in
-  `maity runner status`; a removed clone's credential is revoked (`workspace_removed`). `maity runner check`
-  warns when the workspaces' file system is low on space.
+- contract: §15.5, a runner removes a placement's clone once the placement has stopped (or closed) for its
+  `workspace_retention`: `immediate`, `3h`, `24h` (the default) or `7d`, set with the placement. A start within
+  that time continues in the same clone. The runner removes a clone only on the hub's word, under the checks of
+  `maity runner gc`; uncommitted or untracked files, unpushed commits and stashes keep it however long the
+  retention. It reports `retained` (with the deadline and the size), `removed` or `kept` with
+  `POST /runner/placements/{id}/workspace`, shown as the placement's `workspace_outcome`; the owner can have a
+  kept clone removed by hand (`POST …/placements/{id}/workspace/remove`). A removed clone's credential is revoked
+  (`workspace_removed`) and the next start joins anew. `maity runner check` warns when the workspaces' file system
+  is low on space.
