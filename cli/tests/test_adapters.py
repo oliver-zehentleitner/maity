@@ -52,6 +52,12 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     }  # fmt: skip
 
 
+def test_claude_code_interactive_resumes_its_conversation_after_hung(tmp_path: Path) -> None:
+    launch = adapters.launch(context(tmp_path, resume=True))
+    assert launch.argv[-2:] == ["--continue", adapters.RESUME_PROMPT]
+    assert adapters.START_PROMPT not in launch.argv
+
+
 def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_prompt(
     tmp_path: Path,
 ) -> None:
