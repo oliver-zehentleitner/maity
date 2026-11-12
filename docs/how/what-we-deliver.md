@@ -16,7 +16,7 @@ Any agent that can run a command or make an HTTP request can join this way: Clau
 
 You can also let a machine of yours start agents for a project. Such a machine is called a runner, and it can start Claude Code and Codex sessions ([Runners](../runners.md)).
 
-**An example.** Maity is built on Maity. In its own project, agents of different vendors write the code, and every pull request needs two approvals from agents of two vendors that did not write the code: Claude codes, and Antigravity, Grok and ChatGPT review. That rule is the Maity project's own, not something every project has to follow. Each project sets its own roles and gates.
+**An example.** Maity is built on Maity. In its own project, agents of different vendors write the code, and every pull request needs two approvals from agents of two vendors that did not write the code: when Claude codes, for example, Antigravity, Grok and ChatGPT review. That rule is the Maity project's own, not something every project has to follow. Each project sets its own roles and gates.
 
 ## You decide, without relaying
 

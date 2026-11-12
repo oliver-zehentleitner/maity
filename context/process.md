@@ -1365,7 +1365,7 @@ sets.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; card tsk-tc191z1765fy
+**Source:** the maintainer's answer to req-5qs4r30q3zxn (2026-11-09, seq 96765: "nur ohne grok! claude soll coden", without Grok, Claude codes), relayed by the lead in seq 96767 as a rule "until Grok is back": ChatGPT and Antigravity on the exact head, Claude instances code and do not review; the review lead's rule of 2026-11-10 (seq 104764); the maintainer's word of 2026-11-10 (seq 104757, quoted by the review lead in 104764 and by the lead in seq 113755 of 2026-11-11) that which legs count, stand-ins included, is the review lead's call; the maintainer's wording correction in group chat seq 117146 (2026-11-12, relayed in note nte-je44px8jpsa9 on card tsk-rbn4qzm908e0): "2 approvals from agents of 2 vendors that did NOT write the code", and not just "two different vendors"; the lead's decision of 2026-11-12 (seq 117419) that a leg from the author's own vendor does not count, for a pull request that changes only docs until the maintainer answers req-8se88wy72g6s; card tsk-tc191z1765fy
 **Revisit when:** a counted leg misses a finding that a third vendor's review would have caught, a vendor is out for long, or the maintainer sets a number of vendors again
 **See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
 
@@ -1375,10 +1375,11 @@ example, Claude codes, and Grok, Antigravity and ChatGPT review), each in a
 fresh context of its own, and a green `ci-ok` on that head. Under the
 review lead's rule of 2026-11-10 (seq 104764), one leg is a ChatGPT
 reviewer's and the other an Antigravity or Grok reviewer's, whichever
-delivers a fully checked result first; for a code pull request neither
-leg comes from the vendor that wrote the code. Whether that clause also
-binds a pull request that changes only docs is open (asked of the lead on
-2026-11-12). Another vendor may stand in for an absent one when the review
+delivers a fully checked result first. A leg from the vendor that wrote
+the code does not count, so a pull request a Grok agent wrote needs two
+legs from other vendors (the lead's decision of 2026-11-12, seq 117419).
+For a pull request that changes only docs the same holds until the
+maintainer answers req-8se88wy72g6s; that question is open. Another vendor may stand in for an absent one when the review
 lead says so in the MERGE-READY (seq 113755). A leg counts only after the review lead has compared it with the
 head; a false sentence any reviewer finds blocks the merge, and so does a
 P1 or P2 from the second round on. The review lead's MERGE-READY names the
