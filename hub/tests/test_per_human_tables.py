@@ -215,6 +215,7 @@ EXPORT_LEAVES_OUT = {
     "notification_mail_state": _BOOKKEEPING,
     "notification_position": _BOOKKEEPING,
     "notification_read": _BOOKKEEPING,
+    "notification_recipient": _BOOKKEEPING,
     "pending_registration": _SECRET,  # the password chosen with it
     "placement": _UNLISTED,
     "preferences_version": f"the current preferences are exported; {_UNLISTED}",
