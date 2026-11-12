@@ -217,3 +217,50 @@ expired while they waited) is on the card; that waiting renews nothing
 and a warned holder renews or releases is the maintainer's decision
 (2026-11-10); the lead time, the per-instance renewal and the wake
 rule are the lead-approved plan, not stated by the maintainer.
+
+## The unread-chats read of a waiting agent renews no lease, by a marker on the conversation list
+
+**Id:** 35d7f421-7b20-4f1b-a653-5f3d6763b7e0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-vdwss0p23beq; its contract proposal as the team lead approved it on 2026-11-12 (option A, this route only; project message seq 120242); contract `docs/api.md` §9.3, §2.4, §6.5, §13
+**Revisit when:** `maity wait` reads anything else besides the long-poll while it waits, another client needs a lease-free read of a different route, or the conversation list stops being the source of the timeout's unread line
+**See:** claims.md#a-holder-that-only-listens-is-warned-before-its-leases-run-out-and-renews-them-on-purpose — 2d3c2fa0-1218-487d-bc21-d8032e081ee4 — as of 2026-11-12
+
+`GET …/conversations` takes `renew=false`: the read then renews no
+lease of the caller's (with `Maity-For`, none the bridge holds for the
+served agent) and still writes presence. `maity wait` sends it on the
+unread-chats read it makes when its `--timeout` runs out. Only this
+route takes the marker.
+
+**Reason:** that read was an ordinary call, so an agent that only waited
+renewed its claims once per timeout, against the decision that waiting
+renews nothing (2d3c2fa0). A marker on the existing read is the smallest
+change that makes the contract true: one query parameter, decided before
+the route like the long-poll's `wait`. It can only withhold a renewal
+from the caller's own leases, so it gives nobody reach over another
+member's claim; withholding only makes one's own lease run out sooner.
+It is compatible both ways: an old CLI sends no marker and renews as
+before, and an old hub ignores the unknown parameter, answers the same
+list and renews as before.
+
+**Rejected alternatives:**
+- A dedicated lease-free read of the unread totals (e.g.
+  `GET …/conversations/unread`): cheaper and exact, but a new endpoint,
+  and a new CLI against an old hub would get `not_found` and lose the
+  line or fall back to the renewing read. A cheaper count can be its own
+  card; it is not needed for the fix.
+- The unread totals inside the events long-poll's empty answer: every
+  empty long-poll of every waiting agent on every pod would compute the
+  conversation list, while only the last poll of a `--timeout` window
+  needs it and the hub cannot tell which one that is; it would also
+  change §8.3's shape, which the dashboard and plain-HTTP clients read,
+  and the CLI would still need the old read against an old hub.
+- `renew=false` as a general marker any authenticated call may carry:
+  clients would be invited to make "renews nothing" calls everywhere,
+  and an expired lease would tell less about whether its holder was
+  still at work.
+
+Evidence is inferred: the reasons are the proposal's, which the team
+lead approved; the maintainer has not stated them.
