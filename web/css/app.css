@@ -2073,6 +2073,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .person-picture-none.size-20 { width: 20px; height: 20px; }
 .person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+/* A person's agents (§16.9, "A person's agents"), in the person view and on the visitor's page: each
+   with its picture at 64 px beside its name, handle, roles, model and harness. */
+.person-agents { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s2); overflow-wrap: anywhere; }
+.person-agents li { display: flex; align-items: flex-start; gap: var(--s3); min-width: 0; }
+.person-agents li > div { min-width: 0; }
+.person-agents li p { margin: 2px 0 0; }
+.person-agents .avatar-img, .person-agents .person-picture-none { flex: none; width: 64px; height: 64px; border-radius: 50%; }
 
 /* The person or organisation view in the refreshed look (design refresh step 4): the head as a
    panel with a round picture, the name in the display face, links and the public page as pills,
