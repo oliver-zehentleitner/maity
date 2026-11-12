@@ -676,3 +676,43 @@ def test_the_configured_projects_are_full_names(projects: str, said: str) -> Non
     with pytest.raises(config.ConfigError) as info:
         parse(text.format(url="https://hub.example", state_dir="/srv/state"))
     assert any(said in problem for problem in info.value.problems)
+
+
+# --- pull requests through `maity gh` (cli/context/runner.md 9f43804d) ---------------------
+
+
+def test_a_gh_rule_in_a_grant_is_set_aside_and_the_rest_kept() -> None:
+    """No placed session runs gh, so a gh entry is not applied. It is kept as refused, for
+    `maity runner check` to name, and is never a reason to refuse the configuration."""
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["make test", "gh pr create *", "/usr/bin/gh pr view"]\n'
+        "pull_requests = true\n"
+    )
+    found = parse(minimal(grant=grant)).repositories["github.com/oliver-zehentleitner/maity"]
+    assert found.allow == ("make test",)
+    assert found.refused == ("gh pr create *", "/usr/bin/gh pr view")
+    assert found.pull_requests is True
+
+
+def test_pull_requests_default_to_off_and_take_only_a_boolean() -> None:
+    plain = '\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = ["make test"]\n'
+    found = parse(minimal(grant=plain)).repositories["github.com/oliver-zehentleitner/maity"]
+    assert found.pull_requests is False and found.refused == ()
+    wrong = '\n[repositories."github.com/oliver-zehentleitner/maity"]\npull_requests = "yes"\n'
+    assert any("pull_requests" in p for p in problems(minimal(grant=wrong)))
+
+
+def test_runner_check_names_a_refused_gh_rule_and_an_api_host_as_warnings() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["gh pr create *"]\nnetwork = ["api.github.com"]\npull_requests = true\n'
+    )
+    report = commands.Report()
+    commands._check_repositories(report, parse(minimal(grant=grant)))
+    assert not report.failed
+    texts = [text for level, text in report.lines if level == "warn"]
+    assert len(texts) == 2
+    assert "'gh pr create *' is not applied" in texts[0] and "pull_requests = true" in texts[0]
+    assert "maity gh pr create" in texts[0]
+    assert "api.github.com" in texts[1]

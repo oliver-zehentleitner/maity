@@ -597,7 +597,8 @@ same size for more CPU.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the owner's decision req-s246xb6k1mpp (option A, 2026-11-08), the card tsk-pcw785rhymyg and its plan note nte-smnd4dr3gw6y; docs/api.md §1, §16.11
-**Revisit when:** a file under `/assets/` carries anything per user or private, or the shell names its files by digest (versioned names, below)
+**Revisit when:** a file under `/assets/` carries anything per user or private
+**See:** serving.md#the-shell-names-the-dashboards-files-by-version-and-that-request-is-cached-for-good — d427747e-e7f1-4226-a624-5284f8d61103 — as of 2026-11-09
 
 `shell.AssetFiles` answers the dashboard's files under `/assets/` (`css/`,
 `js/`, `brand/`, `vendor/`) with `Cache-Control: no-cache` and a strong
@@ -616,11 +617,15 @@ it with `Content-Encoding: gzip`. Such a file's answers, the `304`s
 included, say `Vary: Accept-Encoding`. The compression middleware leaves
 these four directories alone (`compression.OWN_ENCODING`); it still
 compresses the rest of `/assets/` and `/api/v1/` as 5cfd29b6 says. A
-`Range` on the stored form is honoured with an `If-Range` that names its
-ETag; a date or another tag gets the whole file. The gzip form is sent
-whole. The file is read, hashed and gzipped in `lookup_path`, which
-Starlette runs in a worker thread, and kept per process for its path
-while its change time and size stay the same.
+`Range` of one span on the stored form is honoured with an `If-Range` that
+names its ETag; a date or another tag, several spans or a span past the
+end get the whole file. The gzip form is sent whole. The file is read,
+hashed and gzipped in `lookup_path`, which Starlette runs in a worker
+thread, and kept per process for its path while its change time and size
+stay the same. Every answer, a range included, is sent from those bytes,
+never from the file read again, so its ETag always names the body that
+goes with it (review of #1543: a file replaced between the check and the
+send went out under the old tag).
 
 **Reason:** the owner decided it (req-s246xb6k1mpp, option A: "the
 dashboard's static files may be cached"): the files hold no private
@@ -630,8 +635,10 @@ so a deploy reaches it at once: a changed file has a new ETag and comes
 back `200`; two pods with different files during a rolling update give
 different ETags, also `200`. Only the ETag decides, so `If-Modified-Since`
 alone never answers `304`, and a date `If-Range` never selects a range:
-Starlette compares it with `Last-Modified`, which these answers do not
-have, so `AssetFileResponse` compares the ETag alone.
+these answers have no `Last-Modified`, so `shell.byte_range` compares an
+`If-Range` with the ETag alone. A matching `If-None-Match` is a `304`
+before any `Range` is read (RFC 9110 §13.2.2), and only a GET gets a
+range; a HEAD says the whole length and sends no body.
 
 **Rejected alternatives:**
 - Starlette's own ETag (an MD5 of the change time and size): an image
@@ -648,7 +655,9 @@ have, so `AssetFileResponse` compares the ETag alone.
   the shell's 93 `<script src>` and 2 `<link href>` would need a rewrite
   in `shell_document`, the `url()` references inside the CSS would stay
   `no-cache` anyway, and it is a contract change of its own. A
-  follow-up once this card's numbers are measured.
+  follow-up once this card's numbers are measured; built since as
+  d427747e, which keeps this answer for every request that does not name
+  the current version.
 
 ## On the hub's own pages too, the product line at phone width is its first part, by a rule inside the hashed block
 
@@ -682,3 +691,34 @@ markup for every width, as the dashboard does.
   it would take a user-agent guess.
 - A second `<style>` block for the media rule: one more hash in each
   strict page's policy, for no gain.
+
+## The shell names the dashboard's files by version, and that request is cached for good
+
+**Id:** d427747e-e7f1-4226-a624-5284f8d61103
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by lotse#wtwy, seq 96636), an extension of the owner's caching decision req-s246xb6k1mpp (option A, `no-cache` + ETag), which the owner decides as req-jjqtn71qaa90; docs/api.md §1, §16.11
+**Revisit when:** a dashboard file is loaded by a name the shell neither writes nor lists, a file under `/assets/` carries anything per user, or the dashboard gets a build step that names its files itself
+**See:** serving.md#the-dashboards-files-are-revalidated-by-an-etag-of-their-content-not-no-store — c6768529-3654-45c7-bd5e-aab3067ce04f — as of 2026-11-09
+
+c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (maity-ops-team#q8q9's measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
+
+- `shell.versioned` adds `?v=<version>` to every `src`/`href` of the shell that names a file under `brand/`, `css/`, `js/` or `vendor/`. The version is the first 16 hex digits of the SHA-256 of the body sent, the same form `/assets/landing/` uses.
+- A stylesheet is served with its `url()`s to such files (fonts, brand masks) versioned the same way, so its version is that of the rewritten body. Like every file here, it is sent from the bytes kept in memory, and a range is cut from them.
+- The files a script loads later by a name it builds (i18n catalogs, Keep the Why's files, brand pictures) are listed in `<script type="application/json" id="maity-assets">`. `web/js/assets.js` (`M.assetQuery`) reads that block.
+- `AssetFiles` answers `public, max-age=31536000, immutable` only when the request's one `v` equals the version of the body this hub would send. Any other request gets c6768529's answer.
+- The middleware lets those four directories choose it (`DASHBOARD_FILES`), as it lets `/assets/landing/`.
+
+**Reason:**
+- A deploy changes the shell, which is `no-cache`, and with it the name of every file that changed. So a browser can keep the others without asking.
+- The version is compared with the body itself, never taken on trust from the request. So during a rolling update (helm `maxSurge 1`, `maxUnavailable 0`), a shell from one pod asking another pod for a version it does not have gets that pod's file `no-cache`, and is never pinned under the wrong name. The same holds for a stale link, or a file changed on a running hub: an answer is always the bytes its version was taken from, read once per process (c6768529), never the file opened again after the check (review of #1543).
+- A load that crosses the two pods may run old and new files together once, as it could before; the next use revalidates.
+- A query instead of a new file name leaves every relative URL as it is: `i18n.js` builds `i18n/<tag>.js` from its own address. Fixture mode (`file://`) keeps the plain names, and no build step is needed.
+- The data block is not run, so the shell's CSP (`default-src 'self'`) stays as it is.
+
+**Rejected alternatives:**
+- File names with the digest (`app.<hash>.js`): every relative name a script builds, and fixture mode, would need a mapping, and the files on disk would have to be copied or renamed.
+- `404` for a version this hub does not have: a page from the other pod would lose that script outright instead of running the file this pod has.
+- Session affinity during a deploy, to keep a browser on one pod: an ingress setting for a once-per-deploy case that `no-cache` already covers.
+- Taking the version from the request without comparing it with the body: a stale or foreign version would be cached for good with the wrong file.

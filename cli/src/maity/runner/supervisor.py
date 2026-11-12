@@ -802,8 +802,10 @@ class Supervisor:
             return ("harness_missing", found.reason)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
-        if harness.id == "codex" and grant.allow:
-            return ("harness_refused", None)  # Codex cannot honour a command allowlist
+        if harness.id == "codex" and (grant.allow or grant.pull_requests):
+            # Codex cannot honour a command allowlist, and its `maity` runs inside its
+            # sandbox, where `maity gh` reaches neither gh's login nor the forge's API.
+            return ("harness_refused", None)
         if harness.require_sandbox and not target.sandbox.get(harness.id, False):
             return ("harness_refused", None)  # the operator asked for no run without it
         return None
