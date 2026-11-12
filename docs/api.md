@@ -18859,17 +18859,25 @@ update = "daily"    # maity itself; default "never"
 - **Rollback.** `maity runner tools rollback <tool>` makes the kept
   version the one new sessions start with; the version it left stays on
   the machine as `previous_version`, so a second rollback goes back to
-  it. The tool then reports `rolled_back`. The runner does not install
-  the version it left, or one that failed its version answer, again on
-  its own, neither on the daily check nor on `Update now`: it takes the
-  next newer version, which ends `rolled_back`. Taking the left version
-  again is the operator's second rollback.
+  it. After a rollback the tool reports `rolled_back` when the version
+  now in use is older than `latest`, and `current` otherwise. While it
+  is `rolled_back`, the runner does not install the version it left, or
+  one that failed its version answer, again on its own, neither on the
+  daily check nor on `Update now`: it takes only a version newer than
+  those, which ends `rolled_back`. Taking the left version again is the
+  operator's second rollback. For example, with 2.1.320 in use, 2.1.308
+  kept and `latest` 2.1.320: a rollback starts new sessions on 2.1.308,
+  keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
+  daily check finds 2.1.320 again and leaves it. A second rollback
+  starts them on 2.1.320 again, keeps 2.1.308 and reports `current`. If
+  2.1.321 appears while it is `rolled_back`, the runner installs it as
+  any update and reports `current`.
 - **maity itself.** The same rules. After an update, the runner restarts
   itself on the new version, takes over its sessions (`adopted`, §15.7),
   and restarts each session that an older `maity` started, at that
   session's next idle point: an interactive agent waiting in `maity
   wait`, a supervised loop between runs, never mid-step (the owner's
-  answer to req-r2egh0ry0c4c). The restart resumes the session
+  answer to req-r2egh0ry0c4c, event 119533). The restart resumes the session
   (§15.14) and reports `exited` with `reason: updated` (§15.7). Today
   that restart is the operator's (docs/runners.md).
 - **Logins.** The runner never handles a login or a credential of a
@@ -18879,7 +18887,7 @@ update = "daily"    # maity itself; default "never"
   machine.
 - **Where.** On the runner's local target. On an `ssh` target the
   runner only reports what it finds there, and manages nothing (the
-  owner's answer to req-vpcfh15h247c).
+  owner's answer to req-vpcfh15h247c, event 119538).
 
 **What the runner reports.** `capabilities.tools` (§15.3), one entry
 per harness tool the configuration lists, and one for `maity`:

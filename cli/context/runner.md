@@ -2244,7 +2244,7 @@ answer: something in the clone may still be needed.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); the owner's answers of 2026-11-12: req-r2egh0ry0c4c (older sessions restart at their next idle point), req-vpcfh15h247c (local target only, ssh targets reported); docs/api.md §15.16
+**Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); the owner's answers of 2026-11-12: req-r2egh0ry0c4c (older sessions restart at their next idle point; answer event 119533), req-vpcfh15h247c (local target only, ssh targets reported; answer event 119538), both relayed by the lead in 119605; docs/api.md §15.16
 **Revisit when:** an ssh target's owner wants the runner to manage its tools, a harness tool ships without an installer the runner can run in the user's space, or a tool's update needs a step only a person can do
 
 Not built yet (tsk-29nmydbzrg5z): this records the contract's decision;
@@ -2283,9 +2283,11 @@ in his words are this design's (inferred).
   signing window allows minutes of skew: a check decided before the
   request could erase it (v5vp's review).
 - **A rollback is a state of its own.** After `maity runner tools
-  rollback`, the tool reports `rolled_back` (older than `latest`), and
-  the runner does not take the version it left, or one that failed its
-  version answer, on its own again; the next newer version ends it.
+  rollback`, the tool reports `rolled_back` while the version in use is
+  older than `latest` (a second rollback back to `latest` reports
+  `current`), and while it is, the runner does not take the version it
+  left, or one that failed its version answer, on its own again; only a
+  newer version ends it.
   Otherwise the daily check would undo the operator's rollback the same
   day (v5vp's review).
 - **Only the owner asks**, and only for a tool the runner says it
