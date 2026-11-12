@@ -2106,7 +2106,12 @@ answer: something in the clone may still be needed.
   clone that fills the disk. The same holds for people (`closed=true`
   in the dashboard's list) and after a detach: the runner still reads
   and reports on those closed placements, or the clone would be
-  orphaned on its disk (v5vp's review).
+  orphaned on its disk (v5vp's review). After a detach, the workspace
+  report still reaches a placement whose `removed` this runner already
+  reported, though `closed=true` no longer lists it: a retry whose first
+  answer was lost must get its `200`, or the runner retries for ever.
+  Rejected: taking `not_found` after its own `removed` as done, since the
+  runner cannot tell it from a wrong id or a placement it never had.
 - Each workspace report names its clone (`workspace_epoch`, raised when a
   removal is taken), and `removed` is final per clone. Rejected: one
   final `removed` per placement. A placement that starts again gets a new
@@ -2115,4 +2120,8 @@ answer: something in the clone may still be needed.
   credential (v5vp's review). The runner makes a removed clone's
   successor only after the hub took the `removed` report, under the epoch
   of that answer; a clone made earlier would carry the old epoch and all
-  its reports would be dropped (spq4's review).
+  its reports would be dropped (spq4's review). A placement that
+  continues another placement's clone reports under its own epoch, the
+  one it read when it started there. Rejected: carrying the older
+  placement's epoch over, which could make its first report later than
+  the hub's and so `invalid` (spq4's review).
