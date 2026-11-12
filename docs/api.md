@@ -2131,8 +2131,8 @@ right now, `missing` why not: `switched_off` (the setting is `false`),
 `signing_key` (no `MAITY_MAIL_SIGNING_KEY`, which signs the links, §18.6),
 and `not_implemented` while the hub does not serve the sign-in link yet.
 `password_reset_available` and `password_reset_missing` say the same of
-the reset (§2.10), with `switched_off`, `mail`, `signing_key` and
-`not_implemented`. A change is not an
+the reset (§2.10), with `switched_off`, `mail` and `signing_key`.
+A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part
@@ -3150,18 +3150,10 @@ this route for someone else; that remains §16.1.
 
 ### 2.10 Human: a forgotten password
 
-**Pending.** The hub stores and serves the settings of this section:
-`email.password_reset` (§18.4), the instance's `password_reset` with
-`MAITY_SIGN_IN_PASSWORD_RESET`, `password_reset_available` and
-`password_reset_missing` (§2.6.6), the budget
-`password_reset_max_per_hour` with its environment variable and counters
-(§16.2), and `password_reset` in `GET /auth/methods` (§2.6.1); the
-password generation moves with every password change. The three routes,
-the mail and the account record are not served yet (tsk-tadt2vw7589n,
-hub), nor is the page (tsk-yksxdpd2pk0m, web): until they are,
-`password_reset_missing` names `not_implemented`, so
-`password_reset_available` and `password_reset` in `GET /auth/methods`
-are `false`.
+**Pending.** The hub serves this section. The dashboard's parts are not
+there yet (tsk-yksxdpd2pk0m): the page `/sign-in/reset`, "Forgot
+password?" on the login page, the switch in the mail settings and the
+banner toward an authenticator app.
 
 The maintainer's decision of 2026-11-11 (seq 109195, 109226, confirmed
 in seq 109283): a human who forgot the password sets a new one through
