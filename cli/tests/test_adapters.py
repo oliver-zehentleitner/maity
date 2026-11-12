@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from maity import __version__
+from maity import __version__, clonecheck
 from maity.runner import adapters, config, loop, supervisor
 from maity.runner.asuser import AsUser
 
@@ -45,6 +45,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
+        clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
     }  # fmt: skip

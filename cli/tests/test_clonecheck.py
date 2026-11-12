@@ -6,6 +6,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,7 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (clone / RECORDED_GIT).write_text(f"{shutil.which('git')}\n")  # and records git
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
     return clone
 
 
@@ -396,7 +398,8 @@ def test_the_copy_by_path_reads_the_same_refs_and_refuses_links(
     for target in (by_fd, by_path):
         (target / "refs").mkdir(parents=True)
     if sys.platform != "win32":
-        clonecheck._copy_refs(placed / ".git", by_fd)
+        with clonecheck.opened_git(placed) as top:
+            clonecheck._copy_refs(placed / ".git", by_fd, top)
         listed = {p.relative_to(by_fd): p.read_bytes() for p in by_fd.rglob("*") if p.is_file()}
     clonecheck._copy_refs_by_path(placed / ".git", by_path)
     copied = {p.relative_to(by_path): p.read_bytes() for p in by_path.rglob("*") if p.is_file()}
@@ -517,6 +520,7 @@ def test_a_partial_clone_is_named_so(
     (partial / ".git" / "maity").mkdir()
     (partial / RECORDED_GIT).write_text(f"{shutil.which('git')}\n")
     monkeypatch.setenv("GIT_COMMON_DIR", str(partial / ".git"))
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(partial / ".git").st_ino))
     with pytest.raises(gitfacts.FactsError, match="Partial clones are not supported") as refused:
         gitfacts.collect(partial)
     assert "unset" not in str(refused.value)
@@ -570,6 +574,113 @@ def test_the_runners_values_win_over_maitys_environment(
     (env,) = seen
     assert env["SYSTEMROOT"] == "/the/system"
     assert "/chosen" not in env["PATH"]
+
+
+def _decoy(placed: Path, marker: Path) -> Path:
+    """What sandboxed code can do in the clone's root (ur6p's reproduction for
+    tsk-er1nymh4te1h): move the real `.git` aside and put a copy of its own in its place,
+    whose `maity/git` names a program of the session's own."""
+    real = placed / ".git-real"
+    (placed / ".git").rename(real)
+    shutil.copytree(real, placed / ".git", symlinks=True, ignore=shutil.ignore_patterns("maity"))
+    (placed / ".git" / "maity").mkdir()
+    (placed / ".git" / "maity" / "placement").write_text("plc-0003\n")
+    program = placed / "marker.py"
+    program.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'a').write('ran\\n')\n")
+    program.chmod(0o755)
+    (placed / RECORDED_GIT).write_text(f"{program}\n")
+    return real
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the decoy git is a shebang script")
+def test_a_git_directory_put_in_place_of_the_runners_is_refused(
+    placed: Path, tmp_path: Path
+) -> None:
+    """The sandbox does not keep the agent from renaming `.git` (Claude Code itself pins it
+    with a mount today, nothing of ours does): maity takes only the `.git` whose inode the
+    runner recorded, so the decoy's git never runs outside the sandbox."""
+    from maity import proc
+
+    marker = tmp_path / "pwned"
+    _decoy(placed, marker)
+    with pytest.raises(proc.ToolError, match="not the directory it was"):
+        proc.run([*proc.GIT, "status"], placed)
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the decoy git is a shebang script")
+def test_a_git_directory_replaced_after_the_check_is_not_read(
+    placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decoy lands right after maity checked `.git`'s inode: what maity reads next (the
+    recorded git, the refs, the new directory) comes through the descriptor it checked, so
+    the decoy's git still never runs."""
+    from maity import proc
+
+    marker = tmp_path / "pwned"
+    real_fstat = os.fstat
+    swapped: list[Path] = []
+
+    def fstat_then_swap(fd: int) -> os.stat_result:
+        result = real_fstat(fd)
+        if (
+            not swapped
+            and stat.S_ISDIR(result.st_mode)
+            and os.path.samestat(result, os.lstat(placed / ".git"))
+        ):
+            swapped.append(_decoy(placed, marker))
+        return result
+
+    monkeypatch.setattr(os, "fstat", fstat_then_swap)
+    try:
+        proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+    except proc.ToolError:
+        pass  # git finds no directory of maity's under the decoy: refused, nothing ran
+    assert swapped and not marker.exists()
+
+
+def test_a_git_directory_that_is_a_link_is_refused(placed: Path, tmp_path: Path) -> None:
+    """A link to the real `.git` is refused too, though it names the recorded directory."""
+    from maity import proc
+
+    real = placed / ".git-real"
+    (placed / ".git").rename(real)
+    (placed / ".git").symlink_to(real, target_is_directory=True)
+    with pytest.raises(proc.ToolError, match="not a plain directory|not the directory it was"):
+        proc.run([*proc.GIT, "status"], placed)
+
+
+def test_without_the_recorded_inode_maity_runs_no_git_there(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session a runner without this check started: restart it, then the inode is set."""
+    from maity import proc
+
+    monkeypatch.delenv(clonecheck.GIT_INODE_ENV)
+    with pytest.raises(proc.ToolError, match="restart the placement"):
+        proc.run([*proc.GIT, "status"], placed)
+
+
+def test_the_private_repository_is_made_through_the_recorded_git(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The directory git reads its configuration from is made in `.git/maity` through the
+    descriptor of the recorded `.git`, never by name: a name looked up again could be a
+    decoy's directory, which sandboxed code can write."""
+    from maity import proc
+
+    made: list[Any] = []
+    real_mkdir = os.mkdir
+
+    def mkdir(path: Any, mode: int = 0o777, *, dir_fd: int | None = None) -> None:
+        made.append((str(path), dir_fd))
+        real_mkdir(path, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "mkdir", mkdir)
+    assert proc.run([*proc.GIT, "rev-parse", "HEAD"], placed).returncode == 0
+    private = [where for name, where in made if name.startswith("git-")]
+    if sys.platform != "win32":
+        assert len(private) == 1 and private[0] is not None
 
 
 def test_without_a_recorded_git_the_runners_clone_runs_none(placed: Path) -> None:
