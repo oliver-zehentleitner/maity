@@ -641,7 +641,8 @@ placed in it, so a crawler and a reader without scripts still read the page and 
 The row, its removal and the sitemap stay as they were; a page is still a row, and the decision between page and
 shell still falls in the shell's route. A failed read of `data` leaves the page's text standing instead of the login.
 The marker on the shell counts for the first drawing only; a later visit to the login inside the same load is the
-login, not this page.
+login, not this page. Superseded for `?as=public` by c0868c32 (2026-11-12): it answers the page in the frame of the
+pages without a session, no longer bare. The answer inside the shell is unchanged.
 
 **Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
 the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).

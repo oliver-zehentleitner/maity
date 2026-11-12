@@ -116,7 +116,8 @@ def answer(
     """The stored page of the request's path for a visitor, or None for the shell. A visitor
     is a request without a live session, or one made with `?as=public` (§16.9). Without that
     query the page comes inside the app shell (`inside_shell`), so the dashboard takes over at
-    the same address; `?as=public` is the bare page and its own security policy."""
+    the same address; `?as=public` is the page on its own in the frame of §16.7.5 under
+    `FRAMED_CSP`, and bare under `CSP` only for a stored document of another shape."""
     if not settings_of(request).public_pages:
         return None
     path = request.url.path

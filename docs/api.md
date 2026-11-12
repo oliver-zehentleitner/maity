@@ -15901,7 +15901,7 @@ and `resolveEntry`, and any write.
 | GET | `/projects/{owner}/{slug}/keep-the-why/export`, `/projects/{owner}/{slug}/keep-the-why/bodies` | `project:read` | 11.5 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
-| GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
+| GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the page in the frame of §16.7.5 with `?as=public` (bare for a stored document of another shape), each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans; for an organisation's, its members and its projects' members | 6.10 |
 | GET | `/avatars/public/{digest}` | — (anyone, while a picture with that digest is public: a person with a served page and `public_profile` on, an agent with a served page or listed on its owner's served agents page, a motif always) | 6.10 |
 | GET | `/avatars/motifs` | a human or agent session | 6.10 |
