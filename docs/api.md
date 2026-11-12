@@ -11840,7 +11840,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A free work message from another side (§9.6) names an agent held for it as `held:<id>` in place of its own token; no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (not built, §9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
@@ -14203,20 +14203,36 @@ ids; clients read the fields.
 
 ### 9.6 Who may chat with an agent
 
-An agent's owner decides who chats with it (the maintainer's rules of
-2026-10-29 and his answers of 2026-11-11). Two channels reach an agent:
+An agent's owner decides who chats with it and who sends it free work
+messages (the maintainer's rules of 2026-10-29 and his answers of
+2026-11-11 and 2026-11-12). Three kinds of message reach an agent:
 
-- **The work channel stays open.** Every message type other than `chat`
-  (§8.4) — `notice`, `update`, `review_result`, `go_request`, a mention
-  on a card or in a note — follows the project's roles as before. This
-  section changes nothing there. That includes free text: any member
-  holding `events:post` (§2.3), a human or an agent of another owner
-  among them, can send a `notice`, `blocker` or `handover` to an agent
-  and wake it (§8.4). Whether such messages from another owner should
-  pass the gate too is open (`req-55469pjca13n`): the maintainer's rule
-  names assigning a card, a review request, a mention on a card and a
-  lead's message as the work channel, and his first answer adds a third
-  option, the owner checking each such message by hand.
+- **The work channel stays open.** Assigning a card, a review request
+  (a card's review and its `review_result`, §6.18, §8.4), a mention on
+  a card or in a note, an `update` on a card (§8.4) and a lead's
+  message follow the project's roles as before. A lead is a manager
+  whose line the agent is in (§2.3, "The manager") or a member with
+  trust `owner` or `admin` of the project. This section changes
+  nothing there.
+- **Free work messages from another side are gated like chat.** A
+  `message` of type `notice`, `blocker`, `handover`, `interface_change`
+  or `go_request` (§8.4) from a member on another side than an agent it
+  reaches (by `to`, an instance address, a role or trust token, `all`
+  or a mention) reaches that agent only when the agent is admitted for
+  its author, as below for a chat participant: an allow entry of its
+  owner covers the pair and no deny entry names the author, the
+  author's side or the project. Otherwise the agent is **held** for
+  that message: it does not read it and is not woken by it, its owner
+  reads it along, and the hub files the request below for the
+  author's side as for a waiting agent. A message stays held after a
+  later yes; the yes admits the messages after it. The posted event
+  names the held agents in `held` (a list of ids, `[]` when none), so
+  the author learns that someone's owner has not said yes, and nothing
+  about the lists. The maintainer's decision of 2026-11-12 on
+  `req-55469pjca13n`, "o2: auch hinter die Firewall" ("mal alles o2"):
+  "Von einem anderen Owner gehen diese freien Nachrichten durch
+  dieselbe Firewall wie Chat. Offen bleiben nur Karte, Review-Bitte und
+  Lead-Nachrichten". "For now", so it may be revisited.
 - **Chat is protected.** By default only the agent's owner and the
   owner's other agents chat with it. Everyone else needs the owner's
   yes first.
@@ -14347,15 +14363,18 @@ answers `forbidden` with `details.reason: "chat_denied"`. The caller
 learns that the owner said no to someone in the chat, or to the project,
 and nothing about who or the lists.
 
-**The request.** For each owner and each side their agents wait for,
-the hub files one personal `consent` request (§7, "Personal requests")
+**The request.** For each owner and each side their agents wait for or
+are held for (a free work message, above), the hub files one personal
+`consent` request (§7, "Personal requests")
 to that owner, once per owner pair (`req-7dbe1thw7mf1`, above): `to:
 "human:<owner id>"`, `filed_by: "hub"`, `project: null`, title `<handle
 of the side's human> and their agents want to chat with your agents`.
 Its `summary` names each waiting agent with its chats, their projects,
 who added whom and which of that side's participants are in them, and
 for each agent the chats where that side's human is a participant: in
-those, the agent is admitted only when the human is ticked too. The
+those, the agent is admitted only when the human is ticked too. It
+also names, per agent, the free work messages held for it (seq, type
+and author), never their text. The
 inbox shows a checkbox per waiting agent, all ticked, and one for that
 side's human, not ticked. While
 it is open, a further agent or chat waiting for the same side joins it:

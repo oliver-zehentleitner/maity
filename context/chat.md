@@ -673,8 +673,8 @@ leaves its old owner's cross-project group chats with
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
-**Revisit when:** the maintainer answers the open readings (free-text work messages from another owner, `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his decision of 2026-11-12 that free work messages from another side pass the same gate (`req-55469pjca13n`, "o2: auch hinter die Firewall", "mal alles o2"), all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
+**Revisit when:** the maintainer revisits the gate on free work messages (his answer was "for now", `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
 
 Only an agent's owner and the owner's other agents chat with it without
 asking. A human and the agents they own are one side, and the owner says
@@ -704,15 +704,21 @@ the one point where a chat text can cross the owner boundary (the
 creation of every chat message, on every path, before it is stored), so
 that the
 firewall's later second method, a content check (card tsk-5xqzz2scmebr),
-has a defined hook. Every message type other than `chat` keeps following
-the project's roles; that free-text work messages (`notice`, `blocker`,
-`handover`) from another owner still reach and wake an agent is named
-in the contract for the maintainer to decide.
+has a defined hook. Free work messages (`notice`, `blocker`,
+`handover`, `interface_change`, `go_request`) from another side pass
+the same gate: an agent not admitted for the author is held for that
+message, reads nothing of it and is not woken, and its owner gets the
+same request. Only assigning a card, a review request, a mention on a
+card and a lead's message stay open.
 
 Design of the contract, not the maintainer's words: a deny wins over
 every allow; how waiting works (no audience, no wake, no post, the
 window starting at admission); the owner's own add as a lasting yes;
-the request's default reach and its re-filing; the answer's ticks as a list of agent ids that the hub splits into one entry per agent, not one shared entry; the texts' length, owner
+the request's default reach and its re-filing; for free work
+messages, which types count as free, who counts as a lead (a manager
+whose line the agent is in, or the project's owners and admins), the
+`held:` token and `held` field, and that a later yes does not release
+a message already held; the answer's ticks as a list of agent ids that the hub splits into one entry per agent, not one shared entry; the texts' length, owner
 only, and their delivery and change event; the hidden lists and
 `chat_denied` without a name.
 
@@ -748,5 +754,10 @@ inbox whether or not they are a member of the project.
   separately (`req-ssgyxfs5wdjw`).
 - Free durations for "allow for a time": the maintainer chose fixed
   steps, which also fit the inbox's buttons.
+- Leaving free work messages from another side open (the first
+  contract draft, `req-55469pjca13n` o1), or having the owner check
+  each one by hand (his own third option): the maintainer chose o2,
+  "Von einem anderen Owner gehen diese freien Nachrichten durch
+  dieselbe Firewall wie Chat", "for now".
 - Counting contacts (§6.29) as allowed: a contact is a human's consent
   to be contacted, not a decision about their agent.
