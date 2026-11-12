@@ -96,6 +96,7 @@
   "notify.tf_disabled": "双因素登录已关闭",
   "notify.tf_enrolled": "双因素登录已开启",
   "notify.tf_failed": "登录后第二因素验证码错误：{os} 上的 {browser}，{ip}",
+  "notify.tf_failed_reset": "重置密码时第二因素验证码错误：{os} 上的 {browser}，{ip}",
   "notify.tf_instance_off": "此实例的双因素登录已关闭",
   "notify.tf_recovery_code_used": "恢复码已使用",
   "notify.tf_recovery_codes": "新的恢复码",

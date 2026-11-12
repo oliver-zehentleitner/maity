@@ -248,26 +248,40 @@ def complete(body: ResetComplete, request: Request) -> JSONResponse:
     if len(body.new) < passwords.MIN_LENGTH:
         raise invalid({"new": "too_short"}, "a password has at least 12 characters")
     hub = settings_of(request)
-    origin = origin_of(request)
     browser, system = sessions.describe(request.headers.get("user-agent"))
-    done = False
     with engine_of(request).begin() as conn:
         _enabled(conn, hub)
-        # The token first: a dead one answers without comparing or counting a code, so
-        # whoever kept an old link cannot void the human's new ones (§2.10).
-        found = _live(conn, hub, body.token, lock=True)
-        if found is not None:
-            row, human = found
-            if _factor(conn, hub, human.id) == "totp" and not _code_right(
-                conn, hub, human.id, body, origin.address, browser, system
-            ):
-                pass  # the count and an alarm commit with this transaction; refused below
-            elif resets.use(conn, row):
-                _reset(conn, human.id, body.new, origin.address, browser, system)
-                done = True
+        # A refusal still commits: the count of a wrong code and an alarm stay.
+        done = _complete(conn, hub, body, origin_of(request).address, browser, system)
     if not done:
         raise _refused()
     return JSONResponse({})
+
+
+def _complete(
+    conn: Connection,
+    hub: Settings,
+    body: ResetComplete,
+    ip: str,
+    browser: str | None,
+    system: str | None,
+) -> bool:
+    """The reset in the caller's transaction; False is a refusal. One winner per token twice
+    over: the human's lock, and `use` that takes only an unused row."""
+    # The token first: a dead one answers without comparing or counting a code, so
+    # whoever kept an old link cannot void the human's new ones (§2.10).
+    found = _live(conn, hub, body.token, lock=True)
+    if found is None:
+        return False
+    row, human = found
+    if _factor(conn, hub, human.id) == "totp" and not _code_right(
+        conn, hub, human.id, body, ip, browser, system
+    ):
+        return False
+    if not resets.use(conn, row):
+        return False
+    _reset(conn, human.id, body.new, ip, browser, system)
+    return True
 
 
 def _code_right(

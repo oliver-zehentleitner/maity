@@ -96,6 +96,7 @@
   "notify.tf_disabled": "Inicio de sesión en dos pasos desactivado",
   "notify.tf_enrolled": "Inicio de sesión en dos pasos activado",
   "notify.tf_failed": "Códigos de segundo factor incorrectos tras un inicio de sesión: {browser} en {os}, {ip}",
+  "notify.tf_failed_reset": "Códigos de segundo factor incorrectos al restablecer la contraseña: {browser} en {os}, {ip}",
   "notify.tf_instance_off": "Inicio de sesión en dos pasos desactivado para esta instancia",
   "notify.tf_recovery_code_used": "Código de recuperación usado",
   "notify.tf_recovery_codes": "Nuevos códigos de recuperación",

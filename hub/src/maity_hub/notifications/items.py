@@ -796,7 +796,13 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record=row.n,
                     title=_cut(
                         where.say(
-                            "tf_failed",
+                            # The reset's alarm says so: the mailbox, not the app, is
+                            # in other hands (§2.10, §18.1).
+                            (
+                                "tf_failed_reset"
+                                if data.get("method") == "password_reset"
+                                else "tf_failed"
+                            ),
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",

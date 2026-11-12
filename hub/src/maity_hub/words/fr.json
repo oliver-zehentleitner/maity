@@ -96,6 +96,7 @@
   "notify.tf_disabled": "Connexion à deux facteurs désactivée",
   "notify.tf_enrolled": "Connexion à deux facteurs activée",
   "notify.tf_failed": "Codes de second facteur erronés après une connexion : {browser} sur {os}, {ip}",
+  "notify.tf_failed_reset": "Codes de second facteur erronés lors d'une réinitialisation du mot de passe : {browser} sur {os}, {ip}",
   "notify.tf_instance_off": "Connexion à deux facteurs désactivée pour cette instance",
   "notify.tf_recovery_code_used": "Code de récupération utilisé",
   "notify.tf_recovery_codes": "Nouveaux codes de récupération",

@@ -96,6 +96,7 @@
   "notify.tf_disabled": "2단계 인증이 꺼졌어요",
   "notify.tf_enrolled": "2단계 인증이 켜졌어요",
   "notify.tf_failed": "로그인 후 2단계 인증 코드가 잘못되었어요: {os}의 {browser}, {ip}",
+  "notify.tf_failed_reset": "비밀번호 재설정 중 2단계 인증 코드가 잘못되었어요: {os}의 {browser}, {ip}",
   "notify.tf_instance_off": "이 인스턴스의 2단계 인증이 꺼졌어요",
   "notify.tf_recovery_code_used": "복구 코드가 사용되었어요",
   "notify.tf_recovery_codes": "새 복구 코드",

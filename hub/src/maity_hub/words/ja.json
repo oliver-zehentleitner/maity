@@ -96,6 +96,7 @@
   "notify.tf_disabled": "2要素サインインがオフになりました",
   "notify.tf_enrolled": "2要素サインインがオンになりました",
   "notify.tf_failed": "サインイン後に第2要素のコードの誤りがありました: {os} の {browser}、{ip}",
+  "notify.tf_failed_reset": "パスワードの再設定で第2要素のコードの誤りがありました: {os} の {browser}、{ip}",
   "notify.tf_instance_off": "このインスタンスの2要素サインインがオフになりました",
   "notify.tf_recovery_code_used": "復旧コードが使われました",
   "notify.tf_recovery_codes": "新しい復旧コード",

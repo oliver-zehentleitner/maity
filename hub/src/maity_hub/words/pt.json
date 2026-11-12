@@ -96,6 +96,7 @@
   "notify.tf_disabled": "Acesso em dois fatores desativado",
   "notify.tf_enrolled": "Acesso em dois fatores ativado",
   "notify.tf_failed": "Códigos de segundo fator incorretos após um acesso: {browser} em {os}, {ip}",
+  "notify.tf_failed_reset": "Códigos de segundo fator incorretos ao redefinir a senha: {browser} em {os}, {ip}",
   "notify.tf_instance_off": "Acesso em dois fatores desativado para esta instância",
   "notify.tf_recovery_code_used": "Código de recuperação usado",
   "notify.tf_recovery_codes": "Novos códigos de recuperação",

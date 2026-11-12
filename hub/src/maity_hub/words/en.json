@@ -96,6 +96,7 @@
   "notify.tf_disabled": "Two-factor sign-in turned off",
   "notify.tf_enrolled": "Two-factor sign-in turned on",
   "notify.tf_failed": "Wrong second-factor codes after a sign-in: {browser} on {os}, {ip}",
+  "notify.tf_failed_reset": "Wrong second-factor codes at a password reset: {browser} on {os}, {ip}",
   "notify.tf_instance_off": "Two-factor sign-in turned off for this instance",
   "notify.tf_recovery_code_used": "Recovery code used",
   "notify.tf_recovery_codes": "New recovery codes",

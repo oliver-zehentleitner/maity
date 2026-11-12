@@ -96,6 +96,7 @@
   "notify.tf_disabled": "Accesso a due fattori disattivato",
   "notify.tf_enrolled": "Accesso a due fattori attivato",
   "notify.tf_failed": "Codici del secondo fattore errati dopo un accesso: {browser} su {os}, {ip}",
+  "notify.tf_failed_reset": "Codici del secondo fattore errati durante la reimpostazione della password: {browser} su {os}, {ip}",
   "notify.tf_instance_off": "Accesso a due fattori disattivato per questa istanza",
   "notify.tf_recovery_code_used": "Codice di recupero usato",
   "notify.tf_recovery_codes": "Nuovi codici di recupero",

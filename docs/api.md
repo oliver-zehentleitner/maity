@@ -2124,8 +2124,8 @@ right now, `missing` why not: `switched_off` (the setting is `false`),
 `signing_key` (no `MAITY_MAIL_SIGNING_KEY`, which signs the links, §18.6),
 and `not_implemented` while the hub does not serve the sign-in link yet.
 `password_reset_available` and `password_reset_missing` say the same of
-the reset (§2.10), with `switched_off`, `mail`, `signing_key` and
-`not_implemented`. A change is not an
+the reset (§2.10), with `switched_off`, `mail` and `signing_key`.
+A change is not an
 event; the accounts design's instance audit log records it (pending).
 
 #### 2.6.7 The dashboard's part

@@ -18,6 +18,7 @@ from maity_hub.instance_settings import put
 from maity_hub.notifications import mailer
 from maity_hub.routes import password_reset
 from tests import factory, flow
+from tests.concurrency import finished, race, waiting
 from tests.conftest import ClientFactory
 from tests.test_email_sign_in import setup
 from tests.test_second_factor_reset import enrol
@@ -454,7 +455,9 @@ def test_the_fifth_wrong_code_in_a_day_voids_every_link_and_alarms(
 ) -> None:
     # The request limits count real seconds, not this clock: out of the way here.
     monkeypatch.setattr(password_reset.LIMITS, "take", lambda address, source: (0, True))
-    client, human, secret, _ = enrolled_ada(make_client, migrated, moment)
+    client, human = setup(make_client, migrated)
+    ada = signed_in(make_client, client)  # her session lives until a reset succeeds
+    secret, _ = enrol(ada, moment)
     # Four wrong codes spread over fresh links: no alarm yet.
     for _ in range(4):
         token = mailed(client, migrated)
@@ -476,6 +479,21 @@ def test_the_fifth_wrong_code_in_a_day_voids_every_link_and_alarms(
     assert refused(finish(client, first, code="000000"))
     [alarm] = records(migrated, human, "second_factor_failed")
     assert alarm.data["method"] == "password_reset"
+    # Titled as the reset's alarm, not a sign-in's: the bell item and so the mail (§18.1).
+    from tests.test_notification_mail import PUBLIC
+
+    mailer.run(migrated, client.app.state.settings.mail, None, PUBLIC)
+    with migrated.connect() as conn:
+        subjects = (
+            conn.execute(select(t.mail_outbox.c.subject).where(t.mail_outbox.c.kind == "security"))
+            .scalars()
+            .all()
+        )
+    [wrong] = [s for s in subjects if "Wrong second-factor codes" in s]
+    assert wrong.startswith("[Maity] Wrong second-factor codes at a password reset: ")
+    bell = ada.client.get("/api/v1/me/notifications").json()["items"]
+    [item] = [i for i in bell if i["title"].startswith("Wrong second-factor codes")]
+    assert item["title"].startswith("Wrong second-factor codes at a password reset: ")
     with migrated.connect() as conn:
         still_open = conn.execute(
             select(t.password_reset).where(
@@ -515,3 +533,27 @@ def test_under_mail_as_the_factor_the_reset_works_without_the_sign_in_link(
         put(conn, "sign_in.second_factor", "email", None)
     assert client.get("/api/v1/auth/methods").json()["email_link"] is False
     assert finish(client, mailed(client, migrated)).status_code == 200
+
+
+def test_two_completes_of_one_link_have_one_winner(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The second waits for the first (the human's lock, and the row `use` writes); once the
+    first commits, the used row refuses it. Only a server database shows this (`race` skips
+    on SQLite)."""
+    client, human = setup(make_client, migrated)
+    token = mailed(client, migrated)
+    hub = client.app.state.settings
+    body = password_reset.ResetComplete(token=token, new=NEW)
+
+    def complete(conn: Any) -> bool:
+        return password_reset._complete(conn, hub, body, "203.0.113.7", None, None)
+
+    with race(migrated) as two:
+        assert complete(two.first)
+        second = two.run(two.second, lambda: complete(two.second))
+        assert waiting(second)
+        two.first.commit()
+        assert finished(second) is False
+        two.second.commit()
+    assert len(records(migrated, human, "password_reset")) == 1

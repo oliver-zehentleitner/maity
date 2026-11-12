@@ -96,6 +96,7 @@
   "notify.tf_disabled": "Inloggen met tweede factor uitgezet",
   "notify.tf_enrolled": "Inloggen met tweede factor aangezet",
   "notify.tf_failed": "Onjuiste codes voor de tweede factor na een login: {browser} op {os}, {ip}",
+  "notify.tf_failed_reset": "Onjuiste codes voor de tweede factor bij het opnieuw instellen van het wachtwoord: {browser} op {os}, {ip}",
   "notify.tf_instance_off": "Inloggen met tweede factor uitgezet voor deze instantie",
   "notify.tf_recovery_code_used": "Herstelcode gebruikt",
   "notify.tf_recovery_codes": "Nieuwe herstelcodes",

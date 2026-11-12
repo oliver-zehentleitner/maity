@@ -11,7 +11,8 @@
   `security` notification mailed at once. A dead link and a wrong code are both
   `code_invalid`; the fifth wrong code at resets of a human in 24 hours, and every further
   one, voids every open reset link and writes `second_factor_failed` (`method:
-  password_reset`). A maintenance window refuses the three calls.
+  password_reset`), titled "Wrong second-factor codes at a password reset" in the bell and
+  the mail. A maintenance window refuses the three calls.
 
 ### Changed
 
