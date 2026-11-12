@@ -10879,6 +10879,74 @@
     "en": "83d3c8cd6e1da6a0",
     "text": "893831b359250216"
   },
+  "mine.leave.agents": {
+    "en": "07c351b0c33fdbad",
+    "text": "2b93ec0699af343c"
+  },
+  "mine.leave.blocked": {
+    "en": "eaf758accde22f7a",
+    "text": "63d7b5a615ff7842"
+  },
+  "mine.leave.cancel": {
+    "en": "c0774c185060fc13",
+    "text": "ad1a123c94de0d8a"
+  },
+  "mine.leave.confirm": {
+    "en": "75ce878104c8ec8b",
+    "text": "ffc1927f208b0759"
+  },
+  "mine.leave.consequences": {
+    "en": "4d5a74df4ace032c",
+    "text": "b25d95e35cc18fae"
+  },
+  "mine.leave.dialog": {
+    "en": "8fc269a069ea6764",
+    "text": "aabca00096532334"
+  },
+  "mine.leave.hint": {
+    "en": "61a78e46ceef3f3a",
+    "text": "e0e913f79ee1fc78"
+  },
+  "mine.leave.isolated": {
+    "en": "46aff18e26e932f0",
+    "text": "13ca4c46acffbdb3"
+  },
+  "mine.leave.last_owner": {
+    "en": "ff6ef9fcdb28506c",
+    "text": "88426f89c3d9c897"
+  },
+  "mine.leave.left": {
+    "en": "62f11deb69c895f7",
+    "text": "f8bfeb24bfec554c"
+  },
+  "mine.leave.namespace": {
+    "en": "bc1d589c228ac655",
+    "text": "efcbc858702fc5f1"
+  },
+  "mine.leave.not_left": {
+    "en": "602724505d27eea4",
+    "text": "99760242e3d49250"
+  },
+  "mine.leave.open": {
+    "en": "daf2b96796c352a0",
+    "text": "3fcac42f5684df4f"
+  },
+  "mine.leave.rule": {
+    "en": "60600b8ad4f71913",
+    "text": "43cfd5c3a93bc38c"
+  },
+  "mine.leave.stays": {
+    "en": "c45cf85f098c23cc",
+    "text": "67c5de226ed068e5"
+  },
+  "mine.leave.title": {
+    "en": "daf2b96796c352a0",
+    "text": "3fcac42f5684df4f"
+  },
+  "mine.leave.working": {
+    "en": "47ee2c6b730e486b",
+    "text": "0a74d4cfc6d38396"
+  },
   "mine.legend": {
     "en": "3cade3d865186402",
     "text": "cbdd7ae9a9f06f4f"
