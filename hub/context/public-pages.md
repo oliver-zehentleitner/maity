@@ -813,7 +813,8 @@ fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the 
 the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
 change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
 `changed` fields still renders the project page with its dependents, since a member's name stands on the card
-pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+pages they hold; narrowed since to the card pages that name the member (fe966f9c-3557-4473-a0d6-14aa4d714a43).
+Rejected: naming the fields a page shows instead (an allowlist), because a field added later
 would silently leave a stale name on a public page; a field missing from the list only costs a render.
 
 ## A member change takes off and renders only the card pages that name that member
@@ -833,6 +834,10 @@ agent and person pages as before, and of the card pages only those that name the
 the principal held in the project (`public_cards.naming`: claim holder, note author, latest note editor; the
 editor is in JSON, so the project's few edited notes are matched in Python, as for a person's cards).
 `events.emit` hands that list to `public_pages.touch` as `others`, read only when pages are rendered at all.
+A removal and an isolation give the member's cards back (`isolation.release_claims`) before their event, so
+the holder is no longer there to be found: a card that left `in_progress` is rendered by its own status event,
+and one that kept its status (`review`, `blocked`, `open`) is touched by `isolation.tell_released` after the
+member's event, under the project lock that event took (a review found the gap on #1700; a test holds both).
 Every page that named the member is still taken off in the writer's transaction and rendered after its commit;
 every other card page is left as it is, since it shows nothing of the member. A test holds the statement
 count of a profile's deletion independent of the project's cards.

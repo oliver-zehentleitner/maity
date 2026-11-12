@@ -304,6 +304,52 @@ def test_a_removed_member_is_off_every_card_page_that_named_them(world: World) -
     assert after == before
 
 
+@pytest.mark.parametrize("way", ["removed", "isolated"])
+def test_a_card_held_in_review_or_blocked_loses_its_holder_when_they_go(
+    make_client: ClientFactory, world: World, way: str
+) -> None:
+    """A removal or an isolation gives the member's cards back before its event, which then
+    no longer finds them by their holder; a card in `review` or `blocked` keeps its status, so
+    no card event renders it either. Its page is touched with the release (`tell_released`)
+    and names no holder after it (fp3y on #1700)."""
+    agent = flow.agent(pages(make_client), world.owner, role="coder")
+    handle = agent.get("/me").json()["member"]["handle"]
+    held = {}
+    for status in ("review", "blocked"):
+        card_id = world.owner.post(TASKS, {"title": f"Held in {status}"}).json()["id"]
+        assert agent.post(f"{TASKS}/{card_id}/claim", {}).status_code == 200
+        with world.migrated.begin() as conn:
+            conn.execute(t.card.update().where(t.card.c.id == card_id).values(status=status))
+            public_pages.touch(conn, "card", card_id)
+        assert data(world, card_id).json()["data"]["holder"]["handle"] == handle
+        held[status] = card_id
+    path = f"/projects/maintainer/maity/members/{agent.id}"
+    gone = (
+        world.owner.delete(path)
+        if way == "removed"
+        else world.owner.post(f"{path}/isolate", {"reason": "it broke main"})
+    )
+    assert gone.status_code == 200, gone.text
+    for status, card_id in held.items():
+        shown = data(world, card_id).json()["data"]
+        assert shown["status"] == status and shown["holder"] is None, shown
+        assert f"({handle})" not in (page(world, card_id) or "")
+
+
+def test_a_removed_member_is_off_the_page_of_a_done_card_they_held(world: World) -> None:
+    """A done card keeps its holder (`cards.open_claims` leaves it out of the release), so
+    only `public_cards.naming` finds its page by the holder after a removal."""
+    card_id = world.owner.post(TASKS, {"title": "Done by the bot"}).json()["id"]
+    assert world.bot.post(f"{TASKS}/{card_id}/claim", {}).status_code == 200
+    with world.migrated.begin() as conn:
+        conn.execute(t.card.update().where(t.card.c.id == card_id).values(status="done"))
+        public_pages.touch(conn, "card", card_id)
+    handle = world.bot.get("/me").json()["member"]["handle"]
+    assert f"({handle})" in (page(world, card_id) or "")
+    _remove_agent(world)
+    assert f"({handle})" not in (page(world, card_id) or "")
+
+
 def test_a_removed_editor_is_off_the_card_page_of_the_note_they_edited(
     make_client: ClientFactory, world: World
 ) -> None:

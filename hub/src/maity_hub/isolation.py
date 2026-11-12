@@ -10,7 +10,7 @@ Lifting gives access back, nothing else. The seats that name it stay, and routin
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, case, func, select, update
 
@@ -39,16 +39,19 @@ def refusal(row: Any) -> ApiError:
     )
 
 
-def release_claims(conn: Connection, membership_id: int) -> list[str]:
-    """Every open card the member holds goes back to the board (§6.5). Returns the cards that
-    left `in_progress`, for `tell_released` after the caller's own event."""
-    moved = (
-        conn.execute(
-            select(t.card.c.id).where(cards.open_claims(membership_id, status="in_progress"))
-        )
-        .scalars()
-        .all()
-    )
+class Released(NamedTuple):
+    """The cards `release_claims` gave back, for `tell_released`."""
+
+    moved: list[str]  # left `in_progress`: a status change, told to their watchers
+    kept: list[str]  # in another status: only the holder went, which their pages show
+
+
+def release_claims(conn: Connection, membership_id: int) -> Released:
+    """Every open card the member holds goes back to the board (§6.5). Returns those cards,
+    for `tell_released` after the caller's own event."""
+    held = conn.execute(
+        select(t.card.c.id, t.card.c.status).where(cards.open_claims(membership_id))
+    ).all()
     conn.execute(
         update(t.card)
         .where(cards.open_claims(membership_id))
@@ -62,16 +65,27 @@ def release_claims(conn: Connection, membership_id: int) -> list[str]:
             updated_at=clock.now(),
         )
     )
-    return list(moved)
+    return Released(
+        moved=sorted(card_id for card_id, status in held if status == "in_progress"),
+        kept=sorted(card_id for card_id, status in held if status != "in_progress"),
+    )
 
 
-def tell_released(conn: Connection, moved: list[str], actor: Actor | None) -> None:
-    """The status change of cards `release_claims` gave back, for their watchers (§6.4)."""
-    if not moved:
+def tell_released(conn: Connection, released: Released, actor: Actor | None) -> None:
+    """The status change of cards `release_claims` gave back, for their watchers (§6.4),
+    which renders their public pages too. A card that kept its status (`review`, `blocked`)
+    makes no event, but its page named the holder: it is touched here, after the caller's
+    event took the project lock, since the member's own event no longer finds it by its
+    holder (hub/context/public-pages.md fe966f9c)."""
+    from maity_hub import public_pages
+
+    for card_id in released.kept:
+        public_pages.touch(conn, "card", card_id)
+    if not released.moved:
         return
     from maity_hub.routes.tasks import status_moved  # tasks reads availability, and this
 
-    for card in conn.execute(select(t.card).where(t.card.c.id.in_(moved))).all():
+    for card in conn.execute(select(t.card).where(t.card.c.id.in_(released.moved))).all():
         state = conn.execute(
             select(t.project.c.state).where(t.project.c.id == card.project_id)
         ).scalar_one()
