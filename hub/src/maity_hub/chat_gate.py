@@ -30,6 +30,11 @@ from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
 
 DENIED = "denied_participant"
+# Whether a jour fixe round's moderator that waits in the round's thread is held back from
+# the statement step too, as from the steps it is eligible for (§9.6). Open: req-a89crp06kjf3
+# asks the maintainer; until he answers, the moderator writes the statement while it waits.
+# The one switch point: `moderator_held` reads it, `jourfixe.exchange` asks that.
+MODERATOR_WAITS = False
 
 
 @dataclass(frozen=True)
@@ -290,6 +295,14 @@ def waiting(conn: Connection, conversation_id: str, membership_id: int) -> bool:
         )
     ).scalar()
     return bool(found)
+
+
+def moderator_held(conn: Connection, conversation_id: str | None, membership_id: int) -> bool:
+    """Whether the round's moderator is held back from the statement step: only when
+    `MODERATOR_WAITS` is on and it waits in the round's thread."""
+    return bool(
+        MODERATOR_WAITS and conversation_id and waiting(conn, conversation_id, membership_id)
+    )
 
 
 def refuse_waiting() -> ApiError:

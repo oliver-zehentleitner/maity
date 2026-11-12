@@ -230,6 +230,8 @@ def submit_statement(
     round_row = _reload(conn, round_row.id)
     if not _is_moderator(round_row, mine):
         raise refused("not_moderator", "only the round's moderator writes the statement")
+    if chat_gate.moderator_held(conn, round_row.conversation_id, mine.id):
+        raise refused("not_eligible", "the moderator waits for its owner's yes (§9.6)")
     first = round_row.steps[0] if round_row.steps else None
     if round_row.status != "statement" or first is None or _ended(first, clock.now()):
         raise _state(round_row, "statement", "the statement step is not open")
