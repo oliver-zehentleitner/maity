@@ -388,6 +388,7 @@ def test_who_has_a_clone_removed(
     agent = admin_agent(make_client, setup)
     refused = agent.post(f"{PATH}/{body['id']}/workspace/remove", {})
     assert (refused.status_code, error(refused)) == (403, "forbidden")
+    assert refused.json()["error"]["details"] == {"reason": "humans_only"}
     plain = member(make_client, migrated, "member")
     refused = remove(plain, body["id"])
     assert (refused.status_code, error(refused)) == (403, "forbidden")
