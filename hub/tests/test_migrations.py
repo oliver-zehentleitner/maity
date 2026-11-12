@@ -1499,7 +1499,7 @@ def test_notif_recipients_backfills_the_window_in_batches_and_runs_again(engine:
     left the table and some rows; the next run keeps them and writes the rest."""
     from datetime import timedelta
 
-    from sqlalchemy import insert, select
+    from sqlalchemy import MetaData, insert, inspect, select
 
     from maity_hub import clock
     from maity_hub import tables as t
@@ -1546,9 +1546,14 @@ def test_notif_recipients_backfills_the_window_in_batches_and_runs_again(engine:
     assert rows() == expected
     assert not {old, outside, nobody} & {seq for _, seq, _, _ in rows()}
     downgrade(engine, _before(engine, revision))
-    # What a MariaDB run that stopped after some batches leaves: the table, the first rows.
+    # What a MariaDB run that stopped after some batches leaves, where each DDL statement
+    # commits alone: the table without its window index (hcrb on #1703), the first rows.
     with engine.begin() as conn:
-        t.notification_recipient.create(conn)
+        tables = MetaData()
+        tables.reflect(conn, only=["human", "event", "project"])
+        bare = t.notification_recipient.to_metadata(tables)
+        bare.indexes.clear()
+        bare.create(conn)
         conn.execute(
             insert(t.notification_recipient),
             [
@@ -1559,3 +1564,5 @@ def test_notif_recipients_backfills_the_window_in_batches_and_runs_again(engine:
         )  # fmt: skip
     migrate(engine, revision)
     assert rows() == expected
+    indexes = {i["name"] for i in inspect(engine).get_indexes("notification_recipient")}
+    assert "ix_notification_recipient_window" in indexes

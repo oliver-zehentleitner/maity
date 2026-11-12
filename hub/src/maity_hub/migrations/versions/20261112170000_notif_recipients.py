@@ -71,7 +71,9 @@ recipient = sa.table(
 
 def upgrade() -> None:
     bind = op.get_bind()
-    if not sa.inspect(bind).has_table("notification_recipient"):  # a MariaDB run that stopped
+    # Each piece only when missing: on MariaDB every DDL statement commits alone, so a run
+    # that stopped may have left the table without its index, or both.
+    if not sa.inspect(bind).has_table("notification_recipient"):
         op.create_table(
             "notification_recipient",
             sa.Column("human_id", sa.String(length=40), nullable=False),
@@ -94,6 +96,8 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("seq", "human_id", name=op.f("pk_notification_recipient")),
             **MYSQL,
         )
+    indexes = {i["name"] for i in sa.inspect(bind).get_indexes("notification_recipient")}
+    if "ix_notification_recipient_window" not in indexes:
         op.create_index(
             "ix_notification_recipient_window",
             "notification_recipient",
