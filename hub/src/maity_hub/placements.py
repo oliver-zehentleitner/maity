@@ -24,7 +24,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import allowed_projects, availability, avatars, clock, events, mentions, namespace
 from maity_hub import tables as t
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
 from maity_hub.policy import CLOSED_STATES
@@ -102,6 +102,14 @@ RUNNING_STATES = ("starting", "running", "stopping")
 STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed", "runner_revoked")
 CLOSED_LIST_DAYS = 30
 SPEC_FIELDS = ("harness", "mode", "model", "target", "stop_grace_seconds")
+# The clone after a stop or a close (§15.5).
+RETENTIONS = ("immediate", "3h", "24h", "7d")
+WORKSPACE_STATES = ("retained", "removed", "kept")
+WORKSPACE_REASONS = ("unsaved_work", "in_use", "not_inspectable", "not_recorded", "remove_failed")
+HELD = ("retained", "kept")  # the clone is still on the runner's disk
+# Closed with its runner's end: no runner is left to ask about the clone, the operator
+# removes it (§15.5), so the runner's closed list never offers it for removal.
+NO_RUNNER_LEFT = ("runner_revoked", "runner_removed")
 
 
 class Refusal(ApiError):
@@ -208,6 +216,11 @@ def _continues(conn: Connection, placement: Any) -> bool:
                 t.placement.c.clone == placement.clone,
                 t.placement.c.active.is_(None),
                 t.placement.c.id != placement.id,
+                # A clone the runner reported removed is gone: nothing to continue (§15.5).
+                or_(
+                    t.placement.c.workspace_state.is_(None),
+                    t.placement.c.workspace_state != "removed",
+                ),
             )
         ).first()
         is not None
@@ -243,6 +256,9 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "generation": placement.generation,
         "rejoin": placement.rejoin,
         "stop_grace_seconds": placement.stop_grace_seconds,
+        "workspace_retention": placement.workspace_retention,
+        "workspace_epoch": placement.workspace_epoch,
+        "workspace_outcome": workspace_outcome(placement),
         "approval": {
             "status": approved,
             "request_id": open_request_id(conn, placement.id),
@@ -268,6 +284,30 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
     return found
 
 
+def workspace_outcome(placement: Any) -> dict[str, Any] | None:
+    """`workspace_outcome` (§15.5): the runner's latest report on the clone, with a removal
+    asked by hand; `null` until the runner reports and while the placement runs."""
+    if placement.workspace_state is None:
+        return None
+    return {
+        "state": placement.workspace_state,
+        "reason": placement.workspace_reason,
+        "unsaved": placement.workspace_unsaved or 0,
+        "size_bytes": placement.workspace_size_bytes,
+        "removes_at": ts(placement.workspace_removes_at),
+        "epoch": placement.workspace_outcome_epoch,
+        "remove_requested": placement.remove_requested_at is not None,
+        "remove_requested_at": ts(placement.remove_requested_at),
+        "reported_at": ts(placement.workspace_reported_at),
+    }
+
+
+def held(placement: Any) -> bool:
+    """The clone of a stopped or closed placement is still on the runner's disk (§15.6)."""
+    stopped = placement.active is None or placement.desired == "stopped"
+    return stopped and placement.workspace_state in HELD
+
+
 def _shown_report(report: dict[str, Any] | None) -> dict[str, Any] | None:
     if report is None:
         return None
@@ -281,7 +321,7 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
         select(t.project.c.repository_url).where(t.project.c.id == placement.project_id)
     ).one()
     agent = _agent(conn, placement)
-    return {
+    found: dict[str, Any] = {
         "id": placement.id,
         # The full name, the fixed id the runner keys the clone on, and the earlier full
         # names its configured project list may still name (§6.25, §15.5).
@@ -307,8 +347,14 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
         },
         "rejoin": placement.rejoin,
         "stop_grace_seconds": placement.stop_grace_seconds,
+        "workspace_retention": placement.workspace_retention,
+        "workspace_epoch": placement.workspace_epoch,
         "seq": placement.reported_seq,
     }
+    if placement.active is None or placement.desired == "stopped":
+        # What the runner removes, keeps or was asked to remove by hand (§15.8).
+        found["workspace_outcome"] = workspace_outcome(placement)
+    return found
 
 
 def runner_reads(conn: Connection, runner_id: str) -> list[Any]:
@@ -323,6 +369,26 @@ def runner_reads(conn: Connection, runner_id: str) -> list[Any]:
                 t.placement.c.approval_status == "approved",
             )
             .order_by(t.placement.c.created_at, t.placement.c.id)
+        ).all()
+    )
+
+
+def runner_reads_closed(conn: Connection, runner_id: str) -> list[Any]:
+    """`closed=true` (§15.8): the runner's closed placements, closed at any time, whose
+    clone it has not reported removed, wherever they are, so a detach does not orphan a
+    clone. Never one closed with the runner's own end (`NO_RUNNER_LEFT`, §15.5)."""
+    p = t.placement.c
+    return list(
+        conn.execute(
+            select(t.placement)
+            .where(
+                p.runner_id == runner_id,
+                p.active.is_(None),
+                p.approval_status == "approved",
+                or_(p.workspace_state.is_(None), p.workspace_state != "removed"),
+                p.closed_reason.not_in(NO_RUNNER_LEFT),
+            )
+            .order_by(p.closed_at, p.id)
         ).all()
     )
 
@@ -498,6 +564,20 @@ def _stop_requested(conn: Connection, placement: Any, actor: Actor | None, by: s
 # --- changing --------------------------------------------------------------------------------
 
 
+# `desired: running` cancels the clock and clears `workspace_outcome` (§15.5); a removal
+# asked by hand goes with it, since the start keeps the clone.
+OUTCOME_CLEARED: dict[str, Any] = {
+    "workspace_state": None,
+    "workspace_reason": None,
+    "workspace_unsaved": None,
+    "workspace_size_bytes": None,
+    "workspace_removes_at": None,
+    "workspace_outcome_epoch": None,
+    "workspace_reported_at": None,
+    "remove_requested_at": None,
+}
+
+
 def _write(conn: Connection, placement_id: str, by: str | None, **values: Any) -> Any:
     conn.execute(
         update(t.placement)
@@ -567,7 +647,8 @@ def set_desired(
 ) -> Any:
     if placement.desired == desired:
         return placement
-    changed = _write(conn, placement.id, by, desired=desired)
+    cleared = OUTCOME_CLEARED if desired == "running" else {}
+    changed = _write(conn, placement.id, by, desired=desired, **cleared)
     if desired == "stopped":
         revoke_unused_joins(conn, t.join_link.c.placement_id == placement.id)
         if terminal(placement.reported) and is_current(placement):
@@ -614,6 +695,7 @@ def restart(
         generation=placement.generation + 1,
         desired="running",
         rejoin=rejoin or placement.rejoin,
+        **OUTCOME_CLEARED,
     )
     announce(conn, placement.id, "placement_updated", actor)
     return changed
@@ -1057,3 +1139,128 @@ def _stamp(value: datetime | None) -> str | None:
 
 def recently_closed() -> datetime:
     return clock.now() - timedelta(days=CLOSED_LIST_DAYS)
+
+
+# --- the workspace after a stop (§15.5, §15.6, §15.8) ---------------------------------------
+
+
+def request_removal(conn: Connection, placement: Any, actor: Actor | None, by: str) -> Any:
+    """A person asks the runner to remove a held clone, unsaved work included (§15.6). A
+    new request replaces an earlier one: it stays asked until a report names it."""
+    if not held(placement):
+        raise Refusal(
+            409,
+            "conflict",
+            "the runner holds no clone of a stopped or closed placement here",
+            {"reason": "workspace_not_held"},
+        )
+    changed = _write(conn, placement.id, by, remove_requested_at=clock.now())
+    announce(conn, placement.id, "placement_updated", actor)
+    return changed
+
+
+def workspace_report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor) -> Any:
+    """The runner's report on a placement's clone (§15.8); returns the placement after it.
+    `epoch` names the clone: an earlier one changes nothing, a later one was never issued."""
+    if body["epoch"] < placement.workspace_epoch:
+        return placement  # a late retry about a clone already removed
+    if body["epoch"] > placement.workspace_epoch:
+        raise invalid({"epoch": "ahead"}, "the report names a clone the hub never issued")
+    now = clock.now()
+    if body["state"] == "removed":
+        return _removed(conn, placement, body["epoch"], now, actor)
+    if placement.active is True and placement.desired != "stopped":
+        raise Refusal(409, "conflict", "the placement runs: its clone is in use")
+    requested = placement.remove_requested_at
+    named = body.get("remove_requested_at")
+    if requested is not None and named is not None and clock.rfc3339(named) == ts(requested):
+        requested = None  # the report decided on this request
+    kept = body["state"] == "kept"
+    conn.execute(
+        update(t.placement)
+        .where(t.placement.c.id == placement.id)
+        .values(
+            workspace_state=body["state"],
+            workspace_reason=body.get("reason") if kept else None,
+            workspace_unsaved=(
+                (body.get("unsaved") or 0) if body.get("reason") == "unsaved_work" else 0
+            ),
+            workspace_size_bytes=body.get("size_bytes"),
+            workspace_removes_at=body.get("removes_at") if body["state"] == "retained" else None,
+            workspace_outcome_epoch=body["epoch"],
+            workspace_reported_at=now,
+            remove_requested_at=requested,
+        )
+    )
+    announce(conn, placement.id, "placement_updated", actor)
+    return row(conn, placement.id)
+
+
+def _removed(conn: Connection, placement: Any, epoch: int, now: datetime, actor: Actor) -> Any:
+    """`removed` is a fact about the disk, taken in any state and final for its clone: the
+    credential whose file was in it is revoked, unless another running placement names it;
+    an active placement rejoins at its next start, in a new clone of the next epoch."""
+    values: dict[str, Any] = {
+        **OUTCOME_CLEARED,
+        "workspace_state": "removed",
+        "workspace_unsaved": 0,
+        "workspace_outcome_epoch": epoch,
+        "workspace_reported_at": now,
+        "workspace_epoch": epoch + 1,
+    }
+    if placement.active is True:
+        values["rejoin"] = True
+    conn.execute(update(t.placement).where(t.placement.c.id == placement.id).values(**values))
+    if placement.credential_id is not None and not _named_elsewhere(conn, placement):
+        _revoke_removed(conn, placement, actor)
+    announce(conn, placement.id, "placement_updated", actor)
+    return row(conn, placement.id)
+
+
+def _named_elsewhere(conn: Connection, placement: Any) -> bool:
+    """Another running placement names the credential: its clone still holds the file."""
+    p = t.placement.c
+    found = conn.execute(
+        select(p.id).where(
+            p.credential_id == placement.credential_id,
+            p.id != placement.id,
+            p.active.is_(True),
+            p.desired == "running",
+        )
+    ).first()
+    return found is not None
+
+
+def _revoke_removed(conn: Connection, placement: Any, actor: Actor) -> None:
+    """`revoked_reason: workspace_removed` (§10), told like any revocation (§15.10). The
+    placement is not stopped by it: a start that came in meanwhile joins anew (`rejoin`)."""
+    from maity_hub.auth.leaks import revoke
+
+    if not revoke(conn, placement.credential_id, "workspace_removed", None, stops_placements=False):
+        return
+    member = conn.execute(
+        select(t.membership.c.project_id, t.membership.c.agent_id)
+        .join(t.credential, t.credential.c.membership_id == t.membership.c.id)
+        .where(t.credential.c.id == placement.credential_id)
+    ).one()
+    events.emit(
+        conn,
+        member.project_id,
+        "credential_revoked",
+        [f"member:{member.agent_id}", "trust:owner"],
+        {"credential_id": placement.credential_id, "reason": "workspace_removed"},
+        actor=actor,
+        subject=("credential", placement.credential_id),
+    )
+
+
+def set_retention(
+    conn: Connection, placement: Any, retention: str, actor: Actor | None, by: str | None
+) -> Any:
+    """`workspace_retention`: no new generation, nothing restarts; the runner moves the
+    deadline of a running clock from the same start (§15.5)."""
+    if placement.workspace_retention == retention:
+        return placement
+    changed = _write(conn, placement.id, by, workspace_retention=retention)
+    announce(conn, placement.id, "placement_updated", actor)
+    return changed

@@ -115,6 +115,9 @@ def test_a_placement_has_the_contract_shape(setup: Setup) -> None:
         "generation",
         "rejoin",
         "stop_grace_seconds",
+        "workspace_retention",
+        "workspace_epoch",
+        "workspace_outcome",
         "approval",
         "credential_id",
         "reported_current",
@@ -167,6 +170,8 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
         "workspace": {"clone": body["agent"]["handle"], "branch": "main", "repository": REPOSITORY},
         "rejoin": False,
         "stop_grace_seconds": 120,
+        "workspace_retention": "24h",
+        "workspace_epoch": 1,
         "seq": 0,
     }
     packet = hello(setup.client, setup.runner).json()

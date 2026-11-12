@@ -89,6 +89,7 @@ def revoke(
     *,
     holder_moves: bool = False,
     member_goes: bool = False,
+    stops_placements: bool = True,
 ) -> bool:
     """Revoke a credential and end its live session; True when this call revoked it
     (a conditional UPDATE decides between two at once), False when it was revoked
@@ -96,7 +97,9 @@ def revoke(
     transaction (a replacement, a member's removal), so no `holder_stalled` is said; it is
     the caller's word, never read from `reason`, which a revoking human writes freely.
     `member_goes`: the whole member is removed in the same transaction, so `member_removed`
-    says the lead's end; also the caller's word, for the same reason."""
+    says the lead's end; also the caller's word, for the same reason.
+    `stops_placements: False`: the revocation follows a clone the runner removed, whose
+    placement rejoins at its next start instead of being stopped (§15.5)."""
     now = clock.now()
     won = conn.execute(
         update(t.credential)
@@ -122,7 +125,8 @@ def revoke(
         holder_stalled.revoked(conn, credential_id)
     # Every path ends here (the leak, §10's revoke, member removal): a placement that
     # names the credential stops in the same transaction (§15.5).
-    placements.credential_revoked(conn, credential_id, by)
+    if stops_placements:
+        placements.credential_revoked(conn, credential_id, by)
     return won == 1
 
 
