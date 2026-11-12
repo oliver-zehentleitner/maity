@@ -338,6 +338,7 @@ def test_settings_carry_the_release_checklist(owner: flow.Human) -> None:
         "release_checklist": ["CHANGELOG has the version"],
         "onboarding": {"check_in_with": "coordinator"},
         "restricted_access": None,
+        "why_merge_children": True,
     }
     unknown = owner.patch("/projects/maintainer/maity", {"settings": {"other": 1}})
     assert unknown.headers["Maity-Error"] == "invalid"

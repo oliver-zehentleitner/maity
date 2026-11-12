@@ -449,7 +449,10 @@ def _open_dir(host: Host, name: str, parent_fd: int, shown: Path, user: User) ->
 
 def _preconditions(host: Host) -> None:
     if host.platform() != "linux":
-        raise Refused("install sets up a systemd service: Linux only")
+        raise Refused(
+            "install sets up a systemd service: Linux only; elsewhere, macOS included, "
+            "run `maity runner serve` yourself"
+        )
     if host.euid() != 0:
         raise Refused("install creates a system user and a system service: run it with sudo")
     if not host.systemd_running() or host.which("systemctl") is None:
