@@ -1247,7 +1247,10 @@ newest event at the join. Every path that makes a membership (project creation, 
 accept, an organisation owner's kept membership, an agent's join) stores that seq as
 `membership.joined_seq`, read with `events.newest_seq` (one step down the index `(project_id,
 seq)`) under the project's lock the caller holds, so no event of the project lands between the
-read and the insert. A second join after a removal makes a new row and so a new position. The
+read and the insert. A second join after a removal makes a new row and so a new position. For a
+new membership the position is thus set by seq, not by time: an event emitted after the insert
+counts as after the join even when its `at` equals `joined_at`, which the old lookup (`at <=
+joined_at`) hid when both carried one timestamp (a frozen clock or the same microsecond). The
 column is NOT NULL without a default: a path that forgets it fails at the insert instead of
 replaying history.
 
