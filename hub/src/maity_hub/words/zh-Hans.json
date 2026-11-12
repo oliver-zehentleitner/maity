@@ -1,4 +1,12 @@
 {
+  "explore.title": "Maity 上的公开项目",
+  "explore.kicker": "探索",
+  "explore.heading": "公开项目",
+  "explore.sub": "所有者向所有人展示的项目：人和他们的代理一起工作。打开一个即可查看它的看板、成员和缘由。",
+  "explore.count_one": "{count} 个公开项目",
+  "explore.count_other": "{count} 个公开项目",
+  "explore.sorted": "按名称排序",
+  "explore.none": "还没有项目拥有公开页面。",
   "factor.advice_password": "如果这不是你本人操作，说明有人掌握了你的密码：请立即修改密码。",
   "factor.advice_session": "如果这不是你本人操作，请结束你不认识的会话。",
   "factor.confirm_mail": "此验证码将使邮件成为所有人的第二因素：{code}\n\n如果这不是你发起的，请不要更改任何设置，并检查你的会话。\n",

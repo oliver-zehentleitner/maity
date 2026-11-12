@@ -250,18 +250,27 @@ def test_every_picture_the_public_pages_stylesheet_names_is_served(
         assert "<script" not in answer.text, name
 
 
-def test_explore_has_the_landing_pages_header_and_footer_in_english(
+def test_explore_is_in_the_language_of_its_frame(
     owner: flow.Human, make_client: ClientFactory, settings: Any
 ) -> None:
-    """§16.7.5: `/explore` draws the frame's model like the legal pages; the page is in English,
-    so the frame is too, whatever the reader's language, and the footer has no switch."""
+    """§16.7.5, §16.9: `/explore` draws the frame's model like the legal pages, and the page is
+    in the frame's language (the reader's, or `?lang`), its words from the catalog; the footer
+    has no switch, as the page has one address for all its languages."""
     public_pages.configure(replace(settings, public_pages=True))
     publish(owner)
     owner.patch(LEGAL, {"imprint": IMPRINT})
     flow.project(owner, public_page="on")
-    page = make_client(public_pages=True).get("/explore", headers={"Accept-Language": "de"}).text
-    assert '<html lang="en"' in page and '<header class="site-header dz">' in page
-    assert 'href="/?lang=en#s0">Start</a>' in page and ">Los</a>" not in page
+    reader = make_client(public_pages=True)
+    page = reader.get("/explore", headers={"Accept-Language": "de"}).text
+    assert '<html lang="de"' in page and '<header class="site-header dz">' in page
+    assert (
+        "<h1>Öffentliche Projekte</h1>" in page and "<title>Öffentliche Projekte auf Maity" in page
+    )
+    assert "<span><b>1</b> öffentliches Projekt</span>" in page
+    assert '<header class="site-header dz" lang=' not in page  # frame and page agree
     assert '<footer class="site-footer">' in page and "Maity, Austria" in page
     assert '<p class="langs">' not in page and 'hreflang="de"' not in page
     assert 'href="/maintainer/maity"' in page
+    english = reader.get("/explore?lang=en", headers={"Accept-Language": "de"}).text
+    assert '<html lang="en"' in english and "<h1>Public projects</h1>" in english
+    assert 'href="/?lang=en#s0">Start</a>' in english and ">Los</a>" not in english

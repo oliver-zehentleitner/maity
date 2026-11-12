@@ -16,7 +16,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from html import escape, unescape
 from typing import Any, NamedTuple
 from urllib.parse import quote, urlsplit
@@ -1021,23 +1021,27 @@ DOOR_CSP = (
 
 def framed_document(
     *,
-    lang: str,
-    title: str,
+    section: str,
+    page: Callable[[str, dict[str, str]], tuple[str, str]],
     canonical: str,
-    content: str,
     setting: dict[str, Any],
     legal: dict[str, Any],
     stats: dict[str, Any] | None,
+    lang: str | None,
     accept_language: str | None,
 ) -> str:
     """A public page the hub renders itself in the frame of §16.7.5: the landing page's header
-    and footer around `content` (HTML of escaped text and elements), in the design of
-    `public-pages.css`. The footer has no language switch: the page is in one language."""
+    and footer around the page, in the design of `public-pages.css`. The page is in the frame's
+    language where the catalog's `section` has words in it, else in English, and the footer has
+    no language switch: `page(lang, words)` gives the title and the content (HTML of escaped
+    text and elements) in that language."""
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
     model["footer"]["languages"] = []
-    frame = public_frame(model, lang)
+    chosen = model["language"] if catalog.speaks(section, model["language"]) else "en"
+    title, content = page(chosen, catalog.section(section, chosen))
+    frame = public_frame(model, chosen)
     return _document(
-        lang=lang,
+        lang=chosen,
         title=title,
         description="",
         head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">' + frame.head,

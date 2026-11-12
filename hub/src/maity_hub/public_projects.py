@@ -479,6 +479,7 @@ def explore_html(
     setting: dict[str, Any],
     legal: dict[str, Any],
     stats: dict[str, Any] | None,
+    lang: str | None,
     accept_language: str | None,
 ) -> str:
     """The page of `/explore`: every project that has a page now, by name, as cards in the
@@ -506,29 +507,36 @@ def explore_html(
             f'<span class="name">{escape(name)}</span><span class="slug">{escape(full)}</span>'
             "</a></li>"
         )
-    count = f"<b>{len(shown)}</b> public project" + ("" if len(shown) == 1 else "s")
-    listed = (
-        f'<div class="explore-tools"><span>{count}</span><span>sorted by name</span></div>'
-        f'<ul class="project-grid">{"".join(cards)}</ul>'
-        if cards
-        else '<p class="empty-note">No project has a public page yet.</p>'
-    )
-    content = (
-        '<section class="page-band"><div class="wrap">'
-        '<p class="kicker"><span class="seat"></span>Explore</p><h1>Public projects</h1>'
-        '<p class="sub">Projects whose owners show them to everyone: people and their agents '
-        "working together. Open one to see its board, members and reasons.</p>"
-        '<div class="band-pad"></div></div></section>'
-        f'<section class="page-body"><div class="wrap">{listed}</div></section>'
-    )
+
+    def page(lang: str, words: dict[str, str]) -> tuple[str, str]:
+        # A figure of 0 is not shown (tsk-tp97v64vpy5z): no projects gives the empty note.
+        count = escape(words["count_one" if len(shown) == 1 else "count_other"]).format(
+            count=f"<b>{len(shown)}</b>"
+        )
+        listed = (
+            f'<div class="explore-tools"><span>{count}</span>'
+            f'<span>{escape(words["sorted"])}</span></div>'
+            f'<ul class="project-grid">{"".join(cards)}</ul>'
+            if cards
+            else f'<p class="empty-note">{escape(words["none"])}</p>'
+        )
+        content = (
+            '<section class="page-band"><div class="wrap">'
+            f'<p class="kicker"><span class="seat"></span>{escape(words["kicker"])}</p>'
+            f'<h1>{escape(words["heading"])}</h1><p class="sub">{escape(words["sub"])}</p>'
+            '<div class="band-pad"></div></div></section>'
+            f'<section class="page-body"><div class="wrap">{listed}</div></section>'
+        )
+        return words["title"], content
+
     return render.framed_document(
-        lang="en",
-        title="Public projects on Maity",
+        section="explore",
+        page=page,
         canonical=f"{hub.public_url.rstrip('/')}/explore",
-        content=content,
         setting=setting,
         legal=legal,
         stats=stats,
+        lang=lang,
         accept_language=accept_language,
     )
 

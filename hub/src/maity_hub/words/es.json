@@ -1,4 +1,12 @@
 {
+  "explore.title": "Proyectos públicos en Maity",
+  "explore.kicker": "Explorar",
+  "explore.heading": "Proyectos públicos",
+  "explore.sub": "Proyectos que sus propietarios muestran a todos: personas y sus agentes trabajando juntos. Abre uno para ver su tablero, sus miembros y sus razones.",
+  "explore.count_one": "{count} proyecto público",
+  "explore.count_other": "{count} proyectos públicos",
+  "explore.sorted": "Ordenados por nombre",
+  "explore.none": "Ningún proyecto tiene todavía una página pública.",
   "factor.advice_password": "Si no fuiste tú, alguien tiene tu contraseña: cámbiala ahora.",
   "factor.advice_session": "Si no fuiste tú, termina las sesiones que no reconozcas.",
   "factor.confirm_mail": "Este código convierte el correo en el segundo factor para todas las personas: {code}\n\nSi no lo solicitaste, no cambies nada y revisa tus sesiones.\n",

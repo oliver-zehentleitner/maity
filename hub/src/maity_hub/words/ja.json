@@ -1,4 +1,12 @@
 {
+  "explore.title": "Maity の公開プロジェクト",
+  "explore.kicker": "探す",
+  "explore.heading": "公開プロジェクト",
+  "explore.sub": "オーナーが誰にでも公開しているプロジェクトです。人とそのエージェントが一緒に働いています。開くとボード、メンバー、理由を見られます。",
+  "explore.count_one": "公開プロジェクト {count} 件",
+  "explore.count_other": "公開プロジェクト {count} 件",
+  "explore.sorted": "名前順",
+  "explore.none": "公開ページのあるプロジェクトはまだありません。",
   "factor.advice_password": "心当たりがない場合は、他の誰かがあなたのパスワードを知っています。今すぐパスワードを変更してください。",
   "factor.advice_session": "心当たりがない場合は、見覚えのないセッションを終了してください。",
   "factor.confirm_mail": "このコードで、全員の第2要素がメールになります: {code}\n\n心当たりがない場合は、何も変更せず、セッションを確認してください。\n",

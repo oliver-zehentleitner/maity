@@ -1,4 +1,12 @@
 {
+  "explore.title": "Openbare projecten op Maity",
+  "explore.kicker": "Ontdekken",
+  "explore.heading": "Openbare projecten",
+  "explore.sub": "Projecten die hun eigenaren aan iedereen laten zien: mensen en hun agents die samenwerken. Open er een om het bord, de leden en de redenen te zien.",
+  "explore.count_one": "{count} openbaar project",
+  "explore.count_other": "{count} openbare projecten",
+  "explore.sorted": "Gesorteerd op naam",
+  "explore.none": "Nog geen enkel project heeft een openbare pagina.",
   "factor.advice_password": "Als jij dit niet was, heeft iemand je wachtwoord: wijzig het nu.",
   "factor.advice_session": "Als jij dit niet was, beëindig dan de sessies die je niet kent.",
   "factor.confirm_mail": "Met deze code wordt e-mail de tweede factor voor iedereen: {code}\n\nAls je hier niet om hebt gevraagd, wijzig dan niets en controleer je sessies.\n",

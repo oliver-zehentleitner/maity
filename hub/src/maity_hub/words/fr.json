@@ -1,4 +1,12 @@
 {
+  "explore.title": "Projets publics sur Maity",
+  "explore.kicker": "Explorer",
+  "explore.heading": "Projets publics",
+  "explore.sub": "Des projets que leurs propriétaires montrent à tous : des personnes et leurs agents qui travaillent ensemble. Ouvrez-en un pour voir son tableau, ses membres et ses raisons.",
+  "explore.count_one": "{count} projet public",
+  "explore.count_other": "{count} projets publics",
+  "explore.sorted": "Triés par nom",
+  "explore.none": "Aucun projet n’a encore de page publique.",
   "factor.advice_password": "Si ce n'était pas vous, quelqu'un a votre mot de passe : changez-le maintenant.",
   "factor.advice_session": "Si ce n'était pas vous, mettez fin aux sessions que vous ne connaissez pas.",
   "factor.confirm_mail": "Ce code fait de l'e-mail le second facteur pour tous : {code}\n\nSi vous n'êtes pas à l'origine de cette demande, ne changez rien et vérifiez vos sessions.\n",
