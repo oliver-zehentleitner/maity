@@ -102,38 +102,41 @@ def is_helper(args: str) -> bool:
 def below(listing: str, root: int) -> str:
     """What runs below `root`, the pane's process (the harness), from the `pid ppid args`
     lines of `ps`: WAITING when a `maity wait` is among its descendants, WORKING when any
-    other child runs (a tool the agent runs, however quiet), IDLE when it has none but the
-    harness's own helpers (`is_helper`): the harness sits at its prompt."""
+    other descendant runs (a tool the agent runs, however quiet, also one below a helper),
+    IDLE when there is none but the harness's own helpers (`is_helper`) and their forks:
+    the harness sits at its prompt."""
     if waits_below(listing, root):
         return WAITING
-    for line in listing.splitlines():
-        parts = line.split(None, 2)
-        if len(parts) >= 2 and parts[1] == str(root) and parts[0].isdigit():
-            if not is_helper(parts[2] if len(parts) > 2 else ""):
-                return WORKING
+    if any(not is_helper(args) for args in _descendants(listing, root)):
+        return WORKING
     return IDLE
 
 
-def waits_below(listing: str, root: int) -> bool:
-    """Whether a process below `root` (the pane's process) is a `maity wait`, from the
-    `pid ppid args` lines of `ps`."""
+def _descendants(listing: str, root: int) -> list[str]:
+    """The command lines of every process below `root`, from the `pid ppid args` lines."""
     children: dict[int, list[tuple[int, str]]] = {}
     for line in listing.splitlines():
         parts = line.split(None, 2)
         if len(parts) < 2 or not parts[0].isdigit() or not parts[1].isdigit():
             continue
-        args = parts[2] if len(parts) > 2 else ""
-        children.setdefault(int(parts[1]), []).append((int(parts[0]), args))
+        children.setdefault(int(parts[1]), []).append(
+            (int(parts[0]), parts[2] if len(parts) > 2 else "")
+        )
+    found: list[str] = []
     seen, queue = {root}, [root]
     while queue:
         for pid, args in children.get(queue.pop(), []):
-            if pid in seen:
-                continue
-            if is_wait(args):
-                return True
-            seen.add(pid)
-            queue.append(pid)
-    return False
+            if pid not in seen:
+                seen.add(pid)
+                found.append(args)
+                queue.append(pid)
+    return found
+
+
+def waits_below(listing: str, root: int) -> bool:
+    """Whether a process below `root` (the pane's process) is a `maity wait`, from the
+    `pid ppid args` lines of `ps`."""
+    return any(is_wait(args) for args in _descendants(listing, root))
 
 
 def attach_words(socket: Path, name: str, as_user: AsUser) -> list[str]:

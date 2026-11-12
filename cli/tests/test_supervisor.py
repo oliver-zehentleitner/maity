@@ -1730,6 +1730,12 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert tmux.below(f"  100     1 claude\n{bridge}  800   100 bwrap -- sh\n", 100) == tmux.WORKING
     assert not tmux.is_helper("socat TCP-LISTEN:8080 TCP:x:1") and not tmux.is_helper("")
     assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/app.sock,fork EXEC:./server")  # the agent's
+    fork = (
+        "  710   700 socat UNIX-LISTEN:/tmp/claude-http-1.sock,fork,reuseaddr TCP:localhost:3128\n"
+    )
+    assert tmux.below(f"  100     1 claude\n{bridge}{fork}", 100) == tmux.IDLE  # its own fork
+    work = "  720   700 make -j2\n"
+    assert tmux.below(f"  100     1 claude\n{bridge}{work}", 100) == tmux.WORKING  # below it
     assert tmux.waits_below(listing, 1) and not tmux.waits_below(listing, 999)
     assert tmux.is_wait("/usr/bin/python3 -m maity wait")
     assert not tmux.is_wait("maity waiting") and not tmux.is_wait("notmaity wait")

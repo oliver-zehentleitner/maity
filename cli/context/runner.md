@@ -2083,7 +2083,8 @@ looks at each interactive session once a minute.
   a bridge is not counted as work, or the check would never fire under
   the sandbox the runner turns on wherever bwrap and socat are present.
   Only a socat listening on a `claude-` socket counts as the bridge; an
-  agent's own socat on another socket is a tool.
+  agent's own socat on another socket is a tool, and so is any process
+  below a bridge but its own forks (hcrb's review).
 - A missing process alone is not enough: an agent writing a long answer
   has no child process for a while. An unchanged pane alone is not enough
   either: an agent waiting for events shows nothing new. The processes
