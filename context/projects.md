@@ -895,11 +895,11 @@ checklist they reach every reviewer through the rules they already read.
 The project's Why view shows only the root export, so the entries of
 `hub/`, `cli/` and `web/` are missing from its graph, lists and
 counts, although the hub already reads the whole family (§11.3) and
-serves each member's export (§11.5). Decided, not built yet (the hub
-and web PRs of the card follow the contract): a project setting,
+serves each member's export (§11.5). Decided: a project setting,
 `settings.why_merge_children`, on by default for new and existing
 projects, is to have the dashboard read every member's export and show
-them as one state. A member that fails is to be named with its reason
+them as one state. The hub keeps the setting (the card's hub PR); the
+dashboard's merged view is not built yet (its web PR follows). A member that fails is to be named with its reason
 and left out. With the setting off, the view stays the root's alone.
 The hub's reads do not change with it.
 
