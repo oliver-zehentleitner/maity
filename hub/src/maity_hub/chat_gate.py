@@ -36,10 +36,10 @@ from maity_hub.scopes import tokens_of
 
 DENIED = "denied_participant"
 # Whether a jour fixe round's moderator that waits in the round's thread is held back from
-# the statement step too, as from the steps it is eligible for (§9.6). Open: req-a89crp06kjf3
-# asks the maintainer; until he answers, the moderator writes the statement while it waits.
+# the statement step too, as from the steps it is eligible for (§9.6): on, by the maintainer's
+# answer o2 to req-a89crp06kjf3 ("gesperrt bis Owner zustimmt", the request's wording).
 # The one switch point: `moderator_held` reads it, `jourfixe.exchange` asks that.
-MODERATOR_WAITS = False
+MODERATOR_WAITS = True
 # The free work messages an owner's yes gates like chat (§9.6, "Free work messages from another
 # side"). The maintainer's o2 of 2026-11-12 is "for now": this set, read by `hold` alone, is the
 # one switch point; empty, every work message reaches as before.

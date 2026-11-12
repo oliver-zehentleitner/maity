@@ -347,3 +347,30 @@ def test_the_statement_and_posts_keep_their_byte_caps(round_: Round) -> None:
     long_post = round_.post(round_.lead, "response", body="ä" * 2049)
     assert long_post.json()["error"]["details"]["fields"] == {"body": "too_long"}
     assert round_.post(round_.lead, "response", body="ä" * 2048).status_code == 201
+
+
+def test_a_waiting_moderator_does_not_write_the_statement(round_: Round) -> None:
+    # The maintainer's o2 on req-a89crp06kjf3: a moderator that waits in the round's thread
+    # for its owner's yes is held back from the statement too (§9.6).
+    with round_.engine.begin() as conn:
+        lead = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == round_.lead.id)
+        ).scalar_one()
+        conn.execute(
+            t.conversation_participant.update()
+            .where(
+                t.conversation_participant.c.conversation_id == round_.thread,
+                t.conversation_participant.c.membership_id == lead,
+            )
+            .values(waiting=True, waiting_for=[round_.owner.id])
+        )
+    refused = round_.statement()
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "waiting"
+    with round_.engine.begin() as conn:
+        conn.execute(
+            t.conversation_participant.update()
+            .where(t.conversation_participant.c.membership_id == lead)
+            .values(waiting=False, waiting_for=[])
+        )
+    assert round_.statement().status_code == 201  # admitted: it writes it
