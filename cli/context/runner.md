@@ -2056,3 +2056,72 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
   tool's message, which is outside the contract.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
+
+## A stopped agent's clone stays for its retention time, then the runner removes it
+
+**Id:** 161d5507-5b44-45d6-8bec-cacd58de58a2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-34gb7frfbsk7 (disks of runner machines filled with the clones of agents that no longer ran there); the owner's answer to req-fdfb49yzqnhv, verbatim: "ich bin für eine zeitspanne die der workspace noch liegen bleiben darf zb 3h oder 24h falls doch noch was daraus benötigt wird oder "sofort entfernen" das soll eine option sein bitte"; the lead's decision on unsaved work (2026-11-12); docs/api.md §15.5
+**Revisit when:** a placement can save an agent's unsaved work somewhere other than its clone, or the owner asks for unsaved work to go too after the retention time
+
+Not built yet (tsk-34gb7frfbsk7): this records the contract's decision;
+the hub and the runner follow in their own pull requests.
+
+A clone stays on the runner until the operator removes it, and the
+clones of agents that no longer run there fill the disk. The contract
+has a stop start a retention time, chosen per placement (`immediate`, `3h`,
+`24h` by default, `7d`); after it, the runner removes the clone, and a
+start within it continues in the same clone. The time is the owner's
+answer: something in the clone may still be needed.
+- Unsaved work (uncommitted or untracked files, unpushed commits,
+  stashes) keeps the clone however long the retention, shown with its
+  size, and the owner can have it removed by hand. The runner never
+  throws away work nobody has looked at. Rejected: removing it anyway
+  once the time is up, because the owner chose the time; the owner's
+  reason for the time was that something might still be needed.
+- Rejected: removing the clone only when the placement closes (the first
+  draft). The owner asked for a time after a stop, and a stopped
+  placement that is never deleted would keep its clone for good.
+- Rejected: one fixed time for every placement. The owner asked for a
+  choice, with "remove immediately" among it.
+- The runner removes only on the hub's word (a stopped or closed
+  placement it lists), never because a placement is missing from its
+  list, and under the checks of `maity runner gc` plus a process check
+  and stashes, because the service runs on while it removes. The removed
+  clone's credential is revoked, so nothing carries over to a later
+  start.
+- Removal by hand is for people only (the profile's owner or a project
+  admin): it deletes unsaved work. A request stays until a report names
+  it, so a report the runner decided before seeing it cannot drop it
+  (spq4's review). The runner reads `remove_requested_at` on every
+  placement it may remove, active under `desired: stopped` or closed, and
+  names it in its report; `removed` clears the request whatever it names,
+  because nothing is left to remove. `removed` is accepted in any state of the placement,
+  because a start that arrives during the removal would otherwise find
+  neither a credential nor a way to rejoin.
+- A closed placement stays listed to its runner as long as its clone is
+  held, not for 30 days: a kept clone outlives any window, and it is the
+  clone that fills the disk. The same holds for people (`closed=true`
+  in the dashboard's list) and after a detach: the runner still reads
+  and reports on those closed placements, or the clone would be
+  orphaned on its disk (v5vp's review). After a detach, the workspace
+  report still reaches a placement whose `removed` this runner already
+  reported, though `closed=true` no longer lists it: a retry whose first
+  answer was lost must get its `200`, or the runner retries for ever.
+  Rejected: taking `not_found` after its own `removed` as done, since the
+  runner cannot tell it from a wrong id or a placement it never had.
+- Each workspace report names its clone (`workspace_epoch`, raised when a
+  removal is taken), and `removed` is final per clone. Rejected: one
+  final `removed` per placement. A placement that starts again gets a new
+  clone, so either its own later removal could not be reported, or a
+  late retry about the old clone could revoke the new clone's
+  credential (v5vp's review). The runner makes a removed clone's
+  successor only after the hub took the `removed` report, under the epoch
+  of that answer; a clone made earlier would carry the old epoch and all
+  its reports would be dropped (spq4's review). A placement that
+  continues another placement's clone reports under its own epoch, the
+  one it read when it started there. Rejected: carrying the older
+  placement's epoch over, which could make its first report later than
+  the hub's and so `invalid` (spq4's review).
