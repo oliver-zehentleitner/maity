@@ -37,6 +37,12 @@ log = logging.getLogger(__name__)
 
 # `img-src 'self'` for the pictures of a person's and an agent's page (§6.10, §16.9).
 CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
+# A stored page in its frame (§16.7.5): the landing page's stylesheets and fonts from this host
+# as well; still no script, and the stored page's inline styles (a picture's size) still apply.
+FRAMED_CSP = (
+    "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
 CACHE = "public, max-age=60"
 READ_CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
@@ -153,23 +159,57 @@ def answer(
         if request.method == "HEAD":
             return Response(media_type="text/html", headers=wrapped)
         return Response(shelled, media_type="text/html", headers=wrapped)
-    # The banner of an upcoming window is part of the answer, and so of its tag: a cache
-    # holding the page from before (or after) the window gets it again, not a 304.
-    tag = maintenance.etag(page.etag, window)
-    headers = {
-        "Cache-Control": CACHE,
-        "ETag": tag,
-        "Vary": "Cookie",
-        "Content-Security-Policy": CSP,
-        "X-Content-Type-Options": "nosniff",
-        **_robots(page),
-    }
+    framed = _in_frame(request, page.body)
+    if framed is not None:
+        # The frame is put around the stored page now (§16.7.5): the landing page's setting,
+        # the legal pages, the counters, the visitor's language and the stylesheets' digests
+        # all change the answer, so its tag is that of the bytes served, banner included.
+        served = maintenance.with_banner(framed, window)
+        tag = etag_of(served)
+        headers = {
+            "Cache-Control": CACHE,
+            "ETag": tag,
+            "Vary": "Cookie, Accept-Language",
+            "Content-Security-Policy": FRAMED_CSP,
+            "X-Content-Type-Options": "nosniff",
+            **_robots(page),
+        }
+    else:
+        # The banner of an upcoming window is part of the answer, and so of its tag: a cache
+        # holding the page from before (or after) the window gets it again, not a 304.
+        served = maintenance.with_banner(page.body, window)
+        tag = maintenance.etag(page.etag, window)
+        headers = {
+            "Cache-Control": CACHE,
+            "ETag": tag,
+            "Vary": "Cookie",
+            "Content-Security-Policy": CSP,
+            "X-Content-Type-Options": "nosniff",
+            **_robots(page),
+        }
     candidates = request.headers.get("if-none-match", "").split(",")
     if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
         return Response(status_code=304, headers=headers)
     if request.method == "HEAD":
         return Response(media_type="text/html", headers=headers)
-    return HTMLResponse(maintenance.with_banner(page.body, window), headers=headers)
+    return HTMLResponse(served, headers=headers)
+
+
+def _in_frame(request: Request, body: str) -> str | None:
+    """The stored page in the frame of the pages without a session (§16.7.5), from the frame's
+    inputs as they are now; None for a stored page of another shape, served bare."""
+    from maity_hub import landing, landing_stats, legal, render
+
+    with engine_of(request).begin() as conn:
+        setting = landing.stored(conn)
+        return render.stored_in_frame(
+            body,
+            setting=setting,
+            legal=legal.public(legal.stored(conn)),
+            stats=landing_stats.for_frame(conn, setting),
+            lang=request.query_params.get("lang"),
+            accept_language=request.headers.get("accept-language"),
+        )
 
 
 def read(request: Request, path: str) -> Response:

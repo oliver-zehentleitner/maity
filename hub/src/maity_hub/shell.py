@@ -27,7 +27,7 @@ from starlette.routing import BaseRoute, Match
 from starlette.staticfiles import NotModifiedResponse
 from starlette.types import Receive, Scope, Send
 
-from maity_hub import compression, paths, public_pages
+from maity_hub import compression, paths, public_pages, render
 from maity_hub.errors import error_response
 
 # The built files the dashboard names under `/assets/` (§16.11): web/'s directories of
@@ -179,12 +179,7 @@ def shell_document(page: bytes, public_url: str) -> bytes:
     return page[: opened.end()] + BASE + page[opened.end() :]
 
 
-_PAGE = re.compile(
-    r"<title>(?P<title>.*?)</title>(?P<meta><meta name=\"description\"[^>]*>)?"
-    r"(?P<canonical><link rel=\"canonical\"[^>]*>)(?P<robots><meta name=\"robots\"[^>]*>)?.*"
-    r"<main class=\"wrap\">(?P<main>.*)</main></body>",
-    re.DOTALL,
-)
+_PAGE = render.STORED_PAGE
 _SHELL_TITLE = re.compile(rb"<title>.*?</title>", re.DOTALL)
 _SHELL_DESCRIPTION = re.compile(rb'<meta name="description"[^>]*>')
 _SHELL_MAIN = re.compile(rb'<main id="main">.*?</main>', re.DOTALL)

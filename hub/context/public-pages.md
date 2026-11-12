@@ -879,3 +879,32 @@ language.
 - `/explore` in English, with the frame forced to English to match (the first cut on the started branch): a
   German reader then left a German landing page for an English frame. With the words in the catalogue there was
   no reason left to keep it.
+
+## A stored public page gets its frame when it is served, not when it is rendered
+
+**Id:** c0868c32-a98a-46d9-ab65-f6ad9583848a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (PR 2 of 4), the lead's go of 2026-11-12 on the serve-time frame and its three
+conditions (the stored page stays untrusted data inside the frame, the cache tag covers the frame, the contract says
+the frame is applied when the page is served); contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — cb025c0e-ce40-4638-bd81-e8034e3e66e7 — as of 2026-11-12
+
+`public_pages.answer` puts `render.public_frame` around a stored page when it answers `?as=public`
+(`render.stored_in_frame`). The row of `public_page` keeps the page as `page_document` wrote it. The frame takes
+the title, the description, the canonical link and the content out of it by the pattern the app shell already uses
+(`render.STORED_PAGE`), and inserts the content unparsed. The answer's `ETag` is the digest of the bytes served,
+not the stored row's tag. The policy adds `'self'` for the frame's stylesheets and fonts. A row of another shape
+is served bare, as before.
+
+**Reason:** the frame changes with the landing page, the legal pages, the counters, the reader's language and a
+deploy of the stylesheets. None of these is an input of a stored page. Applied when served, the frame has one
+source, and no page is rendered again for it.
+
+**Rejected alternatives:**
+- The frame in the stored page, at render time: every change to the landing page, the legal pages or the counters
+  would have to render every stored page again. The frame's language would also be fixed when the page is rendered,
+  not chosen by the reader.
+- The stored row's tag (with the banner) as the `ETag`: a changed frame would answer `304` to a cache holding
+  the old one.

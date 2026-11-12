@@ -19827,12 +19827,12 @@ The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
 a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
 pages (§16.7.1), the mail link pages, which are the sign-in link's page `/mail/sign-in/{token}` (§2.6.3) and the
-pages of §18.6, each with its page for a link that no longer works, `/explore` (§16.9), and the dashboard's
-`/login` and `/register` (§16.7.4).
+pages of §18.6, each with its page for a link that no longer works, `/explore` (§16.9), a stored public
+page as `?as=public` answers it (§16.9), and the dashboard's `/login` and `/register` (§16.7.4).
 The dashboard's sign-in stands in the frame wherever it is drawn without
 a session, not only at `/login`: at the root after a sign-out, and at an
 address of the app opened without a session that has no stored public
-page (§16.9). The hub renders the first four itself; the dashboard draws
+page (§16.9). The hub renders the first five itself; the dashboard draws
 the others in the app shell. So the hub computes the frame once, as a model: it
 renders its own pages from that model, and hands the same model to the
 dashboard. The rules stay in one place: which sections are a link, which
@@ -20266,8 +20266,8 @@ the page inside the app shell: the page's title, description and canonical
 link in its head, its text in `<main>`, no `noindex`, so that a crawler reads
 it and the dashboard then draws the same view read-only from "What visitors
 read in the dashboard" below; the shell's own security policy applies and the
-page's `ETag` also covers the shell. `?as=public` answers the bare page under
-the headers below. Wherever this section
+page's `ETag` also covers the shell. `?as=public` answers the page on its
+own, in the frame of §16.7.5, under the headers below. Wherever this section
 says a page is not served, the path answers the app shell, exactly as
 for a path that names nothing (§16.11).
 
@@ -20750,13 +20750,29 @@ ugc"`. The landing and legal pages (§16.7) use the same renderer with
 name="description">` from the first 160 characters of its rendered
 text, the Report link ("A report link", above) left out (cut first,
 then escaped), and a `<link rel="canonical">` with
-its absolute URL from `MAITY_PUBLIC_URL`. Answers carry
-`Cache-Control: public, max-age=60`, an `ETag`,
-`Content-Security-Policy: default-src 'none'; style-src
-'unsafe-inline'; img-src 'self'` (`img-src` for the pictures of a
-person's and an agent's page, §6.10), `X-Content-Type-Options: nosniff`, and never a
-cookie, and `Vary: Cookie`, as every answer on these addresses, the
-app shell's included (§16.11). When a page stops being public for any
+its absolute URL from `MAITY_PUBLIC_URL`. The hub stores the page
+without its frame and applies the frame (§16.7.5) when it serves the
+page with `?as=public`: the landing page's header and footer, in the
+frame's language (`?lang`, else `Accept-Language`, chosen as for
+`GET /site/chrome`), around the page's content as it was stored. The
+stored page is not rendered again for that, and its content stays its
+escaped text and elements. The page keeps its own language. Header and
+footer carry a `lang` of their own where the frame's differs, and the
+footer has no language switch. A change to the frame (the landing
+page, the legal pages, the counters, the hub's stylesheets) shows on
+the next answer, with no render. A stored page of another shape is
+served bare under the policy `default-src 'none'; style-src
+'unsafe-inline'; img-src 'self'` and `Vary: Cookie`. Answers carry
+`Cache-Control: public, max-age=60`, an `ETag` of the bytes served
+(frame, page and any maintenance banner, §16.12), so a changed frame
+is never a `304`,
+`Content-Security-Policy: default-src 'none'; style-src 'self'
+'unsafe-inline'; font-src 'self'; img-src 'self'; base-uri 'none';
+frame-ancestors 'none'` (the frame's stylesheets and fonts; no script;
+`img-src` for the pictures of a person's and an agent's page, §6.10;
+`unsafe-inline` for a picture's size), `X-Content-Type-Options: nosniff`, and never a
+cookie, and `Vary: Cookie, Accept-Language` (`Vary: Cookie` is on every
+answer on these addresses, the app shell's included, §16.11). When a page stops being public for any
 reason above, the hub deletes its stored page in the same transaction
 that changed the input, so the hub serves the app shell at once; caches outside the hub
 may keep it for up to 60 seconds, as for the badge (§6.20).
