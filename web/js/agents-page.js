@@ -474,16 +474,17 @@ window.Maity = window.Maity || {};
           (a.memberships || []).filter((m) => views[m.project + " " + a.id]).map((m) => instancesPart(ctx, m.project, views[m.project + " " + a.id], pctxs, recount)))));
         return isOpen ? [head, detail()] : [head];
       });
-      append(clear(body),
-        profiles.length
-          ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": "agents-list-heading" },
-            h("h3", { id: "agents-list-heading" }, M.t("agents.list.title", { count: profiles.length })),
-            h("table", { class: "members agents-list" },
-              h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("agents.list.name")), h("th", { scope: "col" }, M.t("agents.list.projects")),
-                h("th", { scope: "col" }, M.t("agents.list.instances")), h("th", { scope: "col" }, M.t("agents.list.presence")),
-                h("th", { scope: "col" }, M.t("agents.list.actions")))),
-              h("tbody", null, rows.flat())))
-          : h("p", { class: "muted" }, M.t("agents.none")));
+      const listed = profiles.length
+        ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": "agents-list-heading" },
+          h("h3", { id: "agents-list-heading" }, M.t("agents.list.title", { count: profiles.length })),
+          h("table", { class: "members agents-list" },
+            h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("agents.list.name")), h("th", { scope: "col" }, M.t("agents.list.projects")),
+              h("th", { scope: "col" }, M.t("agents.list.instances")), h("th", { scope: "col" }, M.t("agents.list.presence")),
+              h("th", { scope: "col" }, M.t("agents.list.actions")))),
+            h("tbody", null, rows.flat())))
+        : h("p", { class: "muted" }, M.t("agents.none"));
+      M.dom.keepImages(body, listed);
+      append(clear(body), listed);
     }
     let titled = false;
     // A profile just made opens its row: its card is where it is named and placed.
@@ -543,7 +544,11 @@ window.Maity = window.Maity || {};
   function fleetView(ctx, root) {
     const status = M.statusLine();
     const box = h("div", { class: "org-box fleet-box" });
-    const draw = () => append(clear(box), M.org.drawFleet(ctx));
+    const draw = () => {
+      const fresh = M.org.drawFleet(ctx);
+      M.dom.keepImages(box, fresh);
+      append(clear(box), fresh);
+    };
     append(root, agentsTabs(ctx, "organisation"), h("h2", null, M.t("agents.fleet.title")),
       h("p", { class: "muted" }, M.t("agents.fleet.intro")), status.el, box);
     draw();
@@ -655,7 +660,7 @@ window.Maity = window.Maity || {};
           h("ul", { class: "agent-cards" }, profileCard(ctx, a, { wanted, views, changed, here: here(m) }))))] : [head];
       });
       // Profiles not read are no "none": the failure is said where the cards go.
-      append(clear(cards), unread
+      const listed = unread
         ? h("p", { class: "send-status failed" }, M.t("agents.project.read_failed", { reason: unread.message }))
         : list.length
           ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": "project-agents-heading" },
@@ -664,7 +669,9 @@ window.Maity = window.Maity || {};
                 h("th", { scope: "col" }, M.t("agents.list.presence")), h("th", { scope: "col" }, M.t("agents.list.instances")),
                 h("th", { scope: "col" }, M.t("agents.list.actions")))),
               h("tbody", null, rows.flat())))
-          : h("p", { class: "muted" }, J || mayAdd ? M.t("agents.project.none_add") : M.t("agents.project.none")));
+          : h("p", { class: "muted" }, J || mayAdd ? M.t("agents.project.none_add") : M.t("agents.project.none"));
+      M.dom.keepImages(cards, listed);
+      append(clear(cards), listed);
       drawJoins();
     }
 
