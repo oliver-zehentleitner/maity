@@ -178,6 +178,8 @@ EXPORT_LEAVES_OUT = {
     "device_code": _SECRET,
     "email_sign_in": _SECRET,
     "email_sign_in_day": _BOOKKEEPING,
+    "password_reset": _SECRET,
+    "password_reset_wrong": _BOOKKEEPING,
     "forge_link_state": _SECRET,
     "handle_alias": _UNLISTED,
     "handle_register": f"the handle is in the account; {_UNLISTED}",

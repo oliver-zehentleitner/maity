@@ -17,6 +17,7 @@ from maity_hub.auth import (
     email_links,
     mail_factor,
     password_limits,
+    password_resets,
     passwords,
     second_factor,
     sessions,
@@ -42,7 +43,7 @@ from maity_hub.errors import (
     unauthenticated,
 )
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import records
+from maity_hub.notifications import preferences, records
 from maity_hub.ratelimit import Attempt, Limiter
 from maity_hub.views import human_member
 
@@ -266,6 +267,10 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
             "password_change",
         )
         email_links.void_human(conn, row.id)
+        # The reset links of the old password die with it, and so does an unconfirmed new
+        # address (§2.10).
+        password_resets.password_changed(conn, row.id)
+        preferences.void_pending_address(conn, row.id)
         url = avatars.urls(conn, [row.id])[row.id]
         return JSONResponse({"member": human_member(row, avatar_url=url)})
 

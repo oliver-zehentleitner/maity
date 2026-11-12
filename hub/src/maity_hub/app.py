@@ -263,6 +263,10 @@ def start_once(engine: Engine, settings: Settings) -> None:
             from maity_hub.auth import email_links
 
             email_links.void_open(conn)
+        if not sign_in.password_reset_enabled(conn, settings):
+            from maity_hub.auth import password_resets
+
+            password_resets.void_open(conn)
         # A second factor the environment switched off is told, once (§2.8.5).
         source = sign_in.resolve(conn, settings)["second_factor"][1]
         sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
