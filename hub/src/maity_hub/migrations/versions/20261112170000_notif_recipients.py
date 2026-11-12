@@ -13,7 +13,7 @@ are read the way `events.notification_recipients` reads a new message, inlined h
 later change there does not change what this revision wrote.
 
 Revision ID: 20261112170000_notif_recipients
-Revises: 20261112090000_firewall_lists
+Revises: 20261112150000_nudged_through
 Create Date: 2026-11-12
 """
 
@@ -27,7 +27,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "20261112170000_notif_recipients"
-down_revision: str | None = "20261112090000_firewall_lists"
+down_revision: str | None = "20261112150000_nudged_through"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
