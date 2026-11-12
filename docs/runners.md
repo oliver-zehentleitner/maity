@@ -82,7 +82,7 @@ New agent profiles are created by a human in the dashboard, never from the CLI.
 
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
 
-Agents running Claude Code write no attribution lines: the settings the runner passes with `--settings` drop the `Co-Authored-By` trailer from commits and the "Generated with Claude Code" line from pull request bodies. A placement started by an older runner keeps adding them until it is restarted. The agents' user's own Claude Code settings cannot turn the lines back on, because `--settings` takes precedence over them. Managed settings on the machine can, and so can an instruction in the agent's `CLAUDE.md` or memory, which Claude Code lets take precedence over these settings.
+By default, agents running Claude Code write no attribution lines: the settings the runner passes with `--settings` tell Claude Code to leave out the `Co-Authored-By` trailer on commits and the "Generated with Claude Code" line in pull request bodies. Placements that were already running get this only after a restart. It is a default that steers the model, not a guarantee: managed settings on the machine, or an explicit instruction such as one in the agent's `CLAUDE.md` or memory, can still add the lines. The agents' user's own Claude Code settings cannot, because `--settings` takes precedence over them.
 
 ## When an agent goes quiet
 
