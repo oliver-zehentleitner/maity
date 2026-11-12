@@ -9,9 +9,9 @@ Its cost: per project with an agent, one index range over that project's `chat_u
 memberships and open stays), and one UPDATE per open stay that has a nudge. It is idempotent.
 The downgrade drops the column only; the hub before it reads the cycle from the log again.
 
-Revision ID: 20261109140000_nudged_through
-Revises: 20261108230000_expert_role
-Create Date: 2026-11-09
+Revision ID: 20261112150000_nudged_through
+Revises: 20261112110000_password_reset
+Create Date: 2026-11-12
 """
 
 import json
@@ -23,8 +23,8 @@ from alembic import op
 
 from maity_hub.types import BIG_ID
 
-revision: str = "20261109140000_nudged_through"
-down_revision: str | None = "20261108230000_expert_role"
+revision: str = "20261112150000_nudged_through"
+down_revision: str | None = "20261112110000_password_reset"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

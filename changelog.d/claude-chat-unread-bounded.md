@@ -8,7 +8,7 @@
   its payload are unchanged.
 - hub: the open read cycle of the unread nudge is stored per stay
   (`conversation_participant.unread_nudged_through`, migration
-  `20261109140000_nudged_through`, filled from the nudges already written), written with the
+  `20261112150000_nudged_through`, filled from the nudges already written), written with the
   nudge under the project lock. A second worker process can no longer write a second nudge
   for the same messages, and the check reads no event log.
 

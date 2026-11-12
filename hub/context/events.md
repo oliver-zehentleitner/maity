@@ -682,7 +682,7 @@ written in the same transaction as the nudge under the project lock, and read wi
 mark is below it: exact across processes, one row the pass reads anyway, no read of the event
 log. The cursor, its bound, the `lagging` rule and the re-check of the delta-1 to delta-3 notes
 are gone with it, and their starvation cases with them. The migration
-(`20261109140000_nudged_through`) fills the column from the nudges already written. The
+(`20261112150000_nudged_through`) fills the column from the nudges already written. The
 EXPLAIN test now runs `ANALYZE` after cloning its backlog: without fresh statistics the planner
 walked the index (project_id, seq) back over other chats' events instead of the chat's index.
 The bound therefore assumes statistics as autovacuum keeps them on a live database; right after
