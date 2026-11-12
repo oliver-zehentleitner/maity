@@ -200,7 +200,7 @@ def test_a_second_install_skips_what_is_done_and_needs_no_code(tmp_path: Path) -
 @pytest.mark.parametrize(
     ("kw", "said"),
     [
-        ({"os": "darwin"}, "Linux only"),
+        ({"os": "darwin"}, "Linux only; elsewhere, macOS included, run `maity runner serve`"),
         ({"uid": 1000}, "run it with sudo"),
         ({"missing": frozenset({"systemctl"})}, "systemd is not running"),
         ({"missing": frozenset({"tmux"})}, "`tmux` is not installed"),
