@@ -2171,18 +2171,29 @@ the repository. A glob rule cannot.
   fallback offered for the test): the maintainer chose that agents do it
   themselves.
 
-maity reads a body file through one descriptor. It opens the file
-without following a final link and without blocking, then checks what it
-opened: a regular file with no other hard link, whose path, resolved
-again after the open, is that same file (device and inode), inside the
-clone and not under its `.git`, both compared by device and inode, not by
-name. Reason: maity runs outside the sandbox, and sandboxed code can swap
-a directory between a path check and an open by name. That made maity
-read the clone's credential (review of #1663 round 3). Rejected:
-checking the resolved path and then opening it by name (racy); refusing
-every link in the clone (a work tree may hold links, and a swap needs
-none at check time); a lock (sandboxed code does not take it); comparing
-`.git` by name (a case-insensitive volume has `.GIT` too).
+maity reads a body file through descriptors only. It works out on the
+text alone which names lead from the clone's root to the file, refusing a
+path that leaves the clone. It opens the clone's root, then each
+directory on the way from the one before with `O_NOFOLLOW` and
+`O_DIRECTORY`, refusing a link and the clone's `.git` (by device and
+inode, so a case-insensitive volume's `.GIT` is caught too). It opens the
+last name with `O_NOFOLLOW` and `O_NONBLOCK` and reads only a regular file
+with one link. Reason: maity runs outside the sandbox, and any name maity
+looks up twice can point elsewhere the second time. Round 3 swapped a
+directory between a check and an open by name. Round 4 exchanged a
+directory with a link between the open, the resolve and the stat, and
+maity read the clone's credential and a file the sandbox hides (review
+of #1663, rounds 3 and 4). Where the system has no `dir_fd` or
+`O_NOFOLLOW` (Windows), maity takes no body file at all and points to
+`--body`. Rejected: checking the resolved path and then opening it by
+name (racy); opening once and then comparing the inode with the path
+resolved again (the path can point elsewhere at each lookup); asking the
+kernel for the descriptor's path (`/proc/self/fd`, `F_GETPATH`): it
+differs per system and its parents would still be checked by name or
+need the same walk; refusing every link in the clone (a work tree may
+hold links); a lock (sandboxed code does not take it); on Windows,
+keeping the check by name (it is racy, and refusing costs only the
+switch to `--body`).
 
 **Known gap:** the login stays readable in the sandbox, because `git push`
 needs it. So code that an allowed command runs (tests, builds) can read

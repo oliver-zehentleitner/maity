@@ -2,7 +2,8 @@
 
 The forge login on a runner's machine is the operator's and reaches every repository its
 account may. No glob rule on a command line pins gh to one (`gh pr create -dR other/repo`,
-a pull request's URL, `-F` with the login file), so no placed session runs gh at all. This
+a pull request's URL, `-F` with the login file), so under the harness's sandbox no placed
+session runs gh at all. This
 command runs outside the harness's sandbox like every `maity` call, takes only the shapes
 below, and starts gh with the repository the runner recorded for the clone, never one the
 command line or the environment names, in an empty directory of its own with the branch
@@ -21,7 +22,7 @@ import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
-from maity import clonecheck, gitfacts, proc
+from maity import clonecheck, gitfacts
 
 # What the runner writes for a clone whose repository's grant has `pull_requests = true`:
 # the repository (`host/owner/name`) and the gh it found, one per line. Empty: not granted.
@@ -114,65 +115,72 @@ def _same(a: os.stat_result, b: os.stat_result) -> bool:
     return (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
 
 
-def _where(root: Path, real: Path) -> str:
-    """`inside`, `git` (under the clone's .git) or `outside`: the parents of `real` compared
-    with the clone and its .git by device and inode, not by name, so a case-insensitive
-    volume's `.GIT` is the same directory as `.git`."""
-    clone = os.stat(root)
+def _in_clone(root: Path, given: str) -> list[str]:
+    """The names from the clone's root down to the file `given` names (relative to the
+    current directory, as the agent wrote it), worked out on the text alone: no name is
+    looked up here, so none can be swapped. Refused when it leads out of the clone."""
+    absolute = os.path.normpath(os.path.join(os.getcwd(), given))
+    for base in dict.fromkeys((str(root), os.path.realpath(root))):
+        relative = os.path.relpath(absolute, base)
+        if relative != os.curdir and relative.split(os.sep)[0] != os.pardir:
+            return relative.split(os.sep)
+    raise Refused(f"--body-file {given}: not a file in this clone ({root})")
+
+
+def _open_at(directory: int, name: str, flags: int, given: str) -> int:
+    """`name` opened in the directory `directory` without following a link."""
     try:
-        git = os.stat(root / ".git")
-    except OSError:
-        git = None
-    for parent in real.parents:
+        return os.open(name, flags | os.O_NOFOLLOW, dir_fd=directory)
+    except OSError as exc:
         try:
-            here = os.stat(parent)
+            link = stat.S_ISLNK(os.stat(name, dir_fd=directory, follow_symlinks=False).st_mode)
         except OSError:
-            return "outside"
-        if git is not None and _same(here, git):
-            return "git"
-        if _same(here, clone):
-            return "inside"
-    return "outside"
+            link = False
+        if link or exc.errno == errno.ELOOP:
+            raise Refused(
+                f"--body-file {given}: a link; name the file itself ({name} is one)"
+            ) from None
+        if exc.errno == errno.ENOENT:
+            raise Refused(f"--body-file {given}: no such file") from None
+        if exc.errno == errno.ENOTDIR:
+            raise Refused(f"--body-file {given}: {name} is not a directory") from None
+        raise Refused(f"--body-file {given}: cannot be read ({exc.strerror})") from None
 
 
 def body_file(root: Path, given: str) -> bytes:
-    """The file's content, read here through one descriptor. maity runs outside the sandbox,
-    so a path checked and then opened again by name could be swapped in between (a link or
-    a directory, by code the sandbox runs). The file is opened first, without following a
-    final link and without blocking (a FIFO), and then checked as opened: a regular file
-    with no other hard link, of at most BODY_MAX bytes, whose path, resolved after the open,
-    is that same file (device and inode), inside the clone and not under its `.git`."""
-    path = Path(given)
-    if not path.is_absolute():
-        path = Path.cwd() / path
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    flags |= getattr(os, "O_BINARY", 0)
+    """The file's content, read through descriptors only. maity runs outside the sandbox,
+    and any name it looked up twice could point elsewhere the second time (a directory
+    exchanged with a link by code the sandbox runs). So the clone's root is opened once,
+    each directory on the way is opened from the one before without following a link and
+    refused when it is the clone's `.git` (device and inode), and the file is opened from
+    the last one without following a link and without blocking (a FIFO): a regular file
+    with no other hard link, of at most BODY_MAX bytes (cli/context/runner.md 9f43804d)."""
+    names = _in_clone(root, given)
+    if os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"):  # Windows
+        raise Refused(
+            f"--body-file {given}: this system cannot open a file without following links;"
+            " give the text with --body"
+        )
+    folder = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(root, folder)
     try:
-        fd = os.open(path, flags)
-    except OSError as exc:
-        if exc.errno == errno.ELOOP or path.is_symlink():
-            raise Refused(f"--body-file {given}: a link; name the file itself") from None
-        if exc.errno == errno.ENOENT:
-            raise Refused(f"--body-file {given}: no such file") from None
-        raise Refused(f"--body-file {given}: cannot be read ({exc.strerror})") from None
-    try:
-        opened = os.fstat(fd)
+        try:
+            git: os.stat_result | None = os.stat(".git", dir_fd=fd, follow_symlinks=False)
+        except OSError:
+            git = None
+        for index, name in enumerate(names):
+            last = index == len(names) - 1
+            flags = os.O_RDONLY | os.O_NONBLOCK if last else folder
+            inner = _open_at(fd, name, flags, given)
+            os.close(fd)
+            fd = inner
+            opened = os.fstat(fd)
+            if git is not None and _same(opened, git):
+                raise Refused(f"--body-file {given}: a file under the clone's .git is not a body")
         if not stat.S_ISREG(opened.st_mode):
             raise Refused(f"--body-file {given}: not a plain file")
         if opened.st_nlink != 1:
             raise Refused(f"--body-file {given}: the file has other hard links")
-        try:
-            real = path.resolve(strict=True)
-            named = os.stat(real)
-        except (OSError, RuntimeError):
-            raise Refused(f"--body-file {given}: changed while it was read") from None
-        if not _same(named, opened):
-            raise Refused(f"--body-file {given}: changed while it was read")
-        place = _where(root, real)
-        if place == "git":
-            raise Refused(f"--body-file {given}: a file under the clone's .git is not a body")
-        if place != "inside":
-            raise Refused(f"--body-file {given}: not a file in this clone ({root})")
         chunks: list[bytes] = []
         size = 0
         while size <= BODY_MAX:
@@ -193,7 +201,7 @@ def current_branch(root: Path) -> str:
     outside the clone, so it is given the branch instead of reading it there."""
     try:
         branch = gitfacts._branch(root)
-    except proc.ToolError as exc:
+    except gitfacts.FactsError as exc:
         raise Refused(str(exc)) from None
     if branch is None:
         raise Refused("the clone is on no branch (a detached HEAD); check out your branch first")

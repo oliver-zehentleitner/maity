@@ -961,10 +961,13 @@ and the login of the agents' user under `HOME`, always on the repository
 of the placement's clone (`--repo` comes from the runner, never from the
 command line). gh runs in an empty directory of its own and gets only
 `HOME`, the locale, the temporary directory, proxy and certificate
-variables; maity names the branch. An option not listed, a URL, or a
-body file that is a link, a FIFO, a file with other hard links, outside
-the clone or under its `.git` is refused, and the refusal lists what is
-allowed. Under the harness's sandbox no placed session can run gh itself,
+variables, so gh's login must be the agents' user's own, stored where gh
+finds it under `HOME` (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and
+`XDG_CONFIG_HOME` do not reach it); maity names the branch. An option not
+listed, a URL, or a body file reached through a link, a FIFO, a file with
+other hard links, outside the clone or under its `.git` is refused, and
+the refusal lists what is allowed. On Windows maity takes no body file
+(`--body` only), since it cannot open one there without following links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
 check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the

@@ -19,10 +19,11 @@
   or an empty directory at the start.
 - cli: a repository grant's `pull_requests = true` lets placed agents open and
   read pull requests with `maity gh pr create` and `maity gh pr view`, always
-  on their own clone's repository. No placed session runs gh itself. A gh
-  entry in a grant's `allow` is ignored, and `maity runner check` warns about
-  it. Codex is refused for a repository whose grant has `allow` or
-  `pull_requests`.
+  on their own clone's repository (a body file is read in the clone only; on
+  Windows `--body` only). Under the harness's sandbox no placed session runs
+  gh itself. A gh entry in a grant's `allow` is ignored, and
+  `maity runner check` warns about it. Codex is refused for a repository whose
+  grant has `allow` or `pull_requests`.
 - cli: in a runner's placement, `maity` that cannot read the clone's credential
   (Claude Code's sandbox hides it from a pipe or a chained command) says to run
   maity alone instead of "has not joined a project", and the Claude Code start

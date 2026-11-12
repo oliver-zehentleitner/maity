@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +37,12 @@ runs_gh = pytest.mark.skipif(
     os.name == "nt",
     reason="the stand-in for gh is a shebang script, which Windows cannot start;"
     " a real gh there is an .exe",
+)
+# The tests that read a body file: maity walks to it through descriptors (`dir_fd`,
+# O_NOFOLLOW), which Windows lacks, so there it refuses `--body-file` (tested below).
+walks = pytest.mark.skipif(
+    os.open not in os.supports_dir_fd or not hasattr(os, "O_NOFOLLOW"),
+    reason="no dir_fd or O_NOFOLLOW here, so maity refuses every --body-file",
 )
 
 
@@ -187,6 +194,7 @@ def test_a_body_file_outside_the_clone_is_refused(
     assert "not a file in this clone" in err and ran(placed) is None
 
 
+@walks
 def test_a_link_in_the_clone_to_a_file_outside_is_refused(
     placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -205,6 +213,7 @@ def test_dot_dot_out_of_the_clone_is_refused(
     assert "not a file in this clone" in err and ran(placed) is None
 
 
+@walks
 def test_a_file_under_the_clones_git_is_refused(
     placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -214,6 +223,7 @@ def test_a_file_under_the_clones_git_is_refused(
     assert "under the clone's .git" in err and ran(placed) is None
 
 
+@walks
 def test_a_body_over_the_limit_is_refused(
     placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -319,47 +329,73 @@ def test_a_detached_head_without_head_is_refused(
     assert "detached HEAD" in err and ran(placed) is None
 
 
-def test_a_directory_swapped_between_the_open_and_the_check_is_refused(
+@walks
+@pytest.mark.parametrize("every", [1, 2, 3])
+@pytest.mark.parametrize("starts_as_link", [True, False])
+def test_a_directory_exchanged_with_a_link_on_every_lookup_never_yields_the_secret(
     placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    every: int, starts_as_link: bool,
 ) -> None:  # fmt: skip
-    """spq4's race (review of #1663 round 3): sandboxed code swaps a directory while maity,
-    outside the sandbox, reads the body. Here the swap lands right after the open: the
-    descriptor holds the secret, the path then names a harmless file in the clone. The
-    device and inode differ, so nothing is read."""
-    secret_dir = tmp_path / "secret"
-    secret_dir.mkdir()
-    (secret_dir / "body.md").write_text("dummysecret\n")
-    swapped = placed["clone"] / "d"
-    swapped.symlink_to(secret_dir, target_is_directory=True)
-    real_open = os.open
+    """spq4's races (review of #1663 rounds 3 and 4): sandboxed code exchanges a directory
+    in the clone with a link to a secret directory while maity, outside the sandbox, reads
+    the body. Here it flips on every `every`-th name lookup maity makes, from either side,
+    so a check made by name and a read made through a descriptor can see two different
+    directories. maity names each file once, so it reads the harmless body or refuses."""
+    secret = tmp_path / "secret"
+    secret.mkdir()
+    (secret / "body.md").write_text("dummysecret\n")
+    clone: Path = placed["clone"]
+    swapped, spare = clone / "d", clone / "spare"
+    swapped.mkdir()
+    (swapped / "body.md").write_text("harmless\n")
+    real_open, real_stat, real_lstat = os.open, os.stat, os.lstat
+    real_rename, real_unlink, real_symlink = os.rename, os.unlink, os.symlink
 
-    def open_then_swap(path: Any, flags: int, *args: Any) -> int:
-        fd = real_open(path, flags, *args)
-        if not str(path).endswith("body.md") or not swapped.is_symlink():
-            return fd  # every other open, and the body only once
-        swapped.unlink()
-        swapped.mkdir()
-        (swapped / "body.md").write_text("harmless\n")
-        return fd
+    def flip() -> None:  # the real directory and the link trade places under the name d
+        if stat.S_ISLNK(real_lstat(swapped).st_mode):
+            real_unlink(swapped)
+            real_rename(spare, swapped)
+        else:
+            real_rename(swapped, spare)
+            real_symlink(secret, swapped, target_is_directory=True)
 
-    monkeypatch.setattr(os, "open", open_then_swap)
-    err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "d/body.md"], capsys)
-    assert "changed while it was read" in err and ran(placed) is None
+    if starts_as_link:
+        flip()
+    calls = 0
+
+    def flipping(real: Any) -> Any:
+        def call(*args: Any, **kwargs: Any) -> Any:
+            nonlocal calls
+            calls += 1
+            if calls % every == 0:
+                flip()
+            return real(*args, **kwargs)
+
+        return call
+
+    for name, real in (("open", real_open), ("stat", real_stat), ("lstat", real_lstat)):
+        monkeypatch.setattr(os, name, flipping(real))
+    for _ in range(20):
+        try:
+            assert ghpr.body_file(clone.resolve(), "d/body.md") == b"harmless\n"
+        except ghpr.Refused:
+            pass
 
 
+@walks
 def test_a_directory_link_into_the_clones_git_is_refused(
     placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The final name is no link, a directory on the way is: the file opened is the
-    credential, and its resolved path is under .git, found by inode."""
+    """The final name is no link, a directory on the way is: no directory is entered
+    through a link."""
     (placed["clone"] / ".git" / "maity" / "credential").write_text("dummysecret\n")
     (placed["clone"] / "G").symlink_to(placed["clone"] / ".git", target_is_directory=True)
     err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "G/maity/credential"],
                   capsys)  # fmt: skip
-    assert "under the clone's .git" in err and ran(placed) is None
+    assert "a link; name the file itself (G is one)" in err and ran(placed) is None
 
 
+@walks
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
 def test_a_fifo_is_refused_without_blocking(
     placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
@@ -369,6 +405,7 @@ def test_a_fifo_is_refused_without_blocking(
     assert "not a plain file" in err and ran(placed) is None
 
 
+@walks
 def test_a_hard_link_is_refused(
     placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -378,3 +415,15 @@ def test_a_hard_link_is_refused(
     os.link(other, placed["clone"] / "body.md")
     err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "body.md"], capsys)
     assert "other hard links" in err and ran(placed) is None
+
+
+def test_without_a_descriptor_walk_a_body_file_is_refused(
+    placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """Windows has no `dir_fd`: maity cannot walk to the file without following a link, so it
+    takes no body file there; `--body` still works."""
+    (placed["clone"] / "body.md").write_text("Card tsk-x\n")
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+    err = refused(["gh", "pr", "create", "--title", "t", "--body-file", "body.md"], capsys)
+    assert "give the text with --body" in err and ran(placed) is None
