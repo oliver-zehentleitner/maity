@@ -336,6 +336,32 @@ def test_a_card_held_in_review_or_blocked_loses_its_holder_when_they_go(
         assert f"({handle})" not in (page(world, card_id) or "")
 
 
+def test_without_a_public_page_a_removal_costs_nothing_per_held_card(
+    make_client: ClientFactory, world: World
+) -> None:
+    """Off a public page there is no card page to touch: a removal of a member holding three
+    cards in `review` reads as many statements as one holding one (spq4 on #1700)."""
+    assert (
+        world.owner.patch("/projects/maintainer/maity", {"public_page": "off"}).status_code == 200
+    )
+
+    def removal(cards: int) -> int:
+        agent = flow.agent(pages(make_client), world.owner, role="coder")
+        for n in range(cards):
+            card_id = world.owner.post(TASKS, {"title": f"Review {n}"}).json()["id"]
+            assert agent.post(f"{TASKS}/{card_id}/claim", {}).status_code == 200
+            with world.migrated.begin() as conn:
+                conn.execute(t.card.update().where(t.card.c.id == card_id).values(status="review"))
+        path = f"/projects/maintainer/maity/members/{agent.id}"
+        answers: list[Any] = []
+        count = count_statements(world.migrated, lambda: answers.append(world.owner.delete(path)))
+        assert answers[0].status_code == 200, answers[0].text
+        return count
+
+    removal(1)  # the first removal reads what later ones find cached
+    assert removal(3) == removal(1)
+
+
 def test_a_removed_member_is_off_the_page_of_a_done_card_they_held(world: World) -> None:
     """A done card keeps its holder (`cards.open_claims` leaves it out of the release), so
     only `public_cards.naming` finds its page by the holder after a removal."""

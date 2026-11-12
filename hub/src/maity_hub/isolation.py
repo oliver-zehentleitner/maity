@@ -71,16 +71,18 @@ def release_claims(conn: Connection, membership_id: int) -> Released:
     )
 
 
-def tell_released(conn: Connection, released: Released, actor: Actor | None) -> None:
+def tell_released(conn: Connection, released: Released, actor: Actor | None, project: Any) -> None:
     """The status change of cards `release_claims` gave back, for their watchers (§6.4),
     which renders their public pages too. A card that kept its status (`review`, `blocked`)
-    makes no event, but its page named the holder: it is touched here, after the caller's
-    event took the project lock, since the member's own event no longer finds it by its
-    holder (hub/context/public-pages.md fe966f9c)."""
-    from maity_hub import public_pages
+    makes no event, but its page named the holder: in a project with a public page it is
+    touched here, after the caller's event took the project lock, since the member's own
+    event no longer finds it by its holder (hub/context/public-pages.md fe966f9c). Without
+    one there is no card page to touch, as `events.emit` gates its own touches."""
+    if project.public_page == "on":
+        from maity_hub import public_pages
 
-    for card_id in released.kept:
-        public_pages.touch(conn, "card", card_id)
+        for card_id in released.kept:
+            public_pages.touch(conn, "card", card_id)
     if not released.moved:
         return
     from maity_hub.routes.tasks import status_moved  # tasks reads availability, and this
@@ -156,7 +158,7 @@ def isolate(
         cross_chats.isolation_settled(conn, target.agent_id, human_id)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
-    tell_released(conn, released, actor)
+    tell_released(conn, released, actor, project)
     _tell_owner(
         conn,
         project,
