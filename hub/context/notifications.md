@@ -1208,6 +1208,10 @@ which `migrations/env.py` keeps so a failed run leaves the schema the running hu
 measured short enough for that (2.5 s per 100,000 messages; the lead's decision keeps it there up to
 about 1,000,000 messages in the window). The table and its window index are each created only when
 missing, since on MariaDB a stop between the two statements leaves the table alone.
+A message the old hub writes while the migration runs, or before the new hub replaces it, gets no
+row: the old `emit` does not know the table, and such a message would miss the bell for its 30 days.
+The upgrade therefore assumes the hub is stopped while it migrates, as `deploy/scripts/helm-upgrade.sh`
+does. Rejected: keeping the text match as a fallback for such messages, which brings the scan back.
 
 The rows are bookkeeping for the hub, not the human's data: an account deletion deletes them,
 the export leaves them out.
