@@ -187,9 +187,8 @@ def password_changed(conn: Connection, human_id: str) -> None:
 
 
 def void_human(conn: Connection, human_id: str) -> None:
-    """Every open link of one human: a password change, the human's own switch turned off, or
-    a change or removal of the address; with the routes (next step), five wrong codes in a
-    day too."""
+    """Every open link of one human: a password change, the human's own switch turned off, a
+    change or removal of the address, or the fifth wrong code at resets in a day."""
     conn.execute(
         update(t.password_reset)
         .where(t.password_reset.c.human_id == human_id, t.password_reset.c.used_at.is_(None))
