@@ -17633,8 +17633,10 @@ tsk-cbz655mvt4ss). The runner checks such a session itself, with or
 without the hub's ask, at most once a minute:
 
 - **Not listening** means the harness has no process below it but its
-  own helpers (the `socat UNIX-LISTEN:…/claude-<kind>-<id>.sock` bridges of Claude
-  Code's sandbox: the socket's own name, not a directory above it),
+  own helpers (the bridges of Claude Code's sandbox: a `socat` listening
+  on a socket named `claude-http-<hex>.sock` or `claude-socks-<hex>.sock`,
+  its own name, not a directory above it, and forwarding to
+  `TCP:localhost:<port>`),
   neither a `maity wait` nor a tool it runs (however quiet: a long build
   or migration keeps it busy), and what the pane shows has not changed.
   The runner compares a hash of the pane; it keeps, logs and sends none
@@ -17649,8 +17651,11 @@ without the hub's ask, at most once a minute:
   that sees it, after that look has measured the pane; one that has not
   shown `reply_within_minutes` after it was typed ends the session as
   below. A client attached, a process below the harness or an unreadable
-  pane before that Enter drops the nudge: its line stays typed, unsent,
-  and it does not count; a later nudge is typed behind it. A nudge counts once its Enter is sent. An answer starts the
+  pane before that Enter drops the nudge: it does not count, and its line
+  may stay typed, so the next nudge sends that line instead of typing it
+  again. A nudge is answered when the pane changes after its Enter or the
+  harness starts a process; a client attached or an unreadable pane in
+  between is no answer, and the reply time runs on. An answer starts the
   count again, but after `3` answered nudges with no `maity wait` seen in
   between, the next quiet spell of `hang_after_minutes` ends the session
   as below, without another nudge.

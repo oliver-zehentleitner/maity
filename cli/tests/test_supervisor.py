@@ -1723,19 +1723,25 @@ def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
     assert tmux.below(listing, 100) == tmux.WAITING
     assert tmux.below("  100     1 claude\n  600   100 /bin/sh -c sleep 900\n", 100) == tmux.WORKING
     assert tmux.below("  100     1 claude\n  600     1 other\n", 100) == tmux.IDLE
-    bridge = (
-        "  700   100 socat UNIX-LISTEN:/tmp/claude-http-1.sock,fork,reuseaddr TCP:localhost:3128\n"
-    )
+    sock = "UNIX-LISTEN:/tmp/claude-http-0123456789abcdef.sock,fork,reuseaddr TCP:localhost:3128"
+    bridge = f"  700   100 socat {sock}\n"
     assert tmux.below(f"  100     1 claude\n{bridge}", 100) == tmux.IDLE  # the sandbox's own
     assert tmux.below(f"  100     1 claude\n{bridge}  800   100 bwrap -- sh\n", 100) == tmux.WORKING
     assert not tmux.is_helper("socat TCP-LISTEN:8080 TCP:x:1") and not tmux.is_helper("")
     assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/app.sock,fork EXEC:./server")  # the agent's
     assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-project/app.sock,fork EXEC:cat")
     assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-myapp.sock,fork EXEC:cat")
-    assert tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-socks-ab12.sock,fork TCP:localhost:1080")
-    fork = (
-        "  710   700 socat UNIX-LISTEN:/tmp/claude-http-1.sock,fork,reuseaddr TCP:localhost:3128\n"
+    # a well-named listener that is no proxy bridge is a tool (v5vp's review)
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-app-prod.sock,fork EXEC:/bin/cat")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-http-0123abcd.sock,fork EXEC:/bin/cat")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-http-0123abcd.sock,fork TCP:db:5432")
+    assert not tmux.is_helper(
+        "socat UNIX-LISTEN:/tmp/claude-app-0123abcd.sock,fork TCP:localhost:80"
     )
+    assert tmux.is_helper(
+        "socat UNIX-LISTEN:/tmp/claude-socks-89abcdef01234567.sock,fork TCP:localhost:1080"
+    )
+    fork = f"  710   700 socat {sock}\n"
     assert tmux.below(f"  100     1 claude\n{bridge}{fork}", 100) == tmux.IDLE  # its own fork
     work = "  720   700 make -j2\n"
     assert tmux.below(f"  100     1 claude\n{bridge}{work}", 100) == tmux.WORKING  # below it
@@ -1843,19 +1849,21 @@ def test_a_held_back_line_dropped_by_an_attach_does_not_count(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A person attaching before the held-back line's Enter drops it: no Enter is sent and
-    it does not count toward `NUDGE_CAP`, so the cap never ends a session for nudges it
-    was never sent (fkyb's review: "answered 3 nudges" after zero Enters)."""
+    it does not count toward `NUDGE_CAP` (fkyb's review: "answered 3 nudges" after zero
+    Enters). Its line may still sit in the input, so the next nudge sends it instead of
+    typing a second copy behind it (v5vp's review)."""
     sup, backend, _, _, _ = world
     interactive(world)
     monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
     minutes(world, 30)
-    for n in range(1, supervisor.NUDGE_CAP + 2):
-        assert len(backend.typed) == n and sup.records["plc-0003"].nudges == 0, n
-        backend.attach = True
-        minutes(world, 1)
-        backend.attach = False
-        minutes(world, 31)
-    assert backend.submitted == 0 and backend.terminated == []
+    assert len(backend.typed) == 1 and backend.submitted == 0
+    backend.attach = True
+    minutes(world, 1)
+    backend.attach = False
+    assert sup.records["plc-0003"].nudges == 0
+    minutes(world, 31)
+    assert len(backend.typed) == 1 and backend.submitted == 1  # sent, not typed again
+    assert sup.records["plc-0003"].nudges == 0 and backend.terminated == []
 
 
 def test_a_line_still_not_shown_gets_no_enter(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1882,11 +1890,45 @@ def test_a_stalled_line_that_shows_later_is_then_measured(
     assert backend.submitted == 0
     backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, three looks late
     minutes(world, 1)
-    assert backend.submitted == 1 and sup.records["plc-0003"].nudges == 1
+    assert backend.submitted == 1 and sup.records["plc-0003"].nudges == 0  # not answered yet
     minutes(world, 9)
     assert backend.terminated == []  # `reply_within_minutes` runs from its Enter
     minutes(world, 1)
     assert backend.terminated == [SESSION]
+
+
+@pytest.mark.parametrize("reset", [{"attach": True}, {"screen": None}])
+def test_a_reset_after_an_unanswered_nudge_does_not_count(
+    world: Any, reset: dict[str, Any]
+) -> None:
+    """A look the runner cannot use between a nudge's Enter and any reaction (a person
+    attached, an unreadable pane) is no answer, and the nudge still waits for one: a
+    harness that never reacts is ended `reply_within_minutes` after the Enter, never as
+    "answered" (v5vp's review)."""
+    sup, backend, _, _, logs = world
+    interactive(world)
+    minutes(world, 30)
+    assert backend.submitted == 1
+    saved = {key: getattr(backend, key) for key in reset}
+    for key, value in reset.items():
+        setattr(backend, key, value)
+    minutes(world, 1)
+    for key, value in saved.items():
+        setattr(backend, key, value)
+    minutes(world, 8)
+    assert backend.terminated == []
+    minutes(world, 1)
+    assert backend.terminated == [SESSION] and sup.records["plc-0003"].nudges == 0
+    assert any("still not listening" in line for line in logs)
+
+
+def test_work_started_after_a_nudge_is_an_answer(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 30)
+    backend.below = tmux.WORKING  # the agent ran a tool on the nudge
+    minutes(world, 1)
+    assert sup.records["plc-0003"].nudges == 1
 
 
 def test_an_answer_after_a_late_line_counts(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1937,6 +1979,7 @@ def test_a_wait_starts_the_answered_nudges_over(world: Any) -> None:
     interactive(world)
     minutes(world, 30)
     minutes(world, 31)
+    minutes(world, 1)  # the second answer is seen
     assert sup.records["plc-0003"].nudges == 2
     backend.below = tmux.WAITING  # it went back to its wait loop
     minutes(world, 1)

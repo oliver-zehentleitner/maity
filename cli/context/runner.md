@@ -2082,10 +2082,13 @@ looks at each interactive session once a minute.
   (fkyb's review, from the sandbox runtime's source, not seen live): such
   a bridge is not counted as work, or the check would never fire under
   the sandbox the runner turns on wherever bwrap and socat are present.
-  Only a socat listening on a socket whose own name is
-  `claude-<kind>-<id>.sock` counts as the bridge (rejected: `/claude-`
+  Only a socat with the bridge's whole shape counts: it listens on a
+  socket whose own name is `claude-http-<hex>.sock` or
+  `claude-socks-<hex>.sock` and forwards to `TCP:localhost:<port>` (or
+  127.0.0.1), as the sandbox runtime builds it. Rejected: `/claude-`
   anywhere in the path, which exempted a service in a `claude-`
-  directory; hcrb's review); an
+  directory (hcrb's review); any `claude-<word>-<id>.sock`, which
+  exempted an agent's own service named like that (v5vp's review); an
   agent's own socat on another socket is a tool, and so is any process
   below a bridge but its own forks (hcrb's review).
 - A missing process alone is not enough: an agent writing a long answer
@@ -2114,11 +2117,17 @@ looks at each interactive session once a minute.
   again (both fkyb's reviews). A line that has still not shown at that
   look keeps its Enter back until a look sees it, so its own late echo is
   never an answer; one that never shows within `reply_within_minutes`
-  ends the session. A nudge counts toward the cap only once its Enter is
-  sent: a held-back line dropped because a person attached or work began
-  stays typed and does not count. Rejected: counting at typing, which
-  ended a session for "three answered nudges" after zero Enters (fkyb's
-  review).
+  ends the session. A nudge counts toward the cap only once an answer to
+  it is seen: a change of the pane after its Enter, or a process the
+  harness started. A look the runner cannot use (a person attached, an
+  unreadable pane) is no answer, and the reply time runs on. A held-back
+  line dropped before its Enter does not count; its line may still be
+  in the input, so the next nudge sends it rather than typing a second
+  copy behind it. Rejected: counting at typing, which ended a session for
+  "three answered nudges" after zero Enters (fkyb's review); counting at
+  Enter, which did the same after three unanswered Enters with a person
+  attaching in between (v5vp's review); clearing the input before typing,
+  which could throw away what a person typed there.
 - Since Enter itself changes a live harness's pane, only a session that
   does not react at all is ended after `reply_within_minutes`. An agent
   that answers every nudge but never goes back to its wait would be

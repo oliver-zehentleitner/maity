@@ -84,8 +84,11 @@ def is_wait(args: str) -> bool:
 WAITING, WORKING, IDLE = "waiting", "working", "idle"
 
 
-# The socket of a sandbox bridge: its own file name, never a directory above it, names it.
-BRIDGE_SOCKET = re.compile(r"claude-[a-z]+-[A-Za-z0-9_-]+\.sock")
+# A sandbox bridge as Claude Code's sandbox runtime builds it: its socket's own file name
+# (never a directory above it) is claude-http- or claude-socks- and a hex id, and it
+# forwards to a proxy on the loopback.
+BRIDGE_SOCKET = re.compile(r"claude-(?:http|socks)-[0-9a-f]+\.sock")
+BRIDGE_TARGET = re.compile(r"TCP:(?:localhost|127\.0\.0\.1):[0-9]+")
 
 
 def is_helper(args: str) -> bool:
@@ -105,6 +108,7 @@ def is_helper(args: str) -> bool:
             is not None
             for word in words[1:]
         )
+        and any(BRIDGE_TARGET.fullmatch(word) is not None for word in words[1:])
     )
 
 

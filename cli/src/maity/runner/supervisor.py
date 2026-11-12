@@ -34,7 +34,7 @@ from .. import __version__, clonecheck, hub, onboarding, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
-from .tmux import IDLE, WAITING, Session, Tmux, TmuxError, session_name
+from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
 PICKUP_RETRY = 15.0
@@ -222,11 +222,12 @@ class Record:
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
+    left_typed: bool = False  # a dropped nudge's line may still sit in the input: not again
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
         self.idle_checked_at = self.pane = self.quiet_since = self.nudged_at = None
-        self.nudges, self.unsent = 0, False
+        self.nudges, self.unsent, self.left_typed = 0, False, False
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -627,7 +628,13 @@ class Supervisor:
         attached = backend.attached(session.name)
         digest = backend.pane_digest(session.name)
         if below != IDLE or attached is not False or digest is None:
-            # A line typed but never sent is dropped: it stays typed, and it does not count.
+            if rec.nudged_at is not None and not rec.unsent:
+                if below == WORKING:  # the harness started something on the nudge: an answer
+                    rec.nudges += 1
+                elif below != WAITING:  # a look it cannot use: the nudge still waits for one
+                    return
+            # A line typed but never sent is dropped; it may still sit in the input.
+            rec.left_typed = rec.left_typed or rec.unsent
             rec.pane, rec.quiet_since, rec.nudged_at, rec.unsent = digest, None, None, False
             return
         if rec.unsent and rec.nudged_at is not None:  # the line did not show in time
@@ -648,9 +655,10 @@ class Supervisor:
                 self.log(f"{session.name}: cannot send the nudge: {exc}")
                 return
             rec.pane, rec.nudged_at, rec.unsent = digest, now, False
-            rec.nudges += 1  # a nudge counts once its Enter is sent
             return
         if rec.quiet_since is None or digest != rec.pane:
+            if rec.nudged_at is not None:  # a change after its Enter: the nudge was answered
+                rec.nudges += 1
             rec.pane, rec.quiet_since, rec.nudged_at = digest, now, None
             return
         settings = (p.get("health") or {}).get("settings") or {}
@@ -666,16 +674,17 @@ class Supervisor:
                 rec.hung_at = now
                 return
             try:  # the baseline is the pane with the line typed, before Enter: any answer counts
-                backend.type_text(session.name, NUDGE_LINE)
-                shown = self._typed(backend, session.name, digest)
+                if rec.left_typed:  # the dropped line is still there: send it, never a second
+                    shown: str | None = digest
+                else:
+                    backend.type_text(session.name, NUDGE_LINE)
+                    shown = self._typed(backend, session.name, digest)
                 if shown is not None:
                     backend.submit(session.name)
             except TmuxError as exc:
                 self.log(f"{session.name}: cannot nudge: {exc}")
                 return
-            rec.nudged_at = now
-            if shown is not None:  # a nudge counts once its Enter is sent
-                rec.nudges += 1
+            rec.nudged_at, rec.left_typed = now, False
             rec.pane, rec.unsent = (digest, True) if shown is None else (shown, False)
             self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
                      "nudged in its pane")  # fmt: skip
