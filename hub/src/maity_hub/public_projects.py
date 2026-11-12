@@ -460,16 +460,11 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     ]
 
 
-# The monogram's ground on a project card: one of eight tones, by the project's full name, so
-# that a project keeps its colour from visit to visit (`.mono.t0` … `.t7` in public-pages.css).
-TONES = 8
-
-
-def monogram(full: str, name: str) -> tuple[str, int]:
-    """The letter and the tone of a project's card on `/explore`: the first letter of its name
-    in upper case, else the first character of its slug; the tone by a hash of `full`."""
-    letter = next((char for char in name if char.isalpha()), full.rsplit("/", 1)[-1][:1])
-    return letter.upper(), hashlib.sha256(full.encode()).digest()[0] % TONES
+def monogram(full: str, name: str) -> str:
+    """The letter on a project's card on `/explore`: the first letter of its name in upper
+    case, else the first character of its slug. Projects have no picture, so the tile shows
+    this letter in the accent colour (the approved mockup, README point 8)."""
+    return next((char for char in name if char.isalpha()), full.rsplit("/", 1)[-1][:1]).upper()
 
 
 def explore_html(
@@ -498,34 +493,29 @@ def explore_html(
         ),
         key=lambda item: (item[1].casefold(), item[0]),
     )
-    cards = []
-    for full, name in shown:
-        letter, tone = monogram(full, name)
-        cards.append(
-            f'<li><a class="project-card" href="/{escape(full, quote=True)}">'
-            f'<span class="mono t{tone}" aria-hidden="true">{escape(letter)}</span>'
-            f'<span class="name">{escape(name)}</span><span class="slug">{escape(full)}</span>'
-            "</a></li>"
-        )
 
     def page(lang: str, words: dict[str, str]) -> tuple[str, str]:
-        # A figure of 0 is not shown (tsk-tp97v64vpy5z): no projects gives the empty note.
-        count = escape(words["count_one" if len(shown) == 1 else "count_other"]).format(
-            count=f"<b>{len(shown)}</b>"
+        # As the approved mockup draws it (tsk-tp97v64vpy5z): the landing's dark hero, then the
+        # projects as cards. No count is shown, so no figure can be 0.
+        cards = "".join(
+            f'<li><a class="xcard" href="/{escape(full, quote=True)}">'
+            f'<span class="pmark" aria-hidden="true">{escape(monogram(full, name))}</span>'
+            f"<b>{escape(name)}</b><small>{escape(full)}</small>"
+            f'<span class="go">{escape(words["open"])} <span aria-hidden="true">→</span></span>'
+            "</a></li>"
+            for full, name in shown
         )
         listed = (
-            f'<div class="explore-tools"><span>{count}</span>'
-            f'<span>{escape(words["sorted"])}</span></div>'
-            f'<ul class="project-grid">{"".join(cards)}</ul>'
+            f'<ul class="xgrid">{cards}</ul>'
             if cards
             else f'<p class="empty-note">{escape(words["none"])}</p>'
         )
         content = (
-            '<section class="page-band"><div class="wrap">'
-            f'<p class="kicker"><span class="seat"></span>{escape(words["kicker"])}</p>'
+            '<section class="hero dz xhero"><div class="wrap">'
+            f'<p class="eyebrow">{escape(words["kicker"])}</p>'
             f'<h1>{escape(words["heading"])}</h1><p class="sub">{escape(words["sub"])}</p>'
-            '<div class="band-pad"></div></div></section>'
-            f'<section class="page-body"><div class="wrap">{listed}</div></section>'
+            "</div></section>"
+            f'<section class="sec"><div class="wrap">{listed}</div></section>'
         )
         return words["title"], content
 

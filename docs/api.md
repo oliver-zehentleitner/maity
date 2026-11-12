@@ -19944,15 +19944,15 @@ from the hub's catalogue in `language`.
   stricter in every other part. Registration's link page (§2.7.1) stays
   outside the frame, with the product line (§16.13).
 - **`/explore`** (§16.9) stands in the model's header and footer around
-  a dark band with its title and the projects as cards, each card one
-  link to the project's page with a letter of its name on a tone chosen
-  by its full name, so a project keeps its colour. The page is in the
-  model's `language` where the hub's catalogue has the page's words in
-  it, else in English; header and footer then say theirs with a `lang`
-  of their own. Its footer has no language switch, as on the mail link
-  pages: the page has one address, and `?lang` or `Accept-Language`
-  picks its language. A count of 0 is not shown: with no project the page
-  says so in a sentence instead of a count. It has no script and no
+  the landing page's dark hero with its title, and the projects as cards.
+  Each card is one link to the project's page: the first letter of its
+  name on a tile in the accent colour (projects have no picture), its
+  name, its full name and "Open project". The page is in the model's
+  `language` where the hub's catalogue has the page's words in it, else
+  in English; header and footer then say theirs with a `lang` of their
+  own. Its footer keeps the landing page's language switch, whose links
+  (`?lang=`) reopen `/explore` in that language. No count is shown: with
+  no project the page says so in a sentence. It has no script and no
   inline `style` attribute; its policy is the legal pages' (§16.7.1),
   with `Vary: Cookie, Accept-Language`.
 

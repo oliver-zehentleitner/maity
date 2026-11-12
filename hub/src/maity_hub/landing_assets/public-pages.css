@@ -94,32 +94,29 @@
    A panel holding any of the pitch's parts (subline, points, note) stays. */
 @media (max-width:959.98px){.door-panel:not(:has(.subline)):not(:has(li)):not(:has(.note)){display:none}}
 /* ---- the hub's own public pages in this frame: /explore (§16.9) ------------------------ */
-/* the dark head band: the door panel's ground, full width */
-.page-band{position:relative;overflow:hidden;background-color:#0b0f14;color:#e6e9ec;
-  background-image:radial-gradient(ellipse 60% 70% at 85% 0%,rgba(76,141,255,.26),transparent 70%),radial-gradient(ellipse 50% 60% at 0% 100%,rgba(26,102,217,.18),transparent 70%),radial-gradient(rgba(156,194,255,.07) 1px,transparent 1px);
-  background-size:100% 100%,100% 100%,22px 22px;padding:56px 0 0}
-.page-band .wrap{position:relative}
-.page-band .seat{display:inline-block;width:12px;height:12px;border-radius:4px;background:#4c8dff;box-shadow:0 0 16px rgba(76,141,255,.85);margin-right:10px;vertical-align:middle}
-.page-band .kicker{font-size:.85rem;font-weight:600;color:#9cc2ff;letter-spacing:.02em;margin:0 0 14px}
-.page-band h1{font:700 clamp(2.1rem,4vw,3.2rem)/1.06 var(--font-display);letter-spacing:-.03em;margin:0;color:#fff;overflow-wrap:anywhere}
-.page-band .sub{color:#a7b0b9;margin:10px 0 0;font-size:1.05rem;max-width:62ch}
-.band-pad{height:48px}
-.page-body{padding:40px 0 88px}
-/* a grid that reads with 1 project and with 30 */
-.explore-tools{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0 0 18px;color:var(--muted);font-size:.92rem}
-.explore-tools b{color:var(--text)}
-.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:16px;list-style:none;margin:0;padding:0}
-.project-card{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 14px;align-items:center;padding:18px;border:1px solid var(--border);border-radius:18px;background:var(--surface);text-decoration:none;color:var(--text);transition:border-color .15s,box-shadow .15s}
-.project-card:hover{border-color:var(--accent);box-shadow:0 6px 24px var(--shadow)}
-.project-card .mono{grid-row:span 2;width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font:700 1.35rem var(--font-display);color:#fff;background:#1a66d9}
-.project-card .mono.t1{background:#2f6b4f}
-.project-card .mono.t2{background:#5b3e96}
-.project-card .mono.t3{background:#a8512e}
-.project-card .mono.t4{background:#1f7a8c}
-.project-card .mono.t5{background:#b0413e}
-.project-card .mono.t6{background:#4a4e69}
-.project-card .mono.t7{background:#2a6f97}
-.project-card .name{font:700 1.15rem var(--font-display);letter-spacing:-.01em;overflow-wrap:anywhere}
-.project-card .slug{font-family:var(--font-mono);font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
+/* From the approved mockup's pp.css (tsk-tp97v64vpy5z): the landing's dark hero (.hero.dz from
+   landing.css), shorter, then sections in the landing's tokens. */
+.xhero .wrap{display:block;padding-top:64px;padding-bottom:64px}
+.xhero h1{margin:6px 0 0;font-size:3.6rem;overflow-wrap:anywhere}
+.xhero .sub{margin:16px 0 0}
+.sec{padding:52px 0}
+/* a project's tile: no picture, so its letter in the accent colour */
+.pmark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:64px;border-radius:16px;
+  font:700 30px/1 var(--font-display);color:var(--accent-text);background:var(--accent)}
+.xgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;list-style:none;margin:0;padding:0}
+.xgrid>li{display:flex;min-width:0}
+.xcard{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;padding:22px;border-radius:18px;background:var(--surface);
+  border:1px solid var(--border);color:var(--text);text-decoration:none;box-shadow:0 1px 2px var(--shadow);transition:border-color .15s}
+.xcard:hover{border-color:var(--accent)}
+.xcard .pmark{margin-bottom:12px}
+.xcard b{font:700 1.5rem/1.2 var(--font-display);letter-spacing:-.02em;overflow-wrap:anywhere}
+.xcard small{font:400 13px var(--font-mono);color:var(--muted);overflow-wrap:anywhere}
+.xcard .go{margin-top:14px;font-weight:600;color:var(--accent);font-size:14.5px}
 .empty-note{color:var(--muted);text-align:center;padding:40px 0}
-@media (prefers-reduced-motion:reduce){.project-card{transition:none}}
+@media (max-width:760px){
+  .xhero .wrap{padding-top:36px;padding-bottom:36px}.xhero h1{font-size:2.5rem}
+  .sec{padding:34px 0}
+  .pmark{width:48px;height:48px;border-radius:12px;font-size:24px}
+  .xgrid{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){.xcard{transition:none}}

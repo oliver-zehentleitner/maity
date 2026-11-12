@@ -4416,12 +4416,14 @@ def explore_layout(run: Run, browser) -> None:
             assert answer is not None and answer.status == 200, f"{where}: {answer.status if answer else None}"
             expect(seen.locator("header.site-header")).to_be_visible()
             expect(seen.locator("footer.site-footer")).to_be_visible()
-            card = seen.locator('a.project-card[href="/owner/e2e-alpha"]')
+            card = seen.locator('a.xcard[href="/owner/e2e-alpha"]')
             expect(card).to_be_visible()
-            expect(card.locator(".slug")).to_have_text("owner/e2e-alpha")
-            expect(card.locator(".mono")).to_have_text("E")
-            ground = card.locator(".mono").evaluate("e => getComputedStyle(e).backgroundColor")
-            assert ground != "rgba(0, 0, 0, 0)", f"{where}: the monogram has no ground"
+            expect(card.locator("small")).to_have_text("owner/e2e-alpha")
+            expect(card.locator(".pmark")).to_have_text("E")
+            ground = card.locator(".pmark").evaluate("e => getComputedStyle(e).backgroundColor")
+            assert ground != "rgba(0, 0, 0, 0)", f"{where}: the project's tile has no ground"
+            hero = seen.locator("section.hero.dz").evaluate("e => getComputedStyle(e).backgroundColor")
+            assert hero == "rgb(11, 15, 20)", f"{where}: the hero is not the landing's dark zone: {hero}"
             sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
             assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
             wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")

@@ -255,7 +255,7 @@ def test_explore_is_in_the_language_of_its_frame(
 ) -> None:
     """§16.7.5, §16.9: `/explore` draws the frame's model like the legal pages, and the page is
     in the frame's language (the reader's, or `?lang`), its words from the catalog; the footer
-    has no switch, as the page has one address for all its languages."""
+    keeps the landing page's language switch, whose links reopen `/explore` in that language."""
     public_pages.configure(replace(settings, public_pages=True))
     publish(owner)
     owner.patch(LEGAL, {"imprint": IMPRINT})
@@ -266,10 +266,11 @@ def test_explore_is_in_the_language_of_its_frame(
     assert (
         "<h1>Öffentliche Projekte</h1>" in page and "<title>Öffentliche Projekte auf Maity" in page
     )
-    assert "<span><b>1</b> öffentliches Projekt</span>" in page
+    assert '<span class="go">Projekt öffnen <span aria-hidden="true">→</span></span>' in page
     assert '<header class="site-header dz" lang=' not in page  # frame and page agree
     assert '<footer class="site-footer">' in page and "Maity, Austria" in page
-    assert '<p class="langs">' not in page and 'hreflang="de"' not in page
+    assert '<p class="langs"><a href="?lang=en" lang="en">English</a>' in page
+    assert '<a href="?lang=de" lang="de">Deutsch</a>' in page and 'hreflang="de"' in page
     assert 'href="/maintainer/maity"' in page
     english = reader.get("/explore?lang=en", headers={"Accept-Language": "de"}).text
     assert '<html lang="en"' in english and "<h1>Public projects</h1>" in english

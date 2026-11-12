@@ -1032,11 +1032,11 @@ def framed_document(
 ) -> str:
     """A public page the hub renders itself in the frame of §16.7.5: the landing page's header
     and footer around the page, in the design of `public-pages.css`. The page is in the frame's
-    language where the catalog's `section` has words in it, else in English, and the footer has
-    no language switch: `page(lang, words)` gives the title and the content (HTML of escaped
-    text and elements) in that language."""
+    language where the catalog's `section` has words in it, else in English. The footer keeps
+    the landing page's language switch, as the landing footer is drawn 1:1 on every signed-out
+    page: its links (`?lang=…`) reopen this page in that language. `page(lang, words)` gives the
+    title and the content (HTML of escaped text and elements) in that language."""
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
-    model["footer"]["languages"] = []
     chosen = model["language"] if catalog.speaks(section, model["language"]) else "en"
     title, content = page(chosen, catalog.section(section, chosen))
     frame = public_frame(model, chosen)
@@ -1046,7 +1046,7 @@ def framed_document(
         description="",
         head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">' + frame.head,
         body=frame.header + f"<main>{content}</main>" + frame.footer,
-        languages=[],
+        languages=[one["tag"] for one in model["footer"]["languages"]],
         style=frame.style,
     )
 

@@ -286,33 +286,28 @@ def test_explore_draws_the_projects_as_cards_in_the_frame(world: World) -> None:
     assert "/assets/landing/public-pages.css?v=" in html and "<script" not in html
     assert got.headers["content-security-policy"] == pages.LEGAL_CSP
     assert "Accept-Language" in got.headers["vary"]
-    letter, tone = public_projects.monogram("maintainer/maity", "Maity")
+    assert '<section class="hero dz xhero"><div class="wrap"><p class="eyebrow">Explore</p>' in html
     assert (
-        '<li><a class="project-card" href="/maintainer/maity">'
-        f'<span class="mono t{tone}" aria-hidden="true">{letter}</span>'
-        '<span class="name">Maity</span><span class="slug">maintainer/maity</span></a></li>'
+        '<li><a class="xcard" href="/maintainer/maity">'
+        '<span class="pmark" aria-hidden="true">M</span><b>Maity</b><small>maintainer/maity</small>'
+        '<span class="go">Open project <span aria-hidden="true">→</span></span></a></li>'
     ) in html
-    assert "<span><b>1</b> public project</span>" in html
-    # The page is in one language: its footer has no language switch.
-    assert '<p class="langs">' not in html
+    # No count is shown (tsk-tp97v64vpy5z), so no figure can be 0.
+    assert "public project<" not in html and "public projects<" not in html
     # No inline style: the policy would block it (the mark's colours come from the sheet).
     assert ' style="' not in html.split("<body", 1)[1]
     flow.project(world.owner, "second", public_page="on")
-    assert "<span><b>2</b> public projects</span>" in world.anyone.get("/explore").text
+    assert world.anyone.get("/explore").text.count('class="xcard"') == 2
 
 
 def test_explore_says_so_when_no_project_has_a_page(world: World) -> None:
     world.owner.patch(f"/projects/{BASE}", {"public_page": "off"})
     html = world.anyone.get("/explore").text
     assert '<p class="empty-note">No project has a public page yet.</p>' in html
-    assert "project-grid" not in html and "public project<" not in html
+    assert 'class="xgrid"' not in html and 'class="xcard"' not in html
 
 
-def test_a_monogram_is_the_names_first_letter_in_a_tone_by_the_full_name() -> None:
-    assert public_projects.monogram("a/web", "maity web")[0] == "M"
-    assert public_projects.monogram("a/web", "2 · ünd")[0] == "Ü"
-    assert public_projects.monogram("a/x9", "42")[0] == "X"
-    tones = {public_projects.monogram(f"o/p{n}", "P")[1] for n in range(64)}
-    assert tones == set(range(public_projects.TONES))
-    # The tone follows the full name only: a renamed project keeps its colour.
-    assert public_projects.monogram("o/p1", "P")[1] == public_projects.monogram("o/p1", "Z")[1]
+def test_a_monogram_is_the_names_first_letter() -> None:
+    assert public_projects.monogram("a/web", "maity web") == "M"
+    assert public_projects.monogram("a/web", "2 · ünd") == "Ü"
+    assert public_projects.monogram("a/x9", "42") == "X"

@@ -1,12 +1,4 @@
 {
-  "explore.count_one": {
-    "en": "93c566705e24fc63",
-    "text": "062344e8a7a719f9"
-  },
-  "explore.count_other": {
-    "en": "f6559047dc584ba3",
-    "text": "3bb2de558e65a1b0"
-  },
   "explore.heading": {
     "en": "1a72c10edf3e3765",
     "text": "f44e83e1bd03bc4f"
@@ -19,13 +11,13 @@
     "en": "b030b5edca8f86f8",
     "text": "bc6b75407cd7472e"
   },
-  "explore.sorted": {
-    "en": "e2eb69101196e5f0",
-    "text": "eb4b93f5c0220cbc"
+  "explore.open": {
+    "en": "eca2e87363143ae9",
+    "text": "56d728578fc7e2dd"
   },
   "explore.sub": {
-    "en": "c0035d47f31f57dc",
-    "text": "98bf626b9f1e1b88"
+    "en": "19981b2e2ab90512",
+    "text": "00e7c3bac9d6c416"
   },
   "explore.title": {
     "en": "bd0224ac466d10fc",
