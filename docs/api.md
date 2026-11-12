@@ -5262,7 +5262,7 @@ server time back.
               "contract_arbiter": "agt-a", "tag_authority": "human", "steward_writes": "cards_only",
               "lease_seconds": 7200, "signing": "optional" },
   "absence": null,
-  "settings": { "language": "en",
+  "settings": { "language": "en", "why_merge_children": true,
                 "release_checklist": ["CHANGELOG has a section for this version",
                                        "live version equals the tag"],
                 "onboarding": { "check_in_with": "coordinator", "version": 3,
@@ -5471,7 +5471,8 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 (below, §6.9); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3); `contract_path` — the
 file the overview links and shows as the project's contract, default
-`docs/api.md` (§6.8); `restricted_access` (below, §6.4). `PATCH` merges
+`docs/api.md` (§6.8); `restricted_access` (below, §6.4);
+`why_merge_children` (below, §11.5). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
@@ -5649,6 +5650,29 @@ requests and docs follow the repository's own convention. The
 maintainer's decision of 2026-10-23 (`context/messages.md`).
 *Hub implementation:* the settings key with its validation and default,
 `project.language` in the resume packet.
+
+**Merging the Why children** (`why_merge_children`) says whether the
+project's Why view (§11.5) shows the entries of every member of the
+project's Keep the Why family in one view, or the root's alone. The
+owner's decision of 2026-11-12 (req-y1zb7awnyjmd, card
+tsk-13scv14k4yg4, `context/projects.md`): a switch in the project
+settings, on by default. A boolean, default `true`; anything else is
+`invalid` (`details.fields["settings.why_merge_children"]:
+"not_a_boolean"`). A project without the key — a new one, and every
+existing one — reads as `true` (`GET` shows `"why_merge_children":
+true`), and `{"settings": {"why_merge_children": null}}` restores that
+default; nothing is written to existing projects for it. Set with
+`PATCH /projects/{owner}/{slug}` `{"settings": {"why_merge_children":
+false}}` by a human with `project:admin`, as `language` is; an admin
+agent may not set it (its one exception is `settings.onboarding`,
+§2.3 ʰ). Every member reads it with the project (`project:read`). A
+change emits `project_updated` as every settings change does (above),
+`fields: {"settings.why_merge_children": false}`, and wakes nobody.
+The setting is read by the dashboard and changes no read of the hub:
+§11.3 and §11.5 answer the same with it on or off, and the public page's
+**Why** (§16.9) stays the family's summary either way. What the view
+does with it is in §11.5, "The family in one view".
+*Hub implementation:* the settings key with its validation and default.
 
 **Restricted access** names who may read and write a card's restricted
 text (§6.4, "Restricted text"): one list for reading and writing, and
@@ -15499,6 +15523,40 @@ time, from what each export declares (`project.parent`,
 them. `family`, `memberState` and `resolveEntry` are not offered: they
 need a Keep the Why server, and the library works without them (the
 family search scope then covers what the exports reach).
+
+**The family in one view.** The hub serves one export per call and
+never merges them; the dashboard does, as the project's
+`why_merge_children` setting says (§6.1, default `true`).
+
+- **On:** the view takes the family from §11.3 (`members`, the root
+  first, depth-first) and reads each member's export with
+  `…/export?root=<path>` (the root with no parameters, as today), its
+  bodies as for the root. It shows the entries of every member that
+  loaded as one state: one graph, one set of lists (overview, topics,
+  timeline, thoughts, queues, findings, authors) and one set of counts.
+  Each member's entry ids and topic files are prefixed with the
+  member's `path` (the root's are not), so the same file or entry id in
+  two members stays two. Each entry and each topic names the member it
+  comes from. A See or Superseded by from an entry of one member to an
+  entry of another, by its `uuid`, is a link in the merged graph like
+  one inside a member. A `uuid` that two members both carry is shown
+  under the first member in §11.3's order, and the view says so.
+- **A member that does not load** does not stop the view. A member
+  that §11.3 lists with an `error` (`location_not_followed` included:
+  a child in another repository is out of scope here) is not read; a
+  member whose `…/export` is refused (the errors below) is left out.
+  The view names each member left out with its reason, as the
+  provider's `{ error }` gives it, and shows the rest. An export served
+  from `details.last` is shown and marked stale, as the root's is
+  today. `family_truncated: true` is said beside them. Only a failure of
+  the root's own export fails the view, as today.
+- **Off:** the view reads and shows the root's export alone, as before
+  the setting. The family page and the family search scope still list
+  and search the members as they do today.
+
+The setting changes only what the dashboard reads and draws; every
+answer above is the same with it on or off, and a reader without
+`project:read` gets nothing of either.
 
 This is §11.3's read, served whole instead of summarised. The same
 rules hold: the hub reads only what a repository publishes, finds a
