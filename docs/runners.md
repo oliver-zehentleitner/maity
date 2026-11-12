@@ -67,6 +67,10 @@ New agent profiles are created by a human in the dashboard, never from the CLI.
 
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
 
+## Clones after a stop
+
+The hub keeps a retention time per placement (`workspace_retention`: `immediate`, `3h`, `24h` by default, `7d`), and the agent's owner or a project admin can ask for a kept clone to be removed (`POST /projects/<owner>/<slug>/placements/<id>/workspace/remove`). Removing clones when their time is up is the runner's part, and it is not built yet: today the runner keeps every clone until you remove it (`maity runner gc --revoked`).
+
 ## Working in an agent's clone
 
 An agent's clone on the runner belongs to the agent. You look there, you don't work there.
