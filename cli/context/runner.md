@@ -2276,8 +2276,18 @@ in his words are this design's (inferred).
   wake of its event wait. Every event belongs to a project, and a runner
   without an attached project would never hear one; the wait's own
   fallback brings the read within a minute anyway. The hub drops a
-  request once a report shows a check at or after it, the same way a
-  removal by hand is closed (161d5507).
+  request only when the report that ends the attempt names it, its
+  `requested_at` exactly as the runner read it, as a removal by hand is
+  closed (161d5507). Rejected: dropping it once a report shows a check at
+  or after it, which compares the runner's clock with the hub's, and the
+  signing window allows minutes of skew: a check decided before the
+  request could erase it (v5vp's review).
+- **A rollback is a state of its own.** After `maity runner tools
+  rollback`, the tool reports `rolled_back` (older than `latest`), and
+  the runner does not take the version it left, or one that failed its
+  version answer, on its own again; the next newer version ends it.
+  Otherwise the daily check would undo the operator's rollback the same
+  day (v5vp's review).
 - **Only the owner asks**, and only for a tool the runner says it
   updates (`updates_off` otherwise): the configuration is the owner's,
   and project admins who use the runner do not change its software.

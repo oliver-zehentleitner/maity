@@ -18856,11 +18856,20 @@ update = "daily"    # maity itself; default "never"
   runner (`maity runner tools rollback <tool>`, no hub call). A newer
   version that does not run is removed again, the version in use stays,
   and the tool reports `failed`.
+- **Rollback.** `maity runner tools rollback <tool>` makes the kept
+  version the one new sessions start with; the version it left stays on
+  the machine as `previous_version`, so a second rollback goes back to
+  it. The tool then reports `rolled_back`. The runner does not install
+  the version it left, or one that failed its version answer, again on
+  its own, neither on the daily check nor on `Update now`: it takes the
+  next newer version, which ends `rolled_back`. Taking the left version
+  again is the operator's second rollback.
 - **maity itself.** The same rules. After an update, the runner restarts
   itself on the new version, takes over its sessions (`adopted`, §15.7),
   and restarts each session that an older `maity` started, at that
   session's next idle point: an interactive agent waiting in `maity
-  wait`, a supervised loop between runs. The restart resumes the session
+  wait`, a supervised loop between runs, never mid-step (the owner's
+  answer to req-r2egh0ry0c4c). The restart resumes the session
   (§15.14) and reports `exited` with `reason: updated` (§15.7). Today
   that restart is the operator's (docs/runners.md).
 - **Logins.** The runner never handles a login or a credential of a
@@ -18869,7 +18878,8 @@ update = "daily"    # maity itself; default "never"
   `reason: login_needed`, §15.3) until its owner has logged in on the
   machine.
 - **Where.** On the runner's local target. On an `ssh` target the
-  runner only reports what it finds there, and manages nothing.
+  runner only reports what it finds there, and manages nothing (the
+  owner's answer to req-vpcfh15h247c).
 
 **What the runner reports.** `capabilities.tools` (§15.3), one entry
 per harness tool the configuration lists, and one for `maity`:
@@ -18895,9 +18905,10 @@ per harness tool the configuration lists, and one for `maity`:
   there; `previous_version`: the version kept for a rollback, or `null`;
   `latest`: the newest version the last check found, or `null` before
   the first check or with `update: "never"`.
-- `state`: `current` (in use is the latest the runner knows of),
-  `missing` (not there and `install: false`), `installing`, `updating`,
-  `login_needed`, `failed`. `reason` with `failed` only:
+- `state`: `current` (in use is the latest the runner knows of, or no
+  check has run), `rolled_back` (in use is older than `latest` after a
+  rollback; above), `missing` (not there and `install: false`),
+  `installing`, `updating`, `login_needed`, `failed`. `reason` with `failed` only:
   `installer_failed`, `version_failed` (the new version does not run;
   the one before is kept), `network`, `no_space`; `null` otherwise. The
   lists are closed, as in §15.7.
@@ -18905,8 +18916,9 @@ per harness tool the configuration lists, and one for `maity`:
   last change of `version`, both `null` until they happen.
 - `sessions_on_older`: how many running sessions still use an older
   version than `version`; they move at their next restart.
-- `update_requested_at`: the `Update now` the runner is carrying out,
-  as it read it (below), else `null`.
+- `update_requested_at`: the `Update now` the runner carried out or is
+  carrying out, its `requested_at` exactly as the runner read it
+  (below), else `null`.
 
 Every string is printable ASCII of at most 200 characters, as for the
 rest of `capabilities`, and a version is never more than the tool's own
@@ -18922,11 +18934,15 @@ configuration decides, and the runner checks again. A second request for
 the same tool replaces the first. The runner reads its requests with
 `GET /runner` (§15.8) after every wake of its event wait, so a request
 reaches it within a minute; a runner that is offline reads it when it is
-back. It carries out a request with the same rules as the daily check,
-and names it in `update_requested_at` when it reports; the hub drops a
-request once the runner reports a `checked_at` at or after it. A request
-does not restart a session: a newer version is used from the next start
-on.
+back. It carries out a request with the same rules as the daily check.
+The attempt is done when the tool's `state` is no longer `installing`
+or `updating`, whatever the outcome; the runner sends that report with
+`update_requested_at` naming the request, its `requested_at` exactly as
+it read it. The hub drops the stored request for that tool only when
+the two are equal, so a report decided before the runner saw a newer
+request leaves that one standing; no clock of the runner's is compared
+with the hub's. A request does not restart a session: a newer version
+is used from the next start on.
 
 **Seen by people.** The runner view (§15.3) carries `capabilities.tools`
 and `update_requests: [{tool, requested_at}]`; the dashboard's runners
