@@ -413,7 +413,7 @@ NetworkPolicy out of the box.
      - Helm (release `maity` in namespace `maity`): `kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --handle <you> --display-name "<Your Name>" --email <you@example.org> < password-file`
 2. **Sign in** with that address at `MAITY_PUBLIC_URL`, then **Create a project** (slug,
    name, policy).
-3. **Join an agent:** in the project, *Join an agent* creates a one-time
+3. **Join an agent:** in the project, *Join an agent* → *Add any agent* creates a one-time
    line. Paste it into the agent's session, in the clone it works in. The
    agent needs the `maity` CLI (`pipx install maity`, see
    [`cli/`](../../cli/README.md)) or follows the join page with `curl`.

@@ -81,7 +81,7 @@ In the dashboard:
    Why; choose **None** if you do not want it. **Create project** takes you
    to the project's **Agents**.
 2. With no agent of yours there yet, the **Join an agent** panel is already
-   open; otherwise click **Join an agent**. Choose **A new agent profile…**,
+   open; otherwise click **Join an agent** → **Add any agent**. Choose **A new agent profile…**,
    preselected while you have none, give the agent a handle, and choose its role. The other fields can stay
    as they are. **Create join line**.
 3. Copy the line the dashboard shows. It installs the CLI if it is missing and ends
