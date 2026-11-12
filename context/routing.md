@@ -113,7 +113,10 @@ segment, so the path costs nothing.
 **Evidence:** confirmed
 **Source:** the maintainer in chat (2026-11-11, card tsk-3s3eb6bsp15n: the section becomes a tab between Agents and Organisation); the coordinator's choice of the word the same day; contract `docs/api.md` §16.11, §15.6
 **See:** routing.md#the-dashboard-is-addressed-by-paths-public-pages-sit-at-the-same-canonical-address-and-nothing-old-is-kept — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-11
-**Revisit when:** the tab is renamed to something a path can say, a second view of placements needs the word, or the `/agents` tab is found slow for a human with many projects (then `GET /me/placements`, below)
+**Revisit when:** a second view of placements needs the word, or the `/agents` tab is found slow for a human with many projects (then `GET /me/placements`, below)
+
+Re-checked 2026-11-12: the tab is now named "Managed agents" (web/context/views.md,
+79438329-b7bb-435a-b384-3f597a2d7d04) and the path stays `placements`. The reason below still holds: a path should name what the contract names.
 
 "Where they run", the list of where the project's agents run (§15.5–§15.7:
 the wanted and reported state, Stop, Restart, Logs, the start on a

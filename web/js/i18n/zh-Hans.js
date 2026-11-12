@@ -143,7 +143,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "agents.add.hint": "打开该项目的“智能体”页并展开加入面板，已选中此档案。若它已在该项目中，此通道会启动另一个实例或替换一个实例。",
   "agents.add.label": "添加到项目",
   "agents.add.none": "你不在任何可以带入智能体的项目中。",
-  "agents.add.open": "+ 添加智能体",
+  "agents.add.open": "新建智能体档案",
   "agents.add.option": "{name}（{full}）",
   "agents.add.submit": "添加到项目",
   "agents.allowed.add": "添加",
@@ -195,6 +195,7 @@ window.MAITY_I18N["zh-Hans"] = {
     "other": "{count} 个实例中 {active} 个活跃"
   },
   "agents.intro": "你在所有项目中的智能体档案：每个档案是一个身份，带有其头像、用户名和所持有的成员资格。把档案添加到项目，即可在那里生成加入通道。",
+  "agents.join.any": "添加任意智能体",
   "agents.join.failed": "无法准备加入： {reason}",
   "agents.join.none": "你不在任何可以带入智能体的项目中。",
   "agents.join.open": "让智能体加入",
@@ -2576,7 +2577,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "members.edit.trust": "信任级别",
   "members.filter.mine": "只看我的智能体",
   "members.filter.mine_none": "你在此项目中没有智能体。",
-  "members.heading": "成员",
   "members.hint": "{project} 中的所有成员，人在前，每个都带有聊天。",
   "members.hint.admin": "管理某一行即可更改其角色、查看并撤销智能体的凭据、编辑其简报、暂停它或移除成员。",
   "members.humans": {
@@ -2603,7 +2603,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "members.isolation_windows": {
     "other": "{count} 次隔离后对其隐藏的内容：{ranges}。"
   },
-  "members.join_agent": "让智能体加入",
   "members.ktw.by": "须在 {when} 前确认",
   "members.ktw.confirmed": "{ago}已确认",
   "members.ktw.late": "Keep the Why 未按时确认",
@@ -3425,6 +3424,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.none_link": "此项目的“运行器”",
   "placements.new.open": "在运行器上启动智能体",
   "placements.new.profile": "新智能体的资料及其在团队中的位置",
+  "placements.new.reading": "正在读取运行器…",
   "placements.new.reason": "原因（可选）",
   "placements.new.reason_required": "原因（项目处于 {state} 期间必填）",
   "placements.new.runner": "运行器",
@@ -3495,7 +3495,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.stop": "停止",
   "placements.stop.label": "停止 {name}",
   "placements.stopping": "正在停止…",
-  "placements.title": "它们在哪里运行",
+  "placements.title": "托管的智能体",
   "placements.waiting": "正在等待运行器处理第 {generation} 代",
   "placements.waiting.last": "正在等待运行器处理第 {generation} 代（上一次：{last}）",
   "placements.wanted": "期望",
