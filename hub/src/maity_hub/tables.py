@@ -1403,6 +1403,20 @@ placement = Table(
     Column("generation", Integer, nullable=False),
     Column("rejoin", Boolean, nullable=False),
     Column("stop_grace_seconds", Integer, nullable=False),
+    # The clone after a stop or a close (§15.5): how long the runner keeps it, which clone
+    # of the placement is meant, and the runner's latest report on it. Columns, not one
+    # JSON value: both closed lists select on the state in SQL (context/placements.md).
+    Column("workspace_retention", String(16), nullable=False, server_default="24h"),
+    Column("workspace_epoch", Integer, nullable=False, server_default="1"),
+    Column("workspace_state", String(16)),
+    Column("workspace_reason", String(32)),
+    Column("workspace_unsaved", Integer),
+    Column("workspace_size_bytes", BigInteger),
+    Column("workspace_removes_at", UtcDateTime),
+    Column("workspace_outcome_epoch", Integer),
+    Column("workspace_reported_at", UtcDateTime),
+    # A removal by hand (§15.6), until a report names it; null when none is asked.
+    Column("remove_requested_at", UtcDateTime),
     Column("approval_status", String(16), nullable=False),
     Column("pending_change", JSON_VALUE),  # an agent's proposed change of the spec
     Column("reason", MARKDOWN_TEXT),

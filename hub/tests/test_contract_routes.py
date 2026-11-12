@@ -40,9 +40,7 @@ NOT_ROUTED = {
     ("POST", "/projects/{}/{}/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/nudge"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/replace"),  # no route yet: tsk-j9e0yapj21wj
-    ("POST", "/projects/{}/{}/placements/{}/workspace/remove"),  # no route yet: tsk-34gb7frfbsk7
     ("POST", "/runner/placements/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
-    ("POST", "/runner/placements/{}/workspace"),  # no route yet: tsk-34gb7frfbsk7
     ("POST", "/runners/{}/updates"),  # no route yet: tsk-29nmydbzrg5z, tool updates
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("PUT", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
