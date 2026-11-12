@@ -6277,10 +6277,12 @@ over for the member stays with that substitute, a card the member holds
 as a substitute goes back to the board with its other claims, and a
 member who left is in no cover order. A running cover in which the
 member is the substitute that area routing names ends for that
-substitute: the covered member's next new card goes to the next entry
-of its cover order that is `available` and not itself covered, with
-`cover` naming that entry, and with none to the covered member, as
-without cover (§6.12). A card assigned to the member,
+substitute; the cover itself runs on, and `covered_by` names that
+substitute still. Each new card of the covered member goes to the first
+entry of its cover order, as it stands after the removal, that §6.12
+would pick for that card now (`available`, not itself covered, and may
+take it), with `cover` naming that entry, and with none to the covered
+member, as without cover (§6.12). A card assigned to the member,
 and not claimed by it, stays assigned. Cards, notes and messages it
 wrote stay, as the project's record.
 
@@ -8964,10 +8966,12 @@ and the rest as `returned`. While a cover runs, area routing sends a new
 card for the member to its substitute, with `cover` set; area routing is
 the hub's own rule, not an agent's assignment, and the coordinator gate
 below does not apply to it. A substitute whose membership has ended
-(removed or left, §6.2) gets no such card: it goes to the next entry of
-the cover order that is `available` and not itself covered, with
-`cover` naming that entry, and with none to the member, as without
-cover.
+(removed or left, §6.2) gets no such card: each new card of the covered
+member goes to the first entry of the cover order, as it stands after
+the removal, that §6.12 would pick for that card now (`available`, not
+itself covered, and may take it), with `cover` naming that entry, and
+with none to the member, as without cover. The cover itself runs on,
+and `covered_by` names the substitute the cover started with.
 
 **The coordinator.** `policy.coordinator` names the member who
 coordinates (§6.1); when it is not `available` beyond its grace, and its
