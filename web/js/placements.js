@@ -33,6 +33,7 @@ window.Maity = window.Maity || {};
     repository_refused: () => M.t("placements.reason.repository_refused"),
     project_refused: () => M.t("placements.reason.project_refused"),
     harness_missing: () => M.t("placements.reason.harness_missing"),
+    hung: () => M.t("placements.reason.hung"),
     clone_failed: () => M.t("placements.reason.clone_failed"),
     workspace_in_use: () => M.t("placements.reason.workspace_in_use"),
     join_failed: () => M.t("placements.reason.join_failed"),

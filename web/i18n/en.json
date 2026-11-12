@@ -3549,6 +3549,7 @@
   "placements.reason.evicted": "evicted",
   "placements.reason.harness_missing": "the harness is not installed on the runner",
   "placements.reason.harness_refused": "the runner's configuration does not allow this harness, mode or model",
+  "placements.reason.hung": "stopped responding",
   "placements.reason.image_pull": "the image could not be pulled",
   "placements.reason.join_failed": "joining failed",
   "placements.reason.oom_killed": "out of memory",
