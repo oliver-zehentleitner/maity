@@ -5572,6 +5572,21 @@ window.Maity = window.Maity || {};
     // unset, nothing waits for it.
     const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
     return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
+      // §5.4: the bundle is each single route's own answer for this caller, errors included; the
+      // route itself needs no session and stays open in a window. MAITY_FIXTURE_NO_BOOTSTRAP plays
+      // an older hub without it (404).
+      if (method === "GET" && asked === "/bootstrap") {
+        if (window.MAITY_FIXTURE_NO_BOOTSTRAP) fail(404, "not_found", "no such route", fullPath);
+        const project = query.get("project");
+        const ask = [["maintenance", "/maintenance"], ["session", "/auth/session"], ["me", "/me"]];
+        if (project) {
+          const base = "/projects/" + project;
+          ask.push(["head", base + "/events?after=latest&wait=0"], ["project", base], ["members", base + "/members"]);
+        }
+        return Promise.all(ask.map(([key, p]) => fromFixtures("GET", p).then((answer) => [key, { status: 200, body: answer }],
+          (err) => [key, { status: err.status || 500, body: { error: { code: err.code || "internal", message: err.message, details: err.details || {} } } }])))
+          .then((parts) => Object.fromEntries(parts));
+      }
       let path = asked;
       // §16.12: while a window runs the hub refuses nearly everything, before it asks who calls.
       const running = maintenanceView(false);
@@ -5682,6 +5697,59 @@ window.Maity = window.Maity || {};
 
   let skew = 0;
   let sessionBlocked = false;
+
+  // GET /bootstrap (docs/api.md §5.4): the boot's first reads in one call. prime() asks it and keeps
+  // its parts as one-shot answers for exactly those reads: the window, the session, /me and, for
+  // a project view, the project, its members and the event head. The boot's own calls stay where
+  // they are and take their answer from the part, through requestOnce's usual handling (the
+  // session's language, a 401, the 503 window, the time zone). An answer without parts (an older
+  // hub's 404, a limit, a refusal, no answer) keeps nothing: every read goes to its own route.
+  // unprime(token) ends them when that boot is done; they serve no read once `live()` says the
+  // drawing that asked is over; a newer prime replaces them; 15 s at most.
+  let primed = null;
+  let primes = 0;
+  const PRIMED_MS = 15000;
+  // What the fixture hub was asked from the page, in order (smoke counts the boot's calls).
+  const fixtureAsked = [];
+  function prime(project, live) {
+    const base = project ? "/projects/" + projectPath(project) : null;
+    const path = "/bootstrap" + (project ? "?project=" + projectPath(project) : "");
+    if (source === "fixtures") fixtureAsked.push("GET " + path);
+    const answer = (source === "fixtures" ? fromFixtures("GET", path) : fromApi("GET", path))
+      .then((parts) => (parts && parts.session && parts.me && parts.maintenance ? parts : null), () => null);
+    const paths = new Map([["/maintenance", "maintenance"], ["/auth/session", "session"], ["/me", "me"]]);
+    if (base) {
+      paths.set(base, "project");
+      paths.set(base + "/members", "members");
+      paths.set(base + "/events?after=latest&wait=0", "head");
+    }
+    primed = { token: ++primes, at: Date.now(), answer, paths, live: live || (() => true) };
+    return primed.token;
+  }
+  function unprime(token) {
+    if (primed && (token === undefined || primed.token === token)) primed = null;
+  }
+  // The part for this read, once, as a promise of its body or of the single route's ApiError; null
+  // when none is kept for it. `single` asks the route itself when the bundle brought no parts.
+  function fromPrimed(method, path, single) {
+    if (method !== "GET" || !primed || !primed.paths.has(path)) return null;
+    if (Date.now() - primed.at > PRIMED_MS || !primed.live()) { primed = null; return null; }
+    const key = primed.paths.get(path);
+    primed.paths.delete(path);
+    return primed.answer.then((parts) => {
+      const part = parts && parts[key];
+      if (!part) return single();
+      if (part.status >= 200 && part.status < 300) return part.body;
+      const e = (part.body && part.body.error) || {};
+      let details = e.details || {};
+      // A part carries no headers: the wait a 503 window's Retry-After gives comes from its end (§5.4).
+      if (part.status === 503 && details.until && !("retry_after" in details)) {
+        const wait = Math.ceil((Date.parse(details.until) - (Date.now() + skew)) / 1000);
+        if (Number.isFinite(wait)) details = Object.assign({}, details, { retry_after: Math.max(1, wait) });
+      }
+      throw new ApiError(e.message || e.code || ("HTTP " + part.status), part.status, path, e.code || null, details);
+    });
+  }
   const obsoleteSession = (path) => new ApiError("The session ended", 0, path, "aborted");
 
   // §5.1: every absolute time is shown in the account's zone, or the browser's without one. A GET
@@ -5711,9 +5779,12 @@ window.Maity = window.Maity || {};
     const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
-    const p = (source === "fixtures"
-      ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
-      : fromApi(method, path, body, raw, signal)).catch(told);
+    const single = () => {
+      if (source !== "fixtures") return fromApi(method, path, body, raw, signal);
+      fixtureAsked.push(method + " " + path);
+      return fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body);
+    };
+    const p = (fromPrimed(method, path, single) || single()).catch(told);
     if (path === "/auth/session") {
       // Only the newest session read of this session sets the language (review of #1524): an
       // older answer that comes back after it, a 401 above all, would switch a newer session's
@@ -5754,7 +5825,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
@@ -5791,6 +5862,10 @@ window.Maity = window.Maity || {};
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
     getAll,
+    // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
+    prime,
+    unprime,
+    fixtureAsked,
     post: (path, body) => request("POST", path, body || {}),
     put: (path, body) => request("PUT", path, body || {}),
     // PUT of an image as its raw bytes; type is the sniffed Content-Type.
