@@ -1566,6 +1566,7 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .page-head-actions .menu-button.join-open { padding: 6px 14px; border-radius: var(--radius); }
 .page-head-actions .menu-button.join-open::after { content: "▾"; font-size: 0.8em; }
 .page-head .view-tabs { width: 100%; margin-top: 0; }
+.join-menu-slot > .send-status:empty { min-height: 0; margin: 0; }
 .join-menu-slot .placement-new-box { margin: 8px 0 16px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); }
 /* The project's name in the hint may be one long word (63 characters): it wraps rather than widening
    the page (nte-fk0fzcsma0e7). */
