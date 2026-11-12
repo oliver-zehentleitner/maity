@@ -1526,6 +1526,20 @@ def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> No
     assert states(reports) == [("failed", "harness_refused", None)]
 
 
+def test_codex_is_refused_where_the_repository_grants_pull_requests(world: Any) -> None:
+    """Codex's `maity` runs inside its sandbox, where `maity gh` reaches neither the login
+    nor the forge's API (cli/context/runner.md 9f43804d)."""
+    sup, backend, reports, _, _ = world
+    sup.cfg = replace(
+        sup.cfg,
+        repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
+            pull_requests=True)},
+    )  # fmt: skip
+    sup.update([placement(harness="codex")])
+    sup.tick()
+    assert states(reports) == [("failed", "harness_refused", None)]
+
+
 # --- the project namespace (§6.25, §15.5) ------------------------------------------------------
 
 

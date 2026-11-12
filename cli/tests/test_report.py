@@ -48,9 +48,70 @@ def test_untracked_file_is_not_a_mismatch(clone: Path) -> None:
     assert gitfacts.mismatches(gitfacts.collect(clone)) == []
 
 
-def test_branch_without_upstream_is_refused(clone: Path) -> None:
+def test_branch_without_upstream_is_refused_until_pushed(clone: Path) -> None:
     git(clone, "switch", "--quiet", "-c", "local-only")
-    assert any("no upstream" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+    assert any("does not exist" in p for p in gitfacts.mismatches(gitfacts.collect(clone)))
+
+
+def test_a_branch_pushed_without_an_upstream_reads_as_its_own_branch_on_origin(
+    clone: Path,
+) -> None:
+    """Under the runner's sandbox `.git/config` cannot be written, so an agent pushes without
+    `-u` and its branch never gets an upstream (the first runner test of 0.1.0a8): the report
+    reads the branch of the same name on the remote a plain `git push` chooses."""
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    (clone / "a.txt").write_text("two\n")
+    git(clone, "commit", "--quiet", "-am", "two")
+    git(clone, "push", "--quiet", "origin", "local-only")
+    assert "branch.local-only." not in git(clone, "config", "--list")
+    lock = clone / ".git" / "config.lock"
+    lock.write_text("")  # what the sandbox leaves: nothing can write the configuration
+    try:
+        facts = gitfacts.collect(clone)
+    finally:
+        lock.unlink()
+    assert (facts.remote, facts.remote_branch) == ("origin", "local-only")
+    assert facts.remote_head == facts.head
+    assert gitfacts.mismatches(facts) == []
+
+
+def test_a_branch_without_an_upstream_uses_the_push_remote(clone: Path) -> None:
+    origin = git(clone, "config", "--get", "remote.origin.url")
+    git(clone, "remote", "add", "fork", origin)
+    git(clone, "config", "remote.pushDefault", "fork")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    facts = gitfacts.collect(clone)
+    assert (facts.remote, facts.remote_branch) == ("fork", "local-only")
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("remote.origin.pushurl", "elsewhere"),
+        ("remote.origin.push", "refs/heads/local-only:refs/heads/published"),
+        ("url.elsewhere.pushInsteadOf", "https://"),
+    ],
+)
+def test_a_push_that_may_go_elsewhere_is_not_read_without_an_upstream(
+    clone: Path, key: str, value: str
+) -> None:
+    """The report reads the fetch URL and the branch's own name. A `pushurl`, a
+    `pushInsteadOf` or a `push` refspec can send the push to another repository or name, so
+    the pushed head would be checked against what was not pushed (review of #1663)."""
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "push", "--quiet", "origin", "local-only")  # what the report would read
+    git(clone, "config", key, value)
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None
+    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
+
+
+def test_a_branch_without_an_upstream_and_without_origin_has_no_upstream(clone: Path) -> None:
+    git(clone, "remote", "rename", "origin", "elsewhere")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None
+    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
 
 
 def test_branch_deleted_on_remote_is_refused(clone: Path) -> None:
@@ -173,8 +234,49 @@ def test_an_upstream_on_a_local_branch_is_no_upstream(clone: Path) -> None:
     git(clone, "branch", "--quiet", "base")
     git(clone, "switch", "--quiet", "-c", "feature", "--track", "base")
     facts = gitfacts.collect(clone)
-    assert facts.remote is None
-    assert any("no upstream" in p for p in gitfacts.mismatches(facts))
+    assert facts.remote is None and facts.upstream_set
+    # A stacked branch is not read as its own branch on origin, and the advice is not a plain
+    # push, which would leave it tracking the local branch (review of #1663).
+    (problem,) = gitfacts.mismatches(facts)
+    assert "not a branch on a remote" in problem and "git push" not in problem
+
+
+def test_one_upstream_key_alone_is_an_upstream_and_no_fallback(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "push", "--quiet", "origin", "local-only")
+    git(clone, "config", "branch.local-only.remote", "origin")  # no .merge
+    facts = gitfacts.collect(clone)
+    assert facts.remote_branch is None and facts.upstream_set
+    assert any("not a branch on a remote" in p for p in gitfacts.mismatches(facts))
+
+
+def test_the_branch_push_remote_wins_over_the_push_default(clone: Path) -> None:
+    origin = git(clone, "config", "--get", "remote.origin.url")
+    git(clone, "remote", "add", "fork", origin)
+    git(clone, "remote", "add", "other", origin)
+    git(clone, "config", "remote.pushDefault", "other")
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "fork")
+    assert gitfacts.collect(clone).remote == "fork"
+
+
+def test_a_push_remote_without_a_url_is_no_upstream(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "nowhere")
+    facts = gitfacts.collect(clone)
+    assert facts.remote is None and not facts.upstream_set
+    (problem,) = gitfacts.mismatches(facts)
+    assert "push remote nowhere has no URL" in problem and "git push origin" not in problem
+
+
+def test_a_derived_push_remote_git_would_read_as_an_option_is_refused(clone: Path) -> None:
+    git(clone, "switch", "--quiet", "-c", "local-only")
+    git(clone, "config", "branch.local-only.pushRemote", "-x")
+    assert gitfacts.collect(clone).remote is None  # a dash is never asked about
+    git(clone, "config", "branch.local-only.pushRemote", "origin")
+    git(clone, "config", "--add", "remote.origin.url", "ext::sh -c touch% /tmp/x")
+    with pytest.raises(gitfacts.FactsError, match="plain `git push` sends it"):
+        gitfacts.collect(clone)
 
 
 def test_detached_and_dirty_are_both_reported(clone: Path) -> None:
