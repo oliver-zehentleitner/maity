@@ -2100,4 +2100,13 @@ answer: something in the clone may still be needed.
   neither a credential nor a way to rejoin.
 - A closed placement stays listed to its runner as long as its clone is
   held, not for 30 days: a kept clone outlives any window, and it is the
-  clone that fills the disk.
+  clone that fills the disk. The same holds for people (`closed=true`
+  in the dashboard's list) and after a detach: the runner still reads
+  and reports on those closed placements, or the clone would be
+  orphaned on its disk (v5vp's review).
+- Each workspace report names its clone (`workspace_epoch`, raised when a
+  removal is taken), and `removed` is final per clone. Rejected: one
+  final `removed` per placement. A placement that starts again gets a new
+  clone, so either its own later removal could not be reported, or a
+  late retry about the old clone could revoke the new clone's
+  credential (v5vp's review).
