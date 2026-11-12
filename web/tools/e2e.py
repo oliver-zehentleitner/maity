@@ -737,6 +737,13 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     expect(page.locator(".project-created-page")).to_contain_text("This project is public")
 
 
+def join_any(page: Page) -> None:
+    """Join an agent at the head of a project's Agents or Team page is a menu (tsk-vkyp71qp95n9):
+    Add any agent opens the join panel."""
+    page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True).click()
+    page.get_by_role("menuitem", name="Add any agent", exact=True).click()
+
+
 def join_line(
     run: Run,
     page: Page,
@@ -761,7 +768,7 @@ def join_line(
     add = page.get_by_role("button", name="Join an agent", exact=True)
     expect(panel.or_(add).first).to_be_visible()
     if not panel.is_visible():
-        add.click()
+        join_any(page)
     expect(panel).to_be_visible()
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
@@ -2862,7 +2869,7 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     add = page.get_by_role("button", name="Join an agent", exact=True)
     expect(panel.or_(add).first).to_be_visible()
     if not panel.is_visible():
-        add.click()
+        join_any(page)
     expect(panel.locator(".join-project")).to_contain_text(f"Joins into the project E2E Mail ({OWNER}/e2e-mail)")
     create = page.get_by_role("button", name="Create join line", exact=True)
     question = panel.locator("form.step-up")
@@ -2878,7 +2885,7 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     newest_mail(catcher, MAIL_ADDRESS, seen)
     panel.locator(".join-form .actions").get_by_role("button", name="Cancel", exact=True).click()
     expect(panel).to_be_hidden()
-    add.click()
+    join_any(page)
     expect(question).to_have_count(0)
     expect(create).to_be_enabled()
     # A project's full name may be one long word: at phone width the panel's line wraps it.
@@ -4923,25 +4930,30 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
     the runner's with it among its repositories: the paired runner allowed here is offered; it has
     not reported what it can do, so there is no tool to choose and nothing to send."""
-    run.step("placements: the Agents page's tab Where they run (§16.11), at /<owner>/<slug>/placements")
+    run.step("placements: the Agents page's tab Managed agents (§16.11), at /<owner>/<slug>/placements")
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     expect(page.locator("main section.placements")).to_have_count(0)
     tabs = page.locator("main nav.agents-tabs")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Organisation"])
-    tabs.get_by_role("link", name="Where they run", exact=True).click()
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Organisation"])
+    tabs.get_by_role("link", name="Managed agents", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/placements$"))
-    expect(tabs.get_by_role("link", name="Where they run", exact=True)).to_have_attribute("aria-current", "page")
+    expect(tabs.get_by_role("link", name="Managed agents", exact=True)).to_have_attribute("aria-current", "page")
     expect(page.locator("header nav.views a[aria-current='page']")).to_have_text(re.compile(r"^Agents"))
-    # The section is the page: its heading is the h2 under the page's h1 (review of #1667).
-    expect(page.get_by_role("heading", name="Where they run", exact=True, level=2)).to_be_visible()
+    # Every tab of the page has the same head (tsk-vkyp71qp95n9): the h2 Agents, its buttons, the
+    # tabs; the list is the h3 under it.
+    expect(page.locator("main .page-head h2")).to_have_text("Agents")
+    expect(page.get_by_role("heading", name="Managed agents", exact=True, level=3)).to_be_visible()
+    expect(page.locator("main section.placements button.placement-new-open")).to_have_count(0)
     agents_page_tabs(run, page)
-    run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
+    run.step("placements: Join an agent → Start an agent on a runner: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")
-    section = page.locator("main section.placements")
+    section = page.locator("main .join-menu-slot")
+    open_form = page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True)
+    open_form.click()
+    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
     expect(section.locator(".placement-new-none")).to_have_text(
         "A runner starts an agent in a clone of the project's repository, and this project has none.")
-    open_form = section.get_by_role("button", name="Start an agent on a runner", exact=True)
-    expect(open_form).to_have_count(0)
+    expect(section.locator("form.placement-new")).to_have_count(0)
     project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha(\?|$)")
     runners_read = re.compile(r"/api/v1/projects/owner/e2e-alpha/runners(\?|$)")
 
@@ -4975,19 +4987,19 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
 
 
 def agents_page_tabs(run: Run, page: Page) -> None:
-    """/agents's tabs (§16.11, tsk-3s3eb6bsp15n): the list, Where they run across one's projects, and
+    """/agents's tabs (§16.11, tsk-3s3eb6bsp15n): the list, Managed agents across one's projects, and
     Maintenance notices, which stood under the list before."""
-    run.step("agents: /agents has the tabs Agents, Where they run and Maintenance notices")
+    run.step("agents: /agents has the tabs Agents, Managed agents and Maintenance notices")
     page.goto(f"{run.base}/agents")
     tabs = page.locator("main nav.agents-tabs")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Maintenance notices"])
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Maintenance notices"])
     expect(page.locator("main section.broadcasts")).to_have_count(0)
-    tabs.get_by_role("link", name="Where they run", exact=True).click()
+    tabs.get_by_role("link", name="Managed agents", exact=True).click()
     expect(page).to_have_url(re.compile(r"/agents/placements$"))
-    expect(page.get_by_role("heading", name="Where they run", exact=True, level=2)).to_be_visible()
+    expect(page.get_by_role("heading", name="Managed agents", exact=True, level=2)).to_be_visible()
     expect(page.locator("main section.placements").first).to_be_visible()
     expect(page.locator("main button.placement-new-open")).to_have_count(0)
-    run.a11y(page, "agents, where they run")
+    run.a11y(page, "agents, managed agents")
     tabs.get_by_role("link", name="Maintenance notices", exact=True).click()
     expect(page).to_have_url(re.compile(r"/agents/maintenance$"))
     expect(page.get_by_role("heading", name="Maintenance notices", exact=True, level=2)).to_be_visible()
@@ -5000,6 +5012,7 @@ def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) ->
     page.reload()
     expect(open_form).to_be_visible()
     open_form.click()
+    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
     form = section.locator("form.placement-new")
     expect(form).to_be_visible()
     runner_options = form.locator("#placement-new-runner option")
@@ -5204,6 +5217,54 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "why")
 
 
+def page_heads_step(run: Run, page: Page) -> None:
+    """The heads of a project's Agents and Team pages (tsk-vkyp71qp95n9): the heading, the buttons at
+    the right end, the tabs under them, each the page's full width; Join an agent a menu of its two
+    ways, Add any agent and Start an agent on a runner, the same on both pages."""
+    run.step("page heads: Agents and Team carry the heading, the buttons at the right end, the tabs under them")
+    for path, title, buttons, tab_names in (
+        ("agents", "Agents", ["New agent profile", "Join an agent"], ["Agents", "Managed agents", "Organisation"]),
+        ("team", "Team", ["Invite user", "Join an agent"], ["Members", "Organisation"]),
+    ):
+        for width in (1280, 390):
+            page.set_viewport_size({"width": width, "height": 900 if width > 400 else 844})
+            page.goto(f"{run.base}/owner/e2e-alpha/{path}")
+            head = page.locator("main .page-head")
+            expect(head.locator("h2")).to_have_text(title)
+            expect(head.locator(".page-head-actions > *:not([hidden])")).to_have_count(len(buttons))
+            expect(head.locator(".page-head-actions")).to_contain_text(buttons[0])
+            expect(head.locator(".page-head-actions")).to_contain_text(buttons[1])
+            expect(head.locator("nav.view-tabs a")).to_have_text(tab_names)
+            box = page.evaluate("""() => {
+              const head = document.querySelector('main .page-head');
+              const bar = head.querySelector('.page-head-bar'), tabs = head.querySelector('nav.view-tabs');
+              const last = Array.from(head.querySelectorAll('.page-head-actions > *')).filter((e) => e.offsetParent).pop();
+              const r = (e) => e.getBoundingClientRect();
+              return { head: [r(head).left, r(head).right], bar: [r(bar).left, r(bar).right], tabs: [r(tabs).left, r(tabs).right, r(tabs).top],
+                       last: [r(last).right, r(last).bottom], parent: r(head.parentElement).width,
+                       page: [document.documentElement.scrollWidth, document.documentElement.clientWidth] };
+            }""")
+            assert box["page"][0] <= box["page"][1], f"{path} head widens the page at {width} px: {box}"
+            assert abs((box["head"][1] - box["head"][0]) - box["parent"]) <= 1, f"{path} head not the full width at {width} px: {box}"
+            assert abs(box["tabs"][1] - box["head"][1]) <= 1 and abs(box["tabs"][0] - box["head"][0]) <= 1, f"{path} tabs not the full width at {width} px: {box}"
+            assert abs(box["last"][0] - box["bar"][1]) <= 1, f"{path} buttons not at the right end at {width} px: {box}"
+            assert box["last"][1] <= box["tabs"][2] + 1, f"{path} tabs not under the buttons at {width} px: {box}"
+            head.get_by_role("button", name="Join an agent", exact=True).click()
+            items = page.locator(".page-head .menu [role=menuitem]")
+            expect(items).to_have_text(["Add any agent", "Start an agent on a runner"])
+            run.shot(page, f"page-head-{path}-{width}")
+            page.keyboard.press("Escape")
+            run.a11y(page, f"{path} page head, {width} px")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    run.step("page heads: Add any agent on Team opens the join panel there")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
+    join_any(page)
+    expect(page.locator("main .join-menu-slot .join-panel")).to_be_visible()
+    expect(page.locator("#join-agent")).to_be_visible()
+    page.keyboard.press("Escape")
+    no_problems(run, "page heads")
+
+
 def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     """One's own fleet on the Agents page's Organisation tab (tsk-q989pagmk2x9): the owner on top,
     E2E Agent under them, E2E Reviewer (which reports to it) under that; each agent's instances
@@ -5241,7 +5302,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     tabs = page.locator("main nav.agents-tabs")
     expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Organisation"])
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Organisation"])
     tabs.get_by_role("link", name="Organisation", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/agents/organisation$"))
     expect(page.get_by_role("heading", name="Organisation of your agents", exact=True)).to_be_visible()
@@ -5430,6 +5491,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
         rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
     )
     agents_fleet_step(run, page, agent_id)
+    page_heads_step(run, page)
     join_reports_to_step(run, page, agent_id)
     view_tab(page, "Team").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
@@ -6528,7 +6590,7 @@ def agents_page_step(run: Run, page: Page) -> None:
     Manage opening a row with the instances of each membership read on the real hub."""
     run.step("agents page: the profiles as rows; Manage shows the instances in each project")
     page.goto(f"{run.base}/agents")
-    expect(page.get_by_role("button", name="+ Add an agent", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="New agent profile", exact=True)).to_be_visible()
     expect(page.get_by_role("button", name="Join an agent", exact=True)).to_be_visible()
     expect(page.locator("section.agents-join")).to_be_hidden()
     row = page.locator("tr.agent-row", has_text="E2E Agent").first
@@ -6642,7 +6704,7 @@ def handle_hints_step(run: Run, page: Page) -> None:
                 expect(page.locator("#org-invite-handle")).to_be_visible()
                 seen |= {x["field"] for x in measured(f"organisation, {at}")}
                 page.goto(f"{run.base}/agents")
-                page.get_by_role("button", name="+ Add an agent", exact=True).click()
+                page.get_by_role("button", name="New agent profile", exact=True).click()
                 expect(page.locator("#agent-new-handle")).to_be_visible()
                 seen |= {x["field"] for x in measured(f"new agent, {at}")}
                 page.goto(f"{run.base}/agents")
