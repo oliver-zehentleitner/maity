@@ -574,3 +574,25 @@ def test_codexs_sandbox_is_tried_on_the_host(tmp_path: Path, fake_ssh: Path) -> 
     target = targets.ssh_hosts(cfg)[1]
     probes, sandbox = targets.probe_remote(target.as_user, harnesses, target.agent_path)
     assert probes["codex"].available and sandbox["codex"] is False  # its sandbox fails there
+
+
+@pytest.mark.parametrize(
+    ("version", "on"),
+    [("2.1.294", False), ("2.1.295", True), ("2.1.295-rc.1", False), ("2.1.295-dev", False),
+     ("2.1.295+build", True), ("2.1.296-rc.1", True)],
+)  # fmt: skip
+def test_claude_codes_sandbox_on_a_host_needs_the_hook_failure_policy(
+    tmp_path: Path, fake_ssh: Path, version: str, on: bool
+) -> None:
+    """As on the local target: the sandbox only from Claude Code 2.1.295, a prerelease of it
+    below it (cli/context/runner.md 63492c65)."""
+    cfg = load(tmp_path)
+    for name, out in (("claude", f"{version} (Claude Code)"), ("bwrap", ""), ("socat", "")):
+        tool = tmp_path / "remote" / "bin" / name
+        tool.write_text(f"#!/bin/sh\necho '{out}'\n")
+        tool.chmod(0o755)
+    harnesses = {"claude-code": config.Harness("claude-code", ("supervised",), "supervised",
+                                               binary="claude")}  # fmt: skip
+    target = targets.ssh_hosts(cfg)[1]
+    probes, sandbox = targets.probe_remote(target.as_user, harnesses, target.agent_path)
+    assert probes["claude-code"].version == version and sandbox["claude-code"] is on

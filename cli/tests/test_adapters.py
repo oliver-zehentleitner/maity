@@ -206,6 +206,9 @@ def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: 
     ("harness_id", "version", "ok"),
     [("claude-code", "2.1.294", False), ("claude-code", "2.1.295", True),
      ("claude-code", "2.2.0", True), ("claude-code", "3.0.0-beta", True),
+     ("claude-code", "2.1.295-rc.1", False), ("claude-code", "2.1.295-dev", False),
+     ("claude-code", "2.1.295+build", True), ("claude-code", "2.1.296-rc.1", True),
+     ("claude-code", "2.1.295-rc.1+build.7", False), ("claude-code", "2.1.295.1", False),
      ("claude-code", None, False), ("claude-code", "2.1", False), ("claude-code", "x", False),
      ("codex", None, True)],
 )  # fmt: skip

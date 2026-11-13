@@ -351,8 +351,10 @@ def test_placements_outside_the_configuration_fail(
 
 @pytest.mark.parametrize(
     ("version", "refused"),
-    [("2.1.294", True), ("2.1.295", False), ("2.1.325", False), (None, True), ("dev", True)],
-)
+    [("2.1.294", True), ("2.1.295", False), ("2.1.325", False), (None, True), ("dev", True),
+     ("2.1.295-rc.1", True), ("2.1.295-dev", True), ("2.1.295+build", False),
+     ("2.1.296-rc.1", False)],
+)  # fmt: skip
 def test_claude_codes_sandbox_starts_only_where_its_hooks_refuse_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str | None, refused: bool
 ) -> None:

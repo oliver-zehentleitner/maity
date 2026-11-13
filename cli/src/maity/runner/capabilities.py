@@ -35,19 +35,25 @@ CHECKED = {"claude-code": "2.1.318"}
 # (`onFailure: "block"`): the runner's sandboxed sessions rely on it (adapters.claude_settings),
 # so its sandbox is switched on only from this version (cli/context/runner.md).
 CLAUDE_SANDBOX_MIN = (2, 1, 295)
-_RELEASE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+# A SemVer version: MAJOR.MINOR.PATCH, an optional prerelease (`-…`) and build metadata (`+…`).
+_RELEASE = re.compile(r"(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?")
 
 
 def sandbox_version_ok(harness_id: str, version: str | None) -> bool:
     """Whether the runner may switch the harness's sandbox on at this version: for Claude Code
     CLAUDE_SANDBOX_MIN or later, read from the probed version; an unknown or unreadable
-    version is not. Other harnesses: always."""
+    version is not, nor is any other shape. A prerelease sorts before its release (SemVer
+    §11), so `2.1.295-rc.1` is below the minimum; build metadata (`+…`) does not count.
+    Other harnesses: always."""
     if harness_id != "claude-code":
         return True
-    match = _RELEASE.match(version or "")
+    match = _RELEASE.fullmatch(version or "")
     if match is None:
         return False
-    return tuple(int(part) for part in match.groups()) >= CLAUDE_SANDBOX_MIN
+    release = tuple(int(part) for part in match.groups()[:3])
+    if match.group(4) is not None:  # a prerelease of `release`
+        return release > CLAUDE_SANDBOX_MIN
+    return release >= CLAUDE_SANDBOX_MIN
 
 
 def sandbox_version_line(version: str | None) -> str:
