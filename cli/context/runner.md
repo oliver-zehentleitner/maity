@@ -2410,7 +2410,8 @@ settings set `disableAllHooks: false` over the agents' user settings.
 Because the hook's refusal on failure needs `onFailure` (Claude Code
 2.1.295), the runner switches Claude Code's sandbox on only from that
 version (`capabilities.sandbox_version_ok`); an unknown or unreadable
-version counts as older. With `require_sandbox` that is an error in
+version counts as older, and so does a prerelease of 2.1.295 (SemVer
+sorts `2.1.295-rc.1` before `2.1.295`; build metadata does not count). With `require_sandbox` that is an error in
 `maity runner check` and a refused start (`harness_refused`); without
 it the session runs unsandboxed (`sandbox_unavailable`), with no
 exclusion for the hook to guard, as on a host without the sandbox's
