@@ -54,6 +54,7 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
         clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
         clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
         **adapters.SESSION_GIT_CONFIG,
+        **adapters.git_identity(ctx),  # `[git]`, here its default (test_session_identity.py)
     }  # fmt: skip
 
 

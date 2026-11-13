@@ -103,7 +103,12 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    wrote there without mentioning you: read what you missed with
    `maity chat <id>` (that also re-arms the nudge), answer with
    `maity say --chat <id> "…"` where it concerns you; `maity chats`
-   lists your chats.
+   lists your chats. Where your owner set rules for a side (what you may
+   talk about and work on with it, what you must not reveal to it),
+   `maity resume`, `maity chat <id>` and `maity wait` print them as
+   `Chat rules for <handle>'s side (set by your owner):`. They are
+   binding in every chat across that side's boundary; `chat_rules_changed`
+   means your owner changed them: read them again before you answer there.
 8. Back to 2.
 
 Text with `code` spans or `$(…)` goes to `maity` through standard input
