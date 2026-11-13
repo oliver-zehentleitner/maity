@@ -17,7 +17,7 @@ texts; only the agent it names reads it (`events.readable`).
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -29,8 +29,8 @@ from maity_hub import chat_access, chat_gate, clock
 from maity_hub import tables as t
 
 KIND = "chat_rules_changed"
-# How long before its `until` a lapsing entry is judged, so that it still covers (`_allows`
-# compares `until <= now`).
+# How long before its `until` an entry not yet lapsed is judged, so that it still covers
+# (`_allows` compares `until <= now`).
 LAPSING = timedelta(microseconds=1)
 
 Texts = tuple[str | None, str | None]
@@ -45,16 +45,15 @@ class _Reach:
     texts: Texts
     chats: set[tuple[str, str, str]] = field(default_factory=set)
 
-    def pairs(self) -> set[tuple[str, str]]:
-        return {(agent, project) for agent, project, _ in self.chats}
 
-
-def _reach(
-    conn: Connection, owner: str, agent: str | None = None, lapsing: Iterable[str] = ()
-) -> dict[str, _Reach]:
+def _reach(conn: Connection, owner: str, agent: str | None = None) -> dict[str, _Reach]:
     """Every allow entry of `owner` with a text, and what it admits the owner's agents to in
-    their open group chats; with `agent`, only that agent's chats. An entry in `lapsing` counts
-    as if its `until` had not passed yet."""
+    their open group chats; with `agent`, only that agent's chats.
+
+    An entry whose `until` passed counts as it was until the worker lapses it (`lapsed_at`,
+    `chat_gate.lapse`): until then the stays it admitted still hold the admission, and a write
+    of the owner's entries in between must see what the entry admitted before it, or the change
+    it makes is announced by neither the write nor the lapse (9s6p on #1733)."""
     entries = _entries(conn, owner)
     found = {
         e.id: _Reach(e, (e.allowed, e.denied))
@@ -67,7 +66,6 @@ def _reach(
 
     now = clock.now()
     rows = [e for e in entries.rows if e.id in found]
-    still = set(lapsing)
     for chat in chat_gate.chats_of_owner(conn, owner):
         current = group_chats.stays(conn, chat.id)
         met = chat_gate.parties(conn, current)
@@ -81,7 +79,9 @@ def _reach(
             for e in rows:
                 if not chat_gate._names_agent(e, entries, s.agent_id):
                     continue
-                at = e.until - LAPSING if e.id in still and e.until is not None else now
+                at = now
+                if e.until is not None and e.lapsed_at is None:
+                    at = min(now, e.until - LAPSING)
                 if any(chat_gate._allows(e, entries, p, chat.project_id, at) for p in others):
                     found[e.id].chats.add((s.agent_id, chat.project_id, chat.id))
     return found
@@ -159,11 +159,13 @@ def for_chat(conn: Connection, agent_id: str, conversation_id: str) -> list[dict
 
 
 @contextmanager
-def announcing(conn: Connection, owner: str, lapsing: Iterable[str] = ()) -> Iterator[None]:
+def announcing(conn: Connection, owner: str) -> Iterator[None]:
     """Around a write of `owner`'s entries and the `recheck` after it: `chat_rules_changed` to
     each agent, in each project, where an entry's texts changed while it admits or admitted the
     agent there, or where an entry with a text came to admit the agent or stopped admitting it
-    (removed, narrowed, or its `until` passed).
+    (removed, narrowed, or its `until` passed), each judged per chat: an entry that comes to
+    admit the agent to a second chat in a project, or stops admitting it to one of two, is a
+    change in that project (9s6p on #1733).
 
     Only the owner's human row is taken first (`chat_access._lock`), as every write of the
     entries takes it first: the projects come later, in `recheck`, after the other human's
@@ -172,7 +174,7 @@ def announcing(conn: Connection, owner: str, lapsing: Iterable[str] = ()) -> Ite
     it changes then shows as a difference too, and the agent gets an event that is still true
     (its entry came to admit it or stopped), never one less for the entry's own change."""
     chat_access._lock(conn, owner)
-    before = _reach(conn, owner, lapsing=lapsing)
+    before = _reach(conn, owner)
     yield
     after = _reach(conn, owner)
     from maity_hub import events
@@ -180,13 +182,13 @@ def announcing(conn: Connection, owner: str, lapsing: Iterable[str] = ()) -> Ite
     sent: dict[tuple[str, str], list[str]] = defaultdict(list)
     for entry_id in sorted(before.keys() | after.keys()):
         old, new = before.get(entry_id), after.get(entry_id)
-        old_pairs = old.pairs() if old else set()
-        new_pairs = new.pairs() if new else set()
+        old_chats = old.chats if old else set()
+        new_chats = new.chats if new else set()
         if (old.texts if old else None) != (new.texts if new else None):
-            targets = old_pairs | new_pairs
+            changed = old_chats | new_chats
         else:
-            targets = old_pairs ^ new_pairs
-        for pair in targets:
+            changed = old_chats ^ new_chats
+        for pair in sorted({(agent, project) for agent, project, _ in changed}):
             sent[pair].append(entry_id)
     for (agent, project_id), entry_ids in sorted(sent.items(), key=lambda x: (x[0][1], x[0][0])):
         for entry_id in entry_ids:

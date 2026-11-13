@@ -262,3 +262,65 @@ def test_an_entry_retargeted_during_the_read_never_shows_another_agents_rules(
     assert moved
     assert "for B only" not in str(rules)
     assert [r["allowed"] for r in rules] in ([], ["for A"])
+
+
+def test_an_entry_coming_to_admit_or_leaving_a_second_chat_of_a_project_is_a_change(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """9s6p on #1733: what an entry admits is compared per chat, not per project, so a widening
+    to a second chat of the same project, and the narrowing back, each send the event."""
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    peer = flow.agent(make_client, owner)
+    entry = allow(
+        other,
+        agents=[theirs.id],
+        owner_id=owner.id,
+        their_human=False,
+        their_agents=[peer.id],
+        allowed="docs only",
+    )
+    first = create(other, peer.id, theirs.id).json()
+    assert item(first, theirs.id)["waiting_for"] == []
+    second = create(owner, theirs.id).json()
+    assert item(second, theirs.id)["waiting_for"] == [owner.id]
+    before = len(changes(migrated))
+    wide = other.patch(f"/me/chat-access/allow/{entry['id']}", {"their_human": True})
+    assert wide.status_code == 200, wide.text
+    [rule] = theirs.resume().json()["chat_rules"]
+    assert rule["conversations"] == sorted([first["id"], second["id"]])
+    after = changes(migrated)
+    assert len(after) == before + 1
+    assert after[-1].payload == {"entry_id": entry["id"]}
+    narrow = other.patch(f"/me/chat-access/allow/{entry['id']}", {"their_human": False})
+    assert narrow.status_code == 200, narrow.text
+    assert item(view(owner, second["id"]).json(), theirs.id)["waiting_for"] == [owner.id]
+    assert theirs.resume().json()["chat_rules"][0]["conversations"] == [first["id"]]
+    assert len(changes(migrated)) == before + 2
+
+
+def test_a_write_between_the_until_and_the_lapse_still_announces(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """9s6p on #1733: an entry whose `until` passed admits until the worker lapses it; an owner
+    write in between that removes it is the change, and the lapse after it sends no second."""
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    entry = rules_entry(other, theirs.id, owner.id, duration="hour")
+    chat = create(owner, theirs.id).json()
+    assert item(chat, theirs.id)["waiting_for"] == []
+    before = len(changes(migrated))
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.chat_access)
+            .where(t.chat_access.c.id == entry["id"])
+            .values(until=clock.now() - timedelta(minutes=1))
+        )
+    gone = other.delete(f"/me/chat-access/allow/{entry['id']}")
+    assert gone.status_code == 204, gone.text
+    after = changes(migrated)
+    assert len(after) == before + 1
+    assert after[-1].payload == {"entry_id": entry["id"]}
+    assert after[-1].audience == [f"member:{theirs.id}"]
+    chat_gate.sweep(migrated)
+    assert len(changes(migrated)) == before + 1

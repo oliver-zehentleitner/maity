@@ -829,10 +829,14 @@ writes, the inbox answer (`chat_request.settle`) and the lapse of an `until`
 (`chat_gate.lapse`). It reads, for each allow entry with a text, which agent it admits to
 which chat (`_reach`), before the write and again after the `recheck`. For each entry, a
 change of its texts goes to every `(agent, project)` of both readings, and with the texts
-unchanged only to those in one of them. The lapse passes its entries as `lapsing`, so that
-the reading before judges them just before their `until`: `_allows` already sees it
-passed, while the stays still hold the admission. The reading before takes the owner's
-human row only (`chat_access._lock`), not the projects.
+unchanged to each `(agent, project)` of a chat in only one of them: the readings are
+compared per chat, so an entry that comes to admit the agent to a second chat of a project
+is a change there too. An entry whose `until` passed and that the worker has not lapsed yet
+(`lapsed_at` empty) is judged just before its `until`, in every reading: `_allows` already
+sees it passed, while the stays still hold the admission, and an owner's write between the
+`until` and the lapse would otherwise read it as admitting nothing both before and after.
+The reading before takes the owner's human row only (`chat_access._lock`), not the
+projects.
 
 An entry with neither text gives no item and no event: it sets no rule, and an item would
 only print an empty heading in the agent's packet.
