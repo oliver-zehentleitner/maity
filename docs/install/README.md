@@ -373,24 +373,46 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      deletes it with the Job.
   4. **Start the hub closed to everyone but you.** The restored database gives back access that was taken away after the
      dump's time, so nobody may reach the hub until step 5 is done. Close the hub's NetworkPolicy to every pod, Traefik
-     included (keep its rules in a file to open it again), start the hub, and reach it through `kubectl port-forward`,
-     which is not pod traffic and arrives on loopback, where the hub allows a sign-in over plain HTTP:
+     included, keeping its rules in `hub-ingress-rules.json` to open it again, and start the hub only once the policy
+     admits nobody. Run it as one block (it needs `python3` on this machine to read the policy): it refuses while that
+     file exists from an earlier close, and stops before the hub starts if the policy cannot be read, has no rules to
+     keep, or still admits someone after the change:
      ```sh
-     ctx=<kube context>
-     kubectl --context "$ctx" -n maity get networkpolicy maity-maity-hub -o jsonpath='{.spec.ingress}' > hub-ingress-rules.json
-     test -s hub-ingress-rules.json
-     kubectl --context "$ctx" -n maity patch networkpolicy maity-maity-hub --type=json -p '[{"op":"replace","path":"/spec/ingress","value":[]}]'
-     kubectl --context "$ctx" -n maity scale deploy/maity-maity-hub --replicas=1
-     kubectl --context "$ctx" -n maity port-forward deploy/maity-maity-hub 8080:8080   # then sign in at http://127.0.0.1:8080
+     sh -eu -c '
+       ctx=$1 f=hub-ingress-rules.json
+       k() { kubectl --context "$ctx" -n maity "$@"; }
+       rules() { python3 -c "import json, sys; print(json.dumps(json.load(sys.stdin)[\"spec\"].get(\"ingress\") or [], sort_keys=True))"; }
+       [ ! -e "$f" ] || { echo "$f is there from an earlier close: open the hub with it (step 6) before closing it again" >&2; exit 1; }
+       np=$(k get networkpolicy maity-maity-hub -o json)
+       saved=$(printf "%s" "$np" | rules)
+       [ "$saved" != "[]" ] || { echo "the policy admits nobody already: there are no rules to keep" >&2; exit 1; }
+       (umask 077; set -C; printf "%s\n" "$saved" > "$f")
+       k patch networkpolicy maity-maity-hub --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/ingress\",\"value\":[]}]"
+       np=$(k get networkpolicy maity-maity-hub -o json)
+       [ "$(printf "%s" "$np" | rules)" = "[]" ] || { echo "the policy still admits someone: the hub stays stopped" >&2; exit 1; }
+       k scale deploy/maity-maity-hub --replicas=1
+       k rollout status deploy/maity-maity-hub --timeout=300s
+     ' close <kube context>
+     kubectl --context <kube context> -n maity port-forward deploy/maity-maity-hub 8080:8080   # then sign in at http://127.0.0.1:8080
      ```
+     `kubectl port-forward` is not pod traffic and arrives on loopback, where the hub allows a sign-in over plain HTTP.
      Check from outside that the public address no longer reaches the hub (a gateway error, not the sign-in page).
   5. **Bring the access rules up to date**, as an admin, over that port-forward ([After a restore](#after-a-restore)).
-  6. **Open the hub again:** give the NetworkPolicy its rules back, then check that the public address answers:
+  6. **Open the hub again:** give the NetworkPolicy the rules kept in step 4, as one block. It refuses a file that is
+     missing, not JSON or empty, and removes the file only once the policy has those rules again:
      ```sh
-     kubectl --context "$ctx" -n maity patch networkpolicy maity-maity-hub --type=merge -p "{\"spec\":{\"ingress\":$(cat hub-ingress-rules.json)}}"
-     rm hub-ingress-rules.json
+     sh -eu -c '
+       ctx=$1 f=hub-ingress-rules.json
+       k() { kubectl --context "$ctx" -n maity "$@"; }
+       rules() { python3 -c "import json, sys; print(json.dumps(json.load(sys.stdin)[\"spec\"].get(\"ingress\") or [], sort_keys=True))"; }
+       saved=$(python3 -c "import json, sys; r = json.load(open(sys.argv[1])); sys.exit(\"no rules in \" + sys.argv[1]) if not (isinstance(r, list) and r) else print(json.dumps(r, sort_keys=True))" "$f")
+       k patch networkpolicy maity-maity-hub --type=merge -p "{\"spec\":{\"ingress\":$saved}}"
+       np=$(k get networkpolicy maity-maity-hub -o json)
+       [ "$(printf "%s" "$np" | rules)" = "$saved" ] || { echo "the policy does not have the kept rules: $f stays" >&2; exit 1; }
+       rm "$f"
+     ' open <kube context>
      ```
-     The next `helm upgrade` writes the chart's rules anyway.
+     Then check that the public address answers. The next `helm upgrade` writes the chart's rules anyway.
 - **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
   attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`

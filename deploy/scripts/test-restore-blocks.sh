@@ -4,7 +4,10 @@
 # before anything is restored while the hub is not verifiably stopped: a replica wanted, a pod left, or a kubectl that
 # fails. A failure must stop the block even when kubectl prints nothing, which a command substitution inside a test
 # does not do under `sh -e`.
-# Usage: deploy/scripts/test-restore-blocks.sh   (no cluster needed; GNU tar)
+# It also runs the two blocks that close the hub's NetworkPolicy after a restore and open it again (docs/install/README.md,
+# steps 4 and 6): the hub starts only once the policy admits nobody, the kept rules are never overwritten, and they are
+# removed only once the policy has them again.
+# Usage: deploy/scripts/test-restore-blocks.sh   (no cluster needed; GNU tar, python3)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
@@ -22,8 +25,20 @@ extract() { # file, the line that ends the block, prefix to strip
 }
 extract "$root/docs/install/README.md" "' restore <kube context> maity-<UTC time>.dump.gpg" "" > "$work/db-block"
 extract "$root/deploy/k3s-single/restore-attachments.yaml" "' restore <kube context>" "#   " > "$work/att-block"
-for b in db-block att-block; do
+# The close and open blocks (steps 4 and 6): the `sh -eu -c '` block that ends in `' close` and the one in `' open`.
+python3 - "$root/docs/install/README.md" "$work" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+for name in ("close", "open"):
+    m = re.search(r"sh -eu -c '\n(.*?)\n\s*' " + name + r" <kube context>", text, re.S)
+    body = "\n".join(l.strip() for l in m.group(1).split("\n")) if m else ""
+    body = body.split("sh -eu -c '")[-1]
+    open(sys.argv[2] + "/" + name + "-block", "w").write(body + "\n")
+PY
+for b in db-block att-block close-block open-block; do
   [ -s "$work/$b" ] || { echo "FAIL could not find the $b in its file"; exit 1; }
+done
+for b in db-block att-block; do
   grep -q 'k get pods' "$work/$b" || { echo "FAIL the $b has no pod check"; exit 1; }
 done
 
@@ -37,6 +52,28 @@ case "$*" in
   *"get pods"*)    [ "$FAIL" = pods_fail ] && { echo "error: the server is unreachable" >&2; exit 1; }
                    [ "$FAIL" = pod_left ] && echo pod/maity-maity-hub-1; exit 0;;
   *" exec "*)      cat > /dev/null; exit 0;;
+  *"get networkpolicy"*)
+                   [ "$FAIL" = np_get_fails ] && { echo "error: forbidden" >&2; exit 1; }
+                   cat "$S/np.json"; exit 0;;
+  *"patch networkpolicy"*)
+                   [ "$FAIL" = patch_fails ] && { echo "error: the server rejected the patch" >&2; exit 1; }
+                   [ "$FAIL" = patch_ignored ] && exit 0
+                   python3 - "$S/np.json" "$@" <<'PY' || exit 1
+import json, sys
+path, args = sys.argv[1], sys.argv[2:]
+patch = json.loads(args[args.index("-p") + 1])
+np = json.load(open(path))
+if "--type=json" in args:
+    for op in patch:
+        assert op["op"] == "replace" and op["path"] == "/spec/ingress"
+        np["spec"]["ingress"] = op["value"]
+else:
+    np["spec"].update(patch["spec"])
+if not np["spec"].get("ingress"):
+    np["spec"].pop("ingress", None)   # the API server drops an empty list
+json.dump(np, open(path, "w"))
+PY
+                   exit 0;;
 esac
 exit 0
 STUB
@@ -74,5 +111,58 @@ for b in db-block att-block; do
   run $b pods_fail stops
   run $b replica stops
   run $b pod_left stops
+done
+# Closing and opening the hub's NetworkPolicy. $S/np.json is the policy; RULES its rules at the start.
+rules='[{"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}], "ports": [{"port": "http", "protocol": "TCP"}]}]'
+np_run() { # name, block, FAIL value, initial ingress (JSON or none), kept file (content, none), want: ok | stops
+  local name=$1 block=$2 fail=$3 initial=$4 kept=$5 want=$6
+  export S="$work/np-$name" FAIL=$fail; mkdir -p "$S"; : > "$S/log"
+  if [ "$initial" = none ]; then echo '{"spec": {"policyTypes": ["Ingress"]}}' > "$S/np.json"
+  else printf '{"spec": {"policyTypes": ["Ingress"], "ingress": %s}}\n' "$initial" > "$S/np.json"; fi
+  [ "$kept" = none ] || printf '%s\n' "$kept" > "$S/hub-ingress-rules.json"
+  ( cd "$S" && PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" "${block%-block}" test-context ) >"$S/out" 2>&1
+  local got=$? scaled=no
+  grep -q " scale " "$S/log" && scaled=yes
+  local result=stops; [ "$got" = 0 ] && result=ok
+  if [ "$result" = "$want" ]; then echo "ok   np/$name ($result, exit $got, scaled $scaled)"
+  else echo "FAIL np/$name: $result with exit $got (want $want)"; sed 's/^/     /' "$S/out"; failures=$((failures + 1)); fi
+}
+np_check() { # name, what, test command (in $S)
+  local name=$1 what=$2; shift 2
+  if ( cd "$work/np-$name" && eval "$*" ); then echo "ok   np/$name: $what"; else echo "FAIL np/$name: $what"; failures=$((failures + 1)); fi
+}
+canon() { python3 -c 'import json, sys; print(json.dumps(json.loads(sys.argv[1]), sort_keys=True))' "$1"; }
+want_rules=$(canon "$rules")
+# close: the rules kept, the policy empty, then the hub started
+np_run close close-block none "$rules" none ok
+np_check close "the rules are kept" '[ "$(cat hub-ingress-rules.json)" = "$want_rules" ]'
+np_check close "the policy admits nobody" '! grep -q ingress np.json'
+np_check close "the hub was started" 'grep -q " scale " log'
+# a failed patch, a patch that did not take, a policy that cannot be read: the hub stays stopped
+np_run close_patch_fails close-block patch_fails "$rules" none stops
+np_check close_patch_fails "the hub was not started" '! grep -q " scale " log'
+np_run close_patch_ignored close-block patch_ignored "$rules" none stops
+np_check close_patch_ignored "the hub was not started" '! grep -q " scale " log'
+np_run close_save_fails close-block np_get_fails "$rules" none stops
+np_check close_save_fails "no file, the hub not started" '[ ! -e hub-ingress-rules.json ] && ! grep -q " scale " log'
+# a second close (the file from the first one is there): refused, the kept rules untouched, nothing patched
+np_run close_rerun close-block none none "$rules" stops
+np_check close_rerun "the kept rules untouched, nothing patched" '[ "$(cat hub-ingress-rules.json)" = "$rules" ] && ! grep -q " patch " log'
+np_run close_already_closed close-block none none none stops
+np_check close_already_closed "no file kept" '[ ! -e hub-ingress-rules.json ]'
+# open: the rules back, the file removed only then
+np_run open open-block none none "$rules" ok
+np_check open "the policy has the rules again, the file is gone" '[ ! -e hub-ingress-rules.json ] && [ "$(python3 -c "import json; print(json.dumps(json.load(open(\"np.json\"))[\"spec\"][\"ingress\"], sort_keys=True))")" = "$want_rules" ]'
+np_run open_patch_fails open-block patch_fails none "$rules" stops
+np_check open_patch_fails "the file stays" '[ "$(cat hub-ingress-rules.json)" = "$rules" ]'
+np_run open_patch_ignored open-block patch_ignored none "$rules" stops
+np_check open_patch_ignored "the file stays" '[ -s hub-ingress-rules.json ]'
+np_run open_empty_file open-block none none "[]" stops
+np_check open_empty_file "nothing patched" '! grep -q " patch " log'
+np_run open_no_file open-block none none none stops
+np_run open_not_json open-block none none "not json" stops
+np_check open_not_json "nothing patched" '! grep -q " patch " log'
+for n in close open; do
+  if grep -v -- "--context test-context" "$work/np-$n/log" | grep -q .; then echo "FAIL np/$n: a kubectl without --context"; failures=$((failures + 1)); fi
 done
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }
