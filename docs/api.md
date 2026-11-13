@@ -6750,13 +6750,14 @@ never been a member then, whatever its trust (§8.2): it reads none of
 them by `GET /events`, the project messages (§8.8), a group chat's
 earlier history and its attachments (§9.2) or any other listing that
 shows events, nor the entries of a card's history (`GET
-…/tasks/{id}/history`, §6.15) or of a restricted text's history (§6.4)
-whose `at` lies in the window, nor a card's notes written in it, in their
-list or the card search (§6.16, §6.4). A bridge reading for an agent
-(§2.3) is held to its own windows beside the agent's. What it does
+…/tasks/{id}/history`, §6.15) whose `at` lies in the window. What it does
 see of that time is the state it finds: a card's fields, a request with
 its answer and status, a chat's members. The window binds that agent membership alone: its human
-owner, reading a group chat along or anything else, reads as before. The
+owner, reading a group chat along or anything else, reads as before. Card notes
+written in the window stay out of their list and the card search
+(§6.16, §6.4), and a restricted text's history entries whose `at` lies
+in it out of that history (§6.4). A bridge reading for an agent (§2.3)
+is held to its own windows beside the agent's. The
 membership keeps the hidden window as `isolation_windows: [{from_seq,
 to_seq}]` in its member view, read by the same readers as `isolated`; a later isolation
 adds a window. Removing the member
