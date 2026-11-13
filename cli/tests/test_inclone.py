@@ -184,14 +184,30 @@ def test_a_mismatch_keeps_nothing(placed: Path, served: fakehub.FakeHub) -> None
     assert not (placed / "o.txt").exists() and parts(placed) == []
 
 
-def test_without_descriptors_maity_writes_no_file_but_standard_output_works(
+def test_without_descriptors_maity_writes_no_file(
     placed: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(inclone, "WALKS", False)
     assert get("-o", "o.txt") == cli.EXIT_ERROR
     assert "cannot open a file without following links" in capsys.readouterr().err
     assert not (placed / "o.txt").exists()
+
+
+def test_standard_output_is_refused_before_any_call(
+    placed: Path, served: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    served.seen.clear()
+    assert get("-o", "-") == cli.EXIT_USAGE
+    captured = capsys.readouterr()
+    assert "-o -: under a runner placement" in captured.err and captured.out == ""
+    assert served.seen == []  # refused before the metadata is fetched
+
+
+def test_outside_a_placement_standard_output_still_works(
+    joined: Path, served: fakehub.FakeHub, capsysbinary: pytest.CaptureFixture[bytes]
+) -> None:
     assert get("-o", "-") == cli.EXIT_OK
+    assert capsysbinary.readouterr().out == b"hello"
 
 
 def test_a_session_without_the_runners_git_inode_writes_nothing(

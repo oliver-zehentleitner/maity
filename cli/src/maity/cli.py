@@ -1443,9 +1443,13 @@ ACTION_BODY_MAX = 48 * 1024  # §7
 
 
 def _read_bytes(source: str, flag: str) -> bytes:
-    """A file's bytes as they are, or standard input's with `-`."""
+    """A file's bytes as they are, or standard input's with `-`. Under a placement only a
+    file in the clone (_placed_read)."""
     if source == "-":
         return sys.stdin.buffer.read()
+    placed = _placed_read(source, flag)
+    if placed is not None:
+        return placed
     try:
         return Path(source).read_bytes()
     except OSError as exc:
@@ -1689,8 +1693,12 @@ def file_name(name: Any) -> str:
     return text if text not in ("", ".", "..") else "attachment"
 
 
-def _read_upload(path: str) -> bytes | None:
-    """The file's bytes, or None after saying why it is refused (larger than 10 MiB)."""
+def _read_upload(path: str, what: str = "files put") -> bytes | None:
+    """The file's bytes, or None after saying why it is refused (larger than 10 MiB). Under
+    a placement only a file in the clone (_placed_read)."""
+    placed = _placed_read(path, what, ATTACHMENT_MAX)
+    if placed is not None:
+        return placed
     try:
         with open(path, "rb") as fh:
             data = fh.read(ATTACHMENT_MAX + 1)
@@ -1736,7 +1744,7 @@ def _post_with(session: Session, paths: list[str], post: Callable[[list[str]], A
     transaction, §8.7). When the post's answer is lost or a 5xx (a proxy's 502 comes after
     a commit as easily as before one), the message may be stored: the uploads are left
     alone then, and named."""
-    files = [(path, _read_upload(path)) for path in paths]  # every file checked before any upload
+    files = [(path, _read_upload(path, "--attach")) for path in paths]  # every file checked before any upload
     if any(data is None for _, data in files):
         raise CommandError("nothing was sent")
     ids: list[str] = []
@@ -1795,7 +1803,14 @@ _SHA256 = re.compile(r"[0-9a-f]{64}", re.ASCII)
 
 
 def cmd_files_get(args: argparse.Namespace) -> int:
-    """`GET …/attachments/{id}`, then `…/content` into a file or to standard output (§13)."""
+    """`GET …/attachments/{id}`, then `…/content` into a file or to standard output (§13).
+    Under a placement into a new file in the clone only, never to standard output."""
+    root = _placement_clone()
+    if root is not None and args.output == "-":
+        raise UsageError(
+            "-o -: under a runner placement maity writes an attachment only into a new file in"
+            " this clone; name one with -o <file>, or leave -o out for ./maity-files/"
+        )
     session = Session()
     meta = session.client.call("GET", session.project_path("attachments", args.id))
     if not isinstance(meta, dict):
@@ -1828,7 +1843,6 @@ def cmd_files_get(args: argparse.Namespace) -> int:
             _err("SHA-256 mismatch: the bytes written are not the ones the metadata names")
             return EXIT_ERROR
         return EXIT_OK
-    root = _placement_clone()
     if root is not None:
         given = args.output or os.path.join(FILES_DIR, name)
         what = "-o" if args.output else "files get"
@@ -1904,6 +1918,43 @@ def _placement_clone() -> Path | None:
         return clonecheck.placement_root()
     except clonecheck.Refused as exc:
         raise CommandError(str(exc)) from None
+
+
+# The most maity reads from one file the agent names under a placement: the largest input a
+# command takes, an attachment.
+PLACED_READ_MAX = ATTACHMENT_MAX
+QUIET_REFUSAL = (
+    "under a runner placement maity reads only a plain file in this clone, outside its .git,"
+    " not through a link and with no other hard link"
+)
+
+
+def _placed_read(
+    given: str, flag: str, limit: int = PLACED_READ_MAX, *, quiet: bool = False
+) -> bytes | None:
+    """Under a placement: the bytes of the file `given` names, read only inside the clone,
+    outside its `.git`, never through a link or a file with another hard link (inclone.read,
+    cli/context/runner.md). None outside a placement, where the caller reads as before.
+    `quiet` leaves the path out of a refusal (a restricted text given there by mistake)."""
+    root = _placement_clone()
+    if root is None:
+        return None
+    try:
+        with clonecheck.opened_git(root) as dot_git:
+            return inclone.read(root, given, flag, limit, dot_git)
+    except (clonecheck.Refused, inclone.Refused) as exc:
+        if quiet:  # nothing of the path, not even one of its names
+            raise UsageError(f"{flag}: {QUIET_REFUSAL}") from None
+        raise UsageError(str(exc)) from None
+
+
+def _placed_text(given: str, flag: str, *, quiet: bool = False) -> str | None:
+    """`_placed_read` as text, as `Path.read_text` gives it (UTF-8, universal newlines);
+    UnicodeDecodeError when it is not UTF-8. None outside a placement."""
+    data = _placed_read(given, flag, quiet=quiet)
+    if data is None:
+        return None
+    return io.TextIOWrapper(io.BytesIO(data), encoding="utf-8").read()
 
 
 def _files_dir() -> Path:
@@ -3013,7 +3064,9 @@ def _restricted_text(source: str) -> str:
     else:
         # The path is not repeated in a refusal: a text given there by mistake stays unsaid.
         try:
-            text = Path(source).read_text(encoding="utf-8").removeprefix(_BOM)
+            placed = _placed_text(source, "--file", quiet=True)
+            text = (placed if placed is not None else Path(source).read_text(encoding="utf-8"))
+            text = text.removeprefix(_BOM)
         except UnicodeDecodeError:
             raise UsageError("--file: the file is not UTF-8; save it as UTF-8") from None
         except OSError as exc:
@@ -3412,9 +3465,13 @@ def cmd_profile_avatar(args: argparse.Namespace) -> int:
     if args.remove:
         answer = Session().client.call("DELETE", "/me/avatar")
         return _done(args, answer, f"avatar removed; now {_avatar_line(answer)}")
+    placed = _placed_read(args.file, "the image", AVATAR_MAX)
     try:
-        with open(args.file, "rb") as fh:
-            data = fh.read(AVATAR_MAX + 1)
+        if placed is not None:
+            data = placed
+        else:
+            with open(args.file, "rb") as fh:
+                data = fh.read(AVATAR_MAX + 1)
     except OSError as exc:
         raise UsageError(f"cannot read {args.file}: {exc.strerror}") from None
     kind = avatar_type(data)
@@ -5590,7 +5647,12 @@ _BOM = "\ufeff"
 
 
 def _read_text_file(path: str, flag: str) -> str:
+    """The file's text, less a leading byte order mark. Under a placement only a file in the
+    clone (_placed_read)."""
     try:
+        placed = _placed_text(path, flag)
+        if placed is not None:
+            return placed.removeprefix(_BOM)
         return Path(path).read_text(encoding="utf-8").removeprefix(_BOM)
     except UnicodeDecodeError:  # PowerShell 5.1 writes UTF-16 with `>`
         raise UsageError(f"{flag}: {path} is not UTF-8; save it as UTF-8") from None
