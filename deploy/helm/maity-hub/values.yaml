@@ -4,7 +4,7 @@
 # connects to one that exists. Secrets are never values here: the chart only
 # names Secrets that already exist in the release namespace.
 #
-# What every install sets: image.repository, database.existingSecret, and
+# What every install sets: image.repository, image.digest, database.existingSecret, and
 # either the Ingress (ingress.enabled, ingress.host, ingress.className,
 # config.trustedProxies) or config.publicUrl. README.md walks through a
 # complete install.

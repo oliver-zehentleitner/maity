@@ -145,7 +145,7 @@ example; any cluster with the same pieces works.
    ```yaml
    image:
      repository: registry.example.org/maity-hub
-     tag: "<commit>"
+     digest: sha256:<the image digest>  # a digest, not a tag: the one the publish-image run summary prints
    imagePullSecrets:
      - name: registry-credentials
    database:

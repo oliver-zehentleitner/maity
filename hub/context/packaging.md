@@ -447,6 +447,7 @@ version to name, and the package path stays untested).
 **Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump and redoing the fold before the final MERGE-READY set by the team lead); the maintainer's answer to req-k3acfg3wva0g, 2026-11-10 (fold the changelog at every release); the log of the `v0.1.0a1` run of publish-image (job 129086565903); `.github/workflows/publish-image.yml`; `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
 **Revisit when:** a deploy runs an image no tag built, the deploy stops being a manual step on the maintainer's command, or the hub reaches its beta and leaves the `0.1.0aN` pre-releases
 **See:** packaging.md#the-hub-is-published-to-pypi-as-maity-hub-from-the-same-v-tag-as-the-image-built-from-a-hashed-lock — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-10
+**See:** packaging.md#the-chart-pulls-by-digest-by-default-a-tag-is-an-explicit-opt-in — b62d9e4a-3c17-4a8f-9e50-d4a1f7c28b93 — as of 2026-11-14
 
 Until deploy 5, maity.team ran images built from main by commit, and
 only `0.1.0a1` was ever tagged. From deploy 6 on, every deploy also
@@ -466,17 +467,20 @@ through the same steps:
 4. Ops deploys the image that tag built.
 
 The deployment itself (manual approvals, the maintainer's command) does
-not change. The chart's `appVersion` follows the bump so that its default
-image tag names the image the release tag builds. It had stayed at
-`0.1.0.dev0`, which was never published. For that image to exist,
+not change. The chart's `appVersion` follows the bump, so `Chart.yaml`
+and the `app.kubernetes.io/version` label name the release. Until
+2026-11-13 it also gave the chart's default image tag, so that the
+default named the image the release tag builds; since then the chart
+pulls by digest and has no default tag (see b62d9e4a). It had stayed at
+`0.1.0.dev0`, which was never published. For that tagged image to exist,
 `publish-image.yml` tags the image with `type=pep440` rather than
 `type=semver`. The pinned metadata-action drops a PEP 440 pre-release such
 as `0.1.0a1` as invalid SemVer, so the
 `v0.1.0a1` run logged `v0.1.0a1 is not a valid semver` and pushed only
 the commit-SHA tag (found in the review of this change). The deploy of
-maity.team pins the image by digest, so the default tag only matters to a
-chart install that sets neither `image.tag` nor `image.digest`. The labels
-`app.kubernetes.io/version` show `appVersion` either way.
+maity.team pins the image by digest, so the default tag only mattered to
+a chart install that set neither `image.tag` nor `image.digest`. The
+`app.kubernetes.io/version` label shows `appVersion` unless a tag is set.
 
 **Reason:** this is the maintainer's decision; no reason beyond it was
 stated.
