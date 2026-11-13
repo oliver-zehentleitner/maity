@@ -454,8 +454,8 @@ def _access(
     for key in sorted(pairs):
         mine, current = mines[key[0]], stays[key[1]]
         keeper = keepers.get(key[1])
-        if any(s.membership_id == mine.id for s in current):
-            found[key] = "participant"
+        if any(s.membership_id == mine.id and not s.waiting for s in current):
+            found[key] = "participant"  # a waiting agent does not see the chat (§9.6)
         elif keeper is not None:  # an owner's round: only its `circle_owner` reads along
             if mine.kind == "human" and mine.principal_id == keeper:
                 found[key] = "observer"
