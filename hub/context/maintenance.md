@@ -161,7 +161,8 @@ and footer around the door, "Maintenance", when the hub is back and the window's
 `render.DOOR_CSP`, `Referrer-Policy: no-referrer` (some of these paths hold a token) and
 `Retry-After`. The frame is the one last read, kept per process (`maintenance.cached_frame`): a
 refused request never reads it. When it is missing or older than a minute, one thread reads it again
-in the background, one read at a time. The small page with the product line stands on the join host,
+in the background, one read at a time; after a failed read the next waits ten seconds, so a database
+that keeps failing costs one read and one warning per ten seconds, not one per refused request. The small page with the product line stands on the join host,
 which serves none of the frame's stylesheets (§1.1), and while no frame is kept: after a start, or
 while every read fails (a used-up pool, a migration under way).
 

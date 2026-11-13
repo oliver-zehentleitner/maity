@@ -294,6 +294,35 @@ def test_the_503_page_never_waits_for_the_frames_read(
         held.set()
 
 
+def test_a_failing_frame_read_is_tried_again_only_after_a_rest(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # A database that keeps failing costs one read and one warning per RETRY_SECONDS, not one per
+    # refused request (#1721's review); a read that works again ends the rest.
+    clock_at = [100.0]
+    monkeypatch.setattr(maintenance, "monotonic", lambda: clock_at[0])
+    reads: list[int] = []
+
+    def failing(_engine: Engine) -> dict[str, Any]:
+        reads.append(1)
+        raise TimeoutError("no pooled connection")
+
+    monkeypatch.setattr(maintenance, "frame_of", failing)
+    monkeypatch.setattr(maintenance, "_in_background", lambda read, engine: read(engine))
+    with caplog.at_level("WARNING", logger="maity_hub.maintenance"):
+        for _ in range(5):
+            assert maintenance.cached_frame(migrated) is None
+        assert len(reads) == 1
+        clock_at[0] += maintenance.RETRY_SECONDS
+        assert maintenance.cached_frame(migrated) is None
+        assert len(reads) == 2
+    assert sum("could not be read" in r.getMessage() for r in caplog.records) == 2
+    monkeypatch.setattr(maintenance, "frame_of", lambda _engine: {"setting": {}})
+    clock_at[0] += maintenance.RETRY_SECONDS
+    maintenance.cached_frame(migrated)  # the read that works again
+    assert maintenance.cached_frame(migrated) == {"setting": {}}
+
+
 def test_a_window_does_not_refuse_once_it_is_over_inside_the_cache(
     admin: flow.Human, now: Clock
 ) -> None:

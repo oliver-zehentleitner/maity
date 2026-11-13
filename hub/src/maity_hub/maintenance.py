@@ -139,29 +139,39 @@ PAGE = (
 # protects (a used-up pool would hold it up to the pool's timeout); a stale or missing frame is
 # read again in one thread of its own, and the page is the small one until a frame is there.
 FRAME_SECONDS = 60.0
+RETRY_SECONDS = 10.0  # after a failed read, the next one waits this long: no log storm
 _frame: tuple[float, dict[str, Any]] | None = None
 _frame_reading = False
+_frame_failed: float | None = None  # when the last read failed
 
 
 def cached_frame(engine: Engine) -> dict[str, Any] | None:
     """The last frame read, or None; starts one read in the background when it is missing or
-    older than `FRAME_SECONDS`. Touches no database in the caller."""
+    older than `FRAME_SECONDS`. Touches no database in the caller. At most one read runs at a
+    time, in a daemon thread that ends with the read; after a failed one the next waits
+    `RETRY_SECONDS`, so a database that keeps failing costs one read and one warning per 10 s."""
     global _frame_reading
     with _lock:
         held = _frame
-        start = (held is None or monotonic() - held[0] >= FRAME_SECONDS) and not _frame_reading
+        now = monotonic()
+        stale = held is None or now - held[0] >= FRAME_SECONDS
+        resting = _frame_failed is not None and now - _frame_failed < RETRY_SECONDS
+        start = stale and not resting and not _frame_reading
         if start:
             _frame_reading = True
     if start:
-        threading.Thread(
-            target=refresh_frame, args=(engine,), name="maintenance-frame", daemon=True
-        ).start()
+        _in_background(refresh_frame, engine)
     return held[1] if held is not None else None
+
+
+def _in_background(read: Callable[[Engine], None], engine: Engine) -> None:
+    """One daemon thread for one read; it ends with the read (tests run it in place)."""
+    threading.Thread(target=read, args=(engine,), name="maintenance-frame", daemon=True).start()
 
 
 def refresh_frame(engine: Engine) -> None:
     """Read the frame and keep it; on any failure keep the last one (the page falls back)."""
-    global _frame, _frame_reading
+    global _frame, _frame_reading, _frame_failed
     found: dict[str, Any] | None = None
     try:
         found = frame_of(engine)
@@ -170,15 +180,19 @@ def refresh_frame(engine: Engine) -> None:
     with _lock:
         if found is not None:
             _frame = (monotonic(), found)
+            _frame_failed = None
+        else:
+            _frame_failed = monotonic()
         _frame_reading = False
 
 
 def forget_frame() -> None:
     """Drop the kept frame (in tests)."""
-    global _frame, _frame_reading
+    global _frame, _frame_reading, _frame_failed
     with _lock:
         _frame = None
         _frame_reading = False
+        _frame_failed = None
 
 
 def frame_of(engine: Engine) -> dict[str, Any]:
