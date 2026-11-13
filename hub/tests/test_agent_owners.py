@@ -9,8 +9,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
+from maity_hub import agent_owners, events
 from maity_hub import tables as t
-from tests import factory, flow
+from tests import concurrency, factory, flow
 from tests.conftest import ClientFactory
 
 PROJECT = "/projects/maintainer/maity"
@@ -535,3 +536,49 @@ def test_an_unsettled_blue_team_does_not_block_a_policy_change(
     changed = _set(owner, outside_roles=["coder", "designer"])
     assert changed.status_code == 200, changed.text
     assert _row(migrated, blue.agent_id).role == "coder"  # the pass after the change settled it
+
+
+def _stale(engine: Engine, made: factory.Agent) -> tuple[Any, Any]:
+    """The project and the member as a resume read them before it took the project's lock."""
+    with engine.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        row = conn.execute(
+            select(t.membership).where(t.membership.c.id == made.membership_id)
+        ).one()
+    return project, row
+
+
+def test_a_settle_on_an_older_row_changes_nothing_and_tells_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated, member=False)
+    _set(owner, agent_owners="anyone")
+    blue = _blue(migrated, friend.id)
+    project, row = _stale(migrated, blue)  # both resumes read the member as blue-team
+    for _ in range(2):
+        with events.transaction(migrated) as conn:
+            agent_owners.settle(conn, project, row, agent_owners.HUB)
+    assert _row(migrated, blue.agent_id).role == "coder"
+    assert len(_fell_back(migrated, blue)) == 1
+    assert sum(FELL_BACK in title for title in _notices(migrated, friend.id)) == 1
+
+
+def test_two_resumes_racing_settle_once(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated, member=False)
+    _set(owner, agent_owners="anyone")
+    blue = _blue(migrated, friend.id)
+    project, row = _stale(migrated, blue)
+    with concurrency.race(migrated) as race:
+        agent_owners.settle(race.first, project, row, agent_owners.HUB)  # holds the lock
+        second = race.run(
+            race.second, lambda: agent_owners.settle(race.second, project, row, agent_owners.HUB)
+        )
+        assert concurrency.waiting(second)  # at the project's lock
+        race.first.commit()
+        concurrency.finished(second)
+        race.second.commit()
+    assert _row(migrated, blue.agent_id).role == "coder"
+    assert len(_fell_back(migrated, blue)) == 1
+    assert sum(FELL_BACK in title for title in _notices(migrated, friend.id)) == 1

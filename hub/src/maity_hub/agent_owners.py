@@ -21,7 +21,7 @@ from sqlalchemy import Connection, select, update
 from maity_hub import clock, isolation, policy, project_roles, public_projects
 from maity_hub import tables as t
 from maity_hub.errors import invalid
-from maity_hub.events import Actor
+from maity_hub.events import Actor, lock_project
 
 OWNER_LEFT = "The agent's owner is no longer a member of this project."
 HUB = Actor(None)  # the events name no actor: the hub's own change
@@ -128,13 +128,17 @@ def fall_back(conn: Connection, project: Any, row: Any, actor: Actor) -> None:
     from maity_hub.routes.requests import file_hub_notice
 
     change = members.Change(project, actor, isolation.BY_HUB, isolation.BY_HUB, None, None)
-    members.apply_patch(
+    changed = members.apply_patch(
         conn,
         change,
         row,
         {"role": FALLBACK_ROLE, "role_base": FALLBACK_ROLE},
         (False, None),
     )
+    if not changed:
+        # The patch re-reads the row under the project's lock: a caller that decided on an
+        # older row (another resume settled it first) changed nothing and tells nobody.
+        return
     handle = conn.execute(
         select(t.agent_profile.c.handle).where(t.agent_profile.c.id == row.agent_id)
     ).scalar_one()
@@ -151,20 +155,34 @@ def fall_back(conn: Connection, project: Any, row: Any, actor: Actor) -> None:
     )
 
 
-def settle(conn: Connection, project: Any, row: Any, actor: Actor, mode: str | None = None) -> None:
-    """One active agent member against the project's setting (§6.2): nothing while its owner
-    is a member or it stays within the limits, `coder` for a `blue-team` that may fall back,
-    else the hub's isolation. An isolated member stays as it is."""
+def _verdict(conn: Connection, project: Any, row: Any, mode: str | None) -> str | None:
+    """None while the member may stay as it is, else `fall_back` or `isolate`."""
     if isolation.is_isolated(row) or not is_outside(conn, project, row):
-        return
+        return None
     mode = mode or effective(conn, project)
     if mode == "anyone":
         if within_limits(project, row.trust, row.role, row.role_base):
-            return
+            return None
         if falls_back(project, row):
-            fall_back(conn, project, row, actor)
-            return
-    isolate_by_hub(conn, project, row, actor)
+            return "fall_back"
+    return "isolate"
+
+
+def settle(conn: Connection, project: Any, row: Any, actor: Actor, mode: str | None = None) -> None:
+    """One active agent member against the project's setting (§6.2): nothing while its owner
+    is a member or it stays within the limits, `coder` for a `blue-team` that may fall back,
+    else the hub's isolation. An isolated member stays as it is. Before it acts it decides
+    again on the row as it is under the project's lock, so that two resumes of one agent
+    settle it once."""
+    if _verdict(conn, project, row, mode) is None:
+        return
+    project = lock_project(conn, project.id)
+    row = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
+    verdict = _verdict(conn, project, row, mode)
+    if verdict == "fall_back":
+        fall_back(conn, project, row, actor)
+    elif verdict == "isolate":
+        isolate_by_hub(conn, project, row, actor)
 
 
 def reconcile(conn: Connection, project_id: str, actor: Actor | None = None) -> None:
