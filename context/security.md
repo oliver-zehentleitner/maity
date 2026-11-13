@@ -295,8 +295,7 @@ HTML answer without a policy, is the one place for the rest: every HTML
 answer gets `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy:
 same-origin` and a `Permissions-Policy` that denies camera, microphone,
 geolocation, payment and USB, unless its route set the header. An HTML
-answer without a policy of its own (the app shell at every path, signed
-in or not) gets `default-src 'self'; frame-ancestors 'none'; base-uri
+answer without a policy of its own (the app shell at every path) gets `default-src 'self'; frame-ancestors 'none'; base-uri
 'self'; form-action 'self'; object-src 'none'` and, unless the route
 chose one, `Referrer-Policy: same-origin`. Every answer that went out
 over TLS (the scheme decided from the trusted proxies, §2.5) carries
