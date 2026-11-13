@@ -266,14 +266,9 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
     assert answer.status_code == 200, answer.text
     with setup.engine.connect() as conn:
         joins = conn.execute(
-            select(t.join_link.c.revoked_at, t.join_link.c.revoked_by).where(
-                t.join_link.c.placement_id.is_not(None)
-            )
+            select(t.join_link.c.revoked_at).where(t.join_link.c.placement_id.is_not(None))
         ).all()
     assert joins and all(j.revoked_at is not None for j in joins)
-    # The hub's own revocation, whoever moved the placement: nobody named or told (§3.1).
-    assert all(j.revoked_by is None for j in joins)
-    assert events_of(setup, "join_revoked") == []
     _unrevoke_joins(setup)
     members = _members(setup)
     refused = exchange(make_client(), picked)
@@ -558,3 +553,22 @@ def test_a_supervised_session_wakes_on_less() -> None:
         row = _row(kind, audience)
         assert events.wakes(row, me, "agt-b") is plain, kind
         assert events.wakes(row, me, "agt-b", supervised=True) is supervised, (kind, audience)
+
+
+def test_the_hub_revoking_an_unused_pickup_names_nobody_and_tells_nobody(
+    setup: Setup,
+) -> None:
+    """`revoke_unused_joins` is the hub's own revocation, whoever moved the placement (§3.1)."""
+    placement = placed(setup)
+    pick_up(setup, placement)
+    path = f"/projects/maintainer/maity/placements/{placement['id']}"
+    assert setup.owner.delete(path).status_code == 200
+    with setup.engine.connect() as conn:
+        joins = conn.execute(
+            select(t.join_link.c.revoked_at, t.join_link.c.revoked_by).where(
+                t.join_link.c.placement_id.is_not(None)
+            )
+        ).all()
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+    assert joins and all(j.revoked_at is not None and j.revoked_by is None for j in joins)
+    assert told == []
