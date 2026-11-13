@@ -620,14 +620,23 @@ def _copy_refs_by_path(dot_git: Path, private: Path) -> None:
         raise Refused(f"the clone's refs cannot be copied ({exc})") from None
 
 
+class Opened(NamedTuple):
+    """The runner's clone as `opened_clone` checked it: its root and its `.git`, each an open
+    descriptor, the second opened from the first."""
+
+    top: int
+    git: int
+
+
 @contextlib.contextmanager
-def opened_git(root: Path) -> Iterator[int | None]:
-    """The clone's `.git` as the runner left it: opened once from the clone's root without
-    following a link, and refused unless it is the directory whose inode the runner set in
-    GIT_INODE_ENV at the session's start. Yields its descriptor, so what maity reads from it
-    afterwards is not looked up through the name `.git` again; sandboxed code can rename
-    `.git` and put a directory of its own there. Where directories cannot be opened (Windows,
-    local mode) the inode is checked by name and None is yielded."""
+def opened_clone(root: Path) -> Iterator[Opened | None]:
+    """The clone's root and `.git` as the runner left them: the root opened once without
+    following a link, `.git` opened from that descriptor without following one, and refused
+    unless it is the directory whose inode the runner set in GIT_INODE_ENV at the session's
+    start. Yields both descriptors, so what maity reads or writes afterwards is not looked up
+    through the clone's path or the name `.git` again; sandboxed code can rename `.git`, and
+    a root exchanged after the check is not the one written to. Where directories cannot be
+    opened (Windows, local mode) the inode is checked by name and None is yielded."""
     value = os.environ.get(GIT_INODE_ENV, "")
     if not (value.isascii() and value.isdigit()):
         raise Refused(
@@ -647,19 +656,31 @@ def opened_git(root: Path) -> Iterator[int | None]:
             raise replaced
         yield None
         return
-    top = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        fd = os.open(".git", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+        top = os.open(root, os.O_RDONLY | os.O_DIRECTORY | NOFOLLOW)
     except OSError:
-        raise replaced from None
+        raise Refused(f"the clone {root} cannot be opened as a directory") from None
+    try:
+        try:
+            fd = os.open(".git", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+        except OSError:
+            raise replaced from None
+        try:
+            if os.fstat(fd).st_ino != int(value):
+                raise replaced
+            yield Opened(top, fd)
+        finally:
+            os.close(fd)
     finally:
         os.close(top)
-    try:
-        if os.fstat(fd).st_ino != int(value):
-            raise replaced
-        yield fd
-    finally:
-        os.close(fd)
+
+
+@contextlib.contextmanager
+def opened_git(root: Path) -> Iterator[int | None]:
+    """The descriptor of the clone's `.git` that `opened_clone` checked, or None where
+    directories cannot be opened."""
+    with opened_clone(root) as opened:
+        yield None if opened is None else opened.git
 
 
 def _walks() -> bool:

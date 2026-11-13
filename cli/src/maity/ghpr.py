@@ -127,19 +127,23 @@ def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
     return lines[0], program
 
 
-def body_file(root: Path, given: str, dot_git: int | None = None) -> bytes:
+def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -> bytes:
     """The file's content, read through descriptors only (`inclone.read`): maity runs
     outside the sandbox, and any name it looked up twice could point elsewhere the second
-    time. A regular file in the clone, outside its `.git` (the one `clonecheck.opened_git`
-    checked, `dot_git`), with no other hard link, of at most BODY_MAX bytes
-    (cli/context/runner.md 9f43804d)."""
+    time. A regular file in the clone whose root and `.git` `clonecheck.opened_clone`
+    checked (`opened`), outside that `.git`, with no other hard link, of at most BODY_MAX
+    bytes (cli/context/runner.md 9f43804d)."""
+    try:
+        inclone.names(root, given, "--body-file")  # a path out of the clone says so everywhere
+    except inclone.Refused as exc:
+        raise Refused(str(exc)) from None
     if not WALKS:  # Windows
         raise Refused(
             f"--body-file {given}: this system cannot open a file without following links;"
             " give the text with --body"
         )
     try:
-        return inclone.read(root, given, "--body-file", BODY_MAX, dot_git)
+        return inclone.read(root, given, "--body-file", BODY_MAX, opened)
     except inclone.Refused as exc:
         raise Refused(str(exc)) from None
 
@@ -157,7 +161,11 @@ def current_branch(root: Path) -> str:
 
 
 def command(
-    args: argparse.Namespace, root: Path, repository: str, gh: str, dot_git: int | None = None
+    args: argparse.Namespace,
+    root: Path,
+    repository: str,
+    gh: str,
+    opened: clonecheck.Opened | None = None,
 ) -> tuple[list[str], bytes | None]:
     """gh's argument list, built here option by option (`--name=value`, so no value is read
     as an option), with the recorded repository, and what goes to its standard input. The
@@ -166,7 +174,7 @@ def command(
     if args.gh_command == "create":
         argv.append(f"--title={args.title}")
         if args.body_file is not None:
-            stdin = body_file(root, args.body_file, dot_git)
+            stdin = body_file(root, args.body_file, opened)
         else:
             stdin = args.body.encode("utf-8")
             if len(stdin) > BODY_MAX:
@@ -249,9 +257,9 @@ def run(args: argparse.Namespace) -> int:
     if root is None:
         raise Refused("maity gh runs only in a session a runner placed; " + ALLOWED)
     try:
-        with clonecheck.opened_git(root) as dot_git:
-            repository, gh = granted(root, dot_git)
-            argv, stdin = command(args, root, repository, gh, dot_git)
+        with clonecheck.opened_clone(root) as opened:
+            repository, gh = granted(root, None if opened is None else opened.git)
+            argv, stdin = command(args, root, repository, gh, opened)
     except clonecheck.Refused as exc:
         raise Refused(str(exc)) from None
     text = as_text(args)

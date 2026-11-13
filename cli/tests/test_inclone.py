@@ -4,9 +4,12 @@ placement it behaves as before (test_chats_files.py)."""
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import hashlib
 import os
 import stat
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -227,3 +230,93 @@ def test_outside_a_placement_force_still_replaces_and_any_path_is_taken(
     assert target.read_bytes() == b"hello"
     assert get("-o", ".git/fetched") == cli.EXIT_OK  # unchanged: no placement, no confinement
     assert (Path.cwd() / ".git" / "fetched").read_bytes() == b"hello"
+
+
+@walks
+def test_a_root_exchanged_after_the_check_is_not_written_to(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The walk starts at the root `opened_clone` checked with `.git`, by its descriptor: a
+    directory put at the clone's path after the check gets nothing."""
+    checked = clonecheck.opened_clone
+    moved = placed.parent / "moved"
+
+    @contextlib.contextmanager
+    def then_exchanged(root: Path) -> Iterator[clonecheck.Opened | None]:
+        with checked(root) as opened:
+            os.rename(placed, moved)
+            placed.mkdir()
+            yield opened
+
+    monkeypatch.setattr(clonecheck, "opened_clone", then_exchanged)
+    assert get("-o", str(placed / "out.txt")) == cli.EXIT_OK
+    assert (moved / "out.txt").read_bytes() == b"hello"
+    assert not (placed / "out.txt").exists()
+
+
+@walks
+@pytest.mark.parametrize("how", ["as-is", "named", "named-no-proc", "no-hard-links"])
+def test_the_checked_bytes_are_what_gets_the_name(
+    placed: Path, served: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    """While the download runs, another file takes the name of maity's file (`.maity-*.part`
+    beside the target). What gets the target's name is the file maity wrote and checked, or
+    nothing: never the other one. `as-is` is this system's way (a file without a name on
+    Linux); the others force a named file, without /proc, and without hard links."""
+    if how != "as-is":
+        monkeypatch.delattr(os, "O_TMPFILE", raising=False)
+    if how == "named-no-proc":
+        monkeypatch.setattr(inclone, "PROC_FD", str(placed / "no-proc"))
+    if how == "no-hard-links":
+        real_link = os.link
+
+        def no_link(*args: Any, **kwargs: Any) -> None:
+            raise OSError(errno.EPERM, "no hard links here")
+
+        monkeypatch.setattr(os, "link", no_link)
+    other = placed.parent / "other"
+
+    def racing(s: Any) -> tuple[int, bytes]:
+        for part in placed.glob(".maity-*.part"):
+            other.write_bytes(b"OTHER")
+            os.replace(other, part)
+        return 200, b"hello"
+
+    served.routes[("GET", f"{P}/attachments/att-0042/content")] = racing
+    code = get("-o", "out.txt")
+    if how == "no-hard-links":
+        monkeypatch.setattr(os, "link", real_link)
+    target = placed / "out.txt"
+    if how == "named-no-proc":
+        assert code == cli.EXIT_ERROR and not target.exists()
+    else:
+        assert code == cli.EXIT_OK and target.read_bytes() == b"hello"
+    assert parts(placed) == []
+
+
+@posix
+@walks
+@pytest.mark.parametrize("target", ["hooks/post-checkout", "maity/git"])
+def test_a_link_put_at_the_clones_path_after_the_check_gets_nothing(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """After the check, the clone's path names a link into its own `.git`: the walk still
+    starts at the root that was checked, so nothing lands under `.git`."""
+    checked = clonecheck.opened_clone
+    moved = placed.parent / "moved"
+
+    @contextlib.contextmanager
+    def then_linked(root: Path) -> Iterator[clonecheck.Opened | None]:
+        with checked(root) as opened:
+            os.rename(placed, moved)
+            placed.symlink_to(moved / ".git", target_is_directory=True)
+            yield opened
+
+    monkeypatch.setattr(clonecheck, "opened_clone", then_linked)
+    before = {p: p.read_bytes() for p in (placed / ".git").rglob("*") if p.is_file()}
+    for given in (str(placed / target), target):
+        assert get("-o", given, "--force") == cli.EXIT_ERROR
+    after = {p: p.read_bytes() for p in (moved / ".git").rglob("*") if p.is_file()}
+    assert {p.relative_to(placed): b for p, b in before.items()} == {
+        p.relative_to(moved): b for p, b in after.items()
+    }
