@@ -1250,6 +1250,11 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
 
             return {**payload, "note": {**note, "body": notes.tombstone_for(body, reader)}}
         return payload
+    task_event = row.kind in ("task_created", "task_updated")
+    if task_event and isinstance(payload, dict) and not row.redacted:
+        # A redacted history entry's tombstone sits in the field values of the event its
+        # write emitted (§6.15).
+        return _field_tombstones_for(payload, reader)
     redaction = row.kind == "event_redacted" or row.redacted
     if not redaction or not isinstance(payload, dict):
         return payload
@@ -1261,6 +1266,18 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     if reader is not None and row.redacted and payload.get("by") == reader.principal_id:
         return payload  # the redactor's own tombstone
     return {**payload, "reason": None}  # no reader known: hidden, never shown by default
+
+
+def _field_tombstones_for(payload: dict[str, Any], reader: Any) -> dict[str, Any]:
+    """A task event's field values with each tombstone's reason as `reader` may read it."""
+    from maity_hub.board import notes
+
+    def tombstone(value: Any) -> bool:
+        return isinstance(value, dict) and value.get("redacted") is True
+
+    if not any(tombstone(v) for v in payload.values()):
+        return payload
+    return {k: notes.tombstone_for(v, reader) if tombstone(v) else v for k, v in payload.items()}
 
 
 def _standing_of(conn: Connection, events: Sequence[Any], reader: Any) -> dict[int, dict[str, Any]]:

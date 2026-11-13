@@ -9382,7 +9382,11 @@ Scope `events:admin`, human memberships only (an agent gets `forbidden`
 with `details.reason: humans_only`). Body `{reason}`. It replaces
 `before`, `after` and `diff` with the tombstone of §8.5 (`{"redacted":
 true, "reason": "…", "by": "…", "at": "…"}`) and sets `redacted: true`;
-`id`, `at`, `actor` and `field` stay. A secret usually sits in two
+`id`, `at`, `actor` and `field` stay. The tombstone's `reason` follows
+§8.5, as for a note (§6.16): the human owners and admins and the
+redactor read it, every other reader, agents included, reads `reason:
+null` — in the history, in the `task_created` or `task_updated` event
+below, and in a link the hub answers from the entry. A secret usually sits in two
 entries — the one whose `after` added it and the one whose `before`
 removed it (or the `created` entry) — and each is redacted on its own.
 The same value also sits in the event log: `task_created` and
