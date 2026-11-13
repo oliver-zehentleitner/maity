@@ -779,7 +779,7 @@ inbox whether or not they are a member of the project.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the maintainer's "paßt" of 2026-10-29 to the coordinator's proposal, as written in the body of card tsk-55x4f398dttv (a decision on the content, not a "like"; one per person and message, changeable, every change an event, the latest counts, the history visible; the author woken as by a reply; only humans; an optional sentence on 👎; no replacement for a go); the endpoint, the audience and the rules on observers, withdrawal and cross-project chats in `docs/api.md` §9.7 are the contract author's reading, open until the maintainer approves the contract
+**Source:** the maintainer's "paßt" of 2026-10-29 to the coordinator's proposal, as written in the body of card tsk-55x4f398dttv (a decision on the content, not a "like"; one per person and message, changeable, every change an event, the latest counts, the history visible; the author woken as by a reply; only humans; an optional sentence on 👎; no replacement for a go); his answers of 2026-11-13: a verdict may be taken back (`req-q94m13rzjfhx`), and cross-project group chats come later (`req-sw7xqv32egrt`); whether an owner reading along gives one is open (`req-58v00knm1qv6`); the endpoint, the audience, the redaction and the rule on observers in `docs/api.md` §9.7 are the contract author's reading, open until the maintainer approves the contract
 **Revisit when:** agents are to give a verdict, or a verdict is to count as a go on a request (§7)
 
 A human gives a chat message 👍 ("yes, I agree") or 👎 ("no, not like
