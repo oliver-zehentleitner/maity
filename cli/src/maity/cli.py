@@ -1734,7 +1734,7 @@ def _discard(session: Session, ids: list[str]) -> None:
         except hub.HubError:
             left.append(aid)
     if left:
-        _err(f"uploaded and still pending (they expire after 24 hours): {', '.join(left)}")
+        _err(f"uploaded and still pending (they expire after 24 hours): {_ids(left)}")
     elif ids:
         _err(f"nothing was sent; the {len(ids)} uploaded file(s) were deleted again")
 
@@ -1763,12 +1763,17 @@ def _post_with(session: Session, paths: list[str], post: Callable[[list[str]], A
         if _refused(exc):
             _discard(session, ids)
         elif ids:
-            _err(f"the message may have been sent; its attachments: {', '.join(ids)}")
+            _err(f"the message may have been sent; its attachments: {_ids(ids)}")
         raise
     except BaseException:
         if ids:
-            _err(f"the message may have been sent; its attachments: {', '.join(ids)}")
+            _err(f"the message may have been sent; its attachments: {_ids(ids)}")
         raise
+
+
+def _ids(ids: list[str]) -> str:
+    """Attachment ids as the hub returned them, cleaned for the terminal."""
+    return ", ".join(onboarding.inline(aid) for aid in ids)
 
 
 def _refused(exc: BaseException) -> bool:

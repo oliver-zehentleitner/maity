@@ -1091,9 +1091,14 @@ through `inline`; a text answer of `maity api`, `maity help` and a pull
 request's body and comments through `clean`, which keeps their lines. The
 stored `HubError.code` is the cleaned one too, since `maity-error` prints
 it. `maity join --pointer` writes only into a regular `AGENTS.md` or
-`CLAUDE.md` directly in the repository's root, opened without following a
-link (`O_NOFOLLOW` where the platform has it); for any other it says so and
-prints the block, and the join goes on.
+`CLAUDE.md` directly in the repository's root. Where the platform opens
+relative to a directory (not Windows), the root is opened once and both files
+are looked up in that open directory, never following a link
+(`O_NOFOLLOW`), and only a regular file is truncated and written. For any
+other file, and for a file the system will not open or write, it says so and
+prints the block, and the join goes on. On Windows the files are opened by
+path after the check, so a directory swapped in between is a known gap
+there.
 
 **Reason:** a terminal acts on escape sequences in what it is given; text a
 hub, a proxy or a pull request's author wrote must not move the cursor,
@@ -1106,6 +1111,10 @@ may write, and a clone brings its links with it.
   tell that the text was changed. `clean` shows them, as the resume does.
 - `inline` for multi-line text (help, a body): it would put a whole page on
   one line; `clean` keeps the newlines, and those cannot act on a terminal.
+- Checking the resolved path and then opening by path (the first version
+  of this change): only the last component is opened without following a
+  link, so a repository directory replaced between the check and the open
+  leads the write elsewhere. A review found it.
 - Following a link whose target lies inside the repository: the check and
   the write are two steps a second link can fall between, and the block in a
   link's target is not what the repository's `AGENTS.md` shows. The one
