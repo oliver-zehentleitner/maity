@@ -2380,10 +2380,10 @@ do, and hid that the cause was the shape of its own command.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`. The grammar and the rejected alternatives below are the author's, not yet reviewed
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
-**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
 
 Under its sandbox, a placed Claude Code session runs a hook before every
 tool call (`runner/plaincall.py`), written by the runner into the
@@ -2407,6 +2407,16 @@ matcher, so it sees every tool, and checks any tool input with a
 `command`. A hook that fails, cannot start or times out refuses the call
 (`onFailure: "block"`), and unreadable input is refused too. The session's
 settings set `disableAllHooks: false` over the agents' user settings.
+Because the hook's refusal on failure needs `onFailure` (Claude Code
+2.1.295), the runner switches Claude Code's sandbox on only from that
+version (`capabilities.sandbox_version_ok`); an unknown or unreadable
+version counts as older. With `require_sandbox` that is an error in
+`maity runner check` and a refused start (`harness_refused`); without
+it the session runs unsandboxed (`sandbox_unavailable`), with no
+exclusion for the hook to guard, as on a host without the sandbox's
+tools. The hook's shell form ends in `|| exit 2`, so a hook that cannot
+start or fails refuses the call on any version; only a timeout needs
+`onFailure`.
 opencode, which runs without a sandbox and gets no hook, denies
 `maity *<c>*` for each of `;&|<>$`, a backtick and a newline, after its
 allows; whether its scanner hands a redirect to the rule with the
@@ -2431,6 +2441,14 @@ spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
   quoted paths also runs on a harness version that predates exec form.
 - No exclusion for `maity` at all: a larger change, for a card of its
   own.
+- Only a warning for a Claude Code older than 2.1.295 (the first round
+  of #1752): there a hook that fails or times out lets the call through,
+  so the promise above would not hold for a version the runner accepts
+  (review of #1752).
+- Refusing every Claude Code placement on such a version, sandbox
+  required or not: without the sandbox there is no exclusion and nothing
+  for the hook to hold; a runner without `require_sandbox` already runs
+  such sessions where the sandbox's tools are missing.
 
 ## Placed agents open their pull requests through `maity gh`, pinned to the clone's repository
 
