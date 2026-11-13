@@ -1271,3 +1271,35 @@ cost without a purpose; stored, the read takes it with the membership row it loa
 - A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
   path that forgets the value.
 
+## A key per purpose comes from one helper in `secretbox`: HKDF of the instance key, else a fallback key made at first use
+
+**Id:** dc952df1-de40-4d07-b091-cb95d4063e6b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit tsk-hgnbapyw7hnh (area 12, item 4) and its card tsk-8vdegd61y70v, which proposed `secretbox` as the home; the follow-up card tsk-2y0qbc1zm7r1 (rate_count keys from one keyed helper)
+**Revisit when:** the open question below is decided, or a keyed value needs a key that is not 32 bytes
+
+`secretbox.derive` (HKDF-SHA256, no salt, the purpose as `info`),
+`secretbox.purpose_key` (derived from `MAITY_SECRET_KEY` when it is set,
+else the stored fallback key as it is) and `secretbox.prepare_fallback`
+(make the fallback at first use in a transaction of its own, keep a
+concurrent winner's) serve the address locks' pepper
+(`address.lock_pepper`), the notification positions' key and the known
+sources' fingerprints; a new keyed value (the rate counts' keys of
+tsk-2y0qbc1zm7r1) uses them too. The purpose strings are pinned by a test:
+a changed byte invalidates every lock row, position and fingerprint.
+
+**Open:** whether a fallback key is removed once an instance key is set.
+The address pepper is (`wipe_when_keyed=True`), the position key is kept;
+the clean-up kept both as they were, since it changes no behaviour.
+
+**Reason:** the derivation had been copied three times, the generic part
+inside `mail/address.py` and the known sources reaching into the mail
+module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
+`cryptography` dependency, so every key the hub derives is in one module.
+
+**Rejected alternatives:**
+- A new module for the three functions: one more home for the instance
+  key, beside the one that parses and uses it.
+- `instance_settings`: it stores the fallback, but knows nothing of keys.
