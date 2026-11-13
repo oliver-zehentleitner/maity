@@ -7,6 +7,8 @@
 # It also runs the two blocks that close the hub's NetworkPolicy after a restore and open it again (docs/install/README.md,
 # steps 4 and 6): the hub starts only once the policy admits nobody, the kept rules are never overwritten, and they are
 # removed only once the policy has them again.
+# The two restore blocks also check the backup's signature when MAITY_BACKUP_SIGNER names a fingerprint (the signing key's or
+# its primary key's), and stop before anything is decrypted when the signature is missing, bad or by another key.
 # Usage: deploy/scripts/test-restore-blocks.sh   (no cluster needed; GNU tar, python3)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -85,6 +87,19 @@ exit 0
 STUB
 cat > "$work/bin/gpg" <<'STUB'
 #!/bin/bash
+# --verify: $SIG good (by $SUBKEY, primary $PRIMARY), other (by another key) or bad; a missing .sig fails like gpg. Else decrypt.
+echo "gpg $*" >> "$S/log"
+args=("$@")
+for i in "${!args[@]}"; do
+  [ "${args[$i]}" = --verify ] || continue
+  sig=${args[$((i + 1))]}
+  [ -e "$sig" ] || { echo "gpg: can't open '$sig': No such file or directory" >&2; exit 2; }
+  case "${SIG:-good}" in
+    good)  echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; echo "[GNUPG:] VALIDSIG $SUBKEY 2026-11-14 1794614400 0 4 0 22 10 00 $PRIMARY"; exit 0;;
+    other) echo "[GNUPG:] GOODSIG ${OTHER: -16} other"; echo "[GNUPG:] VALIDSIG $OTHER 2026-11-14 1794614400 0 4 0 22 10 00 $OTHER"; exit 0;;
+    bad)   echo "[GNUPG:] BADSIG ${SUBKEY: -16} sign"; exit 1;;
+  esac
+done
 cat "$S/plain"
 STUB
 cat > "$work/bin/pg_restore" <<'STUB'
@@ -109,7 +124,7 @@ run() { # block, FAIL value, expected: restores | stops
     echo "FAIL $name: $reached with exit $got (want $want)"; sed 's/^/     /' "$S/out"; failures=$((failures + 1))
   fi
   # Every kubectl names the context given.
-  if grep -v -- "--context test-context" "$S/log" | grep -q .; then echo "FAIL $name: a kubectl without --context"; failures=$((failures + 1)); fi
+  if grep '^kubectl' "$S/log" | grep -v -- "--context test-context" | grep -q .; then echo "FAIL $name: a kubectl without --context"; failures=$((failures + 1)); fi
 }
 for b in db-block att-block; do
   run $b none restores
@@ -117,6 +132,33 @@ for b in db-block att-block; do
   run $b pods_fail stops
   run $b replica stops
   run $b pod_left stops
+done
+# The signature, checked only when MAITY_BACKUP_SIGNER is set; a stop must come before any decryption.
+export SUBKEY=B1B2B3B4B5B6B7B8B9B0B1B2B3B4B5B6B7B8B9B0 PRIMARY=A1A2A3A4A5A6A7A8A9A0A1A2A3A4A5A6A7A8A9A0 OTHER=C1C2C3C4C5C6C7C8C9C0C1C2C3C4C5C6C7C8C9C0
+sig_run() { # block, name, MAITY_BACKUP_SIGNER, SIG (good, other, bad, missing), want: restores | stops
+  local block=$1 name="$1/sig_$2" signer=$3 sig=$4 want=$5
+  export S="$work/sig-$block-$2" FAIL=none SIG=$sig; mkdir -p "$S"; : > "$S/log"; cp "$work/plain.tar" "$S/plain"
+  [ "$sig" = missing ] || : > "$S/backup.gpg.sig"
+  ( cd "$S" && MAITY_BACKUP_SIGNER=$signer PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
+  local got=$? reached=stops
+  grep -q " exec " "$S/log" && reached=restores
+  if [ "$want" = restores ] && [ "$reached" = restores ] && [ "$got" = 0 ]; then echo "ok   $name (restores)"
+  elif [ "$want" = stops ] && [ "$reached" = stops ] && [ "$got" != 0 ] && ! grep -q '^gpg -d' "$S/log"; then echo "ok   $name (stops before decrypting, exit $got)"
+  else echo "FAIL $name: $reached with exit $got (want $want)"; sed 's/^/     /' "$S/out"; failures=$((failures + 1)); fi
+}
+lower=$(printf '%s' "$SUBKEY" | tr A-F a-f)
+for b in db-block att-block; do
+  sig_run $b unset "" missing restores
+  grep -q "signature is not checked" "$work/sig-$b-unset/out" && echo "ok   $b/sig_unset: says the signature is not checked" \
+    || { echo "FAIL $b/sig_unset: no note"; failures=$((failures + 1)); }
+  sig_run $b subkey "$SUBKEY" good restores
+  sig_run $b primary "$PRIMARY" good restores
+  sig_run $b spaced_lower "$(printf '%s' "$lower" | sed 's/..../& /g')" good restores
+  sig_run $b other_key "$SUBKEY" other stops
+  sig_run $b bad "$SUBKEY" bad stops
+  sig_run $b missing "$SUBKEY" missing stops
+  sig_run $b partial "${SUBKEY:0:16}" good stops
+  sig_run $b not_hex "not a fingerprint" good stops
 done
 # Closing and opening the hub's NetworkPolicy. $S/np.json is the policy; RULES its rules at the start.
 rules='[{"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}], "ports": [{"port": "http", "protocol": "TCP"}]}]'

@@ -267,6 +267,25 @@ gpg --armor --export-secret-keys "maity backups" > maity-backup-private.asc   # 
 Without the private key, no backup can be restored. Keep its copy where you keep
 `secret-key`, and keep it off the instance.
 
+The backup Job also signs each encrypted file with a second key, made for that
+alone, so that a restore can check that a backup is one the Job wrote and was
+not changed since. Its private key goes into the cluster (the Job signs with
+it), so it has no passphrase and does nothing else; only its fingerprint is
+kept on the restore machine. Make it on that machine too, where gpg then also
+has its public key for checking:
+
+```sh
+gpg --batch --passphrase "" --quick-gen-key "maity backup signing <you@example.org>" ed25519 sign never
+gpg --armor --export-secret-keys "maity backup signing" > backup-signing.key
+kubectl -n maity create secret generic maity-backup-signing-key --from-file=backup-signing.key=./backup-signing.key
+rm backup-signing.key
+gpg --with-colons --list-keys "maity backup signing" | awk -F: '$1 == "fpr" {print $10; exit}'   # the fingerprint
+```
+
+Without that Secret the Job still writes encrypted backups, unsigned, and says
+so in its log every night. With it, a restore checks the signature when
+`MAITY_BACKUP_SIGNER` holds that fingerprint (below).
+
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml`,
 `uploads.yaml` and `hub-values.yaml` first (and drop the join host from
 `cert.yaml` and `hub-values.yaml` if you run without one):
@@ -315,7 +334,15 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   it. Pull the `.gpg` files to another machine, for example with `rsync` from a cron job there; the files are 0600 and
   owned by the containers' users under k3s's storage path, so the account that reads them needs root on the instance.
   They are encrypted, so the
-  copy needs no further protection, but the private key must never be stored with them.
+  copy needs no further protection, but the private key must never be stored with them. Copy the `.sig` files
+  with them.
+- **Signed backups.** With the Secret `maity-backup-signing-key` (step 4) each file has a detached signature next to
+  it, `<file>.sig`, made over the encrypted file, so a copy can be checked without the private decryption key:
+  `gpg --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg`. The signing key is on the cluster, so the
+  signature shows that a file came from the Job and was not changed on the copy's way or where it is kept; it
+  does not hold against someone who can read the cluster's Secrets. A key there that cannot sign (one with a
+  passphrase, or a public key only) fails the Job with `backup failed: maity-backup-signing-key …` before anything
+  is written. If the signing key was exposed, make a new one, replace the Secret, and set the new fingerprint.
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
   you need, then delete them from the volume.
@@ -324,7 +351,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   running hub ([Backups](#backups)), make a new key pair, and replace the Secret.
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
   (an older version of the script reported "Complete" for a dump that never happened). After a dump you rely on, the Job's log lists
-  the line `dump ok: /backups/maity-<UTC time>.dump.gpg <bytes> attachments <bytes> (encrypted; plain bytes: …)`. The first sizes are the encrypted files' sizes, the last ones the sizes before encryption.
+  the line `dump ok: /backups/maity-<UTC time>.dump.gpg <bytes> attachments <bytes> (encrypted, signed by <fingerprint>; plain bytes: …)`
+  (`unsigned` without the signing key). The first sizes are the encrypted files' sizes, the last ones the sizes before encryption.
   A Job that fails with `backup failed: no public key` has no `maity-backup-key` (step 4). Read the log of the pod
   that succeeded, not of a failed earlier try:
   `kubectl -n maity logs "$(kubectl -n maity get pod -l job-name=<job> --field-selector=status.phase=Succeeded -o name | head -1)"`
@@ -337,6 +365,10 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   against the free disk, and look at it when the attachments grow (the backup Job refuses to write a tar that would not fit twice). Images and
   most files are compressed already, so the tar is not compressed.
 - **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk.
+  Set `MAITY_BACKUP_SIGNER` to the signing key's fingerprint (step 4) in the shell that runs the blocks below, and
+  keep the `.sig` file next to each backup: both blocks then check the signature before they decrypt anything, and stop
+  when it is missing, does not verify, or is by another key. Without `MAITY_BACKUP_SIGNER` they say so and go on
+  unchecked, which is what a backup from before the signing key needs:
   Every `kubectl` below names the instance's kube context (`kubectl config get-contexts` lists them; `<kube context>` is
   that name), so a shell whose current context points at another cluster restores nothing there:
   1. Scale the hub to 0 (`kubectl --context <kube context> -n maity scale deploy/maity-maity-hub --replicas=0`).
@@ -355,6 +387,14 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
        pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
        [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
        [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
+       signer=$(printf "%s" "${MAITY_BACKUP_SIGNER:-}" | tr -d " " | tr abcdef ABCDEF)   # the signing key's fingerprint, if set
+       if [ -n "$signer" ]; then
+         printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
+         st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
+         printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] VALIDSIG ($signer .*|.* $signer)$" || { echo "$2 is not signed by $signer" >&2; exit 1; }
+       else
+         echo "MAITY_BACKUP_SIGNER is not set: the signature is not checked" >&2
+       fi
        gpg -d "$2" > maity.dump
        pg_restore -f /dev/null maity.dump
        k exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
@@ -456,7 +496,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      ' open <kube context>
      ```
      Then check that the public address answers. The next `helm upgrade` writes the chart's rules anyway.
-- **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
+- **Test a restore** once after setting up the key, and after every new key: check the signature
+  (`gpg --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg`), then decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
   attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`
   (GNU tar). That proves the key and the whole file together; a listing alone (`pg_restore --list`, `tar -tf`) passes a
@@ -467,7 +508,9 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   `uploads.yaml` existed applies it once, with its host name, like step 5.
   One whose backups were not yet encrypted creates the Secret
   `maity-backup-key` first (step 4) and applies the new `backup.yaml`
-  after it: without the key every night's Job fails.
+  after it: without the key every night's Job fails. One whose backups are
+  not yet signed creates `maity-backup-signing-key` (step 4) and applies the
+  new `backup.yaml`; until it does, the backups stay unsigned with a warning.
 - **The request limit** (`request-limit.yaml`) is one limit per client
   address for every request, in Traefik: 50 a second, bursts of 200, 100
   open at a time, and for uploads 4 at a time per address and 10 in all on
