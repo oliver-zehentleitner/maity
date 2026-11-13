@@ -544,3 +544,32 @@ removes nothing a person might still need, and the question stays open:
   placement.** The clock runs on after the close, and a change of the
   time moves the deadline; any other change there stays
   `invalid_transition`.
+
+## Who revoked decides with the reason whether anyone but the owner may rejoin
+
+**Id:** 44fe553d-74c0-495d-80c4-e1af00a65f57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8hq77ns50kyf (the lead's security review of 2026-11-13: "a revocation by a person, or because of a leak, is never undone by anyone else"); the contract's restart row (docs/api.md §15.6)
+**Revisit when:** a new revocation reason is added that the hub sets without a person, or the member routes stop taking a free-text reason
+
+A rejoin (`restart` with `rejoin: true`) gives the agent a new credential.
+The agent profile's owner may ask for one after any revocation. Anyone else
+with the restart's right, the runner's owner or a proposing agent, may only
+after a revocation no person chose for that agent: the hub's own after the
+runner removed the clone (`workspace_removed` with `revoked_by` null) or the
+runner owner's revocation of the runner (`runner_revoked` with `revoked_by`
+that owner). Everything else is `forbidden` with `details.reason:
+"owner_only"` (`routes/placements._undone_by_anyone`).
+
+**Reason:** a revocation is how a person stops their agent, and a leak's
+revocation ends a credential someone else may hold. Undoing either by a new
+credential is the owner's decision, as every new instance passes a human.
+
+**Rejected alternatives:** deciding by `revoked_reason` alone: a person
+revoking through the member routes writes the reason freely, so
+`"workspace_removed"` typed by a person would pass. Letting only the owner
+rejoin after any revocation: a removed clone revokes the credential on the
+runner's own report, and its placement is meant to join anew at its next
+start (§15.5) without waiting for the owner.

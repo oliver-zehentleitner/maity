@@ -445,6 +445,16 @@ def request_summary(conn: Connection, placement_id: str | None) -> dict[str, Any
 
 
 def _isolation(capabilities: dict[str, Any] | None, target: str | None) -> dict[str, Any] | None:
+    """The chosen target's `isolation` without the OS `user`: the request is read by the
+    agent's owner and the project's admins, and the user is the runner owner's configuration
+    (§15.3, as `runners.without_user` keeps it from them in the runner view)."""
+    found = _target_isolation(capabilities, target)
+    return None if found is None else {k: v for k, v in found.items() if k != "user"}
+
+
+def _target_isolation(
+    capabilities: dict[str, Any] | None, target: str | None
+) -> dict[str, Any] | None:
     targets = (capabilities or {}).get("targets") or []
     if target is None and len(targets) == 1:
         isolation: dict[str, Any] | None = targets[0].get("isolation")

@@ -16664,6 +16664,12 @@ owner choose):
   opens pull requests) and the git identity its agents commit under; the
   hub neither sees nor checks either. Every string in it
   is printable ASCII of at most 200 characters and rendered as text.
+  The runner's owner reads it whole. Any other viewer (a project admin
+  through `GET /runners/{id}` or `GET …/runners`) reads only what
+  concerns their own projects of the runner: `projects` keeps those
+  projects, `repositories` the patterns that match one of their
+  repositories, and `targets[].isolation` has no `user`. The rest of the
+  runner's configuration stays its owner's.
 - `targets[].isolation.kind`: `shared_user` (every agent on the target
   runs as one OS user; `runner_separate` says whether the runner runs
   as another user), `own_user` (one OS user per agent), or `pod`. Which
@@ -17023,7 +17029,7 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` and `workspace_retention` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
-| `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
+| `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
 | `POST /projects/{owner}/{slug}/placements/{id}/replace` | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
@@ -17571,7 +17577,8 @@ The kinds are in §8.2. Rules that apply to all of them:
   runner_name}` or `null` — always present, `null` for humans and for
   agents without an active placement.
 - **Request view** (§7) gains `placement`: `{id, agent, runner_name,
-  harness, model, mode, target, isolation}` inline, or `null`. Only the
+  harness, model, mode, target, isolation}` inline, or `null`;
+  `isolation` is the target's without its `user` (§15.3). Only the
   hub sets it; `POST …/requests` does not accept it.
 - **Policy** (§6.1) gains `spawn_requests` and `max_placements`.
 - **Scopes** (§2.3) gain `agents:propose`; no role is added. (Since
