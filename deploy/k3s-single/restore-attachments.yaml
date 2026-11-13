@@ -15,8 +15,10 @@
 #   sh -eu -c '
 #     ctx=$1
 #     k() { kubectl --context "$ctx" -n maity "$@"; }
-#     [ "$(k get deploy maity-maity-hub -o jsonpath="{.spec.replicas}")" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
-#     [ -z "$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)" ] || { echo "the hub still has pods" >&2; exit 1; }
+#     want=$(k get deploy maity-maity-hub -o jsonpath="{.spec.replicas}")   # an assignment: a failed kubectl stops here
+#     pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
+#     [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
+#     [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
 #     gpg -d "$2" > attachments.tar
 #     LC_ALL=C tar -tRf attachments.tar > attachments.list   # read the whole tar: any error stops here
 #     tail -n 1 attachments.list | grep -q "Block of NULs"   # and it reached the end-of-archive block

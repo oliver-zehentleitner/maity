@@ -28,5 +28,7 @@ The walkthrough, with the secrets and the order, is in
 Replace `maity.example.org`, the mail values and the hub's image digest
 (`hub-values.yaml`, and `restore-attachments.yaml` for a restore) before
 applying. The PostgreSQL image is pinned by digest in `postgres.yaml` and
-`backup.yaml`. No file holds a secret: the Secrets are created by hand, as the
+`backup.yaml`. `deploy/scripts/test-restore-blocks.sh` runs the documented
+restore blocks against stub `kubectl` and checks that they stop while the hub
+is not verifiably stopped. No file holds a secret: the Secrets are created by hand, as the
 walkthrough shows.

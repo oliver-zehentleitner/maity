@@ -17,7 +17,9 @@
   volume unchanged. It runs the hub's image and brings a ServiceAccount whose Role only reads the hub's Deployment and
   lists pods. Upgrade note: put the hub's image digest (as in `hub-values.yaml`) into the file before a restore, and
   delete it with `kubectl delete -f` afterwards, as the documented block does.
-- docs: the documented restore blocks name the instance's kube context on every `kubectl`, and check that the hub is
-  stopped before anything is restored; a new step after a restore revokes every agent's credentials or applies again
-  the revocations, isolations, pauses, removals and suspensions made after the dump's time (docs/install/README.md,
-  "After a restore").
+- docs: the documented restore blocks name the instance's kube context on every `kubectl`, and stop before anything
+  is restored unless the hub is verifiably stopped (a `kubectl` that fails stops them too);
+  `deploy/scripts/test-restore-blocks.sh` runs both against stubs. After a restore the hub starts closed to everyone
+  but the admin (its NetworkPolicy emptied, reached through `kubectl port-forward`) until the access rules are up to
+  date: the changes to people and accounts made after the dump's time applied again, and every agent's credentials
+  revoked or each agent change applied again (docs/install/README.md, "After a restore").

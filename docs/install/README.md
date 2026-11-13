@@ -344,13 +344,17 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      cut-off file or anything that is not a dump; `pg_restore --list` reads only the start), and only then feed it to
      `pg_restore --clean --if-exists` inside the postgres pod, which drops what it restores. Run it as one block, which stops
      at the first failure and keeps the decrypted file for a second try; it also stops before anything is restored while
-     the hub's Deployment wants a replica or one of its pods is still there. `pg_restore` here must be 17 or later:
+     the hub's Deployment wants a replica, one of its pods is still there, or either could not be read (each `kubectl` is
+     an assignment of its own, since `sh -e` does not stop on a command substitution that fails inside a test).
+     `pg_restore` here must be 17 or later:
      ```sh
      sh -eu -c '
        ctx=$1
        k() { kubectl --context "$ctx" -n maity "$@"; }
-       [ "$(k get deploy maity-maity-hub -o jsonpath="{.spec.replicas}")" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
-       [ -z "$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)" ] || { echo "the hub still has pods" >&2; exit 1; }
+       want=$(k get deploy maity-maity-hub -o jsonpath="{.spec.replicas}")   # an assignment: a failed kubectl stops here
+       pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
+       [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
+       [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
        gpg -d "$2" > maity.dump
        pg_restore -f /dev/null maity.dump
        k exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
@@ -367,9 +371,26 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      again, through the Kubernetes API, that the hub's Deployment wants 0 replicas and that none of its pods is left; it
      has a ServiceAccount of its own for that, whose Role only reads the hub's Deployment and lists the pods, and the block
      deletes it with the Job.
-  4. Scale the hub back to 1.
-  5. **Bring the access rules up to date** ([After a restore](#after-a-restore)): revoke every agent's credentials, or
-     apply again every revocation, isolation and removal made after the dump's time.
+  4. **Start the hub closed to everyone but you.** The restored database gives back access that was taken away after the
+     dump's time, so nobody may reach the hub until step 5 is done. Close the hub's NetworkPolicy to every pod, Traefik
+     included (keep its rules in a file to open it again), start the hub, and reach it through `kubectl port-forward`,
+     which is not pod traffic and arrives on loopback, where the hub allows a sign-in over plain HTTP:
+     ```sh
+     ctx=<kube context>
+     kubectl --context "$ctx" -n maity get networkpolicy maity-maity-hub -o jsonpath='{.spec.ingress}' > hub-ingress-rules.json
+     test -s hub-ingress-rules.json
+     kubectl --context "$ctx" -n maity patch networkpolicy maity-maity-hub --type=json -p '[{"op":"replace","path":"/spec/ingress","value":[]}]'
+     kubectl --context "$ctx" -n maity scale deploy/maity-maity-hub --replicas=1
+     kubectl --context "$ctx" -n maity port-forward deploy/maity-maity-hub 8080:8080   # then sign in at http://127.0.0.1:8080
+     ```
+     Check from outside that the public address no longer reaches the hub (a gateway error, not the sign-in page).
+  5. **Bring the access rules up to date**, as an admin, over that port-forward ([After a restore](#after-a-restore)).
+  6. **Open the hub again:** give the NetworkPolicy its rules back, then check that the public address answers:
+     ```sh
+     kubectl --context "$ctx" -n maity patch networkpolicy maity-maity-hub --type=merge -p "{\"spec\":{\"ingress\":$(cat hub-ingress-rules.json)}}"
+     rm hub-ingress-rules.json
+     ```
+     The next `helm upgrade` writes the chart's rules anyway.
 - **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
   attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`
@@ -483,14 +504,25 @@ Back up before every upgrade.
 The restored database is the hub as it was at the dump's time. Every agent
 credential that existed then works again, and whatever was done since to
 take access away is undone: credentials revoked, agents isolated or paused,
-members removed, accounts suspended. Before anyone relies on the hub again,
-do one of these:
+members removed, accounts suspended, invitations revoked, passwords and
+second factors changed. Do this work while the hub is closed to everyone
+but the admin doing it: no route from the ingress or proxy, reached only
+from the admin's own machine (on Kubernetes, `kubectl port-forward`; the
+k3s steps above show one way). Open it again only when both parts are done.
 
-- **Revoke every agent's credentials** (under **Agents**, or **Team** →
-  **Manage** on each agent, as an admin of each project). Each agent then
-  joins again with a new invitation. This needs no record of what changed.
-- **Apply again every revocation, isolation, pause, removal and suspension
-  made after the dump's time**, when you have a complete list of them.
+1. **People and accounts, always:** remove again every member removed
+   after the dump's time, suspend again every account suspended since,
+   revoke again the invitations revoked since, and set back every trust or
+   role lowered since. Tell the people whose password or second factor
+   changed since that the old one is back, and have them change it again.
+2. **Agents,** one of these:
+   - **Revoke every agent's credentials** (under **Agents**, or **Team** →
+     **Manage** on each agent, as an admin of each project). Each agent then
+     joins again with a new invitation. This needs no record of what
+     changed for agents, and it replaces only this part, not step 1.
+   - **Apply again every credential revocation, isolation, pause and
+     removal of an agent made after the dump's time**, when you have a
+     complete list of them.
 
 ## Upgrades
 
