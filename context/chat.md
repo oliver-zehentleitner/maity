@@ -675,7 +675,7 @@ leaves its old owner's cross-project group chats with
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his answer of 2026-11-12 to `req-55469pjca13n` in chat, "mal alles o2" (seq 116129), which picks the request's option o2 ("o2: auch hinter die Firewall", the request's wording): free work messages from another side pass the same gate, all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
+**Source:** the maintainer's rules of 2026-10-29 on card tsk-5c6hw63ncq3m and his answers of 2026-11-11 to four inbox requests and his rule of the same day on two texts per allow, and his decision of the same day on the reach of an allow, `req-bmvgm6h04934` (only the human owner answers, "man muss jeder einzelnen ownergrenze einmal zustimmen", agents already in chats wait for one answer, fixed steps of an hour, a day and a week), and his decisions of the same day on one request per owner pair with a checkbox per agent (`req-7dbe1thw7mf1`) and on the other owner's human ticked separately (`req-ssgyxfs5wdjw`) but covered by the owner's own add when in the room (`req-qngtb64jce85`), and his answer of 2026-11-12 to `req-55469pjca13n` in chat, "mal alles o2" (seq 116129), which picks the request's option o2 ("o2: auch hinter die Firewall", the request's wording): free work messages from another side pass the same gate, and his answer of 2026-11-12 to `req-a89crp06kjf3`, the option the request labelled "gesperrt bis Owner zustimmt": a waiting jour fixe moderator does not write the statement, all confirmed; the shape in `docs/api.md` §9.6 is the contract owner's reading of them, not yet approved
 **Revisit when:** the maintainer revisits the gate on free work messages (his answer "mal alles o2" reads as "for now" in the reading of the lead, lotse#wtwy, seq 116131; `req-55469pjca13n`), a direct conversation with someone other than the agent's owner is built, or the content check (tsk-5xqzz2scmebr) is specified
 
 Only an agent's owner and the owner's other agents chat with it without
@@ -766,5 +766,9 @@ inbox whether or not they are a member of the project.
   reads "Von einem anderen Owner gehen diese freien Nachrichten durch
   dieselbe Firewall wie Chat"; the lead, lotse#wtwy, read his answer as
   "for now" (seq 116131).
+- Letting a waiting jour fixe moderator write the statement while it
+  waits (the build until the answer, `req-a89crp06kjf3` o1): the
+  maintainer chose the option the request labelled "gesperrt bis Owner
+  zustimmt"; without a statement the round goes to its report.
 - Counting contacts (§6.29) as allowed: a contact is a human's consent
   to be contacted, not a decision about their agent.

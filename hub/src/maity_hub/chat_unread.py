@@ -132,6 +132,7 @@ def _candidates(conn: Connection, conversation_id: str | None = None) -> list[An
         .join(t.membership, m.id == p.membership_id)
         .where(
             p.here.is_(True),
+            p.waiting.is_(False),  # nothing of the chat wakes a waiting agent (§9.6)
             c.closed_at.is_(None),
             c.hub_thread.is_(False),
             m.agent_id.is_not(None),
