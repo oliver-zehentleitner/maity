@@ -1744,7 +1744,9 @@ def _post_with(session: Session, paths: list[str], post: Callable[[list[str]], A
     transaction, §8.7). When the post's answer is lost or a 5xx (a proxy's 502 comes after
     a commit as easily as before one), the message may be stored: the uploads are left
     alone then, and named."""
-    files = [(path, _read_upload(path, "--attach")) for path in paths]  # every file checked before any upload
+    files = [
+        (path, _read_upload(path, "--attach")) for path in paths
+    ]  # every file checked before any upload
     if any(data is None for _, data in files):
         raise CommandError("nothing was sent")
     ids: list[str] = []
@@ -1940,8 +1942,8 @@ def _placed_read(
     if root is None:
         return None
     try:
-        with clonecheck.opened_git(root) as dot_git:
-            return inclone.read(root, given, flag, limit, dot_git)
+        with clonecheck.opened_clone(root) as opened:  # the root and .git, checked once
+            return inclone.read(root, given, flag, limit, opened)
     except (clonecheck.Refused, inclone.Refused) as exc:
         if quiet:  # nothing of the path, not even one of its names
             raise UsageError(f"{flag}: {QUIET_REFUSAL}") from None
@@ -3065,7 +3067,7 @@ def _restricted_text(source: str) -> str:
         # The path is not repeated in a refusal: a text given there by mistake stays unsaid.
         try:
             placed = _placed_text(source, "--file", quiet=True)
-            text = (placed if placed is not None else Path(source).read_text(encoding="utf-8"))
+            text = placed if placed is not None else Path(source).read_text(encoding="utf-8")
             text = text.removeprefix(_BOM)
         except UnicodeDecodeError:
             raise UsageError("--file: the file is not UTF-8; save it as UTF-8") from None
