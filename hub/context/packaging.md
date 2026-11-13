@@ -318,6 +318,43 @@ registry alone.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
 
+## The chart pulls by digest by default; a tag is an explicit opt-in
+
+**Id:** b62d9e4a-3c17-4a8f-9e50-d4a1f7c28b93
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 4 (release chain hardening, 2026-11-13); `deploy/helm/maity-hub/templates/_helpers.tpl`, `values.yaml`, `values.schema.json`, `README.md`, `deploy/helm/check.sh`, `deploy/helm/kind-smoke.sh`
+**Revisit when:** the chart gets an image other than the hub's, or installs need a moving tag on purpose (a channel)
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+**See:** packaging.md#every-deploy-of-maityteam-is-a-release-a-version-bump-as-the-last-merge-then-the-maintainers-v-tag — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-13
+
+The chart's image is `repository@digest`, and `image.digest` is
+required. A tag is used only with `image.allowTag: true` and an
+explicit `image.tag` (and no digest); the chart's `appVersion` is no
+longer a default tag, so an install that sets neither stops at render
+with a message naming both ways. `appVersion` still names the version
+label when no tag is set. `values.yaml` no longer calls a tag
+immutable. Installs that already pin a digest (maity.team,
+`deploy/k3s-single/hub-values.yaml`) render the same; an install by
+tag or by the `appVersion` default has to set the digest, or opt in to
+the tag, at its next upgrade. `kind-smoke.sh` opts in, since its image
+is a local build loaded into kind, which has no registry digest.
+
+**Reason:** the signature an operator checks is for a digest, and a
+tag names whatever the registry points it at when the pod starts, so a
+default by tag would deploy bytes nobody checked. The `appVersion`
+default was the case where nobody chose a tag at all.
+
+**Rejected alternatives:**
+- Keeping the `appVersion` default behind the opt-in: the opt-in should
+  name the tag it pulls, not inherit one from the chart.
+- Removing the tag path entirely: a local or air-gapped build without a
+  registry digest (the kind smoke test) would have no way in.
+- A digest default in `values.yaml` per chart release: the chart would
+  need a bump for every image, and the digest exists only after the
+  workflow ran.
+
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
 **Id:** 843b8d35-45c7-4b91-827f-7109f470ca54
