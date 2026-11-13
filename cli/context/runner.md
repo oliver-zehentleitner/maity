@@ -2516,10 +2516,14 @@ descriptor into an exclusively created file. Either way it counts as
 saved when the name holds that file (device and inode) at the moment of
 that check; a failed copy is left under its name and named in the
 refusal, never removed by name, since POSIX cannot remove a name only
-while it holds a given file. Linking fails on an existing name, so no file is replaced there,
-`--force` included; another file that took the temporary name never gets
-the target's, and one that took the target's name during the copy is
-refused and left alone (review of #1749). Without `-o` the
+while it holds a given file. A named staging file (no `O_TMPFILE`) is
+removed afterwards only when its name still holds maity's file at that
+check, made while maity's descriptor is still open; a name that holds
+another file by then, or none, is left untouched, and a left name is
+noted on standard error. A saved file is not refused over it. Linking fails on an existing name, so no file is replaced
+there, `--force` included; another file that took the temporary name
+never gets the target's, and one that took the target's name during the
+copy is refused and left alone (review of #1749). Without `-o` the
 file goes to `./maity-files/` as before, created 0700 through the same
 walk. Where a name cannot be opened through a directory's descriptor
 (Windows), only `-o -` is taken. Outside a placement nothing changes.
@@ -2567,7 +2571,12 @@ without hard links the target has its name while maity writes it, and
 such code can write into it as well. The target is then the file maity
 made, with those writes: its identity is checked, its content is not.
 The identity check itself is a snapshot: such code can rename or replace
-the name after it, before maity reports the file saved.
+the name after it, before maity reports the file saved. The same holds
+for the staging file's removal: between the check and the unlink such
+code can put another file under the staging name, and that file is then
+removed. POSIX has no unlink only while a name holds a given inode; the
+window is accepted, since the name is maity's own unpredictable one in
+the clone and code that can put a file there can remove it itself.
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 

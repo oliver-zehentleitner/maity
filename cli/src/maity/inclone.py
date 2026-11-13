@@ -20,6 +20,7 @@ import errno
 import os
 import secrets
 import stat
+import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import IO
@@ -169,14 +170,18 @@ def create(
     *,
     make: str | None = None,
     mode: int = 0o644,
+    kept: Callable[[str], None] | None = None,
 ) -> None:
     """A new file at `given`, in the clone and outside `.git`, with what `fill` writes.
     `opened` is the clone as `clonecheck.opened_clone` checked it. An existing name is
     refused before `fill` runs and again when the file gets its name, so a race leaves it
     untouched: maity never replaces a file under a placement. The bytes go to a file of
     maity's own first (without a name where the system allows it); an exception from `fill`
-    (a digest that does not match) leaves nothing behind. The descriptor `fill` wrote to is
-    what gets the name (`_publish`). `make` names a last directory created when missing."""
+    (a digest that does not match) gives no file the target's name. The descriptor `fill`
+    wrote to is what gets the name (`_publish`). A named staging file is removed afterwards
+    only while its name still holds it (`_drop_staging`); a name that holds another file is
+    left and handed to `kept` (by default a line on standard error). `make` names a last
+    directory created when missing."""
     path = names(root, given, what)
     exists = Refused(
         f"{what} {given}: exists; under a runner placement maity never replaces a file"
@@ -196,10 +201,39 @@ def create(
             os.fchmod(fd, mode)
             _publish(directory, fd, part, leaf, mode, exists, f"{what} {given}")
         finally:
-            os.close(fd)
-            if part is not None:
-                with contextlib.suppress(FileNotFoundError):
-                    os.unlink(part, dir_fd=directory)
+            try:
+                if part is not None:  # while `fd` is open, so its inode is not reused
+                    shown = os.path.join(os.path.dirname(given), part)
+                    _drop_staging(directory, part, os.fstat(fd), shown, kept or _say_kept)
+            finally:
+                os.close(fd)
+
+
+def _drop_staging(
+    directory: int, part: str, staged: os.stat_result, shown: str, kept: Callable[[str], None]
+) -> None:
+    """Remove maity's staging name `part` only while it holds the file maity staged (device
+    and inode); a name that holds another file by then is left and handed to `kept`. POSIX
+    has no removal of a name only while it holds a given file, so between this check and the
+    removal a file put there by code that can write this directory can still be removed;
+    such code can remove that file itself (cli/context/runner.md 818828af)."""
+    try:
+        there = os.stat(part, dir_fd=directory, follow_symlinks=False)
+    except OSError:  # no name left, or none that can be checked: nothing is removed
+        return
+    if not _same(there, staged):
+        kept(shown)
+        return
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(part, dir_fd=directory)
+
+
+def _say_kept(shown: str) -> None:
+    print(
+        f"maity: left {shown} in place: it no longer holds the file maity staged; check it and"
+        " delete it yourself",
+        file=sys.stderr,
+    )
 
 
 def _fresh(directory: int) -> tuple[int, str | None]:
