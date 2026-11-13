@@ -20285,7 +20285,9 @@ a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
 pages (§16.7.1), the mail link pages, which are the sign-in link's page `/mail/sign-in/{token}` (§2.6.3) and the
 pages of §18.6, each with its page for a link that no longer works, `/explore` (§16.9), a stored public
-page as `?as=public` answers it (§16.9), and the dashboard's `/login` and `/register` (§16.7.4).
+page as `?as=public` answers it (§16.9), the dashboard's `/login` and `/register` (§16.7.4), and the
+public pages the dashboard draws for a visitor at the same addresses (§16.9), whose header's sign-in
+link carries `?next=` back to the page.
 The dashboard's sign-in stands in the frame wherever it is drawn without
 a session, not only at `/login`: at the root after a sign-out, and at an
 address of the app opened without a session that has no stored public
