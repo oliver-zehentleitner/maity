@@ -586,6 +586,17 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .chat-access label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .chat-access label:not(.check) { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
 .chat-access .hint, .chat-access .muted { margin: 0; }
+/* Who may chat with one's agents, the /agents page's tab Chat access (js/chat-access.js). */
+.chat-access-list { list-style: none; padding: 0; margin: 6px 0 12px; display: grid; gap: 8px; }
+.chat-access-entry { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 0; overflow-wrap: anywhere; }
+.chat-access-entry p { margin: 2px 0; }
+.chat-access-entry .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chat-access-add, .chat-access-edit { margin-top: 12px; }
+.chat-access-agents { border: 0; padding: 0; margin: 0; }
+.chat-access-page label.check { display: flex; align-items: center; gap: 6px; color: var(--text); min-height: 28px; }
+.chat-access-page input[type=checkbox] { width: 18px; height: 18px; margin: 0; flex: none; }
+/* A row of a subject not chosen, and the side's fields under a project: `hidden` wins over .field-stack's grid. */
+.chat-access-page [hidden] { display: none; }
 /* The @ picker under its text field; a stored mention as a member link. */
 .mention-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); max-width: 24rem; }
 .mention-list[hidden] { display: none; }

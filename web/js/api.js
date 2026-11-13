@@ -1867,6 +1867,50 @@ window.Maity = window.Maity || {};
   let maintenanceRow = null;
   const maintenanceChanges = [];
   let broadcastsChoice = { mode: "accept_all", agents: [] };
+  // §9.6 The fixture hub's allow and deny entries of the human (/me/chat-access), newest first:
+  // one allow for anna's side and one deny of her agent, so the tab has something to show.
+  let chatAccessLists = null;
+  const chatAccess = () => chatAccessLists || (chatAccessLists = {
+    allow: [{ id: "cha-0001", agents: ["agt-a"], owner_id: "hum-anna", handle: "anna", their_agents: "all", their_human: false,
+      project: null, duration: null, until: null, allowed: "the shop's frontend, may work on it", denied: "nothing about releases",
+      by: me().member.id, since: "2026-11-11T16:00:00Z" }],
+    deny: [{ id: "cha-0002", agents: "all", agent_id: "agt-s2", by: me().member.id, since: "2026-11-12T09:00:00Z" }],
+  });
+  function chatAccessAgents(raw, path) {
+    if (raw === "all") return "all";
+    if (!Array.isArray(raw) || !raw.length || raw.some((a) => typeof a !== "string")) fail(400, "invalid", "agents is all or a list of ids", path, { fields: { agents: "format" } });
+    if (new Set(raw).size !== raw.length) fail(400, "invalid", "an id twice in agents", path, { fields: { agents: "duplicate" } });
+    const own = new Set(fixtures()["agents.json"].items.filter((a) => a.owner_id === me().member.id && !a.deleted_at).map((a) => a.id));
+    if (raw.some((a) => !own.has(a))) fail(400, "invalid", "only your own agents", path, { fields: { agents: "not_yours" } });
+    return raw.slice();
+  }
+  function chatAccessHuman(raw, field, path) {
+    if (typeof raw !== "string" || !/^hum-/.test(raw)) fail(400, "invalid", field + " is a human id", path, { fields: { [field]: "format" } });
+    if (raw === me().member.id) fail(400, "invalid", "your own side needs no entry", path, { fields: { [field]: "self" } });
+    return raw;
+  }
+  // A person's handle from the member lists the fixtures hold, as the hub names them.
+  function chatAccessHandle(id) {
+    const all = Object.keys(fixtures()).filter((k) => /\/members\.json$/.test(k)).flatMap((k) => fixtures()[k].items || []);
+    const found = all.find((x) => x.id === id);
+    return found ? found.handle : id.replace(/^hum-/, "");
+  }
+  function chatAccessProject(raw, path) {
+    if (!raw || typeof raw !== "object" || typeof raw.owner !== "string" || typeof raw.slug !== "string") fail(400, "invalid", "project is {owner, slug}", path, { fields: { project: "format" } });
+    if (!me().projects.some((p) => p.full_name === raw.owner + "/" + raw.slug)) fail(400, "invalid", "no such project", path, { fields: { project: "not_found" } });
+    return { owner: raw.owner, slug: raw.slug };
+  }
+  function chatAccessDuration(raw, path) {
+    const steps = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3 };
+    if (raw == null) return { duration: null, until: null };
+    if (!(raw in steps)) fail(400, "invalid", "duration is hour, day, week or null", path, { fields: { duration: "format" } });
+    return { duration: raw, until: new Date(Date.now() + steps[raw]).toISOString().replace(/\.\d{3}Z$/, "Z") };
+  }
+  function chatAccessText(raw, field, path) {
+    if (raw == null) return null;
+    if (typeof raw !== "string" || [...raw].length > 1000) fail(400, "invalid", field + " is text of at most 1000 characters", path, { fields: { [field]: "format" } });
+    return raw;
+  }
   (function startWindow(wanted) {
     if (!["upcoming", "running"].includes(wanted)) return;
     const at = (minutes) => new Date(Date.now() + minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -3051,6 +3095,85 @@ window.Maity = window.Maity || {};
     ["GET", /^\/admin\/maintenance\/changes$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       return { items: maintenanceChanges.slice(), next_cursor: null };
+    }],
+    // §9.6 "The lists": checked as the hub checks them (chat_access.py), the same details.fields.
+    ["GET", /^\/me\/chat-access$/, () => JSON.parse(JSON.stringify(chatAccess()))],
+    ["POST", /^\/me\/chat-access\/(allow|deny)$/, (m, body, path) => {
+      const allow = m[1] === "allow";
+      const subjects = allow ? ["owner_id", "project"] : ["owner_id", "human_id", "agent_id", "project"];
+      const named = subjects.filter((k) => body[k] != null);
+      if (named.length !== 1) fail(400, "invalid", "an entry names exactly one subject", path, { fields: Object.fromEntries(subjects.map((k) => [k, "one_subject"])) });
+      const entry = { id: localId("cha"), agents: chatAccessAgents(body.agents, path) };
+      const k = named[0];
+      if (k === "owner_id" || k === "human_id") {
+        entry[k] = chatAccessHuman(body[k], k, path);
+        entry.handle = chatAccessHandle(entry[k]);
+      } else if (k === "agent_id") {
+        const own = fixtures()["agents.json"].items.some((a) => a.id === body.agent_id && a.owner_id === me().member.id);
+        if (typeof body.agent_id !== "string" || !/^agt-/.test(body.agent_id)) fail(400, "invalid", "agent_id is an agent id", path, { fields: { agent_id: "format" } });
+        if (own) fail(400, "invalid", "your own agents need no entry", path, { fields: { agent_id: "self" } });
+        entry.agent_id = body.agent_id;
+      } else {
+        entry.project = chatAccessProject(body.project, path);
+      }
+      if (allow) {
+        if (k === "owner_id") {
+          entry.their_agents = body.their_agents === undefined ? "all" : body.their_agents;
+          if (!["all", "none"].includes(entry.their_agents) && !Array.isArray(entry.their_agents)) fail(400, "invalid", "their_agents", path, { fields: { their_agents: "format" } });
+          entry.their_human = body.their_human === undefined ? false : body.their_human;
+          if (typeof entry.their_human !== "boolean") fail(400, "invalid", "their_human is true or false", path, { fields: { their_human: "format" } });
+          if (entry.their_agents === "none" && !entry.their_human) fail(400, "invalid", "names no one", path, { fields: { their_agents: "names_no_one" } });
+        } else {
+          ["their_agents", "their_human"].forEach((f) => { if (body[f] != null) fail(400, "invalid", "a project entry names no side", path, { fields: { [f]: "project_entry" } }); });
+          Object.assign(entry, { owner_id: null, handle: null, their_agents: null, their_human: null });
+        }
+        if (!("project" in entry)) entry.project = null;
+        Object.assign(entry, chatAccessDuration(body.duration, path), { allowed: chatAccessText(body.allowed, "allowed", path), denied: chatAccessText(body.denied, "denied", path) });
+      }
+      Object.assign(entry, { by: me().member.id, since: nowIso() });
+      const lists = chatAccess();
+      if (lists.allow.length + lists.deny.length >= 1000) fail(400, "invalid", "too many entries", path, { reason: "too_many_entries" });
+      // A deny removes the allows for the same agents and subject; an allow for all agents stays
+      // when the deny names some of them (a deny wins over it anyway).
+      if (!allow && (k === "owner_id" || k === "project")) {
+        const same = (a) => (k === "owner_id" ? a.owner_id === entry.owner_id : a.project && JSON.stringify(a.project) === JSON.stringify(entry.project));
+        lists.allow = lists.allow.flatMap((a) => {
+          if (!same(a)) return [a];
+          if (entry.agents === "all") return [];
+          if (a.agents === "all") return [a];
+          const left = a.agents.filter((x) => !entry.agents.includes(x));
+          return left.length ? [Object.assign(a, { agents: left })] : [];
+        });
+      }
+      lists[m[1]].unshift(entry);
+      return JSON.parse(JSON.stringify(entry));
+    }],
+    ["PATCH", /^\/me\/chat-access\/allow\/([^/]+)$/, (m, body, path) => {
+      const entry = chatAccess().allow.find((e) => e.id === m[1]);
+      if (!entry) fail(404, "not_found", "Not found", path);
+      const next = Object.assign({}, entry);
+      if ("agents" in body) next.agents = chatAccessAgents(body.agents, path);
+      if (("their_agents" in body || "their_human" in body) && !entry.owner_id) {
+        fail(400, "invalid", "a project entry names no side", path, { fields: { ["their_agents" in body ? "their_agents" : "their_human"]: "project_entry" } });
+      }
+      if ("their_agents" in body) {
+        if (!["all", "none"].includes(body.their_agents) && !Array.isArray(body.their_agents)) fail(400, "invalid", "their_agents", path, { fields: { their_agents: "format" } });
+        next.their_agents = body.their_agents;
+      }
+      if ("their_human" in body) {
+        if (typeof body.their_human !== "boolean") fail(400, "invalid", "their_human is true or false", path, { fields: { their_human: "format" } });
+        next.their_human = body.their_human;
+      }
+      if (entry.owner_id && next.their_agents === "none" && !next.their_human) fail(400, "invalid", "names no one", path, { fields: { their_agents: "names_no_one" } });
+      if ("duration" in body) Object.assign(next, chatAccessDuration(body.duration, path));
+      ["allowed", "denied"].forEach((f) => { if (f in body) next[f] = chatAccessText(body[f], f, path); });
+      Object.assign(entry, next);
+      return JSON.parse(JSON.stringify(entry));
+    }],
+    ["DELETE", /^\/me\/chat-access\/(allow|deny)\/([^/]+)$/, (m) => {
+      const lists = chatAccess();
+      lists[m[1]] = lists[m[1]].filter((e) => e.id !== m[2]);
+      return null;
     }],
     ["GET", /^\/me\/broadcasts$/, () => Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() })],
     ["PATCH", /^\/me\/broadcasts$/, (m, body, path) => {
