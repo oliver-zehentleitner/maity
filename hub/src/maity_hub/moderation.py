@@ -18,6 +18,7 @@ from maity_hub import (
     clock,
     public_pages,
     public_projects,
+    runner_revoke,
     write_guard,
 )
 from maity_hub import tables as t
@@ -26,6 +27,7 @@ from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor
 from maity_hub.forge import Forge
 from maity_hub.notifications import records
+from maity_hub.runners import live_credential_id
 from maity_hub.views import principal_id, ts
 
 HOLDING = ("hide", "remove")
@@ -173,12 +175,33 @@ def suspensions(conn: Connection, rows: Any, owner_of: dict[str, str]) -> dict[i
 
 def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     """The account signs in no more, and every session and credential it holds ends at
-    once: its agents' credentials and its runners' credentials, so its placements stop.
-    The order is a deletion's (§2.9): the account lock first and exclusively, so no issue
-    that read the account before this commits hands out a credential after it; then the
-    credentials, which lock their projects; the human's own rows last, as project work
-    locks the project before the human."""
+    once: its runners' credentials and its agents' credentials. Its runners are revoked
+    as under the owner's `agents: "stop"` (§15.3), whatever the projects' rule: their
+    placements close, and the agent credentials they named, other members' included, are
+    revoked at once. The order is a deletion's (§2.9): the account lock first and
+    exclusively, so no issue that read the account before this commits hands out a
+    credential after it; then the runners' rows, as a revoke takes its runner's row before
+    its projects; then the credentials, which lock their projects; the human's own rows
+    last, as project work locks the project before the human."""
+    from maity_hub.routes import runners as runner_routes
+
     account_deletion.lock_account(conn, human_id)
+    runner_ids = conn.execute(
+        select(t.runner.c.id)
+        .where(t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None))
+        .order_by(t.runner.c.id)
+        .with_for_update()
+    ).scalars()
+    for runner_id in list(runner_ids):
+        # `stop` whatever the projects' rule, so the instance rule passed is never read.
+        applied = runner_revoke.apply(
+            conn, runner_id, agents="stop", instance_rule="stop", removing=False, by=human_id
+        )
+        live = live_credential_id(conn, runner_id)
+        if live is not None:
+            leaks.revoke_runner_credential(conn, live, REVOKED_REASON, None, applied)
+        else:  # a key revoked already: what the stop applied joins its record (§15.3)
+            runner_routes.record_applied(conn, runner_id, applied)
     m, c = t.membership.c, t.credential.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     credentials = conn.execute(
@@ -189,15 +212,6 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     ).scalars()
     for credential_id in list(credentials):
         leaks.revoke(conn, credential_id, REVOKED_REASON, None)
-    r = t.runner_credential.c
-    runner_credentials = conn.execute(
-        select(r.id)
-        .join(t.runner, t.runner.c.id == r.runner_id)
-        .where(t.runner.c.owner_id == human_id, r.revoked_at.is_(None))
-        .order_by(r.id)
-    ).scalars()
-    for credential_id in list(runner_credentials):
-        leaks.revoke_runner_credential(conn, credential_id, REVOKED_REASON, None)
     sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
     email_links.void_human(conn, human_id)  # a mailed sign-in link or code dies too
     conn.execute(

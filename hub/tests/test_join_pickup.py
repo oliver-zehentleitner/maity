@@ -10,10 +10,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import CLI_VERSION, clock, cross_owner, events
+from maity_hub import CLI_VERSION, clock, cross_owner, events, moderation
 from maity_hub import tables as t
 from maity_hub.routes import agents, joins
 from tests import factory, flow
+from tests import test_runners as runners
 from tests.conftest import ClientFactory
 from tests.test_placements import REPOSITORY, Setup, events_of, placed
 from tests.test_runner_stream import attach, hello, send
@@ -243,10 +244,28 @@ def _members(s: Setup) -> int:
         return len(conn.execute(select(t.membership.c.id)).all())
 
 
-@pytest.mark.parametrize("gone", ["deleted", "stopped", "runner_revoked", "runner_removed"])
+def _suspend_owner(s: Setup) -> Any:
+    with events.transaction(s.engine) as conn:
+        moderation.suspend(conn, s.owner.id, "rpt-000000000000")
+    return SimpleNamespace(status_code=200, text="")
+
+
+def _re_pair(s: Setup, make_client: ClientFactory) -> Any:
+    answer = runners.exchange(
+        make_client(), runners.enroll(s.owner, name=None, runner_id=s.runner.id)
+    )
+    assert answer.status_code == 201, answer.text
+    return SimpleNamespace(status_code=200, text="")
+
+
+@pytest.mark.parametrize(
+    "gone",
+    ["deleted", "stopped", "runner_revoked", "runner_removed", "re_paired", "owner_suspended"],
+)
 def test_an_unused_pickup_dies_with_its_placement_or_runner(
     setup: Setup, make_client: ClientFactory, gone: str
 ) -> None:
+    """A re-pair and the owner's suspension revoke the credential that fetched it, too."""
     placement = placed(setup)
     picked = pick_up(setup, placement).json()
     path = f"/projects/maintainer/maity/placements/{placement['id']}"
@@ -255,6 +274,8 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
         "stopped": lambda: setup.owner.patch(path, {"desired": "stopped"}),
         "runner_revoked": lambda: setup.owner.post(f"/runners/{setup.runner.id}/revoke", {}),
         "runner_removed": lambda: setup.owner.delete(f"/runners/{setup.runner.id}"),
+        "re_paired": lambda: _re_pair(setup, make_client),
+        "owner_suspended": lambda: _suspend_owner(setup),
     }[gone]()
     assert answer.status_code == 200, answer.text
     with setup.engine.connect() as conn:
@@ -262,10 +283,12 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
             select(t.join_link.c.revoked_at).where(t.join_link.c.placement_id.is_not(None))
         ).all()
     assert joins and all(j.revoked_at is not None for j in joins)
-    _unrevoke_joins(setup)
+    if gone != "re_paired":  # a re-pair leaves a live credential: the revocation refuses
+        _unrevoke_joins(setup)
     members = _members(setup)
     refused = exchange(make_client(), picked)
-    assert refused.status_code == 404, refused.text
+    # A suspended creator's join is refused before anything else is read (§16.8).
+    assert refused.status_code == (403 if gone == "owner_suspended" else 404), refused.text
     assert _members(setup) == members
     assert placement_row(setup, placement["id"]).credential_id is None
 
