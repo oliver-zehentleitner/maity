@@ -19,7 +19,7 @@ from functools import partial
 from typing import Any, cast
 
 import anyio
-from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, select
+from sqlalchemy import ColumnElement, Connection, Engine, and_, func, insert, not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
@@ -595,6 +595,12 @@ HUMANS_ONLY_KINDS = frozenset(
 )
 
 
+# Kinds a bridge's read for an agent (`carried`, §2.3) never reads nor wakes on: the rules the
+# agent's owner set for it (§9.6) and a mention from a chat across projects, whose payload
+# names that chat's title (§9.5).
+CARRIED_EXCLUDED = frozenset({"chat_rules_changed", "cross_chat_mention"})
+
+
 def hidden_redactions(
     conn: Connection, rows: Sequence[Any], membership: Any = None
 ) -> frozenset[str]:
@@ -765,8 +771,45 @@ def _names_team(audience: list[str], principal: str) -> bool:
     )
 
 
+class CarriedRow:
+    """A served agent's membership row as its bridge reads it (`Maity-For`, `for`, §2.3):
+    every column as the row has it, and as the reader's hidden windows those of the agent and
+    of the bridge's own membership (§6.2), so that a bridge reads nothing of a window it was
+    hidden from by reading for an agent. Only `windows_of` reads `reader_windows`; the
+    row's own `isolation_windows`, as the member view shows it, stays the agent's."""
+
+    __slots__ = ("_row", "reader_windows")
+
+    def __init__(self, row: Any, bridge_windows: Sequence[dict[str, int]]) -> None:
+        own: list[dict[str, int]] = list(getattr(row, "isolation_windows", None) or [])
+        self._row = row
+        self.reader_windows = own + [w for w in bridge_windows if w not in own]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._row, name)
+
+
+def carried_row(row: Any, bridge_windows: Sequence[dict[str, int]]) -> Any:
+    """`row` as read through a bridge with these windows of its own; unchanged without any."""
+    if isinstance(row, CarriedRow):
+        row = row._row
+    return CarriedRow(row, bridge_windows) if bridge_windows else row
+
+
+def bridge_windows_of(row: Any) -> list[dict[str, int]]:
+    """The bridge's own windows a `carried_row` adds, so a row read again can carry them."""
+    if not isinstance(row, CarriedRow):
+        return []
+    own = list(getattr(row._row, "isolation_windows", None) or [])
+    return [w for w in row.reader_windows if w not in own]
+
+
 def windows_of(membership: Any) -> list[dict[str, int]]:
-    """The reader's `isolation_windows` (§6.2): a reader that is no membership row has none."""
+    """The reader's effective hidden windows (§6.2): its own `isolation_windows`, and for a
+    bridge's read for an agent the bridge's too (`CarriedRow`). A reader that is no
+    membership row has none. Every read that hides a window asks this one function."""
+    if isinstance(membership, CarriedRow):
+        return membership.reader_windows
     found: list[dict[str, int]] = getattr(membership, "isolation_windows", None) or []
     return found
 
@@ -807,6 +850,16 @@ def window_times(conn: Connection, project_id: str, membership: Any) -> list[tup
     return found
 
 
+def outside_window_times(conn: Connection, project_id: str, membership: Any, column: Any) -> Any:
+    """SQL for the rows whose time `column` lies outside every hidden window of the reader
+    (`window_times`), or `None` without a window: what a listing of things that are no event
+    (a card's history and notes, a restricted text's entries) hides (§6.2)."""
+    times = window_times(conn, project_id, membership)
+    if not times:
+        return None
+    return and_(*(or_(column < start, column > end) for start, end in times))
+
+
 def is_isolated(membership: Any) -> bool:
     """An isolated agent member (§6.2)."""
     return _isolated(membership)
@@ -831,8 +884,8 @@ def readable_by(
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
     own; owners and admins read every event of the project. `carried` is a bridge's read for
-    the agent (`Maity-For`, §2.3), which reads as the agent but never what is the agent's
-    alone towards its owner (`chat_rules_changed`, §9.6)."""
+    the agent (`Maity-For`, §2.3), which reads as the agent but never `CARRIED_EXCLUDED`, and
+    hides the bridge's own windows too (`windows_of`, §6.2)."""
     if _isolated(membership):
         return False  # an isolated agent is left out of every audience (§6.2)
     if in_window(row, membership):
@@ -856,10 +909,12 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
-    if row.kind == "chat_rules_changed" and carried:
+    if row.kind in CARRIED_EXCLUDED and carried:
         # The rules an owner sets are for its own agent: a bridge serving it across owners
-        # (§2.3) neither reads nor wakes on their change (§9.6). The other two kinds below make
-        # no such promise; a bridge reads them for the agent as the agent would.
+        # (§2.3) neither reads nor wakes on their change (§9.6). A mention from a chat across
+        # projects carries that chat's title, which is the agent's and its owner's (§9.5):
+        # the bridge neither reads nor wakes on it either. The unread nudge below makes no such
+        # promise; a bridge reads it for the agent as the agent would.
         return False
     if row.kind in ("cross_chat_mention", "chat_unread", "chat_rules_changed"):
         # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5);

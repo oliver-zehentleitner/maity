@@ -197,7 +197,10 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
             if caller.kind == "agent":
                 # As of now, not as of the call's start: an isolation that committed since
                 # reads nothing more (§6.2, "Isolation").
-                row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
+                row = events.carried_row(
+                    conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one(),
+                    events.bridge_windows_of(mine.row),  # a bridge's own windows (§2.3, §6.2)
+                )
                 if waking and events.is_isolated(row):
                     # Ended here too, not only by the process that isolated it: that one's
                     # registry holds only its own waits (hub/context/replicas.md).

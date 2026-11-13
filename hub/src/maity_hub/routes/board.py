@@ -231,9 +231,10 @@ def get_history(
         card = _card(conn, mine, card_id)
         c = t.card_history.c
         query = select(t.card_history).where(c.card_id == card.id)
-        for start, end in events.window_times(conn, mine.project.id, mine.row):
-            # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
-            query = query.where(or_(c.at < start, c.at > end))
+        # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
+        visible = events.outside_window_times(conn, mine.project.id, mine.row, c.at)
+        if visible is not None:
+            query = query.where(visible)
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor)
             query = query.where(or_(c.at < after_at, and_(c.at == after_at, c.id < after_id)))
@@ -387,6 +388,11 @@ def list_notes(
         card = _card(conn, mine, card_id)
         c = t.card_note.c
         query = select(t.card_note).where(c.card_id == card.id)
+        # A note written in one of the reader's hidden windows, as its history's entries
+        # (§6.2, §6.16).
+        visible = events.outside_window_times(conn, mine.project.id, mine.row, c.created_at)
+        if visible is not None:
+            query = query.where(visible)
         if state != "all":
             wanted = [s for s in state.split(",") if s]
             if not wanted or any(s not in notes.STATES for s in wanted):

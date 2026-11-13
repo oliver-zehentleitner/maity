@@ -22,7 +22,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import clock, idempotency, restricted
+from maity_hub import clock, events, idempotency, restricted
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import sessions
@@ -193,13 +193,17 @@ def _state(conn: Connection, card_id: str, row: Any) -> dict[str, Any]:
     }
 
 
-def _read(conn: Connection, card_id: str) -> dict[str, Any]:
+def _read(conn: Connection, card_id: str, mine: Membership) -> dict[str, Any]:
     row = _row(conn, card_id)
+    h = t.task_restricted_history.c
+    query = select(t.task_restricted_history).where(h.task_id == card_id)
+    # Entries of the reader's hidden windows, by their time, as a card's history (§6.2, §6.15);
+    # the text and its version are the state the reader finds.
+    visible = events.outside_window_times(conn, mine.project.id, mine.row, h.at)
+    if visible is not None:
+        query = query.where(visible)
     entries = conn.execute(
-        select(t.task_restricted_history)
-        .where(t.task_restricted_history.c.task_id == card_id)
-        .order_by(t.task_restricted_history.c.version.desc())
-        .limit(HISTORY_SHOWN)
+        query.order_by(t.task_restricted_history.c.version.desc()).limit(HISTORY_SHOWN)
     ).all()
     people = _people(conn, {e.author for e in entries} | ({row.updated_by} if row else set()))
     return {
@@ -291,8 +295,8 @@ def _write(
 def get_restricted(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     """Allowed on closed cards and in every project state (§6.4)."""
     with engine_of(request).begin() as conn:
-        _mine, card = _admit(conn, caller, slug, card_id)
-        return JSONResponse(_read(conn, card.id))
+        mine, card = _admit(conn, caller, slug, card_id)
+        return JSONResponse(_read(conn, card.id, mine))
 
 
 def _admit_locked(
