@@ -148,6 +148,9 @@ human = Table(
     # The terms version accepted at registration, and when (§2.7.2); null otherwise.
     Column("terms_version", String(64)),
     Column("terms_accepted_at", UtcDateTime),
+    # When the person answered the experiment notice with "Understood" (§5.1, "Experiment
+    # notice"); null until then. The first confirmation is kept.
+    Column("experiment_notice_understood_at", UtcDateTime),
     # Set when the human deleted the account (§2.9): the row stays, so every stored id
     # resolves and the handle stays taken; everything about the person is gone.
     Column("deleted_at", UtcDateTime),

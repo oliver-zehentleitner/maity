@@ -1902,3 +1902,37 @@ anything after it, the same way in a group chat.
 - Naming the conversation in the hub's event or in the contract's
   wait output. Out of the card's scope (no contract change). The
   payload already carries the id.
+
+## `wait` and `chat` read the chat's view for the rules per side, once per chat and wake; a failed read prints no rules and costs nothing else
+
+**Id:** 6153e13c-da66-41f0-9943-7e876c4ae927
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dq1229pyh333 (the CLI step), docs/api.md §9.6 "Rules per side" ("`maity chat <id>` prints them above the messages, and `maity wait` prints them with every chat message of that chat"); how the CLI gets there is the implementer's
+**Revisit when:** a chat message's event comes to carry the rules itself, or one wake holds messages of many group chats often enough that the reads of their views show
+
+`maity wait` reads `GET …/conversations/{id}` for each group chat (`cnv-…`) a wake's chat
+messages are in, once per chat and wake, and prints its `chat_rules` under every message of
+that chat on stderr. `maity chat <id>` reads the view before the messages and prints the rules
+above them; with `--json` it reads no view. A refused or failed read of the view prints no
+rules: the command goes on, the wake is handed over, and the resume packet still carries the
+rules. In a wait each read gets what is left of `--timeout` as its timeout, and none is made
+under half a second (as for the unread-chats note), so a view that does not answer no longer
+holds back events already in hand for the client's 30 s (hcrb on #1734: a 1 s wait returned
+after 1.5 s). As for that note, the timeout bounds each socket operation, not the whole read:
+a hub that trickles its answer can still run past the deadline. `maity resume` prints them from the packet's `chat_rules`.
+
+**Reason:** the hub gives the rules in the resume packet and in the chat's view, not in a
+message's event (§9.6 sends the event `{entry_id}` only, never the texts), so the view is the
+one current source at the moment a message wakes the agent; the packet may be hours old. One
+read per chat and wake keeps the cost to one call where a wake brings several messages of a
+chat. A wait is the agent's line to the hub: a lost wake costs more than a missing reminder of
+rules the resume already printed.
+
+**Rejected alternatives:**
+- The rules from the last stored packet: stale after a change, which is exactly when the
+  agent most needs them.
+- A read of the view per message: the same answer several times in one wake.
+- Failing the wait or the chat when the view cannot be read: the messages, the wake and the
+  cursor would be lost over a reminder.

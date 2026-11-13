@@ -1767,7 +1767,7 @@ message says are no boundary.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them)
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13)
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
 **Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
@@ -1846,7 +1846,17 @@ session wrote them. The check accepts, while empty, a little more than
 those six: an empty `config.worktree`, `objects/info/alternates` or
 `objects/info/http-alternates` file, an empty `remotes/`, and an empty
 `.claude-sandbox-noreplace/` directory wherever it appears in `.git`,
-not only in the three places observed. Empty means an empty regular
+not only in the three places observed. It also accepts an empty
+`glab-cli/`, `modules/` and `worktrees/`. Claude Code's binary lists
+`.git/glab-cli`, `.git/modules` and `.git/worktrees` among the paths its
+sandbox protects (read in 2.1.321), and on the runner's host 2.1.323 made
+`glab-cli/` and `worktrees/` empty at every session start, so every
+placed session refused its own clone for `maity checkpoint`, `report`
+and the next start (tsk-ydxv7x37fg08). `modules/` is accepted from the
+list without having been seen: it is the same guard, and the check
+should not hang on which of the listed paths one release happens to
+make. With anything in them, `modules/` is refused as submodules and
+`worktrees/` as worktrees, as before. Empty means an empty regular
 file or directory: a link, a FIFO, a socket or a device anywhere in
 `.git` is refused, under any name, and so is a directory in `.git` that
 cannot be listed, since unlisted it would look empty. Any of them with
@@ -1855,7 +1865,8 @@ holds for every maity user, not only the runner. Empty, they change
 nothing git does: an empty `config.worktree` is not even read without
 an `extensions.worktreeConfig` the configuration check refuses, an
 empty `alternates` names no object store, and an empty `remotes/` names
-no remote.
+no remote, and empty `glab-cli/`, `modules/` and `worktrees/` hold no
+glab configuration, no submodule and no linked worktree.
 
 **Reason:** under the runner, maity's git runs outside the agent's
 sandbox for Claude Code (inside it for Codex), in a clone whose
@@ -2728,3 +2739,73 @@ Rejected:
 - Installing on ssh targets too: a vendor's installer would run on a
   machine whose owner did not set it up for that, with more ways to fail
   (the owner's answer); a later card can add it.
+
+## Placed sessions commit as the runner's `[git]` identity, set through the environment
+
+**Id:** ad2b5d74-ce26-40cc-ae2c-50f22c3e008a
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-z27pwcfr03wm (the runner test of 2026-11-11 on #1592: `git commit` in a placed Claude Code session failed with "empty ident name (for <maity-runner@…>) not allowed", the checks were refused); the lead's decisions on that card, message 123366, 2026-11-13; the review of #1735 (the control-character finding) and the review lead's fix order, message 123623, 2026-11-13; git 2.53 in a scratch repository with an empty `HOME`, no system configuration and a read-only `.git/config`, 2026-11-13; `cli/tests/test_session_identity.py`
+**See:** runner.md#git-in-a-sandboxed-session-works-without-writing-gitconfig — 82e70deb-7cf9-4ea1-be2f-137186b20b2d — as of 2026-11-13
+**Revisit when:** a placement should commit as an identity of its own (per agent or per repository), git stops letting `GIT_AUTHOR_*`/`GIT_COMMITTER_*` override the configuration, or a harness filters these variables out of the commands it runs
+
+Every placed session gets `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`,
+`GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL` from the runner
+configuration's `[git]` table (`name`, `email`, both required in it), for
+every harness and layout (`adapters.git_identity`). Without the table the
+default is the generic `Maity agent <maity-agent@invalid>`, and
+`maity runner check` warns while a harness other than `stub` is configured.
+`config user.name` and `config user.email` are no longer among the granted
+git subcommands. It is the session's default, not a lock: `git commit
+--author` sets another author, and a program the session runs (an allowed
+check) can start git with an environment of its own. Both values are
+refused when the configuration is read unless `str.isprintable()` accepts
+them.
+
+**Reason:** the session had no identity anywhere. Its environment is a
+fixed few variables, the agents' user on the runner VM has no
+`~/.gitconfig` and an empty passwd name, and the agent could not set one:
+the sandbox keeps `.git/config` unwritable and `git -c` is denied. The
+variables win over every git configuration, so a plain `git commit` works
+with nothing written anywhere. They also close a gap the card did not
+name: in the `single` layout the agents' home is the operator's, whose
+`~/.gitconfig` is not among the hidden secrets, so placed sessions there
+had committed under the operator's personal address. The generic default
+keeps every runner working while naming no one; `.invalid` (RFC 2606) can
+never be a real address, so no owner's or team's address is built into an
+open-source default. Setting the team identity is each deployment's
+operator step. The `config user.*` grants became pointless (the variables
+win) and, without a sandbox, wrote `.git/config`.
+
+**Rejected alternatives:**
+- `user.name`/`user.email` through `GIT_CONFIG_COUNT`, beside the settings
+  already passed that way: it works as well, but `GIT_AUTHOR_*` and
+  `GIT_COMMITTER_*` are git's own variables for this and win even over a
+  `-c user.name`; `--author` still changes only the author.
+- Letting the agent set its identity (`git config` writable, or `-c`
+  allowed): `.git/config` and `-c` can run a program outside the sandbox
+  (82e70deb).
+- The team identity as the built-in default: every operator's runner would
+  commit under the maintainer's address unless they noticed (the lead's
+  decision, option a of three).
+- Requiring `[git]` with no default: an existing configuration would stop
+  passing `check` and `serve` on upgrade.
+- An identity per repository grant: not needed now (the lead's decision).
+- Refusing only control characters (category Cc: C0, DEL, C1) in the two
+  values, the first fix the review of #1735 asked for: it would keep format
+  characters such as U+200C, which some names use, but also invisible ones
+  in every commit. The review lead preferred everything `str.isprintable()`
+  refuses; an identity for agents does without U+200C. The first version
+  refused only C0 and DEL in the name and nothing in the address, so a NUL
+  passed `check` and failed only when a session was started (review of
+  #1735).
+
+Which checks a repository's grant allows stays the operator's choice in
+the runner configuration; the contract only says the hub neither sees nor
+checks it (§15.1, §15.3). `docs/runners.md` shows the entries for a Python
+repository. Rejected: the repository declaring its own checks in a
+committed file. The project's committed configuration is never loaded
+(adapters' module docstring), because a branch could then widen its own
+grant. `git apply` stays ungranted (the lead's decision).

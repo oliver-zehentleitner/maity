@@ -6343,6 +6343,7 @@ window.MAITY_FIXTURES = {
     "member": {
       "aliases": [],
       "display_name": "Maintainer",
+      "experiment_notice_understood_at": null,
       "handle": "maintainer",
       "id": "hum-maintainer",
       "instance_admin": true,
@@ -6646,6 +6647,29 @@ window.MAITY_FIXTURES = {
   "people.json": {
     "items": [
       {
+        "agents": [
+          {
+            "avatar_url": "/api/v1/avatars/public/0f3c9a2b7d1e4c580f3c9a2b7d1e4c58",
+            "display_name": "Quiet Bot",
+            "handle": "quiet-bot",
+            "harness": null,
+            "model": null,
+            "page": null,
+            "roles": []
+          },
+          {
+            "avatar_url": null,
+            "display_name": "Trader <b>Bot</b>",
+            "handle": "trader-bot",
+            "harness": "harness-x",
+            "model": "model-one",
+            "page": "/wolfgang/agents/trader-bot",
+            "roles": [
+              "coder",
+              "reviewer"
+            ]
+          }
+        ],
         "aliases": [
           "wolf"
         ],
@@ -6676,6 +6700,7 @@ window.MAITY_FIXTURES = {
         "website": "https://example.org"
       },
       {
+        "agents": [],
         "aliases": [],
         "avatar_url": null,
         "display_name": "Anna",

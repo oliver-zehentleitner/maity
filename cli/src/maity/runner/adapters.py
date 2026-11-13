@@ -67,8 +67,11 @@ SUPERVISED_PROMPT = (
 GIT_SUBCOMMANDS = (
     "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
     "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
-    "ls-files", "blame", "grep", "remote -v", "config user.name", "config user.email",
+    "ls-files", "blame", "grep", "remote -v",
 )  # fmt: skip
+# Not `config user.name` or `config user.email`: the session's identity comes from the
+# runner (git_identity), which wins over any configuration, and without a sandbox those
+# would write `.git/config`.
 GIT_DENIED = (
     "git -c *", "git --config-env*", "git --exec-path*", "git * --no-index*",
     "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
@@ -131,6 +134,15 @@ def git_config(ctx: Context) -> dict[str, str]:
     return env
 
 
+def git_identity(ctx: Context) -> dict[str, str]:
+    """Who the session commits as: the runner's `[git]`, author and committer alike. The
+    variables win over every git configuration, so neither the agents' user's own (the
+    operator's, in the `single` layout) nor one the agent sets is used (cli/context/runner.md)."""
+    name, email = ctx.git.name, ctx.git.email
+    return {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}  # fmt: skip
+
+
 def writes_denied(ctx: Context) -> bool:
     """Whether the session's git cannot write `.git/config`: Claude Code's and Codex's
     sandboxes deny it (claude_settings, codex_config)."""
@@ -178,6 +190,7 @@ class Context:
     as_user: AsUser = AsUser()  # who the agents run as (§7.6)
     agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
     resume: bool = False  # interactive: continue the harness's last conversation (§15.14)
+    git: config.GitIdentity = config.GitIdentity()  # who the session commits as (`[git]`)
 
 
 @dataclass(frozen=True)
@@ -200,6 +213,7 @@ def launch(ctx: Context) -> Launch:
         # A nested repository the agent registers as a submodule keeps its own configuration,
         # which the pin does not reach; git passes these settings on to it.
         **git_config(ctx),
+        **git_identity(ctx),
         **ctx.extra_env,
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the

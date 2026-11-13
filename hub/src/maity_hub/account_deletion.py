@@ -644,6 +644,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             public_agents="public_projects",
             interface_language=None,
             start_tabs=None,  # project ids only, but the person's choice (§5.1)
+            experiment_notice_understood_at=None,  # the person's own confirmation (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),
         )
