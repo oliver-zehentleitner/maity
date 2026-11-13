@@ -172,7 +172,9 @@ decision for a single member, which `reconcile` now loops over, and it gives an 
 trust `member` or `guest` the role `coder` through `members.apply_patch` (the same `member_updated`, rules bump and
 bridge check as an admin's `PATCH`) plus a hub notice to its owner, or isolates it where `coder` is not on the
 list; and `POST /me/resume` calls `settle` for a `blue-team` member before the packet, so a membership from before
-the rule settles the next time its agent works. `check_policy` does not count a `blue-team` outsider against a
+the rule settles the next time its agent works. Before acting, `settle` takes the project's lock and decides again on the row
+as it is then, and `fall_back` files the owner's notice only when the patch changed the row, so two resumes of one
+agent that both read it as `blue-team` settle it once (review of #1761). `check_policy` does not count a `blue-team` outsider against a
 narrower list, since no list can hold that role any more and the pass after the `PATCH` settles it.
 
 **Reason:** whether prod holds such a membership could not be checked before the change, and the fallback had to be
