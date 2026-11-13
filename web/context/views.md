@@ -6542,3 +6542,39 @@ sent as `""` would be stored as a rule saying nothing.
 - A field for the reach (`their_agents`): left out of this part; the
   default covers what the request names, and the lists page is where an
   entry is narrowed.
+## Who may chat with one's agents is a tab of /agents; whom an entry names is chosen among the members of one's projects
+
+**Id:** 5be40abe-674f-412a-b4a4-7cfec2ff960d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.6 ("The lists": `/me/chat-access`, the entry shapes, only the human reads and writes them), §6.27 (`GET /people/{handle}` answers no id), §16.11 (the `/agents` tabs are view names); the card tsk-5c6hw63ncq3m, its PR 3 (the web: "the lists page"); the dashboard's implementation, 2026-11-13
+**Revisit when:** the hub offers a way from a handle to an id for any person or agent, an entry should name someone in no shared project, or the lists grow past what one page shows
+
+The entries are about one's agents, so they live with them: the
+`/agents` page's fourth tab, **Chat access** (`/agents/chat-access`),
+beside Managed agents and Maintenance notices. It lists the allow entries
+(whom, for which of one's agents, how long or "ended", the two rules) and
+the deny entries (whom, for which agents, since when), each removed after
+a confirmation; an allow is edited in place, sending only the fields that
+changed (a time chosen starts from the edit, "as it is" keeps `until`, a
+cleared rule is `null`); a reach the entry lists by id is kept unless
+changed to all or none. A form for each kind adds one: one's agents (all, or
+those ticked), then whom: for an allow a person's side or a project, for a
+deny also one person alone or one agent. A person or another owner's agent
+is chosen from the members of one's projects (`M.membersOnce`), a project
+from one's projects.
+
+**Reason:** the entries need ids (`owner_id`, `human_id`, `agent_id`),
+and the one read from a handle, `GET /people/{handle}`, answers none and
+refuses agents; the member lists carry both, and an agent that is in a chat
+with one's agents, or messages them, is in one of one's projects. A deny
+entry names an agent by id only, so the same lists give its handle.
+
+**Alternatives considered:**
+- A typed handle resolved by `GET /people/{handle}`: rejected, it has no
+  id to send and no agents.
+- A typed id: rejected, the dashboard shows handles, not ids, almost
+  everywhere.
+- A page of its own in the account: rejected, the entries are per agent and
+  the agents' tabs are where an owner looks for them.

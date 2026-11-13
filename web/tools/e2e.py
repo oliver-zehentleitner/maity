@@ -5325,10 +5325,10 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
 def agents_page_tabs(run: Run, page: Page) -> None:
     """/agents's tabs (§16.11, tsk-3s3eb6bsp15n): the list, Managed agents across one's projects, and
     Maintenance notices, which stood under the list before."""
-    run.step("agents: /agents has the tabs Agents, Managed agents and Maintenance notices")
+    run.step("agents: /agents has the tabs Agents, Managed agents, Maintenance notices and Chat access")
     page.goto(f"{run.base}/agents")
     tabs = page.locator("main nav.agents-tabs")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Maintenance notices"])
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Maintenance notices", "Chat access"])
     expect(page.locator("main section.broadcasts")).to_have_count(0)
     tabs.get_by_role("link", name="Managed agents", exact=True).click()
     expect(page).to_have_url(re.compile(r"/agents/placements$"))
