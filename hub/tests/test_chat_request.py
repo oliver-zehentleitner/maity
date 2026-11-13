@@ -501,8 +501,8 @@ def test_a_request_filed_in_between_is_joined_not_doubled(
     """hcrb on #1718: a request another transaction files and commits after this one read the
     open requests, but before it computes the new id, gets the same id; this one then joins it
     instead of filing a second open request for the pair."""
-    if migrated.dialect.name != "postgresql":
-        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("two writers at once need a server database; SQLite serialises them")
     import threading
 
     from maity_hub import chat_request
@@ -539,3 +539,55 @@ def test_a_request_filed_in_between_is_joined_not_doubled(
     rows = requests(migrated, other.id)
     assert len(rows) == 1
     assert sorted(h["seq"] for h in rows[0].proposal["held"]) == [1, 2]
+
+
+def test_a_collision_with_a_request_closed_meanwhile_files_the_next(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """hcrb on #1718: a filer that computed its id, while another transaction files a request
+    with that id and the owner answers it, collides with a closed request; it counts it and
+    files the next id once, instead of trying the same id again or giving up."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("two writers at once need a server database; SQLite serialises them")
+    import threading
+
+    from maity_hub import chat_request
+
+    other = other_human(make_client, migrated, "other")
+    writer = other_human(make_client, migrated, "writer", "member")
+    theirs = flow.agent(make_client, other)
+    project = project_id(migrated)
+    paused, go = threading.Event(), threading.Event()
+    slow: list[int] = []
+    original = chat_request._insert
+
+    def insert(conn: Any, *args: Any) -> None:
+        if threading.get_ident() in slow:
+            slow.clear()  # once
+            paused.set()
+            go.wait(15)
+        original(conn, *args)
+
+    def note(seq: int, pause: bool = False) -> None:
+        if pause:
+            slow.append(threading.get_ident())
+        with migrated.begin() as conn:
+            chat_request.note_held(
+                conn, project, seq, "notice", (writer.id, "human"), writer.id, [theirs.id]
+            )
+
+    monkeypatch.setattr(chat_request, "_insert", insert)
+    racer = threading.Thread(target=note, args=(1, True))
+    racer.start()
+    assert paused.wait(15)  # its id is computed, its insert not yet sent
+    note(2)  # the same id, filed and committed
+    first = the_request(migrated, other.id)
+    assert other.post(f"/requests/{first.id}/withdraw", {}).status_code == 200  # and closed
+    go.set()
+    racer.join(15)
+    assert not racer.is_alive()
+    [row] = requests(migrated, other.id)
+    assert row.id != first.id and [h["seq"] for h in row.proposal["held"]] == [1]

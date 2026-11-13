@@ -132,10 +132,13 @@ def _request_id(conn: Connection, owner: str, side: str) -> str:
     the pair's closed requests are counted: a request another transaction files and commits
     between this one's read of the open requests and this count leaves the count as it was,
     so this one collides with it (hcrb on #1718). Filing happens only where no request of the
-    pair is open, and closing one is what moves the count on."""
+    pair is open, and closing one is what moves the count on. The count is a locking read, so
+    it sees the latest committed rows on MariaDB too, whose plain reads keep the transaction's
+    first snapshot."""
+    closed = _mine(owner).where(t.request.c.status != "open").with_for_update(read=True)
     asked = sum(
         1
-        for row in conn.execute(_mine(owner).where(t.request.c.status != "open")).all()
+        for row in conn.execute(closed).all()
         if (row.proposal or {}).get("kind") == KIND and row.proposal.get("side") == side
     )
     digest = hashlib.sha256(f"{KIND}|{owner}|{side}|{asked}".encode()).digest()
@@ -347,7 +350,7 @@ def sync(conn: Connection, owner: str) -> None:
     seen = _open(conn, owner)
     open_ = _open(conn, owner, lock="skip")
     for side in sorted(set(waiting) | set(seen)):
-        if side in seen and side not in open_:
+        if side in seen and side not in open_ and _still_open(conn, seen[side].id):
             continue  # another transaction holds it (an answer, a held message) and syncs after
         row = open_.get(side)
         held = pruned(conn, owner, row.proposal)["held"] if row is not None else []
@@ -356,9 +359,16 @@ def sync(conn: Connection, owner: str) -> None:
                 _withdraw(conn, row)
             continue
         if row is None:
-            _file(conn, owner, side, [])
+            _ensure(conn, owner, side, [])  # one filed meanwhile is found, not doubled
         else:
             _refresh(conn, row, {**row.proposal, "held": held})
+
+
+def _still_open(conn: Connection, request_id: str) -> bool:
+    """Whether a request `sync` saw open and could not lock is still open as committed: one
+    closed meanwhile (an answer that has committed) is no reason to leave the side alone."""
+    status = conn.execute(select(t.request.c.status).where(t.request.c.id == request_id)).scalar()
+    return status == "open"
 
 
 def sync_agents(conn: Connection, agent_ids: list[str]) -> None:
@@ -407,17 +417,31 @@ def note_held(
 
 
 def _hold(conn: Connection, owner: str, side: str, held: dict[str, Any]) -> None:
-    """Add a held message to the pair's open request, or file one with it. The open row is
-    waited for, not skipped, so that the message is never lost; a request another transaction
-    filed meanwhile is read again once that one has committed (`_file` returns None)."""
-    while True:
+    """Add a held message to the pair's open request, or file one with it (`_ensure`)."""
+    row = _ensure(conn, owner, side, [held])
+    if row is not None:
+        _refresh(conn, row, {**row.proposal, "held": [*row.proposal.get("held", []), held]})
+
+
+# How often `_ensure` files again after a collision before it gives up: each collision means a
+# request of the pair committed with the id tried, and the next pass either finds it open or,
+# as it is closed, counts it and tries the next id; another needs a whole filing and closing of
+# the same pair between two passes.
+FILE_ATTEMPTS = 5
+
+
+def _ensure(conn: Connection, owner: str, side: str, held: list[dict[str, Any]]) -> Any:
+    """Make sure the pair has an open request: None when this call filed it with `held`, else
+    the open request it found, its row locked (waited for, never skipped, so a held message is
+    never lost). A collision (`_file` returns None) means another transaction filed that id and
+    has committed: it is read again, open or closed, with the latest rows."""
+    for _ in range(FILE_ATTEMPTS):
         row = _open(conn, owner, lock="wait").get(side)
         if row is not None:
-            proposal = {**row.proposal, "held": [*row.proposal.get("held", []), held]}
-            _refresh(conn, row, proposal)
-            return
-        if _file(conn, owner, side, [held]) is not None:
-            return
+            return row
+        if _file(conn, owner, side, held) is not None:
+            return None
+    raise RuntimeError(f"no request for {owner} and {side} after {FILE_ATTEMPTS} collisions")
 
 
 def sweep_owners(conn: Connection) -> None:

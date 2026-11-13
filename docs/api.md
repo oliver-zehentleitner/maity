@@ -14560,8 +14560,10 @@ message it counts never ends, so a request with one
 stays open until the owner answers it. The owner withdrawing it (§7) counts as
 `no`.
 
-`GET /requests/{id}` shows the owner what the inbox draws the checkboxes
-from, as of the read:
+`GET /requests/{id}` shows the owner what an inbox draws its checkboxes
+from, as of the read (the web inbox offers them in a later part; until
+then its answer carries the `reply_id` only and takes the defaults
+below):
 
 ```json
 { "chat_access_request": {
