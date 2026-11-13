@@ -602,7 +602,7 @@ def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     for entry in ("config.worktree", "objects/info/alternates"):
         (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
         (place.path / ".git" / entry).write_text("")
-    for entry in ("remotes", "info/.claude-sandbox-noreplace",
+    for entry in ("glab-cli", "modules", "remotes", "worktrees", "info/.claude-sandbox-noreplace",
                   "objects/info/.claude-sandbox-noreplace",
                   "objects/info/commit-graphs/.claude-sandbox-noreplace"):  # fmt: skip
         (place.path / ".git" / entry).mkdir(parents=True)

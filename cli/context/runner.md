@@ -1767,7 +1767,7 @@ message says are no boundary.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them)
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13)
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
 **Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
@@ -1846,7 +1846,17 @@ session wrote them. The check accepts, while empty, a little more than
 those six: an empty `config.worktree`, `objects/info/alternates` or
 `objects/info/http-alternates` file, an empty `remotes/`, and an empty
 `.claude-sandbox-noreplace/` directory wherever it appears in `.git`,
-not only in the three places observed. Empty means an empty regular
+not only in the three places observed. It also accepts an empty
+`glab-cli/`, `modules/` and `worktrees/`. Claude Code's binary lists
+`.git/glab-cli`, `.git/modules` and `.git/worktrees` among the paths its
+sandbox protects (read in 2.1.321), and on the runner's host 2.1.323 made
+`glab-cli/` and `worktrees/` empty at every session start, so every
+placed session refused its own clone for `maity checkpoint`, `report`
+and the next start (tsk-ydxv7x37fg08). `modules/` is accepted from the
+list without having been seen: it is the same guard, and the check
+should not hang on which of the listed paths one release happens to
+make. With anything in them, `modules/` is refused as submodules and
+`worktrees/` as worktrees, as before. Empty means an empty regular
 file or directory: a link, a FIFO, a socket or a device anywhere in
 `.git` is refused, under any name, and so is a directory in `.git` that
 cannot be listed, since unlisted it would look empty. Any of them with
@@ -1855,7 +1865,8 @@ holds for every maity user, not only the runner. Empty, they change
 nothing git does: an empty `config.worktree` is not even read without
 an `extensions.worktreeConfig` the configuration check refuses, an
 empty `alternates` names no object store, and an empty `remotes/` names
-no remote.
+no remote, and empty `glab-cli/`, `modules/` and `worktrees/` hold no
+glab configuration, no submodule and no linked worktree.
 
 **Reason:** under the runner, maity's git runs outside the agent's
 sandbox for Claude Code (inside it for Codex), in a clone whose
