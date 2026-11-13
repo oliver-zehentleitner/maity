@@ -426,7 +426,7 @@ def lapse(conn: Connection, owner: str) -> int:
     locked: a renewal (`PATCH …/allow/{id}` with a new `duration`) that committed before is
     seen and not marked lapsed, one that comes after waits (v5vp on #1717, P1). The marker is
     still written only where the entry is expired and unmarked."""
-    from maity_hub import group_chats
+    from maity_hub import chat_request, chat_rules, group_chats
 
     chat_access._lock(conn, owner)
     c = t.chat_access.c
@@ -434,16 +434,17 @@ def lapse(conn: Connection, owner: str) -> int:
     ids = [r.id for r in conn.execute(_expired(owner, now).order_by(c.id).with_for_update())]
     if not ids:
         return 0
-    conn.execute(
-        update(t.chat_access)
-        .where(c.id.in_(ids), c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now)
-        .values(lapsed_at=now)
-    )
-    from maity_hub import chat_request
-
-    with chat_request.deferred(conn):
-        for chat in chats_of_owner(conn, owner):
-            group_chats.resettle(conn, chat, None)
+    # Before the lapse these entries count as they admitted until now (`lapsing`): `_allows`
+    # already sees their `until` passed, while the stays still hold the admission.
+    with chat_rules.announcing(conn, owner, lapsing=ids):
+        conn.execute(
+            update(t.chat_access)
+            .where(c.id.in_(ids), c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now)
+            .values(lapsed_at=now)
+        )
+        with chat_request.deferred(conn):
+            for chat in chats_of_owner(conn, owner):
+                group_chats.resettle(conn, chat, None)
     return len(ids)
 
 
