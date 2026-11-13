@@ -455,3 +455,46 @@ def test_err_shows_escapes_and_keeps_its_own_lines(capsys: pytest.CaptureFixture
         err == "maity: first a\\x1b[2J\\x1b[31mb\\x1b]52;c;aGk=\\x07c\\x1b]0;title\\x07d"
         "\\x9b31me\\x07f\nsecond\n"
     )
+
+
+@posix
+def test_join_pointer_refuses_claude_md_when_looking_it_up_fails(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (clone / "CLAUDE.md").write_text("# own rules\n")
+    real = pointer._Root.lstat
+
+    def lstat(self: pointer._Root, name: str) -> os.stat_result | None:
+        if name == "CLAUDE.md":
+            raise PermissionError(13, "Permission denied")
+        return real(self, name)
+
+    monkeypatch.setattr(pointer._Root, "lstat", lstat)
+    url = f"{fake.url}/j/{fakehub.TOKEN}"
+    code = cli.main(["join", url, "--code", fakehub.CODE, "--no-resume", "--pointer"])
+    err = capsys.readouterr().err
+    assert code == cli.EXIT_OK, err
+    assert "wrote the Maity pointer block into" in err  # AGENTS.md is still written
+    assert "not written" in err and "CLAUDE.md could not be written (Permission denied)" in err
+    assert pointer.BLOCK in err
+    assert (clone / "CLAUDE.md").read_text() == "# own rules\n"
+
+
+@posix
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads anyway")
+def test_pointer_refuses_both_files_in_a_root_it_may_list_but_not_search(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "AGENTS.md").write_text("rules\n")
+    (root / "CLAUDE.md").write_text("# own rules\n")
+    root.chmod(0o400)  # read, no search: every lookup of a name in it fails
+    try:
+        changed, refused = pointer.write(root)
+    finally:
+        root.chmod(0o700)
+    assert changed == [] and len(refused) == 2
+    assert all("could not be written (Permission denied)" in r for r in refused)
+    assert (root / "CLAUDE.md").read_text() == "# own rules\n"

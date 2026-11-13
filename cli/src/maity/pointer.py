@@ -196,21 +196,21 @@ def write(root: Path) -> tuple[list[Path], list[str]]:
             refused.append(str(exc))
         except OSError as exc:
             refused.append(_refusal(agents, exc))
-        entry = opened.lstat("CLAUDE.md")
-        if entry is None:
-            return changed, refused
-        if stat.S_ISLNK(entry.st_mode):
-            target, own = opened.stat("CLAUDE.md"), opened.lstat("AGENTS.md")
-            if (
-                target is not None
-                and own is not None
-                and stat.S_ISREG(own.st_mode)
-                and os.path.samestat(target, own)
-            ):
+        try:  # the lookups too: a CLAUDE.md the system will not even stat is refused
+            entry = opened.lstat("CLAUDE.md")
+            if entry is None:
                 return changed, refused
-        elif not stat.S_ISREG(entry.st_mode):
-            return changed, refused  # a directory of that name is no CLAUDE.md, as before
-        try:
+            if stat.S_ISLNK(entry.st_mode):
+                target, own = opened.stat("CLAUDE.md"), opened.lstat("AGENTS.md")
+                if (
+                    target is not None
+                    and own is not None
+                    and stat.S_ISREG(own.st_mode)
+                    and os.path.samestat(target, own)
+                ):
+                    return changed, refused
+            elif not stat.S_ISREG(entry.st_mode):
+                return changed, refused  # a directory of that name is no CLAUDE.md, as before
             _check(opened, "CLAUDE.md")
             if "@AGENTS.md" not in _read(opened, "CLAUDE.md") and _upsert(opened, "CLAUDE.md"):
                 changed.append(claude)
