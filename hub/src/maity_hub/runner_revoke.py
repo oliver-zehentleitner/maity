@@ -92,6 +92,8 @@ def apply(
     # ids, before any placement is read: a pickup's exchange (§15.9) takes its project's
     # lock first, so it either committed its credential, which is read here, or waits and
     # then finds its placement closed or the runner without its credential.
+    # A caller that already holds project locks took this set's, in the same order, first
+    # (`projects_to_lock`, the account's deletion).
     for project_id in _to_lock(conn, runner_id, attached, everywhere=agents == "stop"):
         events.lock_project(conn, project_id)
     results = []
@@ -129,6 +131,13 @@ def apply(
     if agents == "stop":
         _on_the_machine(conn, runner_id, by)
     return results
+
+
+def projects_to_lock(conn: Connection, runner_id: str) -> list[str]:
+    """What `apply` locks under the owner's stop, and the runner's removal after it, in the
+    order of their ids: for a caller that must take them together with other project locks
+    of its own, all in one ordered pass, before it calls `apply`."""
+    return _to_lock(conn, runner_id, attached_project_ids(conn, runner_id), everywhere=True)
 
 
 def _to_lock(

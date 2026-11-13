@@ -428,3 +428,111 @@ def test_a_pickup_exchanged_after_the_stop_is_not_found(setup: Setup) -> None:
             ).scalar()
             is None
         )
+
+
+# --- a project's stop racing a pickup (§15.3, §15.9) ---------------------------------------------
+
+
+def test_a_pickup_exchanged_while_a_policy_stop_waits_gets_its_grace(setup: Setup) -> None:
+    """As for the owner's override: the policy's stop reads the credential the exchange
+    wrote under the project's lock and sets its revocation due (PostgreSQL, MariaDB)."""
+    from maity_hub import runner_revoke
+    from maity_hub.routes import joins
+    from tests.concurrency import finished, race, waiting
+
+    first, row = _picked_up(setup)
+    with race(setup.engine) as r:
+        exchange, stop = r.first, r.second
+        minted = joins._consume(exchange, row, "maity-cli/test")[1]
+        step = r.run(
+            stop,
+            lambda: runner_revoke.apply(
+                stop,
+                setup.runner.id,
+                agents="policy",
+                instance_rule="stop",
+                removing=False,
+                by=setup.owner.id,
+            ),
+        )
+        assert waiting(step)  # blocked on the project's lock
+        exchange.commit()
+        assert finished(step)[0]["stopped"] == [first["id"]]
+        stop.commit()
+    with setup.engine.connect() as conn:
+        due = conn.execute(
+            select(t.credential.c.revoke_due_at).where(t.credential.c.id == minted)
+        ).scalar()
+    assert due is not None
+
+
+# --- two account deletions, each with a retained clone in the other's namespace (§2.9) ---------
+
+
+def test_two_deletions_with_clones_in_each_others_namespace_do_not_deadlock(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """Each deletion takes its namespace's and its runners' project locks in one ordered
+    pass, so the second waits for the first instead of holding a project the first's
+    removal of its runner needs (PostgreSQL, MariaDB)."""
+    from maity_hub import account_deletion
+    from maity_hub.routes import runners as runner_routes
+    from tests.concurrency import finished, race, waiting
+
+    closed_by_delete(setup)
+    pat = flow.human(make_client, setup.engine, "pat")
+    flow.project(pat, "other", repository={"url": REPOSITORY})
+    their_runner = paired(make_client, pat)
+    assert hello(make_client(), their_runner).status_code == 200
+    attached = pat.post("/projects/pat/other/runners", {"runner_id": their_runner.id})
+    assert attached.status_code == 201, attached.text
+    their_agent = flow.agent(make_client, pat, "pat/other", role="member")
+    made = pat.post(
+        "/projects/pat/other/placements",
+        {"agent": {"id": their_agent.id}, "runner": their_runner.id, "harness": "claude-code"},
+    )
+    assert made.status_code == 201, made.text
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == made.json()["id"])
+            .values(credential_id=their_agent.credential_id)
+        )
+    assert pat.delete(f"/projects/pat/other/placements/{made.json()['id']}").status_code == 200
+    for owner, slug, runner in ((setup.owner, "maity", setup.runner), (pat, "other", their_runner)):
+        detached = owner.delete(f"/projects/{owner.handle}/{slug}/runners/{runner.id}")
+        assert detached.status_code == 200, detached.text
+    with setup.engine.begin() as conn:  # each namespace now holds the other's clone
+        ours = conn.execute(select(t.project.c.id).where(t.project.c.slug == "maity")).scalar()
+        theirs = conn.execute(select(t.project.c.id).where(t.project.c.slug == "other")).scalar()
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == ours)
+            .values(owner_id=pat.id, owner_human_id=pat.id)
+        )
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == theirs)
+            .values(owner_id=setup.owner.id, owner_human_id=setup.owner.id)
+        )
+
+    def deletion(conn: Any, human_id: str, runner_id: str) -> None:
+        conn.execute(select(t.runner.c.id).where(t.runner.c.id == runner_id).with_for_update())
+        runner_routes.remove(conn, runner_id, agents="stop", instance_rule="keep", by=human_id)
+
+    with race(setup.engine) as r:
+        first, second = r.first, r.second
+        account_deletion._lock_namespace(first, setup.owner.id)
+
+        def other_deletion() -> None:
+            account_deletion._lock_namespace(second, pat.id)
+            deletion(second, pat.id, their_runner.id)
+
+        step = r.run(second, other_deletion)
+        assert waiting(step)  # blocked on a project the first holds
+        deletion(first, setup.owner.id, setup.runner.id)
+        first.commit()
+        finished(step)
+        second.commit()
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+    assert error(their_agent.get("/me")) == "credential_revoked"
