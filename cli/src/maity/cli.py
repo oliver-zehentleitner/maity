@@ -689,7 +689,28 @@ def _event_line(event: dict[str, Any]) -> str:
         return line + f": {_harness_model(before)} -> {_harness_model(after)}"
     if title:
         line += f": {onboarding.inline(title)[:120]}"
-    return line + _attachments_suffix(event) + onboarding.standing(event)
+    return line + _attachments_suffix(event) + onboarding.standing(event) + _chat_suffix(event)
+
+
+def _chat_suffix(event: dict[str, Any]) -> str:
+    """` in <conversation>: maity chat <id> --after <seq - 1>` for a chat message, so the
+    agent opens the chat the message is in, its direct one or a group chat, and not another
+    (tsk-3zm149w7bxg6). `--after`, not the bare command: `wait` moves the event cursor past
+    the message, and a direct conversation's unread read starts there, so it would show
+    nothing (cli/context/commands.md). An id or seq the CLI would not put in a command is
+    named without one; empty for any other event."""
+    if event.get("kind") != "message" or onboarding.get(event, "payload", "type") != "chat":
+        return ""
+    chat = onboarding.get(event, "payload", "conversation_id")
+    if not isinstance(chat, str) or not chat:
+        group = onboarding.get(event, "payload", "conversation")
+        chat = group.get("id") if isinstance(group, dict) else None
+    if not isinstance(chat, str) or not chat:
+        return ""
+    seq = event.get("seq")
+    if not FETCHABLE_ID.fullmatch(chat) or not _positive_int(seq):
+        return f" in {onboarding.inline(chat)[:120]}"
+    return f" in {chat}: maity chat {chat} --after {seq - 1}"
 
 
 ATTACHMENT_NAME_MAX = 60  # characters of one name in the event line
