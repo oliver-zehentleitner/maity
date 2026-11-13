@@ -318,6 +318,40 @@ registry alone.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
 
+## A hand-started image build runs the same release gate as a tag build
+
+**Id:** 9c3f6a1e-7b42-4d85-a0e9-3e5d8b17c4f2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 2 (release chain hardening, 2026-11-13); `.github/workflows/publish-image.yml`, `tools/release_gate.py`, `tools/test_release_gate.py`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** images built from `main` stop being deployed or signed, or the gate starts needing something a hand start does not have (a tag, a version)
+**See:** https://github.com/oliver-zehentleitner/maity — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-13
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+
+The `gate` job of `publish-image.yml` runs on a hand start from `main`
+as on a `v*` tag, and the `image` job needs it to have passed in both
+cases; a skipped gate no longer lets a build through.
+`tools/release_gate.py` needs only the full commit id: on a hand start
+that is the head of `main` the run started on, and it asks the same two
+things of it (ci-ok of the push to main, hub-mariadb on the same hub
+files), waiting while they still run. The signing identity stays as the
+chart README documents it, `refs/tags/v*` or `refs/heads/main`.
+
+**Reason:** a digest signed as `refs/heads/main` is accepted by the
+documented `cosign verify` just like a release, so it should stand for
+the same checks as a release. The gate needs no tag, so the hand start
+can run it unchanged.
+
+**Rejected alternatives:**
+- Dropping `heads/main` from the documented identity, so that a hand
+  start's signature is no longer accepted: images built from `main` are
+  still a documented deploy path (the root context's overnight deploy
+  entry), and operators would lose the only way to check them. Open
+  until the owner settles which of the two deploy descriptions stays.
+- Leaving the hand start ungated as the maintainer's own build: it
+  carries the same signature an operator trusts.
+
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
 **Id:** 843b8d35-45c7-4b91-827f-7109f470ca54

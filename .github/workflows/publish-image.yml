@@ -13,10 +13,10 @@ name: publish-image
 # pushed digest with cosign, keyless: the certificate names this workflow and the
 # ref it ran on, which is what an operator checks (deploy/helm/maity-hub/README.md);
 # only that job may request an OIDC token.
-# On a tag, the `gate` job first asks what release-hub.yml asks before the
-# package: ci passed on the tagged commit and hub-mariadb on the same hub files
-# (tools/release_gate.py, read-only). A tag without them builds nothing. A hand
-# start from main is not gated: it is the maintainer's own build of main.
+# On a tag and on a hand start from main alike, the `gate` job first asks what
+# release-hub.yml asks before the package: ci passed on the commit and
+# hub-mariadb on the same hub files (tools/release_gate.py, read-only). A commit
+# without them builds nothing, whichever way the run was started.
 on:
   push:
     tags: ["v*"]
@@ -30,10 +30,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # On a v* tag, the release's standard before anything is built: ci-ok of the
-  # push to main for the commit, hub-mariadb on the same hub files.
+  # On a v* tag or main (a hand start), the release's standard before anything
+  # is built: ci-ok of the push to main for the commit, hub-mariadb on the same
+  # hub files. A hand start runs the same gate as a tag build: GITHUB_SHA is
+  # then the head of main the run started on, which is all the gate needs.
   gate:
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: >-
+      (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) ||
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # ci takes about an hour, hub-mariadb about 40 minutes and may queue behind
     # another run: the wait covers a tag pushed right after its merge.
@@ -57,12 +61,12 @@ jobs:
 
   image:
     needs: gate
-    # Only a v* tag that passed the gate, or main (the gate skipped); a dispatch
-    # from another branch does nothing.
+    # Only a v* tag or main, and only after the gate passed; a dispatch from
+    # another branch skips the gate and so does nothing.
     if: >-
-      always() &&
-      ((github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && needs.gate.result == 'success') ||
-      (github.ref == 'refs/heads/main' && needs.gate.result == 'skipped'))
+      needs.gate.result == 'success' &&
+      ((github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) ||
+      github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     environment: ghcr
     permissions:
