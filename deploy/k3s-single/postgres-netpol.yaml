@@ -12,3 +12,12 @@ spec:
         - podSelector: {matchLabels: {app.kubernetes.io/name: maity-hub}}
         - podSelector: {matchLabels: {app: maity-pg-dump}}
       ports: [{port: 5432}]
+---
+# PostgreSQL opens no connection of its own: no egress at all. Replies to the
+# connections admitted above are not affected.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: maity-postgres-egress, namespace: maity}
+spec:
+  podSelector: {matchLabels: {app: maity-postgres}}
+  policyTypes: [Egress]

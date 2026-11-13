@@ -147,16 +147,20 @@ for a personal hub are in [`docs/install/quickstart.md`](../docs/install/quickst
 The hub with PostgreSQL. From the repository root:
 
 ```sh
-(umask 077; printf 'Database password: '; stty -echo; read -r pw; stty echo; echo; printf 'MAITY_DB_PASSWORD=%s\n' "$pw" > deploy/.env)
+(umask 077; for v in MAITY_DB_PASSWORD MAITY_DB_OWNER_PASSWORD MAITY_DB_APP_PASSWORD; do
+   printf '%s=%s\n' "$v" "$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"; done > deploy/.env)
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-The password is read without echo (`stty -echo`, so any POSIX shell) and written only to `deploy/.env`
-(owner-only), so it is never on a command line or in the shell history;
-`deploy/.env` is ignored by Git. Use only letters, digits and `-_.~` in the password, nothing
-else: Compose hands the same value to PostgreSQL as it is and to the hub
-inside a URL, so a character that needs percent-encoding cannot be right
-for both. Compose also interpolates `$` in `.env` values.
+The three database passwords are made at random and written only to `deploy/.env`
+(owner-only), so they are never on a command line or in the shell history;
+`deploy/.env` is ignored by Git. They belong to the superuser `maity`, the role
+`maity_owner` the migrations run as, and the role `maity_app` the hub runs as
+([`docs/install/README.md`, "Database roles"](../docs/install/README.md#database-roles); an
+installation from before the two roles moves to them as described there). A password of your
+own takes only letters, digits and `-_.~`, nothing else: Compose hands the same value to
+PostgreSQL as it is and to the hub inside a URL, so a character that needs percent-encoding
+cannot be right for both. Compose also interpolates `$` in `.env` values.
 
 The `migrate` service runs `maity-hub migrate` once and exits; the hub
 starts after it succeeded and reports healthy once `/api/v1/health`

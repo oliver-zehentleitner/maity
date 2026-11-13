@@ -208,6 +208,7 @@ silently ignored. These are the values that matter:
 | `image.tag` / `image.digest` | appVersion / none | a digest wins over the tag |
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
+| `database.migrate.existingSecret`, `.key` | empty, `database-url` | the migrate Job's own `MAITY_DATABASE_URL`: the role that owns the schema, while the hub's Secret names one that only reads and writes rows ([`docs/install/README.md`, "Database roles"](../../../docs/install/README.md#database-roles)); empty, the Job uses the hub's |
 | `database.poolSize`, `.maxOverflow` | hub default (16, 16) | `MAITY_DB_POOL_SIZE`, `MAITY_DB_MAX_OVERFLOW`: each pod's connections, shared by its workers (see Several pods) |
 | `replicas` | `1` | hub pods and `MAITY_REPLICAS`; above 1 only with PostgreSQL and without `attachments.existingClaim` (see Several pods) |
 | `config.workers` | `1` | `MAITY_WORKERS`, serving processes per pod; above 1 only with PostgreSQL |
@@ -233,6 +234,12 @@ silently ignored. These are the values that matter:
 | `ingress.annotations` | ingress-nginx long-poll settings and `proxy-body-size: 11m` | merged with yours; set a key to `null` to drop it |
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |
+| `networkPolicy.egress.enabled` | `false` | a second policy for the hub's outbound connections: DNS, the database, HTTPS and SMTP, nothing else |
+| `networkPolicy.egress.dns` | CoreDNS / kube-dns in `kube-system` | the peers answering DNS (UDP and TCP 53) |
+| `networkPolicy.egress.database.to`, `.port` | any address, `5432` | the database's peers (a `podSelector` in the cluster, an `ipBlock` outside) and port |
+| `networkPolicy.egress.https` | `true` | TCP 443 to any address: the forge, Keep the Why reads, an S3 store, images |
+| `networkPolicy.egress.smtpPorts` | `mail.port` with `mail.host` set, else 587 and 465 | the SMTP ports |
+| `networkPolicy.egress.extra` | none | more `egress` rules as given, e.g. a plain-HTTP MinIO in the cluster |
 | `service.type`, `.annotations` | `ClusterIP`, none | |
 | `extraEnv`, `extraVolumes`, `extraVolumeMounts` | `[]` | for the hub and the migrate Job; a `ReadWriteOnce` claim here must land both on one node |
 | `resources` | 50m / 128Mi requested, 512Mi limit | |

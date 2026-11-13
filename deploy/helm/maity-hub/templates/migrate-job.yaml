@@ -41,7 +41,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["migrate"]
           env:
-            {{- include "maity-hub.env" . | nindent 12 }}
+            {{- include "maity-hub.migrateEnv" . | nindent 12 }}
           resources:
             {{- toYaml .Values.migrate.resources | nindent 12 }}
           securityContext:
