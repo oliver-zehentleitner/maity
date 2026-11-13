@@ -246,7 +246,7 @@ def _publish(
         # another file, which then went away with it), and Linux links no such file.
         if exc.errno not in NO_HARD_LINKS and not (via_proc and exc.errno == errno.ENOENT):
             raise
-        _copy(directory, fd, leaf, mode, exists, replaced)
+        _copy(directory, fd, leaf, mode, exists, replaced, said)
         return
     # As in `_copy`: a name that holds another file now is refused and left alone; it is
     # not maity's file, and removing it could take someone else's.
@@ -256,13 +256,15 @@ def _publish(
 
 
 def _copy(
-    directory: int, fd: int, leaf: str, mode: int, exists: Refused, replaced: Refused
+    directory: int, fd: int, leaf: str, mode: int, exists: Refused, replaced: Refused, said: str
 ) -> None:
     """A new file `leaf` in `directory`, created exclusively without following a link, with
     the bytes of `fd` from its start: maity's own descriptor, never a name reopened. It
-    succeeds as the link does, only when `leaf` still names the file written here (device
-    and inode); otherwise it is refused and the name is left alone, since what it names now
-    is not maity's file. On an error the name is removed only while it is still that file."""
+    counts as saved, as the link does, when `leaf` names the file written here (device and
+    inode) at the moment of that check; otherwise it is refused and the name is left alone,
+    since what it names then is not maity's file. A failed write is not cleaned up by name
+    either: POSIX has no removal of a name only while it names a given file, and a file put
+    there in between would be the one removed. The refusal names the partial file instead."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
         out = os.open(leaf, flags, mode, dir_fd=directory)
@@ -270,10 +272,6 @@ def _copy(
         raise exists from None
     try:
         written = os.fstat(out)
-    except BaseException:
-        os.close(out)
-        raise
-    try:
         offset = 0
         while chunk := os.pread(fd, CHUNK, offset):
             offset += len(chunk)
@@ -287,16 +285,10 @@ def _copy(
             named = None
         if named is None or not _same(named, written):
             raise replaced
-    except BaseException as exc:
+    except OSError as exc:
+        raise Refused(
+            f"{said}: writing the file failed ({exc.strerror or exc}); a partial file may be"
+            " left under that name: delete it, then fetch the file again"
+        ) from None
+    finally:
         os.close(out)
-        if exc is not replaced:
-            _unlink_if(directory, leaf, written)
-        raise
-    os.close(out)
-
-
-def _unlink_if(directory: int, leaf: str, ours: os.stat_result) -> None:
-    """Remove `leaf` only while it names the file `ours` describes."""
-    with contextlib.suppress(OSError):
-        if _same(os.stat(leaf, dir_fd=directory, follow_symlinks=False), ours):
-            os.unlink(leaf, dir_fd=directory)

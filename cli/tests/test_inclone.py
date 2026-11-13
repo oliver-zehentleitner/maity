@@ -358,3 +358,40 @@ def test_a_link_whose_name_was_taken_meanwhile_is_refused_and_left_alone(
     assert "was replaced before it got its name" in capsys.readouterr().err
     assert target.read_bytes() == b"OTHER"
     assert parts(placed) == []
+
+
+@walks
+def test_a_failed_copy_leaves_its_file_and_removes_nothing_by_name(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without hard links, a copy that fails part way is not cleaned up by name: a file put
+    under that name in between would be the one removed. The refusal names the partial
+    file; nothing under the target's name is ever removed."""
+    monkeypatch.delattr(os, "O_TMPFILE", raising=False)
+
+    def no_link(*args: Any, **kwargs: Any) -> None:
+        raise OSError(errno.EPERM, "no hard links here")
+
+    def failing(fd: int, size: int, offset: int) -> bytes:
+        raise OSError(errno.EIO, "input/output error")
+
+    real_unlink = os.unlink
+    target = placed / "out.txt"
+    other = placed.parent / "other"
+
+    def replaced_first(path: Any, *args: Any, **kwargs: Any) -> None:
+        if str(path) == "out.txt":  # a file put under the name just before a removal
+            target.rename(placed.parent / "ours-moved")
+            other.write_bytes(b"OTHER")
+            os.replace(other, target)
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", no_link)
+    monkeypatch.setattr(os, "pread", failing)
+    monkeypatch.setattr(os, "unlink", replaced_first)
+    assert get("-o", "out.txt") == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "a partial file may be left under that name" in err and "out.txt" in err
+    assert target.exists()  # the partial file, left in place; no other file was removed
+    assert not (placed.parent / "ours-moved").exists()
+    assert parts(placed) == []

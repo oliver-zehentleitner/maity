@@ -2512,9 +2512,11 @@ the last directory, without a name where the system has `O_TMPFILE`, and
 that open file is what gets the name: linked through `/proc/self/fd`, or
 by its own name compared by device and inode before and after the link,
 or, without hard links or once its name is gone, copied from maity's own
-descriptor into an exclusively created file, which counts as saved only
-while the name still holds that file (device and inode), as after a
-link. Linking fails on an existing name, so no file is replaced there,
+descriptor into an exclusively created file. Either way it counts as
+saved when the name holds that file (device and inode) at the moment of
+that check; a failed copy is left under its name and named in the
+refusal, never removed by name, since POSIX cannot remove a name only
+while it holds a given file. Linking fails on an existing name, so no file is replaced there,
 `--force` included; another file that took the temporary name never gets
 the target's, and one that took the target's name during the copy is
 refused and left alone (review of #1749). Without `-o` the
@@ -2564,6 +2566,8 @@ can write into it between the digest check and the link. In the copy
 without hard links the target has its name while maity writes it, and
 such code can write into it as well. The target is then the file maity
 made, with those writes: its identity is checked, its content is not.
+The identity check itself is a snapshot: such code can rename or replace
+the name after it, before maity reports the file saved.
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
