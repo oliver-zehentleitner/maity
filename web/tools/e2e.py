@@ -3010,6 +3010,18 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         run.shot(page, "mail-factor-banner-390")
         page.set_viewport_size({"width": 1280, "height": 900})
         run.a11y(page, "mail factor: the banner toward an authenticator app")
+        # The minute's refresh that says the same keeps the banner, and the keyboard focus on its
+        # link (review of #1716): the clock moved a minute on, the real five-second check.
+        banner.get_by_role("link", name="Set up an authenticator app", exact=True).focus()
+        page.evaluate("() => { document.querySelector('.factor-banner').dataset.e2e = 'standing';"
+                      " window.e2eNow = Maity.api.now; Maity.api.now = () => window.e2eNow() + 61000; }")
+        with page.expect_response(lambda r: r.url.split("?")[0].endswith("/auth/second-factor"), timeout=15000):
+            pass
+        page.wait_for_timeout(500)
+        page.evaluate("() => { Maity.api.now = window.e2eNow; }")
+        kept = page.evaluate("() => [document.querySelector('.factor-banner') && document.querySelector('.factor-banner').dataset.e2e,"
+                             " document.activeElement && document.activeElement.textContent]")
+        assert kept == ["standing", "Set up an authenticator app"], f"the minute's refresh replaced the banner or moved the focus: {kept}"
         banner.get_by_role("button", name="Later", exact=True).click()
         expect(banner).to_have_count(0)
         page.reload()

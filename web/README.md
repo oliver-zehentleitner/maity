@@ -1221,8 +1221,10 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   made again sooner after a write of this tab to the mail settings, the
   second factor or the instance's sign-in settings and on every Security
   page. The banner on screen is drawn again once its reads are a minute old
-  (checked every five seconds) and when the tab is shown again, so a page
-  left open does not keep it. An app enrolled in this tab ends it at the
+  (checked every five seconds while the tab is shown; a hidden tab reads
+  nothing) and when the tab is shown again, so a page left open does not
+  keep it. A redraw that says the same leaves the banner standing, and the
+  keyboard focus in it. An app enrolled in this tab ends it at the
   next page, on Security at once; one enrolled in another tab ends it when
   this tab is shown again; one enrolled on another device, or a switch an
   admin turns, within about a minute.

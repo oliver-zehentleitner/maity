@@ -2196,13 +2196,21 @@ window.Maity = window.Maity || {};
     M.factorBanner.banner(factorSession, security).then((b) => {
       if (seq !== factorSeq) return;
       const old = main.querySelector(".factor-banner");
+      // Kept current while it stands: a change made elsewhere ends it on this page too.
+      const watch = (box) => M.factorBanner.keep(box, () => main.contains(box), () => renderFactorBanner(ctx));
+      // The same sentence for the same session: the one standing stays, and with it the
+      // reader's focus (review of #1716).
+      if (old && b && old.factorKey === b.factorKey) { watch(old); return; }
+      const focused = old && document.activeElement && old.contains(document.activeElement) ? document.activeElement.tagName : null;
       if (old) main.removeChild(old);
       M.factorBanner.keep(null);
       if (!b) return;
       const signin = main.querySelector(".signin-banner");
       main.insertBefore(b, signin ? signin.nextSibling : main.firstChild);
-      // Kept current while it stands: a change made elsewhere ends it on this page too.
-      M.factorBanner.keep(b, () => main.contains(b), () => renderFactorBanner(ctx));
+      // A changed sentence: the focus moves to the same control in the new one.
+      const same = focused && b.querySelector(focused === "A" ? "a" : "button");
+      if (same) same.focus();
+      watch(b);
     });
   }
   function renderBanner(ctx) {

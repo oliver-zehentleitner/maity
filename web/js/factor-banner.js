@@ -18,7 +18,8 @@ window.Maity = window.Maity || {};
   // the factor. Another tab, another device or an admin may change it meanwhile, and a banner
   // that says the mailbox alone signs in must not outlive an app enrolled elsewhere (#1716
   // review): the banner on screen is drawn again once its reads are a minute old, checked every
-  // few seconds, and when the tab is shown again, without waiting for the next page.
+  // few seconds while the tab is shown, and when the tab is shown again, without waiting for the
+  // next page. A redraw that says the same leaves the standing banner, and the focus in it, alone.
   const MAX_AGE_MS = 60000;
   const CHECK_MS = 5000;
   let reading = null;
@@ -45,7 +46,9 @@ window.Maity = window.Maity || {};
       unkeep(); forget(); redraw();
     };
     const back = () => again(() => document.visibilityState === "visible");
-    const timer = window.setInterval(() => again(() => !reading || M.api.now() - readAt >= MAX_AGE_MS), CHECK_MS);
+    // A hidden tab reads nothing on its intervals (context/refresh.md); shown again, it reads at once.
+    const timer = window.setInterval(() => again(() => document.visibilityState !== "hidden"
+      && (!reading || M.api.now() - readAt >= MAX_AGE_MS)), CHECK_MS);
     document.addEventListener("visibilitychange", back);
     watching = { timer, back };
   }
@@ -100,6 +103,8 @@ window.Maity = window.Maity || {};
     append(box, h("div", { class: "flag" },
       h("p", null, state.reset ? M.tn("factor_banner.mailbox_alone", { link }) : M.tn("factor_banner.mailbox", { link })),
       h("button", { type: "button", class: "small", onclick: () => { if (sessionId) setLater(sessionId); unkeep(); box.remove(); if (onHide) onHide(); } }, M.t("factor_banner.later"))));
+    // What it says for whom: a redraw that would say the same keeps the banner standing.
+    box.factorKey = [state.reset, sessionId || ""].join("|");
     return box;
   }
 

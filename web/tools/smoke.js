@@ -14372,6 +14372,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     document.visibilityState = "visible"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
     document.visibilityState = fbVis;
     expect(fbHidden && !fbBox(), "authenticator banner: and at once when the tab is shown again");
+    // A refresh that says the same keeps the banner standing (the reader's focus stays in it), and a
+    // hidden tab reads nothing on the minute's check; shown again, it reads at once (#1716 review).
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbStanding = fbBox(), fbBefore = fbReads;
+    const fbAged2 = fbNow() + 61000;
+    win.Maity.api.now = () => fbAged2;
+    await fireIntervals(); await fbSettle();
+    win.Maity.api.now = fbNow;
+    expect(fbStanding && fbBox() === fbStanding && fbReads === fbBefore + 1,
+      "authenticator banner: a refresh that says the same leaves the standing banner in place (" + fbReads + ")");
+    const fbVis2 = document.visibilityState;
+    document.visibilityState = "hidden"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    const fbAged3 = fbNow() + 122000;
+    win.Maity.api.now = () => fbAged3;
+    fbVia = "totp";
+    await fireIntervals(); await fbSettle();
+    const fbHiddenReads = fbReads === fbBefore + 1 && !!fbBox();
+    document.visibilityState = "visible"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    win.Maity.api.now = fbNow; document.visibilityState = fbVis2;
+    expect(fbHiddenReads && !fbBox(), "authenticator banner: a hidden tab reads nothing on the minute's check, and catches up when shown (" + fbReads + ")");
     // No watch left behind: none while no banner stands, none after Later, none once the page is gone.
     const fbTimers = intervals.size;
     fbVia = "email"; win.Maity.factorBanner.forget();

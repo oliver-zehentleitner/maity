@@ -6431,8 +6431,10 @@ the page load. What the banner stands on (`GET /auth/second-factor`,
 and read again sooner after a write of this tab to the mail settings, the
 second factor or the instance's sign-in settings, and on every Security
 page. The banner on screen is drawn again from fresh reads once they are a
-minute old (a check every five seconds, no call) and when the tab is shown
-again, so it does not stand on a page left open.
+minute old (a check every five seconds, no call, none in a hidden tab) and
+when the tab is shown again, so it does not stand on a page left open. A
+redraw that says the same for the same session leaves the standing banner
+in place; a changed one moves the focus to the same control in the new.
 
 **Reason:** the contract ties "Later" to the sign-in and gives the hub no
 field for it, and a session's id is exactly what changes at a sign-in.
@@ -6445,7 +6447,10 @@ Security (review of #1716). A minute bounds how long it can be wrong,
 also on a page nobody leaves: dropping the kept reads alone only helped
 the next page, and an idle tab kept the claim on screen (second review of
 #1716). Security, where the human checks the factor, never shows a kept
-one.
+one. A hidden tab reads nothing on the minute, as on the dashboard's other
+intervals (refresh.md, 6cb02c3d-063d-473b-b86b-8f8324c11f14): it shows
+nothing, and shown again it reads at once. Replacing an unchanged banner
+took the keyboard focus off its link (third review of #1716).
 
 **Rejected alternatives:**
 - `sessionStorage`: it ends with the tab, not with the sign-in; a new tab
@@ -6461,3 +6466,5 @@ one.
 - Dropping the kept reads at the minute and on the tab's return without
   drawing the banner again (the second version): only the next page saw
   the change, and a page left open kept the claim.
+- Replacing the banner at every refresh (the third version): the same
+  sentence drawn anew, and the focus on its link lost to the page.
