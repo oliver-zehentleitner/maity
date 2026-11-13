@@ -162,7 +162,11 @@ and footer around the door, "Maintenance", when the hub is back and the window's
 `Retry-After`. The frame is the one last read, kept per process (`maintenance.cached_frame`): a
 refused request never reads it. When it is missing or older than a minute, one thread reads it again
 in the background, one read at a time; after a failed read the next waits ten seconds, so a database
-that keeps failing costs one read and one warning per ten seconds, not one per refused request. The small page with the product line stands on the join host,
+that keeps failing costs one read and one warning per ten seconds, not one per refused request. A
+kept frame is served until it is two minutes old, whether or not its reads fail; past that the small
+page stands, so a database that keeps failing never leaves an old label or legal link on the page
+(the review found a day-old frame served). Each process keeps its own, so two answers may differ by
+up to that bound. The small page with the product line stands on the join host,
 which serves none of the frame's stylesheets (§1.1), and while no frame is kept: after a start, or
 while every read fails (a used-up pool, a migration under way).
 
@@ -179,4 +183,6 @@ against 9 ms with a 1.5 s timeout), and a failed one must not turn the `503` int
 - Reading the frame in each refused request with a fallback on failure (the first cut of #1721):
   the fallback came only after the pool's timeout, so the 503 waited for the database.
 - A bounded wait for the read: still a wait per request, and a timer per request under load.
+- Serving the last frame however old while reads fail: the page could show a label or a legal link
+  that changed long ago, against the bound the contract states.
 

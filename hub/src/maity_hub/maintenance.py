@@ -138,7 +138,8 @@ PAGE = (
 # never reads it itself, so the page that says the hub is down never waits for the database it
 # protects (a used-up pool would hold it up to the pool's timeout); a stale or missing frame is
 # read again in one thread of its own, and the page is the small one until a frame is there.
-FRAME_SECONDS = 60.0
+FRAME_SECONDS = 60.0  # a kept frame this old is read again
+FRAME_MAX_SECONDS = 120.0  # a kept frame this old is no longer served: the small page instead
 RETRY_SECONDS = 10.0  # after a failed read, the next one waits this long: no log storm
 _frame: tuple[float, dict[str, Any]] | None = None
 _frame_reading = False
@@ -146,10 +147,12 @@ _frame_failed: float | None = None  # when the last read failed
 
 
 def cached_frame(engine: Engine) -> dict[str, Any] | None:
-    """The last frame read, or None; starts one read in the background when it is missing or
-    older than `FRAME_SECONDS`. Touches no database in the caller. At most one read runs at a
-    time, in a daemon thread that ends with the read; after a failed one the next waits
-    `RETRY_SECONDS`, so a database that keeps failing costs one read and one warning per 10 s."""
+    """The last frame read while it is younger than `FRAME_MAX_SECONDS`, else None (the small
+    page); starts one read in the background when it is missing or older than `FRAME_SECONDS`.
+    Touches no database in the caller. At most one read runs at a time, in a daemon thread that
+    ends with the read; after a failed one the next waits `RETRY_SECONDS`, so a database that
+    keeps failing costs one read and one warning per 10 s, and its last frame goes once it is two
+    minutes old."""
     global _frame_reading
     with _lock:
         held = _frame
@@ -161,7 +164,7 @@ def cached_frame(engine: Engine) -> dict[str, Any] | None:
             _frame_reading = True
     if start:
         _in_background(refresh_frame, engine)
-    return held[1] if held is not None else None
+    return held[1] if held is not None and now - held[0] < FRAME_MAX_SECONDS else None
 
 
 def _in_background(read: Callable[[Engine], None], engine: Engine) -> None:
@@ -176,7 +179,10 @@ def refresh_frame(engine: Engine) -> None:
     try:
         found = frame_of(engine)
     except Exception:  # noqa: BLE001 - a failed read only means the small page
-        log.warning("the maintenance page's frame could not be read; the small page stands")
+        log.warning(
+            "the maintenance page's frame could not be read; the last one is served until it is"
+            " two minutes old, then the small page"
+        )
     with _lock:
         if found is not None:
             _frame = (monotonic(), found)

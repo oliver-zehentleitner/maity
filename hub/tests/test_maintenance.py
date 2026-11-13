@@ -323,6 +323,30 @@ def test_a_failing_frame_read_is_tried_again_only_after_a_rest(
     assert maintenance.cached_frame(migrated) == {"setting": {}}
 
 
+def test_a_kept_frame_is_served_two_minutes_at_most_when_its_reads_fail(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #1721's review (v5vp 122233): a database that keeps failing must not leave an arbitrarily
+    # old frame (an old label, an old legal link) on the 503 page; past the bound, the small page.
+    clock_at = [100.0]
+    monkeypatch.setattr(maintenance, "monotonic", lambda: clock_at[0])
+    monkeypatch.setattr(maintenance, "_in_background", lambda read, engine: read(engine))
+    monkeypatch.setattr(maintenance, "frame_of", lambda _engine: {"setting": {"old": True}})
+    maintenance.cached_frame(migrated)  # read and kept
+    assert maintenance.cached_frame(migrated) == {"setting": {"old": True}}
+
+    def failing(_engine: Engine) -> dict[str, Any]:
+        raise TimeoutError("no pooled connection")
+
+    monkeypatch.setattr(maintenance, "frame_of", failing)
+    clock_at[0] += maintenance.FRAME_SECONDS + 1  # stale, the refresh fails: still served
+    assert maintenance.cached_frame(migrated) == {"setting": {"old": True}}
+    clock_at[0] = 100.0 + maintenance.FRAME_MAX_SECONDS  # at the bound: the small page
+    assert maintenance.cached_frame(migrated) is None
+    clock_at[0] += 86_400  # a day later, still failing
+    assert maintenance.cached_frame(migrated) is None
+
+
 def test_a_window_does_not_refuse_once_it_is_over_inside_the_cache(
     admin: flow.Human, now: Clock
 ) -> None:

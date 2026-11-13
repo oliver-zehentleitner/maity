@@ -20403,8 +20403,11 @@ from the hub's catalogue in `language`.
   `Referrer-Policy: no-referrer` and `Retry-After`. On the join host,
   which serves none of the frame's stylesheets (§1.1), and while the
   hub has no frame read yet, it is the small page with the product line
-  (§16.13). The frame is the one the hub last read, at most a minute old;
-  a refused request never reads the database for it.
+  (§16.13). The frame is the one the hub process last read; a refused
+  request never reads the database for it. It is read again once it is a
+  minute old and served until it is two minutes old, then the small page
+  stands until a read works again. Each hub process keeps its own, so two
+  answers may show frames up to two minutes apart.
 - **The join page in a browser** (§3.2) on the public host stands in the
   frame: its text in the legal pages' column, in `en`, the note with the
   dashboard link under it, no language switch, with the same policy and
