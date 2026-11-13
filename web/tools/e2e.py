@@ -4845,6 +4845,24 @@ def visitor_layout(run: Run, browser) -> None:
                 run.shot(seen, f"visitor-{kind}-{width}-{scheme}")
                 if width == 1280:
                     run.a11y(seen, f"{path} for a visitor, {scheme}")
+            if (width, scheme) == (390, "light"):
+                # An empty board scrolls sideways with no card to focus: its columns take the focus
+                # themselves (axe scrollable-region-focusable, review of #1719).
+                def empty(route):
+                    answer = route.fetch()
+                    data = answer.json()
+                    data["data"]["columns"] = [dict(c, cards=[]) for c in data["data"]["columns"]]
+                    route.fulfill(response=answer, json=data)
+                seen.route("**/api/v1/public/pages/owner/e2e-alpha/board", empty)
+                seen.goto(f"{run.base}/owner/e2e-alpha/board")
+                expect(seen.locator('section.view-visitor[data-kind="board"] .columns[tabindex="0"][role="region"][aria-label="Board"]')).to_be_visible()
+                expect(seen.locator("section.view-visitor article.card")).to_have_count(0)
+                run.a11y(seen, "/owner/e2e-alpha/board for a visitor, an empty board")
+                seen.unroute("**/api/v1/public/pages/owner/e2e-alpha/board", empty)
+                # With its cards again, the columns add no focus stop before the first card's link.
+                seen.goto(f"{run.base}/owner/e2e-alpha/board")
+                expect(seen.locator("section.view-visitor article.card").first).to_be_visible()
+                expect(seen.locator('section.view-visitor[data-kind="board"] .columns[tabindex]')).to_have_count(0)
             context.close()
 
 
