@@ -536,7 +536,7 @@ the rest of the host, so one address may reach the values once on each.
 
 `helm-upgrade.sh` runs a Job from the CronJob `maity-pg-dump` before every upgrade unless `NO_DUMP=1` is
 set; `DUMP_CRONJOB` names another CronJob. A missing CronJob stops the script before it changes anything,
-with a message naming both settings. `NO_DUMP` takes 1 or nothing; any other value stops the script too.
+with a message naming both settings. `NO_DUMP` takes 1 (skip), 0 or nothing (dump); any other value stops the script too.
 
 **Reason:** there is no downgrade (see "A hub serves only on its own schema head"), so the dump taken
 right before the migration is the only way back, and an opt-in dump was skipped whenever the variable was
