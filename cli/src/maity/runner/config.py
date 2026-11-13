@@ -23,6 +23,11 @@ from ..hub import HubError, hub_base
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
+# Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
+# domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
+# configuration, which in the `single` layout is the operator's (cli/context/runner.md).
+DEFAULT_GIT_NAME = "Maity agent"
+DEFAULT_GIT_EMAIL = "maity-agent@invalid"
 
 HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
 # No command allowlist in their own configuration (runner design §6.3): refused unless they
@@ -126,6 +131,15 @@ class RepositoryGrant:
 
 
 @dataclass(frozen=True)
+class GitIdentity:
+    """The author and committer of every placed session's commits (`[git]`)."""
+
+    name: str = DEFAULT_GIT_NAME
+    email: str = DEFAULT_GIT_EMAIL
+    configured: bool = False  # `[git]` named one; else the default, which `check` warns about
+
+
+@dataclass(frozen=True)
 class Config:
     path: Path
     hub_url: str
@@ -136,6 +150,7 @@ class Config:
     harnesses: dict[str, Harness]
     repositories: dict[str, RepositoryGrant]
     ssh: Ssh | None = None
+    git: GitIdentity = GitIdentity()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -254,6 +269,25 @@ def _names_maity(argument: str) -> bool:
     """Whether any part of `argument` is maity: `/tmp/a:b/maity`, `C:/bin/MAITY.EXE`,
     `C:maity`, `--exec=maity`."""
     return any(_program_name(part) == "maity" for part in _ARGUMENT_PARTS.split(argument))
+
+
+# A name or an address git records as written: git drops `<` and `>` from a name and trims
+# its ends, so those are refused here instead of committed changed. No control characters,
+# at most 200 characters.
+_GIT_NAME = re.compile(r"[^<>\x00-\x1f\x7f]{1,200}")
+_GIT_EMAIL = re.compile(r"[^<>\s@]+@[^<>\s@]+")
+
+
+def _git_name(value: Any) -> str | None:
+    if not _GIT_NAME.fullmatch(value) or value != value.strip():
+        return "a name of 1 to 200 printable characters, no < or >, no space at either end"
+    return None
+
+
+def _git_email(value: Any) -> str | None:
+    if len(value) > 200 or not _GIT_EMAIL.fullmatch(value):
+        return "an address like team@example.org: one @, no spaces, < or >"
+    return None
 
 
 def _commands(values: Any) -> str | None:
@@ -439,10 +473,20 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             )
             table.done()
 
+    git = GitIdentity()
+    git_in = root.table("git")
+    if git_in is not None:
+        git = GitIdentity(
+            name=git_in.get("name", str, DEFAULT_GIT_NAME, required=True, check=_git_name),
+            email=git_in.get("email", str, DEFAULT_GIT_EMAIL, required=True, check=_git_email),
+            configured=True,
+        )
+        git_in.done()
+
     root.done()
     if problems:
         raise ConfigError(problems)
-    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh)
+    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh, git)
 
 
 _RESTART = Restart()

@@ -16400,7 +16400,8 @@ agents; the hub still never does".
 
 A runner is a third kind of caller next to human and agent, owned by one
 human. It is not an agent profile and not a membership: it has no trust,
-no role, no scopes, no git identity, and is in no project's member list, org
+no role, no scopes, no git identity (the git identity its agents commit
+under is the runner's configuration, §15.3), and is in no project's member list, org
 chart or `all` audience. It serves every project it is attached to
 (§15.4) with one credential and one stream.
 
@@ -16619,7 +16620,11 @@ owner choose):
 - `capabilities` is what the runner last advertised (`hello`, `PATCH
   /runner`, §15.8). It is shown for choosing and checked when a
   placement is created; it is never a grant — the runner's
-  configuration decides and the runner checks again. Every string in it
+  configuration decides and the runner checks again. That configuration
+  includes each repository's grant (the commands an agent may run
+  besides `maity` and `git`, the hosts its sandbox may reach, whether it
+  opens pull requests) and the git identity its agents commit under; the
+  hub neither sees nor checks either. Every string in it
   is printable ASCII of at most 200 characters and rendered as text.
 - `targets[].isolation.kind`: `shared_user` (every agent on the target
   runs as one OS user; `runner_separate` says whether the runner runs

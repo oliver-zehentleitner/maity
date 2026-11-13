@@ -931,9 +931,14 @@ A repository can get more than the default grant, in a table of its own:
 
 ```toml
 [repositories."github.com/oliver-zehentleitner/maity"]
-allow = ["make test", "python -m pytest *"]   # commands the agent may run
-network = ["pypi.org"]                        # hosts the sandbox may reach
+allow = ["make test", "python3 -m pytest *"]   # commands the agent may run
+network = ["pypi.org"]                         # hosts the sandbox may reach
 ```
+
+Claude Code applies an entry as written, so end it with ` *` where the
+command takes arguments: `pytest` alone allows only a bare `pytest`.
+[`docs/runners.md`](../docs/runners.md#letting-agents-run-a-repositorys-checks)
+shows the entries for a Python repository's checks.
 
 Each `allow` entry is a plain command: a program (a name or a path),
 then arguments of letters, digits and `_ . / = : @ % + , -`, separated
@@ -945,6 +950,24 @@ backticks, backslashes and shell operators, a `:` in the program
 and `maity` as any part of an argument (between `/`, `:`, `=` and the
 other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
 case or with a Windows extension. `maity` is the runner's own rule.
+
+Every agent commits as the identity in `[git]`, author and committer
+alike:
+
+```toml
+[git]
+name = "Your Team"
+email = "team@example.org"
+```
+
+Both keys are required in the table. Without it agents commit as
+`Maity agent <maity-agent@invalid>`, and `check` warns while a harness
+other than `stub` is configured. The runner sets `GIT_AUTHOR_NAME`,
+`GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL` in
+every session, which win over the clone's and the agents' user's git
+configuration; `git config` is not granted. A name with `<` or `>` or
+spaces at either end, and an address without exactly one `@` or with
+spaces, are refused, since git would change or refuse them.
 
 For agents that open their pull requests themselves, set `pull_requests`:
 
@@ -1104,8 +1127,8 @@ project's own harness configuration is never loaded:
   agents' home (below), or the credential of any other clone that
   existed when the agent started. A clone made later stays readable to
   it until its next start, and the rest of every other clone stays
-  readable. `git` is granted by subcommand, and `-c`, `--no-index` and
-  paths under `.git/maity` are denied.
+  readable. `git` is granted by subcommand (`config` not among them), and
+  `-c`, `--no-index` and paths under `.git/maity` are denied.
 
   These lists stop accidents and naive prompt injection; they are not a
   security boundary. `git diff /dev/null <file>` reads a file outside the

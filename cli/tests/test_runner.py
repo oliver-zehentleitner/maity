@@ -538,7 +538,10 @@ def test_check_warns_about_inherited_claude_settings(
     (home / ".claude" / "settings.json").write_text(
         '{"permissions": {"allow": ["Bash(rm:*)"]}, "hooks": {"Stop": []}}'
     )
-    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    paired.write_text(
+        paired.read_text()
+        + '\n[harness.claude-code]\n\n[git]\nname = "Your Team"\nemail = "team@example.org"\n'
+    )
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
     warnings = [line for line in lines(capsys) if line.startswith("warn")]
@@ -716,3 +719,49 @@ def test_runner_check_names_a_refused_gh_rule_and_an_api_host_as_warnings() -> N
     assert "'gh pr create *' is not applied" in texts[0] and "pull_requests = true" in texts[0]
     assert "maity gh pr create" in texts[0]
     assert "api.github.com" in texts[1]
+
+
+# --- the agents' git identity (cli/context/runner.md, tsk-z27pwcfr03wm) --------------------
+
+
+def test_the_git_table_names_the_agents_identity_and_has_a_generic_default() -> None:
+    cfg = parse(minimal())
+    assert (cfg.git.name, cfg.git.email, cfg.git.configured) == (
+        "Maity agent", "maity-agent@invalid", False,
+    )  # fmt: skip
+    team = parse(minimal(git='\n[git]\nname = "Your Team"\nemail = "team@example.org"\n'))
+    assert (team.git.name, team.git.email, team.git.configured) == (
+        "Your Team", "team@example.org", True,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("table", "said"),
+    [
+        ('name = "Your Team"\n', "git.email: required"),
+        ('name = "A <b>"\nemail = "team@example.org"\n', "git.name: a name of 1 to 200"),
+        ('name = " Team"\nemail = "team@example.org"\n', "git.name: a name of 1 to 200"),
+        ('name = "Team"\nemail = "team example.org"\n', "git.email: an address like"),
+        ('name = "Team"\nemail = "a@b"\nsigning_key = "x"\n', "git.signing_key: unknown key"),
+    ],
+)
+def test_the_git_table_refuses_what_git_would_change_or_not_take(table: str, said: str) -> None:
+    found = problems(minimal(git=f"\n[git]\n{table}"))
+    assert any(p.startswith(said) for p in found), found
+
+
+def test_runner_check_warns_while_agents_commit_as_the_default() -> None:
+    harness = "\n[harness.claude-code]\n"
+    report = commands.Report()
+    commands._check_git(report, parse(minimal(h=harness)))
+    assert not report.failed
+    assert [level for level, _ in report.lines] == ["warn"]
+    assert "Maity agent <maity-agent@invalid>" in report.lines[0][1]
+    assert "[git]" in report.lines[0][1]
+    named = commands.Report()
+    git = '\n[git]\nname = "Your Team"\nemail = "team@example.org"\n'
+    commands._check_git(named, parse(minimal(h=harness, git=git)))
+    assert named.lines == [("ok", "agents commit as Your Team <team@example.org>")]
+    stub_only = commands.Report()  # the stub commits nothing: no default in use
+    commands._check_git(stub_only, parse(minimal()))
+    assert stub_only.lines == []
