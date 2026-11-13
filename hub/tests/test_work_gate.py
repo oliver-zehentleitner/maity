@@ -154,6 +154,14 @@ def test_a_manager_whose_line_the_agent_is_in_is_a_lead(
         conn.execute(
             update(t.membership).where(t.membership.c.agent_id == theirs.id).values(reports_to=boss)
         )
+    # A member the chain names but who is no manager is no lead: the message is held.
+    assert send(writer, theirs.id)["payload"]["held"] == [theirs.id]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == boss)
+            .values(role="manager", role_base="manager")
+        )
     assert send(writer, theirs.id)["payload"]["held"] == []
 
 

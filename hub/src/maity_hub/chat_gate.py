@@ -452,12 +452,15 @@ def hold(
     if not reached:
         return audience, []
     bosses = dict(conn.execute(select(m.id, m.reports_to).where(m.project_id == project_id)).all())
+    # Only a manager leads its line (§2.3, "The manager"): another member a chain names is no
+    # lead, whatever reports to it.
+    manager = mine.may("line:lead")
     entries = _entries(conn, {r.owner_id for r in reached})
     party = Party(author, "agent" if mine.row.agent_id else "human", side)
     held = [
         r.agent_id
         for r in reached
-        if not _in_line(bosses, r.id, mine.id)
+        if not (manager and _in_line(bosses, r.id, mine.id))
         and _held(judge(r.agent_id, r.owner_id, [party], entries[r.owner_id], project_id))
     ]
     if not held:
