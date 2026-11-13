@@ -364,7 +364,8 @@ window.Maity = window.Maity || {};
   i18n.frameAddress = frameAddress;
   i18n.frame = (tag) => {
     const found = closest(tag);
-    if (!found) return Promise.resolve(false);
+    // Not in fixture mode, as readFrame: its frame answers English whatever ?lang= asked.
+    if (!found || (window.location && window.location.protocol === "file:")) return Promise.resolve(false);
     framed[frameAddress()] = found;
     const next = visitorChoice();
     if (account || next === i18n.language) return Promise.resolve(false);

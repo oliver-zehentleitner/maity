@@ -20,6 +20,10 @@ window.Maity = window.Maity || {};
   const SWITCHES = [
     { key: "device_code", label: () => M.t("admin_sign_in.device_code.label"), hint: () => M.t("admin_sign_in.device_code.hint") },
     { key: "email_link", label: () => M.t("admin_sign_in.email_link.label"), hint: () => M.t("admin_sign_in.email_link.hint") },
+    // §2.10: a forgotten password reset by mail. It has its own reasons for not being offered
+    // (`password_reset_missing`), said under it while it is on.
+    { key: "password_reset", label: () => M.t("admin_sign_in.password_reset.label"), hint: () => M.t("admin_sign_in.password_reset.hint"),
+      missing: (cur) => (cur.password_reset_available === false ? cur.password_reset_missing || [] : []) },
   ];
   const POLICIES = [
     ["off", () => M.t("admin_sign_in.policy.off")],
@@ -130,9 +134,11 @@ window.Maity = window.Maity || {};
         const box = h("input", { id, type: "checkbox", disabled: locked ? true : null, "aria-describedby": id + "-hint " + id + "-error" });
         box.checked = !!v.value;
         const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
+        const why = f.missing && v.value ? f.missing(current).filter((k) => Object.hasOwn(MISSING, k) && MISSING[k]).map((k) => MISSING[k]()) : [];
         return { key: f.key, v, box, error, locked, nodes: h("div", { class: "field-stack" },
           h("label", { for: id }, box, " ", f.label()),
           h("p", { class: "hint", id: id + "-hint" }, f.hint() + " " + sourceWords(v)),
+          why.length ? h("p", { class: "hint admin-sign-in-not-offered", id: id + "-missing" }, M.t("admin_sign_in.password_reset.not_offered", { reasons: why.join(" ") })) : null,
           error) };
       });
       const policy = current.second_factor || { value: "optional", source: "default" };

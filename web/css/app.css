@@ -1824,6 +1824,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    control. One class for every such wrapper (tsk-jpaqk8m7j52v), so none runs label and field inline. */
 .field-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .sign-in-form button, .register-form button { justify-self: end; }
+/* The reset of a forgotten password (js/password-reset.js) lays out as registration does. */
+.reset-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.reset-form button[type="submit"] { justify-self: end; }
 .link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
 .device-account { display: flex; align-items: center; gap: 8px; }

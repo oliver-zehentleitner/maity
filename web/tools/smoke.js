@@ -10160,6 +10160,136 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
   win.Maity.api.get = rgGet;
+  // A forgotten password (docs/api.md §2.10, tsk-yksxdpd2pk0m): "Forgot password?" under the
+  // password field where the hub offers it, one answer for every address; the mailed link's page.
+  {
+    const fpMethods = (on) => (p) => (p === "/auth/methods"
+      ? Promise.resolve({ password: true, device_code: true, email_link: true, password_reset: on, registration: false, terms: null }) : rgGet(p));
+    const fpPosts = [];
+    const fpPost = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => { if (p.startsWith("/auth/password-reset")) fpPosts.push([p, Object.assign({}, b)]); return fpPost(p, b); };
+    const fpOpen = () => main.querySelector("button.reset-open");
+    win.Maity.api.get = fpMethods(false);
+    await go("#/register"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+    expect(byId("login-email") && main.querySelector(".sign-in-forgot") && main.querySelector(".sign-in-forgot").hidden,
+      "reset: without password_reset in /auth/methods the login offers no Forgot password?");
+    win.Maity.api.get = fpMethods(true);
+    await go("#/register"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+    const fpForgot = main.querySelector(".sign-in-forgot");
+    const fpSiblings = fpForgot ? fpForgot.parentNode.childNodes : [];
+    const fpAfterPassword = !!fpForgot && fpSiblings[fpSiblings.indexOf(fpForgot) - 1] === byId("login-password");
+    expect(fpForgot && !fpForgot.hidden && fpOpen() && text(fpOpen()) === "Forgot password?" && fpAfterPassword && !byId("reset-address"),
+      "reset: Forgot password? stands under the password field, its form closed " + JSON.stringify([!!fpForgot, fpForgot && fpForgot.hidden, !!fpOpen(), fpOpen() && text(fpOpen()), fpAfterPassword, !!byId("reset-address")]));
+    byId("login-email").value = "maintainer@example.org";
+    fpOpen().click(); await tick();
+    expect(byId("reset-address") && byId("reset-address").value === "maintainer@example.org" && fpOpen().hidden,
+      "reset: the form opens with the login's address in it");
+    byId("reset-address").value = "  "; main.querySelector("form.reset-ask").dispatch("submit"); await tick();
+    expect(!fpPosts.length && text(main.querySelector("form.reset-ask")).includes("your address is needed"), "reset: an empty address is refused before sending");
+    byId("reset-address").value = " someone@example.org "; main.querySelector("form.reset-ask").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(fpPosts) === JSON.stringify([["/auth/password-reset", { address: "someone@example.org" }]])
+      && text(main.querySelector("form.reset-ask")).includes("If this address can reset a password here, a link is on its way. It is valid for 30 min."),
+      "reset: the address is sent trimmed, and the answer is the same sentence for every address " + JSON.stringify([fpPosts, text(main.querySelector("form.reset-ask"))]));
+    win.Maity.api.get = rgGet;
+    // The page: the token from the link, the name it is for, the fields the factor asks for.
+    const fpForm = () => main.querySelector("form.reset-form");
+    const fpH1 = () => main.querySelector("article.reset-page h1");
+    const fpSet = (a, b) => { byId("reset-password").value = a; byId("reset-repeat").value = b; };
+    fpPosts.length = 0;
+    await go("#/login"); await go("#/sign-in/reset?token=reset-plain"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)" && !byId("reset-code") && !main.querySelector(".reset-mail-factor")
+      && JSON.stringify(fpPosts) === JSON.stringify([["/auth/password-reset/check", { token: "reset-plain" }]]),
+      "reset: the page asks the hub about the token once and names whom the password is for; no code without a second factor " + JSON.stringify([win.location.hash, fpPosts, text(main).slice(0, 300)]));
+    // A redraw finds the token gone from the address, as over http(s) (the frame's language
+    // arriving, a language chosen in its footer): the same form, the link read again (#1714 review).
+    await go("#/sign-in/reset"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)" && !main.querySelector(".reset-dead")
+      && JSON.stringify(fpPosts.map((x) => x[1].token)) === JSON.stringify(["reset-plain", "reset-plain"]),
+      "reset: a redraw without the token in the address keeps the link's form " + JSON.stringify([win.location.hash, fpPosts]));
+    // A language picked in the frame's footer: the page's address without the token, drawn again.
+    const fpGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => (p.startsWith("/site/chrome") ? fpGet(p, o).then((m) => Object.assign({}, m, {
+      footer: Object.assign({}, m.footer, { languages: [{ tag: "de", name: "Deutsch" }, { tag: "en", name: "English" }] }) })) : fpGet(p, o));
+    await go("#/sign-in/reset?lang=de"); for (let k = 0; k < 6; k++) await tick();
+    const fpFoot = body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
+    const fpLang = fpFoot && fpFoot.querySelector("p.langs") ? fpFoot.querySelector("p.langs").querySelectorAll("a").find((a) => text(a) === "English") : null;
+    if (fpLang) { fpLang.click(); for (let k = 0; k < 6; k++) await tick(); }
+    expect(fpLang && /^#\/sign-in\/reset\?lang=en$/.test(win.location.hash) && fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)"
+      && !main.querySelector(".reset-dead") && fpPosts.length === 4 && fpPosts.every((x) => x[1].token === "reset-plain"),
+      "reset: a language picked in the frame's footer keeps the link's form " + JSON.stringify([win.location.hash, fpPosts.length, !!fpLang]));
+    win.Maity.api.get = fpGet;
+    fpPosts.length = 1;
+    fpSet("short", "short"); fpForm().dispatch("submit"); await tick();
+    expect(fpPosts.length === 1 && text(fpForm()).includes("a password has at least 12 characters"), "reset: a short password is refused before sending");
+    fpSet("a long new password", "a long new passwort"); fpForm().dispatch("submit"); await tick();
+    expect(fpPosts.length === 1 && text(fpForm()).includes("the two passwords differ"), "reset: two passwords that differ are refused before sending");
+    fpSet("a long new password", "a long new password"); fpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(fpPosts[1]) === JSON.stringify(["/auth/password-reset/complete", { token: "reset-plain", new: "a long new password" }])
+      && !fpForm() && text(fpH1()) === "Your password is set" && main.querySelector('article.reset-page a[href="#/login"]'),
+      "reset: complete sends the token and the new password, says the sessions ended and links to the login, signing nobody in");
+    win.Maity.redraw(); for (let k = 0; k < 6; k++) await tick();
+    expect(!fpForm() && text(fpH1()) === "Your password is set" && fpPosts.length === 2, "reset: a redraw after the password is set still says so, and asks nothing");
+    await go("#/login"); await go("#/sign-in/reset?token=reset-plain"); for (let k = 0; k < 6; k++) await tick();
+    expect(!fpForm() && main.querySelector(".reset-dead") && main.querySelector('article.reset-page a[href="#/login"]'),
+      "reset: a used link says it does not work, and where to ask for a new one");
+    await go("#/login"); await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+    expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.filter((x) => x[0].endsWith("/check")).length === 2,
+      "reset: a page without a token, reached from another page, says the link does not work and asks nothing");
+    await go("#/login"); await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && !byId("reset-code") && main.querySelector(".reset-mail-factor")
+      && text(main.querySelector(".reset-mail-factor")).startsWith("This mailbox is your second factor too")
+      && main.querySelector('.reset-mail-factor a[href="#/account/security"]'),
+      "reset: where the mail is the second factor the page says so, with the way to an authenticator app");
+    await go("#/login"); await go("#/sign-in/reset?token=reset-totp"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && byId("reset-code") && text(main.querySelector('label[for="reset-code"]')) === "Code from your authenticator app"
+      && text(main.querySelector("button.reset-code-swap")) === "Use a recovery code", "reset: with an authenticator app the page asks for its code");
+    fpSet("a long new password", "a long new password"); fpForm().dispatch("submit"); await tick();
+    expect(text(fpForm()).includes("the code from your authenticator app is needed"), "reset: no code, nothing sent");
+    const fpBefore = fpPosts.length;
+    byId("reset-code").value = "000 000"; fpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(fpPosts.length === fpBefore + 1 && fpPosts[fpBefore][1].code === "000000" && fpForm() && byId("reset-code").value === ""
+      && text(fpForm()).includes("the code is wrong, or this link no longer works"),
+      "reset: a refused code keeps the form, clears the code and says it may be the code or the link");
+    main.querySelector("button.reset-code-swap").click(); await tick();
+    expect(text(main.querySelector('label[for="reset-code"]')) === "Recovery code", "reset: Use a recovery code switches the field");
+    fpSet("a long new password", "a long new password"); byId("reset-code").value = "ABCD-EFGH-JKMN"; fpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    const fpLast = fpPosts[fpPosts.length - 1][1];
+    expect(fpLast.recovery_code === "ABCD-EFGH-JKMN" && !("code" in fpLast) && text(fpH1()) === "Your password is set",
+      "reset: a recovery code is sent as recovery_code and sets the password");
+    await go("#/register"); for (let k = 0; k < 4; k++) await tick();
+    await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(fpH1()) !== "Your password is set" && main.querySelector(".reset-dead"), "reset: after a set password and /register, a page without a token is no link, not \"set\"");
+    // Registration and an invitation draw themselves before the rest: leaving to either ends the
+    // kept link too, so /sign-in/reset without a token afterwards is no link (#1714 review, v5vp).
+    for (const away of ["#/register", "#/invite/open-xxxxxxxxxxxxxxxx1"]) {
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      const fpWas = fpPosts.length;
+      await go(away); for (let k = 0; k < 4; k++) await tick();
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(fpWas && !fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas,
+        "reset: after " + away + " a page without a token is no link and asks nothing " + JSON.stringify([fpWas, fpPosts.length, !!fpForm()]));
+    }
+    // A maintenance window that holds the reset page, and an address that does not parse, end it too.
+    {
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      const fpRunning = win.Maity.maintenance.running;
+      win.Maity.maintenance.running = () => true;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      win.Maity.maintenance.running = fpRunning;
+      const fpWas = fpPosts.length;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas,
+        "reset: after a maintenance window held the page, a page without a token is no link " + JSON.stringify([fpWas, fpPosts.length]));
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      await go("#/%E0%A4%A"); for (let k = 0; k < 4; k++) await tick();
+      const fpWas2 = fpPosts.length;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas2,
+        "reset: after an address that does not parse, a page without a token is no link " + JSON.stringify([fpWas2, fpPosts.length]));
+    }
+    win.Maity.api.post = fpPost;
+    await go("#/login"); for (let k = 0; k < 4; k++) await tick();
+  }
   // Signing in from the invitation returns to it, now with the button to join.
   await go("#/login?next=%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
@@ -13768,6 +13898,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await mmSubmit();
     expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { hold_while_online: false } }) && !byId("mail-hold-while-online").checked,
       "mail modes: turning the hold off sends hold_while_online false, the answer shown");
+    // §2.10: the human's own switch for a reset by mail, beside the sign-in link, its warning by factor.
+    const prEnrolled = !!(await win.Maity.api.get("/auth/second-factor")).enrolled;
+    expect(byId("mail-password-reset") && byId("mail-password-reset").checked
+      && text(main.querySelector('label[for="mail-password-reset"]')) === " Allow a password reset by mail"
+      && text(byId("mail-password-reset-hint")).startsWith(prEnrolled ? "A reset by mail also needs a code from your authenticator app"
+        : "Turn this off if an agent or anyone else can read this mailbox"),
+      "mail modes: the password reset by mail is on by default, its warning following the human's factor " + JSON.stringify([prEnrolled, text(byId("mail-password-reset-hint"))]));
+    byId("mail-password-reset").checked = false;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { password_reset: false } }) && !byId("mail-password-reset").checked,
+      "mail modes: turning the reset off sends password_reset false");
     // The tab's presence (§18.4), driven here with its own clock, timers and listeners: fixture mode
     // never starts it (js/app.js), so the dashboard drawn above did not.
     expect(!win.Maity.presence.running(), "presence: fixture mode sends no presence");
@@ -16461,7 +16602,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.get = async (p, o) => { const v = await siGet(p, o); return p === "/admin/settings/sign-in" ? Object.assign(v, { missing: ["mail"], email_link_available: false }) : v; };
     await redraw();
     expect(!policyOptions().includes("email") && text(siSection()).includes("Mail is not ready"), "sign-in: no Mail for everyone while mail is not ready");
+    // §2.10: the reset by mail is a switch of its own; while on but not offered, the reasons stand under it.
+    win.Maity.api.get = async (p, o) => { const v = await siGet(p, o); return p === "/admin/settings/sign-in" ? Object.assign(v, { password_reset_available: false, password_reset_missing: ["mail", "signing_key"] }) : v; };
+    await redraw();
+    expect(byId("admin-sign-in-password_reset") && byId("admin-sign-in-password_reset").checked && byId("admin-sign-in-password_reset-missing")
+      && text(byId("admin-sign-in-password_reset-missing")).startsWith("Not offered right now: ") && text(byId("admin-sign-in-password_reset-missing")).includes("Mail is not ready"),
+      "sign-in: the password reset by mail is on, and why it is not offered stands under it");
     win.Maity.api.get = siGet;
+    await redraw();
+    expect(!byId("admin-sign-in-password_reset-missing"), "sign-in: an offered reset needs no reasons");
+    const siBefore = siPatches.length;
+    byId("admin-sign-in-password_reset").checked = false;
+    await siSubmit();
+    expect(JSON.stringify(siPatches[siBefore]) === JSON.stringify({ password_reset: false }) && !byId("admin-sign-in-password_reset").checked
+      && (await win.Maity.api.get("/auth/methods")).password_reset === false,
+      "sign-in: turning the reset off sends password_reset false, and the login no longer offers it");
+    byId("admin-sign-in-password_reset").checked = true;
+    await siSubmit();
     await redraw();
     // No verified address: said at the field, no code asked for.
     win.Maity.api.patch = async () => { throw Object.assign(new Error("invalid"), { code: "invalid", details: { fields: { second_factor: "no_verified_address" } } }); };

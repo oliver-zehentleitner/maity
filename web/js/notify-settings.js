@@ -288,6 +288,14 @@ window.Maity = window.Maity || {};
       hold.checked = email.hold_while_online !== false;
       const signIn = h("input", { type: "checkbox", id: "mail-sign-in-link" });
       signIn.checked = email.sign_in_link !== false;
+      // §2.10: a reset of a forgotten password by mail, its own key, since it is the stronger way
+      // in. Its warning follows the human's factor: with TOTP a reset also asks for its code.
+      const reset = h("input", { type: "checkbox", id: "mail-password-reset", "aria-describedby": "mail-password-reset-hint" });
+      reset.checked = email.password_reset !== false;
+      const resetHint = h("p", { class: "hint", id: "mail-password-reset-hint" }, M.t("mail.password_reset.hint.mailbox"));
+      M.api.get("/auth/second-factor").then((sf) => {
+        if (sf && sf.enrolled) resetHint.textContent = M.t("mail.password_reset.hint.totp");
+      }, () => { /* the stricter sentence stays */ });
       const errors = {
         daily_at: h("p", { class: "field-error", id: "mail-daily-at-error", role: "alert" }),
         quiet_hours: h("p", { class: "field-error", id: "mail-quiet-error", role: "alert" }),
@@ -322,6 +330,7 @@ window.Maity = window.Maity || {};
           if (JSON.stringify(hours) !== JSON.stringify(email.quiet_hours || null)) patch.quiet_hours = hours;
           if (hold.checked !== (email.hold_while_online !== false)) patch.hold_while_online = hold.checked;
           if (signIn.checked !== (email.sign_in_link !== false)) patch.sign_in_link = signIn.checked;
+          if (reset.checked !== (email.password_reset !== false)) patch.password_reset = reset.checked;
           if (!Object.keys(patch).length) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("notify.unchanged"))); return; }
           button.disabled = true;
           status.busy(M.t("notify.saving"));
@@ -360,6 +369,8 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("mail.hold_while_online.hint")),
       h("label", { class: "check", for: "mail-sign-in-link" }, signIn, " " + M.t("mail.sign_in_link")),
       h("p", { class: "hint" }, M.t("mail.sign_in_link.hint")),
+      h("label", { class: "check", for: "mail-password-reset" }, reset, " " + M.t("mail.password_reset")),
+      resetHint,
       button);
       const byKind = (k) => form.querySelector("#mail-mode-" + k + "-error");
       append(clear(box),

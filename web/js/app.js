@@ -116,6 +116,8 @@ window.Maity = window.Maity || {};
     // /invite alone: the person invitations of one's projects (§16.11, js/invitations.js).
     if (parts[0] === "invite") return { scope: "invitations" };
     if (parts[0] === "register") return { scope: "register" };
+    // §2.10: the mailed link of a forgotten password, signed in or not.
+    if (parts[0] === "sign-in" && parts[1] === "reset" && !parts[2]) return { scope: "reset" };
     if (parts[0] === "notifications") return { scope: "notifications" };
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
@@ -411,7 +413,11 @@ window.Maity = window.Maity || {};
     const pitch = M.authPages.pitch("sign_in", M.t("login.title"));
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
-    const options = M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null;
+    // "Forgot password?" under the password field where the hub offers it (§2.6.7, §2.10).
+    const forgot = M.passwordReset ? M.passwordReset.forgot(() => email.value.trim()) : null;
+    if (forgot) forgot.hidden = true;
+    const options = M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render(),
+      (methods) => { if (forgot && methods.password_reset) forgot.hidden = false; }) : null;
     const form = h("form", {
       class: "login",
       onsubmit: async (e) => {
@@ -439,7 +445,7 @@ window.Maity = window.Maity || {};
       },
     },
     h("label", { for: "login-email" }, M.t("login.email")), email,
-    h("label", { for: "login-password" }, M.t("login.password")), password,
+    h("label", { for: "login-password" }, M.t("login.password")), password, forgot,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
     h("button", { type: "submit", class: "btn btn-primary" }, M.t("login.title")),
     status.el);
@@ -2278,7 +2284,7 @@ window.Maity = window.Maity || {};
     let firstWhere = null;
     try { firstWhere = parseRoute(); } catch { /* the drawing below says why */ }
     const first = firstWhere ? firstWhere.scope : null;
-    const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register);
+    const ownRead = (first === "invite" && M.invite) || (first === "register" && M.register) || (first === "reset" && M.passwordReset);
     // The three waves (the window and the session, then /me, then the project's head, project and
     // members) come in one GET /bootstrap (§5.4, tsk-j591fzgnmspf): the reads below take their
     // answers from its parts, in the same order and with the same handling; an older hub's 404
@@ -2293,6 +2299,11 @@ window.Maity = window.Maity || {};
     try {
       where = parseRoute();
       const held = M.maintenance.running();
+      // The reset reads no session: it ends every one and signs nobody in (§2.10).
+      if (where.scope === "reset" && M.passwordReset && !held) { await M.passwordReset.page(main, document.getElementById("header")); return; }
+      // Any other drawing ends the reset's kept link (js/password-reset.js), before any page
+      // returns early: the invitation, registration, a maintenance window's page, the rest.
+      if (M.passwordReset) M.passwordReset.leave();
       if (where.scope === "invite" && M.invite && !held) { M.siteChrome.leave(); await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
@@ -2419,6 +2430,8 @@ window.Maity = window.Maity || {};
       else if (writes === wrote && kept === reuse) reuse.project = ctx.keptProject || null;
     } catch (err) {
       if (seq !== renderSeq) return;
+      // An address that does not parse, or a page that failed, is no reset either.
+      if (M.passwordReset) M.passwordReset.leave();
       // The page could not load: the header with the lockup stays, the
       // failure stands where the loader stood, with a way to try again.
       M.siteChrome.leave();
