@@ -139,7 +139,11 @@ def root(
         visitor = as_ == "public" or not auth_caller.has_live_session(conn, request.cookies)
         if setting["enabled"] and visitor:
             if window is not None and window["state"] == "running":
-                return maintenance.refusal_page(window)  # type: ignore[no-any-return]
+                return maintenance.refusal_page(  # type: ignore[no-any-return]
+                    window,
+                    maintenance.cached_frame(engine_of(request)),
+                    request.headers.get("accept-language"),
+                )
             campaign = known_campaign(setting, c)
             body = landing_html(conn, request, setting, lang=lang, campaign=campaign)
             _count_view(conn, request, setting, landing.DEFAULT_VARIANT, campaign, as_)

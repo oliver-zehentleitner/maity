@@ -10,6 +10,7 @@ maintenance` (`refusal`), and the sweeps that decide on deadlines by themselves 
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import threading
 import time
@@ -23,6 +24,8 @@ from sqlalchemy import Connection, Engine, and_, select, update
 from maity_hub import clock, events
 from maity_hub import tables as t
 from maity_hub.ids import new_id
+
+log = logging.getLogger(__name__)
 
 TEXT_MAX = 500
 MARGIN = timedelta(minutes=1)  # deadlines this soon after `until` move too (§16.12)
@@ -129,6 +132,53 @@ PAGE = (
     'content="noindex"><title>Maintenance</title>{style}</head><body><main><h1>Maintenance</h1>'
     "<p>Back at {until} UTC.</p><p>{text}</p></main>{product}</body></html>"
 )
+
+
+# The frame of the 503 page (§16.7.5, §16.12): the last one read, kept per process. A request
+# never reads it itself, so the page that says the hub is down never waits for the database it
+# protects (a used-up pool would hold it up to the pool's timeout); a stale or missing frame is
+# read again in one thread of its own, and the page is the small one until a frame is there.
+FRAME_SECONDS = 60.0
+_frame: tuple[float, dict[str, Any]] | None = None
+_frame_reading = False
+
+
+def cached_frame(engine: Engine) -> dict[str, Any] | None:
+    """The last frame read, or None; starts one read in the background when it is missing or
+    older than `FRAME_SECONDS`. Touches no database in the caller."""
+    global _frame_reading
+    with _lock:
+        held = _frame
+        start = (held is None or monotonic() - held[0] >= FRAME_SECONDS) and not _frame_reading
+        if start:
+            _frame_reading = True
+    if start:
+        threading.Thread(
+            target=refresh_frame, args=(engine,), name="maintenance-frame", daemon=True
+        ).start()
+    return held[1] if held is not None else None
+
+
+def refresh_frame(engine: Engine) -> None:
+    """Read the frame and keep it; on any failure keep the last one (the page falls back)."""
+    global _frame, _frame_reading
+    found: dict[str, Any] | None = None
+    try:
+        found = frame_of(engine)
+    except Exception:  # noqa: BLE001 - a failed read only means the small page
+        log.warning("the maintenance page's frame could not be read; the small page stands")
+    with _lock:
+        if found is not None:
+            _frame = (monotonic(), found)
+        _frame_reading = False
+
+
+def forget_frame() -> None:
+    """Drop the kept frame (in tests)."""
+    global _frame, _frame_reading
+    with _lock:
+        _frame = None
+        _frame_reading = False
 
 
 def frame_of(engine: Engine) -> dict[str, Any]:

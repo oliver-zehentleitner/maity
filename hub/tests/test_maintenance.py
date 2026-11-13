@@ -3,6 +3,7 @@ its exceptions, the broadcast and each owner's choice, and the deadlines that mo
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -240,15 +241,22 @@ def test_the_root_is_the_shell_for_a_signed_in_reader_and_the_503_page_for_a_vis
     page = make_client().get("/")  # a visitor: the landing page, refused
     assert page.status_code == 503 and "Maintenance" in page.text
     assert page.headers["Retry-After"] == str(25 * 60)
+    maintenance.refresh_frame(admin.client.app.state.engine)  # type: ignore[attr-defined]
+    framed = make_client().get("/")
+    assert framed.status_code == 503 and '<header class="site-header dz">' in framed.text
+    assert 'class="product-line"' not in framed.text
 
 
 def test_the_503_page_stands_in_the_frame_on_the_public_host_and_small_on_the_join_host(
-    make_client: ClientFactory, admin: flow.Human, now: Clock
+    make_client: ClientFactory, admin: flow.Human, now: Clock, migrated: Engine
 ) -> None:
-    # §16.7.5, §16.12 (tsk-tp97v64vpy5z): the door frame where its stylesheets are served; the
-    # join host serves none of them (§1.1), so its page stays the small one with the line.
+    # §16.7.5, §16.12 (tsk-tp97v64vpy5z): the door frame as last read, where its stylesheets are
+    # served; the join host serves none of them (§1.1), so its page stays the small one.
     put(admin)
     running(now)
+    first = make_client().get("/explore")  # no frame kept yet: the small page, at once
+    assert first.status_code == 503 and 'class="product-line"' in first.text
+    maintenance.refresh_frame(migrated)
     framed = make_client().get("/explore")
     assert framed.status_code == 503 and '<header class="site-header dz">' in framed.text
     assert 'class="product-line"' not in framed.text
@@ -256,6 +264,34 @@ def test_the_503_page_stands_in_the_frame_on_the_public_host_and_small_on_the_jo
     small = joined.get("/join/not-a-token", headers={"Accept": "text/html"})
     assert small.status_code == 503 and "Maintenance" in small.text
     assert "site-header" not in small.text and 'class="product-line"' in small.text
+
+
+def test_the_503_page_never_waits_for_the_frames_read(
+    make_client: ClientFactory, admin: flow.Human, now: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #1721's review (v5vp): with the pool used up, the frame's read would wait for the pool's
+    # timeout. The read is held here until the page has answered; the page does not wait for it.
+    put(admin)
+    running(now)
+    held = threading.Event()
+    reads: list[int] = []
+
+    def frame_of(_engine: Engine) -> dict[str, Any]:
+        reads.append(1)
+        held.wait(10)
+        raise TimeoutError("no pooled connection")
+
+    monkeypatch.setattr(maintenance, "frame_of", frame_of)
+    try:
+        client = make_client()
+        started = time.monotonic()
+        for _ in range(3):
+            page = client.get("/explore")
+            assert page.status_code == 503 and 'class="product-line"' in page.text
+        assert time.monotonic() - started < 2, "the 503 waited for the frame's read"
+        assert len(reads) <= 1  # one read at a time, not one per refused request
+    finally:
+        held.set()
 
 
 def test_a_window_does_not_refuse_once_it_is_over_inside_the_cache(
@@ -800,6 +836,12 @@ def test_a_stored_public_page_answers_the_503_page_to_a_visitor(
         page = client.get(PATH + query)
         assert page.status_code == 503 and "Maintenance" in page.text
         assert page.headers["Retry-After"] == str(25 * 60)
+    # Once a frame is kept, in the frame of §16.7.5 like every page of the public host (#1721).
+    maintenance.refresh_frame(migrated)
+    for query in ("", "?as=public"):
+        page = client.get(PATH + query)
+        assert page.status_code == 503 and '<header class="site-header dz">' in page.text
+        assert 'class="product-line"' not in page.text
 
 
 @pytest.fixture

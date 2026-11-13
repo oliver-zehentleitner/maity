@@ -152,24 +152,30 @@ and made unrelated PRs red. A test that wants the cache to expire moves `mainten
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-tp97v64vpy5z, PR 4, as lotse#wtwy split it (2026-11-13); `maintenance.refusal_page`, `maintenance.frame_of`, `middleware.HubMiddleware._maintenance_refused`. The fallbacks are this entry's reading
+**Source:** card tsk-tp97v64vpy5z, PR 4, as lotse#wtwy split it (2026-11-13); the review of #1721 (maity-review-team-lead#vuur, order 4003, after maity-review-team-chatgpt#v5vp's leg: the 503 must never wait for the database it protects); `maintenance.refusal_page`, `maintenance.cached_frame`, `middleware.HubMiddleware._maintenance_refused`, `routes/pages.py`, `public_pages.py`. The fallbacks are this entry's reading
 **Revisit when:** the join host serves the landing stylesheets, or the frame is drawn from something that is not in the database
 
-While a window runs, the `503` page of the hub's own pages (`/explore`, `/for/…`, `/r/…`, `/mail/…`,
-`/join/…` in a browser) is drawn by `render.door_document` in English: the landing page's header
+While a window runs, the `503` page of the hub's own pages (`/`, a stored public page, `/explore`,
+`/for/…`, `/r/…`, `/mail/…`, `/join/…` in a browser) is drawn by `render.door_document` in English: the landing page's header
 and footer around the door, "Maintenance", when the hub is back and the window's text, with
 `render.DOOR_CSP`, `Referrer-Policy: no-referrer` (some of these paths hold a token) and
-`Retry-After`. The frame is read once per refused request, in the threadpool. Two cases keep the
-small page with the product line: the join host, which serves none of the frame's stylesheets
-(§1.1), and a hub whose landing setting cannot be read (`SQLAlchemyError`, a migration under way).
+`Retry-After`. The frame is the one last read, kept per process (`maintenance.cached_frame`): a
+refused request never reads it. When it is missing or older than a minute, one thread reads it again
+in the background, one read at a time. The small page with the product line stands on the join host,
+which serves none of the frame's stylesheets (§1.1), and while no frame is kept: after a start, or
+while every read fails (a used-up pool, a migration under way).
 
 **Reason:** a visitor who meets the window on a public page should see the same frame the page has
-when it works. The `503` must still never depend on more than the window it reports, so a failed
-read of the frame falls back instead of turning the `503` into a `500`.
+when it works. The `503` must still never depend on more than the window it reports: a read of the
+frame in the request would wait for a used-up pool up to its timeout (the review measured 1.6 s
+against 9 ms with a 1.5 s timeout), and a failed one must not turn the `503` into a `500`.
 
 **Rejected alternatives:**
 - The frame on the join host too: its stylesheets and the header's links lead to paths the join
   host does not serve, so the page would show only its fallback style there.
 - Failing the request when the frame cannot be read: the page that says the hub is down for
   maintenance would then be an error page.
+- Reading the frame in each refused request with a fallback on failure (the first cut of #1721):
+  the fallback came only after the pool's timeout, so the 503 waited for the database.
+- A bounded wait for the read: still a wait per request, and a timer per request under load.
 

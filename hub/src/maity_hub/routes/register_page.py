@@ -109,14 +109,13 @@ def _message(
 
 
 def _dead(frame: Frame, request: Request) -> HTMLResponse:
-    """Invalid, expired, used or voided: one page, `not_found`, never which (§18.6)."""
-    return _message(
-        frame,
-        request,
-        catalog.section("register_page", "en")["dead"],
-        catalog.section("register_page", "en")["dead"],
-        404,
+    """Invalid, expired, used or voided: one page, `not_found`, never which (§18.6). Nobody is
+    known here, so it is in the browser's language, as the sign-in link's dead page (§16.7.5)."""
+    lang = render.choose_language(
+        list(landing.LANGUAGES), "en", None, request.headers.get("accept-language")
     )
+    dead = catalog.section("register_page", lang)["dead"]
+    return _message(frame, request, dead, dead, 404, lang=lang)
 
 
 def _humans_only(request: Request) -> None:

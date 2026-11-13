@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, render
+from maity_hub import catalog, clock, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.notifications import tokens
@@ -566,3 +566,16 @@ def test_a_fields_error_stands_under_it_and_is_tied_to_it(
     ) in refused.text
     assert '<p class="error" id="handle-error" role="alert">A handle has' in refused.text
     assert 'aria-invalid="true" aria-describedby="password-error"' not in refused.text
+
+
+def test_a_dead_link_is_in_the_browsers_language(make_client: ClientFactory) -> None:
+    # Nobody is known on a dead link, so its page takes the best match of `Accept-Language`
+    # among the frame's languages, else English (§16.7.5), as the sign-in link's dead page does.
+    page = make_client().get(
+        "/mail/register/garbage", headers={"Accept-Language": "de-AT, en;q=0.5"}
+    )
+    assert page.status_code == 404
+    assert page.text.startswith('<!doctype html><html lang="de"')
+    assert catalog.section("register_page", "de")["dead"] in page.text
+    other = make_client().get("/mail/register/garbage", headers={"Accept-Language": "tlh"})
+    assert other.text.startswith('<!doctype html><html lang="en"')

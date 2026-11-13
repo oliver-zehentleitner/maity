@@ -20402,8 +20402,9 @@ from the hub's catalogue in `language`.
   in the frame on the public host, in `en`, with the same policy,
   `Referrer-Policy: no-referrer` and `Retry-After`. On the join host,
   which serves none of the frame's stylesheets (§1.1), and while the
-  frame's settings cannot be read, it is the small page with the product
-  line (§16.13).
+  hub has no frame read yet, it is the small page with the product line
+  (§16.13). The frame is the one the hub last read, at most a minute old;
+  a refused request never reads the database for it.
 - **The join page in a browser** (§3.2) on the public host stands in the
   frame: its text in the legal pages' column, in `en`, the note with the
   dashboard link under it, no language switch, with the same policy and
@@ -21805,7 +21806,7 @@ back to the English sentence.
 | Page | Line |
 |---|---|
 | every page the dashboard draws (`web/`): the signed-in views, the sign-in and `/register` where the frame of §16.7.5 does not stand, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
-| the hub's `503 maintenance` page (§16.12) on the join host, or while the frame's settings cannot be read | yes |
+| the hub's `503 maintenance` page (§16.12) on the join host, or while the hub has no frame read yet | yes |
 | the hub's `503 maintenance` page (§16.12) in the frame of §16.7.5 | no: the frame's footer |
 | the mail link pages in the frame of §16.7.5: the sign-in link's page `/mail/sign-in/{token}` (§2.6.3), registration's link page `/mail/register/{token}` (§2.7.1) and the pages of §18.6 (§2.9 among them), each with its page for a link that no longer works | no: the frame's footer |
 | the join page in a browser on the join host, `/{token}` as HTML (§3.2, §1.1), below its own note | yes |

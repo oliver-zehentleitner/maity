@@ -155,6 +155,9 @@
 .door-form .check input{width:auto;height:auto;margin:.25em 0 0;flex:none}
 .door-form .error{color:var(--bad,#b42318);font-size:.875rem;margin:4px 0 0}
 .door-form input[aria-invalid=true]{border-color:var(--bad,#b42318)}
+/* Dark: the light red is 2.8:1 on the dark page; this one is 7:1. By the system without a script (the hub's own pages), or by the dashboard's choice. */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .door-form :is(.error,input[aria-invalid=true]){--bad:#ff7b72}}
+:root[data-theme="dark"] .door-form :is(.error,input[aria-invalid=true]){--bad:#ff7b72}
 .door-form .note{color:var(--muted);font-size:.9rem;margin:12px 0 0}
 .join-page h2{font:700 1.4rem/1.25 var(--font-display);margin:36px 0 10px}
 .join-page pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:14px 16px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);font:14px/1.5 var(--font-mono)}
