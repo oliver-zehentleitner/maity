@@ -330,9 +330,13 @@ registry alone.
 
 `deploy/scripts/helm-upgrade.sh` renders the upgrade first
 (`helm upgrade --dry-run` with the caller's own arguments), takes every
-`image:` it would run, and requires each to be pinned by digest and to
-pass `cosign verify` with the issuer and identity regexp of the chart
-README's install step 2 (the stub test holds the two equal). All of this
+image it would run (an `image` key, also as a list item's first key or
+quoted, its value plain or quoted; an empty value is skipped), and requires
+each to be pinned by digest and to pass `cosign verify` with the issuer and
+identity regexp of the chart README's install step 2 (the stub test holds
+the script's issuer and identity equal to the README's). An image key in any
+other form (a flow mapping, a block scalar, an anchor or alias) stops the
+script: an image the check cannot read is not deployed. All of this
 happens before the dump, the migrate Job and the scale-down, so a refusal
 changes nothing. A missing cosign is a refusal too. `NO_SIGNATURE_CHECK=1`
 is the only way past the check, for an image someone built themselves,

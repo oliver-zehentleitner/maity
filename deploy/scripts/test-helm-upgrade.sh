@@ -45,8 +45,10 @@ case " $* " in
   *" --dry-run "*)
     echo "helm-dry $*" >> "$STUB_STATE/log"
     [ "$FAIL" = render ] && exit 1
+    # MANIFEST_FILE: a test's own rendering, printed as it is.
+    [ -n "${MANIFEST_FILE:-}" ] && { cat "$MANIFEST_FILE"; exit 0; }
+    printf 'HOOKS:\n          image: "%s"\n' "${HOOK_REF:-${IMAGE_REF:-$DIGEST_REF}}"
     printf 'MANIFEST:\n    spec:\n      containers:\n        - name: hub\n          image: %s\n' "${IMAGE_REF:-$DIGEST_REF}"
-    printf 'HOOKS:\n          image: "%s"\n' "${IMAGE_REF:-$DIGEST_REF}"
     exit 0;;
 esac
 echo "helm $*" >> "$STUB_STATE/log"
@@ -59,6 +61,8 @@ cat > "$work/bin/cosign" <<'STUB'
 #!/bin/bash
 echo "cosign $*" >> "$STUB_STATE/log"
 [ "$FAIL" = unsigned ] && { echo "error: no matching signatures" >&2; exit 1; }
+# UNSIGNED_REF: only this one image fails the check.
+[ -n "${UNSIGNED_REF:-}" ] && [ "$2" = "$UNSIGNED_REF" ] && { echo "error: no matching signatures" >&2; exit 1; }
 exit 0
 STUB
 cat > "$work/bin/sleep" <<'STUB'
@@ -66,7 +70,7 @@ cat > "$work/bin/sleep" <<'STUB'
 exit 0
 STUB
 chmod +x "$work/bin/"*
-unset NO_SIGNATURE_CHECK IMAGE_REF
+unset NO_SIGNATURE_CHECK IMAGE_REF HOOK_REF UNSIGNED_REF MANIFEST_FILE
 export COSIGN="$work/bin/cosign"
 export DIGEST_REF="ghcr.io/oliver-zehentleitner/maity-hub@sha256:$(printf 'a%.0s' {1..64})"
 
@@ -135,11 +139,86 @@ UNTOUCHED=1 COSIGN=no-such-cosign run cosign_missing none 1 1 no 1
 NO_SIGNATURE_CHECK=1 COSIGN=no-such-cosign run opt_out_without_cosign none 1 0 yes 1
 NO_SIGNATURE_CHECK=1 IMAGE_REF=registry.example.org/maity-hub:mine run opt_out_tag none 1 0 yes 1
 grep -q '^cosign ' "$work/opt_out_tag/log" && { echo "FAIL opt_out_tag: cosign ran with NO_SIGNATURE_CHECK=1"; failures=$((failures + 1)); }
+# NO_SIGNATURE_CHECK=1 says so; any other value runs the normal check.
+grep -q '^WARNING: NO_SIGNATURE_CHECK=1' "$work/opt_out_tag/out" || { echo "FAIL opt_out_tag: no WARNING for NO_SIGNATURE_CHECK=1"; failures=$((failures + 1)); }
+UNTOUCHED=1 NO_SIGNATURE_CHECK=0 run opt_out_zero_checks unsigned 1 1 no 1
+grep -q '^cosign verify ' "$work/opt_out_zero_checks/log" || { echo "FAIL opt_out_zero_checks: cosign did not run with NO_SIGNATURE_CHECK=0"; failures=$((failures + 1)); }
+# The rendering gets the caller's own arguments.
+if grep -qE '^helm-dry -n maity upgrade maity .* --dry-run -f values\.yaml$' "$work/all_good/log"; then
+  echo "ok   dry_run_has_caller_args"
+else
+  echo "FAIL dry_run_has_caller_args: no helm --dry-run with -f values.yaml in the log"; failures=$((failures + 1))
+fi
+# Two distinct images (the hook's and the Deployment's): each is checked, and the hook's failing stops it.
+hook_ref="ghcr.io/oliver-zehentleitner/maity-hub@sha256:$(printf 'b%.0s' {1..64})"
+HOOK_REF=$hook_ref run two_refs none 1 0 yes 1
+for r in "$DIGEST_REF" "$hook_ref"; do
+  grep -qF -- "cosign verify $r " "$work/two_refs/log" || { echo "FAIL two_refs: $r was not checked"; failures=$((failures + 1)); }
+done
+UNTOUCHED=1 HOOK_REF=$hook_ref UNSIGNED_REF=$hook_ref run hook_unsigned none 1 1 no 1
+grep -qF "$hook_ref has no valid signature" "$work/hook_unsigned/out" || { echo "FAIL hook_unsigned: no message naming the hook's image"; failures=$((failures + 1)); }
+# Every form an image takes in the rendering: a list-item sidecar, an init container, quoted keys and values,
+# a trailing comment; empty entries are skipped.
+init_ref="ghcr.io/example/init@sha256:$(printf 'c%.0s' {1..64})"
+side_ref="ghcr.io/example/sidecar@sha256:$(printf 'd%.0s' {1..64})"
+quoted_ref="ghcr.io/example/quoted@sha256:$(printf 'e%.0s' {1..64})"
+cat > "$work/forms.yaml" <<EOF
+MANIFEST:
+    spec:
+      initContainers:
+        - image: $init_ref
+          name: init
+      containers:
+        - name: hub
+          image: "$DIGEST_REF"  # the hub
+        - image: '$side_ref'
+          name: sidecar
+        - name: quoted
+          "image": $quoted_ref
+        - name: empty
+          image: ""
+        - name: none
+          image:
+          imagePullPolicy: IfNotPresent
+EOF
+MANIFEST_FILE="$work/forms.yaml" run image_forms none 1 0 yes 1
+for r in "$DIGEST_REF" "$init_ref" "$side_ref" "$quoted_ref"; do
+  grep -qF -- "cosign verify $r " "$work/image_forms/log" || { echo "FAIL image_forms: $r was not checked"; failures=$((failures + 1)); }
+done
+[ "$(grep -c '^cosign verify ' "$work/image_forms/log")" = 4 ] || { echo "FAIL image_forms: not exactly the four images were checked"; failures=$((failures + 1)); }
+grep -q '^signature checked: *$' "$work/image_forms/out" && { echo "FAIL image_forms: an empty image name was printed"; failures=$((failures + 1)); }
+UNTOUCHED=1 MANIFEST_FILE="$work/forms.yaml" UNSIGNED_REF=$side_ref run sidecar_unsigned none 1 1 no 1
+# A form the check does not read stops the script before anything changes (fail closed).
+form_case() { # name, the line(s) after "containers:"
+  printf 'MANIFEST:\n    spec:\n      containers:\n%s\n' "$2" > "$work/form-$1.yaml"
+  UNTOUCHED=1 MANIFEST_FILE="$work/form-$1.yaml" run "form_$1" none 1 1 no 1
+  grep -q 'form the check does not read' "$work/form_$1/out" || { echo "FAIL form_$1: not refused as an unread form"; failures=$((failures + 1)); }
+}
+form_case flow_mapping "        - {name: side, image: $side_ref}"
+form_case flow_list_item "        - name: hub
+          resources: {image: $side_ref}"
+form_case block_scalar "        - name: side
+          image: >-
+            $side_ref"
+form_case plain_continued "        - name: side
+          image:
+            $side_ref"
+form_case anchor "        - name: side
+          image: &img $side_ref"
+form_case alias "        - name: side
+          image: *img"
 # The identity the script checks is the one the install docs name.
 identity=$(sed -n "s/^IDENTITY='\(.*\)'\$/\1/p" "$here/helm-upgrade.sh")
-if [ -n "$identity" ] && grep -qF -- "--certificate-identity-regexp '$identity'" "$here/../helm/maity-hub/README.md"; then
+issuer=$(sed -n "s/^ISSUER='\(.*\)'\$/\1/p" "$here/helm-upgrade.sh")
+readme="$here/../helm/maity-hub/README.md"
+if [ -n "$identity" ] && grep -qF -- "--certificate-identity-regexp '$identity'" "$readme"; then
   echo "ok   identity_matches_readme"
 else
   echo "FAIL identity_matches_readme: the script's IDENTITY is not the README's --certificate-identity-regexp"; failures=$((failures + 1))
+fi
+if [ -n "$issuer" ] && grep -qE -- "--certificate-oidc-issuer '?$(printf '%s' "$issuer" | sed 's/[.]/\\./g')'?( |\\|\$)" "$readme"; then
+  echo "ok   issuer_matches_readme"
+else
+  echo "FAIL issuer_matches_readme: the script's ISSUER is not the README's --certificate-oidc-issuer"; failures=$((failures + 1))
 fi
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }

@@ -482,6 +482,10 @@ Back up before every upgrade.
      override file on both commands. The old hub is stopped while the
      `migrate` service runs, and the new one starts after it.
    - Helm: `helm upgrade … --timeout 10m`. The hook Job migrates first.
+     `deploy/scripts/helm-upgrade.sh` checks the image's signature first, so the
+     host that deploys needs cosign v3 or later and the image pinned by digest
+     (`image.digest`); `NO_SIGNATURE_CHECK=1` is only for an image you built
+     yourself.
 
 There is **no downgrade**. `maity-hub` has no command that takes the
 schema back, and an older hub refuses a newer schema. To go back, restore

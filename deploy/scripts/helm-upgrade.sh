@@ -77,16 +77,49 @@ else
   # Every image the upgrade would run, from the same arguments, rendered without changing anything.
   rendered_manifest=$(helm -n "$NAMESPACE" upgrade "$RELEASE" "$CHART" --dry-run "$@") ||
     { echo "could not render the upgrade to find its image; nothing was changed" >&2; restored=1; exit 1; }
-  images=$(printf '%s\n' "$rendered_manifest" | sed -n 's/^[[:space:]]*image:[[:space:]]*//p' | tr -d "\"'" | sort -u)
+  # The forms an image can take in the rendered YAML: `image: <ref>` as a mapping key, also as the
+  # first key of a list item (`- image: <ref>`, a sidecar or init container written that way), the
+  # key quoted ("image" or 'image'), the value plain, double- or single-quoted, with or without a
+  # trailing comment. An empty value (nothing, "", '', null, ~) names no image and is skipped, unless
+  # the lines after a bare `image:` continue it. Every other line with an image key (a flow mapping
+  # `{image: …}`, a block scalar, an anchor, an alias, a tag) is not taken, and stops the script:
+  # an image the check did not see must not be deployed.
+  found=$(printf '%s\n' "$rendered_manifest" | awk -v q="'" '
+    BEGIN {
+      key = "(image|\"image\"|" q "image" q ")"
+      lead = "^[[:space:]]*(-[[:space:]]+)*"
+      ref = "[A-Za-z0-9][-A-Za-z0-9._/:@+]*"
+      pend = ""
+    }
+    pend != "" {
+      if ($0 ~ /^[[:space:]]*$/) next
+      match($0, /^[[:space:]]*/)
+      if (RLENGTH > pendcol) { print "bad " pendnr ": " pend; pend = ""; next }
+      pend = ""
+    }
+    $0 ~ ("(^|[[:space:]{,])" key "[[:space:]]*:") {
+      if (!match($0, lead key "[[:space:]]*:")) { print "bad " NR ": " $0; next }
+      v = substr($0, RLENGTH + 1)
+      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+#.*$/, "", v); sub(/[[:space:]]+$/, "", v)
+      if (v == "") { match($0, lead); pend = $0; pendnr = NR; pendcol = RLENGTH; next }
+      if (v == "\"\"" || v == q q || v == "~" || v == "null" || v == "Null" || v == "NULL") next
+      if (v ~ ("^\"" ref "\"$") || v ~ ("^" q ref q "$")) v = substr(v, 2, length(v) - 2)
+      if (v ~ ("^" ref "$")) print "img " v
+      else print "bad " NR ": " $0
+    }')
+  untaken=$(printf '%s\n' "$found" | sed -n 's/^bad //p')
+  [ -z "$untaken" ] || { printf 'the rendered upgrade has an image key in a form the check does not read, so its image cannot be checked; nothing was changed:\n%s\n' "$untaken" >&2; restored=1; exit 1; }
+  images=$(printf '%s\n' "$found" | sed -n 's/^img //p' | sort -u)
   [ -n "$images" ] || { echo "the rendered upgrade names no image; nothing was changed" >&2; restored=1; exit 1; }
   while IFS= read -r image; do
+    [ -n "$image" ] || continue
     case "$image" in
       *@sha256:*) ;;
       *) echo "$image is not pinned by digest: set image.digest (the signature is for a digest, a tag can be moved); nothing was changed" >&2
          restored=1; exit 1;;
     esac
     "$COSIGN" verify "$image" --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$IDENTITY" </dev/null >/dev/null ||
-      { echo "$image has no valid signature from the release workflow (see deploy/helm/maity-hub/README.md, step 2); nothing was changed" >&2; restored=1; exit 1; }
+      { echo "$image has no valid signature from the release workflow, or cosign is older than v3 and does not find it (cosign v3 or later; see deploy/helm/maity-hub/README.md, step 2); nothing was changed" >&2; restored=1; exit 1; }
     echo "signature checked: $image"
   done <<<"$images"
 fi

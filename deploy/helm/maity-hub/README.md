@@ -417,7 +417,8 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   same arguments) and checks each image's signature with `cosign verify` and
   the identity in step 2 of the install; an image by tag, a failed check or
   a missing cosign stops it with nothing changed, unless
-  `NO_SIGNATURE_CHECK=1` (your own build). `deploy/scripts/test-helm-upgrade.sh`
+  `NO_SIGNATURE_CHECK=1` (your own build). `COSIGN=<path>` names the cosign
+  binary when it is not `cosign` on the `PATH`. `deploy/scripts/test-helm-upgrade.sh`
   runs the failure paths against stub `kubectl`, `helm` and `cosign`. A release whose migration touches no busy table can
   use plain `helm upgrade`.
 - **Rollback.** There is no schema downgrade: `maity-hub` has `serve`,
