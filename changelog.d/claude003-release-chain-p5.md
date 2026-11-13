@@ -7,5 +7,3 @@
 - deploy: the k3s install guide takes the k3s installer from its release tag
   and checks its checksum, and installs cert-manager from the pulled chart
   archive after checking its checksum (tsk-6zh891gy6cvz, point 5).
-- ci: `kind-smoke.sh` runs PostgreSQL by the digest `ci.yml` pins, not by the
-  tag `postgres:17` (tsk-6zh891gy6cvz, point 5).

@@ -797,7 +797,7 @@ only from a copy that belongs to the runner, so no system Python is changed.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-6zh891gy6cvz, point 5 (release chain hardening, 2026-11-13); `deploy/runner/install-python.sh`, `deploy/runner/README.md`, `docs/install/README.md`, `deploy/helm/kind-smoke.sh`
+**Source:** card tsk-6zh891gy6cvz, point 5 (release chain hardening, 2026-11-13; the kind-smoke pin settled by the team lead, 2026-11-13); `deploy/runner/install-python.sh`, `deploy/runner/README.md`, `docs/install/README.md`, `deploy/helm/kind-smoke.sh`
 **Revisit when:** uv, k3s or cert-manager publish a signature this setup can check offline, or one of the pinned versions changes
 **See:** process.md#the-runner-gets-its-python-through-uv-into-the-tool-cache-and-starts-through-runsvcsh — 2bede3db-2d8e-4716-851b-0ecc07cb140d — as of 2026-11-13
 
@@ -815,8 +815,9 @@ checked before they run:
   checksums.
 - cert-manager's chart is pulled as an archive of the pinned version and
   checked with `sha256sum -c` before `helm install` takes the file.
-- `kind-smoke.sh` runs PostgreSQL by the digest `ci.yml` already pins
-  for its PostgreSQL service, not by the tag `postgres:17`.
+- `kind-smoke.sh` runs PostgreSQL by digest too: the pin
+  `postgres:17.10@sha256:7958605b…` came with #1751, and this change
+  keeps it.
 
 **Reason:** a tag, a moving URL or an installer piped into a shell runs
 whatever the server sends that day. A checksum or digest pinned in the
@@ -830,9 +831,10 @@ download whose own downloads are not pinned here.
 - `helm install --verify` with jetstack's signing key: it needs the key
   fetched and trusted as well; a checksum of the archive needs nothing
   more.
-- A digest of its own for kind-smoke's PostgreSQL: the CI service's pin
-  is already reviewed, and the smoke test then runs the PostgreSQL ci
-  tests against.
+- kind-smoke's PostgreSQL on `ci.yml`'s `postgres:17@sha256:31ba9c94…`,
+  the image the CI service tests against: #1751's `17.10` digest is what
+  that tag resolves to today and what production runs, so the smoke test
+  of the chart stays on it. `ci.yml`'s service pin is unchanged.
 
 ## One runner service per database job type, a label each, three workers per job
 
