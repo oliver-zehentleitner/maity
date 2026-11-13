@@ -1249,3 +1249,24 @@ def test_a_rescue_falls_back_to_a_temp_directory_when_the_home_refuses(
     assert state.credential_path(rescued).read_bytes() == fakehub.CREDENTIAL.encode()
     assert err.count("export MAITY_STATE_DIR=") == 1
     assert fakehub.SECRET not in err
+
+
+def test_a_placed_session_that_cannot_read_its_credential_is_told_to_run_maity_alone(
+    clone: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Claude Code's sandbox hides `.git/maity`, and only a `maity` call of its own runs
+    outside it. A placed agent that piped `maity` read "has not joined a project" and took
+    the hub for broken (the runner test of 2026-11-11)."""
+    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    assert cli.main(["messages"]) != 0
+    err = capsys.readouterr().err
+    assert "run maity alone" in err and "has not joined" not in err
+
+
+def test_an_unplaced_clone_without_a_credential_is_told_to_join(
+    clone: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    assert cli.main(["messages"]) != 0
+    assert "has not joined a project" in capsys.readouterr().err

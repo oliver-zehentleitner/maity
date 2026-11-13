@@ -848,6 +848,10 @@ membership = Table(
     Column("briefing_by", String(ID)),
     Column("briefing_updated_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
+    # The project's newest event seq when the membership was made, 0 for none: where its
+    # notifications begin, since joining never replays a project's history (§18.2). Written
+    # with the row (`events.newest_seq`), so no read looks for it in the event log.
+    Column("joined_seq", BIG_ID, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
     # True while the membership exists, NULL once removed: a removed member
@@ -1403,6 +1407,20 @@ placement = Table(
     Column("generation", Integer, nullable=False),
     Column("rejoin", Boolean, nullable=False),
     Column("stop_grace_seconds", Integer, nullable=False),
+    # The clone after a stop or a close (§15.5): how long the runner keeps it, which clone
+    # of the placement is meant, and the runner's latest report on it. Columns, not one
+    # JSON value: both closed lists select on the state in SQL (context/placements.md).
+    Column("workspace_retention", String(16), nullable=False, server_default="24h"),
+    Column("workspace_epoch", Integer, nullable=False, server_default="1"),
+    Column("workspace_state", String(16)),
+    Column("workspace_reason", String(32)),
+    Column("workspace_unsaved", Integer),
+    Column("workspace_size_bytes", BigInteger),
+    Column("workspace_removes_at", UtcDateTime),
+    Column("workspace_outcome_epoch", Integer),
+    Column("workspace_reported_at", UtcDateTime),
+    # A removal by hand (§15.6), until a report names it; null when none is asked.
+    Column("remove_requested_at", UtcDateTime),
     Column("approval_status", String(16), nullable=False),
     Column("pending_change", JSON_VALUE),  # an agent's proposed change of the spec
     Column("reason", MARKDOWN_TEXT),
@@ -2711,6 +2729,26 @@ notification_read = Table(
     Column("seq", BIG_ID, nullable=False),
     Column("at", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("human_id", "seq"),
+    **MYSQL_TABLE,
+)
+
+# The message events that may make a notification of a human (§18.1), written by
+# `events.emit` with the message: `chat` when a conversation's message names the human in
+# its audience, `mention` when its mentions name them. A superset of the items: a later
+# redaction leaves the row, and `notifications.items._classify` stays the exact test. The
+# notifications read these rows instead of matching the event's JSON as text, which scanned
+# every message of the window (hub/context/notifications.md fc79a4a6).
+notification_recipient = Table(
+    "notification_recipient",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Column("chat", Boolean, nullable=False),
+    Column("mention", Boolean, nullable=False),
+    PrimaryKeyConstraint("seq", "human_id"),
+    Index("ix_notification_recipient_window", "human_id", "project_id", "at", "seq"),
     **MYSQL_TABLE,
 )
 

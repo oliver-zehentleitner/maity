@@ -15,6 +15,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 import anyio
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from maity_hub import clock, restricted, ticker_read
 from maity_hub import tables as t
+from maity_hub.ids import PREFIXES
 from maity_hub.scopes import counts_as, in_admin_team, tokens_of
 
 _PENDING = "maity_pending_events"
@@ -250,6 +252,16 @@ def lock_project(conn: Connection, project_id: str) -> Any:
     ).one()
 
 
+def newest_seq(conn: Connection, project_id: str) -> int:
+    """The project's newest event seq, 0 for none: one step down the index (project_id, seq).
+    A new membership stores it as `joined_seq`, read under the project's lock that its
+    caller holds, so no event of the project lands between this read and the insert."""
+    found = conn.execute(
+        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project_id)
+    ).scalar()
+    return int(found or 0)
+
+
 WATCHERS = "watchers:"
 # A notice about an event, and the payload field that names that event.
 _READ_AS_THEIR_EVENT = {"event_redacted": "seq", "attachment_deleted": "message_seq"}
@@ -348,11 +360,12 @@ def emit(
         .limit(1)
     ).scalar()
     now = clock.now()
+    at = now if last is None or now >= last else last
     result = conn.execute(
         insert(t.event).values(
             project_id=project_id,
             kind=kind,
-            at=now if last is None or now >= last else last,
+            at=at,
             actor_membership=actor.membership_id if actor else None,
             actor_session_id=actor.session_id if actor else None,
             actor_credential_id=actor.credential_id if actor else None,
@@ -388,6 +401,13 @@ def emit(
             insert(t.restricted_event_list),
             [{"seq": seq, "membership_id": member} for member in restricted_list],
         )
+    if kind == "message":
+        recipients = notification_recipients(audience, conversation_id, payload)
+        if recipients:
+            conn.execute(
+                insert(t.notification_recipient),
+                [{"seq": seq, "project_id": project_id, "at": at, **row} for row in recipients],
+            )
     if kind in {"message", "task_claimed"}:
         from maity_hub import onboarding
 
@@ -413,9 +433,17 @@ def emit(
         # Who a public page shows follows who is a member (§16.9): a join adds, any other
         # change may take someone off. A change no page shows renders nothing: this
         # transaction holds the project row (hub/context/public-pages.md 721bcdfa).
-        from maity_hub import public_pages
+        from maity_hub import public_pages, public_projects
 
-        public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
+        # Of the card pages only those that name the member: no other shows one (fe966f9c).
+        others = (
+            partial(public_projects.member_dependents, conn, project_id, subject[1])
+            if subject and subject[0] == "member"
+            else None
+        )
+        public_pages.touch(
+            conn, "project", project_id, removal=kind != "member_joined", others=others
+        )
     elif kind in CARD_KINDS and project.public_page == "on":
         # The Board follows its cards: a new one adds, any other change may take one off.
         from maity_hub import public_pages
@@ -461,6 +489,39 @@ def emit(
 # line consent, and the availability (a dormant instance, the outage policy), which only
 # changes who is online, and that waits for the snapshot (§16.9).
 UNSHOWN_MEMBER_FIELDS = frozenset({"language", "line_consent", "dormant", "availability_policy"})
+
+
+_HUMAN = f"{PREFIXES['human']}-"  # a human's principal id, as a `member:` token names it
+
+
+def notification_recipients(
+    audience: Sequence[str], conversation_id: str | None, payload: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The humans a message may make a notification of (§18.1), as `notification_recipient`
+    rows without the event's columns: `chat` for a conversation's message whose audience names
+    them, `mention` for one whose mentions name them. What `notifications.items._classify`
+    tests exactly, read from the message as written; the migration's backfill reads the stored
+    messages the same way."""
+    chat = (
+        {
+            token.removeprefix("member:")
+            for token in audience
+            if isinstance(token, str) and token.startswith(f"member:{_HUMAN}")
+        }
+        if conversation_id is not None
+        else set()
+    )
+    mention: set[str] = {
+        m["member_id"]
+        for m in payload.get("mentions") or []
+        if isinstance(m, dict)
+        and isinstance(m.get("member_id"), str)
+        and m["member_id"].startswith(_HUMAN)
+    }
+    return [
+        {"human_id": human_id, "chat": human_id in chat, "mention": human_id in mention}
+        for human_id in sorted(chat | mention)
+    ]
 
 
 def _shown_member_change(kind: str, payload: dict[str, Any]) -> bool:

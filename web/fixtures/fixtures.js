@@ -6543,6 +6543,7 @@ window.MAITY_FIXTURES = {
           }
         },
         "language": "en",
+        "password_reset": true,
         "pending_address": null,
         "quiet_hours": null,
         "sign_in_link": true,

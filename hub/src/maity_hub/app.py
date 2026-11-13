@@ -157,7 +157,7 @@ from maity_hub.routes import restricted as restricted_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
-from maity_hub.shell import AssetFiles, ShellRoute
+from maity_hub.shell import AssetFiles, ShellRoute, asset_versions
 
 log = logging.getLogger(__name__)
 
@@ -645,6 +645,8 @@ def _mount_web(app: FastAPI, settings: Settings) -> None:
         # Mounted last: the API routes above take precedence over files.
         app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
         app.router.routes.append(ShellRoute(web_dir, settings.public_url))
+        # Each file read and hashed once at start-up, not on the event loop of the first shell.
+        asset_versions(web_dir)
     elif settings.web_dir_required:
         check_web_dir(settings)
     elif web_dir is None:

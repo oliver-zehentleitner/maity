@@ -213,7 +213,7 @@ window.Maity = window.Maity || {};
       append(clear(faces), Array.from(nextFaces.childNodes));
       append(clear(box), fresh);
     };
-    append(root, M.teamTabs(ctx, "organisation"), h("h2", null, M.t("team.tab.organisation")),
+    append(root, M.teamHead(ctx, "organisation"),
       h("p", { class: "muted" }, M.t("org.intro", { preset: ctx.project.policy.preset })), faces, status.el, box);
     draw();
     ctx.onEvents((events) => {

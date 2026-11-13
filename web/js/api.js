@@ -1813,12 +1813,15 @@ window.Maity = window.Maity || {};
     password: { value: true, source: "fixed" },
     device_code: { value: true, source: "default" },
     email_link: { value: true, source: "default" },
+    password_reset: { value: true, source: "default" },
     second_factor: { value: "optional", source: "default" },
     secret_key: true,
     signing_key: true,
     pending: false,
   };
   const signInMailReady = () => { const mail = fixtures()["admin-mail.json"]; return !!(mail.complete && mail.enabled); };
+  const resetLinks = { "reset-plain": null, "reset-totp": "totp", "reset-email": "email" };
+  const resetUsed = new Set();
   function signInView() {
     const missing = [];
     if (!signInSetting.email_link.value) missing.push("switched_off");
@@ -1827,8 +1830,14 @@ window.Maity = window.Maity || {};
     if (!signInSetting.signing_key) missing.push("signing_key");
     const available = !missing.length;
     if (!signInSetting.secret_key) missing.push("secret_key");
-    const { password, device_code, email_link, second_factor } = signInSetting;
-    return JSON.parse(JSON.stringify({ password, device_code, email_link, second_factor, email_link_available: available, missing }));
+    const { password, device_code, email_link, password_reset, second_factor } = signInSetting;
+    // §2.10: the reset's own reasons, without the second factor's.
+    const resetMissing = [];
+    if (!password_reset.value) resetMissing.push("switched_off");
+    if (!signInMailReady()) resetMissing.push("mail");
+    if (!signInSetting.signing_key) resetMissing.push("signing_key");
+    return JSON.parse(JSON.stringify({ password, device_code, email_link, password_reset, second_factor, email_link_available: available, missing,
+      password_reset_available: !resetMissing.length, password_reset_missing: resetMissing }));
   }
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
@@ -2017,7 +2026,30 @@ window.Maity = window.Maity || {};
     }],
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
     // phone has entered it by the second read, so the approval can be seen.
-    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: signInSetting.device_code.value, email_link: signInView().email_link_available, registration: false, terms: null })],
+    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: signInSetting.device_code.value, email_link: signInView().email_link_available,
+      password_reset: signInView().password_reset_available, registration: false, terms: null })],
+    // §2.10 a forgotten password. The fixture's links: reset-plain (no second factor), reset-totp
+    // (its code 123456, a recovery code ABCD-EFGH-JKMN), reset-email (the mail is the factor);
+    // any other token is dead. A link is used once.
+    ["POST", /^\/auth\/password-reset$/, (m, body, path) => {
+      if (!signInView().password_reset_available) fail(403, "forbidden", "resets by mail are off", path, { reason: "method_disabled" });
+      return { expires_in: 1800 };
+    }],
+    ["POST", /^\/auth\/password-reset\/check$/, (m, body, path) => {
+      if (!signInView().password_reset_available) fail(403, "forbidden", "resets by mail are off", path, { reason: "method_disabled" });
+      const factor = resetLinks[body.token];
+      if (factor === undefined || resetUsed.has(body.token)) fail(403, "code_invalid", "this link or code does not work", path);
+      return { display_name: "Maintainer", handle: "maintainer", factor };
+    }],
+    ["POST", /^\/auth\/password-reset\/complete$/, (m, body, path) => {
+      if (!signInView().password_reset_available) fail(403, "forbidden", "resets by mail are off", path, { reason: "method_disabled" });
+      if (typeof body.new !== "string" || [...body.new].length < 12) fail(400, "invalid", "a password has at least 12 characters", path, { fields: { new: "too_short" } });
+      const factor = resetLinks[body.token];
+      if (factor === undefined || resetUsed.has(body.token)) fail(403, "code_invalid", "this link or code does not work", path);
+      if (factor === "totp" && body.code !== "123456" && body.recovery_code !== "ABCD-EFGH-JKMN") fail(403, "code_invalid", "this link or code does not work", path);
+      resetUsed.add(body.token);
+      return {};
+    }],
     // §3.4: the invitation page and accepting, signed out and in; per token
     // fixtures/invitations.json says what the page shows or how accept refuses.
     ["GET", /^\/invitations\/([^/]+)$/, (m, body, path) => {
@@ -2623,7 +2655,8 @@ window.Maity = window.Maity || {};
     // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
     ["GET", /^\/auth\/second-factor$/, () => (mockFactorOn ? { enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
       last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" }
-      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null })],
+      // Not enrolled under the instance's mail factor (§2.8.8): the mail is the factor.
+      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: signInSetting.second_factor.value === "email" ? "email" : null })],
     ["POST", /^\/auth\/second-factor\/totp$/, () => ({ secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
       otpauth_uri: "otpauth://totp/Maity:maintainer?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Maity&digits=6&period=30", expires_in: 600 })],
     ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
@@ -2677,10 +2710,11 @@ window.Maity = window.Maity || {};
         if ("timezone" in e && e.timezone !== null && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
         if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
         if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
+        if ("password_reset" in e && typeof e.password_reset !== "boolean") fields["email.password_reset"] = "invalid";
         if ("hold_while_online" in e && typeof e.hold_while_online !== "boolean") fields["email.hold_while_online"] = "invalid";
         if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
         Object.entries(e.kinds || {}).forEach(([k, v]) => { set.email.kinds[k] = Object.assign({}, set.email.kinds[k], v); });
-        ["daily_at", "weekly_on", "timezone", "quiet_hours", "sign_in_link", "hold_while_online"].forEach((key) => { if (key in e) set.email[key] = e[key]; });
+        ["daily_at", "weekly_on", "timezone", "quiet_hours", "sign_in_link", "password_reset", "hold_while_online"].forEach((key) => { if (key in e) set.email[key] = e[key]; });
       }
       if (body.email && "language" in body.email) {
         if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.email.language)) fail(400, "invalid", "unknown language", path);
@@ -2878,7 +2912,7 @@ window.Maity = window.Maity || {};
       const fields = {};
       Object.entries(body).forEach(([k, v]) => {
         if (k === "password") fields[k] = "fixed";
-        else if (!["device_code", "email_link", "second_factor"].includes(k)) fields[k] = "extra_forbidden";
+        else if (!["device_code", "email_link", "password_reset", "second_factor"].includes(k)) fields[k] = "extra_forbidden";
         else if (signInSetting[k].source === "env") fields[k] = "set_by_environment";
         else if (k === "second_factor") {
           if (v !== null && !["off", "optional", "required_admins", "email"].includes(v)) fields[k] = "invalid";
@@ -2888,7 +2922,7 @@ window.Maity = window.Maity || {};
         } else if (v !== null && typeof v !== "boolean") fields[k] = "invalid";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
-      const defaults = { device_code: true, email_link: true, second_factor: "optional" };
+      const defaults = { device_code: true, email_link: true, password_reset: true, second_factor: "optional" };
       const waits = body.second_factor === "email";
       Object.entries(body).forEach(([k, v]) => {
         if (k === "second_factor" && waits) return;
@@ -5685,7 +5719,7 @@ window.Maity = window.Maity || {};
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && path !== "/maintenance" && !path.startsWith("/invitations/")
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && path !== "/maintenance" && !path.startsWith("/invitations/")
         && path !== "/site/chrome" && !/^\/auth\/pages\/[^/]+$/.test(path)) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
@@ -5866,7 +5900,7 @@ window.Maity = window.Maity || {};
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
-    if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite();
+    if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite(path);
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
     // place (js/maintenance.js), and the caller gets the refusal as before.
@@ -5919,7 +5953,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {

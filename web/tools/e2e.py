@@ -737,6 +737,13 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     expect(page.locator(".project-created-page")).to_contain_text("This project is public")
 
 
+def join_any(page: Page) -> None:
+    """Join an agent at the head of a project's Agents or Team page is a menu (tsk-vkyp71qp95n9):
+    Add any agent opens the join panel."""
+    page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True).click()
+    page.get_by_role("menuitem", name="Add any agent", exact=True).click()
+
+
 def join_line(
     run: Run,
     page: Page,
@@ -761,7 +768,7 @@ def join_line(
     add = page.get_by_role("button", name="Join an agent", exact=True)
     expect(panel.or_(add).first).to_be_visible()
     if not panel.is_visible():
-        add.click()
+        join_any(page)
     expect(panel).to_be_visible()
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
@@ -886,6 +893,7 @@ def main() -> int:
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
+                    password_reset_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
@@ -927,7 +935,9 @@ def scenario(run: Run, page: Page) -> None:
     expect(page.locator("header.site-header .signin")).to_have_text("Sign in")
     expect(page.locator("footer.site-footer nav.foot-col").first).to_be_visible()
     expect(page.locator("#header")).to_be_hidden()
-    assert page.locator(".door-page").evaluate("e => getComputedStyle(e).display") == "grid"
+    # site-chrome.js adds public-pages.css as a <link> at run time, after the frame's text stands:
+    # a waiting check, as a one-time read of the computed style can come before the sheet applies.
+    expect(page.locator(".door-page")).to_have_css("display", "grid")
     run.shot(page, "sign-in")
     run.a11y(page, "sign-in")
     page.locator("#login-email").fill(OWNER_EMAIL)
@@ -1143,6 +1153,8 @@ def scenario(run: Run, page: Page) -> None:
     run.shot(page, "switched-to-alpha")
     no_problems(run, "switcher")
 
+    warm_load_step(run, page)
+
     run.step("everything waiting, across projects (/all)")
     switcher.get_by_role("link", name=re.compile("^All projects")).click()
     expect(page).to_have_url(re.compile(r"/all$"))
@@ -1294,6 +1306,52 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+DASHBOARD_FILE = re.compile(r"/assets/(?:brand|css|js|vendor)/")
+VERSIONED = re.compile(r"\?v=[0-9a-f]{16}$")
+
+
+def warm_load_step(run: Run, page: Page) -> None:
+    """docs/api.md §16.11 (tsk-0pp41wxp6f75): the shell names every dashboard file under its
+    version, so a reload in the same browser asks the network for none of them: no 304s."""
+    run.step("a warm load asks the network for no unchanged dashboard file")
+    named = page.evaluate(
+        """() => [...document.querySelectorAll("script[src], link[href], img[src]")]
+          .map((e) => e.getAttribute("src") || e.getAttribute("href"))"""
+    )
+    files = [n for n in named if re.match(r"(?:brand|css|js|vendor)/", n)]
+    plain = [n for n in files if not VERSIONED.search(n)]
+    assert files and not plain, f"named without a version: {plain}"
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Network.enable")
+    from_cache: set[str] = set()
+    answered: list[tuple[str, str, int, bool]] = []
+    cdp.on("Network.requestServedFromCache", lambda e: from_cache.add(e["requestId"]))
+    cdp.on(
+        "Network.responseReceived",
+        lambda e: answered.append(
+            (
+                e["requestId"],
+                e["response"]["url"],
+                e["response"]["status"],
+                bool(e["response"].get("fromDiskCache")),
+            )
+        ),
+    )
+    page.reload()
+    expect(page.locator("header .project")).to_have_text("E2E Alpha")
+    page.wait_for_load_state("networkidle")
+    files_seen = [a for a in answered if DASHBOARD_FILE.search(a[1])]
+    asked = [
+        f"{status} {url}"
+        for request, url, status, disk in files_seen
+        if not disk and request not in from_cache
+    ]
+    cdp.detach()
+    assert files_seen, "the reload loaded no dashboard file"
+    assert not asked, f"a warm load still asked the network: {asked}"
+    no_problems(run, "warm load")
 
 
 def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
@@ -2545,8 +2603,13 @@ def language_choice_step(run: Run, browser) -> None:
         context.set_default_timeout(TIMEOUT_MS)
         page = context.new_page()
         watch_page(run, page)
+        catalogs: list[str] = []
+        page.on("request", lambda r: catalogs.append(r.url) if "/js/i18n/" in r.url else None)
         page.goto(f"{run.base}{path}?lang=de")
         expect(page.locator("html")).to_have_attribute("lang", "de")
+        # A catalog loaded later is asked for under its version, as the shell names it (§16.11).
+        assert any("/js/i18n/de.js?v=" in url for url in catalogs), catalogs
+        assert all(VERSIONED.search(url) for url in catalogs), catalogs
         page.locator(field).fill("kim@e2e.example")
         page.locator(picker).select_option("fr")
         expect(page.locator("html")).to_have_attribute("lang", "fr")
@@ -2809,7 +2872,7 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     add = page.get_by_role("button", name="Join an agent", exact=True)
     expect(panel.or_(add).first).to_be_visible()
     if not panel.is_visible():
-        add.click()
+        join_any(page)
     expect(panel.locator(".join-project")).to_contain_text(f"Joins into the project E2E Mail ({OWNER}/e2e-mail)")
     create = page.get_by_role("button", name="Create join line", exact=True)
     question = panel.locator("form.step-up")
@@ -2825,7 +2888,7 @@ def mail_factor_join(run: Run, page, catcher: MailCatcher) -> None:
     newest_mail(catcher, MAIL_ADDRESS, seen)
     panel.locator(".join-form .actions").get_by_role("button", name="Cancel", exact=True).click()
     expect(panel).to_be_hidden()
-    add.click()
+    join_any(page)
     expect(question).to_have_count(0)
     expect(create).to_be_enabled()
     # A project's full name may be one long word: at phone width the panel's line wraps it.
@@ -2936,6 +2999,35 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         page.locator("form.second-factor").get_by_role("button", name="Verify", exact=True).click()
         expect(page.locator("header .me")).to_contain_text("Owner")
         no_problems(run, "mail factor: the code")
+        # Toward an authenticator app (§2.10): the mail is the factor and a reset by mail could
+        # reach the owner, so the banner says the mailbox alone is enough; Later until the next sign-in.
+        banner = page.locator(".factor-banner")
+        expect(banner).to_contain_text("Your sign-in rests on your mailbox alone: whoever reads it can reset your password and sign in.")
+        expect(banner.get_by_role("link", name="Set up an authenticator app", exact=True)).to_have_attribute("href", "/account/security")
+        page.set_viewport_size({"width": 390, "height": 844})
+        wide = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        assert wide[0] <= wide[1], f"the authenticator banner widens the page at 390 px: {wide}"
+        run.shot(page, "mail-factor-banner-390")
+        page.set_viewport_size({"width": 1280, "height": 900})
+        run.a11y(page, "mail factor: the banner toward an authenticator app")
+        # The minute's refresh that says the same keeps the banner, and the keyboard focus on its
+        # link (review of #1716): the clock moved a minute on, the real five-second check.
+        banner.get_by_role("link", name="Set up an authenticator app", exact=True).focus()
+        page.evaluate("() => { document.querySelector('.factor-banner').dataset.e2e = 'standing';"
+                      " window.e2eNow = Maity.api.now; Maity.api.now = () => window.e2eNow() + 61000; }")
+        with page.expect_response(lambda r: r.url.split("?")[0].endswith("/auth/second-factor"), timeout=15000):
+            pass
+        page.wait_for_timeout(500)
+        page.evaluate("() => { Maity.api.now = window.e2eNow; }")
+        kept = page.evaluate("() => [document.querySelector('.factor-banner') && document.querySelector('.factor-banner').dataset.e2e,"
+                             " document.activeElement && document.activeElement.textContent]")
+        assert kept == ["standing", "Set up an authenticator app"], f"the minute's refresh replaced the banner or moved the focus: {kept}"
+        banner.get_by_role("button", name="Later", exact=True).click()
+        expect(banner).to_have_count(0)
+        page.reload()
+        expect(page.locator("header .me")).to_contain_text("Owner")
+        expect(page.locator(".factor-banner")).to_have_count(0)
+        no_problems(run, "mail factor: the banner toward an authenticator app")
         context.close()
 
         run.step("mail factor: a session from before the switch is asked for a mailed code")
@@ -2962,6 +3054,176 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
             joiner_context.close()
         if older_context is not None:
             older_context.close()
+        stop_hub(hub)
+        catcher.close()
+        run.base = first_base
+
+
+def reset_request(run: Run, browser, address: str, width: int = 1280):
+    """Signed out, "Forgot password?" under the login's password field asks for an address; the
+    answer is one sentence whatever the address (§2.10). The context and page, still open."""
+    context = browser.new_context(viewport={"width": width, "height": 900 if width > 400 else 844})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/login")
+    page.get_by_role("button", name="Forgot password?", exact=True).click()
+    page.locator("#reset-address").fill(address)
+    page.locator("form.reset-ask").get_by_role("button", name="Send the link", exact=True).click()
+    expect(page.locator("form.reset-ask")).to_contain_text("If this address can reset a password here, a link is on its way. It is valid for 30 min.")
+    return context, page
+
+
+def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """A forgotten password (§2.10, tsk-yksxdpd2pk0m) on a hub of its own with mail: the login's
+    "Forgot password?", the same answer for an unknown address, the mailed link's page, every
+    session ended, the new password signing in; with an authenticator app the page asks for its
+    code; the human's own switch stops the mail."""
+    home = work / "password-reset-hub"
+    home.mkdir()
+    port = free_port()
+    catcher = MailCatcher()
+    extra = {
+        "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_SMTP_HOST": "127.0.0.1",
+        "MAITY_SMTP_PORT": str(catcher.port),
+        "MAITY_SMTP_TLS": "none",
+        "MAITY_SMTP_ALLOW_PLAINTEXT": "1",
+        "MAITY_SMTP_FROM": "hub@e2e.example",
+    }
+    first_base = run.base
+    run.base = f"http://127.0.0.1:{port}"
+    run.step(f"password reset hub on {run.base}: Forgot password? on the login page, one answer for every address")
+    hub = start_hub(home, artifacts, port, extra, "hub-password-reset.log")
+    contexts = []
+    try:
+        signed_context, signed = sign_in(run, browser)
+        contexts.append(signed_context)
+        verify_address(run, signed, catcher)
+        seen = len(catcher.mails)
+        context, page = reset_request(run, browser, "nobody@e2e.example")
+        contexts.append(context)
+        run.shot(page, "reset-ask-1280")
+        run.a11y(page, "login: Forgot password? answered")
+        time.sleep(2)
+        assert not [m for m in catcher.mails[seen:] if "nobody@e2e.example" in m[0]], "a reset mail to an unknown address"
+        context.close()
+        context, page = reset_request(run, browser, MAIL_ADDRESS.upper(), width=390)
+        contexts.append(context)
+        wide = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        assert wide[0] <= wide[1], f"the reset form widens the login at 390 px: {wide}"
+        run.shot(page, "reset-ask-390")
+        link = re.search(r"(http\S+/sign-in/reset#[A-Za-z0-9_.-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
+        assert link, "no reset link in the mail"
+        context.close()
+
+        run.step("password reset: the link's page sets a new password, ends every session and signs nobody in")
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        context.set_default_timeout(TIMEOUT_MS)
+        contexts.append(context)
+        page = context.new_page()
+        watch_page(run, page)
+        page.goto(link.group(1))
+        form = page.locator("form.reset-form")
+        expect(page.locator("article.reset-page h1")).to_have_text("Set a new password for Owner (owner)")
+        assert "#" not in page.url, f"the token stays in the address: {page.url}"
+        expect(page.locator("#reset-code")).to_have_count(0)
+        run.shot(page, "reset-page-1280")
+        run.a11y(page, "reset: the page")
+        # A redraw (the frame's language arriving, a language picked in its footer) finds the
+        # fragment gone: the page keeps the link's form (#1714 review).
+        page.evaluate("() => window.Maity.redraw()")
+        expect(page.locator("article.reset-page h1")).to_have_text("Set a new password for Owner (owner)")
+        expect(page.locator(".reset-dead")).to_have_count(0)
+        new_password = "e2e new owner password"
+        page.locator("#reset-password").fill(new_password)
+        page.locator("#reset-repeat").fill(new_password)
+        form.get_by_role("button", name="Set password", exact=True).click()
+        expect(page.locator("article.reset-page h1")).to_have_text("Your password is set")
+        expect(page.locator("header .me-name")).to_have_count(0)
+        page.evaluate("() => window.Maity.redraw()")
+        expect(page.locator("article.reset-page h1")).to_have_text("Your password is set")
+        run.shot(page, "reset-done")
+        # The same link a second time does not work, and the page says where to ask for a new one.
+        # (From another page: the same path with only a fragment would not load the page again.)
+        page.goto("about:blank")
+        page.goto(link.group(1))
+        expect(page.locator(".reset-dead")).to_be_visible()
+        run.problems = [p for p in run.problems if "/auth/password-reset/check answered 403" not in p]
+        # The session from before is gone: its next page is the login.
+        signed.goto(run.base + "/account/notifications")
+        expect(signed.locator("#login-email")).to_be_visible()
+        # The new password signs in.
+        signed.locator("#login-email").fill(OWNER_EMAIL)
+        signed.locator("#login-password").fill(new_password)
+        signed.get_by_role("button", name="Sign in", exact=True).click()
+        expect(signed.locator("header .me")).to_contain_text("Owner")
+        no_problems(run, "password reset: by mail")
+
+        run.step("password reset: the human's own switch stops the mail")
+        signed.goto(run.base + "/account/notifications")
+        expect(signed.locator("#mail-password-reset-hint")).to_contain_text("Turn this off if an agent or anyone else can read this mailbox")
+        signed.locator("#mail-password-reset").uncheck()
+        signed.locator("form.mail-modes-form").get_by_role("button", name="Save", exact=True).click()
+        expect(signed.locator("section.mail-modes")).to_contain_text("Saved.")
+        assert signed.evaluate("""() => window.Maity.api.get("/me/notification-settings")""")["email"]["password_reset"] is False
+        seen = len(catcher.mails)
+        context, page = reset_request(run, browser, MAIL_ADDRESS)
+        contexts.append(context)
+        time.sleep(2)
+        assert not [m for m in catcher.mails[seen:] if MAIL_ADDRESS in m[0]], "a reset mail although the human switched it off"
+        context.close()
+        signed.reload()
+        signed.locator("#mail-password-reset").check()
+        signed.locator("form.mail-modes-form").get_by_role("button", name="Save", exact=True).click()
+        expect(signed.locator("section.mail-modes")).to_contain_text("Saved.")
+        no_problems(run, "password reset: the human's switch")
+
+        run.step("password reset: with an authenticator app the page asks for its code; a wrong one is said")
+        started = signed.evaluate("""() => window.Maity.api.post("/auth/second-factor/totp", {})""")
+        secret = started["secret"]
+        used = int(time.time() // 30)
+        signed.evaluate("""(code) => window.Maity.api.post("/auth/second-factor/totp/confirm", { code })""", totp_code(secret, used))
+        signed.goto(run.base + "/account/notifications")
+        expect(signed.locator("#mail-password-reset-hint")).to_contain_text("A reset by mail also needs a code from your authenticator app")
+        seen = len(catcher.mails)
+        context, page = reset_request(run, browser, MAIL_ADDRESS)
+        contexts.append(context)
+        link = re.search(r"(http\S+/sign-in/reset#[A-Za-z0-9_.-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
+        assert link, "no reset link in the mail"
+        page.goto(link.group(1))
+        form = page.locator("form.reset-form")
+        expect(page.locator('label[for="reset-code"]')).to_have_text("Code from your authenticator app")
+        expect(form.get_by_role("button", name="Use a recovery code", exact=True)).to_be_visible()
+        page.set_viewport_size({"width": 390, "height": 844})
+        wide = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        assert wide[0] <= wide[1], f"the reset page widens at 390 px: {wide}"
+        run.shot(page, "reset-page-totp-390")
+        run.a11y(page, "reset: the page with an authenticator app, 390 px")
+        page.set_viewport_size({"width": 1280, "height": 900})
+        final_password = "e2e final owner password"
+        page.locator("#reset-password").fill(final_password)
+        page.locator("#reset-repeat").fill(final_password)
+        page.locator("#reset-code").fill(wrong_totp_code(secret))
+        form.get_by_role("button", name="Set password", exact=True).click()
+        expect(form).to_contain_text("the code is wrong, or this link no longer works")
+        run.problems = [p for p in run.problems if "/auth/password-reset/complete answered 403" not in p]
+        # The hub takes only a step newer than the last one used, within one step of skew.
+        while int(time.time() // 30) <= used:
+            time.sleep(1)
+        page.locator("#reset-code").fill(totp_code(secret, max(used + 1, int(time.time() // 30))))
+        form.get_by_role("button", name="Set password", exact=True).click()
+        expect(page.locator("article.reset-page h1")).to_have_text("Your password is set")
+        no_problems(run, "password reset: with an authenticator app")
+        context.close()
+
+    finally:
+        for c in contexts:
+            try:
+                c.close()
+            except Exception:
+                pass
         stop_hub(hub)
         catcher.close()
         run.base = first_base
@@ -4870,25 +5132,30 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
     the runner's with it among its repositories: the paired runner allowed here is offered; it has
     not reported what it can do, so there is no tool to choose and nothing to send."""
-    run.step("placements: the Agents page's tab Where they run (§16.11), at /<owner>/<slug>/placements")
+    run.step("placements: the Agents page's tab Managed agents (§16.11), at /<owner>/<slug>/placements")
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     expect(page.locator("main section.placements")).to_have_count(0)
     tabs = page.locator("main nav.agents-tabs")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Organisation"])
-    tabs.get_by_role("link", name="Where they run", exact=True).click()
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Organisation"])
+    tabs.get_by_role("link", name="Managed agents", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/placements$"))
-    expect(tabs.get_by_role("link", name="Where they run", exact=True)).to_have_attribute("aria-current", "page")
+    expect(tabs.get_by_role("link", name="Managed agents", exact=True)).to_have_attribute("aria-current", "page")
     expect(page.locator("header nav.views a[aria-current='page']")).to_have_text(re.compile(r"^Agents"))
-    # The section is the page: its heading is the h2 under the page's h1 (review of #1667).
-    expect(page.get_by_role("heading", name="Where they run", exact=True, level=2)).to_be_visible()
+    # Every tab of the page has the same head (tsk-vkyp71qp95n9): the h2 Agents, its buttons, the
+    # tabs; the list is the h3 under it.
+    expect(page.locator("main .page-head h2")).to_have_text("Agents")
+    expect(page.get_by_role("heading", name="Managed agents", exact=True, level=3)).to_be_visible()
+    expect(page.locator("main section.placements button.placement-new-open")).to_have_count(0)
     agents_page_tabs(run, page)
-    run.step("placements: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
+    run.step("placements: Join an agent → Start an agent on a runner: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")
-    section = page.locator("main section.placements")
+    section = page.locator("main .join-menu-slot")
+    open_form = page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True)
+    open_form.click()
+    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
     expect(section.locator(".placement-new-none")).to_have_text(
         "A runner starts an agent in a clone of the project's repository, and this project has none.")
-    open_form = section.get_by_role("button", name="Start an agent on a runner", exact=True)
-    expect(open_form).to_have_count(0)
+    expect(section.locator("form.placement-new")).to_have_count(0)
     project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha(\?|$)")
     runners_read = re.compile(r"/api/v1/projects/owner/e2e-alpha/runners(\?|$)")
 
@@ -4922,19 +5189,19 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
 
 
 def agents_page_tabs(run: Run, page: Page) -> None:
-    """/agents's tabs (§16.11, tsk-3s3eb6bsp15n): the list, Where they run across one's projects, and
+    """/agents's tabs (§16.11, tsk-3s3eb6bsp15n): the list, Managed agents across one's projects, and
     Maintenance notices, which stood under the list before."""
-    run.step("agents: /agents has the tabs Agents, Where they run and Maintenance notices")
+    run.step("agents: /agents has the tabs Agents, Managed agents and Maintenance notices")
     page.goto(f"{run.base}/agents")
     tabs = page.locator("main nav.agents-tabs")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Maintenance notices"])
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Maintenance notices"])
     expect(page.locator("main section.broadcasts")).to_have_count(0)
-    tabs.get_by_role("link", name="Where they run", exact=True).click()
+    tabs.get_by_role("link", name="Managed agents", exact=True).click()
     expect(page).to_have_url(re.compile(r"/agents/placements$"))
-    expect(page.get_by_role("heading", name="Where they run", exact=True, level=2)).to_be_visible()
+    expect(page.get_by_role("heading", name="Managed agents", exact=True, level=2)).to_be_visible()
     expect(page.locator("main section.placements").first).to_be_visible()
     expect(page.locator("main button.placement-new-open")).to_have_count(0)
-    run.a11y(page, "agents, where they run")
+    run.a11y(page, "agents, managed agents")
     tabs.get_by_role("link", name="Maintenance notices", exact=True).click()
     expect(page).to_have_url(re.compile(r"/agents/maintenance$"))
     expect(page.get_by_role("heading", name="Maintenance notices", exact=True, level=2)).to_be_visible()
@@ -4947,6 +5214,7 @@ def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) ->
     page.reload()
     expect(open_form).to_be_visible()
     open_form.click()
+    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
     form = section.locator("form.placement-new")
     expect(form).to_be_visible()
     runner_options = form.locator("#placement-new-runner option")
@@ -5151,6 +5419,54 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "why")
 
 
+def page_heads_step(run: Run, page: Page) -> None:
+    """The heads of a project's Agents and Team pages (tsk-vkyp71qp95n9): the heading, the buttons at
+    the right end, the tabs under them, each the page's full width; Join an agent a menu of its two
+    ways, Add any agent and Start an agent on a runner, the same on both pages."""
+    run.step("page heads: Agents and Team carry the heading, the buttons at the right end, the tabs under them")
+    for path, title, buttons, tab_names in (
+        ("agents", "Agents", ["New agent profile", "Join an agent"], ["Agents", "Managed agents", "Organisation"]),
+        ("team", "Team", ["Invite user", "Join an agent"], ["Members", "Organisation"]),
+    ):
+        for width in (1280, 390):
+            page.set_viewport_size({"width": width, "height": 900 if width > 400 else 844})
+            page.goto(f"{run.base}/owner/e2e-alpha/{path}")
+            head = page.locator("main .page-head")
+            expect(head.locator("h2")).to_have_text(title)
+            expect(head.locator(".page-head-actions > *:not([hidden])")).to_have_count(len(buttons))
+            expect(head.locator(".page-head-actions")).to_contain_text(buttons[0])
+            expect(head.locator(".page-head-actions")).to_contain_text(buttons[1])
+            expect(head.locator("nav.view-tabs a")).to_have_text(tab_names)
+            box = page.evaluate("""() => {
+              const head = document.querySelector('main .page-head');
+              const bar = head.querySelector('.page-head-bar'), tabs = head.querySelector('nav.view-tabs');
+              const last = Array.from(head.querySelectorAll('.page-head-actions > *')).filter((e) => e.offsetParent).pop();
+              const r = (e) => e.getBoundingClientRect();
+              return { head: [r(head).left, r(head).right], bar: [r(bar).left, r(bar).right], tabs: [r(tabs).left, r(tabs).right, r(tabs).top],
+                       last: [r(last).right, r(last).bottom], parent: r(head.parentElement).width,
+                       page: [document.documentElement.scrollWidth, document.documentElement.clientWidth] };
+            }""")
+            assert box["page"][0] <= box["page"][1], f"{path} head widens the page at {width} px: {box}"
+            assert abs((box["head"][1] - box["head"][0]) - box["parent"]) <= 1, f"{path} head not the full width at {width} px: {box}"
+            assert abs(box["tabs"][1] - box["head"][1]) <= 1 and abs(box["tabs"][0] - box["head"][0]) <= 1, f"{path} tabs not the full width at {width} px: {box}"
+            assert abs(box["last"][0] - box["bar"][1]) <= 1, f"{path} buttons not at the right end at {width} px: {box}"
+            assert box["last"][1] <= box["tabs"][2] + 1, f"{path} tabs not under the buttons at {width} px: {box}"
+            head.get_by_role("button", name="Join an agent", exact=True).click()
+            items = page.locator(".page-head .menu [role=menuitem]")
+            expect(items).to_have_text(["Add any agent", "Start an agent on a runner"])
+            run.shot(page, f"page-head-{path}-{width}")
+            page.keyboard.press("Escape")
+            run.a11y(page, f"{path} page head, {width} px")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    run.step("page heads: Add any agent on Team opens the join panel there")
+    page.goto(f"{run.base}/owner/e2e-alpha/team")
+    join_any(page)
+    expect(page.locator("main .join-menu-slot .join-panel")).to_be_visible()
+    expect(page.locator("#join-agent")).to_be_visible()
+    page.keyboard.press("Escape")
+    no_problems(run, "page heads")
+
+
 def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     """One's own fleet on the Agents page's Organisation tab (tsk-q989pagmk2x9): the owner on top,
     E2E Agent under them, E2E Reviewer (which reports to it) under that; each agent's instances
@@ -5188,7 +5504,7 @@ def agents_fleet_step(run: Run, page: Page, agent_id: str) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/agents")
     tabs = page.locator("main nav.agents-tabs")
     expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Where they run", "Organisation"])
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Organisation"])
     tabs.get_by_role("link", name="Organisation", exact=True).click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/agents/organisation$"))
     expect(page.get_by_role("heading", name="Organisation of your agents", exact=True)).to_be_visible()
@@ -5377,6 +5693,7 @@ def release_contract(run: Run, page: Page, alpha: Path, agent_id: str, card_id: 
         rev, "join", url, "--code", code, "--harness", "e2e", "--model", "none", "--no-pointer"
     )
     agents_fleet_step(run, page, agent_id)
+    page_heads_step(run, page)
     join_reports_to_step(run, page, agent_id)
     view_tab(page, "Team").click()
     over = page.locator("tr.member", has_text="E2E Reviewer").locator(".member-takes-over")
@@ -6475,7 +6792,7 @@ def agents_page_step(run: Run, page: Page) -> None:
     Manage opening a row with the instances of each membership read on the real hub."""
     run.step("agents page: the profiles as rows; Manage shows the instances in each project")
     page.goto(f"{run.base}/agents")
-    expect(page.get_by_role("button", name="+ Add an agent", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="New agent profile", exact=True)).to_be_visible()
     expect(page.get_by_role("button", name="Join an agent", exact=True)).to_be_visible()
     expect(page.locator("section.agents-join")).to_be_hidden()
     row = page.locator("tr.agent-row", has_text="E2E Agent").first
@@ -6589,7 +6906,7 @@ def handle_hints_step(run: Run, page: Page) -> None:
                 expect(page.locator("#org-invite-handle")).to_be_visible()
                 seen |= {x["field"] for x in measured(f"organisation, {at}")}
                 page.goto(f"{run.base}/agents")
-                page.get_by_role("button", name="+ Add an agent", exact=True).click()
+                page.get_by_role("button", name="New agent profile", exact=True).click()
                 expect(page.locator("#agent-new-handle")).to_be_visible()
                 seen |= {x["field"] for x in measured(f"new agent, {at}")}
                 page.goto(f"{run.base}/agents")

@@ -1411,6 +1411,8 @@ Organisation stand side by side is the Agents page's own, so that is
 where the tab goes. One list across projects needs one read per project
 because the contract has no cross-project read (context/routing.md).
 
+Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at the same paths.
+
 **Rejected alternatives:**
 - A tab in the project's top row after Agents. That row has no
   Organisation for it to stand before, and a second agents tab there
@@ -1429,6 +1431,10 @@ because the contract has no cross-project read (context/routing.md).
 **Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
 **Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
+
+Moved 2026-11-12 (79438329): the form is no longer in the list. It opens from **Join an agent** →
+**Start an agent on a runner** at the head of the project's Agents and Team pages. What follows
+about runners, tools and refusals is unchanged.
 
 Where they run, on the project's Agents, has **Start an agent on a runner**
 for a human with members:admin. It offers the runners attached here
@@ -1681,7 +1687,8 @@ User (`/invite`), for humans only; Runner and Project were added later
 human adds members. The one chosen (`?project=`, as Members' Invite user
 links it) shows the invitation form and its list. The other projects
 show their lists without a form. Members has two blue buttons at the top,
-Invite user and Join agent; its own invitation form is gone. The project
+Invite user and Join agent; its own invitation form is gone (since 2026-11-12 in the Team page's
+shared head, Join as the Join an agent menu: 79438329). The project
 view `runners` keeps its route and its Settings tab mark, but has no tab:
 the project's Settings links it. `/invite` reads the projects one after
 the other and draws again when another project is chosen. A counter
@@ -5151,6 +5158,10 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **Revisit when:** a member's limit needs its own wording on the button, or profiles and joins merge into one form
 **See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-01
 
+On a project's Agents and Team, superseded by 79438329 (2026-11-12): Add reads **New agent
+profile**, and **Join an agent** is a menu (any agent, or start on a runner) on both project pages,
+with Team's no longer leading to Agents. On `/agents` the two buttons stay, Add with the new words.
+
 Both pages have **+ Add an agent** and **Join an agent** at their head, and
 a click opens the matching form, one at a time. Add makes a new profile. Join
 is the join panel, for this project on a project's Agents, with a project to
@@ -6340,3 +6351,120 @@ effective value: naming an agent then would be a guess.
 - Guessing per agent when `agent_owners` is unset and the page might still
   be served: the view does not say whether a hold or a suspension is in
   force, and a wrong "stays" would tell someone their agent keeps working.
+
+## One page head for Agents and Team: "Managed agents" at `placements`, the start on a runner in a Join an agent menu
+
+**Id:** 79438329-b7bb-435a-b384-3f597a2d7d04
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer through the lead on card tsk-vkyp71qp95n9 (2026-11-12: the card body, the notes on the Team page and the tab name); the lead's go on the plan note of the same day
+**See:** views.md#add-and-join-are-two-buttons-the-same-on-a-projects-agents-and-on-agents-each-opening-its-form — 1ac94340-cc4e-4d87-9ec0-c26fbdf57e96 — as of 2026-11-12
+**Revisit when:** a third page needs the head, or a way into a project other than these two needs a place in the menu
+
+The project's Agents and Team pages share one head (`web/js/page-head.js`). It holds the heading, the page's
+buttons at the right end and the tab row under them, each the page's full width. Agents has
+**New agent profile** and **Join an agent**. Team has **Invite user** and the same **Join an agent**.
+**Join an agent** is a menu of two ways in: **Add any agent** (the join panel) and **Start an agent
+on a runner** (the form that was at the foot of the list). The list tab is named **Managed agents**
+on the project page and on `/agents`. The paths stay `placements` and `/agents/placements`. The
+list now only shows what runs.
+
+**Reason:** the maintainer wanted the two pages laid out alike and both ways of bringing an agent
+in under one button. A start belongs with joining, not with the list of what already runs. A
+head above the tabs puts the menu on every tab, and the Team page no longer jumps to
+`/agents/join`. The path keeps the contract's noun (context/routing.md, b32bb82c).
+
+**Rejected alternatives:**
+- "Runners" as the tab name: it is already the project's view of the machines (`runners`). The
+  lead took it back the same day.
+- Keeping the start form in the list: it would be reachable from one tab only, and the list
+  would mix what runs with how to start one.
+- Renaming the path to say the tab's words: an address read from the API, a log or the CLI would
+  name another thing than the contract's `placements` (context/routing.md, b32bb82c).
+
+## The reset page is drawn before the session is read, and never says why a link is dead
+
+**Id:** 281af47c-7469-4e8a-bf62-879aaf06beeb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.10 (the page, the token in the fragment, `code_invalid` for every dead link and every wrong code, a reset ending every session and signing nobody in); the card tsk-yksxdpd2pk0m; the dashboard's implementation, 2026-11-12
+**Revisit when:** a reset starts to sign the human in, the hub starts to tell a wrong code from a dead link, or the dashboard gains a page that must see the session before it draws
+
+`/sign-in/reset` is drawn in `js/app.js` before `GET /auth/session`,
+signed in or not, in the frame of the pages without a session. It takes
+the token from the fragment (from `?token=` in fixture mode, where the
+fragment holds the route) and drops it from the address before the first
+call. A link the hub refuses at the check is one sentence and the way to a
+new link. At the end a refused code keeps the form and clears the code
+where a code was asked; without one, the link is dead.
+
+**Reason:** a reset ends every session of the human and signs nobody in,
+so a session in this browser changes nothing about the page; reading it
+first would put a session owing the second factor, or a failed read,
+between the human and a page that does not need it. The hub answers
+`code_invalid` for an expired, used or voided link and for a wrong code
+alike (§2.10); the page cannot know which, and must not guess one.
+
+**Rejected alternatives:**
+- Drawing the page after the session read, as every dashboard route is:
+  a signed-in browser would show the dashboard or the second-factor step
+  instead of the link's page.
+- Saying "expired" or "used" for a dead link: the hub does not tell them
+  apart, and a guess would be wrong half the time.
+
+## The banner toward an authenticator app: Later kept per session in the browser, its reads kept a minute at most and the banner on screen drawn again
+
+**Id:** 7edef2ad-504b-4a50-983c-daa9eb37f88c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.10 ("Toward an authenticator app": every page, Later until the next sign-in, enrolling ends it); the card tsk-yksxdpd2pk0m; the dashboard's implementation, 2026-11-12
+**Revisit when:** the hub keeps "Later" itself, or `GET /me` or `/bootstrap` starts to carry the second factor's `via`
+
+"Later" stores the current session's id in the browser's storage; the
+banner stays away while the session is that one, so the next sign-in, a
+new session, shows it again. Where the browser keeps nothing it holds for
+the page load. What the banner stands on (`GET /auth/second-factor`,
+`/auth/methods`, `/me/notification-settings`) is kept for a minute at most,
+and read again sooner after a write of this tab to the mail settings, the
+second factor or the instance's sign-in settings, and on every Security
+page. The banner on screen is drawn again from fresh reads once they are a
+minute old (a check every five seconds, no call, none in a hidden tab) and
+when the tab is shown again, so it does not stand on a page left open. A
+redraw that says the same for the same session leaves the standing banner
+in place; a changed one moves the focus to the same control in the new.
+
+**Reason:** the contract ties "Later" to the sign-in and gives the hub no
+field for it, and a session's id is exactly what changes at a sign-in.
+The banner is on every page, and three reads on every page switch would
+be three calls on every click for something that changes rarely. It does
+change outside this tab, though (an app enrolled in another tab or on
+another device, an admin's switch), and the sharp sentence is a security
+claim: kept for the tab's lifetime it stood next to the enrolled app on
+Security (review of #1716). A minute bounds how long it can be wrong,
+also on a page nobody leaves: dropping the kept reads alone only helped
+the next page, and an idle tab kept the claim on screen (second review of
+#1716). Security, where the human checks the factor, never shows a kept
+one. A hidden tab reads nothing on the minute, as on the dashboard's other
+intervals (refresh.md, 6cb02c3d-063d-473b-b86b-8f8324c11f14): it shows
+nothing, and shown again it reads at once. Replacing an unchanged banner
+took the keyboard focus off its link (third review of #1716).
+
+**Rejected alternatives:**
+- `sessionStorage`: it ends with the tab, not with the sign-in; a new tab
+  of the same session would show the banner again.
+- Reading the three on every page: the cost above, for nothing new.
+- Re-reading after any write: the inbox and the board write all the time,
+  and none of their writes moves the banner.
+- Keeping the reads for the tab's lifetime, cleared only by this tab's own
+  writes (the first version): a change made elsewhere left a false claim
+  until a reload.
+- A `storage` event between tabs: it covers another tab of this browser,
+  not another device or an admin, which the minute covers too.
+- Dropping the kept reads at the minute and on the tab's return without
+  drawing the banner again (the second version): only the next page saw
+  the change, and a page left open kept the claim.
+- Replacing the banner at every refresh (the third version): the same
+  sentence drawn anew, and the focus on its link lost to the page.

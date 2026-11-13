@@ -56,7 +56,7 @@ from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -923,6 +923,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
+                joined_seq=newest_seq(conn, project_id),
                 last_seen_at=now,
                 changed_via=caller.via,
                 # an owner of the organisation holds a membership the hub keeps (§6.26)
