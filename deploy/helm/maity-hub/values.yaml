@@ -23,11 +23,15 @@ image:
   # Required. ghcr.io/oliver-zehentleitner/maity-hub once releases are published
   # (workflow publish-image), or your own build of deploy/Dockerfile.
   repository: ""
-  # Empty: the chart's appVersion. Use an immutable tag (a release or a full
-  # commit SHA), never `latest`: the pod would not change on an upgrade.
-  tag: ""
-  # `sha256:…`; when set it wins over the tag.
+  # Required: `sha256:…`, the digest the workflow's run summary prints. The
+  # chart pulls by digest; a tag names whatever the registry points it at
+  # when the pod starts, and can be moved.
   digest: ""
+  # Pulling by tag is an explicit opt-in: allowTag: true, a tag and no digest.
+  # A digest always wins; a tag next to it only names the version label.
+  # Even with the opt-in never `latest`: the pod would not change on an upgrade.
+  allowTag: false
+  tag: ""
   pullPolicy: IfNotPresent
 
 # Existing docker-registry Secrets for a private registry, as
