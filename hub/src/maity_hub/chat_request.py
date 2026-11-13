@@ -132,10 +132,10 @@ def _request_id(conn: Connection, owner: str, side: str) -> str:
     the pair's closed requests are counted: a request another transaction files and commits
     between this one's read of the open requests and this count leaves the count as it was,
     so this one collides with it (hcrb on #1718). Filing happens only where no request of the
-    pair is open, and closing one is what moves the count on. The count is a locking read, so
-    it sees the latest committed rows on MariaDB too, whose plain reads keep the transaction's
-    first snapshot."""
-    closed = _mine(owner).where(t.request.c.status != "open").with_for_update(read=True)
+    pair is open, and closing one is what moves the count on. Every server engine runs at READ
+    COMMITTED (`db._engine_options`), so the count sees what committed before it, on MariaDB as
+    on PostgreSQL."""
+    closed = _mine(owner).where(t.request.c.status != "open")
     asked = sum(
         1
         for row in conn.execute(closed).all()
@@ -365,8 +365,10 @@ def sync(conn: Connection, owner: str) -> None:
 
 
 def _still_open(conn: Connection, request_id: str) -> bool:
-    """Whether a request `sync` saw open and could not lock is still open as committed: one
-    closed meanwhile (an answer that has committed) is no reason to leave the side alone."""
+    """Whether a request `sync` saw open and could not lock is still open as committed (READ
+    COMMITTED on every server engine, `db.engine_options`, so a plain read sees the latest
+    commit): one closed meanwhile (an answer that has committed) is no reason to leave the
+    side alone."""
     status = conn.execute(select(t.request.c.status).where(t.request.c.id == request_id)).scalar()
     return status == "open"
 
@@ -441,6 +443,8 @@ def _ensure(conn: Connection, owner: str, side: str, held: list[dict[str, Any]])
             return row
         if _file(conn, owner, side, held) is not None:
             return None
+    # Not expected to happen (see FILE_ATTEMPTS): the whole transaction rolls back and the call
+    # answers 500 `internal`, so nothing is half written and the caller may send it again.
     raise RuntimeError(f"no request for {owner} and {side} after {FILE_ATTEMPTS} collisions")
 
 

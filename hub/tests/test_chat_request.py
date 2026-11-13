@@ -9,7 +9,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, func, select, update
 
 from maity_hub import chat_gate, clock
 from maity_hub import tables as t
@@ -591,3 +591,80 @@ def test_a_collision_with_a_request_closed_meanwhile_files_the_next(
     assert not racer.is_alive()
     [row] = requests(migrated, other.id)
     assert row.id != first.id and [h["seq"] for h in row.proposal["held"]] == [1]
+
+
+def test_a_request_closed_after_sync_skipped_it_gets_a_new_one(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """hcrb on #1718: a request `sync` read as open, which another transaction closes and
+    commits before `sync` locks the open ones, is not left alone as held by another: every
+    server engine runs at READ COMMITTED, so `_still_open` reads the latest commit, and the
+    agent that still waits gets a new request."""
+    if migrated.dialect.name == "sqlite":
+        pytest.skip("two writers at once need a server database; SQLite serialises them")
+    import threading
+
+    from maity_hub import chat_request
+
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    chat = create(owner, theirs.id)
+    first = the_request(migrated, other.id)
+    paused, go = threading.Event(), threading.Event()
+    slow: list[int] = []
+    original = chat_request._open
+
+    def open_(conn: Any, owner_id: str, lock: str | None = None) -> dict[str, Any]:
+        if lock == "skip" and threading.get_ident() in slow:
+            slow.clear()
+            paused.set()
+            go.wait(15)
+        return original(conn, owner_id, lock)
+
+    def sync() -> None:
+        slow.append(threading.get_ident())
+        with migrated.begin() as conn:
+            chat_request.sync(conn, other.id)
+
+    monkeypatch.setattr(chat_request, "_open", open_)
+    r = t.request.c
+    racer = threading.Thread(target=sync)
+    racer.start()
+    assert paused.wait(15)  # it read the request as open and has not locked it yet
+    with migrated.begin() as conn:  # another transaction closes it and commits
+        conn.execute(update(t.request).where(r.id == first.id).values(status="withdrawn"))
+    go.set()
+    racer.join(15)
+    assert not racer.is_alive()
+    assert waiting_for(owner, chat["id"], theirs.id) == [owner.id]
+    [again] = requests(migrated, other.id)
+    assert again.id != first.id
+
+
+def test_a_filing_that_keeps_colliding_writes_nothing_and_answers_internal(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """hcrb on #1718: `_ensure` gives up after `FILE_ATTEMPTS` collisions, which is not expected
+    to happen; the call then answers the 500 envelope and its transaction rolls back whole."""
+    from maity_hub import chat_request
+
+    other = other_human(make_client, migrated, "other")
+    writer = other_human(make_client, migrated, "writer", "member")
+    theirs = flow.agent(make_client, other)
+    monkeypatch.setattr(chat_request, "_file", lambda *args: None)
+    with migrated.connect() as conn:
+        before = conn.execute(select(func.count()).select_from(t.event)).scalar_one()
+    sent = writer.post(
+        f"{PROJECT}/events", {"kind": "message", "type": "notice", "to": theirs.id, "body": "x"}
+    )
+    assert sent.status_code == 500
+    assert sent.json()["error"]["code"] == "internal"
+    with migrated.connect() as conn:
+        after = conn.execute(select(func.count()).select_from(t.event)).scalar_one()
+    assert after == before and requests(migrated, other.id) == []
