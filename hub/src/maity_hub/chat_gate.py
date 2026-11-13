@@ -10,9 +10,10 @@ An agent that is not admitted waits: its stay holds the human of each side it wa
 `member:<id>`, which its owner reads along by), reads and posts nothing and is woken by nothing.
 An agent a deny entry stops leaves the chat with `reason: "denied_participant"`.
 
-A free work message from another side (`GATED_WORK`) is gated the same way, per message: `hold`
+A work message from another side (`GATED_WORK`) is gated the same way, per message: `hold`
 takes each agent it reaches that is not admitted for its author out of its audience and names it
-`held:<id>`, which its owner reads along by; a lead's message passes.
+`held:<id>`, which its owner reads along by; a lead's message passes, and so does the card's own
+flow the caller names (`passes`: an update's watchers, a review result's author and two leads).
 
 `settle` is the one place that writes the state: every change of who is in a chat, and every
 change of an owner's entries, ends in it. It hands the owners whose agents waited or wait to
@@ -41,10 +42,23 @@ DENIED = "denied_participant"
 # answer o2 to req-a89crp06kjf3 ("gesperrt bis Owner zustimmt", the request's wording).
 # The one switch point: `moderator_held` reads it, `jourfixe.exchange` asks that.
 MODERATOR_WAITS = True
-# The free work messages an owner's yes gates like chat (§9.6, "Free work messages from another
-# side"). The maintainer's o2 of 2026-11-12 is "for now": this set, read by `hold` alone, is the
-# one switch point; empty, every work message reaches as before.
-GATED_WORK = frozenset({"notice", "blocker", "handover", "interface_change", "go_request"})
+# The work messages an owner's yes gates like chat (§9.6, "Free work messages from another
+# side"): every message type that takes a `to` (all of `routes/events.MESSAGE_TYPES` but `chat`,
+# which has its own gate). An `update` and a `review_result` are gated too, for every agent they
+# reach beyond the card's own flow, which `post_message` hands `hold` as `passes`. The
+# maintainer's o2 of 2026-11-12 is "for now": this set, read by `hold` alone, is the one switch
+# point; empty, every work message reaches as before.
+GATED_WORK = frozenset(
+    {
+        "notice",
+        "blocker",
+        "handover",
+        "interface_change",
+        "go_request",
+        "update",
+        "review_result",
+    }
+)
 LEAD_TRUSTS = frozenset({"owner", "admin"})
 
 
@@ -486,12 +500,19 @@ def boundary(conn: Connection, project_id: str, author: str, body: str, sides: l
 
 
 def hold(
-    conn: Connection, project_id: str, mine: Any, kind: str, audience: list[str]
+    conn: Connection,
+    project_id: str,
+    mine: Any,
+    kind: str,
+    audience: list[str],
+    passes: Iterable[str] = (),
 ) -> tuple[list[str], list[str]]:
-    """A free work message's audience with every agent it reaches on another side than its
-    author, and not admitted for the author, taken out and named `held:<id>` instead; and those
-    agents (§9.6). A lead's message is not gated: a member with trust `owner` or `admin`, or a
-    manager whose line the agent is in (§2.3, "The manager")."""
+    """A work message's audience with every agent it reaches on another side than its author,
+    and not admitted for the author, taken out and named `held:<id>` instead; and those agents
+    (§9.6). A lead's message is not gated: a member with trust `owner` or `admin`, or a manager
+    whose line the agent is in (§2.3, "The manager"). `passes` names the agents the message
+    reaches on the card's own flow, which stays open whoever writes: an update's watchers, a
+    review result's author and two leads (§8.4)."""
     if kind not in GATED_WORK or mine.trust in LEAD_TRUSTS:
         return audience, []
     author = mine.principal_id
@@ -505,11 +526,13 @@ def hold(
         .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
     ).all()
     tokens = set(audience)
+    open_to = set(passes)
     reached = [
         r
         for r in rows
         if r.owner_id != side
         and r.agent_id != author
+        and r.agent_id not in open_to
         and (
             "all" in tokens
             or f"member:{r.agent_id}" in tokens

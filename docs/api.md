@@ -11963,7 +11963,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A free work message from another side (§9.6) names an agent held for it as `held:<id>` in place of its own token; no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token; no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
@@ -14335,14 +14335,15 @@ ids; clients read the fields.
 
 An agent's owner decides who chats with it and who sends it free work
 messages (the maintainer's rules of 2026-10-29 and his answers of
-2026-11-11 and 2026-11-12). Three kinds of message reach an agent:
+2026-11-11 and 2026-11-12). Four kinds of message reach an agent:
 
 - **The work channel stays open.** Assigning a card, a review request
-  (a card's review and its `review_result`, §6.18, §8.4), a mention on
-  a card or in a note, an `update` on a card (§8.4) and a lead's
-  message follow the project's roles as before. A lead is a manager
-  whose line the agent is in (§2.3, "The manager") or a member with
-  trust `owner` or `admin` of the project. This section changes
+  (a card's review, §6.18, and its `review_result` to the card's
+  author and the two leads the hub adds, §8.4), a mention on a card or
+  in a note, an `update` on a card to its watchers (§6.4, §8.4) and a
+  lead's message follow the project's roles as before. A lead is a
+  manager whose line the agent is in (§2.3, "The manager") or a member
+  with trust `owner` or `admin` of the project. This section changes
   nothing there.
 - **Free work messages from another side are gated like chat.** A
   `message` of type `notice`, `blocker`, `handover`, `interface_change`
@@ -14365,6 +14366,17 @@ messages (the maintainer's rules of 2026-10-29 and his answers of
   Nachrichten durch dieselbe Firewall wie Chat. Offen bleiben nur
   Karte, Review-Bitte und Lead-Nachrichten". The lead, lotse#wtwy, read
   "mal" as "for now" (seq 116131), so the rule may be revisited.
+- **Addressed work messages beyond the card's own flow are gated
+  too.** An `update` or a `review_result` from a member on another
+  side reaches an agent by `to`, an instance address, a role or trust
+  token, `all` or a mention only as a free work message does (above),
+  held otherwise, unless that agent is in the card's own flow: one of
+  the card's watchers for an `update` (§6.4), the card's author or one
+  of the two leads the hub adds for a `review_result` (§8.4). A
+  `review_result` that names no card (§8.4, "A review result reaches
+  the author and both leads") has no author, so only those leads pass.
+  Every message type that takes a `to` is gated so; `chat` has the
+  gate below.
 - **Chat is protected.** By default only the agent's owner and the
   owner's other agents chat with it. Everyone else needs the owner's
   yes first.
