@@ -412,14 +412,21 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.
-  `DUMP_CRONJOB=<cronjob>` takes a dump job first (waiting up to `DUMP_TIMEOUT` seconds, 300 by default; `DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment tar in its mark).
-  Before the dump, it renders the upgrade (`helm upgrade --dry-run` with the
-  same arguments) and checks each image's signature with `cosign verify` and
-  the identity in step 2 of the install; an image by tag, a failed check or
-  a missing cosign stops it with nothing changed, unless
-  `NO_SIGNATURE_CHECK=1` (your own build). `COSIGN=<path>` names the cosign
-  binary when it is not `cosign` on the `PATH`. `deploy/scripts/test-helm-upgrade.sh`
-  runs the failure paths against stub `kubectl`, `helm` and `cosign`. A release whose migration touches no busy table can
+  It takes a dump first, by default: a Job from the CronJob `maity-pg-dump`
+  (`DUMP_CRONJOB=<cronjob>` names another), waiting up to `DUMP_TIMEOUT`
+  seconds, 300 by default, and going on only when its log ends with the
+  `dump ok:` line (`DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment
+  tar in it). Without that CronJob the script stops before it changes
+  anything; `NO_DUMP=1` skips the dump, for a cluster where you take it
+  yourself. `deploy/k3s-single/backup.yaml` is such a CronJob.
+  Before the dump and before it looks for the CronJob, it renders the upgrade
+  (`helm upgrade --dry-run` with the same arguments) and checks each image's
+  signature with `cosign verify` and the identity in step 2 of the install;
+  an image by tag, a failed check or a missing cosign stops it with nothing
+  changed, unless `NO_SIGNATURE_CHECK=1` (your own build). `COSIGN=<path>`
+  names the cosign binary when it is not `cosign` on the `PATH`. And
+  `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
+  `kubectl`, `helm` and `cosign`. A release whose migration touches no busy table can
   use plain `helm upgrade`.
 - **Rollback.** There is no schema downgrade: `maity-hub` has `serve`,
   `migrate` and `owner`, and the hook runs only on install and upgrade.

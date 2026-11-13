@@ -337,8 +337,9 @@ identity regexp of the chart README's install step 2 (the stub test holds
 the script's issuer and identity equal to the README's). An image key in any
 other form (a flow mapping, a block scalar, an anchor or alias) stops the
 script: an image the check cannot read is not deployed. All of this
-happens before the dump, the migrate Job and the scale-down, so a refusal
-changes nothing. A missing cosign is a refusal too. `NO_SIGNATURE_CHECK=1`
+happens before the dump (and its CronJob lookup), the migrate Job and the
+scale-down, so a refusal changes nothing. A missing cosign is a refusal
+too. `NO_SIGNATURE_CHECK=1`
 is the only way past the check, for an image someone built themselves,
 and the script prints a warning when it is set.
 
