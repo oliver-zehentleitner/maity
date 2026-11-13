@@ -4518,6 +4518,30 @@ def account_tabs_layout(run: Run, browser) -> None:
                 page.wait_for_function("() => location.href === 'about:blank'")
         finally:
             context.close()
+    # The fonts arriving after the view is drawn (font-display: swap, a slow phone or a busy
+    # machine): Inter widens the tabs, and the current tab, brought into sight in the fallback
+    # face, still is once Inter is in (tsk-1cs7h9jhww36: Security ended 1 px outside its row at
+    # 390 px). Until the style is taken out no element uses Inter, so the face is only loaded then.
+    run.step("fixtures: the account's tabs at 390 and 360 px when the fonts arrive after the view is drawn")
+    for width, height in ((390, 844), (360, 780)):
+        for path, tab, sub, part in ACCOUNT_TABS:
+            context = browser.new_context(viewport={"width": width, "height": height})
+            context.add_init_script("""document.addEventListener("DOMContentLoaded", () => {
+              const s = document.createElement("style"); s.id = "e2e-no-fonts";
+              s.textContent = "* { font-family: serif !important; }"; document.head.appendChild(s); });""")
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                page.goto(f"{index}?lang=en#{path}")
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                page.evaluate("""async () => { document.getElementById("e2e-no-fonts").remove();
+                  await document.fonts.ready; await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))); }""")
+                assert page.evaluate("() => document.fonts.check('600 16px Inter')"), f"{path} at {width}: Inter is not loaded"
+                m = page.evaluate(TABS_MEASURE)
+                assert not m["problems"] and not errors, f"{path} at {width}, the fonts late: {m['problems'] + errors}"
+            finally:
+                context.close()
 
 
 PROFILE_LINK_MEASURE = """() => {
