@@ -6414,7 +6414,7 @@ alike (§2.10); the page cannot know which, and must not guess one.
 - Saying "expired" or "used" for a dead link: the hub does not tell them
   apart, and a guess would be wrong half the time.
 
-## The banner toward an authenticator app: Later kept per session in the browser, its reads kept a minute at most
+## The banner toward an authenticator app: Later kept per session in the browser, its reads kept a minute at most and the banner on screen drawn again
 
 **Id:** 7edef2ad-504b-4a50-983c-daa9eb37f88c
 **Type:** decision
@@ -6429,8 +6429,10 @@ new session, shows it again. Where the browser keeps nothing it holds for
 the page load. What the banner stands on (`GET /auth/second-factor`,
 `/auth/methods`, `/me/notification-settings`) is kept for a minute at most,
 and read again sooner after a write of this tab to the mail settings, the
-second factor or the instance's sign-in settings, on every Security page,
-and when the tab is shown again.
+second factor or the instance's sign-in settings, and on every Security
+page. The banner on screen is drawn again from fresh reads once they are a
+minute old (a check every five seconds, no call) and when the tab is shown
+again, so it does not stand on a page left open.
 
 **Reason:** the contract ties "Later" to the sign-in and gives the hub no
 field for it, and a session's id is exactly what changes at a sign-in.
@@ -6439,8 +6441,11 @@ be three calls on every click for something that changes rarely. It does
 change outside this tab, though (an app enrolled in another tab or on
 another device, an admin's switch), and the sharp sentence is a security
 claim: kept for the tab's lifetime it stood next to the enrolled app on
-Security (review of #1716). A minute bounds how long it can be wrong;
-Security, where the human checks the factor, never shows a kept one.
+Security (review of #1716). A minute bounds how long it can be wrong,
+also on a page nobody leaves: dropping the kept reads alone only helped
+the next page, and an idle tab kept the claim on screen (second review of
+#1716). Security, where the human checks the factor, never shows a kept
+one.
 
 **Rejected alternatives:**
 - `sessionStorage`: it ends with the tab, not with the sign-in; a new tab
@@ -6453,3 +6458,6 @@ Security, where the human checks the factor, never shows a kept one.
   until a reload.
 - A `storage` event between tabs: it covers another tab of this browser,
   not another device or an admin, which the minute covers too.
+- Dropping the kept reads at the minute and on the tab's return without
+  drawing the banner again (the second version): only the next page saw
+  the change, and a page left open kept the claim.

@@ -2184,7 +2184,8 @@ window.Maity = window.Maity || {};
   let bannerSeq = 0;
   const sessionsRev = () => M.notify.state.sessionsRev;
   // The banner toward an authenticator app (§2.10), under the sign-in banner: a human whose
-  // second factor is the mail. What it stands on is read again after a write of this tab.
+  // second factor is the mail. What it stands on is read again after a write of this tab, and
+  // the banner drawn again once that is a minute old or the tab is shown again.
   let factorSession = null;
   let factorSeq = 0;
   function renderFactorBanner(ctx) {
@@ -2196,9 +2197,12 @@ window.Maity = window.Maity || {};
       if (seq !== factorSeq) return;
       const old = main.querySelector(".factor-banner");
       if (old) main.removeChild(old);
+      M.factorBanner.keep(null);
       if (!b) return;
       const signin = main.querySelector(".signin-banner");
       main.insertBefore(b, signin ? signin.nextSibling : main.firstChild);
+      // Kept current while it stands: a change made elsewhere ends it on this page too.
+      M.factorBanner.keep(b, () => main.contains(b), () => renderFactorBanner(ctx));
     });
   }
   function renderBanner(ctx) {

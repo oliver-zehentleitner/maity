@@ -14,18 +14,40 @@ window.Maity = window.Maity || {};
 
   // What the banner stands on, kept for a minute at most: three reads on each page would be
   // three calls on every click. Read again before that after a write of this tab that may
-  // change it (a switch turned off, TOTP enrolled), on Security, where the human looks at the
-  // factor, and when the tab is shown again: another tab, another device or an admin may have
-  // changed it meanwhile, and a banner that says the mailbox alone signs in must not outlive
-  // an app enrolled elsewhere (#1716 review).
+  // change it (a switch turned off, TOTP enrolled) and on Security, where the human looks at
+  // the factor. Another tab, another device or an admin may change it meanwhile, and a banner
+  // that says the mailbox alone signs in must not outlive an app enrolled elsewhere (#1716
+  // review): the banner on screen is drawn again once its reads are a minute old, checked every
+  // few seconds, and when the tab is shown again, without waiting for the next page.
   const MAX_AGE_MS = 60000;
+  const CHECK_MS = 5000;
   let reading = null;
   let readAt = 0;
   let laterHere = null; // where the browser keeps nothing, "Later" holds for this page load
 
   function forget() { reading = null; }
-  if (window.document && window.document.addEventListener) {
-    window.document.addEventListener("visibilitychange", () => { if (window.document.visibilityState === "visible") forget(); });
+
+  // The banner on screen: its minute's check and the tab's return. here: whether it still
+  // stands; redraw: draw it again from fresh reads. keep(null) stops watching.
+  let watching = null;
+  function unkeep() {
+    if (!watching) return;
+    window.clearInterval(watching.timer);
+    document.removeEventListener("visibilitychange", watching.back);
+    watching = null;
+  }
+  function keep(box, here, redraw) {
+    unkeep();
+    if (!box) return;
+    const again = (due) => {
+      if (!here()) { unkeep(); return; }
+      if (!due()) return;
+      unkeep(); forget(); redraw();
+    };
+    const back = () => again(() => document.visibilityState === "visible");
+    const timer = window.setInterval(() => again(() => !reading || M.api.now() - readAt >= MAX_AGE_MS), CHECK_MS);
+    document.addEventListener("visibilitychange", back);
+    watching = { timer, back };
   }
   // A write that may change it: the human's mail settings (their switch), the second factor
   // (TOTP enrolled ends the banner), the instance's sign-in settings (the reset offered).
@@ -77,9 +99,9 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "factor-banner", role: "region", "aria-label": M.t("factor_banner.label") });
     append(box, h("div", { class: "flag" },
       h("p", null, state.reset ? M.tn("factor_banner.mailbox_alone", { link }) : M.tn("factor_banner.mailbox", { link })),
-      h("button", { type: "button", class: "small", onclick: () => { if (sessionId) setLater(sessionId); box.remove(); if (onHide) onHide(); } }, M.t("factor_banner.later"))));
+      h("button", { type: "button", class: "small", onclick: () => { if (sessionId) setLater(sessionId); unkeep(); box.remove(); if (onHide) onHide(); } }, M.t("factor_banner.later"))));
     return box;
   }
 
-  M.factorBanner = { banner, forget, wrote };
+  M.factorBanner = { banner, forget, wrote, keep };
 })(window.Maity);

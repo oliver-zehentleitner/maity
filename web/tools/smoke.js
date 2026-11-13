@@ -14348,6 +14348,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.now = fbNow;
     expect(fbKept && fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."),
       "authenticator banner: a switch turned off elsewhere shows within a minute, read again once the kept answer is a minute old");
+    // The banner on screen and the page left as it is: drawn again once its reads are a minute
+    // old, and when the tab is shown again, not only on the next page (#1716 review).
+    const fbSettle = async () => { for (let k = 0; k < 6; k++) await tick(); };
+    fbOwn = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbIdle = fbReads;
+    fbVia = "totp";
+    await fireIntervals(); await fbSettle();
+    const fbWithin = !!fbBox() && fbReads === fbIdle;
+    const fbAged = fbNow() + 61000;
+    win.Maity.api.now = () => fbAged;
+    await fireIntervals(); await fbSettle();
+    win.Maity.api.now = fbNow;
+    expect(fbWithin && !fbBox() && fbReads === fbIdle + 1,
+      "authenticator banner: an app enrolled elsewhere ends it on a page left as it is, once its reads are a minute old (" + fbReads + ")");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbVia = "totp";
+    const fbVis = document.visibilityState;
+    document.visibilityState = "hidden"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    const fbHidden = !!fbBox();
+    document.visibilityState = "visible"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    document.visibilityState = fbVis;
+    expect(fbHidden && !fbBox(), "authenticator banner: and at once when the tab is shown again");
+    // No watch left behind: none while no banner stands, none after Later, none once the page is gone.
+    const fbTimers = intervals.size;
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbWatched = intervals.size === fbTimers + 1 && !!docListeners.visibilitychange;
+    await fbGo("#/maintainer/maity/board");
+    const fbOnBoard = intervals.size;
+    const fbOne = !!fbBox() && fbOnBoard >= fbTimers + 1;
+    btn(fbBox(), "Later").click(); await tick();
+    const fbAfterLater = intervals.size === fbOnBoard - 1 && !docListeners.visibilitychange;
+    delete fbStore["maity.factor-banner.later"]; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbBox().remove(); await fireIntervals(); await fbSettle();
+    expect(fbTimers === intervals.size && fbWatched && fbOne && fbAfterLater && fbReads > 0,
+      "authenticator banner: one watch while it stands, none after Later or once it is gone (" + [fbTimers, intervals.size, fbWatched, fbOne, fbAfterLater] + ")");
     fbOwn = true; fbVia = "email"; win.Maity.factorBanner.forget();
     fbOffered = true; win.Maity.factorBanner.forget();
     await fbGo("#/maintainer/maity/inbox");

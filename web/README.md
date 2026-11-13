@@ -1219,11 +1219,13 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   (the session's id kept in the browser, for this page load where the
   browser keeps nothing). The three reads are kept for a minute at most and
   made again sooner after a write of this tab to the mail settings, the
-  second factor or the instance's sign-in settings, on every Security page,
-  and when the tab is shown again. So an app enrolled here, or in another
-  tab before this one is shown again, ends it at the next page; one
-  enrolled on another device, or a switch an admin turns, within a minute;
-  on Security at once.
+  second factor or the instance's sign-in settings and on every Security
+  page. The banner on screen is drawn again once its reads are a minute old
+  (checked every five seconds) and when the tab is shown again, so a page
+  left open does not keep it. An app enrolled in this tab ends it at the
+  next page, on Security at once; one enrolled in another tab ends it when
+  this tab is shown again; one enrolled on another device, or a switch an
+  admin turns, within about a minute.
 - Times are compared as instants on the hub's clock (`Maity-Server-Time`).
   A check each minute draws the section again when this session crosses
   an hour or a day of age, which changes what it may do.
