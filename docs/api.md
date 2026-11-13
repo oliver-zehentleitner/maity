@@ -8543,7 +8543,9 @@ https://pillow.readthedocs.io/en/stable/handbook/security.html):
   three (`hub/` documents the settings and their defaults). A decode
   over a budget is refused; a call that finds every decode slot taken is
   `rate_limited` with `Retry-After`, and so is a call whose human (for an
-  agent, its owner) already holds all but one of the slots.
+  agent, its owner) already holds all but one of the slots (one when
+  there is only one); the slots and the share are counted per serving
+  process.
 - Changes are rate-limited per account or profile, not per credential:
   at most 10 `PUT` or `DELETE` per hour for one avatar, an agent's
   choices of a motif counted with them, whichever of its credentials (or

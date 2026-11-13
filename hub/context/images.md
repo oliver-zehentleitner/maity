@@ -160,7 +160,7 @@ wording "changes", but it leaves the decoder unguarded.
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-x2gd2w0146jm, hardening from the security rounds (tsk-v9kheekgq115), 2026-11-13; the share and its key are the implementer's choice
-**Revisit when:** decodes move out of the hub's process (a pool or a service), or the hub runs several workers per replica that would each need their own share
+**Revisit when:** decodes move out of the hub's process (a pool or a service), or one human's decodes have to be bounded across serving processes (`MAITY_WORKERS`) or replicas
 **See:** images.md#an-avatar-is-decoded-in-a-process-of-its-own-that-limits-itself — 28da8cdf-5d46-4306-a49a-9ef02bb2185d — as of 2026-11-13
 
 The decode slots of one process (`avatars.DecodeSlots`, `MAITY_AVATAR_DECODES`
@@ -170,7 +170,10 @@ at most all but one of the slots (one when there is only one); a call past
 its share, like a call that finds every slot taken, is `rate_limited` at
 once, never queued, and an attachment upload refused so is not counted
 against the upload rate. The size mode, which the hub starts itself for a
-stored picture, takes a slot with no holder.
+stored picture, takes a slot with no holder. The slots and the share are
+per serving process, so with several `MAITY_WORKERS` (or replicas) each
+process gives a holder its own share; that is accepted, as the slots
+themselves were already per process.
 
 **Reason:** the slots were one try-once semaphore, so a few slow images
 from one account could hold every slot for seconds at a time and every

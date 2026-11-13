@@ -157,11 +157,14 @@ An image upload is charged against the membership's 30 uploads and 100 MiB
 (in 64 KiB units of the bytes sent) before its decode. The charge stays when
 the decoder refuses the image (`undecodable`, `dimensions`, a timeout or a
 killed child) and when the decoded image is then refused for its room (the
-pending bytes, the project's or the instance's storage). It is given back
-only where nothing was decoded: the pending count or a failed read before
-the decode, and a call that found no decode slot free or its human's share
-of them taken (`rate_limited`). A file that is not an image is still given
-back when it is refused before the store is written.
+pending bytes, the project's or the instance's storage), and whatever
+else fails from the decode on (the child could not be started, a database
+error in the check after it). It is given back only where nothing was
+decoded: the pending count or a failed read before the decode, and a call
+that found no decode slot free or its human's share of them taken
+(`rate_limited`). A project already closed is refused before anything is
+charged. A file that is not an image is still given back when it is refused
+before the store is written.
 
 **Reason:** the avatar change limit already counts refused images (b293dec9)
 for the same reason: the limit is what stands in front of the most exposed

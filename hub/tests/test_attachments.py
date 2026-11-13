@@ -964,6 +964,8 @@ def _counted(limiter: Any, key: str) -> int:
     from maity_hub import shared_counts
 
     if shared_counts.active():
+        if limiter.exact:  # a small limit keeps a row per attempt, not two windows
+            return shared_counts.log_read(limiter.name, key, limiter.window).total
         window = shared_counts.read(limiter.name, key, limiter.window)
         return window.current + window.previous
     return len(limiter._hits.get(key, ()))
