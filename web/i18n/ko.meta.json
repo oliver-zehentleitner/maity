@@ -4315,6 +4315,18 @@
     "en": "76c012bc07d476ba",
     "text": "5d68d41316df74bc"
   },
+  "experiment.not_saved": {
+    "en": "831641bc8e3a7e90",
+    "text": "eb0f9d4f826a7c2c"
+  },
+  "experiment.notice": {
+    "en": "ef237730002e679e",
+    "text": "b270b1244c434437"
+  },
+  "experiment.understood": {
+    "en": "baef2b7fd9c56095",
+    "text": "5f24f4964ee721c4"
+  },
   "factor_banner.label": {
     "en": "ca4ae1ba2d424523",
     "text": "ab98a7a230833fac"
@@ -12547,6 +12559,10 @@
     "en": "7e35927a104c820e",
     "text": "ea4ae07857fc9600"
   },
+  "person.agents.none": {
+    "en": "5233ae2fc929a121",
+    "text": "33f202a722f10d96"
+  },
   "person.handle": {
     "en": "e52b730b195d5cd3",
     "text": "e52b730b195d5cd3"
@@ -12642,6 +12658,22 @@
   "person.role.owner": {
     "en": "622f06cbcd2e7e61",
     "text": "420e9201d14d5585"
+  },
+  "person.tab.agents": {
+    "en": "21cf98a292e94015",
+    "text": "efd0461a0aa8254d"
+  },
+  "person.tab.profile": {
+    "en": "96ad4bd0f7baa40e",
+    "text": "a1ea77e29158ee40"
+  },
+  "person.tabs.label": {
+    "en": "16a03e3aa01e736f",
+    "text": "3810ec11258f61c0"
+  },
+  "person.title.agents": {
+    "en": "dd81b03eabf89b55",
+    "text": "e95d603ea97301e5"
   },
   "person.view_public": {
     "en": "8164ca72067a45c7",
