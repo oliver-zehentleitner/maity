@@ -27,12 +27,12 @@ extract "$root/docs/install/README.md" "' restore <kube context> maity-<UTC time
 extract "$root/deploy/k3s-single/restore-attachments.yaml" "' restore <kube context>" "#   " > "$work/att-block"
 # The close and open blocks (steps 4 and 6): the `sh -eu -c '` block that ends in `' close` and the one in `' open`.
 python3 - "$root/docs/install/README.md" "$work" <<'PY'
-import re, sys
+import re, sys, textwrap
 text = open(sys.argv[1]).read()
 for name in ("close", "open"):
     m = re.search(r"sh -eu -c '\n(.*?)\n\s*' " + name + r" <kube context>", text, re.S)
-    body = "\n".join(l.strip() for l in m.group(1).split("\n")) if m else ""
-    body = body.split("sh -eu -c '")[-1]
+    # the block is the last `sh -eu -c '` before the marker; dedented as a whole, so the Python in it keeps its indentation
+    body = textwrap.dedent(m.group(1).split("sh -eu -c '\n")[-1]) if m else ""
     open(sys.argv[2] + "/" + name + "-block", "w").write(body + "\n")
 PY
 for b in db-block att-block close-block open-block; do
@@ -47,14 +47,20 @@ cat > "$work/bin/kubectl" <<'STUB'
 # $FAIL: deploy_fails, pods_fail, replica, pod_left; every call goes to $S/log
 echo "kubectl $*" >> "$S/log"
 case "$*" in
+  *"get deploy maity-maity-hub -o json")   # the whole Deployment (not -o jsonpath)
+                   printf '%s' '{"spec": {"template": {"metadata": {"labels": {"app.kubernetes.io/name": "maity-hub", "app.kubernetes.io/instance": "maity", "app.kubernetes.io/component": "hub"}}}}}'; exit 0;;
   *"get deploy"*)  [ "$FAIL" = deploy_fails ] && { echo "error: forbidden" >&2; exit 1; }
                    [ "$FAIL" = replica ] && { printf 1; exit 0; }; printf 0; exit 0;;
   *"get pods"*)    [ "$FAIL" = pods_fail ] && { echo "error: the server is unreachable" >&2; exit 1; }
                    [ "$FAIL" = pod_left ] && echo pod/maity-maity-hub-1; exit 0;;
   *" exec "*)      cat > /dev/null; exit 0;;
-  *"get networkpolicy"*)
+  *"get networkpolicy maity-maity-hub"*)
                    [ "$FAIL" = np_get_fails ] && { echo "error: forbidden" >&2; exit 1; }
                    cat "$S/np.json"; exit 0;;
+  *"get networkpolicy"*)   # all of the namespace: the hub's and those in $S/others.json
+                   [ "$FAIL" = np_list_fails ] && { echo "error: forbidden" >&2; exit 1; }
+                   python3 -c 'import json, sys; print(json.dumps({"items": [json.load(open(sys.argv[1]))] + json.load(open(sys.argv[2]))}))' \
+                     "$S/np.json" "$S/others.json"; exit 0;;
   *"patch networkpolicy"*)
                    [ "$FAIL" = patch_fails ] && { echo "error: the server rejected the patch" >&2; exit 1; }
                    [ "$FAIL" = patch_ignored ] && exit 0
@@ -114,11 +120,15 @@ for b in db-block att-block; do
 done
 # Closing and opening the hub's NetworkPolicy. $S/np.json is the policy; RULES its rules at the start.
 rules='[{"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}], "ports": [{"port": "http", "protocol": "TCP"}]}]'
+# The hub's policy as the chart renders it; OTHERS (more policies in the namespace), SELECTOR and TYPES change it.
+hub_selector='{"matchLabels": {"app.kubernetes.io/name": "maity-hub", "app.kubernetes.io/instance": "maity", "app.kubernetes.io/component": "hub"}}'
 np_run() { # name, block, FAIL value, initial ingress (JSON or none), kept file (content, none), want: ok | stops
   local name=$1 block=$2 fail=$3 initial=$4 kept=$5 want=$6
   export S="$work/np-$name" FAIL=$fail; mkdir -p "$S"; : > "$S/log"
-  if [ "$initial" = none ]; then echo '{"spec": {"policyTypes": ["Ingress"]}}' > "$S/np.json"
-  else printf '{"spec": {"policyTypes": ["Ingress"], "ingress": %s}}\n' "$initial" > "$S/np.json"; fi
+  local head="\"metadata\": {\"name\": \"maity-maity-hub\"}, \"spec\": {\"podSelector\": ${SELECTOR:-$hub_selector}, \"policyTypes\": ${TYPES:-[\"Ingress\"]}"
+  if [ "$initial" = none ]; then printf '{%s}}\n' "$head" > "$S/np.json"
+  else printf '{%s, "ingress": %s}}\n' "$head" "$initial" > "$S/np.json"; fi
+  printf '%s\n' "${OTHERS:-[]}" > "$S/others.json"
   [ "$kept" = none ] || printf '%s\n' "$kept" > "$S/hub-ingress-rules.json"
   ( cd "$S" && PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" "${block%-block}" test-context ) >"$S/out" 2>&1
   local got=$? scaled=no
@@ -146,6 +156,24 @@ np_check close_patch_ignored "the hub was not started" '! grep -q " scale " log'
 np_run close_save_fails close-block np_get_fails "$rules" none stops
 np_check close_save_fails "no file, the hub not started" '[ ! -e hub-ingress-rules.json ] && ! grep -q " scale " log'
 # a second close (the file from the first one is there): refused, the kept rules untouched, nothing patched
+# Policies add up: another one that admits traffic to the hub's pods, a hub policy that lost its Ingress type or its
+# selector, and a policy list that cannot be read all keep the hub stopped.
+other() { # name, podSelector, policyTypes, ingress
+  printf '[{"metadata": {"name": "%s"}, "spec": {"podSelector": %s, "policyTypes": %s, "ingress": %s}}]' "$@"
+}
+OTHERS=$(other allow-hub '{}' '["Ingress"]' "$rules") np_run close_second_policy close-block none "$rules" none stops
+np_check close_second_policy "the hub was not started" '! grep -q " scale " log'
+OTHERS=$(other allow-hub '{"matchExpressions": [{"key": "app.kubernetes.io/component", "operator": "In", "values": ["hub"]}]}' '["Ingress"]' "$rules") \
+  np_run close_second_policy_expr close-block none "$rules" none stops
+OTHERS=$(other db '{"matchLabels": {"app": "maity-postgres"}}' '["Ingress"]' "$rules") np_run close_other_pods close-block none "$rules" none ok
+OTHERS=$(other hub-egress "$hub_selector" '["Egress"]' "$rules") np_run close_other_egress_only close-block none "$rules" none ok
+OTHERS=$(other deny-hub "$hub_selector" '["Ingress"]' '[]') np_run close_other_deny close-block none "$rules" none ok
+TYPES='["Egress"]' np_run close_egress_only close-block none "$rules" none stops
+np_check close_egress_only "the hub was not started" '! grep -q " scale " log'
+SELECTOR='{"matchLabels": {"app.kubernetes.io/component": "web"}}' np_run close_selector_changed close-block none "$rules" none stops
+np_check close_selector_changed "the hub was not started" '! grep -q " scale " log'
+np_run close_list_fails close-block np_list_fails "$rules" none stops
+np_check close_list_fails "the hub was not started" '! grep -q " scale " log'
 np_run close_rerun close-block none none "$rules" stops
 np_check close_rerun "the kept rules untouched, nothing patched" '[ "$(cat hub-ingress-rules.json)" = "$rules" ] && ! grep -q " patch " log'
 np_run close_already_closed close-block none none none stops

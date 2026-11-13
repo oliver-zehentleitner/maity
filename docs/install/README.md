@@ -374,22 +374,54 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   4. **Start the hub closed to everyone but you.** The restored database gives back access that was taken away after the
      dump's time, so nobody may reach the hub until step 5 is done. Close the hub's NetworkPolicy to every pod, Traefik
      included, keeping its rules in `hub-ingress-rules.json` to open it again, and start the hub only once the policy
-     admits nobody. Run it as one block (it needs `python3` on this machine to read the policy): it refuses while that
-     file exists from an earlier close, and stops before the hub starts if the policy cannot be read, has no rules to
-     keep, or still admits someone after the change:
+     admits nobody. Run it as one block (it needs `python3` on this machine to read the policies): it refuses while that
+     file exists from an earlier close, and stops before the hub starts if the policy cannot be read or has no rules to
+     keep, or if after the change any NetworkPolicy in the namespace still admits traffic to the hub's pods. Policies add
+     up, so it reads them all: `maity-maity-hub` must have the type `Ingress`, select the labels of the hub's pod
+     template and have no rule left, and any other policy that selects those pods and has an ingress rule (one you added
+     outside the chart) stops the block; remove or narrow it first. The closed phase holds only where the cluster's CNI
+     enforces NetworkPolicy (k3s does out of the box); with a CNI that does not, it isolates nothing, and the hub must be
+     kept unreachable some other way, by removing its route from the ingress controller or proxy:
      ```sh
      sh -eu -c '
        ctx=$1 f=hub-ingress-rules.json
        k() { kubectl --context "$ctx" -n maity "$@"; }
        rules() { python3 -c "import json, sys; print(json.dumps(json.load(sys.stdin)[\"spec\"].get(\"ingress\") or [], sort_keys=True))"; }
+       # Exit 0 only when no policy admits pod traffic to the hub pods: maity-maity-hub has the type Ingress, selects the
+       # labels of the hub Deployment pod template and has no rule, and no other policy that selects them has one.
+       closed="
+       import json, os, sys
+       labels = json.loads(os.environ[\"DEP\"])[\"spec\"][\"template\"][\"metadata\"][\"labels\"]
+       def selects(sel):
+           ok = all(labels.get(k) == v for k, v in (sel.get(\"matchLabels\") or {}).items())
+           for e in sel.get(\"matchExpressions\") or []:
+               k, op, vals = e[\"key\"], e[\"operator\"], e.get(\"values\") or []
+               ok = ok and {\"In\": labels.get(k) in vals, \"NotIn\": labels.get(k) not in vals,
+                            \"Exists\": k in labels, \"DoesNotExist\": k not in labels}.get(op, True)
+           return ok
+       def admits(spec):
+           return \"Ingress\" in (spec.get(\"policyTypes\") or [\"Ingress\"]) and bool(spec.get(\"ingress\"))
+       own, others = False, []
+       for p in json.loads(os.environ[\"NPS\"])[\"items\"]:
+           name, spec = p[\"metadata\"][\"name\"], p[\"spec\"]
+           if name == \"maity-maity-hub\":
+               own = \"Ingress\" in (spec.get(\"policyTypes\") or [\"Ingress\"]) and selects(spec.get(\"podSelector\") or {}) and not spec.get(\"ingress\")
+           elif admits(spec) and selects(spec.get(\"podSelector\") or {}):
+               others.append(name)
+       if not own:
+           sys.exit(\"maity-maity-hub does not close the hub (no type Ingress, a selector that misses its pods, or a rule left): it stays stopped\")
+       if others:
+           sys.exit(\"other NetworkPolicies admit traffic to the hub pods: \" + \", \".join(others) + \": the hub stays stopped\")
+       "
        [ ! -e "$f" ] || { echo "$f is there from an earlier close: open the hub with it (step 6) before closing it again" >&2; exit 1; }
        np=$(k get networkpolicy maity-maity-hub -o json)
        saved=$(printf "%s" "$np" | rules)
        [ "$saved" != "[]" ] || { echo "the policy admits nobody already: there are no rules to keep" >&2; exit 1; }
        (umask 077; set -C; printf "%s\n" "$saved" > "$f")
        k patch networkpolicy maity-maity-hub --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/ingress\",\"value\":[]}]"
-       np=$(k get networkpolicy maity-maity-hub -o json)
-       [ "$(printf "%s" "$np" | rules)" = "[]" ] || { echo "the policy still admits someone: the hub stays stopped" >&2; exit 1; }
+       dep=$(k get deploy maity-maity-hub -o json)
+       nps=$(k get networkpolicy -o json)
+       DEP=$dep NPS=$nps CODE=$closed python3 -c "import os, textwrap; exec(textwrap.dedent(os.environ[\"CODE\"]))"
        k scale deploy/maity-maity-hub --replicas=1
        k rollout status deploy/maity-maity-hub --timeout=300s
      ' close <kube context>

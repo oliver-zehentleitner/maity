@@ -20,7 +20,8 @@
 - docs: the documented restore blocks name the instance's kube context on every `kubectl`, and stop before anything
   is restored unless the hub is verifiably stopped (a `kubectl` that fails stops them too);
   `deploy/scripts/test-restore-blocks.sh` runs both against stubs. After a restore the hub starts closed to everyone
-  but the admin (its NetworkPolicy emptied and checked before it starts, its rules kept in a file that is never
+  but the admin (its NetworkPolicy emptied, and every policy of the namespace checked to admit nothing to the hub pods
+  before it starts; its rules kept in a file that is never
   overwritten and removed only once they are back, reached through `kubectl port-forward`) until the access rules are up to
   date: the changes to people and accounts made after the dump's time applied again, and every agent's credentials
   revoked or each agent change applied again (docs/install/README.md, "After a restore").
