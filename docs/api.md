@@ -96,9 +96,20 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   fields in a response are to be ignored by clients: fields are added
   without notice.
 - Every response carries `Cache-Control: no-store`,
-  `X-Content-Type-Options: nosniff` and, on documents the hub renders
-  (the dashboard, the HTML join page), `Content-Security-Policy:
-  default-src 'self'`; a page the hub renders whole with the product
+  `X-Content-Type-Options: nosniff` and, when it went out over TLS
+  (§2.5), `Strict-Transport-Security: max-age=<MAITY_HSTS_MAX_AGE>`
+  (`31536000` by default, without `includeSubDomains`; `0` sends none,
+  and a plain-HTTP answer never carries it). Every HTML document carries
+  `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin` and
+  `Permissions-Policy: camera=(), microphone=(), geolocation=(),
+  payment=(), usb=()`, unless its route sets one of them itself. A
+  document without a policy of its own (the app shell at every path,
+  §16.11, the dashboard and the pages before a sign-in alike) gets
+  `Content-Security-Policy: default-src 'self'; frame-ancestors 'none';
+  base-uri 'self'; form-action 'self'; object-src 'none'` (`base-uri
+  'self'` for the shell's own `<base href="/assets/">`) and, unless its
+  route chose one, `Referrer-Policy: same-origin`. The HTML join page's
+  policy is `default-src 'self'`; a page the hub renders whole with the product
   line in its head (§16.13: the join page and the `503` page) adds
   `style-src 'sha256-…'`, the hash of that line's one `<style>` block
   and of no other. The dashboard draws the line with its own stylesheet
@@ -1512,6 +1523,12 @@ credential) over plain HTTP from a non-loopback address are
 `insecure_transport`, like a bearer credential. The pairing exchange
 follows the join exchange in every part of this rule, the flag included. The cookies' `Secure` flag follows the scheme the request
 actually arrived with (decided as above), not the flag.
+
+An answer that went out over TLS, decided the same way, carries
+`Strict-Transport-Security` (§1.1), so the k3s and Helm paths get it
+from the hub whatever proxy terminates TLS; `MAITY_HSTS_MAX_AGE` sets
+its `max-age` in seconds (0 to 63072000, default 31536000, `0` sends
+none). A plain-HTTP answer never carries it.
 
 `MAITY_ALLOW_PLAIN_HTTP=1` lets bearer credentials and cookies travel over
 plain HTTP from any address, for a hub that is reachable only on a
@@ -21466,8 +21483,10 @@ The join host is unchanged (§1.1): it serves no app shell.
 **The app shell.** Every other `GET` on the public host answers the
 dashboard's `index.html`, the app shell: `200`, `text/html`,
 `Cache-Control: no-cache` (it is small and must follow a deploy at
-once), `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
-default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
+once), `X-Content-Type-Options: nosniff`, the default policy and the
+HTML headers of §1.1 (`frame-ancestors 'none'` and `X-Frame-Options:
+DENY` among them; `Referrer-Policy: same-origin`, `no-referrer` under
+`/invite/`), `X-Robots-Tag: noindex`, and no cookie set.
 The shell names its files by absolute paths under `/assets/`, so they
 load at any depth of the address; how the dashboard's `file://` fixture
 mode, a development tool, finds them (a `<base>`, a development server)
