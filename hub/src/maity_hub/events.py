@@ -773,8 +773,14 @@ def windows_of(membership: Any) -> list[dict[str, int]]:
 
 def in_window(row: Any, membership: Any) -> bool:
     """The event lies in one of the reader's hidden windows (§6.2)."""
+    return seq_in_window(row.seq, membership)
+
+
+def seq_in_window(seq: int, membership: Any) -> bool:
+    """`seq` lies in one of the reader's hidden windows (§6.2): also what a copy of an event
+    kept elsewhere, such as a jour fixe round's statement and posts, is hidden by."""
     windows = windows_of(membership)
-    return bool(windows) and any(w["from_seq"] <= row.seq <= w["to_seq"] for w in windows)
+    return bool(windows) and any(w["from_seq"] <= seq <= w["to_seq"] for w in windows)
 
 
 def outside_windows(membership: Any) -> Any:
