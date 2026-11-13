@@ -6637,12 +6637,14 @@ credentials) keep the panel's whole width. A part that holds such a
 list, however deep (the account's sessions, its forge links and
 repositories, the settings' attach list), keeps the whole width too, and
 its own parts without one stop at the column again, level by level down
-to the list (`:has()`). A `dl` of facts is text here, not a list: short
+to the list (`:has()`). A list counts only inside the column: a column
+may itself stand in a table or a list (Team's Manage row, an agent's
+card), and everything in it would otherwise read as inside a list. A `dl` of facts is text here, not a list: short
 pairs that read better in the column. Inside the column fields and
 help texts fill it, so a panel has one right edge, and a form's buttons
-(`.actions`, `.row`, `.inline-form`, `.project-form`, `.image-row`,
-Remove) start at its left, next to what they send; a form's own button
-is not stretched across it. A form's own width (32, 36 or 48rem) still
+(`.actions`, `.row`, Remove, and a grid form's own: `form`,
+`.field-stack`, `.image-row`) start at its left, next to what they send;
+a form's own button is not stretched across it. A form's own width (32, 36 or 48rem) still
 holds outside a column (the admin area, the inbox, the sign-in): inside
 one the form fills the column. The instance admin area is not in this
 decision's scope; its forms keep their widths. The rules that put

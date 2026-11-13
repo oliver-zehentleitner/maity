@@ -66,10 +66,11 @@
    panel's parts stop at --form-column, left-aligned; its lists, tables and tab rows keep the
    panel's full width (.full-width for one built of other elements). A part that holds a list,
    however deep, keeps the full width too, and its own parts without one stop at the column
-   again, level by level down to the list. Inside the column, fields and help texts fill it and
+   again, level by level down to the list (a list counts inside the column only: a column may
+   itself stand in a table or list, Manage's row, an agent's card). Inside the column, fields and help texts fill it and
    a form's buttons start at its left. */
 :root { --form-column: 42rem; }
-:is(.form-column, .form-column :not(nav, ul, ol, table, .table-wrap, .full-width, :is(ul, ol, table, .table-wrap, .full-width) *):has(nav, ul, ol, table, .table-wrap, .full-width))
+:is(.form-column, .form-column :not(nav, ul, ol, table, .table-wrap, .full-width, .form-column :is(ul, ol, table, .table-wrap, .full-width) *):has(nav, ul, ol, table, .table-wrap, .full-width))
   > :not(nav, ul, ol, table, .table-wrap, .full-width, :has(nav, ul, ol, table, .table-wrap, .full-width)) { max-width: var(--form-column); }
 /* Its buttons start at the column's left: the block at the end of this file, after the forms' own rules. */
 
@@ -2253,7 +2254,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The form column's buttons (web/context/views.md): at the column's left, Remove included, after
    the forms' own rules above that put them at the right edge. */
 .form-column :is(.actions, .row) { justify-content: flex-start; }
-.form-column :is(.inline-form, .project-form, .image-row) button { justify-self: start; }
+.form-column :is(form, .field-stack, .image-row) button { justify-self: start; }
 /* Inside the column a form fills it: its own width (32, 36 or 48rem) holds only outside one;
    the preferences' versions are a list, at the full width. */
 .form-column :is(.inline-form, .project-form, .image-row, .preferences-form, .preferences-projects, .not-listening-settings, .mail-address, .mail-modes, .leave-project) { max-width: var(--form-column); }

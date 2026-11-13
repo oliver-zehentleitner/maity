@@ -4245,11 +4245,20 @@ FORM_COLUMN_MEASURE = """(selector) => {
   const edges = [];
   for (const col of columns) {
     const own = (el) => el.offsetParent && el.parentElement.closest('.form-column') === col;
+    // An ancestor between el and the column (never above it: a column may stand in a table or list).
+    const within = (el, sel) => { for (let x = el.parentElement; x && x !== col; x = x.parentElement) if (x.matches(sel)) return true; return false; };
     const box = col.getBoundingClientRect(), cs = getComputedStyle(col);
     const left = box.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
     const full = box.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
-    const parts = Array.from(col.children).filter((el) => el.offsetParent && !wide(el)
-      && ['block', 'grid', 'flex', 'flow-root'].includes(getComputedStyle(el).display));
+    // Its parts: the block boxes without a list, and inside a part that holds one, its own such
+    // parts, level by level down to the list.
+    const parts = [];
+    const collect = (node) => { for (const el of node.children) {
+      if (!el.offsetParent || el.matches(LISTS) || el.matches('.form-column, button, a, label, input, select, textarea')) continue;
+      if (el.querySelector(LISTS) && getComputedStyle(el).maxWidth === 'none') collect(el);  // a wrapper; one with a width of its own is a part
+      else if (['block', 'grid', 'flex', 'flow-root'].includes(getComputedStyle(el).display)) parts.push(el);
+    } };
+    collect(col);
     if (!parts.length) { problems.push(name(col) + ': no part'); continue; }
     const edge = Math.max(...parts.map((el) => el.getBoundingClientRect().right));
     edges.push(Math.round(edge - left));
@@ -4259,7 +4268,7 @@ FORM_COLUMN_MEASURE = """(selector) => {
       if (Math.abs(r - edge) > 0.5) problems.push(name(col) + ' > ' + name(el) + ' ends at ' + Math.round(r - left) + ', the column at ' + Math.round(edge - left));
     }
     const inside = Array.from(col.querySelectorAll('input:not([type=hidden]), select, textarea, button, p.hint, p.muted, .actions'))
-      .filter((el) => own(el) && !el.closest(LISTS));
+      .filter((el) => own(el) && !el.matches(LISTS) && !within(el, LISTS));
     for (const el of inside) {
       const r = el.getBoundingClientRect(), up = el.parentElement, ucs = getComputedStyle(up);
       if (r.right > edge + 0.5 || r.left < left - 0.5) problems.push(name(el) + ' in ' + name(up) + ' outside the column: ' + Math.round(r.left - left) + '..' + Math.round(r.right - left));
@@ -4269,16 +4278,16 @@ FORM_COLUMN_MEASURE = """(selector) => {
       if (fills && r.right < edge - 24) problems.push(name(el) + ' in ' + name(up) + ' ends at ' + Math.round(r.right - left) + ', the column at ' + Math.round(edge - left));
     }
     for (const list of col.querySelectorAll('ul, ol, table, .table-wrap')) {
-      if (!own(list) || list.parentElement.closest('ul, ol, table, .table-wrap, form, fieldset')) continue;
+      if (!own(list) || within(list, 'ul, ol, table, .table-wrap, form, fieldset')) continue;
       const r = list.getBoundingClientRect();
       if (r.right < full - 48) problems.push(name(list) + ' ends at ' + Math.round(r.right - left) + ', the full width at ' + Math.round(full - left));
     }
     for (const row of col.querySelectorAll('.actions, .row, .member-remove')) {
-      if (!own(row) || row.closest('ul, ol, table, .table-wrap')) continue;
+      if (!own(row) || within(row, 'ul, ol, table, .table-wrap')) continue;
       const first = Array.from(row.children).find((c) => c.offsetParent);  // a button, or the keys beside one
       if (first && first.getBoundingClientRect().left - row.getBoundingClientRect().left > 24) problems.push(name(row) + ': it does not start at the left');
     }
-    for (const b of col.querySelectorAll(':is(.inline-form, .project-form, .image-row) > button')) {
+    for (const b of col.querySelectorAll(':is(form, .field-stack, .image-row) > button')) {
       const up = b.parentElement;
       if (own(b) && getComputedStyle(up).display === 'grid' && b.getBoundingClientRect().left - up.getBoundingClientRect().left > 24) problems.push(name(up) + ' > ' + name(b) + ' is not at the left');
       if (own(b) && getComputedStyle(up).display === 'grid' && b.getBoundingClientRect().width > up.getBoundingClientRect().width - 2) problems.push(name(up) + ' > ' + name(b) + ' is stretched across the form');
