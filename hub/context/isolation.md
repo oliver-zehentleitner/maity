@@ -153,3 +153,46 @@ carry neither `tasks:review` nor `tasks:test`, and the hub never moved a card on
   its owner's membership no longer justifies.
 - Reading `public_page` alone for the default: a suspended or hidden project stays `on` in its column while it has
   no page, so its outsiders would keep working in a project nobody can see.
+
+## A reader's effective windows: its own, and for a bridge's read also the bridge's, through one function
+
+**Id:** c5ef8337-6ad3-40d5-b0af-298d9a1b38ec
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.3 ("The bridge"), §6.2 ("Isolation"), §6.4, §6.16; the card tsk-1w2n2t4e70qq and the scope additions in its notes, 2026-11-13; the implementation (`events.windows_of`, `events.CarriedRow`, `access.Membership.bridge_windows`, `events.outside_window_times`)
+**Revisit when:** a read path for a bridge does not take the served agent's row from `access.membership`, or a listing of something that is no event shows rows without asking `events.windows_of`
+**See:** isolation.md#a-hidden-window-is-an-inclusive-seq-range-on-the-membership-applied-where-events-are-read — 7b3e1f2a-4c55-4a0e-9d8b-2f6a91c0e1d4 — as of 2026-11-13
+
+`events.windows_of` is the one answer to "which windows does this reader not read": the membership's own
+`isolation_windows`, and for a call through a bridge (`Maity-For`, `?for=`) also those of the bridge's own
+membership. `access.membership` reads the bridge's windows once and keeps them on the `Membership`
+(`bridge_windows`); the dataclass then holds the served agent's row as an `events.CarriedRow`, which answers
+every column as the row does and the union of both lists as `reader_windows`, also after a `replace` with a row
+read again (the `_locked` helpers) and in the events long-poll, which reads the row again each pass
+(`events.carried_row`). The member view still shows the row's own `isolation_windows`. So `readable_by`,
+`read`, `highest_readable`, `outside_windows` (the conversation SQL) and `window_times` (a card's history)
+apply the bridge's windows without a parameter of their own. The listings of things that are no event filter
+through the same windows by time (`events.outside_window_times`): a card's notes by `created_at`, the card
+search over notes, and a restricted text's history entries by `at`. A bridge's read also leaves out
+`cross_chat_mention` beside `chat_rules_changed` (`events.CARRIED_EXCLUDED`): its payload names a chat of
+another project, which is the agent's and its owner's.
+
+**Reason:** §6.2 says the window's events stay out "as if it had never been a member then"; a bridge that reads
+for an agent is still that membership reading, so its windows have to hold whichever agent it reads for. Doing it
+where the reader's row is made reaches every read path at once, those that exist and those added later, and
+leaves the routes as they are.
+
+**Rejected alternatives:**
+- Passing the bridge's membership id into `readable_by`, `read`, `highest_readable`, `outside_windows` and
+  `window_times` at each call: about a dozen call sites, and the next read path through a bridge has to
+  remember it.
+- Checking the windows in `bridges.carry`: it decides who the caller is, not what a read returns, and it is not
+  where the windows are applied.
+- Ending a bridge's connections when the bridge is isolated: the card offered it as an alternative; the
+  connection is the owners' choice, and a lift without hiding should find it as it was. Not done here.
+
+**Not covered:** a note's text edited after the window keeps its `created_at` and so stays hidden; a note
+written before the window and edited inside it stays listed with its current text, as a card's fields show the
+state the reader finds. A restricted text's current `text`, `version`, `updated_by` and `updated_at` are that
+state too. The public card page shows a public project's notes to everyone, windows have no reader there.
