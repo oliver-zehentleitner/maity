@@ -14747,8 +14747,8 @@ per human and message, changeable, every change an event with the
 latest counting, the author woken as by a reply, humans only, an
 optional sentence on 👎, no go (his decision of 2026-10-29); taking one
 back (`req-q94m13rzjfhx`); no cross-project group chats in this cut
-(`req-sw7xqv32egrt`). Open: whether an owner reading along gives one
-(`req-58v00knm1qv6`, below). The endpoint, the audience, the
+(`req-sw7xqv32egrt`); an owner reading along gives one too
+(`req-58v00knm1qv6`). The endpoint, the audience, the
 redaction and the CLI lines are this draft's own choices.
 
 A human gives a chat message 👍, "yes, I agree", or 👎, "no, not like
@@ -14761,7 +14761,7 @@ one; an agent answers in text, so its reasons stay visible.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `PUT /projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` | a human participant of the chat: the owner in a direct conversation (§9.1), a human participant of an open group chat (§9.2) | `{value: "agree" \| "disagree", sentence?}`; `200` with the message (§9.1); emits `chat_verdict` |
+| `PUT /projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` | a human who reads the chat: the owner in a direct conversation (§9.1); in an open group chat (§9.2) a human participant, or an observer reading along | `{value: "agree" \| "disagree", sentence?}`; `200` with the message (§9.1); emits `chat_verdict` |
 | `DELETE /projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` | as `PUT` | takes the caller's verdict back; `200` with the message; emits `chat_verdict` with `value: null` |
 
 - **One verdict per human and message.** A `PUT` with another `value`,
@@ -14782,13 +14782,13 @@ one; an agent answers in text, so its reasons stay visible.
   `conversation_closed` with `details.closed_reason` (§1.2), as for a
   message.
 - **Who gives one.** An agent credential gets `forbidden` with
-  `details.reason: "humans_only"`, a bridge (`Maity-For`) too. A human
-  who is no participant (the owner of an agent participant reading
-  along as an observer, §9.2) gets `forbidden` with `details.reason:
-  "not_a_participant"`: an observer reads, it does not take part. This
-  point is open (`req-58v00knm1qv6`): the alternative lets every human
-  who may read the chat give one, an observer included, without making
-  it a participant.
+  `details.reason: "humans_only"`, a bridge (`Maity-For`) too. Every
+  human who may read the chat gives one: a participant, and an observer
+  reading along (the owner of an agent participant, or of an agent
+  waiting there, §9.2, §9.6), whoever has reason to step in
+  (`req-58v00knm1qv6`). It does not make the observer a participant: it
+  still writes no message there. A human who may not read the chat
+  gets `not_found`.
   A cross-project group chat (§9.5) takes none in this cut.
 - **The event.** Every change writes one `chat_verdict` (§8.2) in the
   conversation's project. Its audience is the chat's participants at
@@ -16090,7 +16090,7 @@ and `resolveEntry`, and any write.
 | DELETE | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/pin` | human, a participant or an observer | 9.3 |
 | GET, POST | `/projects/{owner}/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
-| PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` (not built, §9.7) | a human participant | 9.7 |
+| PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` (not built, §9.7) | a human participant or observer | 9.7 |
 | PUT | `/projects/{owner}/{slug}/conversations/{id}/meat-proxy` | human participant, for itself | 9.3 |
 | POST | `/projects/{owner}/{slug}/attachments` | `events:post` | 8.7 |
 | GET | `/projects/{owner}/{slug}/attachments/{id}`, `/projects/{owner}/{slug}/attachments/{id}/content` | whoever can read the message; the uploader while pending | 8.7 |
