@@ -143,7 +143,11 @@ def answer(
 
     window = maintenance.window_now(engine_of(request))
     if window is not None and window["state"] == "running":
-        return maintenance.refusal_page(window)  # type: ignore[no-any-return]
+        return maintenance.refusal_page(  # type: ignore[no-any-return]
+            window,
+            maintenance.cached_frame(engine_of(request)),
+            request.headers.get("accept-language"),
+        )
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)

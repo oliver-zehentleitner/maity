@@ -968,6 +968,16 @@ def scenario(run: Run, page: Page) -> None:
     url, code = join_line(run, page, "e2e-alpha", "e2e-agent")
     run.shot(page, "join-line")
     run.a11y(page, "join with a paste line")
+    # The join page in a browser on the public host stands in the landing page's frame (§3.2,
+    # §16.7.5). No screenshot: the page shows the token, and the artifacts are public.
+    doc = page.context.new_page()
+    watch_page(run, doc)
+    doc.goto(url)
+    expect(doc.locator("header.site-header")).to_be_visible()
+    expect(doc.locator(".join-page h1")).to_be_visible()
+    expect(doc.locator("footer.site-footer")).to_be_visible()
+    run.a11y(doc, "the join page in a browser")
+    doc.close()
     alpha = run.clone("clone-alpha")
     out = run.maity(
         alpha,
@@ -2800,6 +2810,29 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
         [address, password],
     )
     page.goto(catcher.link_in(address, "/mail/register/"))
+    # The registration link's page stands in the door frame, as /login does (§2.7.1, §16.7.5).
+    expect(page.locator("header.site-header")).to_be_visible()
+    expect(page.locator("footer.site-footer")).to_be_visible()
+    expect(page.locator(".door-page")).to_have_css("display", "grid")
+    run.shot(page, "registration-link")
+    run.a11y(page, "the registration link's page")
+    page.set_viewport_size({"width": 390, "height": 844})
+    run.shot(page, "registration-link-390")
+    run.a11y(page, "the registration link's page at 390 px")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    # A refused answer: each field's error under it, legible in light and dark (#1721's review).
+    page.locator("#password").fill(password)
+    page.locator("#handle").fill("x")
+    page.locator("#display_name").fill("Ada")
+    page.locator("form button[type=submit]").click()
+    expect(page.locator("#handle-error")).to_be_visible()
+    expect(page.locator("#handle")).to_have_attribute("aria-invalid", "true")
+    run.problems = [p for p in run.problems if not ("/mail/register/" in p and "answered 400" in p)]
+    run.shot(page, "registration-link-error")
+    run.a11y(page, "the registration link's page, a refused handle")
+    page.emulate_media(color_scheme="dark")
+    run.shot(page, "registration-link-error-dark")
+    page.emulate_media(color_scheme="light")
     page.locator("#password").fill(password)
     page.locator("#handle").fill(handle)
     page.locator("#display_name").fill("Ada")
