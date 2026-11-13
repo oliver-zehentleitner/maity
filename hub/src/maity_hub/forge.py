@@ -32,6 +32,13 @@ from maity_hub import shared_budget
 HOSTS = {"github.com": "github"}  # host -> forge kind
 API_HOST = "api.github.com"
 TIMEOUT = 10.0
+# The bounds on reading an answer's body, as `outbound._body` keeps them for the hooks: the
+# whole read ends at READ_SECONDS however slowly the bytes come, and a JSON answer past
+# ANSWER_CAP is refused unread. One page of 100 check runs, each with the forge's longest
+# summary, stays under it.
+READ_SECONDS = 30.0
+ANSWER_CAP = 16 * 1024 * 1024
+CHUNK = 64 * 1024
 
 
 class ForgeUnavailableError(Exception):
@@ -74,6 +81,35 @@ def repository_of(url: str) -> str:
     path = url.split("://", 1)[-1].split("/", 1)[1]
     owner, name = path.strip("/").split("/")[:2]
     return f"{owner}/{name.removesuffix('.git')}"
+
+
+def read_bounded(response: Any, limit: int) -> bytes:
+    """At most `limit` bytes of the answer's body, read in chunks until READ_SECONDS after the
+    first. Each chunk waits for TIMEOUT at most, shortened to what is left of the read where
+    the socket can be reached, so a forge that trickles its answer is cut off near the deadline
+    rather than held open. Past the deadline it is `ForgeUnavailableError`."""
+    deadline = time.monotonic() + READ_SECONDS
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    out = bytearray()
+    while len(out) < limit:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ForgeUnavailableError("the forge did not answer: timeout")
+        if sock is not None:
+            sock.settimeout(min(remaining, TIMEOUT))
+        chunk = response.read(min(CHUNK, limit - len(out)))
+        if not chunk:
+            break
+        out += chunk
+    return bytes(out)
+
+
+def json_answer(response: Any) -> Any:
+    """The answer's body as JSON, refused when it is over ANSWER_CAP (`read_bounded`)."""
+    body = read_bounded(response, ANSWER_CAP + 1)
+    if len(body) > ANSWER_CAP:
+        raise ForgeUnavailableError("the forge's answer is over the size the hub reads")
+    return json.loads(body)
 
 
 class _SameHostOnly(urllib.request.HTTPRedirectHandler):
@@ -556,8 +592,8 @@ class Forge:
                 _note(source, getattr(response, "headers", None), spent=False)
                 noted = True
                 if raw_cap is not None:
-                    return response.read(raw_cap + 1)
-                return json.loads(response.read())
+                    return read_bounded(response, raw_cap + 1)
+                return json_answer(response)
         except urllib.error.HTTPError as error:
             headers: Any = error.headers or {}
             if error.code == 404:

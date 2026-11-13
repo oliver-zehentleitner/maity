@@ -433,6 +433,23 @@ def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor:
     public_pages.touch(conn, public_projects.KIND, project_id)  # an archived project has no page
 
 
+# A path segment of the repository URL (§6.1, "The shape of `url`", step 4): owner and name are
+# what the probe puts into its API paths (`forge.repository_of`), so `.`, `..`, percent-encoding,
+# a query or a fragment would make it read another path than the repository's.
+_SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,255}")
+
+
+def _repository_path(path: str) -> bool:
+    """Whether `owner/name` holds two segments of the contract's shape; a lower-case `.git` at
+    the end of the name is the clone suffix and is taken off first (step 3)."""
+    segments = path.split("/")
+    segments[-1] = segments[-1].removesuffix(".git")
+    return all(
+        _SEGMENT.fullmatch(s) and s not in (".", "..") and not s.lower().endswith((".git", ".atom"))
+        for s in segments
+    )
+
+
 def _repository_columns(repository: RepositoryIn | None, current: Any = None) -> dict[str, Any]:
     """The project's repository columns from a request's `repository`; `current` is the
     project a `PATCH` changes. Unlike `default_branch`, a `required_check` left out keeps the
@@ -445,7 +462,12 @@ def _repository_columns(repository: RepositoryIn | None, current: Any = None) ->
             "repository_required_check": None,
         }
     url = repository.url.rstrip("/")
-    if not url.startswith("https://") or forge_of(url) is None or url.count("/") != 4:
+    if (
+        not url.startswith("https://")
+        or forge_of(url) is None
+        or url.count("/") != 4
+        or not _repository_path(url.split("/", 3)[3])
+    ):
         raise invalid(
             {"repository.url": "not_a_configured_forge"},
             "the repository must be https://<forge host>/<owner>/<name> on a configured forge",

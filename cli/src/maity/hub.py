@@ -112,8 +112,15 @@ def opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(_NoRedirect)
 
 
+# The path segments whose next segment is a secret: a join link's token (`/join/<token>`),
+# a runner's pairing link (`/r/<token>`) and an invitation's (`/i/<token>`).
+TOKEN_PREFIXES = frozenset({"join", "r", "i"})
+
+
 def safe_url(url: str) -> str:
-    """A URL fit for a message: scheme, host, port and path; never userinfo or query."""
+    """A URL fit for a message: scheme, host, port and path; never userinfo or query, and
+    never the token of a join, pairing or invitation link, which reads as `<token>`: the
+    message may be pasted into a chat or a card, and the link works for whoever reads it."""
     try:
         parts = urllib.parse.urlsplit(url.strip())
         host = parts.hostname or ""
@@ -121,7 +128,12 @@ def safe_url(url: str) -> str:
             host = f"{host}:{parts.port}"
     except ValueError:
         return "<not a URL>"
-    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", "")) or "<empty>"
+    segments = parts.path.split("/")
+    for at in range(1, len(segments)):
+        if segments[at - 1] in TOKEN_PREFIXES and segments[at]:
+            segments[at] = "<token>"
+    path = "/".join(segments)
+    return urllib.parse.urlunsplit((parts.scheme, host, path, "", "")) or "<empty>"
 
 
 def hub_base(url: str) -> str:

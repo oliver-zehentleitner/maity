@@ -469,3 +469,33 @@ Known and left for later: `unknown` counts as not conflicting, so a conflicting
 pull request whose state GitHub recomputes (`conflicting`, `unknown`,
 `conflicting`) wakes the release holder twice. Carrying the last known conflict
 through `unknown` needs a stored value the observation does not have today.
+
+## A forge answer is read within a size cap and one deadline for the whole body
+
+**Id:** e8417295-6766-4952-ac7b-a103d8d7d4a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qtr9myhtysbs (hardening from the security rounds, tsk-v9kheekgq115), which asks for a byte cap and a total deadline "as `outbound._body` does"; the numbers are the coder's choice, not stated on the card
+**Revisit when:** a real answer (a check-runs page, a large repository's metadata) comes near 16 MiB, or reads that time out at 30 seconds show up in the probe's log
+
+Every body the hub reads from the forge's API, the probe's (`forge.Forge._send`)
+and the GitHub App's (`github_app._open`), goes through `forge.read_bounded`:
+it reads in chunks until `READ_SECONDS` (30 s) after the first, each chunk's
+socket wait shortened to what is left, and a JSON answer past `ANSWER_CAP`
+(16 MiB) is refused as `ForgeUnavailableError`. A raw file read keeps its own
+cap (`raw_cap + 1`) under the same deadline.
+
+**Reason:** before, `TIMEOUT` bounded each socket operation only, so an
+answer that trickled a byte every few seconds kept the read, and the probe's
+worker, open for as long as it liked, and `response.read()` took the whole
+body into memory whatever its size. 16 MiB leaves room for a page of 100 check
+runs with the forge's longest summaries; 30 s is three times the per-operation
+`TIMEOUT`.
+
+**Rejected alternatives:** reusing `outbound._body` itself: it belongs to
+outbound's own connection (pinned address, its `Refused` errors, gzip), while
+the forge reads go through urllib's opener with the redirect guard. A watchdog
+thread that closes the socket at the deadline, as outbound has: shortening each
+chunk's socket wait to the time left gives the same bound without a thread per
+read.

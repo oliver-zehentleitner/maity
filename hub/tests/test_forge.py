@@ -781,3 +781,49 @@ def test_a_raw_read_under_a_grant_reads_another_repository_without_the_token(
         "application/vnd.github.raw",
     ]
     assert all(r.get_header("Authorization") is None for r in seen.requests)
+
+
+class _Trickle(io.RawIOBase):
+    """A forge that sends one byte at a time, a little while apart, and never ends."""
+
+    def readinto(self, buffer: Any) -> int:
+        time.sleep(0.02)
+        buffer[0:1] = b" "
+        return 1
+
+
+def test_an_answer_over_the_cap_is_refused_unread(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(forge, "ANSWER_CAP", 64)
+    opener.answers["/repos/a/b/commits/x"] = {"sha": "a" * 40}  # 51 bytes
+    assert READER._get("/repos/a/b/commits/x") == {"sha": "a" * 40}
+    opener.answers["/repos/a/b/commits/x"] = {"sha": "a" * 60}
+    with pytest.raises(forge.ForgeUnavailableError, match="over the size"):
+        READER._get("/repos/a/b/commits/x")
+
+
+def test_a_trickling_answer_ends_at_the_read_deadline(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.2)
+    monkeypatch.setattr(
+        forge, "_opener", type("O", (), {"open": lambda _s, r, timeout: _Trickle()})()
+    )
+    started = time.monotonic()
+    with pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"):
+        READER._get("/repos/a/b/commits/x")
+    assert time.monotonic() - started < 1.0
+
+
+def test_the_app_reads_are_bounded_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maity_hub import github_app
+
+    monkeypatch.setattr(forge, "ANSWER_CAP", 64)
+    monkeypatch.setattr(
+        forge,
+        "_opener",
+        type("O", (), {"open": lambda _s, r, timeout: io.BytesIO(b'"' + b"x" * 100 + b'"')})(),
+    )
+    with pytest.raises(forge.ForgeUnavailableError, match="over the size"):
+        github_app._call("/app", "Bearer x")

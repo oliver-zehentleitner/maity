@@ -257,7 +257,7 @@ def _call(path: str, authorization: str, post: bool = False) -> Any | None:
 def _open(request: urllib.request.Request) -> Any | None:
     try:
         with forge._opener.open(request, timeout=forge.TIMEOUT) as response:
-            return json.loads(response.read())
+            return forge.json_answer(response)
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None

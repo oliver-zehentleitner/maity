@@ -707,6 +707,21 @@ def test_safe_url_drops_userinfo_and_query() -> None:
 
 
 @pytest.mark.parametrize(
+    ("url", "shown"),
+    [
+        ("https://h.example/join/abc123", "https://h.example/join/<token>"),
+        ("https://h.example/api/v1/join/abc123/", "https://h.example/api/v1/join/<token>/"),
+        ("https://h.example/r/abc123", "https://h.example/r/<token>"),
+        ("https://h.example/i/abc123?x=1", "https://h.example/i/<token>"),
+        ("https://h.example/join/", "https://h.example/join/"),
+        ("https://h.example/projects/a/b", "https://h.example/projects/a/b"),
+    ],
+)
+def test_safe_url_hides_the_token_of_a_link(url: str, shown: str) -> None:
+    assert hub.safe_url(url) == shown
+
+
+@pytest.mark.parametrize(
     ("given", "header"),
     [
         ("https://x.0.0.1/j/t", "https://0.0.1"),  # an address is never a parent
