@@ -15,8 +15,8 @@ takes each agent it reaches that is not admitted for its author out of its audie
 `held:<id>`, which its owner reads along by; a lead's message passes.
 
 `settle` is the one place that writes the state: every change of who is in a chat, and every
-change of an owner's entries, ends in it. The request to the owner (§9.6, "The request") is a
-later part of the same card.
+change of an owner's entries, ends in it. It hands the owners whose agents waited or wait to
+`chat_request.sync`, which keeps the request to each owner (§9.6, "The request").
 """
 
 from __future__ import annotations
@@ -282,6 +282,7 @@ def settle(
 
     current = group_chats.stays(conn, conversation.id)
     if conversation.closed_at is not None:
+        _ask(conn, [s for s in current if s.waiting])
         return [], []
     judged = verdicts(conn, conversation, current)
     changed: list[dict[str, Any]] = []
@@ -309,7 +310,22 @@ def settle(
         )
         if s.membership_id not in fresh and (s.waiting_for is not None or wanted):
             changed.append({"member_id": s.agent_id, "by": by, "waiting_for": wanted})
+    _ask(
+        conn,
+        [
+            s
+            for s in current
+            if s.waiting or (s.membership_id in judged and judged[s.membership_id].waiting_for)
+        ],
+    )
     return changed, denied
+
+
+def _ask(conn: Connection, stays: list[Any]) -> None:
+    """The request to the owner of each agent that waited or waits in the chat (§9.6)."""
+    from maity_hub import chat_request
+
+    chat_request.sync_agents(conn, [s.agent_id for s in stays if s.agent_id])
 
 
 def waiting(conn: Connection, conversation_id: str, membership_id: int) -> bool:
@@ -370,7 +386,7 @@ def chats_of_owner(conn: Connection, owner: str) -> list[Any]:
 def served(conn: Connection, membership_id: int) -> None:
     """After a connection across owners that serves this member starts or ends (§2.3): the
     bridge counts on its owner's side in the member's open chats, so settle them again."""
-    from maity_hub import group_chats
+    from maity_hub import chat_request, group_chats
 
     p, c = t.conversation_participant.c, t.conversation.c
     chats = conn.execute(
@@ -379,17 +395,19 @@ def served(conn: Connection, membership_id: int) -> None:
         .where(p.membership_id == membership_id, p.here.is_(True), c.closed_at.is_(None))
         .order_by(c.id)
     ).all()
-    for chat in chats:
-        group_chats.resettle(conn, chat, None)
+    with chat_request.deferred(conn):
+        for chat in chats:
+            group_chats.resettle(conn, chat, None)
 
 
 def recheck(conn: Connection, owner: str) -> None:
     """After a change of the owner's entries (§9.6): settle each open chat of the owner's
     agents and announce what changed; an agent a new deny entry stops leaves."""
-    from maity_hub import group_chats
+    from maity_hub import chat_request, group_chats
 
-    for chat in chats_of_owner(conn, owner):
-        group_chats.resettle(conn, chat, owner)
+    with chat_request.deferred(conn):
+        for chat in chats_of_owner(conn, owner):
+            group_chats.resettle(conn, chat, owner)
 
 
 def _expired(owner: str | None, now: Any) -> Any:
@@ -421,16 +439,20 @@ def lapse(conn: Connection, owner: str) -> int:
         .where(c.id.in_(ids), c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now)
         .values(lapsed_at=now)
     )
-    for chat in chats_of_owner(conn, owner):
-        group_chats.resettle(conn, chat, None)
+    from maity_hub import chat_request
+
+    with chat_request.deferred(conn):
+        for chat in chats_of_owner(conn, owner):
+            group_chats.resettle(conn, chat, None)
     return len(ids)
 
 
 def sweep(engine: Any) -> int:
     """`lapse` for each owner with an expired entry, each in a transaction of its own (the
-    human's row, then the projects', as a write under /me/chat-access takes them), run again
-    after a transient deadlock with a chat write (`db.retrying`)."""
-    from maity_hub import events
+    human's row, then the projects', as a write under /me/chat-access takes them), then the
+    requests to the owners (`chat_request.sweep_owners`) in another; each run again after a
+    transient deadlock with a chat write (`db.retrying`)."""
+    from maity_hub import chat_request, events
     from maity_hub.db import retrying
 
     with engine.connect() as conn:
@@ -440,7 +462,13 @@ def sweep(engine: Any) -> int:
         with events.transaction(engine) as conn:
             return lapse(conn, owner)
 
-    return sum(retrying(partial(one, owner)) for owner in owners)
+    def asking() -> None:
+        with events.transaction(engine) as conn:
+            chat_request.sweep_owners(conn)
+
+    lapsed = sum(retrying(partial(one, owner)) for owner in owners)
+    retrying(asking)
+    return lapsed
 
 
 def sides_of(conn: Connection, current: list[Any]) -> list[str]:
