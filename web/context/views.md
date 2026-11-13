@@ -4064,7 +4064,8 @@ for want of `review`.
 
 **Id:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Evidence:** confirmed
 **Source:** the maintainer's wish for only one Settings in a project (relayed on the card tsk-wzqeneerfacp, 2026-10-30); docs/api.md §16.11 after the contract #741 (the `settings` view with two tabs, the project's at `settings` for `project:admin`, the caller's own at `settings/mine` for every member, a caller without `project:admin` at `settings` gets `settings/mine`; `my-settings` is no project view any more); the alpha rule, no redirect from the old path
 **Revisit when:** a member without `project:admin` needs to read a project setting the overview does not show, or one's own settings for a project grow into a page of their own
@@ -4089,6 +4090,62 @@ Project tab read only, as before: the contract shows it to admins only,
 and what a member may read of it (language, memory) is on the overview
 or in the project's files. A redirect from `my-settings`: the alpha
 rule, no route kept for an old address.
+
+## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation and Mine
+
+**Id:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request on the card tsk-chtvqs62cd10, 2026-11-13 (sub-tabs instead of one long page, an address per tab, General the default, only the tabs with something for the reader, presentation only, the dashboard's existing tab pattern, and a proposed grouping open to review); where Keep the Why personal settings and the sections the card did not list went is the implementer's, 2026-11-13
+**Revisit when:** the review rules (tsk-kymz2pdrf85k), the rule settings (tsk-z5h7h1v7kmjd) or outsider removal (tsk-yr3ckca01b9q) land, a tab grows into a long page again, or the maintainer moves a section
+**See:** views.md#a-project-has-one-settings-view-project-for-its-admins-mine-at-settingsmine-for-every-human-member — f37bbdb4-2ad3-432e-babf-dd58f6e3ff79 — as of 2026-11-13
+
+The project's **Settings** view is a row of tabs, drawn by the same
+`M.tabBar` as the Team and Agents pages (links in a `nav`, the shown one
+`aria-current="page"`), each tab at its own address: **General** at
+`settings`, **Members and agents** at `settings/members`, **Way of
+working** at `settings/work`, **Moderation** at `settings/moderation` and
+**Mine** at `settings/mine`. One table in `js/app.js`
+(`SETTINGS_SECTIONS`) names every section once with its tab and the rule
+of who gets it, the rule each section had on the one page; a tab is shown
+where one of its sections is, the project's tabs only to `project:admin`,
+Mine to every human. An address of a tab the reader is not shown (a
+member without the right at `settings`, the restricted-access notice's
+`settings/members`) leads on to the first tab they are shown, as
+`settings` led such a member to `settings/mine` before; `settings/general`
+leads to `settings`. Each section keeps its form, words and checks; a save
+redraws the tab it was made on.
+
+Grouping: General holds what the project is and where it lives (state,
+language, repository and its grant, links, name and transfer, public
+page, badge, ticker and webhook, logo and banner, the runners link);
+Members and agents who joins on what terms and who reads what (members'
+own agents, agents of owners who are not members, onboarding, restricted
+access, signing); Way of working how work is done and kept (who closes a
+card, the memory provider, the Keep the Why commitment, Keep the Why
+personal settings, the jour fixe link); Moderation the reported-message
+removal and everyone's pending uploads; Mine one's own settings, leaving
+the project, and the owner's absence.
+
+**Reason:** the one page had grown to some twenty sections, and an admin
+looking for one scrolled through all of them. An address per tab keeps a
+link, a reload and Back on the tab, as the account's and the Overview's
+tabs already do. Keep the Why personal settings went to Way of working,
+not to Mine as the card proposed: the form sets the project's policy
+`keep_the_why_defaults` (whether a joining agent adopts the project's
+defaults), with a reason, for every member's agents, not the reader's own
+setting; it stands beside the commitment it belongs with. The memory
+provider goes there too, since the commitment follows it.
+
+**Rejected alternative:** the one long page with a list of anchors at
+its top: a place on a page is a route and one checked anchor
+(web/context/routing.md), and the page would stay as long. Tabs switched
+in the page without an address: the card asks that a link, a reload and
+Back land on the same tab. A tab bar of its own with arrow-key roving
+(`role="tablist"`): the dashboard's view tabs are links, and the card asks
+for the existing pattern. Keep the Why personal settings on Mine, as
+proposed: see the reason.
 
 ## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
 
