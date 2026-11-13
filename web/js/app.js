@@ -143,6 +143,9 @@ window.Maity = window.Maity || {};
       || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
+    // /<handle>/agents: the person's tab Agents (§6.27, §16.11); `agents` is never a slug (a project
+    // view), and an agent's own page, /<owner>/agents/<handle>, stays the project scope's.
+    if (parts.length === 2 && parts[1] === "agents" && !OWN_WORDS.includes(parts[0])) return { scope: "person", handle: parts[0], tab: "agents" };
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
       return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
@@ -756,7 +759,8 @@ window.Maity = window.Maity || {};
       }
     };
 
-    const panel = h("div", { class: "panel", id: "project-panel" });
+    // The settings' forms share one reading column (web/context/views.md).
+    const panel = h("div", { class: "panel form-column", id: "project-panel" });
     const language = (ctx.project.settings || {}).language || "en";
     const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
     if (humanAdmin) {
@@ -2483,7 +2487,9 @@ window.Maity = window.Maity || {};
     if (["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
-    const root = h("section", { class: "view view-" + viewName });
+    // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
+    // are forms: one reading column (web/context/views.md).
+    const root = h("section", { class: "view view-" + viewName + (["account", "orgs", "settings"].includes(viewName) ? " form-column" : "") });
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:
@@ -2527,7 +2533,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "agents") {
         await M.views.agentsPage(ctx, root, where.args);
       } else if (where.scope === "person") {
-        await M.views.person(ctx, root, where.handle);
+        await M.views.person(ctx, root, where.handle, where.tab);
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
@@ -2563,7 +2569,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "runners") label = M.t("view.runners");
     else if (where.scope === "invitations") label = M.t("header.invitations");
     else if (where.scope === "agents") label = M.t("view.agents");
-    else if (where.scope === "person") label = "@" + where.handle;
+    else if (where.scope === "person") label = where.tab === "agents" ? M.t("person.title.agents", { name: "@" + where.handle }) : "@" + where.handle;
     else if (where.scope === "instance-admin") label = M.t("view.instance_admin");
     else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;

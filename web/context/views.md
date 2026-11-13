@@ -3252,7 +3252,7 @@ named in the digest can be resumed or ended only from one's agents.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30
+**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11
 **Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
 
 `/<handle>` (one segment, not one of the dashboard's own words) is the
@@ -3269,6 +3269,15 @@ Overview, any other to its public page. An alias answers with the
 current handle and the address follows it; `not_found` says that there
 is nobody to see, as for an unknown name.
 
+A person's view has two tabs, **Profile** at `/<handle>` and **Agents**
+at `/<handle>/agents` (card tsk-zrjxhxanfwzd, 2026-11-11: the public
+agents page existed, the signed-in address showed nothing). The Agents
+tab draws the same answer's `agents` (§6.27), as the public agents page
+lists them (§16.9); it does not read `GET /public/pages/<handle>/agents`
+signed in. Signed out, the dashboard's copy of that page
+(`person_agents`, `js/visitor.js`) draws its list with the same helper
+and carries the same tabs, so the address shows one list either way.
+
 **Reason:** what a reader may see of another person (the bio only while
 the page is public, the links by `links_visible`, a picture by §6.10)
 is the hub's to decide per reader; one read that already answers that
@@ -3283,6 +3292,10 @@ shares no project with, and no organisation for a non-member. A
 generated avatar from the handle: it would differ from the one every
 other view draws for the same person, and change with a rename. Hiding
 the picture's place: the layout would jump from one person to the next.
+For the Agents tab, reading the visitors' route signed in as well: §6.27
+names `GET /people` as the dashboard's read of a person, and gives the
+same list there (the hub's `listed_agents` serves both), so a second
+route would add a read without adding anything to see.
 
 ## The fixture hub serves an organisation's page by its switch, which the hub does not yet
 
@@ -6617,3 +6630,62 @@ which a phone hides, so the owner sees it there too.
 - A link to the request itself: rejected, its id is not in the chat's view.
 - The waiting mark in the Manage list only: rejected, only managers open it,
   and the owner of the waiting agent may not be one.
+
+## A settings or manage panel's forms share one column, --form-column (42rem), its buttons at the left
+
+**Id:** 7c1cf0ae-ac5b-4f72-8d3e-acd05e1771b4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-0t3vdzjvm2vq (one width for forms and help texts in settings and manage panels) and the project lead's answer on it: a `--form-column: 42rem` token, a `.form-column` class, lists and tables full width, buttons left inside the column, Remove included; the reviews of PR #1731 (lists inside wrappers, the forms' widths outside the panels, the panels left out); web/css/app.css, web/tools/e2e.py `form_column_layout`, 2026-11-13
+**Revisit when:** a panel needs two columns side by side, a form inside a column needs to be wider than 42rem, or the dashboard gets a layout grid of its own
+
+A panel that holds forms carries the class `.form-column`: Team →
+Manage, an agent's card (Agents → Manage and /agents), a project's
+Settings (Project and Mine, the settings panel a column of its own
+inside) and the account's tabs, Organisations and an organisation's page
+among them. Its parts stop at `--form-column` (42rem) and start at its left; lists,
+tables, tab rows and a part marked `.full-width` (an agent's
+credentials) keep the panel's whole width. A part that holds such a
+list, however deep (the account's sessions, its forge links and
+repositories, the settings' attach list), keeps the whole width too, and
+its own parts without one stop at the column again, level by level down
+to the list (`:has()`). A list counts only inside the column: a column
+may itself stand in a table or a list (Team's Manage row, an agent's
+card), and everything in it would otherwise read as inside a list. A `dl` of facts is text here, not a list: short
+pairs that read better in the column. Inside the column fields and
+help texts fill it, so a panel has one right edge, and a form's buttons
+(`.actions`, `.row`, Remove, and a grid form's own: `form`,
+`.field-stack`, `.image-row`) start at its left, next to what they send;
+a form's own button is not stretched across it. A form's own width (32, 36 or 48rem) still
+holds outside a column (the admin area, the inbox, the sign-in): inside
+one the form fills the column. The instance admin area is not in this
+decision's scope; its forms keep their widths. The rules that put
+buttons at the column's left and fill forms stand at the end of app.css, after the forms' own rules.
+The e2e step `form_column_layout` measures every column on those pages
+at 1280, 390 and 360 px (the notifications also in German): one edge,
+every list outside a form at the full width, the buttons at the left,
+and the forms' own widths outside a column.
+
+**Reason:** each form brought its own width (32, 42 or 48rem, some none
+at all), so help texts ran to the panel's edge while the fields beside
+them stopped at 26 or 32rem, and Remove sat at the far right, away from
+the form it belongs to. One token and one container class give every
+panel the same edge, and a new form inside it needs no width of its own.
+
+**Alternatives considered:**
+- A width per form, as before: rejected, the widths drifted apart, and
+  parts with no form (help paragraphs, sections) had none.
+- Buttons at the column's right edge: rejected, the project lead chose
+  the left, Remove included, so a button stands where the eye ends the form.
+- Only the column's direct parts exempt when they are lists: rejected in
+  review, the account wraps its lists in sections, which then shrank from
+  1168 to 672 px.
+- `.full-width` on each wrapper of a list: rejected, the lists sit two to
+  five levels deep and a new one would need the class again; `:has()`
+  finds them.
+- The token as every form's width everywhere: rejected in review, it
+  widened forms outside the panels in scope.
+- A `dl` of facts at the full width like a list: rejected, its pairs are
+  short, and in a padded box (the settings' webhook) the column's parts
+  beside it would end the box's padding past the column's edge.

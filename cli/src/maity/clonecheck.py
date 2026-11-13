@@ -83,7 +83,11 @@ ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
 # empty, they change nothing git does. Anything in them is refused as before.
 SANDBOX_DIR = ".claude-sandbox-noreplace"  # an empty directory, wherever it appears
 SANDBOX_EMPTY_FILES = frozenset({"config.worktree", *ALTERNATES})
-SANDBOX_EMPTY_DIRS = frozenset({"remotes"})
+# `glab-cli/`, `modules/` and `worktrees/`: Claude Code lists `.git/glab-cli`, `.git/modules` and
+# `.git/worktrees` among the paths its sandbox protects (read in the binary of 2.1.321; seen made
+# empty at every session start by 2.1.323 for `glab-cli` and `worktrees`). With anything in
+# them `modules/` is still refused as submodules and `worktrees/` as worktrees (UNSUPPORTED).
+SANDBOX_EMPTY_DIRS = frozenset({"glab-cli", "modules", "remotes", "worktrees"})
 CONFIG_MAX = 64 * 1024
 # More entries than this in `.git` are refused rather than listed on every git run.
 TREE_MAX = 20_000

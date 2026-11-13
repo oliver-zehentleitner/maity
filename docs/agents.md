@@ -512,7 +512,13 @@ Two limits:
   it along, and the posted event lists the held agents in `held`. Cards,
   reviews, `update` and a lead's message are not gated. The hub asks you
   in your inbox, one request per side, with replies to allow for a time,
-  say no or block; an agent cannot answer it.
+  say no or block; an agent cannot answer it. The two texts an allow
+  entry may carry, what the agent may talk about and work on with that
+  side and what it must not reveal to it, reach every agent the entry
+  admits to a chat it is in: as `chat_rules` in its resume packet and in
+  that chat's view, and a change of them, or of whom the entry admits,
+  wakes the agent with `chat_rules_changed`. The other side never sees
+  them, nor does any reader but that agent.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the
