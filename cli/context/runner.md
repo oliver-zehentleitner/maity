@@ -2353,13 +2353,15 @@ listed: it is real, untracked work that `git status` must keep showing.
 **Evidence:** confirmed
 **Source:** card tsk-3qb19f0r56zf (the runner test of 2026-11-11: after its first `maity resume`, a placed agent ran `maity` in pipes and chains, read "this clone has not joined a project", took the hub for broken and stopped without `maity wait`; its session transcript)
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
+**See:** runner.md#a-placed-claude-code-agents-maity-line-is-one-plain-call-held-to-that-by-a-hook — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-13
 **Revisit when:** Claude Code matches `excludedCommands` per part of a compound command, or the credential becomes readable inside the sandbox
 
 Claude Code's sandbox hides `.git/maity`, and only a command that matches
-`excludedCommands` (`maity *`) runs outside it. A pipe or a chain with
-`;`, `&&` or `||` is one command that does not match, so its `maity`
-runs inside and finds no credential. The start prompt of a Claude Code
-placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
+`excludedCommands` (`maity *`) runs outside it. A pipe or a chain that
+does not start with `maity` does not match, so its `maity` runs inside
+and finds no credential; a line that starts with `maity` and holds more
+than the call is refused before it runs (63492c65). The start prompt of
+a Claude Code placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
 is set and no credential is readable, `maity` says that instead of "has not
 joined a project".
 
@@ -2371,6 +2373,64 @@ do, and hid that the cause was the shape of its own command.
   allowed build or test command runs could then read it (ea36c196).
 - Rewriting the agent's command in a hook: hooks are switched off for
   placements (`--setting-sources user`), and the harness owns the command.
+
+## A placed Claude Code agent's `maity` line is one plain call, held to that by a hook
+
+**Id:** 63492c65-e6bf-4fd8-9a73-5a599f11707e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`. The grammar and the rejected alternatives below are the author's, not yet reviewed
+**See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
+**See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
+
+Under its sandbox, a placed Claude Code session runs a hook before every
+tool call (`runner/plaincall.py`), written by the runner into the
+session's settings beside `excludedCommands`. A command line that starts
+with `maity` passes only as one plain call: words of letters, digits and
+`_-./:=@%+,~^#`, a backslash before any character but a newline,
+single-quoted text, and double-quoted text without `$`, a backtick or
+`!`, with no newline inside. Anything else on such a line (a pipe, `;`,
+`&&`, `||`, `&`, a redirect, `$(…)`, backticks, `<(…)`, a heredoc, a
+`$`) is refused before it runs, with the way out: the text in a file in
+the clone, passed with `--body-file`. So `maity say … - <<'EOF'` does not
+run for a placed Claude Code agent. Before looking for `maity`, every
+leading character that is not a letter or a digit is skipped, so a line
+counts however the harness trims it; a line that starts with a variable
+or another command is left to the permission rules.
+
+The hook is the runner's own interpreter and module (`-I -m
+maity.runner.plaincall`; on an ssh host `maity runner plaincall`, as for
+the loop), outside the clone and not the agent's to change. It has no
+matcher, so it sees every tool, and checks any tool input with a
+`command`. A hook that fails, cannot start or times out refuses the call
+(`onFailure: "block"`), and unreadable input is refused too. The session's
+settings set `disableAllHooks: false` over the agents' user settings.
+opencode, which runs without a sandbox and gets no hook, denies
+`maity *<c>*` for each of `;&|<>$`, a backtick and a newline, after its
+allows; whether its scanner hands a redirect to the rule with the
+command is not checked.
+
+**Reason:** only `maity` itself needs to run outside the sandbox. A line
+that holds more than maity's call is held to the rules every other
+command is, and the check does not rely on the shell to tell the parts
+apart. A grammar of what may appear rather than a list of operators: a
+spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
+
+**Rejected alternatives:**
+- A narrower `excludedCommands` pattern: the exclusion is a pattern
+  over the line, and nothing in it says what may not follow `maity`.
+- A list of refused operators (the order's first shape): an expansion
+  nobody listed would pass.
+- Letting heredocs through: their line holds `<` and a newline like any
+  other redirection; a file in the clone carries the same text.
+- `maity` checking its own command line: a program sees its arguments,
+  not the line around it; a redirect is done before it starts.
+- The hook in exec form (`args`): the shell form with the runner's
+  quoted paths also runs on a harness version that predates exec form.
+- No exclusion for `maity` at all: a larger change, for a card of its
+  own.
 
 ## Placed agents open their pull requests through `maity gh`, pinned to the clone's repository
 
