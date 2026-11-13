@@ -2512,10 +2512,12 @@ the last directory, without a name where the system has `O_TMPFILE`, and
 that open file is what gets the name: linked through `/proc/self/fd`, or
 by its own name compared by device and inode before and after the link,
 or, without hard links or once its name is gone, copied from maity's own
-descriptor into an exclusively created file. Linking fails on an
-existing name, so no file is replaced there, `--force` included; another
-file that took the temporary name never gets the target's (review of
-#1749). Without `-o` the
+descriptor into an exclusively created file, which counts as saved only
+while the name still holds that file (device and inode), as after a
+link. Linking fails on an existing name, so no file is replaced there,
+`--force` included; another file that took the temporary name never gets
+the target's, and one that took the target's name during the copy is
+refused and left alone (review of #1749). Without `-o` the
 file goes to `./maity-files/` as before, created 0700 through the same
 walk. Where a name cannot be opened through a directory's descriptor
 (Windows), no file is saved; `-o -` is not offered either since
@@ -2556,11 +2558,13 @@ there.
   holds both records in one place the runner already makes and maity
   already checks.
 
-**Known gap:** where the system has no `O_TMPFILE` (macOS, some file
-systems), maity's file has a name in the clone until it is linked, and
-code running as the same user can write into it by that name between the
-digest check and the link; the target then holds the checked file with
-those writes. Its identity is kept, its content is not.
+**Known gap:** a file with a name can be opened by that name. Where the
+system has no `O_TMPFILE` (macOS, some file systems), maity's file has a
+name in the clone until it is linked, and code running as the same user
+can write into it between the digest check and the link. In the copy
+without hard links the target has its name while maity writes it, and
+such code can write into it as well. The target is then the file maity
+made, with those writes: its identity is checked, its content is not.
 
 ## Under a placement maity reads a file for the agent only inside the clone, and writes no attachment to standard output
 

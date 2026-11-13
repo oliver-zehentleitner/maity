@@ -246,23 +246,33 @@ def _publish(
         # another file, which then went away with it), and Linux links no such file.
         if exc.errno not in NO_HARD_LINKS and not (via_proc and exc.errno == errno.ENOENT):
             raise
-        _copy(directory, fd, leaf, mode, exists)
+        _copy(directory, fd, leaf, mode, exists, replaced)
         return
+    # As in `_copy`: a name that holds another file now is refused and left alone; it is
+    # not maity's file, and removing it could take someone else's.
     linked = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
     if not _same(linked, own):
-        with contextlib.suppress(OSError):
-            os.unlink(leaf, dir_fd=directory)
         raise replaced
 
 
-def _copy(directory: int, fd: int, leaf: str, mode: int, exists: Refused) -> None:
+def _copy(
+    directory: int, fd: int, leaf: str, mode: int, exists: Refused, replaced: Refused
+) -> None:
     """A new file `leaf` in `directory`, created exclusively without following a link, with
-    the bytes of `fd` from its start: maity's own descriptor, never a name reopened."""
+    the bytes of `fd` from its start: maity's own descriptor, never a name reopened. It
+    succeeds as the link does, only when `leaf` still names the file written here (device
+    and inode); otherwise it is refused and the name is left alone, since what it names now
+    is not maity's file. On an error the name is removed only while it is still that file."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
         out = os.open(leaf, flags, mode, dir_fd=directory)
     except FileExistsError:
         raise exists from None
+    try:
+        written = os.fstat(out)
+    except BaseException:
+        os.close(out)
+        raise
     try:
         offset = 0
         while chunk := os.pread(fd, CHUNK, offset):
@@ -271,9 +281,22 @@ def _copy(directory: int, fd: int, leaf: str, mode: int, exists: Refused) -> Non
             while view:
                 view = view[os.write(out, view) :]
         os.fchmod(out, mode)
-    except BaseException:
+        try:
+            named = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
+        except OSError:
+            named = None
+        if named is None or not _same(named, written):
+            raise replaced
+    except BaseException as exc:
         os.close(out)
-        with contextlib.suppress(OSError):
-            os.unlink(leaf, dir_fd=directory)
+        if exc is not replaced:
+            _unlink_if(directory, leaf, written)
         raise
     os.close(out)
+
+
+def _unlink_if(directory: int, leaf: str, ours: os.stat_result) -> None:
+    """Remove `leaf` only while it names the file `ours` describes."""
+    with contextlib.suppress(OSError):
+        if _same(os.stat(leaf, dir_fd=directory, follow_symlinks=False), ours):
+            os.unlink(leaf, dir_fd=directory)
