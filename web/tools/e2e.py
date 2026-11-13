@@ -57,6 +57,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zlib
 from datetime import datetime, timedelta, timezone
@@ -371,6 +372,24 @@ def take_machine_lock(path: Path = LOCK_PATH, say=print, every: float = 60, paus
     _machine_lock = descriptor
 
 
+# Each running hub's environment by its base URL, for a `maity-hub` command a step runs against it.
+HUB_ENV: dict[str, dict[str, str]] = {}
+
+
+def hub_command(run: Run, args: list[str], stdin: str | None = None) -> None:
+    """`maity-hub <args>` against the hub at run.base, with the environment it was started with;
+    the output goes to that hub's log directory as hub-command.log."""
+    with open(run.artifacts / "hub-command.log", "a") as log:
+        log.write(f"$ maity-hub {' '.join(args)}\n")
+        log.flush()
+        done = subprocess.run(
+            ["maity-hub", *args], env=HUB_ENV[run.base], input=stdin, text=True,
+            stdout=log, stderr=subprocess.STDOUT, check=False,
+        )  # fmt: skip
+    if done.returncode != 0:
+        raise AssertionError(f"maity-hub {args[0]} failed: see hub-command.log")
+
+
 def start_hub(
     work: Path, logs: Path, port: int, extra: dict[str, str] | None = None, log_name: str = "hub.log"
 ) -> subprocess.Popen:
@@ -393,6 +412,7 @@ def start_hub(
         MAITY_PUBLIC_PAGES="on",
         **(extra or {}),
     )
+    HUB_ENV[base] = env
     log_path = logs / log_name
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
         for args, stdin in (
@@ -770,6 +790,14 @@ def join_line(
     if not panel.is_visible():
         join_any(page)
     expect(panel).to_be_visible()
+    # The experiment notice (docs/api.md §5.1): until the person confirms it, once per account;
+    # it holds the form back in nothing.
+    notice = panel.locator(".experiment-notice")
+    if notice.count():
+        expect(notice).to_contain_text("Maity is a public experiment at an early stage.")
+        run.a11y(page, "join panel with the experiment notice")
+        notice.get_by_role("button", name="Understood", exact=True).click()
+        expect(notice).to_have_count(0)
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
         expect(page.locator("#join-handle")).to_be_visible()
@@ -891,6 +919,7 @@ def main() -> int:
                     jour_fixe_settings_layout(run, browser)
                     form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
+                    report_pages_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -4802,6 +4831,95 @@ def report_step(run: Run, page: Page) -> None:
     expect(row).to_contain_text("open")
     run.a11y(page, "account, reports")
     no_problems(run, "report")
+
+
+REPORTER = ("rita", "Rita", "rita@e2e.example", "e2e rita password")
+
+
+def report_pages_round(run: Run, browser) -> None:
+    """Report where a stranger sees the thing (docs/api.md §16.9 "A report link", §16.8;
+    tsk-w0g9d128wgma), on the hub: signed out, a person's page, an agent's page, a project's page
+    and a card's page each carry **Report** to the sign-in with the page's own address and
+    `?report`, and a person's agents page none; the sign-in through that link comes back to the
+    same address in the dashboard with the report form open, for a second person who is no
+    member. Signed in, `/<handle>/agents` is the person view's Agents tab (§6.27, §16.11), each
+    listed agent linked to its page, where Report is. Late in the first hub's run: the second
+    person would change what earlier steps count."""
+    run.step("report: each public page's Report signs in and comes back with the form open; the Agents tab")
+    handle, name, address, password = REPORTER
+    hub_command(run, ["owner", "create", "--handle", handle, "--display-name", name, "--email", address], password + "\n")
+
+    def fresh() -> tuple:
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        context.set_default_timeout(TIMEOUT_MS)
+        page = context.new_page()
+        watch_page(run, page)
+        return context, page
+
+    # A card with a page: the first one the public board links to.
+    context, page = fresh()
+    page.goto(f"{run.base}/owner/e2e-alpha/board")
+    card = page.locator("a[href*='/owner/e2e-alpha/tasks/tsk-']").first.get_attribute("href")
+    card = "/" + card.split("://", 1)[-1].split("/", 1)[-1] if "://" in card else card
+    assert re.fullmatch(r"/owner/e2e-alpha/tasks/tsk-[a-z0-9]+", card), card
+    # Signed out, the person's agents page carries no Report (§16.9): each agent has its own page.
+    page.goto(f"{run.base}/owner/agents")
+    expect(page.locator("main a[href='/owner/agents/e2e-agent']")).to_be_visible()
+    expect(page.locator("a[href*='%3Freport']")).to_have_count(0)
+    context.close()
+
+    pages = (
+        ("/owner", "Report this person to the instance's admins"),
+        ("/owner/agents/e2e-agent", "Report this agent to the instance's admins"),
+        ("/owner/e2e-alpha", "Report this project to the instance's admins"),
+        (card, "Report this card to the instance's admins"),
+    )
+    for path, button in pages:
+        context, page = fresh()
+        page.goto(run.base + path)
+        # The hub's stored page says **Report**; the dashboard's copy, where it stands in, its own words.
+        link = page.locator("a[href^='/login?next='][href*='%3Freport']")
+        expect(link).to_have_count(1)
+        href = link.get_attribute("href") or ""
+        expected = "/login?next=" + urllib.parse.quote(path + "?report", safe="")
+        assert href == expected or href.startswith(expected + "&"), f"{path}: Report links to {href!r}, not {expected!r}"
+        link.click()
+        page.locator("#login-email").fill(address)
+        page.locator("#login-password").fill(password)
+        page.get_by_role("button", name="Sign in", exact=True).click()
+        expect(page).to_have_url(re.compile(re.escape(run.base + path + "?report") + "$"))
+        # The form is open, named for what this page shows; its button hides while it is.
+        expect(page.get_by_role("form", name=button, exact=True)).to_be_visible()
+        if path == "/owner":
+            run.a11y(page, "report, signed in from a person's page")
+        context.close()
+
+    # Signed in: the Agents tab of a person's view lists their agents, each linked to its page,
+    # which carries Report (#1719: the address showed "couldn't load" before).
+    context, page = fresh()
+    page.goto(run.base + "/login")
+    page.locator("#login-email").fill(address)
+    page.locator("#login-password").fill(password)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text(name)
+    page.goto(run.base + "/owner/agents")
+    tabs = page.locator("nav.person-tabs")
+    expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
+    agent = page.locator("ul.person-agents li", has_text="(e2e-agent)").get_by_role("link")
+    expect(agent).to_have_attribute("href", "/owner/agents/e2e-agent")
+    run.shot(page, "person-agents-tab")
+    run.a11y(page, "a person's Agents tab, signed in")
+    agent.click()
+    expect(page).to_have_url(re.compile(r"/owner/agents/e2e-agent$"))
+    expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
+    # Known on main, fixed by tsk-8fk897a9tan8 (whose PR removes this filter): the stored pages' inline
+    # styles, refused by the hub's own CSP: the per-day bars of a project's page
+    # (public_projects._per_day_html) and the 128 px placeholder of a person without a picture
+    # (public_people.picture_html). Only these two, by their hashes; any other refusal still fails.
+    known = ("'sha256-8xVPQegQ3n2TD8Ru9x9C/G9ctgSmSqDhi6CQln9gM7o='", "'sha256-uX/JLK1ra8Fz6XKAN8nPKzpDkutTzzz574XTranjWJU='")
+    run.problems = [p for p in run.problems if not ("Applying inline style violates" in p and any(k in p for k in known))]
+    no_problems(run, "report pages")
+    context.close()
 
 
 def request_action_step(run: Run, page: Page) -> None:

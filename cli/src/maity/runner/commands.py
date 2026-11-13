@@ -213,6 +213,11 @@ DEFAULTS = (
     ("harness.<id>.binary", "the harness's usual command, resolved on agent_path"),
     ("harness.<id>.require_sandbox", "false"),
     ("harness.<id>.env_file", "unset"),
+    (
+        "git.name, git.email",
+        f"{config.DEFAULT_GIT_NAME} <{config.DEFAULT_GIT_EMAIL}> "
+        "(author and committer of every agent's commits)",
+    ),
 )
 
 EXPLAIN = (
@@ -266,6 +271,19 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                 f"repositories.{name}: network api.github.com is not needed for pull requests "
                 "(`maity gh` runs outside the sandbox) and lets repository code reach the API"
             )
+
+
+def _check_git(report: Report, cfg: config.Config) -> None:
+    """Every placed session commits as `[git]`; without it as the generic default, which no
+    forge links to anyone. Said as a warning: a runner that only runs the stub commits
+    nothing, and a default is a working configuration (cli/context/runner.md)."""
+    if cfg.git.configured:
+        report.ok(f"agents commit as {cfg.git.name} <{cfg.git.email}>")
+    elif any(harness.id != "stub" for harness in cfg.harnesses.values()):
+        report.warn(
+            f"agents commit as the default {cfg.git.name} <{cfg.git.email}>; set name and "
+            "email in [git] to the identity your agents should commit as"
+        )
 
 
 def _check_state(report: Report, cfg: config.Config) -> None:
@@ -531,6 +549,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     _check_config_file(report, path)
     _check_state(report, cfg)
     _check_repositories(report, cfg)
+    _check_git(report, cfg)
     if cfg.ssh is not None:
         _check_ssh(report, cfg, getattr(args, "target", None))
     elif getattr(args, "target", None):
