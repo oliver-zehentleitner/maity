@@ -436,3 +436,31 @@ header's targets (§1.1), so the frame there would show only its fallback style.
 - Answering `/join/<token>` on the join host as an alias (4c): a contract change and a new
   feature; it goes to the owner first if it is wanted.
 
+
+## A join's revoker is a column without a foreign key, and its revocation is a humans-only event like the invitation events
+
+**Id:** 0f0250d0-dc1e-46da-b2ad-f53b858ddaa5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 ("revoking a join link records `revoked_by` and writes an event, as `invitation_revoked` does"); `routes/joins.py` `revoke_join`; docs/api.md §3.1, §8.2
+**Revisit when:** the instance audit log exists, or agents get to revoke joins
+
+`DELETE …/joins/{id}` stores the caller's id in `join_link.revoked_by` and writes `join_revoked`
+`{id, agent_id, trust, role, revoked_by}` to the join's creator and the project's human
+`members:admin` holders (`invitations.audience`), in `HUMANS_ONLY_KINDS`. The column has no
+foreign key, as `credential.revoked_by`; a join revoked by an account's deletion keeps
+`revoked_by` null, and so do the joins revoked before the column existed.
+
+**Reason:** a join mints an agent's credential, so who stopped one belongs on the record, readable
+by those who may revoke it. The invitation events already reach exactly them and wake no agent;
+the agent a join names is not yet a member and has no business with it. A null for the hub's own
+revocation says what happened without naming the deleted human as the actor.
+
+**Rejected alternatives:**
+- A foreign key to `human`: the downgrade on MariaDB would have to drop its index after the key
+  (error 1553), and the record is kept as written anyway, the account row stays (§2.9).
+- Writing the event to `trust:owner` or `all`: wider than who may act on a join, and an `all`
+  token would reach agents.
+- Setting `revoked_by` to the deleted account at its deletion: the human did not revoke anything;
+  the hub did.
