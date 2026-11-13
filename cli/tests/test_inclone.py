@@ -335,3 +335,26 @@ def test_a_copy_whose_name_was_taken_meanwhile_is_not_reported_saved(
     assert "was replaced before it got its name" in capsys.readouterr().err
     assert target.read_bytes() == b"OTHER"
     assert parts(placed) == []
+
+
+@walks
+def test_a_link_whose_name_was_taken_meanwhile_is_refused_and_left_alone(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """As with the copy: another file at the target's name right after the link is refused,
+    and that file is left as it is."""
+    real_link = os.link
+    target = placed / "out.txt"
+    other = placed.parent / "other"
+
+    def then_taken(*args: Any, **kwargs: Any) -> None:
+        real_link(*args, **kwargs)
+        target.rename(placed.parent / "ours-moved")
+        other.write_bytes(b"OTHER")
+        os.replace(other, target)
+
+    monkeypatch.setattr(os, "link", then_taken)
+    assert get("-o", "out.txt") == cli.EXIT_ERROR
+    assert "was replaced before it got its name" in capsys.readouterr().err
+    assert target.read_bytes() == b"OTHER"
+    assert parts(placed) == []

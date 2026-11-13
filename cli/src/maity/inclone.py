@@ -248,10 +248,10 @@ def _publish(
             raise
         _copy(directory, fd, leaf, mode, exists, replaced)
         return
+    # As in `_copy`: a name that holds another file now is refused and left alone; it is
+    # not maity's file, and removing it could take someone else's.
     linked = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
     if not _same(linked, own):
-        with contextlib.suppress(OSError):
-            os.unlink(leaf, dir_fd=directory)
         raise replaced
 
 
