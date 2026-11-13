@@ -213,7 +213,7 @@ watches for it:
 
 ```sh
 curl -sfL -o k3s-install.sh https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh
-echo "PLACEHOLDER-sha256-of-k3s-install.sh-at-v1.36.5+k3s1  k3s-install.sh" | sha256sum -c
+echo "46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad  k3s-install.sh" | sha256sum -c
 INSTALL_K3S_VERSION=v1.36.5+k3s1 sh k3s-install.sh
 cp deploy/k3s-single/traefik-config.yaml /var/lib/rancher/k3s/server/manifests/
 ```
@@ -229,7 +229,7 @@ installed:
 ```sh
 helm repo add jetstack https://charts.jetstack.io
 helm pull jetstack/cert-manager --version v1.20.4
-echo "PLACEHOLDER-sha256-of-cert-manager-v1.20.4.tgz  cert-manager-v1.20.4.tgz" | sha256sum -c
+echo "aa916e8fb726ee573f8c2fbed6899de7dbb77a017ac1deef63fee91cc5bfcd03  cert-manager-v1.20.4.tgz" | sha256sum -c
 helm install cert-manager ./cert-manager-v1.20.4.tgz -n cert-manager --create-namespace \
   --set crds.enabled=true
 ```

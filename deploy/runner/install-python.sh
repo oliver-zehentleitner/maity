@@ -25,10 +25,9 @@ RUNNER_DIR=${RUNNER_DIR:-/opt/actions-runner}
 SERVICE=${SERVICE:-maity-runner}
 SERIES=${PYTHON_SERIES:-3.12}
 UV_VERSION=${UV_VERSION:-0.13.6}
-# TODO(tsk-6zh891gy6cvz): the sha256 of uv-x86_64-unknown-linux-gnu.tar.gz of uv 0.13.6, from the release's
-# uv-x86_64-unknown-linux-gnu.tar.gz.sha256 (github.com/astral-sh/uv/releases/tag/0.13.6). Until it is filled in,
-# the script refuses to install uv.
-UV_SHA256=${UV_SHA256:-PLACEHOLDER-sha256-of-uv-0.13.6-x86_64-unknown-linux-gnu.tar.gz}
+# The sha256 of uv-x86_64-unknown-linux-gnu.tar.gz of uv 0.13.6, from the release's
+# uv-x86_64-unknown-linux-gnu.tar.gz.sha256 (github.com/astral-sh/uv/releases/tag/0.13.6).
+UV_SHA256=${UV_SHA256:-f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645}
 UV_TARGET=uv-x86_64-unknown-linux-gnu
 TOOL=$RUNNER_DIR/_work/_tool
 as_ru() { runuser -u "$RU" -- env HOME="$HOME_RU" PATH="$HOME_RU/.local/bin:/usr/local/bin:/usr/bin:/bin" UV_PYTHON_PREFERENCE=only-managed "$@"; }
