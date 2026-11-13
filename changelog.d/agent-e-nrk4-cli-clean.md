@@ -9,5 +9,7 @@
   that is a symbolic link (one linked to this `AGENTS.md` excepted) or no
   regular file, and opens both in the repository's root directory opened once;
   for a file it refuses or cannot write it prints the block instead.
-- cli: the attachment ids `maity say --attach` names after a failed send are
-  printed cleaned.
+- cli: every status line and every `maity:` message on stderr is printed
+  cleaned, so the ids, statuses and texts the hub returns in them (the
+  release summary and checklist, claim, ask, answer, say, the attachment ids
+  after a failed send) cannot act on the terminal; `--json` keeps the data.

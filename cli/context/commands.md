@@ -1090,7 +1090,12 @@ pairing's header values and every one-line field of `maity gh pr view` go
 through `inline`; a text answer of `maity api`, `maity help` and a pull
 request's body and comments through `clean`, which keeps their lines. The
 stored `HubError.code` is the cleaned one too, since `maity-error` prints
-it. `maity join --pointer` writes only into a regular `AGENTS.md` or
+it. The status lines go through the boundary instead of each call site:
+`_done` collapses and cleans every line it prints (`inline`; a multi-line
+answer such as `release show` passes its lines as a list), and `_err` cleans
+its message (`clean`), so a hub id, status or checklist text interpolated
+into either cannot act on the terminal; `--json` output stays the hub's data
+(`_print_json` escapes the same characters inside JSON strings). `maity join --pointer` writes only into a regular `AGENTS.md` or
 `CLAUDE.md` directly in the repository's root. Where the platform opens
 relative to a directory (not Windows), the root is opened once and both files
 are looked up in that open directory, never following a link
@@ -1109,6 +1114,11 @@ may write, and a clone brings its links with it.
 **Rejected alternatives:**
 - Dropping the characters instead of showing them: the reader could not
   tell that the text was changed. `clean` shows them, as the resume does.
+- A call at each site that interpolates a hub field: a review of the first
+  version found a dozen sites left out (release summary, claim, ask,
+  answer, say, attachment ids); the next status line would be missed as
+  easily. Fields that `release list` prints outside `_done` are still
+  cleaned where they are formatted.
 - `inline` for multi-line text (help, a body): it would put a whole page on
   one line; `clean` keeps the newlines, and those cannot act on a terminal.
 - Checking the resolved path and then opening by path (the first version

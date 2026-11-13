@@ -186,7 +186,7 @@ class Report:
 
     def print(self) -> None:
         for level, text in self.lines:
-            print(f"{level:5}  {text}")
+            print(f"{level:5}  {onboarding.clean(text)}")
 
 
 DEFAULTS = (

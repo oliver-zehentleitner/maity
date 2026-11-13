@@ -343,3 +343,112 @@ def test_pointer_refuses_a_fifo_without_waiting(tmp_path: Path) -> None:
     os.mkfifo(tmp_path / "AGENTS.md")
     changed, refused = pointer.write(tmp_path)
     assert changed == [] and refused == [f"{tmp_path / 'AGENTS.md'} is not a regular file"]
+
+
+# --- status lines: the release summary, `_done` and `_err` -------------------------------------
+
+EVIL_RELEASE: dict[str, Any] = {
+    "id": "rel-1",
+    "kind": "release",
+    "status": "in_progress",
+    "release": {
+        "version": "0.9" + EVIL,
+        "readiness": {
+            "ready": False,
+            "blocking": [{"reason": EVIL, "task": EVIL + "\nfake", EVIL: "v"}],
+        },
+        "checklist": [
+            {"id": "chk-1", "done": False, "text": EVIL + "\nfake line"},
+            {"id": EVIL, "done": True, "text": "tag"},
+        ],
+    },
+}
+
+
+def test_release_show_prints_the_summary_and_checklist_cleaned(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/tasks/rel-1")] = lambda s: (200, EVIL_RELEASE)
+    assert cli.main(["release", "show", "rel-1"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert_clean(captured.out + captured.err)
+    lines = captured.out.splitlines()
+    assert lines[0].startswith("rel-1  0.9a\\x1b[2J")
+    assert len(lines) == 4  # the summary, one blocking line, two checklist items: no fake line
+    assert lines[2].startswith("  [ ] chk-1  a\\x1b[2J") and lines[2].endswith("\\nfake line")
+    assert lines[3].startswith("  [x] a\\x1b[2J")
+
+
+def test_release_show_json_keeps_the_hub_data(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", f"{P}/tasks/rel-1")] = lambda s: (200, EVIL_RELEASE)
+    assert cli.main(["release", "show", "rel-1", "--json"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert_clean(out)  # `_print_json` escapes, and the JSON reads back as sent
+    assert json.loads(out)["release"]["checklist"][0]["text"] == EVIL + "\nfake line"
+
+
+def test_release_list_prints_each_summary_line_cleaned(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    card = {**EVIL_RELEASE, "id": EVIL, "status": EVIL}
+    fake.routes[("GET", f"{P}/tasks")] = lambda s: (200, {"items": [card], "next_cursor": None})
+    assert cli.main(["release", "list"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert_clean(captured.out + captured.err)
+    assert captured.out.startswith("a\\x1b[2J")
+
+
+def test_release_tick_names_the_card_cleaned(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    card = {**EVIL_RELEASE, "id": EVIL}
+    fake.routes[("GET", f"{P}/tasks")] = lambda s: (200, {"items": [card], "next_cursor": None})
+    fake.routes[("POST", f"{P}/tasks/{hub.segment(EVIL)}/checklist/chk-1")] = lambda s: (
+        200, card)  # fmt: skip
+    assert cli.main(["release", "tick", "chk-1"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert_clean(captured.out + captured.err)
+    assert captured.out.startswith("ticked chk-1 on a\\x1b[2J")
+
+
+@pytest.mark.parametrize(
+    "argv, route, answer, shown",
+    [
+        (["unclaim", "tsk-1"], ("POST", "/tasks/tsk-1/release"), {"status": EVIL},
+         "gave tsk-1 back; it is a\\x1b[2J"),
+        (["claim", "tsk-1"], ("POST", "/tasks/tsk-1/claim"),
+         {"claim": {"lease_until": EVIL}}, "claimed tsk-1; lease until a\\x1b[2J"),
+        (["answer", "req-1", "--text", "yes"], ("POST", "/requests/req-1/answer"),
+         {"status": EVIL}, "answered req-1; it is a\\x1b[2J"),
+        (["ask", "q?", "--to", "human", "--class", "info"], ("POST", "/requests"),
+         {"id": EVIL, "class": "info", "status": "open"}, "asked a\\x1b[2J"),
+        (["say", "all", "x", "--type", "notice"], ("POST", "/events"), {"seq": EVIL},
+         "sent notice to all (seq a\\x1b[2J"),
+    ],
+)  # fmt: skip
+def test_status_lines_show_hub_fields_cleaned(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    route: tuple[str, str],
+    answer: dict[str, Any],
+    shown: str,
+) -> None:
+    fake.routes[(route[0], P + route[1])] = lambda s: (200, answer)
+    assert cli.main(argv) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert_clean(captured.out + captured.err)
+    assert captured.out.startswith(shown) and captured.out.count("\n") == 1
+
+
+def test_err_shows_escapes_and_keeps_its_own_lines(capsys: pytest.CaptureFixture[str]) -> None:
+    cli._err("first " + EVIL + "\nsecond")
+    err = capsys.readouterr().err
+    assert_clean(err)
+    assert (
+        err == "maity: first a\\x1b[2J\\x1b[31mb\\x1b]52;c;aGk=\\x07c\\x1b]0;title\\x07d"
+        "\\x9b31me\\x07f\nsecond\n"
+    )

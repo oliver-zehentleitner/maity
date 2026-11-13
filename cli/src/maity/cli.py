@@ -114,7 +114,10 @@ class LocalRefusal(Exception):
 
 
 def _err(message: str) -> None:
-    print(f"maity: {message}", file=sys.stderr)
+    """One message on stderr. It often carries text the hub, GitHub or the repository wrote
+    (ids, statuses, a refusal): cleaned (`onboarding.clean`), so no escape reaches the
+    terminal; line breaks the message itself has are kept."""
+    print(f"maity: {onboarding.clean(message)}", file=sys.stderr)
 
 
 def _print_json(data: Any) -> None:
@@ -1535,12 +1538,15 @@ def cmd_request_claim(args: argparse.Namespace) -> int:
     return _done(args, request, f"claimed {onboarding.inline(args.request)}")
 
 
-def _done(args: argparse.Namespace, result: Any, line: str) -> int:
-    """Print the hub's answer with --json, otherwise one status line."""
+def _done(args: argparse.Namespace, result: Any, line: str | list[str]) -> int:
+    """Print the hub's answer with --json, otherwise the status line (or lines). Every line is
+    collapsed and cleaned (`onboarding.inline`): the lines name ids, statuses and titles the hub
+    returned, so none of them can start a line of its own or reach the terminal as an escape.
+    The JSON stays the hub's data as sent."""
     if getattr(args, "json", False):
         _print_json(result)
     else:
-        print(line)
+        print("\n".join(onboarding.inline(x) for x in ([line] if isinstance(line, str) else line)))
     return EXIT_OK
 
 
@@ -3086,17 +3092,18 @@ def _release_card(session: Session, card: str | None) -> dict[str, Any]:
 def _release_summary(card: dict[str, Any]) -> list[str]:
     release = card.get("release") or {}
     readiness = release.get("readiness") or {}
+    one = onboarding.inline  # every field is the hub's; the checklist text is free text
     lines = [
-        f"{card.get('id')}  {release.get('version')}  {card.get('status')}  "
+        f"{one(card.get('id'))}  {one(release.get('version'))}  {one(card.get('status'))}  "
         f"ready: {'yes' if readiness.get('ready') else 'no'}"
     ]
     for block in readiness.get("blocking") or []:
         detail = {k: v for k, v in block.items() if k != "reason"}
-        extra = " ".join(f"{k}={v}" for k, v in detail.items())
-        lines.append(f"  blocking: {block.get('reason')} {extra}".rstrip())
+        extra = " ".join(f"{one(k)}={one(v)}" for k, v in detail.items())
+        lines.append(f"  blocking: {one(block.get('reason'))} {extra}".rstrip())
     for item in release.get("checklist") or []:
         mark = "x" if item.get("done") else " "
-        lines.append(f"  [{mark}] {item.get('id')}  {item.get('text')}")
+        lines.append(f"  [{mark}] {one(item.get('id'))}  {one(item.get('text'))}")
     return lines
 
 
@@ -4046,7 +4053,7 @@ def cmd_jourfixe_statement(args: argparse.Namespace) -> int:
                if isinstance(s, dict)]  # fmt: skip
         line = f"  {onboarding.inline(topic.get('id'))} {onboarding.inline(topic.get('title'))}"
         lines.append(line + (f" (proposals {', '.join(ids)})" if ids else ""))
-    return _done(args, round_, "\n".join(lines))
+    return _done(args, round_, lines)
 
 
 def cmd_jourfixe_post(args: argparse.Namespace) -> int:
@@ -4100,7 +4107,7 @@ def cmd_jourfixe_report(args: argparse.Namespace) -> int:
     for left in [x for x in report.get("proposals_not_carded") or [] if isinstance(x, dict)]:
         left_id, why = (onboarding.inline(left.get(k)) for k in ("proposal_id", "reason"))
         lines.append(f"  not carded: {left_id} ({why})")
-    return _done(args, answer, "\n".join(lines))
+    return _done(args, answer, lines)
 
 
 # Why a start did not open (§20.1), as the hub names it; no round is recorded.
@@ -4211,7 +4218,7 @@ def cmd_jourfixe_report_to(args: argparse.Namespace) -> int:
 
 def cmd_release_show(args: argparse.Namespace) -> int:
     card = _release_card(Session(), args.card)
-    return _done(args, card, "\n".join(_release_summary(card)))
+    return _done(args, card, _release_summary(card))
 
 
 def cmd_release_tick(args: argparse.Namespace) -> int:
