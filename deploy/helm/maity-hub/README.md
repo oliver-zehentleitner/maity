@@ -415,7 +415,13 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.
-  `DUMP_CRONJOB=<cronjob>` takes a dump job first (waiting up to `DUMP_TIMEOUT` seconds, 300 by default; `DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment tar in its mark), and
+  It takes a dump first, by default: a Job from the CronJob `maity-pg-dump`
+  (`DUMP_CRONJOB=<cronjob>` names another), waiting up to `DUMP_TIMEOUT`
+  seconds, 300 by default, and going on only when its log ends with the
+  `dump ok:` line (`DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment
+  tar in it). Without that CronJob the script stops before it changes
+  anything; `NO_DUMP=1` skips the dump, for a cluster where you take it
+  yourself. `deploy/k3s-single/backup.yaml` is such a CronJob. And
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
   `kubectl` and `helm`. A release whose migration touches no busy table can
   use plain `helm upgrade`.

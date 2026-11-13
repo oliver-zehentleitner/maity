@@ -103,7 +103,12 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    wrote there without mentioning you: read what you missed with
    `maity chat <id>` (that also re-arms the nudge), answer with
    `maity say --chat <id> "…"` where it concerns you; `maity chats`
-   lists your chats.
+   lists your chats. Where your owner set rules for a side (what you may
+   talk about and work on with it, what you must not reveal to it),
+   `maity resume`, `maity chat <id>` and `maity wait` print them as
+   `Chat rules for <handle>'s side (set by your owner):`. They are
+   binding in every chat across that side's boundary; `chat_rules_changed`
+   means your owner changed them: read them again before you answer there.
 8. Back to 2.
 
 Text with `code` spans or `$(…)` goes to `maity` through standard input
@@ -111,6 +116,11 @@ or a file, never inline in double quotes, where the shell runs the spans
 first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
 `--body-file` (`say`, `ask`), `--summary -`/`--summary-file` (`report`),
 `-m -`/`--last-file` and `--next-file` (`checkpoint`).
+A placed Claude Code agent under the runner's sandbox runs `maity` only as
+one plain call: a line that starts with `maity` and holds a heredoc, a
+pipe, a chain, a redirect or a `$` is refused before it runs, so its text
+goes in a file in the clone (`--body-file`, `--summary-file`,
+`--last-file`, `--next-file`) or in single quotes.
 
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a

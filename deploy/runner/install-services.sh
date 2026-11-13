@@ -5,8 +5,11 @@
 # the runner package as a tarball, and a registration token from GitHub (Settings → Actions → Runners → New
 # self-hosted runner; the token is valid for an hour and is not printed here).
 # Start with ONE instance (INSTANCES=pg) while someone watches the machine, then add the others (README, "limits").
-# Usage: RUNNER_TOKEN=<token> RUNNER_TARBALL=/root/actions-runner-linux-x64-2.338.0.tar.gz \
+# Usage: RUNNER_TARBALL=/root/actions-runner-linux-x64-2.338.0.tar.gz \
 #        [RUNNER_USER=gh-runner] [LABEL_PREFIX=maity-hub] [INSTANCES="pg"] [RUNNER_NAME_PREFIX=maity-vm] install-services.sh
+# The token is read from standard input (typed without echo at a terminal, or `< token-file`), or taken from RUNNER_TOKEN when
+# that is set. It never goes on a command line: config.sh gets it through its environment (ACTIONS_RUNNER_INPUT_TOKEN), which
+# the runner reads and clears, so no process list shows it.
 # A second machine for the same job type registers under the same label (GitHub hands a job to whichever runner is free), but the
 # NAME of a runner must be unique in the repository: give each machine its own RUNNER_NAME_PREFIX (maity-srv2 -> maity-srv2-maria).
 # Then run install-python.sh for each instance (README.md, step 4) and set the repository variable HUB_RUNNER_LABEL.
@@ -17,7 +20,14 @@ PREFIX=${LABEL_PREFIX:-maity-hub}
 NAME_PREFIX=${RUNNER_NAME_PREFIX:-maity-vm}
 INSTANCES=${INSTANCES:-pg}   # ONE instance by default; the others are added one at a time, after the caps held (README, "limits")
 URL=${RUNNER_URL:-https://github.com/oliver-zehentleitner/maity}
-: "${RUNNER_TOKEN:?RUNNER_TOKEN is not set}" "${RUNNER_TARBALL:?RUNNER_TARBALL is not set}"
+: "${RUNNER_TARBALL:?RUNNER_TARBALL is not set}"
+if [ -z "${RUNNER_TOKEN:-}" ]; then
+  if [ -t 0 ]; then printf 'Registration token: ' >&2; IFS= read -rs RUNNER_TOKEN || true; echo >&2
+  else IFS= read -r RUNNER_TOKEN || true; fi
+fi
+[ -n "${RUNNER_TOKEN:-}" ] || { echo "no registration token: type it when asked, give it on standard input, or set RUNNER_TOKEN" >&2; exit 1; }
+# Only exported to config.sh below, under the name the runner reads; nothing else of this script needs it in its environment.
+export -n RUNNER_TOKEN
 RUNNER_TARBALL=$(realpath -- "$RUNNER_TARBALL")   # resolved before the cd below
 [ -f "$RUNNER_TARBALL" ] || { echo "no such tarball: $RUNNER_TARBALL" >&2; exit 1; }
 # Root works in directories that belong to the runner user for a moment (config.sh runs as that user). A process of that
@@ -53,8 +63,10 @@ for t in $INSTANCES; do
   install -d "$d"
   tar xzf "$RUNNER_TARBALL" -C "$d"
   chown -R "$RU" "$d"
-  # config.sh as the runner user (as root it refuses); the token is passed as an argument, never echoed.
-  runuser -u "$RU" -- env HOME="$HOME_RU" "$d/config.sh" --url "$URL" --token "$RUNNER_TOKEN" --unattended --disableupdate \
+  # config.sh as the runner user (as root it refuses). The token goes through the environment, never as an argument: argv is
+  # world-readable in /proc. The assignment before runuser puts it in runuser's environment, not its argv, and runuser without
+  # --login hands it on; the runner reads ACTIONS_RUNNER_INPUT_TOKEN in place of --token and clears it.
+  ACTIONS_RUNNER_INPUT_TOKEN=$RUNNER_TOKEN runuser -u "$RU" -- env HOME="$HOME_RU" "$d/config.sh" --url "$URL" --unattended --disableupdate \
     --name "$NAME_PREFIX-$t" --labels "$PREFIX-$t" >/dev/null
   chown -R root:root "$d"
   # Only regular files are handed on: a symlink among the registration files stops the script.

@@ -351,34 +351,134 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   PostgreSQL is on. Fourteen nights keep fourteen dumps and fourteen tars of the attachment volume, so plan with `14 × (the volume's size + a dump)`
   against the free disk, and look at it when the attachments grow (the backup Job refuses to write a tar that would not fit twice). Images and
   most files are compressed already, so the tar is not compressed.
-- **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk:
-  1. Scale the hub to 0 (`kubectl -n maity scale deploy/maity-maity-hub --replicas=0`).
+- **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk.
+  Every `kubectl` below names the instance's kube context (`kubectl config get-contexts` lists them; `<kube context>` is
+  that name), so a shell whose current context points at another cluster restores nothing there:
+  1. Scale the hub to 0 (`kubectl --context <kube context> -n maity scale deploy/maity-maity-hub --replicas=0`).
   2. Decrypt the dump to a file on this machine, read all of it with `pg_restore -f /dev/null` (which fails on a wrong key, a
      cut-off file or anything that is not a dump; `pg_restore --list` reads only the start), and only then feed it to
      `pg_restore --clean --if-exists` inside the postgres pod, which drops what it restores. Run it as one block, which stops
-     at the first failure and keeps the decrypted file for a second try; `pg_restore` here must be 17 or later:
+     at the first failure and keeps the decrypted file for a second try; it also stops before anything is restored while
+     the hub's Deployment wants a replica, one of its pods is still there, or either could not be read (each `kubectl` is
+     an assignment of its own, since `sh -e` does not stop on a command substitution that fails inside a test).
+     `pg_restore` here must be 17 or later:
      ```sh
      sh -eu -c '
-       gpg -d "$1" > maity.dump
+       ctx=$1
+       k() { kubectl --context "$ctx" -n maity "$@"; }
+       want=$(k get deploy maity-maity-hub -o jsonpath="{.spec.replicas}")   # an assignment: a failed kubectl stops here
+       pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
+       [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
+       [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
+       gpg -d "$2" > maity.dump
        pg_restore -f /dev/null maity.dump
-       kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
+       k exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
        rm maity.dump
-     ' restore maity-<UTC time>.dump.gpg
+     ' restore <kube context> maity-<UTC time>.dump.gpg
      ```
   3. Put the files of the same night back, replacing the volume's contents (the hub is still at 0 from step 1). The commands
      are at the top of `deploy/k3s-single/restore-attachments.yaml`, as one `sh -eu` block that stops at the first failure:
-     decrypt the tar locally and check that GNU tar reads it without an error and reaches its end-of-archive block, apply
-     the Job, then stream the tar into it with `kubectl exec -i` together with its SHA-256. Run it as that block, not line
-     by line: the Job empties the volume before it unpacks, so it must only ever get a tar that was read whole first, and
-     it unpacks only what arrived with that digest.
-  4. Scale the hub back to 1.
+     check that the hub is stopped, decrypt the tar locally and check that GNU tar reads it without an error and reaches
+     its end-of-archive block, apply the Job, then stream the tar into it with `kubectl exec -i` together with its SHA-256.
+     Put the hub's image digest from `hub-values.yaml` into the file first: the Job runs the hub's image. Run it as that
+     block, not line by line: the Job empties the volume before it unpacks, so it must only ever get a tar that was read
+     whole first, and it unpacks only what arrived with that digest. Right before it empties the volume, the Job checks
+     again, through the Kubernetes API, that the hub's Deployment wants 0 replicas and that none of its pods is left; it
+     has a ServiceAccount of its own for that, whose Role only reads the hub's Deployment and lists the pods, and the block
+     deletes it with the Job.
+  4. **Start the hub closed to everyone but you.** The restored database gives back access that was taken away after the
+     dump's time, so nobody may reach the hub until step 5 is done. Close the hub's NetworkPolicy to every pod, Traefik
+     included, keeping its rules in `hub-ingress-rules.json` to open it again, and start the hub only once the policy
+     admits nobody. Run it as one block (it needs `python3` on this machine to read the policies): it refuses while that
+     file exists from an earlier close, and stops before the hub starts if the policy cannot be read or has no rules to
+     keep, or if after the change any NetworkPolicy in the namespace still admits traffic to the hub's pods. Policies add
+     up, so it reads them all: `maity-maity-hub` must have the type `Ingress`, select the hub's pods by `matchLabels` from
+     the Deployment's pod template only, and have no rule left. Every other policy with an ingress rule stops the block
+     unless the pod template's labels alone prove it cannot select the hub's pods: a `matchLabels` entry, or an `In`,
+     `NotIn` or `DoesNotExist` expression, on a key of the template that the template's value fails. The check is
+     deliberately conservative: the pods carry labels the template does not (`pod-template-hash`), so an empty selector,
+     an `Exists` or a key the template does not have stops it even when the policy is meant for other pods. Remove or
+     narrow such a policy first (one you added outside the chart). The shipped `postgres-netpol.yaml` passes; an
+     installation from before this check applies it again first. The closed phase holds only where the cluster's CNI
+     enforces NetworkPolicy (k3s does out of the box); with a CNI that does not, it isolates nothing, and the hub must be
+     kept unreachable some other way, by removing its route from the ingress controller or proxy:
+     ```sh
+     sh -eu -c '
+       ctx=$1 f=hub-ingress-rules.json
+       k() { kubectl --context "$ctx" -n maity "$@"; }
+       rules() { python3 -c "import json, sys; print(json.dumps(json.load(sys.stdin)[\"spec\"].get(\"ingress\") or [], sort_keys=True))"; }
+       # Exit 0 only when no policy can admit pod traffic to the hub pods: maity-maity-hub has the type Ingress, selects
+       # them by matchLabels of the hub Deployment pod template only and has no rule, and every other policy with a rule
+       # is proven disjoint by the template labels alone (a pod has more labels than its template, never other values).
+       closed="
+       import json, os, sys
+       labels = json.loads(os.environ[\"DEP\"])[\"spec\"][\"template\"][\"metadata\"][\"labels\"]
+       def selects(sel):
+           ml = sel.get(\"matchLabels\") or {}
+           return not sel.get(\"matchExpressions\") and all(k in labels and labels[k] == v for k, v in ml.items())
+       def disjoint(sel):
+           if any(k in labels and labels[k] != v for k, v in (sel.get(\"matchLabels\") or {}).items()):
+               return True
+           for e in sel.get(\"matchExpressions\") or []:
+               k, op, vals = e.get(\"key\"), e.get(\"operator\"), e.get(\"values\") or []
+               if k in labels and ((op == \"In\" and labels[k] not in vals) or (op == \"NotIn\" and labels[k] in vals)
+                                   or op == \"DoesNotExist\"):
+                   return True
+           return False
+       def admits(spec):
+           return \"Ingress\" in (spec.get(\"policyTypes\") or [\"Ingress\"]) and bool(spec.get(\"ingress\"))
+       own, others = False, []
+       for p in json.loads(os.environ[\"NPS\"])[\"items\"]:
+           name, spec = p[\"metadata\"][\"name\"], p[\"spec\"]
+           if name == \"maity-maity-hub\":
+               own = \"Ingress\" in (spec.get(\"policyTypes\") or [\"Ingress\"]) and selects(spec.get(\"podSelector\") or {}) and not spec.get(\"ingress\")
+           elif admits(spec) and not disjoint(spec.get(\"podSelector\") or {}):
+               others.append(name)
+       if not own:
+           sys.exit(\"maity-maity-hub does not close the hub (no type Ingress, a selector that misses its pods, or a rule left): it stays stopped\")
+       if others:
+           sys.exit(\"other NetworkPolicies may admit traffic to the hub pods: \" + \", \".join(others) + \": remove or narrow them; the hub stays stopped\")
+       "
+       [ ! -e "$f" ] || { echo "$f is there from an earlier close: open the hub with it (step 6) before closing it again" >&2; exit 1; }
+       np=$(k get networkpolicy maity-maity-hub -o json)
+       saved=$(printf "%s" "$np" | rules)
+       [ "$saved" != "[]" ] || { echo "the policy admits nobody already: there are no rules to keep" >&2; exit 1; }
+       (umask 077; set -C; printf "%s\n" "$saved" > "$f")
+       k patch networkpolicy maity-maity-hub --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/ingress\",\"value\":[]}]"
+       dep=$(k get deploy maity-maity-hub -o json)
+       nps=$(k get networkpolicy -o json)
+       DEP=$dep NPS=$nps CODE=$closed python3 -c "import os, textwrap; exec(textwrap.dedent(os.environ[\"CODE\"]))"
+       k scale deploy/maity-maity-hub --replicas=1
+       k rollout status deploy/maity-maity-hub --timeout=300s
+     ' close <kube context>
+     kubectl --context <kube context> -n maity port-forward deploy/maity-maity-hub 8080:8080   # then sign in at http://127.0.0.1:8080
+     ```
+     `kubectl port-forward` is not pod traffic and arrives on loopback, where the hub allows a sign-in over plain HTTP.
+     Check from outside that the public address no longer reaches the hub (a gateway error, not the sign-in page).
+  5. **Bring the access rules up to date**, as an admin, over that port-forward ([After a restore](#after-a-restore)).
+  6. **Open the hub again:** give the NetworkPolicy the rules kept in step 4, as one block. It refuses a file that is
+     missing, not JSON or empty, and removes the file only once the policy has those rules again:
+     ```sh
+     sh -eu -c '
+       ctx=$1 f=hub-ingress-rules.json
+       k() { kubectl --context "$ctx" -n maity "$@"; }
+       rules() { python3 -c "import json, sys; print(json.dumps(json.load(sys.stdin)[\"spec\"].get(\"ingress\") or [], sort_keys=True))"; }
+       saved=$(python3 -c "import json, sys; r = json.load(open(sys.argv[1])); sys.exit(\"no rules in \" + sys.argv[1]) if not (isinstance(r, list) and r) else print(json.dumps(r, sort_keys=True))" "$f")
+       k patch networkpolicy maity-maity-hub --type=merge -p "{\"spec\":{\"ingress\":$saved}}"
+       np=$(k get networkpolicy maity-maity-hub -o json)
+       [ "$(printf "%s" "$np" | rules)" = "$saved" ] || { echo "the policy does not have the kept rules: $f stays" >&2; exit 1; }
+       rm "$f"
+     ' open <kube context>
+     ```
+     Then check that the public address answers. The next `helm upgrade` writes the chart's rules anyway.
 - **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
   attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`
   (GNU tar). That proves the key and the whole file together; a listing alone (`pg_restore --list`, `tar -tf`) passes a
   cut-off file: `pg_restore --list` reads only the start, and `tar -tf` accepts a tar cut off between two files.
-- **Upgrades** are `helm upgrade` with the new digest. The chart's hook
-  migrates first ([Upgrades](#upgrades)). An installation set up before
+- **Upgrades** are `deploy/scripts/helm-upgrade.sh -f deploy/k3s-single/hub-values.yaml`
+  with the new digest. It takes a dump from `maity-pg-dump` first, stops the
+  hub, and the chart's hook migrates ([Upgrades](#upgrades)). An installation set up before
   `uploads.yaml` existed applies it once, with its host name, like step 5.
   One whose backups were not yet encrypted creates the Secret
   `maity-backup-key` first (step 4) and applies the new `backup.yaml`
@@ -554,10 +654,39 @@ sessions it holds in the running hub, whether you restore it or not.
 
 Back up before every upgrade.
 
+### After a restore
+
+The restored database is the hub as it was at the dump's time. Every agent
+credential that existed then works again, and whatever was done since to
+take access away is undone: credentials revoked, agents isolated or paused,
+members removed, accounts suspended, invitations revoked, passwords and
+second factors changed. Do this work while the hub is closed to everyone
+but the admin doing it: no route from the ingress or proxy, reached only
+from the admin's own machine (on Kubernetes, `kubectl port-forward`; the
+k3s steps above show one way). Open it again only when both parts are done.
+
+1. **People and accounts, always:** remove again every member removed
+   after the dump's time, suspend again every account suspended since,
+   revoke again the invitations revoked since, and set back every trust or
+   role lowered since. Tell the people whose password or second factor
+   changed since that the old one is back, and have them change it again.
+2. **Agents,** one of these:
+   - **Revoke every agent's credentials** (under **Agents**, or **Team** →
+     **Manage** on each agent, as an admin of each project). Each agent then
+     joins again with a new invitation. This needs no record of what
+     changed for agents, and it replaces only this part, not step 1.
+   - **Apply again every credential revocation, isolation, pause and
+     removal of an agent made after the dump's time**, when you have a
+     complete list of them.
+
 ## Upgrades
 
 1. Read the `CHANGELOG.md` section of the new version.
-2. **Back up.** When the release has `attachments.existingClaim`, apply `deploy/k3s-single/attachments.yaml` and `backup.yaml` first (without the claim
+2. **Back up.** On Helm, `deploy/scripts/helm-upgrade.sh` takes the dump
+   itself, by default: it runs a Job from the CronJob `maity-pg-dump`
+   (`DUMP_CRONJOB` names another) and stops before it changes anything when
+   there is none, or when the dump failed. `NO_DUMP=1` skips it, for when
+   you took the backup yourself. When the release has `attachments.existingClaim`, apply `deploy/k3s-single/attachments.yaml` and `backup.yaml` first (without the claim
    a hub pod stays Pending, and the old backup script has no tar) and run the upgrade script with `DUMP_REQUIRES_ATTACHMENTS=1`: it then stops
    unless the dump's mark carries the tar. The backups are encrypted, so create the Secret `maity-backup-key` first
    (step 4 of the k3s setup), or the backup job fails.
@@ -571,7 +700,9 @@ Back up before every upgrade.
      `docker compose -f deploy/docker-compose.yml up -d --build`, with your
      override file on both commands. The old hub is stopped while the
      `migrate` service runs, and the new one starts after it.
-   - Helm: `helm upgrade … --timeout 10m`. The hook Job migrates first.
+   - Helm: `deploy/scripts/helm-upgrade.sh -f values.yaml` (step 2), or
+     `helm upgrade … --timeout 10m` after a backup of your own. The hook Job
+     migrates first.
 
 There is **no downgrade**. `maity-hub` has no command that takes the
 schema back, and an older hub refuses a newer schema. To go back, restore

@@ -14,6 +14,7 @@ S=$STUB_STATE
 echo "kubectl $*" >> "$S/log"
 case "$*" in
   *"get deploy"*)           cat "$S/replicas"; exit 0;;
+  *"get cronjob/"*)         [ "$FAIL" = no_cronjob ] && { echo "Error from server (NotFound)" >&2; exit 1; }; echo "${*##* get }"; exit 0;;
   *"create job"*)           [ "$FAIL" = dump ] && exit 1; exit 0;;
   *'type=="Complete"'*)     [ "$FAIL" = job_failed ] && exit 0; echo True; exit 0;;
   *'type=="Failed"'*)       [ "$FAIL" = job_failed ] && echo True; exit 0;;
@@ -60,8 +61,10 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
   echo pod/hub-1 > "$STUB_STATE/pods"; : > "$STUB_STATE/log"
   [ "$initial" = 0 ] && [ "$podsleft" != yes ] && : > "$STUB_STATE/pods"
   local t0=$SECONDS
-  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=$dumptimeout DUMP_REQUIRES_ATTACHMENTS=${REQ_ATT:-0} DUMP_CRONJOB=dump \
-    "$here/helm-upgrade.sh" -f values.yaml >"$STUB_STATE/out" 2>&1
+  # CJ names the CronJob (dump unless set; CJ=default leaves DUMP_CRONJOB unset), NO_DUMP is passed as given.
+  local cj=${CJ:-dump}; [ "$cj" = default ] && cj=""
+  PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=$dumptimeout DUMP_REQUIRES_ATTACHMENTS=${REQ_ATT:-0} DUMP_CRONJOB=$cj \
+    NO_DUMP=${NO_DUMP:-} "$here/helm-upgrade.sh" -f values.yaml >"$STUB_STATE/out" 2>&1
   local got=$? ran=no took=$((SECONDS - t0)); grep -q '^helm ' "$STUB_STATE/log" && ran=yes
   local end; end=$(cat "$STUB_STATE/replicas")
   if [ -n "$maxsecs" ] && [ "$took" -gt "$maxsecs" ]; then
@@ -100,4 +103,20 @@ RENDERED=3 run helm_fails_keeps_old helm 1 7 yes 1
 RENDERED=2 run initial0_rendered none 0 0 yes 0
 # Helm succeeded, the rollout check then fails: the rendered count stays (the release's), exit 4.
 RENDERED=3 run rollout_rendered rollout 1 4 yes 3
+# A dump is taken by default: an unset DUMP_CRONJOB means maity-pg-dump, NO_DUMP=1 is the only way to skip it.
+logged() { # name, text the stub log must (yes) or must not (no) contain
+  if grep -qF -- "$3" "$work/$1/log"; then [ "$2" = yes ]; else [ "$2" = no ]; fi && echo "ok   $1: the log $([ "$2" = yes ] && echo has || echo "has no") '$3'" \
+    || { echo "FAIL $1: expected the log to be $2 on '$3'"; failures=$((failures + 1)); }
+}
+CJ=default run default_cronjob none 1 0 yes 1
+logged default_cronjob yes "create job --from=cronjob/maity-pg-dump"
+CJ=default run default_cronjob_missing no_cronjob 1 1 no 1
+logged default_cronjob_missing no "create job"
+NO_DUMP=1 run no_dump no_cronjob 1 0 yes 1
+logged no_dump no "create job"
+logged no_dump no "get cronjob"
+NO_DUMP=yes run no_dump_bad none 1 1 no 1
+logged no_dump_bad no "create job"
+NO_DUMP=0 run no_dump_zero none 1 0 yes 1
+logged no_dump_zero yes "create job --from=cronjob/dump"
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }
