@@ -4,6 +4,8 @@ prints them from the packet's `chat_rules`, `maity chat <id>` above a group chat
 
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +135,33 @@ def test_wait_prints_the_rules_with_each_message_of_the_chat(
     assert err.count("    > nothing about releases") == 2  # with each message
     views = [s for s in fake.signed() if s.path == f"{P}/conversations/cnv-0007"]
     assert len(views) == 1  # one read of the view per wake
+
+
+def test_a_slow_view_keeps_the_wait_within_its_timeout(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """hcrb on #1734: the view read had the client's 30 s, so a slow view held a wake already
+    in hand past --timeout. It gets what is left of the wait, and none is read past it."""
+    other = {**_group_message(5022)}
+    second = {"id": "cnv-0008", "kind": "group", "title": "B"}
+    other["payload"] = {**other["payload"], "conversation_id": "cnv-0008", "conversation": second}
+    fake.events = [_group_message(5020), other]
+
+    def slow(seen: fakehub.Seen) -> tuple[int, Any]:
+        time.sleep(4)
+        return 503, {"error": {}}
+
+    fake.routes[("GET", f"{P}/conversations/cnv-0007")] = slow
+    fake.routes[("GET", f"{P}/conversations/cnv-0008")] = slow
+    started = time.monotonic()
+    assert cli.main(["wait", "--timeout", "2"]) == cli.EXIT_OK
+    took = time.monotonic() - started
+    assert took < 2.5, took
+    captured = capsys.readouterr()
+    assert [e["seq"] for e in json.loads(captured.out)] == [5020, 5022]  # every event handed over
+    assert "Chat rules" not in captured.err
+    views = [s for s in fake.signed() if s.path.startswith(f"{P}/conversations/cnv-")]
+    assert len(views) <= 1  # the second chat's view is not read past the budget
 
 
 def test_wait_names_a_change_of_the_rules() -> None:

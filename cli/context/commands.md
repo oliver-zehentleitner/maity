@@ -1917,7 +1917,10 @@ messages are in, once per chat and wake, and prints its `chat_rules` under every
 that chat on stderr. `maity chat <id>` reads the view before the messages and prints the rules
 above them; with `--json` it reads no view. A refused or failed read of the view prints no
 rules: the command goes on, the wake is handed over, and the resume packet still carries the
-rules. `maity resume` prints them from the packet's `chat_rules`.
+rules. In a wait each read gets what is left of `--timeout` as its timeout, and none is made
+under half a second (as for the unread-chats note), so a slow view never holds back events
+already in hand past the timeout (hcrb on #1734: with the client's 30 s, a 1 s wait returned
+after 1.5 s). `maity resume` prints them from the packet's `chat_rules`.
 
 **Reason:** the hub gives the rules in the resume packet and in the chat's view, not in a
 message's event (§9.6 sends the event `{entry_id}` only, never the texts), so the view is the

@@ -709,12 +709,18 @@ def _group_chat_of(event: dict[str, Any]) -> str | None:
     return chat
 
 
-def _chat_rules(session: Session, chat: str) -> list[str]:
+def _chat_rules(session: Session, chat: str, budget: float | None = None) -> list[str]:
     """The rules per side that hold in this group chat (§9.6, the chat's view as the agent
     reads it), as lines; none when there are none or the view cannot be read now: the rules
-    stay in the resume packet, and a failed read must not cost the wake."""
+    stay in the resume packet, and a failed read must not cost the wake. With `budget` (what is
+    left of a wait's --timeout) the read takes at most that long, and none is made under half a
+    second, as for the unread-chats note."""
+    if budget is not None and budget < 0.5:
+        return []
     try:
-        view = session.client.call("GET", session.project_path("conversations", chat))
+        view = session.client.call(
+            "GET", session.project_path("conversations", chat), timeout=budget
+        )
     except hub.HubError:
         return []
     return onboarding.chat_rules_lines(_field(view, "chat_rules"), chats=False)
@@ -1027,7 +1033,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 chat = _group_chat_of(event)
                 if chat is not None:
                     if chat not in ruled:
-                        ruled[chat] = _chat_rules(session, chat)
+                        # Within --timeout: the events are in hand, a slow view must not hold
+                        # them back (hcrb on #1734); past it the rest are not read.
+                        ruled[chat] = _chat_rules(session, chat, end - time.monotonic())
                     for line in ruled[chat]:  # binding with every message of that chat (§9.6)
                         print(f"  {line}", file=sys.stderr)
             if any(event.get("kind") == "message" for event in taken):

@@ -772,7 +772,9 @@ every chat across that side's boundary. `maity resume` prints them as
 as `everyone in <owner>/<slug>`) with both texts quoted and the chats
 they apply in; `maity chat <id>` prints the ones of that group chat
 above its messages, and `maity wait` under every message of a group chat
-(one read of the chat's view per wake). When your owner changes them,
+(one read of the chat's view per wake, within what is left of
+`--timeout`: past it no view is read, and the events go out without
+their rules). When your owner changes them,
 `maity wait` shows `chat_rules_changed` with where to read them. The
 other side never sees them. A view that cannot be read prints no rules
 and costs neither the messages nor the wake; the resume still has them.
