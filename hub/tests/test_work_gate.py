@@ -183,3 +183,43 @@ def test_the_switch_is_one_set_and_the_line_walk_ends() -> None:
     } == chat_gate.GATED_WORK
     assert chat_gate._in_line({1: 2, 2: 3, 3: 1}, 1, 4) is False  # a loop ends the walk
     assert chat_gate._in_line({1: 2, 2: 3}, 1, 3) is True
+
+
+def test_a_redacted_held_message_and_its_notices_stay_held(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """A redaction replaces the payload, and its `event_redacted` and an `attachment_deleted`
+    copy the message's audience: the `held:` token still keeps them from a held agent, even one
+    whose trust sees all (fp3y on #1717)."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == theirs.id).values(trust="admin")
+        )
+    sent = send(writer, theirs.id)
+    assert sent["payload"]["held"] == [theirs.id]
+    redacted = owner.post(f"{PROJECT}/events/{sent['seq']}/redact", {"reason": "oops"})
+    assert redacted.status_code == 200, redacted.text
+    with migrated.connect() as conn:
+        stone = conn.execute(select(t.event).where(t.event.c.seq == sent["seq"])).one()
+    project = project_id(migrated)
+    with events.transaction(migrated) as conn:
+        deleted = events.emit(
+            conn,
+            project,
+            "attachment_deleted",
+            list(stone.audience),
+            {"message_seq": sent["seq"], "attachment_id": "att-x", "reason": "deleted"},
+        )
+    with migrated.connect() as conn:
+        member = conn.execute(
+            select(t.membership).where(t.membership.c.agent_id == theirs.id)
+        ).one()
+        notice = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
+        gone = conn.execute(select(t.event).where(t.event.c.seq == deleted)).one()
+    assert "held" not in stone.payload  # the tombstone keeps no payload of its own
+    for row in (stone, notice, gone):
+        assert not events.readable_by(row, member, theirs.id), row.kind
+    read = seqs(theirs)
+    assert {sent["seq"], notice.seq, deleted} & set(read) == set()
+    assert {sent["seq"], notice.seq, deleted} & set(woken(migrated, theirs.id)) == set()

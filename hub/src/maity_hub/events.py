@@ -750,8 +750,10 @@ def held_agent(token: Any) -> str:
 
 
 def held_for(row: Any, principal: str) -> bool:
-    """A free work message holds `principal` back (§9.6): no token reaches it for this one."""
-    return row.kind == "message" and principal in ((row.payload or {}).get("held") or ())
+    """A free work message holds `principal` back (§9.6): no token reaches it for this one.
+    Read from the audience, not the payload: a redaction replaces the payload, and the
+    `event_redacted` and `attachment_deleted` of a held message copy its audience."""
+    return f"held:{principal}" in (row.audience or ())
 
 
 def _names_team(audience: list[str], principal: str) -> bool:

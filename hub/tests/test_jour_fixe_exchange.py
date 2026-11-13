@@ -375,3 +375,40 @@ def test_a_waiting_moderator_does_not_write_the_statement(round_: Round) -> None
             .values(waiting=False, waiting_for=[])
         )
     assert round_.statement().status_code == 201  # admitted: it writes it
+
+
+def _wait(round_: Round, agent: Any) -> None:
+    with round_.engine.begin() as conn:
+        member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent.id)
+        ).scalar_one()
+        conn.execute(
+            t.conversation_participant.update()
+            .where(
+                t.conversation_participant.c.conversation_id == round_.thread,
+                t.conversation_participant.c.membership_id == member,
+            )
+            .values(waiting=True, waiting_for=[round_.owner.id])
+        )
+
+
+def test_a_waiting_agent_posts_nothing_and_gets_the_round_without_its_text(
+    round_: Round,
+) -> None:
+    """fp3y on #1717: a waiting agent's post is `waiting`, and every answer with the round, a
+    replay's included, comes without the statement and the posts (§9.6)."""
+    assert round_.statement().status_code == 201
+    assert round_.post(round_.member, "response").status_code == 201
+    _wait(round_, round_.member)
+    refused = round_.post(round_.member, "response", body="again")
+    assert refused.status_code == 403 and refused.json()["error"]["details"]["reason"] == "waiting"
+    _wait(round_, round_.lead)
+    path = f"/api/v1{rounds_path(round_.id, '/steps')}"
+    headers = round_.lead.auth | {"Idempotency-Key": "waiting-agent-step-0001"}
+    first = round_.lead.client.post(path, json={"reason": "more"}, headers=headers)
+    assert first.status_code == 201, first.text
+    again = round_.lead.client.post(path, json={"reason": "more"}, headers=headers)
+    assert again.status_code == 201, again.text
+    for answered in (first.json(), again.json()):
+        assert answered["statement"] is None and answered["posts"] == []
+    assert round_.get()["statement"] is not None  # the owner reads it in full

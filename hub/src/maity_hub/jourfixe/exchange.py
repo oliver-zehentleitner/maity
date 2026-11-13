@@ -327,6 +327,8 @@ def submit_post(
     ):
         raise _state(round_row, step["kind"] if step else None, "that step is not open")
     me = mine.principal_id
+    if round_row.conversation_id and chat_gate.waiting(conn, round_row.conversation_id, mine.id):
+        raise chat_gate.refuse_waiting()  # as in any chat it waits in (§9.6, §20.5)
     if me not in step["eligible"] or me not in _admitted(conn, round_row):
         raise refused("not_eligible", "you may not post in this step")
     too_long([("body", body["body"], POST_BYTES)])
