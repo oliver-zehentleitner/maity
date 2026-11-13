@@ -12559,6 +12559,10 @@
     "en": "7e35927a104c820e",
     "text": "ea4ae07857fc9600"
   },
+  "person.agents.none": {
+    "en": "5233ae2fc929a121",
+    "text": "33f202a722f10d96"
+  },
   "person.handle": {
     "en": "e52b730b195d5cd3",
     "text": "e52b730b195d5cd3"
@@ -12654,6 +12658,22 @@
   "person.role.owner": {
     "en": "622f06cbcd2e7e61",
     "text": "420e9201d14d5585"
+  },
+  "person.tab.agents": {
+    "en": "21cf98a292e94015",
+    "text": "efd0461a0aa8254d"
+  },
+  "person.tab.profile": {
+    "en": "96ad4bd0f7baa40e",
+    "text": "a1ea77e29158ee40"
+  },
+  "person.tabs.label": {
+    "en": "16a03e3aa01e736f",
+    "text": "3810ec11258f61c0"
+  },
+  "person.title.agents": {
+    "en": "dd81b03eabf89b55",
+    "text": "e95d603ea97301e5"
   },
   "person.view_public": {
     "en": "8164ca72067a45c7",

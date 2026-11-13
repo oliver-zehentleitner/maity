@@ -4540,7 +4540,7 @@ Response `200`, bounded and deterministic:
   text does not tell the agent to run `maity chat` for one of them. The
   text prints its own block (§13). The agent reads the chat with
   `GET /me/cross-chats/{id}/messages`.
-- `chat_rules` (not built, not in the example above, §9.6) lists, per
+- `chat_rules` (not in the example above, §9.6) lists, per
   side of another owner the agent shares an admitted chat with, the
   rules its owner set for that side: `{entry_id, owner_id, handle,
   project, allowed, denied, conversations}`. Empty when there are none.
@@ -11994,7 +11994,7 @@ learns its content.
 | `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A free work message from another side (§9.6) names an agent held for it as `held:<id>` in place of its own token; no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
-| `chat_rules_changed` (not built, §9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
+| `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
 | `chat_unread` (§9.2) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants but a waiting agent (§9.6) (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -14638,7 +14638,11 @@ across that side's boundary:
 - in the resume packet (§5.2), `chat_rules`: one item `{entry_id,
   owner_id, handle, project, allowed, denied, conversations}` per entry
   that admits the agent to a chat it is in, `conversations` the ids of
-  those chats; an `owner` entry has `project: null`, a `project` entry
+  those chats (in a packet, the chats of the packet's project). An entry
+  admits the agent to a chat when the agent takes part there admitted
+  (`waiting_for: []`), the entry names it in `agents`, and it covers a
+  participant on another side as "Waiting" counts it; an entry with
+  neither text sets no rule and gives no item. An `owner` entry has `project: null`, a `project` entry
   `owner_id: null` and `handle: null` and is printed with the project's
   name; the
   CLI prints them as `Chat rules for <handle>'s side (set by your
@@ -14648,10 +14652,17 @@ across that side's boundary:
   gets no such field. `maity chat <id>` prints them above the messages,
   and `maity wait` prints them with every chat message of that chat.
 
-A change emits `chat_rules_changed` to `member:<agent>` in each project
-where the agent is in a chat the entry admits it to, and wakes the
-agent. So does the entry's removal or the end of its `until`, in each
-project where the entry admitted the agent to a chat just before. Its payload is `{entry_id}` only, never the texts: the agent
+A change of an entry's texts emits `chat_rules_changed` to
+`member:<agent>` in each project where the entry admits the agent to a
+chat, or admitted it just before, and wakes the agent. So does an entry
+with a text that comes to admit the agent (a new entry, a widening, a
+renewal) or stops admitting it (its removal, a narrowing, a deny that
+narrows it, the end of its `until`), in each project where that changed;
+this is judged per chat, so coming to admit the agent to one more chat
+of a project, or to one fewer, is such a change. An entry whose `until`
+passed still counts as admitting until the hub lapses it.
+A write that changes neither, and an entry with no text before or
+after, sends none. Its payload is `{entry_id}` only, never the texts: the agent
 reads them in its next resume or in the chat's view. Only the agent it
 names reads it (§8.2): never the see-all, by trust or role, a bridge
 (§2.3) or the agent's owner, as for `chat_unread`.
@@ -14690,9 +14701,8 @@ are a member of the project.
 **The lists.** A human's allow and deny entries for their agents. Only
 that human reads and changes them. The lists and the gate ("Waiting",
 the owner's add, a deny entry, an entry that ends, a held free work
-message, a waiting moderator) and the request are built; the rules per
-side are stored but not yet delivered to the agents (`chat_rules`,
-`chat_rules_changed`). An owner also admits a waiting agent with an
+message, a waiting moderator), the request and the delivery of the
+rules per side (`chat_rules`, `chat_rules_changed`) are built. An owner also admits a waiting agent with an
 entry here:
 
 | Endpoint | Scope | Notes |

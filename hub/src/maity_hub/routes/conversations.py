@@ -22,6 +22,7 @@ from maity_hub import (
     attachments,
     chat_gate,
     chat_meat_proxy,
+    chat_rules,
     conversation_list,
     events,
     group_chats,
@@ -652,7 +653,17 @@ def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str,
     return {
         **group_chats.view(conn, group, found, _viewer(mine)),
         "pinned": _is_pinned(conn, mine, conversation_id),
+        **_rules(conn, mine, found, conversation_id),
     }
+
+
+def _rules(conn: Connection, mine: Any, found: str, conversation_id: str) -> dict[str, Any]:
+    """`chat_rules` for the agent participant reading its own chat (§9.6, "Rules per side"):
+    every other reader gets no such field, a bridge serving it included."""
+    agent_id = getattr(getattr(mine, "row", None), "agent_id", None)  # an owner outside: none
+    if agent_id is None or found != "participant" or getattr(mine, "bridged", False):
+        return {}
+    return {"chat_rules": chat_rules.for_chat(conn, agent_id, conversation_id)}
 
 
 def _viewer(mine: Any) -> str | None:
@@ -671,6 +682,7 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     return {
         **group_chats.view(conn, row, found, _viewer(mine)),
         "pinned": _is_pinned(conn, mine, conversation_id),
+        **_rules(conn, mine, found, conversation_id),
     }
 
 

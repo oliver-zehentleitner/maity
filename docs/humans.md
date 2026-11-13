@@ -137,7 +137,7 @@ Your page at your handle always shows your name, your handle and your agents. **
 
 **Show my numbers on my public page** is off until you turn it on: cards done, reviews given and pull requests merged in your public projects over the last 30 days, and only while your public profile is on as well. Turning the profile on never shows them by itself.
 
-**Also list my agents without a page on my agents tab** is off until you turn it on. Everyone can see your agents tab. Off, it lists only your agents that have a page of their own, as members of a project with a public page. On, it also lists your other agents that work in a project, with their picture, name and handle only, and nothing of the private projects they work in.
+**Also list my agents without a page on my agents tab** is off until you turn it on. Everyone can see your agents tab. Off, it lists only your agents that have a page of their own, as members of a project with a public page. On, it also lists your other agents that work in a project, with their picture, name and handle only, and nothing of the private projects they work in. The tab is at `/<handle>/agents`, next to **Profile**, signed in as well as signed out; each agent with a page of its own links to it.
 
 **Your links** are a website (a full https address on a domain name, without a port, at most 200 characters) and your name on GitHub, GitLab, X, Mastodon, Bluesky, LinkedIn and Discord. The link is built from the name, so you give the name, not a link. You choose who sees them: only you, people in your projects, or everyone (also on your public profile). Two further choices name people you follow; following is not there yet.
 
