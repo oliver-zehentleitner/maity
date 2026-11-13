@@ -18057,7 +18057,7 @@ that machine (§15.3):
 
 | Harness | Linux | macOS | Windows |
 |---|---|---|---|
-| `claude-code` | its sandbox, strict, when `bwrap` and `socat` are on `PATH`; else off | off | off |
+| `claude-code` | its sandbox, strict, when `bwrap` and `socat` are on `PATH` and Claude Code is 2.1.295 or later; else off | off | off |
 | `codex` | its sandbox; refused if `codex sandbox -- true` does not start | as Linux | as Linux |
 | `opencode` | none (allowlist only) | none | none |
 

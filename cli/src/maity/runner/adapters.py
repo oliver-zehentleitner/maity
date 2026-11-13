@@ -327,9 +327,12 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
         # that starts with `maity` and holds anything else (plaincall). It runs for every
         # tool, outside the sandbox, from the runner's own code; a hook that fails or times
-        # out refuses the call (`onFailure`, Claude Code 2.1.295 and later). Shell form, so
-        # a version that predates exec form runs it too.
-        hook = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
+        # out refuses the call (`onFailure`, Claude Code 2.1.295 and later: the sandbox is not
+        # switched on for an older one, capabilities.sandbox_version_ok). Shell form, so a
+        # version that predates exec form runs it too; `|| exit 2` refuses on any version
+        # when the hook cannot start or fails.
+        module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
+        hook = f"{module} || exit 2"
         settings["hooks"] = {
             "PreToolUse": [
                 {"hooks": [{"type": "command", "command": hook, "timeout": 30,

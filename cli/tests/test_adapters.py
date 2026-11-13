@@ -192,12 +192,38 @@ def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: 
     (hook,) = entry["hooks"]
     assert hook["type"] == "command" and hook["onFailure"] == "block"
     # The runner's own interpreter and module, isolated from the session's environment.
-    assert shlex.split(hook["command"]) == [sys.executable, "-I", "-m", "maity.runner.plaincall"]
+    module = [sys.executable, "-I", "-m", "maity.runner.plaincall"]
+    # A hook that cannot start or fails refuses the call on any version, not only with onFailure.
+    assert shlex.split(hook["command"]) == [*module, "||", "exit", "2"]
     assert "args" not in hook  # shell form: also runs on a version without exec form
     remote = Ssh(name="b", address="b.lan", login="m", known_hosts=tmp_path / "k")
     remote_hook = adapters.claude_settings(context(tmp_path / "r", sandbox=True, as_user=remote))
     command = remote_hook["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    assert command == "maity runner plaincall"  # the host's maity, as for the loop
+    assert command == "maity runner plaincall || exit 2"  # the host's maity, as for the loop
+
+
+@pytest.mark.parametrize(
+    ("harness_id", "version", "ok"),
+    [("claude-code", "2.1.294", False), ("claude-code", "2.1.295", True),
+     ("claude-code", "2.2.0", True), ("claude-code", "3.0.0-beta", True),
+     ("claude-code", None, False), ("claude-code", "2.1", False), ("claude-code", "x", False),
+     ("codex", None, True)],
+)  # fmt: skip
+def test_claude_codes_sandbox_needs_the_hook_failure_policy(
+    harness_id: str, version: str | None, ok: bool
+) -> None:
+    from maity.runner import capabilities
+
+    assert capabilities.sandbox_version_ok(harness_id, version) is ok
+
+
+def test_the_hook_refuses_when_it_cannot_start(tmp_path: Path) -> None:
+    """The shell form's `|| exit 2`: a missing module or interpreter is exit 2, a refusal."""
+    hook = adapters.claude_settings(context(tmp_path, sandbox=True))["hooks"]["PreToolUse"]
+    command = hook[0]["hooks"][0]["command"].replace("maity.runner.plaincall", "maity.nowhere")
+    done = subprocess.run(["sh", "-c", command], input="{}", capture_output=True, text=True,
+                          check=False, timeout=60)  # fmt: skip
+    assert done.returncode == 2
 
 
 def test_the_plain_call_hook_is_a_runner_command(

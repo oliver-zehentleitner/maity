@@ -349,6 +349,35 @@ def test_placements_outside_the_configuration_fail(
     assert backend.started == []
 
 
+@pytest.mark.parametrize(
+    ("version", "refused"),
+    [("2.1.294", True), ("2.1.295", False), ("2.1.325", False), (None, True), ("dev", True)],
+)
+def test_claude_codes_sandbox_starts_only_where_its_hooks_refuse_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str | None, refused: bool
+) -> None:
+    """The runner's hook relies on `onFailure: "block"` (Claude Code 2.1.295): an older or
+    unknown version gets no sandbox, and `require_sandbox` refuses the start."""
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path, max_agents=2)
+                    + "\n[harness.claude-code]\nrequire_sandbox = true\n")  # fmt: skip
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    monkeypatch.setattr(capabilities, "sandbox_available", lambda *a, **k: True)
+    probes = {
+        "stub": capabilities.Probe(None, None, None),
+        "codex": capabilities.Probe("/usr/bin/codex", "0.40.0", None),
+        "claude-code": capabilities.Probe("/usr/bin/claude", version, None),
+    }
+    sup = supervisor.Supervisor(
+        config.load(path), FakeTmux(), Reports(), [].append, probes, now=Clock(),  # type: ignore[arg-type]
+        rand=lambda: 0.5,
+    )  # fmt: skip
+    target = sup.targets["local"]
+    assert target.sandbox["claude-code"] is not refused
+    found = sup._refusal(placement(harness="claude-code"), target)
+    assert (found == ("harness_refused", None)) is refused
+
+
 def test_a_missing_harness_binary(world: Any) -> None:
     sup, _, reports, _, _ = world
     sup.probes["codex"] = capabilities.Probe(None, None, "binary_not_found")

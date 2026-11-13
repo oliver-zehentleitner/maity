@@ -111,6 +111,7 @@ def local(
         probes=probes,
         sandbox={
             h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user)
+            and capabilities.sandbox_version_ok(h, probes[h].version if h in probes else None)
             for h in cfg.harnesses
         },
         backend=backend,
@@ -192,5 +193,9 @@ def probe_remote(
                 == 0
             )
         else:
-            sandbox[harness.id] = harness.id == "claude-code" and tools
+            sandbox[harness.id] = (
+                harness.id == "claude-code"
+                and tools
+                and capabilities.sandbox_version_ok(harness.id, found[harness.id].version)
+            )
     return found, sandbox

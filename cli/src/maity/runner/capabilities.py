@@ -31,6 +31,34 @@ _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
 CHECKED = {"claude-code": "2.1.318"}
 
 
+# The oldest Claude Code whose hooks refuse the call when they fail or time out
+# (`onFailure: "block"`): the runner's sandboxed sessions rely on it (adapters.claude_settings),
+# so its sandbox is switched on only from this version (cli/context/runner.md).
+CLAUDE_SANDBOX_MIN = (2, 1, 295)
+_RELEASE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def sandbox_version_ok(harness_id: str, version: str | None) -> bool:
+    """Whether the runner may switch the harness's sandbox on at this version: for Claude Code
+    CLAUDE_SANDBOX_MIN or later, read from the probed version; an unknown or unreadable
+    version is not. Other harnesses: always."""
+    if harness_id != "claude-code":
+        return True
+    match = _RELEASE.match(version or "")
+    if match is None:
+        return False
+    return tuple(int(part) for part in match.groups()) >= CLAUDE_SANDBOX_MIN
+
+
+def sandbox_version_line(version: str | None) -> str:
+    """Why Claude Code's sandbox stays off at this version, for `check` and the log."""
+    oldest = ".".join(str(part) for part in CLAUDE_SANDBOX_MIN)
+    return (
+        f"harness claude-code: version {version or 'unknown'} is older than {oldest} or"
+        " unknown; its sandbox is not switched on (the runner's hook needs `onFailure`)"
+    )
+
+
 def unchecked(harness_id: str, version: str | None) -> str | None:
     """A warning when `version` of the harness is not the one its sandbox was checked with,
     or None."""
@@ -148,7 +176,11 @@ def harness_entry(
     sandbox: bool | None = None,
     as_user: AsUser = RUNNER,
 ) -> dict[str, Any]:
-    on = sandbox_available(harness, path, as_user) if sandbox is None else sandbox
+    if sandbox is None:
+        sandbox = sandbox_available(harness, path, as_user) and sandbox_version_ok(
+            harness.id, found.version
+        )
+    on = sandbox
     return {
         "id": harness.id,
         "version": found.version,
