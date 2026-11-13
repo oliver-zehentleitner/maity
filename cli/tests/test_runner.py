@@ -765,3 +765,46 @@ def test_runner_check_warns_while_agents_commit_as_the_default() -> None:
     stub_only = commands.Report()  # the stub commits nothing: no default in use
     commands._check_git(stub_only, parse(minimal()))
     assert stub_only.lines == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("email", "team\\u0000@example.org"),  # NUL: no process could get it in its environment
+        ("email", "team\\u001b@example.org"),  # ESC
+        ("email", "team\\u007f@example.org"),  # DEL
+        ("email", "team\\u0085@example.org"),  # NEL, a C1 control
+        ("email", "team\\u200b@example.org"),  # a format character, invisible in a commit
+        ("name", "Your\\u0080Team"),  # a C1 control
+        ("name", "Your\\u0000Team"),
+        ("name", "Your\\u001bTeam"),
+        ("name", "Your\\u2028Team"),  # a line separator
+    ],
+)
+def test_the_git_table_refuses_what_is_not_printable(field: str, value: str) -> None:
+    """Review of #1735: a control character passed the first validator, and a NUL then failed
+    only when a session was started. Everything `str.isprintable()` refuses is refused when
+    the configuration is read (the values are TOML escapes, decoded by tomllib)."""
+    other = {"name": '"Your Team"', "email": '"team@example.org"'}
+    other[field] = f'"{value}"'
+    found = problems(minimal(git=f"\n[git]\nname = {other['name']}\nemail = {other['email']}\n"))
+    assert any(p.startswith(f"git.{field}: ") and "printable" in p for p in found), found
+
+
+def test_printable_letters_beyond_ascii_are_kept() -> None:
+    cfg = parse(minimal(git='\n[git]\nname = "Zoë Équipe"\nemail = "équipe@example.org"\n'))
+    assert (cfg.git.name, cfg.git.email) == ("Zoë Équipe", "équipe@example.org")
+
+
+def test_a_nul_in_the_git_email_fails_when_the_file_is_loaded(tmp_path: Path) -> None:
+    """Not when a session starts: `load` refuses the file and names the field."""
+    path = tmp_path / "runner.toml"
+    path.write_text(
+        minimal(h="\n[harness.claude-code]\n")
+        + '\n[git]\nname = "Your Team"\nemail = "team\\u0000@example.org"\n',
+        encoding="utf-8",
+    )
+    assert "\\u0000" in path.read_text(encoding="utf-8")  # the escape, decoded only by tomllib
+    with pytest.raises(config.ConfigError) as info:
+        config.load(path)
+    assert any(p.startswith("git.email: ") for p in info.value.problems), info.value.problems

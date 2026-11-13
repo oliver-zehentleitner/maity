@@ -96,7 +96,7 @@ The sandbox keeps an agent's `.git/config` read-only, because what it sets could
 
 ## Who agents commit as
 
-Every agent the runner starts commits under one git identity, the same as author and committer, from the `[git]` table of the runner's configuration:
+Every agent the runner starts gets one default git identity, the same as author and committer, from the `[git]` table of the runner's configuration:
 
 ```toml
 [git]
@@ -106,7 +106,7 @@ email = "team@example.org"
 
 Without `[git]`, agents commit as `Maity agent <maity-agent@invalid>`, a generic default that no forge links to anyone, and `maity runner check` warns until you set it. Use an identity for your agents, not a person's own: every agent of this runner commits under it.
 
-The runner passes the identity to each session as `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL`. These win over every git configuration, so a plain `git commit` works with nothing in `.git/config` and nothing in the agents' user's `~/.gitconfig`. In the `single` layout the agents' home is yours, and before this setting existed agents committed under the identity in your own `~/.gitconfig`; now they commit as `[git]`. Agents cannot set an identity of their own, because `git config` and `git -c` are not granted. `git commit --author` still changes the author line of a commit, never its committer. Placements that were already running get the identity only after a restart.
+The runner passes the identity to each session as `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL`. These win over every git configuration, so a plain `git commit` works with nothing in `.git/config` and nothing in the agents' user's `~/.gitconfig`. In the `single` layout the agents' home is yours, and before this setting existed agents committed under the identity in your own `~/.gitconfig`; now they commit as `[git]`. What the runner guarantees is that default: every placed session starts with it as author and committer, and no git configuration replaces it (the clone's, the agents' user's, or one written later), because the variables win over configuration and `git config` and `git -c` are not granted. It is a default, not a lock: `git commit --author` gives a commit another author, and a program the session runs, such as an allowed check (see below), can start git with an environment of its own and commit under any identity. The name and the address take printable characters only (what Python's `str.isprintable()` accepts, so no control or format characters); a name has no `<` or `>` and no space at either end, an address exactly one `@` and no spaces. `check` and `serve` refuse anything else when they read the file. Placements that were already running get the identity only after a restart.
 
 ## Letting agents run a repository's checks
 

@@ -1,8 +1,9 @@
 ### Added
 
-- cli: `[git]` in the runner configuration (`name`, `email`) is the
-  author and committer of every placed session's commits, passed as
-  `GIT_AUTHOR_*` and `GIT_COMMITTER_*`; without it agents commit as
+- cli: `[git]` in the runner configuration (`name`, `email`, printable
+  characters only) is the default author and committer of every placed
+  session, passed as `GIT_AUTHOR_*` and `GIT_COMMITTER_*`; without it
+  agents commit as
   `Maity agent <maity-agent@invalid>`, and `maity runner check` warns.
   Upgrade: set `[git]` to your agents' identity, then restart the
   placements that were already running.

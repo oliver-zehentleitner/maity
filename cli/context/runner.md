@@ -2736,7 +2736,7 @@ Rejected:
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-z27pwcfr03wm (the runner test of 2026-11-11 on #1592: `git commit` in a placed Claude Code session failed with "empty ident name (for <maity-runner@…>) not allowed", the checks were refused); the lead's decisions on that card, message 123366, 2026-11-13; git 2.53 in a scratch repository with an empty `HOME`, no system configuration and a read-only `.git/config`, 2026-11-13; `cli/tests/test_session_identity.py`
+**Source:** card tsk-z27pwcfr03wm (the runner test of 2026-11-11 on #1592: `git commit` in a placed Claude Code session failed with "empty ident name (for <maity-runner@…>) not allowed", the checks were refused); the lead's decisions on that card, message 123366, 2026-11-13; the review of #1735 (the control-character finding) and the review lead's fix order, message 123623, 2026-11-13; git 2.53 in a scratch repository with an empty `HOME`, no system configuration and a read-only `.git/config`, 2026-11-13; `cli/tests/test_session_identity.py`
 **See:** runner.md#git-in-a-sandboxed-session-works-without-writing-gitconfig — 82e70deb-7cf9-4ea1-be2f-137186b20b2d — as of 2026-11-13
 **Revisit when:** a placement should commit as an identity of its own (per agent or per repository), git stops letting `GIT_AUTHOR_*`/`GIT_COMMITTER_*` override the configuration, or a harness filters these variables out of the commands it runs
 
@@ -2747,7 +2747,11 @@ every harness and layout (`adapters.git_identity`). Without the table the
 default is the generic `Maity agent <maity-agent@invalid>`, and
 `maity runner check` warns while a harness other than `stub` is configured.
 `config user.name` and `config user.email` are no longer among the granted
-git subcommands.
+git subcommands. It is the session's default, not a lock: `git commit
+--author` sets another author, and a program the session runs (an allowed
+check) can start git with an environment of its own. Both values are
+refused when the configuration is read unless `str.isprintable()` accepts
+them.
 
 **Reason:** the session had no identity anywhere. Its environment is a
 fixed few variables, the agents' user on the runner VM has no
@@ -2778,6 +2782,14 @@ win) and, without a sandbox, wrote `.git/config`.
 - Requiring `[git]` with no default: an existing configuration would stop
   passing `check` and `serve` on upgrade.
 - An identity per repository grant: not needed now (the lead's decision).
+- Refusing only control characters (category Cc: C0, DEL, C1) in the two
+  values, the first fix the review of #1735 asked for: it would keep format
+  characters such as U+200C, which some names use, but also invisible ones
+  in every commit. The review lead preferred everything `str.isprintable()`
+  refuses; an identity for agents does without U+200C. The first version
+  refused only C0 and DEL in the name and nothing in the address, so a NUL
+  passed `check` and failed only when a session was started (review of
+  #1735).
 
 Which checks a repository's grant allows stays the operator's choice in
 the runner configuration; the contract only says the hub neither sees nor

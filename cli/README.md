@@ -965,9 +965,14 @@ Both keys are required in the table. Without it agents commit as
 other than `stub` is configured. The runner sets `GIT_AUTHOR_NAME`,
 `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL` in
 every session, which win over the clone's and the agents' user's git
-configuration; `git config` is not granted. A name with `<` or `>` or
-spaces at either end, and an address without exactly one `@` or with
-spaces, are refused, since git would change or refuse them.
+configuration; `git config` is not granted. It is a default, not a
+lock: `git commit --author` sets another author, and a program the
+session runs, such as an allowed check, can start git with an
+environment of its own. Both values take only characters Python's
+`str.isprintable()` accepts (no control or format characters). A name
+with `<` or `>` or spaces at either end, and an address without exactly
+one `@` or with spaces, are refused too, since git would change or
+refuse them.
 
 For agents that open their pull requests themselves, set `pull_requests`:
 

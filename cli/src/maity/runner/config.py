@@ -272,21 +272,28 @@ def _names_maity(argument: str) -> bool:
 
 
 # A name or an address git records as written: git drops `<` and `>` from a name and trims
-# its ends, so those are refused here instead of committed changed. No control characters,
-# at most 200 characters.
-_GIT_NAME = re.compile(r"[^<>\x00-\x1f\x7f]{1,200}")
+# its ends, so those are refused here instead of committed changed. Only what
+# `str.isprintable()` takes (the ASCII space included): no control character (C0, DEL, C1),
+# whose NUL cannot be passed in the session's environment at all and the rest would land in
+# every commit, and no format character, line or paragraph separator, other space, private
+# or unassigned code point either. That also refuses U+200C, which some names use; an
+# identity for agents does without it, and nothing invisible reaches a commit
+# (cli/context/runner.md). At most 200 characters.
+_GIT_NAME = re.compile(r"[^<>]{1,200}")
 _GIT_EMAIL = re.compile(r"[^<>\s@]+@[^<>\s@]+")
 
 
 def _git_name(value: Any) -> str | None:
-    if not _GIT_NAME.fullmatch(value) or value != value.strip():
-        return "a name of 1 to 200 printable characters, no < or >, no space at either end"
+    if not _GIT_NAME.fullmatch(value) or value != value.strip() or not value.isprintable():
+        return ("a name of 1 to 200 printable characters (no control or format characters), "
+                "no < or >, no space at either end")  # fmt: skip
     return None
 
 
 def _git_email(value: Any) -> str | None:
-    if len(value) > 200 or not _GIT_EMAIL.fullmatch(value):
-        return "an address like team@example.org: one @, no spaces, < or >"
+    if len(value) > 200 or not _GIT_EMAIL.fullmatch(value) or not value.isprintable():
+        return ("an address like team@example.org: printable characters (no control or format "
+                "characters), one @, no spaces, < or >")  # fmt: skip
     return None
 
 
