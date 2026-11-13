@@ -5207,6 +5207,50 @@
     "en": "7ef9a2c7bf324381",
     "text": "7ef9a2c7bf324381"
   },
+  "inbox.chat_access.allowed": {
+    "en": "d6e7a7703ef619b6",
+    "text": "572352d2c6a6339f"
+  },
+  "inbox.chat_access.allowed_placeholder": {
+    "en": "f501fe7226f42dec",
+    "text": "aba3e7f6328a8de8"
+  },
+  "inbox.chat_access.denied": {
+    "en": "585d71165b1194aa",
+    "text": "7c6f69b623ad0564"
+  },
+  "inbox.chat_access.denied_placeholder": {
+    "en": "a6a053da945df82f",
+    "text": "c93c55faa60a9c82"
+  },
+  "inbox.chat_access.held": {
+    "en": "1c0cd904c169ab48",
+    "text": "2f5968cd9eee9b49"
+  },
+  "inbox.chat_access.human": {
+    "en": "9ba2f2a1f3fbc485",
+    "text": "13bf1fd64fe8a040"
+  },
+  "inbox.chat_access.human_hint": {
+    "en": "1e578de7d28c0d49",
+    "text": "c5db65f5374c4402"
+  },
+  "inbox.chat_access.human_in_chat": {
+    "en": "0e755505f2519ec9",
+    "text": "c0091236d5650548"
+  },
+  "inbox.chat_access.legend": {
+    "en": "45241b561f526ec3",
+    "text": "6d603372ad787d11"
+  },
+  "inbox.chat_access.none": {
+    "en": "9108684fdfc8e60a",
+    "text": "c31185000006dc99"
+  },
+  "inbox.chat_access.waiting": {
+    "en": "97c51d0448d1e7af",
+    "text": "5731d5910272527d"
+  },
   "inbox.chat_with": {
     "en": "08d2ac3fa99907ab",
     "text": "c1a9a8a4155d2306"

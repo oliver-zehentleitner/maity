@@ -14558,9 +14558,8 @@ stays open until the owner answers it. The owner withdrawing it (§7) counts as
 `no`.
 
 `GET /requests/{id}` shows the owner what an inbox draws its checkboxes
-from, as of the read (the web inbox offers them in a later part; until
-then its answer carries the `reply_id` only and takes the defaults
-below):
+from, as of the read (the web inbox draws its boxes and the two rules
+from it and sends them as `chat_access` with an allow reply):
 
 ```json
 { "chat_access_request": {
