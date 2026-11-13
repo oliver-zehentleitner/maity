@@ -42,6 +42,12 @@ def enrolled(make_client: ClientFactory, migrated: Engine, moment: Clock) -> tup
     return ada, secret
 
 
+def hub_of(ada: flow.Human) -> Any:
+    """The settings of the hub `ada`'s client talks to."""
+    app: Any = ada.client.app
+    return app.state.settings
+
+
 def wrong_code(secret: bytes, moment: Clock) -> str:
     """A code no step near now accepts."""
     step = totp.step_of(moment.at.timestamp())
@@ -82,7 +88,7 @@ def security_mails(engine: Engine) -> list[Any]:
 
 def unlock_mail(engine: Engine, ada: flow.Human) -> Any:
     """The newest security mail with an unlock link, after a pass of the mailer."""
-    assert mailer.run(engine, ada.client.app.state.settings.mail, None, PUBLIC) >= 1
+    assert mailer.run(engine, hub_of(ada).mail, None, PUBLIC) >= 1
     found = [m for m in security_mails(engine) if "/mail/second-factor-unlock/" in m.body]
     assert found, [m.subject for m in security_mails(engine)]
     return found[-1]
@@ -168,7 +174,7 @@ def test_a_link_of_another_day_or_purpose_does_not_work(
     ada, secret = enrolled(make_client, migrated, moment)
     reach_the_cap(ada, secret, moment)
     link = unlock_link(migrated, ada)
-    key = ada.client.app.state.settings.mail.signing_key
+    key = hub_of(ada).mail.signing_key
     payload = tokens.read(key, link.rsplit("/", 1)[1])
     assert payload is not None
     other = tokens.make(key, {**payload, "p": "second_factor_reset"})
