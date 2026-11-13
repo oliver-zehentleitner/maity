@@ -11,12 +11,13 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 Unreleased changes are collected in `changelog.d/` (one file per pull request) and folded in at release.
 
-## [0.1.0a5] - 2026-11-12
+## [0.1.0a5] - 2026-11-13
 
 ### Added
 
 - hub: a human's allow and deny entries for their agents (§9.6, "The lists"), part 1 of the agent firewall. `GET /me/chat-access` (`{allow, deny}`, newest first, `agent=<id>` to filter, at most 1,000 entries), `POST /me/chat-access/allow`, `PATCH /me/chat-access/allow/{id}`, `POST /me/chat-access/deny` and `DELETE /me/chat-access/{allow|deny}/{id}`, for humans only (an agent is `humans_only`). New tables `chat_access` and `chat_access_agent` (migration `20261112090000_firewall_lists`). The entries are in the owner's export (`chat_access`) and go with the account. A side's entry defaults to `their_agents: "all"` and `their_human: false`; one that would name no one is `invalid` (`names_no_one`). The writes take an `Idempotency-Key` (§1.5); a replay answers the entry as it is now, and one deleted since is `not_found`. One human's writes run one after the other, so the cap holds, and an agent's deletion does not deadlock with them; another human's entry naming that human does not either on PostgreSQL, and on MariaDB such a deadlock is run again. A deleted agent is taken out of every entry, and an entry left naming no one goes. The lists are not in effect yet: nobody is admitted or held back by them until the gate (part 2) ships.
 - Contract: who may chat with an agent (§9.6, not built). Only the agent's owner and the owner's other agents chat with it without asking. A human and the agents they own are one side. An agent in a group chat with someone its owner has not admitted waits: it reads nothing and is not woken until the owner answers a personal `consent` request (allow for an hour, a day or a week; allow always; no; block). One request per owner pair lists every agent of that owner waiting for the same side, each with a checkbox, all ticked by default. Jour fixe round threads are gated the same way, and a bridge serving another owner's agent counts as its own owner's side. Agents of another owner already in group chats wait for that answer too. An allow pairs two sets the owner picks: one, selected or all of the owner's agents, with all, selected or none of the other owner's agents, and that owner's human only when the owner ticks it (`/me/chat-access`); a deny names a side, a person, an agent or a project, and wins. Each allow carries two texts by the owner, `allowed` (what the agent may talk about and work on with that side) and `denied` (what it must not reveal), which the agent receives as binding rules in its resume packet (`chat_rules`), in the chat's view and with each chat message; the hub cannot enforce them, it delivers them every time. §9.6 also names where a text can cross the owner boundary (the creation of every `chat` message, on every path, after validation and before it is stored), the point where a later content check will sit. Free work messages (`notice`, `blocker`, `handover`, `interface_change`, `go_request`) from another side pass the same gate: an agent its owner has not admitted for the author is held for that message (`held` in the event, `held:<id>` in its audience), and its owner gets the same request. Assigning a card, a review request, a mention on a card and a lead's message stay open.
+- Dashboard: while the mail is a human's second factor, a banner on every page leads to setting up an authenticator app, sharper where a password reset by mail could reach them; **Later** hides it until the next sign-in (`docs/api.md` §2.10).
 - hub: a forgotten password is reset by mail (docs/api.md §2.10). `POST /auth/password-reset`
   always answers `202` and mails a 30-minute link `/sign-in/reset#<token>` to a verified
   address of an active account with a password whose human has not switched it off, from the
@@ -39,7 +40,9 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   `not_implemented` and the reset is never offered.
 - hub: migration `20261112110000_password_reset`: `human.password_generation`, and the tables
   `password_reset` and `password_reset_wrong`, deleted with the account.
+- Dashboard: "Forgot password?" on the login page, the page `/sign-in/reset` that sets a new password from the mailed link (with the authenticator app's code or a recovery code where one is set up), the switch **Allow password reset by mail** under Notifications, and the instance's switch under Admin → Sign-in methods, which says why a reset is not offered while it is on (`docs/api.md` §2.10).
 - web: the dashboard tells the hub you are present, so the mail of an immediate notification waits while you use it (§18.4, §18.5). A tab sends `POST /me/presence` at once and then every 60 seconds while it is visible and had pointer, key, scroll or focus input within ten minutes, and stops on sign-out or when the session ends. Notification settings → Mail has the switch **No mail while I'm online in the web app** (`email.hold_while_online`, on by default).
+- Contract: the runner harness `antigravity` (Google's Antigravity CLI, `agy`; §15.3, not built). Its confinement is `allowlist`: agy's own permission rules, with its terminal sandbox around every other command. Because agy loads the hooks, MCP servers, plugins and rules of the directory it starts in, the runner starts it in a workspace folder per placement that holds the clone as `repo` and nothing else (§15.5), and refuses a start when the folder holds anything more (`workspace_in_use`, new detail `workspace_not_bare`, §15.7) or lies inside a git work tree, whose configuration agy loads up to its root (new detail `workspace_in_repository`). An entry beside the clone counts as unsaved work, so a retention expiry never removes it. The runner writes the session settings before every launch: the default agent mode (not `auto`), commands no permission rule matches in the sandbox without asking, the sandbox on, the folder trusted, `.git/maity` denied to the file tools, `maity` and the repository's grants allowed. They are merged with the agy settings of the user the agents run as, whose own rules, skills, hooks, MCP servers and plugins also apply to every agent. Both modes; a run continues with `-c`, per workspace folder. Local mode has no `antigravity`.
 - cli: `maity runner serve` notices an interactive agent that stopped listening. When no process runs below the
   harness (no `maity wait`, no tool) and the pane is unchanged for 30 minutes, it types one line into the pane
   telling the agent to go back to its wait loop, but only while no client is attached. Any answer counts. If the
@@ -49,6 +52,24 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   a provider limit) sat idle while its placement showed `running`.
 - contract: §15.14, the runner's own check of an interactive session, with or without the hub's ask.
 - hub: a status report may carry `reason: hung` with `exited` or `failed`, and `detail: idle` or `tool` (§15.7).
+- contract: the runner installs and updates the harness tools and maity itself, opt-in per tool
+  in its configuration (`install`, `update = "daily"`), never under a running session, with the
+  previous version kept; it reports each tool's version and state in `capabilities.tools`, and the
+  runner's owner asks for an update with `POST /runners/{id}/updates`, which the runner reads with
+  `GET /runner` (docs/api.md §15.16, tsk-29nmydbzrg5z). Not built yet.
+- hub: a placement's `workspace_retention` (`immediate`, `3h`, `24h` by default, `7d`),
+  set at creation and changed by `PATCH` without a new generation, by the agent profile's
+  owner too and also after the placement closed; `workspace_epoch` and `workspace_outcome`
+  in its view (docs/api.md §15.5, tsk-34gb7frfbsk7). The runner's clock and removal follow.
+- hub: `POST /runner/placements/{id}/workspace`, the runner's report on a stopped or closed
+  placement's clone (`retained`, `kept`, `removed`) without `Idempotency-Key`; `removed`
+  revokes the placement's credential (`workspace_removed`) unless another running placement
+  names it, sets `rejoin` on an active placement and on every other active placement naming the
+  revoked credential, and raises `workspace_epoch` (§15.8).
+- hub: `GET /runner/placements?closed=true`, the runner's closed placements whose clone it
+  has not reported removed, also after a detach (§15.8).
+- hub: `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove`, a removal of a held
+  clone asked by the agent profile's owner or a project admin, humans only (§15.6).
 - contract: §15.5, a runner removes a placement's clone once the placement has stopped (or closed) for its
   `workspace_retention`: `immediate`, `3h`, `24h` (the default) or `7d`, set with the placement. A start within
   that time continues in the same clone. The runner removes a clone only on the hub's word, under the checks of
@@ -96,12 +117,25 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
 
 ### Changed
 
+- The dashboard's files are asked for under a version (docs/api.md §1, §16.11):
+  - The shell names each script, stylesheet and picture under `/assets/` with `?v=<version>`, the first 16 hex digits of the SHA-256 of the file as served.
+  - That request is cached `public, max-age=31536000, immutable`, so a warm load no longer revalidates each unchanged file.
+  - A stylesheet's fonts and pictures carry their versions too.
+  - The files a script loads later (language catalogs, Keep the Why) take their versions from a data block in the shell.
+  - Any other request, including one for another version, still gets the current file `no-cache` with its `ETag`.
 - docs: the Maity project's review rule in `docs/how/` and `CONTRIBUTING.md`: when two
   approvals cannot be had, the team agrees with the maintainer how to go on, instead of the
   review lead choosing a stand-in alone.
 - docs: the Maity project's own review rule on the site's front page, in `docs/how/` and in
   `CONTRIBUTING.md` reads two approvals on the exact commit from agents of two vendors that
   did not write the code, not one from each of three.
+- web: the project's Agents and Team pages share one head: the heading, the buttons at the right end
+  and the tabs under them, each the page's full width. Agents has **New agent profile** (was
+  **+ Add an agent**, also on `/agents`) and **Join an agent**; Team has **Invite user** and the same
+  **Join an agent**. **Join an agent** is now a menu: **Add any agent** opens the join panel, and
+  **Start an agent on a runner** opens the start form, which is no longer in the list. The tab
+  **Where they run** is now **Managed agents**, on a project's Agents and on `/agents`; the paths are
+  unchanged.
 - hub: `password_reset_missing` no longer names `not_implemented`: with mail ready the reset is
   offered, and `password_reset` in `GET /auth/methods` is `true`.
 - hub: the hub names CLI 0.1.0a9 as the newest published CLI (`hints.cli_version` and `GET …/events`
@@ -117,7 +151,12 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
 - cli: version 0.1.0a10 for PyPI, with the runner nudging an interactive agent that stopped
   listening in its pane and resuming its session when it stays silent (#1687), and taking a
   clone's `.git` only as the directory the runner recorded (#1683).
+- hub: the hub names CLI 0.1.0a10 as the newest published CLI (`hints.cli_version` and `GET …/events`
+  `cli_version`), so a CLI older than 0.1.0a10 prints its upgrade line (§5.2, §8.3).
 - cli: on macOS the runner switches Claude Code's sandbox on with Seatbelt (`sandbox-exec` on the agents' `PATH`), with the same strict settings as on Linux; `maity runner check` names Claude Code's sandbox on Linux, macOS and other POSIX systems (Windows refuses `maity runner` as before), and `install` on macOS points at `maity runner serve`.
+- hub: `GET /projects/{owner}/{slug}/placements?closed=true` also lists older closed
+  placements whose clone is still held; `desired: running` clears `workspace_outcome`; a
+  closed placement whose clone was reported removed no longer makes `continues_existing`.
 - hub: the group-chat unread nudge (`chat_unread`, §9.2) bounds the database work of each
   pass by its budget instead of the unread history. The one-row aggregates over a stay's
   unread range are gone. The read's limit counts every event row of the chat, so agents' or
@@ -175,8 +214,56 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
 
 ### Fixed
 
+- docs/api.md §15.13: local mode's `maity wait` long-polls between runs keep the session online
+  and renew no claim lease, as §2.4 and §8.3 already say; the sentence said they renewed them. A
+  `claim_lease_expiring` (not built yet) wakes that wait, and the run it starts renews with
+  `maity claim renew` or releases the card.
+- cli: `maity claim --help` says that the events long-poll inside `maity wait` renews no lease,
+  while the unread-chats check `maity wait` makes on a timeout is an ordinary call and does; and
+  that an expired lease releases nothing: the card stays the holder's until it is given back or
+  taken over.
+- Reading notifications no longer looks through a project's whole event history to find where your membership began. The hub now stores that position with the membership when you join, so the bell costs the same however long the project's history is. An upgrade fills it in for existing memberships, with the same result as before.
+- Removing a member from a public project, deleting an agent profile included, no longer takes off and renders again every card page of the project in the same request: only the card pages that name the member (as claim holder, note author or note editor) are. On a project with many cards one profile deletion sent about 32,000 statements and took close to a minute; the count now no longer depends on the number of cards. Joins and other shown member changes take the same narrower path.
+- Your agents (`/agents`) says a profile is deleted as soon as the hub answers the deletion, and reads the lists again behind it; a failed read shows under the message.
+- The notification bell no longer scans every message of the last 30 days in each of your projects. The hub now records, with each message, which humans it may notify, and the bell reads that record. In a project where agents send many messages to each other, reading notifications was slow and loaded the database for everyone. It now costs about the same however many messages are not for you. An upgrade fills in the record for the messages of the last 30 days.
 - hub: `POST /auth/password` voids an unconfirmed new address and its verification link, as
   docs/api.md §2.10 says it does, and moves the password generation.
+- cli: the runner's Claude Code settings set `attribution` to empty `commit` and `pr` texts and
+  `sessionUrl: false` for every placement, so agents no longer add a `Co-Authored-By` trailer to
+  commits or a "Generated with Claude Code" line to pull request bodies. Takes effect on a
+  placement's next start.
+- cli: an interactive placement no longer tells the hub it is supervised
+  (`MAITY_SUPERVISOR` only for a supervised one), so it waits for the next
+  event with `maity wait` instead of ending its turn and missing later
+  messages.
+- cli: git in a runner's sandboxed session (Claude Code, Codex) works without writing
+  `.git/config`: the session gets `branch.autoSetupMerge=false`,
+  `push.default=current` and `fetch.recurseSubmodules=false`, and the start
+  prompt of Claude Code and Codex names the commands that still fail
+  (`push -u` and `--set-upstream`, which push but cannot store an upstream,
+  `--track`, and `branch -m`, which renames and then fails).
+- cli: `maity report` reads a branch without an upstream as its own branch on
+  the push remote (`branch.<b>.pushRemote`, `remote.pushDefault`, else
+  `origin`) instead of refusing it, unless a `pushurl`, a `push` refspec or a
+  `pushInsteadOf` could send the push elsewhere.
+- cli: the runner hides the placeholders Claude Code's sandbox puts into the
+  work tree in the clone's `.git/info/exclude`, only for paths that are missing
+  or an empty directory at the start.
+- cli: a repository grant's `pull_requests = true` lets placed agents open and
+  read pull requests with `maity gh pr create` and `maity gh pr view`, always
+  on their own clone's repository (a body file is read in the clone only; on
+  Windows `--body` only). Without `--json`, `pr view` asks gh for fixed fields and
+  prints them as text, so it also works with an older gh whose own text view the
+  forge refuses. The grant and the body file are read through the
+  `.git` the runner recorded at the start: a `.git` renamed or replaced in the
+  session is refused. Under the harness's sandbox no placed session runs
+  gh itself. A gh entry in a grant's `allow` is ignored, and
+  `maity runner check` warns about it. Codex is refused for a repository whose
+  grant has `allow` or `pull_requests`.
+- cli: in a runner's placement, `maity` that cannot read the clone's credential
+  (Claude Code's sandbox hides it from a pipe or a chained command) says to run
+  maity alone instead of "has not joined a project", and the Claude Code start
+  prompt says so too.
 - hub: the unread nudge now comes at any rate of new messages, redactions or events about the
   chat. A read's bound grows only once the read has reached it, and the redaction look has a
   bound of its own. So 2000 or more new human messages between passes, a stream of later
