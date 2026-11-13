@@ -24,4 +24,7 @@
   before it starts; its rules kept in a file that is never
   overwritten and removed only once they are back, reached through `kubectl port-forward`) until the access rules are up to
   date: the changes to people and accounts made after the dump's time applied again, and every agent's credentials
-  revoked or each agent change applied again (docs/install/README.md, "After a restore").
+  revoked or each agent change applied again (docs/install/README.md, "After a restore"). The check is deliberately
+  conservative: another policy with an ingress rule passes only when the pod template's labels prove it disjoint.
+  Upgrade note: `deploy/k3s-single/postgres-netpol.yaml` now says so for PostgreSQL's policy (an added `NotIn` that
+  selects the same pods); apply it again, or the closed phase after a restore stops on `maity-postgres`.

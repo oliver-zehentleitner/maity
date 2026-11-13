@@ -165,7 +165,23 @@ OTHERS=$(other allow-hub '{}' '["Ingress"]' "$rules") np_run close_second_policy
 np_check close_second_policy "the hub was not started" '! grep -q " scale " log'
 OTHERS=$(other allow-hub '{"matchExpressions": [{"key": "app.kubernetes.io/component", "operator": "In", "values": ["hub"]}]}' '["Ingress"]' "$rules") \
   np_run close_second_policy_expr close-block none "$rules" none stops
-OTHERS=$(other db '{"matchLabels": {"app": "maity-postgres"}}' '["Ingress"]' "$rules") np_run close_other_pods close-block none "$rules" none ok
+# Fail closed: only a selector the template labels alone prove disjoint lets the block go on (a pod has labels its
+# template lacks, such as pod-template-hash).
+OTHERS=$(other hash '{"matchExpressions": [{"key": "pod-template-hash", "operator": "Exists"}]}' '["Ingress"]' '[{}]') \
+  np_run close_other_template_hash close-block none "$rules" none stops
+OTHERS=$(other unknown '{"matchExpressions": [{"key": "team", "operator": "Exists"}]}' '["Ingress"]' "$rules") \
+  np_run close_other_unknown_key close-block none "$rules" none stops
+OTHERS=$(other unknown-labels '{"matchLabels": {"team": "x"}}' '["Ingress"]' "$rules") \
+  np_run close_other_unknown_label close-block none "$rules" none stops
+# The shipped postgres policy (deploy/k3s-single/postgres-netpol.yaml), read from the file: it goes on.
+OTHERS=$(python3 -c 'import json, sys, yaml; print(json.dumps([d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d["spec"].get("ingress")]))' \
+  "$root/deploy/k3s-single/postgres-netpol.yaml") np_run close_shipped_postgres_policy close-block none "$rules" none ok
+OTHERS=$(other other-component '{"matchLabels": {"app.kubernetes.io/component": "migrate"}}' '["Ingress"]' "$rules") \
+  np_run close_other_component close-block none "$rules" none ok
+OTHERS=$(other not-hub '{"matchExpressions": [{"key": "app.kubernetes.io/component", "operator": "NotIn", "values": ["hub"]}]}' '["Ingress"]' "$rules") \
+  np_run close_other_notin close-block none "$rules" none ok
+SELECTOR='{"matchLabels": {"app.kubernetes.io/component": "hub"}, "matchExpressions": [{"key": "pod-template-hash", "operator": "DoesNotExist"}]}' \
+  np_run close_selector_expressions close-block none "$rules" none stops
 OTHERS=$(other hub-egress "$hub_selector" '["Egress"]' "$rules") np_run close_other_egress_only close-block none "$rules" none ok
 OTHERS=$(other deny-hub "$hub_selector" '["Ingress"]' '[]') np_run close_other_deny close-block none "$rules" none ok
 TYPES='["Egress"]' np_run close_egress_only close-block none "$rules" none stops

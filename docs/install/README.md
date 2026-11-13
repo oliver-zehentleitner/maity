@@ -377,9 +377,14 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      admits nobody. Run it as one block (it needs `python3` on this machine to read the policies): it refuses while that
      file exists from an earlier close, and stops before the hub starts if the policy cannot be read or has no rules to
      keep, or if after the change any NetworkPolicy in the namespace still admits traffic to the hub's pods. Policies add
-     up, so it reads them all: `maity-maity-hub` must have the type `Ingress`, select the labels of the hub's pod
-     template and have no rule left, and any other policy that selects those pods and has an ingress rule (one you added
-     outside the chart) stops the block; remove or narrow it first. The closed phase holds only where the cluster's CNI
+     up, so it reads them all: `maity-maity-hub` must have the type `Ingress`, select the hub's pods by `matchLabels` from
+     the Deployment's pod template only, and have no rule left. Every other policy with an ingress rule stops the block
+     unless the pod template's labels alone prove it cannot select the hub's pods: a `matchLabels` entry, or an `In`,
+     `NotIn` or `DoesNotExist` expression, on a key of the template that the template's value fails. The check is
+     deliberately conservative: the pods carry labels the template does not (`pod-template-hash`), so an empty selector,
+     an `Exists` or a key the template does not have stops it even when the policy is meant for other pods. Remove or
+     narrow such a policy first (one you added outside the chart). The shipped `postgres-netpol.yaml` passes; an
+     installation from before this check applies it again first. The closed phase holds only where the cluster's CNI
      enforces NetworkPolicy (k3s does out of the box); with a CNI that does not, it isolates nothing, and the hub must be
      kept unreachable some other way, by removing its route from the ingress controller or proxy:
      ```sh
@@ -387,18 +392,24 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
        ctx=$1 f=hub-ingress-rules.json
        k() { kubectl --context "$ctx" -n maity "$@"; }
        rules() { python3 -c "import json, sys; print(json.dumps(json.load(sys.stdin)[\"spec\"].get(\"ingress\") or [], sort_keys=True))"; }
-       # Exit 0 only when no policy admits pod traffic to the hub pods: maity-maity-hub has the type Ingress, selects the
-       # labels of the hub Deployment pod template and has no rule, and no other policy that selects them has one.
+       # Exit 0 only when no policy can admit pod traffic to the hub pods: maity-maity-hub has the type Ingress, selects
+       # them by matchLabels of the hub Deployment pod template only and has no rule, and every other policy with a rule
+       # is proven disjoint by the template labels alone (a pod has more labels than its template, never other values).
        closed="
        import json, os, sys
        labels = json.loads(os.environ[\"DEP\"])[\"spec\"][\"template\"][\"metadata\"][\"labels\"]
        def selects(sel):
-           ok = all(labels.get(k) == v for k, v in (sel.get(\"matchLabels\") or {}).items())
+           ml = sel.get(\"matchLabels\") or {}
+           return not sel.get(\"matchExpressions\") and all(k in labels and labels[k] == v for k, v in ml.items())
+       def disjoint(sel):
+           if any(k in labels and labels[k] != v for k, v in (sel.get(\"matchLabels\") or {}).items()):
+               return True
            for e in sel.get(\"matchExpressions\") or []:
-               k, op, vals = e[\"key\"], e[\"operator\"], e.get(\"values\") or []
-               ok = ok and {\"In\": labels.get(k) in vals, \"NotIn\": labels.get(k) not in vals,
-                            \"Exists\": k in labels, \"DoesNotExist\": k not in labels}.get(op, True)
-           return ok
+               k, op, vals = e.get(\"key\"), e.get(\"operator\"), e.get(\"values\") or []
+               if k in labels and ((op == \"In\" and labels[k] not in vals) or (op == \"NotIn\" and labels[k] in vals)
+                                   or op == \"DoesNotExist\"):
+                   return True
+           return False
        def admits(spec):
            return \"Ingress\" in (spec.get(\"policyTypes\") or [\"Ingress\"]) and bool(spec.get(\"ingress\"))
        own, others = False, []
@@ -406,12 +417,12 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
            name, spec = p[\"metadata\"][\"name\"], p[\"spec\"]
            if name == \"maity-maity-hub\":
                own = \"Ingress\" in (spec.get(\"policyTypes\") or [\"Ingress\"]) and selects(spec.get(\"podSelector\") or {}) and not spec.get(\"ingress\")
-           elif admits(spec) and selects(spec.get(\"podSelector\") or {}):
+           elif admits(spec) and not disjoint(spec.get(\"podSelector\") or {}):
                others.append(name)
        if not own:
            sys.exit(\"maity-maity-hub does not close the hub (no type Ingress, a selector that misses its pods, or a rule left): it stays stopped\")
        if others:
-           sys.exit(\"other NetworkPolicies admit traffic to the hub pods: \" + \", \".join(others) + \": the hub stays stopped\")
+           sys.exit(\"other NetworkPolicies may admit traffic to the hub pods: \" + \", \".join(others) + \": remove or narrow them; the hub stays stopped\")
        "
        [ ! -e "$f" ] || { echo "$f is there from an earlier close: open the hub with it (step 6) before closing it again" >&2; exit 1; }
        np=$(k get networkpolicy maity-maity-hub -o json)
