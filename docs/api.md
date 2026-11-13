@@ -11791,7 +11791,13 @@ theirs)
   - (b) *Current visibility*: the notice keeps §7's `task`, and while
     it is open the hub shows the title only while the project's page
     is served and the card is on its public board; otherwise `task`
-    is `{id}` alone.
+    is `{id}` alone. When the notice closes, §7's snapshot is taken
+    under the same rule, at that moment: the title only while the page
+    is served and the card is on its public board, otherwise `{id}`
+    alone. A title the notice showed earlier, while the card was
+    public, is not kept: the closed notice holds what the rule allows
+    at the close, so a card that lost its public visibility before the
+    close never shows its title there.
   - (c) *No title*: the notice names the project and the card id only,
     and the owner opens the public card page while there is one.
 - **Q25 A bound on stars.** The draft caps `starred` at 100 per
