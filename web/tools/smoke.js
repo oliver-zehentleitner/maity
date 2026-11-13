@@ -14779,8 +14779,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(viView().querySelectorAll("a.card-id").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/tasks/tsk-1")), "visitor: the board links each card to its own page");
   {
     const cols = viView().querySelector(".columns");
-    expect(cols && cols.getAttribute("tabindex") === "0" && cols.getAttribute("role") === "region" && cols.getAttribute("aria-label") === "Board",
-      "visitor: the board's columns are a named region that takes the focus, scrollable by keyboard also when empty");
+    expect(cols && !cols.getAttribute("tabindex") && !cols.getAttribute("role") && !cols.getAttribute("aria-label"),
+      "visitor: a board with cards adds no focus stop before them, its card links scroll the columns");
   }
   await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "team" && viAsked.includes("/public/pages/stranger/tool/team")

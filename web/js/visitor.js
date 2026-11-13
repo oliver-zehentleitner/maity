@@ -104,9 +104,12 @@ window.Maity = window.Maity || {};
       ];
     },
     board(d, base) {
-      // The columns scroll sideways on a phone: a named region that takes the focus, so a keyboard
-      // can scroll it also where no card in it has a link (an empty board, WCAG 2.1.1).
-      return h("div", { class: "columns", role: "region", tabindex: "0", "aria-label": M.t("nav.board") }, d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
+      // The columns scroll sideways on a phone. A card's link scrolls them by keyboard; a board with
+      // no card has none, so there the columns are a named region that takes the focus (WCAG 2.1.1),
+      // and a board with cards gets no extra stop before them (#1720's review).
+      const empty = !d.columns.some((col) => col.cards.length);
+      const region = empty ? { role: "region", tabindex: "0", "aria-label": M.t("nav.board") } : {};
+      return h("div", Object.assign({ class: "columns" }, region), d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
         h("h2", null, (COLUMNS[col.status] || col.status) + " (" + col.cards.length + ")"),
         col.cards.map((c) => h("article", { class: "card", "data-card": c.id, "aria-label": c.title },
           h("header", null, h("a", { class: "card-id", href: base + "/tasks/" + c.id }, c.id), c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null),

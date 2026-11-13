@@ -4798,10 +4798,14 @@ def visitor_layout(run: Run, browser) -> None:
                     route.fulfill(response=answer, json=data)
                 seen.route("**/api/v1/public/pages/owner/e2e-alpha/board", empty)
                 seen.goto(f"{run.base}/owner/e2e-alpha/board")
-                expect(seen.locator('section.view-visitor[data-kind="board"] .columns[tabindex="0"]')).to_be_visible()
+                expect(seen.locator('section.view-visitor[data-kind="board"] .columns[tabindex="0"][role="region"][aria-label="Board"]')).to_be_visible()
                 expect(seen.locator("section.view-visitor article.card")).to_have_count(0)
                 run.a11y(seen, "/owner/e2e-alpha/board for a visitor, an empty board")
                 seen.unroute("**/api/v1/public/pages/owner/e2e-alpha/board", empty)
+                # With its cards again, the columns add no focus stop before the first card's link.
+                seen.goto(f"{run.base}/owner/e2e-alpha/board")
+                expect(seen.locator("section.view-visitor article.card").first).to_be_visible()
+                expect(seen.locator('section.view-visitor[data-kind="board"] .columns[tabindex]')).to_have_count(0)
             context.close()
 
 
