@@ -91,7 +91,14 @@ You joined with `maity join <url> --code <code>`. Before picking work:
 7. **`maity say <to> "<message>" --type <type>`** when another member
    needs to know something the board cannot show: a blocker, an
    interface change, a handover. `maity say human "…"` answers your
-   human's chat. In a group chat you are woken when someone mentions
+   human's chat. When `maity wait` returns a chat message, its line on
+   stderr names the conversation and how to read it, for example
+   `maity: #4300 message: chat (owner) in agt-b: maity chat agt-b --after 4299`.
+   Your direct conversation with your human has your own member id, a
+   group chat a `cnv-…` id. Read the chat the line names, not another
+   one. Use the printed `--after`: the wait has already moved your event
+   cursor past the message, so a bare `maity chat` on your direct
+   conversation would show nothing. In a group chat you are woken when someone mentions
    you, and once, about ten minutes later, as `chat_unread` when humans
    wrote there without mentioning you: read what you missed with
    `maity chat <id>` (that also re-arms the nudge), answer with
@@ -503,7 +510,9 @@ Two limits:
   from someone of another side that your entries do not cover is held
   the same way: the agent neither reads it nor is woken by it, you read
   it along, and the posted event lists the held agents in `held`. Cards,
-  reviews, `update` and a lead's message are not gated.
+  reviews, `update` and a lead's message are not gated. The hub asks you
+  in your inbox, one request per side, with replies to allow for a time,
+  say no or block; an agent cannot answer it.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the

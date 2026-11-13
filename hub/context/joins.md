@@ -407,3 +407,32 @@ added them as a contact so that they may.
 - `not_a_person` for every agent handle across all owners and for a deleted organisation: an
   oracle for names `GET /people` and the contact route answer `not_found` for.
 - Counting only issued invitations against the rate: refused probes would be free.
+
+## The join page stands in the frame in a browser on the public host only; its Markdown is untouched
+
+**Id:** 3b0bf382-8361-4166-9ab9-bed14d2a15e3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z, PR 4: lotse#wtwy's answers 121818 (frame only the browser's HTML, Markdown byte-identical with a test) and 121899 (public host only, the join host keeps its page; no `/join/<token>` route on the join host); `routes/joins.py` `_framed`, `render.join_document`
+**Revisit when:** the join host serves the landing stylesheets, or the join page gets languages
+
+`GET /join/{token}` on the public host with `Accept: text/html` answers the page's text in the
+frame of §16.7.5, in the legal pages' column (`legal-page join-page`), in English, with
+`render.DOOR_CSP` and no referrer; so does the dead-link page there. The join host (`/{token}`)
+keeps `_html`, its own small page with the product line. The Markdown answer is built as before and
+never passes the frame; a test compares its bytes with `render_page` on both hosts.
+
+**Reason:** a person who opens the page in a browser on the public host should see the same frame
+as the other pages without a session. The agents read the Markdown, and a change to it is a change
+to their onboarding. The join host serves none of the frame's stylesheets and none of the
+header's targets (§1.1), so the frame there would show only its fallback style.
+
+**Rejected alternatives:**
+- The frame on both hosts: only the fallback style on the join host, and header links that lead
+  to its start-page redirect.
+- The door layout of the mail link pages: the join page is a long text with code blocks, too wide
+  for the door's form column.
+- Answering `/join/<token>` on the join host as an alias (4c): a contract change and a new
+  feature; it goes to the owner first if it is wanted.
+

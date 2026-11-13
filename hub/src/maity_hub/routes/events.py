@@ -20,6 +20,7 @@ from maity_hub import (
     attachment_store,
     attachments,
     chat_gate,
+    chat_request,
     clock,
     events,
     group_chats,
@@ -660,6 +661,10 @@ def post_message(
         conversation_id=body.conversation_id,
     )
     attachments.attach(conn, named, seq)
+    if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
+        author = (me, "agent" if mine.row.agent_id else "human")
+        side = chat_gate.owners_of(conn, [me]).get(me, me) if mine.row.agent_id else me
+        chat_request.note_held(conn, mine.project.id, seq, body.type, author, side, held)
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
     return load_event(conn, str(seq), mine)

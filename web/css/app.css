@@ -580,6 +580,12 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .free-text { margin-top: 12px; display: grid; gap: 6px; }
 .free-text label { font-size: 0.85rem; color: var(--muted); }
 .free-text button { justify-self: end; }
+/* The request to chat with one's agents (§9.6): its boxes and two rules above the note (js/inbox.js). */
+.chat-access { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; gap: 6px; }
+.chat-access legend { font-weight: 600; padding: 0 4px; }
+.chat-access label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.chat-access label:not(.check) { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+.chat-access .hint, .chat-access .muted { margin: 0; }
 /* The @ picker under its text field; a stored mention as a member link. */
 .mention-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); max-width: 24rem; }
 .mention-list[hidden] { display: none; }

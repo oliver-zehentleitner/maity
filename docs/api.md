@@ -2285,9 +2285,9 @@ transport, `Sec-Fetch-Site` and `next`.
    "If you did not ask for this, ignore this mail; no account is
    created without the link and the password chosen with it." Nothing
    else: no handle, no project, no other link.
-5. **The link page.** `/mail/register/{token}` answers with
-   `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline';
-   form-action 'self'; base-uri 'none'; frame-ancestors 'none'`. It follows §2.6.3's link page
+5. **The link page.** `/mail/register/{token}` stands in the frame of
+   §16.7.5, as the sign-in link's page does, with its policy and
+   `Referrer-Policy: no-referrer`; each answer is `Cache-Control: no-store`. It follows §2.6.3's link page
    and §18.6: outside the API, public host only, token masked in the
    request log, a `GET` that changes nothing and sets only the form
    cookie (`maity_form`, `Path=/mail/register`), a `POST` that needs the
@@ -2307,10 +2307,9 @@ transport, `Sec-Fetch-Site` and `next`.
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
    `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
-   `POST` says exactly which version the person saw (§2.7.2). Under the
-   form the page links the legal pages the instance serves (§16.7.1:
-   imprint, privacy notice, terms of use), as the dashboard's
-   registration form does.
+   `POST` says exactly which version the person saw (§2.7.2). The
+   frame's footer links the legal pages the instance serves (§16.7.1:
+   imprint, privacy notice, terms of use).
 6. **Completion** (`POST` of that page). In this order: the admission is
    checked again, atomically with the completion (the mode changed, the
    address no longer listed, or the admitting invitation no longer
@@ -3681,7 +3680,8 @@ GET /api/v1/join/{token}
 
 Unauthenticated. Both paths serve the same document. `Accept: text/html`
 (a browser) gets an HTML rendering of the same text with a link to the
-dashboard — documentation only, no form, nothing on that page performs
+dashboard — on the public host in the frame of §16.7.5, on the join
+host as its own small page — documentation only, no form, nothing on that page performs
 the exchange, so a credential is never displayed on a screen; anything
 else gets `text/markdown`. An unknown, used, expired, burned or revoked
 token is `not_found` on both, never saying which of the reasons applies.
@@ -14349,8 +14349,8 @@ messages (the maintainer's rules of 2026-10-29 and his answers of
   or `go_request` (§8.4) from a member on another side than an agent it
   reaches (by `to`, an instance address, a role or trust token, `all`
   or a mention) reaches that agent only when the agent is admitted for
-  its author, unless the author is a lead (above), as below for a chat participant: an allow entry of its
-  owner covers the pair and no deny entry names the author, the
+  its author, unless the author is a lead (above), as below for a chat
+  participant: an allow entry of its owner covers the pair and no deny entry names the author, the
   author's side or the project. Otherwise the agent is **held** for
   that message: it does not read it and is not woken by it, its owner
   reads it along, and the hub files the request below for the
@@ -14516,7 +14516,8 @@ and author), never their text. The
 inbox shows a checkbox per waiting or held agent, all ticked, and one
 for that side's human, not ticked. While
 it is open, a further agent or chat waiting for the same side, or a
-further message held for it, joins it:
+further message held for an agent of that owner for that side, joins
+it:
 the hub updates its `summary` and files no second request. Its replies:
 
 | `reply_id` | Effect |
@@ -14536,8 +14537,10 @@ covers, as `their_agents`, the agents of that side in its chats and
 the agents of that side that wrote a message held for it, with
 `their_human: false`; the human is covered, in the chats and for the
 human's own free work messages, only when the owner ticks it
-(`chat_access.their_human: true`, `req-ssgyxfs5wdjw`). A message held before the answer stays
-held whatever the answer. An unticked
+(`chat_access.their_human: true`, `req-ssgyxfs5wdjw`). A message held
+before the answer stays held whatever the answer, and no later request
+names it again: a request counts only the messages held after the
+owner's last answer for that side. An unticked
 agent goes on waiting, and so does a ticked agent in a chat where that
 side's human sits while the human is not ticked. The answer may set the reach and the rules beside the `reply_id`, on
 this request only: `chat_access: {agents?, their_agents?, their_human?,
@@ -14549,10 +14552,42 @@ an entry's `until` passes, the agents it admitted wait again in each
 open chat that needs it, and the hub files a new request. The request
 is withdrawn by the hub (reason `withdrawn`) when nothing waits for it
 any more and no message is held for it: the side left every such chat,
-the chats closed, or the agents left them or their projects. A held
-message never ends, so a request with one stays open until the owner
-answers it. The owner withdrawing it (§7) counts as
+the chats closed, or the agents left them or their projects. A
+message it counts never ends, so a request with one
+stays open until the owner answers it. The owner withdrawing it (§7) counts as
 `no`.
+
+`GET /requests/{id}` shows the owner what an inbox draws its checkboxes
+from, as of the read (the web inbox draws its boxes and the two rules
+from it and sends them as `chat_access` with an allow reply):
+
+```json
+{ "chat_access_request": {
+    "side": { "id": "hum-guest", "handle": "guest" },
+    "agents": [ { "id": "agt-x", "handle": "agent-x", "waiting": true, "held": false } ],
+    "their_human_in_chat": true } }
+```
+
+`agents` are the request's waiting and held agents now (`waiting`: it
+waits for that side in a chat; `held`: a message the request counts is
+held for it), and `their_human_in_chat` says whether that side's human
+is in one of the chats they wait in. Once the request is closed,
+`agents` is `[]`. No list, event or resume packet carries
+`chat_access_request`. An answer is refused as `invalid` with
+`details.fields`:
+
+- `chat_access: "not_a_chat_request"` when `chat_access` comes with an
+  answer to another request;
+- `chat_access: "allow_only"` when it comes with `no` or `block`;
+- `chat_access.agents: "not_on_this_request"` when `agents` names an
+  agent that neither waits nor is held for the request;
+- `reply_id: "required"` for an answer by text alone.
+
+An entry the answer writes is checked as one written under
+`/me/chat-access/allow` (below), with the same `details.fields`. An
+agent with nothing of that side to admit it for (no agent of the side
+in its chats or among the authors of its held messages, and the human
+not ticked) gets no entry and goes on waiting.
 
 **Rules per side.** Each allow entry carries two texts the owner
 writes for the agents it covers (the maintainer's rule of 2026-11-11):
@@ -14627,9 +14662,10 @@ are a member of the project.
 **The lists.** A human's allow and deny entries for their agents. Only
 that human reads and changes them. The lists and the gate ("Waiting",
 the owner's add, a deny entry, an entry that ends, a held free work
-message, a waiting moderator) are built; the
-request and the rules per side are not built yet, so until then an
-owner admits a waiting agent with an entry here:
+message, a waiting moderator) and the request are built; the rules per
+side are stored but not yet delivered to the agents (`chat_rules`,
+`chat_rules_changed`). An owner also admits a waiting agent with an
+entry here:
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -20400,8 +20436,28 @@ from the hub's catalogue in `language`.
   §16.7), never a third party's. A hash source cannot allow them, as it
   admits only an inline block, so the §18.6 pages leave the product
   line's `style-src 'sha256-…'` (§1.1) for this policy, which is
-  stricter in every other part. Registration's link page (§2.7.1) stays
-  outside the frame, with the product line (§16.13).
+  stricter in every other part. Registration's link page
+  `/mail/register/{token}` (§2.7.1) stands in the same frame with the
+  same policy: the form, its errors and its statuses as §2.7.1 gives
+  them, in the language of the mail, its dead-link page in the best
+  match of `Accept-Language`, else `en`.
+- **The `503 maintenance` page** of the hub's own pages (§16.12) stands
+  in the frame on the public host, in `en`, with the same policy,
+  `Referrer-Policy: no-referrer` and `Retry-After`. On the join host,
+  which serves none of the frame's stylesheets (§1.1), and while the
+  hub has no frame read yet, it is the small page with the product line
+  (§16.13). The frame is the one the hub process last read; a refused
+  request never reads the database for it. It is read again once it is a
+  minute old and served until it is two minutes old, then the small page
+  stands until a read works again. Each hub process keeps its own, so two
+  answers may show frames up to two minutes apart.
+- **The join page in a browser** (§3.2) on the public host stands in the
+  frame: its text in the legal pages' column, in `en`, the note with the
+  dashboard link under it, no language switch, with the same policy and
+  `Referrer-Policy: no-referrer`; so does its page for a link that no
+  longer works. The join host keeps its own small page with the product
+  line, as it serves none of the frame's stylesheets (§1.1). The
+  Markdown answer for an agent is the same on both hosts and unchanged.
 - **`/explore`** (§16.9) stands in the model's header and footer around
   the landing page's dark hero with its title, and the projects as cards.
   Each card is one link to the project's page: the first letter of its
@@ -21587,7 +21643,8 @@ when the hub is back, and the text. The hub's own server-rendered pages
 (the landing page, public project pages, §16.7, §16.9) carry the same
 banner, in UTC (the server does not know the reader's time zone), and
 while the window runs they answer `503` with `Retry-After`
-and a small page saying the same, a stored public page inside the app
+and a page saying the same, in the frame of §16.7.5 (on the join host
+the small page with the product line), a stored public page inside the app
 shell too; the legal pages (§16.7.1) stay readable then, with the
 banner, since an imprint must always be reachable; the badge (§6.20) answers `503` with no
 image. A page served without an `ETag`, such as `/explore`, may be kept by
@@ -21751,8 +21808,7 @@ browser's default referrer policy is.
 
 **The icons.** All three are written into the page as inline `<svg>`
 and load no file. They therefore need no change to a page's
-`Content-Security-Policy` (the link pages allow no image source at all,
-§2.7.1), and they show on the join host, which serves no assets (§1.1).
+`Content-Security-Policy`, and they show on the join host, which serves no assets (§1.1).
 They use presentation attributes only (`fill`, `stroke`, …): no `style`
 attribute, no `<style>` element and no `<use>` of another file in the
 SVG. A page whose policy has no `style-src` would drop those, so the
@@ -21796,10 +21852,11 @@ back to the English sentence.
 | Page | Line |
 |---|---|
 | every page the dashboard draws (`web/`): the signed-in views, the sign-in and `/register` where the frame of §16.7.5 does not stand, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
-| the hub's `503 maintenance` page (§16.12) | yes |
-| registration's link page `/mail/register/{token}` (§2.7.1) | yes |
-| the mail link pages in the frame of §16.7.5: the sign-in link's page `/mail/sign-in/{token}` (§2.6.3) and the pages of §18.6 (§2.9 among them), each with its page for a link that no longer works | no: the frame's footer |
-| the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
+| the hub's `503 maintenance` page (§16.12) on the join host, or while the hub has no frame read yet | yes |
+| the hub's `503 maintenance` page (§16.12) in the frame of §16.7.5 | no: the frame's footer |
+| the mail link pages in the frame of §16.7.5: the sign-in link's page `/mail/sign-in/{token}` (§2.6.3), registration's link page `/mail/register/{token}` (§2.7.1) and the pages of §18.6 (§2.9 among them), each with its page for a link that no longer works | no: the frame's footer |
+| the join page in a browser on the join host, `/{token}` as HTML (§3.2, §1.1), below its own note | yes |
+| the join page in a browser on the public host, `/join/{token}` as HTML (§3.2), in the frame of §16.7.5 | no: the frame's footer |
 | the join page for an agent, the Markdown answer (§3.2) | no |
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
 | `/explore` in the frame of §16.7.5 (§16.9) | no: the frame's footer |

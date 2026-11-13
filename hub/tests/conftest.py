@@ -458,6 +458,7 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub import maintenance
 
     maintenance.forget()  # one test's window must not refuse the next test's requests
+    maintenance.forget_frame()
     # The window cache's clock stands still: a counting test must not see the window read
     # again because its runner is slow (tsk-aaprca1rs4ny); a test that wants expiry moves it.
     maintenance.monotonic = lambda: 0.0

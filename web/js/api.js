@@ -291,6 +291,20 @@ window.Maity = window.Maity || {};
     if (body.reply_id != null && !(req.replies || []).some((r) => r.id === body.reply_id)) {
       fail(400, "invalid", "Unknown reply", path, { fields: { reply_id: "not_a_reply" } });
     }
+    // `chat_access` beside an answer (§9.6): on a request to chat with one's agents only, with an
+    // allow reply, naming only its waiting and held agents; its rules checked as /me/chat-access/allow checks them.
+    if (body.chat_access != null) {
+      const car = req.chat_access_request;
+      if (!car) fail(400, "invalid", "not a chat request", path, { fields: { chat_access: "not_a_chat_request" } });
+      if (!/^allow_(hour|day|week|always)$/.test(body.reply_id || "")) fail(400, "invalid", "chat_access goes with an allow reply", path, { fields: { chat_access: "allow_only" } });
+      const ca = body.chat_access;
+      if (ca.agents != null && (!Array.isArray(ca.agents) || ca.agents.some((a) => !car.agents.some((x) => x.id === a)))) {
+        fail(400, "invalid", "only the request's agents", path, { fields: { "chat_access.agents": "not_on_this_request" } });
+      }
+      ["allowed", "denied"].forEach((k) => {
+        if (ca[k] != null && (typeof ca[k] !== "string" || [...ca[k]].length > 1000)) fail(400, "invalid", k + " is text of at most 1000 characters", path, { fields: { [k]: "format" } });
+      });
+    }
     if (body.talk) {
       // The asker's profile: the project's member, else one of the human's own.
       const asking = req.asked_by && req.asked_by.member_id;
@@ -3310,11 +3324,12 @@ window.Maity = window.Maity || {};
     ["GET", /^\/requests$/, () => ({
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
         { project: { slug: project(p.slug, "").slug, full_name: p.full_name, name: p.name, state: project(p.slug, "").state } }, r)))
-        // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
+        // A list shows no proposal (§7, §19.4) and no chat request's boxes (§9.6): GET /requests/{id} has them.
         // A personal request addressed to another human is theirs, not this one's.
         .concat(personalRequests().filter((r) => r.status === "open" && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id)).map((r) => {
           const listed = Object.assign({}, r);
           delete listed.memory_proposal;
+          delete listed.chat_access_request;
           return listed;
         })),
       next_cursor: null,
