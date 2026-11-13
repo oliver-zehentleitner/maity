@@ -206,6 +206,22 @@ def refuse_denied(conn: Connection, conversation: Any, current: list[Any], agent
         )
 
 
+def lock_for_yes(conn: Connection, owner: str, project_id: str, agent_ids: Iterable[str]) -> None:
+    """Before a chat write in `project_id` that may be `owner`'s yes for some of `agent_ids`
+    (§9.6, the owner's add): when one of them is the owner's, take the owner's human row, then
+    the project of each open chat of the owner's agents and `project_id`, in ascending order.
+    That is the order a write under `/me/chat-access` takes them in (`chat_access._lock`, then
+    `recheck`), so `owner_yes` counts and writes the owner's entries under the human's lock and
+    the `recheck` after it takes no project lock out of order. Without such an agent, nothing."""
+    if owner not in owners_of(conn, agent_ids).values():
+        return
+    from maity_hub import events
+
+    chat_access._lock(conn, owner)
+    for found in sorted({project_id, *(c.project_id for c in chats_of_owner(conn, owner))}):
+        events.lock_project(conn, found)
+
+
 def owner_yes(conn: Connection, conversation: Any, current: list[Any], agent_id: str) -> None:
     """The owner's add is the yes (§9.6): an allow entry for the agent and each other side in
     the chat now, `their_agents` that side's agents in it and `their_human` whether its human
@@ -397,11 +413,16 @@ def lapse(conn: Connection) -> int:
 
 
 def sweep(engine: Any) -> int:
-    """`lapse` in a transaction of its own, for the worker's minute pass."""
+    """`lapse` in a transaction of its own, for the worker's minute pass, run again after a
+    transient deadlock with a chat write (`db.retrying`)."""
     from maity_hub import events
+    from maity_hub.db import retrying
 
-    with events.transaction(engine) as conn:
-        return lapse(conn)
+    def work() -> int:
+        with events.transaction(engine) as conn:
+            return lapse(conn)
+
+    return retrying(work)
 
 
 def sides_of(conn: Connection, current: list[Any]) -> list[str]:

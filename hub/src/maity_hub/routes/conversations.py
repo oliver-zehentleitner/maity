@@ -606,7 +606,10 @@ def unpin_conversation(
 def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         # No chat to read along in yet: an owner outside gets not_found here (§9.2).
-        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        project_id = membership(conn, caller, slug).project.id
+        if caller.human_id is not None:  # the creator's own agents: the add is the yes (§9.6)
+            chat_gate.lock_for_yes(conn, caller.human_id, project_id, body.participants)
+        events.lock_project(conn, project_id)
         mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
@@ -724,6 +727,9 @@ def add_participant(
     slug: str, conversation_id: str, body: ParticipantIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
+        if caller.human_id is not None:  # its owner's add is the yes (§9.6)
+            project_id = writer(conn, caller, slug, conversation_id=conversation_id).project.id
+            chat_gate.lock_for_yes(conn, caller.human_id, project_id, [body.member_id])
         mine = _locked(conn, caller, slug, conversation_id)
         group = _manager(conn, mine, conversation_id)
         group_chats.add(conn, group, body.member_id, mine.principal_id, caller.actor(mine.id))

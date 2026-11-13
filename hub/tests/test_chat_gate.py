@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import chat_gate, clock, events
+from maity_hub import chat_access, chat_gate, clock, events
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -264,3 +264,64 @@ def test_an_allow_that_ends_lets_the_agent_wait_again(
     renewed = other.patch(f"/me/chat-access/allow/{entry['id']}", {"duration": "day"})
     assert renewed.status_code == 200, renewed.text
     assert item(view(owner, chat["id"]).json(), theirs.id)["waiting_for"] == []
+
+
+def test_the_owners_yes_takes_the_human_then_the_projects_in_order(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """fp3y on #1717 (delta, P2): a create that is the owner's yes takes the owner's human row,
+    then the projects of the owner's chats in ascending order, as a write under /me/chat-access
+    does; so it waits for such a write instead of deadlocking with it, and is not run again."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import logging
+    import threading
+
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    flow.project(owner, "second")
+    with migrated.connect() as conn:
+        slugs = dict(conn.execute(select(t.project.c.id, t.project.c.slug)).all())
+    low, high = sorted(slugs)
+    with migrated.connect() as conn:
+        joined = {
+            r.project_id
+            for r in conn.execute(
+                select(t.membership.c.project_id).where(t.membership.c.agent_id == theirs.id)
+            )
+        }
+    for project in set(slugs) - joined:  # the agent and its owner in both projects
+        factory.membership(migrated, project, "member", agent_id=theirs.id)
+        factory.membership(migrated, project, "admin", human_id=other.id)
+    waiting = owner.post(
+        f"/projects/maintainer/{slugs[low]}/conversations",
+        {"title": "Low", "participants": [theirs.id]},
+    )
+    assert waiting.status_code == 201, waiting.text
+    assert item(waiting.json(), theirs.id)["waiting_for"] == [owner.id]
+    outcome: list[int] = []
+
+    def create_in_high() -> None:
+        made = other.post(
+            f"/projects/maintainer/{slugs[high]}/conversations",
+            {"title": "High", "participants": [owner.id, theirs.id]},
+        )
+        outcome.append(made.status_code)
+
+    caplog.set_level(logging.WARNING, logger="maity_hub.db")
+    with migrated.begin() as conn:  # as /me/chat-access holds them: the human, then low
+        chat_access._lock(conn, other.id)
+        events.lock_project(conn, low)
+        racer = threading.Thread(target=create_in_high)
+        racer.start()
+        racer.join(1.0)
+        assert racer.is_alive()  # it waits for the human's row, holding nothing yet
+        events.lock_project(conn, high)  # free: the create took no project before the human
+    racer.join(15)
+    assert outcome == [201]
+    assert not [r for r in caplog.records if "database retry" in r.getMessage()]
+    low_chat = owner.get(f"/projects/maintainer/{slugs[low]}/conversations/{waiting.json()['id']}")
+    assert item(low_chat.json(), theirs.id)["waiting_for"] == []  # the yes admits it there too
