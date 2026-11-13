@@ -356,7 +356,16 @@ class HubMiddleware:
 
             response = Response(status_code=503, headers=headers)
         else:
-            response = maintenance.refusal_page(found)
+            # The frame as last read, never read in this request: the 503 must not wait for the
+            # database (§16.12). The small page while none is kept, and on the join host, which
+            # serves none of the frame's stylesheets (§1.1).
+            frame = (
+                None
+                if scope["state"].get("on_join_host")
+                else maintenance.cached_frame(self.engine)
+            )
+            accept = Request(scope).headers.get("accept-language")
+            response = maintenance.refusal_page(found, frame, accept)
         await response(scope, receive, send)
         _access(scope, 503)
         return True

@@ -21,7 +21,7 @@ from html import escape, unescape
 from typing import Any, NamedTuple
 from urllib.parse import quote, urlsplit
 
-from maity_hub import catalog, landing_files, product_line
+from maity_hub import catalog, landing_files
 from maity_hub.landing import (
     AGENTS,
     ALPHA_MARKS,
@@ -1089,6 +1089,39 @@ def door_document(
     )
 
 
+def join_document(
+    *,
+    title: str,
+    content: str,
+    note: str,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    accept_language: str | None,
+) -> str:
+    """The join page (§3.2) in a browser on the public host, in the frame of §16.7.5: the
+    landing page's header and footer around the page's text in the legal pages' column, in
+    English like the page. No language switch: the page has one language. `content` and `note`
+    are HTML of escaped text and elements; the join host keeps its own page, as it serves none
+    of the frame's stylesheets (§1.1)."""
+    model = chrome(setting, legal, lang="en", accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    frame = public_frame(model, "en")
+    body = (
+        frame.header + '<main><div class="legal-page join-page"><div class="wrap">'
+        f'{content}<p class="note">{note}</p></div></div></main>' + frame.footer
+    )
+    return _document(
+        lang="en",
+        title=title,
+        description="",
+        head=frame.head,
+        body=body,
+        languages=[],
+        style=frame.style,
+    )
+
+
 # A stored public page (§16.9) as `page_document` wrote it: its title, description, canonical
 # link and robots line in the head, its content in `<main class="wrap">`. The app shell takes
 # the same parts out (shell.py), and so does the frame below.
@@ -1136,53 +1169,6 @@ def stored_in_frame(
         + frame.footer,
         languages=[],
         style=frame.style,
-    )
-
-
-# --- a form page outside the app (§2.7.1) ---------------------------------------------------
-
-FORM_STYLE = """
-:root{--danger:#c92a2a}@media (prefers-color-scheme:dark){:root{--danger:#ff8787}}
-.panel{max-width:28rem;margin:2rem auto;background:var(--card);border:1px solid var(--line);
-border-radius:.8rem;padding:1.5rem}.panel h1{font-size:1.6rem;margin:0 0 .6rem}
-.field{margin:1rem 0 0}.field label{display:block;font-weight:600;margin:0 0 .3rem}
-.field input{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);
-border-radius:.5rem;background:var(--bg);color:var(--fg)}
-.field input:focus,.check input:focus,button:focus{outline:2px solid var(--accent);outline-offset:1px}
-.field input[aria-invalid=true]{border-color:var(--danger)}
-.check{margin:1rem 0 0}.check label{display:flex;gap:.5rem;align-items:flex-start}
-.check input{margin:.3rem 0 0;flex:none}
-.error{color:var(--danger);margin:.3rem 0 0;font-size:.92rem}
-.panel .note{margin:1rem 0 0}
-button{margin:1.4rem 0 0;width:100%;font:inherit;font-weight:600;padding:.65rem 1rem;
-border:1px solid var(--accent);border-radius:.5rem;background:var(--accent);color:var(--accent-fg);
-cursor:pointer}
-footer p{margin:0}footer a{margin-right:0}
-@media (max-width:30rem){.panel{margin:1rem 0;padding:1.1rem}}
-"""
-
-
-def form_document(*, lang: str, title: str, content: str, footer: str) -> str:
-    """A page outside the app that a link in a mail opens, such as the registration's (§2.7.1):
-    the legal pages' head and colours, one centred panel and the given footer, no script and
-    nothing loaded from elsewhere. `content` and `footer` are HTML of escaped text and elements."""
-    header = (
-        '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a></div></header>'
-    )
-    return _document(
-        lang=lang,
-        title=title,
-        description="",
-        head="",
-        body=(
-            f'{header}<main class="wrap"><div class="panel">{content}</div></main>'
-            + (f'<footer><div class="wrap">{footer}</div></footer>' if footer else "")
-            # The product line after the page's own footer (§16.13); this page's policy
-            # allows its stylesheet, so the mark follows a dark theme.
-            + product_line.html(lang)
-        ),
-        languages=[],
-        style=STYLE + FORM_STYLE + product_line.STYLE + product_line.DARK,
     )
 
 
