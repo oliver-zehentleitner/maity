@@ -12,7 +12,6 @@ not a reason).
 from __future__ import annotations
 
 import os
-import re
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +27,6 @@ CONTROL_SUFFIX = 17  # `.` + 16 random characters: ssh binds the master's socket
 SANDBOX_TOOLS = ("bwrap", "socat")
 # Each argument with where the host's PATH finds it (empty when nowhere); names are data.
 WHICH = 'for b; do printf "%s\\t%s\\n" "$b" "$(command -v -- "$b")"; done'
-_VERSION = re.compile(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.]+)?")
 
 
 @dataclass
@@ -111,6 +109,7 @@ def local(
         probes=probes,
         sandbox={
             h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user)
+            and capabilities.sandbox_version_ok(h, probes[h].version if h in probes else None)
             for h in cfg.harnesses
         },
         backend=backend,
@@ -176,7 +175,7 @@ def probe_remote(
         if version.returncode != 0 or not lines:
             found[harness.id] = capabilities.Probe(path, None, "version_failed")
             continue
-        match = _VERSION.search(lines[0])
+        match = capabilities.VERSION.search(lines[0])
         text = capabilities.ascii_text(match.group(0) if match else lines[0], 80)
         found[harness.id] = capabilities.Probe(path, text, None)
     tools = all(paths.get(tool) for tool in SANDBOX_TOOLS)
@@ -192,5 +191,9 @@ def probe_remote(
                 == 0
             )
         else:
-            sandbox[harness.id] = harness.id == "claude-code" and tools
+            sandbox[harness.id] = (
+                harness.id == "claude-code"
+                and tools
+                and capabilities.sandbox_version_ok(harness.id, found[harness.id].version)
+            )
     return found, sandbox
