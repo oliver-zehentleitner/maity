@@ -558,8 +558,11 @@ def _two_factor_mail(
         and signing_key is not None
         and isinstance(data.get("day"), str)
         and isinstance(data.get("unlocks"), int)
+        and isinstance(data.get("password_generation"), int)
     ):
-        token = second_factor.unlock_token(signing_key, row.human_id, data["day"], data["unlocks"])
+        token = second_factor.unlock_token(
+            signing_key, row.human_id, data["day"], data["unlocks"], data["password_generation"]
+        )
         body += "\n" + words["two_factor_unlock"].format(
             link=f"{public_url}/mail/second-factor-unlock/{token}"
         )

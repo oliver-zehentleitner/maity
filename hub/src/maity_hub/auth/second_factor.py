@@ -496,10 +496,12 @@ def daily_limited() -> ApiError:
 
 def refuse_over_day(conn: Connection, hub: Settings, human_id: str) -> None:
     """`rate_limited` (`reason: daily_limit`) while the human's wrong codes of the UTC day are
-    at the cap, before a code is compared: a right one is refused too. The caller holds the
-    factor's row."""
+    at the cap and the human was told so, before a code is compared: a right one is refused
+    too. A count at a cap lowered during the day that was never told lets one more code be
+    compared, whose wrong answer writes the alert with its link (`_count_day`): nobody is
+    refused without a way back. The caller holds the factor's row."""
     row = _day(conn, human_id, _today())
-    if row is not None and row.wrong_codes >= hub.second_factor_wrong_per_day:
+    if row is not None and row.alerted and row.wrong_codes >= hub.second_factor_wrong_per_day:
         raise daily_limited()
 
 
@@ -509,9 +511,11 @@ def _count_day(
     human_id: str,
     seen: tuple[str | None, str | None, str | None],
 ) -> None:
-    """One more wrong code today, under the factor's row lock; the one that reaches the cap
-    writes `second_factor_failed` (`method: daily_limit`), whose mail carries the link that
-    lifts the cap. Earlier days of the human go: nothing reads them."""
+    """One more wrong code today, under the factor's row lock; the first one at or over the
+    cap since the day began or the cap was last lifted writes `second_factor_failed`
+    (`method: daily_limit`), whose mail carries the link that lifts the cap. The record names
+    the human's password generation, which the link carries: a password change kills it.
+    Earlier days of the human go: nothing reads them."""
     day = _today()
     row = _day(conn, human_id, day)
     if row is None:
@@ -521,42 +525,65 @@ def _count_day(
             )
         )
         conn.execute(
-            insert(t.second_factor_day).values(human_id=human_id, day=day, wrong_codes=1, unlocks=0)
+            insert(t.second_factor_day).values(
+                human_id=human_id, day=day, wrong_codes=1, unlocks=0, alerted=False
+            )
         )
-        wrong, unlocks = 1, 0
+        wrong, unlocks, alerted = 1, 0, False
     else:
-        wrong, unlocks = row.wrong_codes + 1, row.unlocks
-        conn.execute(
-            update(t.second_factor_day)
-            .where(t.second_factor_day.c.human_id == human_id, t.second_factor_day.c.day == day)
-            .values(wrong_codes=wrong)
-        )
-    if wrong == hub.second_factor_wrong_per_day:
+        wrong, unlocks, alerted = row.wrong_codes + 1, row.unlocks, bool(row.alerted)
+    alert = not alerted and wrong >= hub.second_factor_wrong_per_day
+    conn.execute(
+        update(t.second_factor_day)
+        .where(t.second_factor_day.c.human_id == human_id, t.second_factor_day.c.day == day)
+        .values(wrong_codes=wrong, alerted=alerted or alert)
+    )
+    if alert:
+        generation = conn.execute(
+            select(t.human.c.password_generation).where(t.human.c.id == human_id)
+        ).scalar_one()
         ip, browser, os = seen
-        failed(conn, human_id, DAILY_LIMIT, ip, browser, os, day=day, unlocks=unlocks)
+        failed(
+            conn,
+            human_id,
+            DAILY_LIMIT,
+            ip,
+            browser,
+            os,
+            day=day,
+            unlocks=unlocks,
+            password_generation=generation,
+        )
 
 
-def unlock_token(key: bytes, human_id: str, day: str, unlocks: int) -> str:
-    """The link's token: the human, the day and how often the cap was lifted that day, so
-    it works once and only that day (§18.6)."""
-    return tokens.make(key, {"h": human_id, "p": UNLOCK_PURPOSE, "d": day, "g": unlocks})
+def unlock_token(key: bytes, human_id: str, day: str, unlocks: int, generation: int) -> str:
+    """The link's token: the human, the day, how often the cap was lifted that day and the
+    password generation at the alert, so it works once, only that day, and not after a
+    password change (§18.6)."""
+    return tokens.make(
+        key, {"h": human_id, "p": UNLOCK_PURPOSE, "d": day, "g": unlocks, "w": generation}
+    )
 
 
 def _unlockable(conn: Connection, hub: Settings, token: str, *, lock: bool) -> Any | None:
     """The day row the link lifts while the link still works, else None: signed by the hub,
-    for today, not used, and the cap reached."""
+    for today, not used, the alert written, and the password unchanged since."""
     payload = tokens.read(hub.mail.signing_key, token)
     if payload is None or payload.get("p") != UNLOCK_PURPOSE:
         return None
-    human_id, day, unlocks = payload.get("h"), payload.get("d"), payload.get("g")
+    human_id, day = payload.get("h"), payload.get("d")
+    unlocks, generation = payload.get("g"), payload.get("w")
     if not isinstance(human_id, str) or day != _today():
         return None
-    if not isinstance(unlocks, int) or isinstance(unlocks, bool):
+    if not all(isinstance(n, int) and not isinstance(n, bool) for n in (unlocks, generation)):
         return None
     if lock:
         factor_of(conn, human_id, lock=True)  # the lock order of every check
     row = _day(conn, human_id, day)
-    if row is None or row.unlocks != unlocks or row.wrong_codes < hub.second_factor_wrong_per_day:
+    current = conn.execute(
+        select(t.human.c.password_generation).where(t.human.c.id == human_id)
+    ).scalar()
+    if row is None or row.unlocks != unlocks or not row.alerted or current != generation:
         return None
     return row
 
@@ -582,7 +609,7 @@ def unlock(conn: Connection, hub: Settings, token: str) -> bool:
             t.second_factor_day.c.day == row.day,
             t.second_factor_day.c.unlocks == row.unlocks,
         )
-        .values(wrong_codes=0, unlocks=row.unlocks + 1)
+        .values(wrong_codes=0, unlocks=row.unlocks + 1, alerted=False)
     )
     return done.rowcount == 1
 

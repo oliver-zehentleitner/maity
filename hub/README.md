@@ -288,6 +288,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_REGISTRATION_BREAKER` | `120` | Requests per minute across the instance; past it every registration is `rate_limited` for a minute. | §16.4, §2.7.3 |
 | `MAITY_TERMS_URL`, `MAITY_TERMS_VERSION` | unset | Both or neither. Neither: the `terms` legal page, if written; else no terms are asked for. | §16.4, §16.7.1 |
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `optional` | Admins may sign in on a password alone. `required_admins` holds them to a second factor and needs `MAITY_SECRET_KEY`, or the hub does not start. `email` needs complete mail. | §2.8.5 |
+| `MAITY_SECOND_FACTOR_WRONG_PER_DAY` | `50` | Past 50 wrong second-factor codes of one human in a UTC day, every code of that human is refused until the day ends or the human opens the mailed link that lifts it; 10–10000. | §2.8.6 |
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `100` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |

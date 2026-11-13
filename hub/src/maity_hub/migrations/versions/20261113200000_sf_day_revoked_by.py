@@ -2,8 +2,9 @@
 §3.1).
 
 `second_factor_day` counts each human's wrong second-factor codes per UTC day; `unlocks` counts
-the times the mailed link lifted the cap that day. It starts empty. `join_link.revoked_by` is
-the human who revoked a join; null on every existing row, whose revoker was not recorded.
+the times the mailed link lifted the cap that day, `alerted` whether the alert with that link
+was written since. It starts empty. `join_link.revoked_by` is who revoked a join; null on every
+existing row, whose revoker was not recorded.
 
 Revision ID: 20261113200000_sf_day_revoked_by
 Revises: 20261113130000_experiment_notice
@@ -36,6 +37,7 @@ def upgrade() -> None:
         sa.Column("day", sa.String(length=10), nullable=False),
         sa.Column("wrong_codes", sa.Integer(), nullable=False),
         sa.Column("unlocks", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("alerted", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.ForeignKeyConstraint(
             ["human_id"], ["human.id"], name=op.f("fk_second_factor_day_human_id_human")
         ),

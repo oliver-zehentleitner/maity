@@ -177,11 +177,18 @@ class RequestLimits:
 
 def password_changed(conn: Connection, human_id: str) -> None:
     """A new password, by `POST /auth/password` or a reset: the generation moves, so every
-    link made under the old one dies with it, and the open ones are voided now too."""
+    link made under the old one dies with it, and the open ones are voided now too. That
+    includes the link that lifts the daily second-factor cap (§2.8.6): the day's alert counts
+    as not written, so the next wrong code mails one under the new generation."""
     conn.execute(
         update(t.human)
         .where(t.human.c.id == human_id)
         .values(password_generation=t.human.c.password_generation + 1)
+    )
+    conn.execute(
+        update(t.second_factor_day)
+        .where(t.second_factor_day.c.human_id == human_id)
+        .values(alerted=False)
     )
     void_human(conn, human_id)
 

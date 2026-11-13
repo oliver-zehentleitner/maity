@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, select
 
-from maity_hub import clock, isolation, policy, project_roles, public_projects
+from maity_hub import isolation, policy, project_roles, public_projects
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.events import Actor
@@ -125,19 +125,19 @@ def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: 
     """A human's membership ended (§6.2): the joins they created and nobody used are revoked,
     the placements they proposed that made no membership yet are closed, and what the
     project's setting does not let stay without its owner is isolated. Under both settings."""
-    from maity_hub import bridges, placements
+    from maity_hub import bridges, join_revocation, placements
 
     j = t.join_link.c
-    conn.execute(
-        update(t.join_link)
-        .where(
-            j.project_id == project.id,
-            j.created_by == human_id,
-            j.used_at.is_(None),
-            j.burned_at.is_(None),
-            j.revoked_at.is_(None),
-        )
-        .values(revoked_at=clock.now())
+    # Attributed to whoever ended the membership, and told (§3.1); a change the hub makes on
+    # its own (no actor: an account's deletion, §2.9) names nobody and tells nobody.
+    join_revocation.revoke(
+        conn,
+        j.project_id == project.id,
+        j.created_by == human_id,
+        j.used_at.is_(None),
+        j.burned_at.is_(None),
+        by=None if actor == HUB else by,
+        actor_in=lambda _project_id: actor,
     )
     placements.creator_left(conn, project.id, human_id, actor, by)
     bridges.owner_left(conn, project.id, human_id, actor)  # §2.3, "Ending on its own"
