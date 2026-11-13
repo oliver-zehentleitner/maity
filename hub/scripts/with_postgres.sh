@@ -125,7 +125,14 @@ if [ -t 0 ]; then
 fi
 
 # Otherwise in a process group of its own, so that a signal reaches all of it (pytest -n has
-# workers) and the database is only dropped once the command has ended.
+# workers) and the database is only dropped once the command has ended. The traps are set
+# before the command starts: a signal that came between its start and the forwarding traps
+# would otherwise end this script under the running command. One that comes before the
+# command has a process group is kept and passed on as soon as it has one.
+pending=
+for signal in INT TERM HUP; do
+  trap 'pending='"$signal" "$signal"
+done
 set -m
 "$@" 8>&- &
 child=$!
@@ -133,6 +140,9 @@ set +m
 for signal in INT TERM HUP; do
   trap 'kill -'"$signal"' -- "-$child" 2>/dev/null || true' "$signal"
 done
+if [ -n "$pending" ]; then
+  kill -"$pending" -- "-$child" 2>/dev/null || true
+fi
 while :; do
   status=0
   wait "$child" || status=$?
