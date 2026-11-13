@@ -14349,8 +14349,8 @@ messages (the maintainer's rules of 2026-10-29 and his answers of
   or `go_request` (§8.4) from a member on another side than an agent it
   reaches (by `to`, an instance address, a role or trust token, `all`
   or a mention) reaches that agent only when the agent is admitted for
-  its author, unless the author is a lead (above), as below for a chat participant: an allow entry of its
-  owner covers the pair and no deny entry names the author, the
+  its author, unless the author is a lead (above), as below for a chat
+  participant: an allow entry of its owner covers the pair and no deny entry names the author, the
   author's side or the project. Otherwise the agent is **held** for
   that message: it does not read it and is not woken by it, its owner
   reads it along, and the hub files the request below for the
@@ -14516,7 +14516,8 @@ and author), never their text. The
 inbox shows a checkbox per waiting or held agent, all ticked, and one
 for that side's human, not ticked. While
 it is open, a further agent or chat waiting for the same side, or a
-further message held for it, joins it:
+further message held for an agent of that owner for that side, joins
+it:
 the hub updates its `summary` and files no second request. Its replies:
 
 | `reply_id` | Effect |
@@ -14536,8 +14537,10 @@ covers, as `their_agents`, the agents of that side in its chats and
 the agents of that side that wrote a message held for it, with
 `their_human: false`; the human is covered, in the chats and for the
 human's own free work messages, only when the owner ticks it
-(`chat_access.their_human: true`, `req-ssgyxfs5wdjw`). A message held before the answer stays
-held whatever the answer. An unticked
+(`chat_access.their_human: true`, `req-ssgyxfs5wdjw`). A message held
+before the answer stays held whatever the answer, and no later request
+names it again: a request counts only the messages held after the
+owner's last answer for that side. An unticked
 agent goes on waiting, and so does a ticked agent in a chat where that
 side's human sits while the human is not ticked. The answer may set the reach and the rules beside the `reply_id`, on
 this request only: `chat_access: {agents?, their_agents?, their_human?,
@@ -14549,10 +14552,43 @@ an entry's `until` passes, the agents it admitted wait again in each
 open chat that needs it, and the hub files a new request. The request
 is withdrawn by the hub (reason `withdrawn`) when nothing waits for it
 any more and no message is held for it: the side left every such chat,
-the chats closed, or the agents left them or their projects. A held
-message never ends, so a request with one stays open until the owner
-answers it. The owner withdrawing it (§7) counts as
+the chats closed, or the agents left them or their projects. A
+message it counts never ends, so a request with one
+stays open until the owner answers it. The owner withdrawing it (§7) counts as
 `no`.
+
+`GET /requests/{id}` shows the owner what an inbox draws its checkboxes
+from, as of the read (the web inbox offers them in a later part; until
+then its answer carries the `reply_id` only and takes the defaults
+below):
+
+```json
+{ "chat_access_request": {
+    "side": { "id": "hum-guest", "handle": "guest" },
+    "agents": [ { "id": "agt-x", "handle": "agent-x", "waiting": true, "held": false } ],
+    "their_human_in_chat": true } }
+```
+
+`agents` are the request's waiting and held agents now (`waiting`: it
+waits for that side in a chat; `held`: a message the request counts is
+held for it), and `their_human_in_chat` says whether that side's human
+is in one of the chats they wait in. Once the request is closed,
+`agents` is `[]`. No list, event or resume packet carries
+`chat_access_request`. An answer is refused as `invalid` with
+`details.fields`:
+
+- `chat_access: "not_a_chat_request"` when `chat_access` comes with an
+  answer to another request;
+- `chat_access: "allow_only"` when it comes with `no` or `block`;
+- `chat_access.agents: "not_on_this_request"` when `agents` names an
+  agent that neither waits nor is held for the request;
+- `reply_id: "required"` for an answer by text alone.
+
+An entry the answer writes is checked as one written under
+`/me/chat-access/allow` (below), with the same `details.fields`. An
+agent with nothing of that side to admit it for (no agent of the side
+in its chats or among the authors of its held messages, and the human
+not ticked) gets no entry and goes on waiting.
 
 **Rules per side.** Each allow entry carries two texts the owner
 writes for the agents it covers (the maintainer's rule of 2026-11-11):
@@ -14627,9 +14663,10 @@ are a member of the project.
 **The lists.** A human's allow and deny entries for their agents. Only
 that human reads and changes them. The lists and the gate ("Waiting",
 the owner's add, a deny entry, an entry that ends, a held free work
-message, a waiting moderator) are built; the
-request and the rules per side are not built yet, so until then an
-owner admits a waiting agent with an entry here:
+message, a waiting moderator) and the request are built; the rules per
+side are stored but not yet delivered to the agents (`chat_rules`,
+`chat_rules_changed`). An owner also admits a waiting agent with an
+entry here:
 
 | Endpoint | Scope | Notes |
 |---|---|---|
