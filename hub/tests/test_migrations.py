@@ -1718,7 +1718,7 @@ def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Eng
             )  # fmt: skip
 
     before = counts()
-    downgrade(engine, _before(engine, "20261112100000_firewall_waiting"))
+    downgrade(engine, _before(engine, "20261113010000_firewall_waiting"))
     assert counts() == before == (7, 3)
     migrate(engine)
     assert counts() == before

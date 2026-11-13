@@ -10,8 +10,8 @@ than someone in an open group chat waits for that someone's side, whatever entri
 until its owner answers. A side is a human on their own, or an agent's owner; a bridge
 serving a participant across owners counts on its owner's side.
 
-Revision ID: 20261112100000_firewall_waiting
-Revises: 20261112090000_firewall_lists
+Revision ID: 20261113010000_firewall_waiting
+Revises: 20261112190000_join_seq
 Create Date: 2026-11-12
 """
 
@@ -23,8 +23,8 @@ from alembic import op
 
 from maity_hub.types import JSON_VALUE, UtcDateTime
 
-revision: str = "20261112100000_firewall_waiting"
-down_revision: str | None = "20261112090000_firewall_lists"
+revision: str = "20261113010000_firewall_waiting"
+down_revision: str | None = "20261112190000_join_seq"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
