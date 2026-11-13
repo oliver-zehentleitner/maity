@@ -18,11 +18,14 @@ import base64
 import hashlib
 import http.client
 import json
+import socket
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -32,11 +35,11 @@ from maity_hub import shared_budget
 HOSTS = {"github.com": "github"}  # host -> forge kind
 API_HOST = "api.github.com"
 TIMEOUT = 10.0
-# The bounds on reading an answer's body, as `outbound._body` keeps them for the hooks: the
-# whole read ends at READ_SECONDS however slowly the bytes come, and a JSON answer past
-# ANSWER_CAP is refused unread. One page of 100 check runs, each with the forge's longest
-# summary, stays under it.
-READ_SECONDS = 30.0
+# The bounds on a request to the forge, as `outbound` keeps them for the hooks: from the
+# connection to the body's last byte it ends at READ_SECONDS however slowly the bytes come
+# (`bounded`), and a JSON answer past ANSWER_CAP is refused unread. One page of 100 check
+# runs, each with the forge's longest summary, stays under it.
+READ_SECONDS = 10.0  # §11.1: "10 seconds per read, connect to last byte"
 ANSWER_CAP = 16 * 1024 * 1024
 CHUNK = 64 * 1024
 
@@ -83,29 +86,87 @@ def repository_of(url: str) -> str:
     return f"{owner}/{name.removesuffix('.git')}"
 
 
+_held = threading.local()  # the sockets the current thread's `bounded` read has opened
+
+
+class _Registering:
+    """A connection that tells the running `bounded` read its socket, so the deadline can
+    end a read blocked anywhere: in the TLS handshake, the headers or the body."""
+
+    sock: Any
+
+    def connect(self) -> None:
+        super().connect()  # type: ignore[misc]
+        socks = getattr(_held, "socks", None)
+        if socks is not None:
+            socks.append(self.sock)
+
+
+class _RegisteringHTTPS(_Registering, http.client.HTTPSConnection):
+    pass
+
+
+class _BoundedHTTPS(urllib.request.HTTPSHandler):
+    def https_open(self, req: Any) -> Any:
+        return self.do_open(_RegisteringHTTPS, req, context=self._context)  # type: ignore[attr-defined]
+
+
+@contextmanager
+def bounded() -> Iterator[None]:
+    """One request to the forge, from the connection to the last byte of the body, within
+    READ_SECONDS. A timer shuts the sockets the request opened (`_Registering`) at the
+    deadline, which ends a recv however slowly the bytes come: a per-recv timeout cannot,
+    since a forge sending a byte before each one runs out never trips it. What the shut
+    socket raises, or a body it cut short, is `ForgeUnavailableError` (timeout)."""
+    socks: list[Any] = []
+    expired = threading.Event()
+
+    def expire() -> None:
+        expired.set()
+        for sock in socks:
+            with suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+
+    timer = threading.Timer(READ_SECONDS, expire)
+    timer.daemon = True
+    _held.socks = socks
+    timer.start()
+    try:
+        yield
+    except (OSError, ValueError, http.client.HTTPException, ForgeUnavailableError):
+        if expired.is_set():  # whatever the shut socket made of the read, it was the deadline
+            raise ForgeUnavailableError("the forge did not answer: timeout") from None
+        raise
+    finally:
+        timer.cancel()
+        _held.socks = None
+    if expired.is_set():  # the body ended where the timer cut it
+        raise ForgeUnavailableError("the forge did not answer: timeout")
+
+
 def read_bounded(response: Any, limit: int) -> bytes:
-    """At most `limit` bytes of the answer's body, read in chunks until READ_SECONDS after the
-    first. Each chunk waits for TIMEOUT at most, shortened to what is left of the read where
-    the socket can be reached, so a forge that trickles its answer is cut off near the deadline
-    rather than held open. Past the deadline it is `ForgeUnavailableError`."""
-    deadline = time.monotonic() + READ_SECONDS
-    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    """At most `limit` bytes of the answer's body, one recv at a time (`read1`), so a body
+    past `limit` is never taken in whole; the time is `bounded`'s."""
+    read = getattr(response, "read1", None) or response.read
     out = bytearray()
     while len(out) < limit:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise ForgeUnavailableError("the forge did not answer: timeout")
-        if sock is not None:
-            sock.settimeout(min(remaining, TIMEOUT))
-        chunk = response.read(min(CHUNK, limit - len(out)))
+        chunk = read(min(CHUNK, limit - len(out)))
         if not chunk:
+            # A read with a byte count returns nothing at the end of the stream, also
+            # before the declared length: that is no answer, not a short one.
+            if getattr(response, "length", None):
+                raise ForgeUnavailableError("the forge did not answer: IncompleteRead")
             break
         out += chunk
     return bytes(out)
 
 
 def json_answer(response: Any) -> Any:
-    """The answer's body as JSON, refused when it is over ANSWER_CAP (`read_bounded`)."""
+    """The answer's body as JSON, refused when it is over ANSWER_CAP: at once when its
+    declared length says so, else at the first byte past it (`read_bounded`)."""
+    declared = getattr(response, "length", None)
+    if isinstance(declared, int) and declared > ANSWER_CAP:
+        raise ForgeUnavailableError("the forge's answer is over the size the hub reads")
     body = read_bounded(response, ANSWER_CAP + 1)
     if len(body) > ANSWER_CAP:
         raise ForgeUnavailableError("the forge's answer is over the size the hub reads")
@@ -131,7 +192,7 @@ class _SameHostOnly(urllib.request.HTTPRedirectHandler):
         raise NotCoveredError("repository_moved")
 
 
-_opener = urllib.request.build_opener(_SameHostOnly)
+_opener = urllib.request.build_opener(_SameHostOnly, _BoundedHTTPS)
 
 
 def _quote(ref: str) -> str:
@@ -588,7 +649,7 @@ class Forge:
         request.add_header("User-Agent", "maity-hub")
         noted = False  # whether the read's answer already took it out of flight
         try:
-            with _opener.open(request, timeout=TIMEOUT) as response:
+            with bounded(), _opener.open(request, timeout=TIMEOUT) as response:
                 _note(source, getattr(response, "headers", None), spent=False)
                 noted = True
                 if raw_cap is not None:

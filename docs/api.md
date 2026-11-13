@@ -14939,8 +14939,10 @@ read:
   export URL is not exempt from the address rule. A self-hosted forge
   on a private network is not fetched.
 - 10 seconds per read, connect to last byte. The body is read up to its
-  cap and the read is refused at the first byte past it; the cap counts
-  the decoded bytes when the answer is compressed.
+  cap and the read is refused at the first byte past it, or at once when
+  its declared length is over the cap; the cap counts the decoded bytes
+  when the answer is compressed. The reads of the forge's API (§11.4)
+  ask for no compression, and their cap is 16 MiB.
 - A failure is reported by a reason code, never by the upstream's body
   or error text.
 

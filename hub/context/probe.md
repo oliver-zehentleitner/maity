@@ -476,26 +476,31 @@ through `unknown` needs a stored value the observation does not have today.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qtr9myhtysbs (hardening from the security rounds, tsk-v9kheekgq115), which asks for a byte cap and a total deadline "as `outbound._body` does"; the numbers are the coder's choice, not stated on the card
-**Revisit when:** a real answer (a check-runs page, a large repository's metadata) comes near 16 MiB, or reads that time out at 30 seconds show up in the probe's log
+**Source:** card tsk-qtr9myhtysbs (hardening from the security rounds, tsk-v9kheekgq115), which asks for a byte cap and a total deadline "as `outbound._body` does"; the lead's security check of #1753's first version, which measured the trickle; the numbers are the coder's choice, not stated on the card
+**Revisit when:** a real answer (a check-runs page, a large repository's metadata) comes near 16 MiB, or reads that time out at 10 seconds show up in the probe's log
 
-Every body the hub reads from the forge's API, the probe's (`forge.Forge._send`)
-and the GitHub App's (`github_app._open`), goes through `forge.read_bounded`:
-it reads in chunks until `READ_SECONDS` (30 s) after the first, each chunk's
-socket wait shortened to what is left, and a JSON answer past `ANSWER_CAP`
-(16 MiB) is refused as `ForgeUnavailableError`. A raw file read keeps its own
-cap (`raw_cap + 1`) under the same deadline.
+Every request the hub makes to the forge's API, the probe's (`forge.Forge._send`)
+and the GitHub App's (`github_app._open`), runs inside `forge.bounded`: a timer
+shuts the sockets the request opened (`_Registering`) `READ_SECONDS` (10 s)
+after it starts, so the connection, the headers and the body all end there. The
+body is read one recv at a time (`read1`), and a JSON answer past `ANSWER_CAP`
+(16 MiB) is refused as `ForgeUnavailableError`, and so is a body that ends
+before its declared length: a read with a byte count returns nothing there
+rather than raising, and a cut JSON prefix can still parse. A raw file read
+keeps its own cap (`raw_cap + 1`) under the same deadline.
 
 **Reason:** before, `TIMEOUT` bounded each socket operation only, so an
 answer that trickled a byte every few seconds kept the read, and the probe's
 worker, open for as long as it liked, and `response.read()` took the whole
 body into memory whatever its size. 16 MiB leaves room for a page of 100 check
-runs with the forge's longest summaries; 30 s is three times the per-operation
-`TIMEOUT`.
+runs with the forge's longest summaries; 10 s is what §11.1 sets for every
+read the hub makes, "connect to last byte".
 
-**Rejected alternatives:** reusing `outbound._body` itself: it belongs to
-outbound's own connection (pinned address, its `Refused` errors, gzip), while
-the forge reads go through urllib's opener with the redirect guard. A watchdog
-thread that closes the socket at the deadline, as outbound has: shortening each
-chunk's socket wait to the time left gives the same bound without a thread per
-read.
+**Rejected alternatives:** a deadline checked between chunks, with each
+recv's socket timeout cut to the time left (the PR's first version):
+`HTTPResponse.read(n)` loops over recvs until it has `n` bytes, and each recv
+that gets a byte before its timeout keeps it going, so a measured trickle of one
+byte every 0.5 s held a 2-second deadline for 15 s; it did not cover the headers
+either. Reusing `outbound._body` itself: it belongs to outbound's own
+connection (pinned address, its `Refused` errors, gzip), while the forge reads
+go through urllib's opener with the redirect guard.

@@ -112,15 +112,22 @@ def opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(_NoRedirect)
 
 
-# The path segments whose next segment is a secret: a join link's token (`/join/<token>`),
-# a runner's pairing link (`/r/<token>`) and an invitation's (`/i/<token>`).
-TOKEN_PREFIXES = frozenset({"join", "r", "i"})
+# The path segments whose next segment is a secret, compared case-folded and %-decoded:
+# a join link's token (`/join/`, `/j/`), a runner's pairing link (`/r/`, `…/runners/pair/`),
+# an invitation's (`/i/`, `/invite/`). Under `/mail/` every segment after the page's name
+# is one (`/mail/verify/<token>`, `/mail/sign-in/<token>`, …).
+TOKEN_PREFIXES = frozenset({"join", "j", "r", "i", "invite", "pair"})
+# A lone segment of lower-case letters and hyphens is a route (`/skill`, `/help`, `/join`),
+# not a token: a token (22 characters of `[A-Za-z0-9_-]`, §3.1) is all of them almost never.
+ROUTE_WORD = re.compile(r"[a-z-]+")
 
 
 def safe_url(url: str) -> str:
     """A URL fit for a message: scheme, host, port and path; never userinfo or query, and
-    never the token of a join, pairing or invitation link, which reads as `<token>`: the
-    message may be pasted into a chat or a card, and the link works for whoever reads it."""
+    never a link's token, which reads as `<token>`: the message may be pasted into a chat or
+    a card, and the link works for whoever reads it. A path of one segment is masked as
+    well, as a join host's link is the token alone (`https://join.example/<token>`), unless
+    it is a route's word (`ROUTE_WORD`)."""
     try:
         parts = urllib.parse.urlsplit(url.strip())
         host = parts.hostname or ""
@@ -129,9 +136,15 @@ def safe_url(url: str) -> str:
     except ValueError:
         return "<not a URL>"
     segments = parts.path.split("/")
-    for at in range(1, len(segments)):
-        if segments[at - 1] in TOKEN_PREFIXES and segments[at]:
-            segments[at] = "<token>"
+    named = [i for i, raw in enumerate(segments) if raw]  # `//` is no segment
+    words = {i: urllib.parse.unquote(segments[i]).casefold() for i in named}
+    for k, i in enumerate(named):
+        before = [words[j] for j in named[:k]]
+        lone = len(named) == 1 and not ROUTE_WORD.fullmatch(words[i])
+        if lone or (before and before[-1] in TOKEN_PREFIXES):
+            segments[i] = "<token>"
+        elif len(before) >= 2 and "mail" in before[:-1]:
+            segments[i] = "<token>"
     path = "/".join(segments)
     return urllib.parse.urlunsplit((parts.scheme, host, path, "", "")) or "<empty>"
 

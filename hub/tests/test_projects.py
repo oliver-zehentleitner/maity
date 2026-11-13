@@ -140,6 +140,7 @@ def test_probe_configured_says_whether_the_hub_holds_a_token(
         "https://github.com/a/b.atom",
         "https://github.com/a/b.GIT",
         "https://github.com/a/b.git.git",
+        "https://github.com/a/b//",
     ],
 )
 def test_a_repository_must_be_on_a_configured_forge(owner: flow.Human, url: str) -> None:

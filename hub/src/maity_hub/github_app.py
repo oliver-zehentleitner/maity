@@ -12,6 +12,7 @@ which follows no redirect (§11.4).
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import threading
 import time
@@ -256,7 +257,7 @@ def _call(path: str, authorization: str, post: bool = False) -> Any | None:
 
 def _open(request: urllib.request.Request) -> Any | None:
     try:
-        with forge._opener.open(request, timeout=forge.TIMEOUT) as response:
+        with forge.bounded(), forge._opener.open(request, timeout=forge.TIMEOUT) as response:
             return forge.json_answer(response)
     except urllib.error.HTTPError as error:
         if error.code == 404:
@@ -268,7 +269,7 @@ def _open(request: urllib.request.Request) -> Any | None:
         raise forge.ForgeUnavailableError(
             f"the forge answered {error.code}", error.code, rate_limited=limited
         ) from None
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, http.client.HTTPException) as error:
         # Never the error text: it may quote the request, and the request carries a secret.
         raise forge.ForgeUnavailableError(
             f"the forge did not answer: {type(error).__name__}"

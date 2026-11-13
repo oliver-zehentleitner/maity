@@ -461,7 +461,9 @@ def _repository_columns(repository: RepositoryIn | None, current: Any = None) ->
             "repository_default_branch": None,
             "repository_required_check": None,
         }
-    url = repository.url.rstrip("/")
+    url = repository.url
+    if url.endswith("/") and not url.endswith("//"):
+        url = url[:-1]  # one trailing slash (§6.1 step 2); a second one leaves an empty segment
     if (
         not url.startswith("https://")
         or forge_of(url) is None
