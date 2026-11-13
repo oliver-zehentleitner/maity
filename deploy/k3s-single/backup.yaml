@@ -3,8 +3,10 @@
 # The private key is never on the cluster. Without the Secret, or with a private key in it, the Job fails before it writes anything. The
 # volume is on the same disk as the database: copy the backups off the instance too (docs/install/README.md, "Backups on this setup").
 # With the Secret maity-backup-signing-key (key backup-signing.key, an OpenPGP private key without a passphrase), each encrypted file gets a
-# detached signature next to it, <file>.sig, which a restore checks against the fingerprint the operator keeps. Without that Secret the
-# backups are written unsigned and the log says so; a key in it that cannot sign fails the Job before it writes anything.
+# detached signature next to it, <file>.sig, which a restore checks against the fingerprint the operator keeps. The signature carries the
+# file's name (with its time stamp) as a signed notation, backup-file@maity, which the restore compares with the name it is given. Without
+# that Secret the backups are written unsigned and the log says so; a key in it that cannot sign, that can also decrypt, or that is the
+# encryption key itself fails the Job before it writes anything.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata: {name: maity-backups, namespace: maity}
@@ -49,6 +51,15 @@ spec:
                     gpg --batch --quiet --homedir "$g" --import "$s" || { echo "backup failed: maity-backup-signing-key could not be imported" >&2; exit 1; }
                     echo | gpg --batch --quiet --homedir "$g" --pinentry-mode loopback --passphrase "" --detach-sign > /dev/null \
                       || { echo "backup failed: maity-backup-signing-key cannot sign: it needs an OpenPGP private key that signs, without a passphrase" >&2; exit 1; }
+                    # A key of its own: one that can also decrypt, or the encryption key itself, is refused.
+                    gpg --batch --homedir "$g" --with-colons --list-secret-keys > "$g/signing"
+                    if awk -F: '($1 == "sec" || $1 == "ssb") && $12 ~ /[eE]/ {found = 1} END {exit !found}' "$g/signing"; then
+                      echo "backup failed: maity-backup-signing-key can also decrypt: use a key that only signs, not the one in maity-backup-key" >&2; exit 1
+                    fi
+                    gpg --batch --quiet --homedir "$g" --no-autostart --show-keys --with-colons "$k" | awk -F: '$1 == "fpr" {print $10}' > "$g/recipient"
+                    if awk -F: '$1 == "fpr" {print $10}' "$g/signing" | grep -qxFf "$g/recipient"; then
+                      echo "backup failed: maity-backup-signing-key is the key in maity-backup-key: use a key of its own for signing" >&2; exit 1
+                    fi
                   fi
                   ts=$(date -u +%Y%m%dT%H%M%SZ)
                   t=/backups/maity-$ts.attachments.tar.gpg
@@ -67,7 +78,8 @@ spec:
                   plain=$(awk '/ bytes / {print $1}' "$g/count")
                   [ "${plain:-0}" -gt 0 ]
                   # The signature covers the encrypted file, so a copy can be checked without the private decryption key.
-                  [ ! -s "$s" ] || gpg --batch --quiet --homedir "$g" --pinentry-mode loopback --passphrase "" --yes --detach-sign --output "$t.sig.part" "$t.part"
+                  [ ! -s "$s" ] || gpg --batch --quiet --homedir "$g" --pinentry-mode loopback --passphrase "" --yes \
+                    --sig-notation "backup-file@maity=${t##*/}" --detach-sign --output "$t.sig.part" "$t.part"
                   mv "$t.part" "$t"
                   [ ! -s "$s" ] || mv "$t.sig.part" "$t.sig"
                   printf '%s %s\n' "$ts" "$plain" > /ts/stamp
@@ -102,6 +114,15 @@ spec:
                     gpg --batch --quiet --homedir "$g" --import "$s" || { echo "backup failed: maity-backup-signing-key could not be imported" >&2; exit 1; }
                     echo | gpg --batch --quiet --homedir "$g" --pinentry-mode loopback --passphrase "" --detach-sign > /dev/null \
                       || { echo "backup failed: maity-backup-signing-key cannot sign: it needs an OpenPGP private key that signs, without a passphrase" >&2; exit 1; }
+                    # A key of its own: one that can also decrypt, or the encryption key itself, is refused.
+                    gpg --batch --homedir "$g" --with-colons --list-secret-keys > "$g/signing"
+                    if awk -F: '($1 == "sec" || $1 == "ssb") && $12 ~ /[eE]/ {found = 1} END {exit !found}' "$g/signing"; then
+                      echo "backup failed: maity-backup-signing-key can also decrypt: use a key that only signs, not the one in maity-backup-key" >&2; exit 1
+                    fi
+                    gpg --batch --quiet --homedir "$g" --no-autostart --show-keys --with-colons "$k" | awk -F: '$1 == "fpr" {print $10}' > "$g/recipient"
+                    if awk -F: '$1 == "fpr" {print $10}' "$g/signing" | grep -qxFf "$g/recipient"; then
+                      echo "backup failed: maity-backup-signing-key is the key in maity-backup-key: use a key of its own for signing" >&2; exit 1
+                    fi
                     fpr=$(gpg --batch --homedir "$g" --with-colons --list-secret-keys | awk -F: '$1 == "fpr" {print $10; exit}')
                     signed="signed by $fpr"
                     test -s "$t.sig"
@@ -122,7 +143,8 @@ spec:
                   done
                   plain=$(awk '/ bytes / {print $1}' "$g/count")
                   [ "${plain:-0}" -gt 0 ]
-                  [ ! -s "$s" ] || gpg --batch --quiet --homedir "$g" --pinentry-mode loopback --passphrase "" --yes --detach-sign --output "$f.sig.part" "$f.part"
+                  [ ! -s "$s" ] || gpg --batch --quiet --homedir "$g" --pinentry-mode loopback --passphrase "" --yes \
+                    --sig-notation "backup-file@maity=${f##*/}" --detach-sign --output "$f.sig.part" "$f.part"
                   mv "$f.part" "$f"
                   [ ! -s "$s" ] || mv "$f.sig.part" "$f.sig"
                   test -s "$t"

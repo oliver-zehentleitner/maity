@@ -584,7 +584,7 @@ files and a restored database must not be written by a running hub at the same m
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** deploy hardening card tsk-xesvyydh2yd3 (item 6), from the security rounds of card tsk-v9kheekgq115; option A (a signing key in the Job, the restore checking the fingerprint, safe for existing installations) chosen by the team lead, 2026-11-13; follow-up card tsk-4eyae1smgdj5; `deploy/k3s-single/backup.yaml`, `deploy/k3s-single/restore-attachments.yaml`, docs/install/README.md, `deploy/scripts/test-backup-signing.sh`, `deploy/scripts/test-restore-blocks.sh`
+**Source:** deploy hardening card tsk-xesvyydh2yd3 (item 6), from the security rounds of card tsk-v9kheekgq115; option A (a signing key in the Job, the restore checking the fingerprint, safe for existing installations) chosen by the team lead, 2026-11-13; the file name in the signature and the refusal of a shared key from the review of the pull request, 2026-11-14; follow-up card tsk-4eyae1smgdj5; `deploy/k3s-single/backup.yaml`, `deploy/k3s-single/restore-attachments.yaml`, docs/install/README.md, `deploy/scripts/test-backup-signing.sh`, `deploy/scripts/test-restore-blocks.sh`
 **See:** kubernetes.md#the-k3s-backups-are-encrypted-with-gpg-to-a-public-key-in-a-secret-and-the-job-fails-without-it — f6cd5dc1-f718-4490-92fc-285f88085514 — as of 2026-11-14
 **Revisit when:** the backups move to an object store with its own integrity checks (object lock, signed manifests), or the Job gets a way to sign without a key on the cluster
 
@@ -598,8 +598,12 @@ Job writes the encrypted backups unsigned and warns in its log and in the
 key only) fails the Job before anything is written, checked by a test
 signature. The restore blocks check the signature before they decrypt, only
 when `MAITY_BACKUP_SIGNER` holds a fingerprint: the signing key's or its
-primary key's, matched in gpg's `VALIDSIG` status line. A missing `.sig`, a
-bad signature or another key then stops the block. Signatures whose file the
+primary key's, matched in gpg's `VALIDSIG` status line. Each signature also
+carries the file's name, time stamp included, as the signed notation
+`backup-file@maity`, and the blocks compare it with the name they are given. A
+missing `.sig`, a bad signature, another key or another name then stops the
+block. The Job refuses a signing key that can also decrypt (an `e` capability
+on any of its keys) and one whose fingerprint is in `maity-backup-key`. Signatures whose file the
 rotation removed are removed with it.
 
 **Reason:** a backup is copied off the instance and kept elsewhere, and a
@@ -612,7 +616,11 @@ signature does not hold against someone who can read the cluster's Secrets;
 it covers the copies and the way to them. Existing installations have no
 signing key and older backups have no `.sig`: so the Job goes on unsigned
 with a warning, and a restore refuses only when the operator set a
-fingerprint, as the team lead asked.
+fingerprint, as the team lead asked. A signature over the content alone would
+let an older night's file, with its own valid signature, pass under a newer
+name; the name in the signature ties the file to its night. Separate keys keep
+the signing key, which is on the cluster, from ever being able to read a
+backup.
 
 **Rejected alternatives:**
 - Checksums kept off the instance (the card's other option): the Job would
@@ -622,7 +630,13 @@ fingerprint, as the team lead asked.
   only by decrypting, so only where the private key is, and it changes the
   format of every backup, older restores included.
 - Signing with the decryption key pair: its private key would then be on the
-  cluster, which the encryption exists to avoid.
+  cluster, which the encryption exists to avoid. The Job refuses it rather than
+  relying on the documented key setup alone.
+- A signed manifest per night (names, time, hashes) next to the files: one more
+  file to copy, keep and match; the notation puts the name into the signature
+  each file already has.
+- Putting the time into the encrypted payload: it is checked only after
+  decryption, where the private key is, and changes the backup format.
 - Failing the Job without a signing key: every existing installation would
   lose its nightly backups at the next apply of `backup.yaml` until the key
   is made.

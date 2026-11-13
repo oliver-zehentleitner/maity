@@ -271,7 +271,9 @@ The backup Job also signs each encrypted file with a second key, made for that
 alone, so that a restore can check that a backup is one the Job wrote and was
 not changed since. Its private key goes into the cluster (the Job signs with
 it), so it has no passphrase and does nothing else; only its fingerprint is
-kept on the restore machine. Make it on that machine too, where gpg then also
+kept on the restore machine. It must be a key of its own: the Job refuses a
+signing key that can also decrypt, and one that is the key in
+`maity-backup-key`. Make it on that machine too, where gpg then also
 has its public key for checking:
 
 ```sh
@@ -338,11 +340,13 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   with them.
 - **Signed backups.** With the Secret `maity-backup-signing-key` (step 4) each file has a detached signature next to
   it, `<file>.sig`, made over the encrypted file, so a copy can be checked without the private decryption key:
-  `gpg --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg`. The signing key is on the cluster, so the
+  `gpg --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg`. The signature also carries the file's name,
+  time stamp included, as the notation `backup-file@maity` (`gpg --verify` prints it): keep the files under the names the
+  Job gave them, since a restore compares that name with the one it is given. The signing key is on the cluster, so the
   signature shows that a file came from the Job and was not changed on the copy's way or where it is kept; it
   does not hold against someone who can read the cluster's Secrets. A key there that cannot sign (one with a
-  passphrase, or a public key only) fails the Job with `backup failed: maity-backup-signing-key …` before anything
-  is written. If the signing key was exposed, make a new one, replace the Secret, and set the new fingerprint.
+  passphrase, or a public key only), that can also decrypt, or that is the key in `maity-backup-key` fails the Job
+  with `backup failed: maity-backup-signing-key …` before anything is written. If the signing key was exposed, make a new one, replace the Secret, and set the new fingerprint.
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
   you need, then delete them from the volume.
@@ -367,7 +371,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk.
   Set `MAITY_BACKUP_SIGNER` to the signing key's fingerprint (step 4) in the shell that runs the blocks below, and
   keep the `.sig` file next to each backup: both blocks then check the signature before they decrypt anything, and stop
-  when it is missing, does not verify, or is by another key. Without `MAITY_BACKUP_SIGNER` they say so and go on
+  when it is missing, does not verify, is by another key, or was made for another file name (the name holds the
+  backup's time stamp). Without `MAITY_BACKUP_SIGNER` they say so and go on
   unchecked, which is what a backup from before the signing key needs:
   Every `kubectl` below names the instance's kube context (`kubectl config get-contexts` lists them; `<kube context>` is
   that name), so a shell whose current context points at another cluster restores nothing there:
@@ -392,6 +397,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
          printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
          st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
          printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] VALIDSIG ($signer .*|.* $signer)$" || { echo "$2 is not signed by $signer" >&2; exit 1; }
+         printf "%s\n" "$st" | grep -A2 -xF "[GNUPG:] NOTATION_NAME backup-file@maity" | grep -qxF "[GNUPG:] NOTATION_DATA ${2##*/}" \
+           || { echo "$2 was signed under another name: give it the name the backup Job wrote" >&2; exit 1; }   # the time stamp is signed too
        else
          echo "MAITY_BACKUP_SIGNER is not set: the signature is not checked" >&2
        fi

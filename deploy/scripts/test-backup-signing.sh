@@ -2,8 +2,11 @@
 # Runs the two container scripts of deploy/k3s-single/backup.yaml (the attachment tar, then the dump) with a real gpg and a stub
 # pg_dump, the volumes as directories, and checks the signatures: without the Secret maity-backup-signing-key the backups are
 # written unsigned with a warning; with a signing key each encrypted file gets a detached <file>.sig that verifies with that key's
-# fingerprint; a key that cannot sign (a passphrase, a public key only) fails the Job before anything is written; a signature
-# whose file is gone is removed with the rotation.
+# fingerprint and carries the file's name as a signed notation; a key that cannot sign (a passphrase, a public key only), that can
+# also decrypt, or that is the encryption key fails the Job before anything is written; a signature whose file is gone is removed
+# with the rotation. Then it runs the two documented restore blocks (docs/install/README.md, restore-attachments.yaml) with that
+# gpg against the files the Job wrote, kubectl and pg_restore stubbed: a backup under its own name restores, an older backup with
+# its signature renamed to a newer time stamp stops before it is decrypted.
 # Usage: deploy/scripts/test-backup-signing.sh   (no cluster needed; gpg 2.2+, GNU tar, python3 with PyYAML)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -42,10 +45,10 @@ gk --pinentry-mode loopback --passphrase secret --armor --export-secret-keys "lo
 failures=0
 fail() { echo "FAIL $1"; [ -n "${2:-}" ] && sed 's/^/     /' "$2"; failures=$((failures + 1)); }
 
-run() { # name, signing key file or none; sets W and the exit status of the Job (init, then dump) in rc
+run() { # name, signing key file or none, [public key for maity-backup-key]; sets W and the Job's failed container (or 0) in rc
   W="$work/run-$1"; mkdir -p "$W/backups" "$W/attachments" "$W/ts" "$W/key" "$W/signing"
   echo file > "$W/attachments/f"
-  cp "$work/backup.pub" "$W/key/backup.pub"
+  cp "${3:-$work/backup.pub}" "$W/key/backup.pub"
   [ "$2" = none ] || cp "$2" "$W/signing/backup-signing.key"
   for f in init dump; do
     sed -E "s#([ =])/(backups|attachments|ts|key|signing)([/ ]|\$)#\\1$W/\\2\\3#g" "$work/$f.sh" > "$W/$f.sh"
@@ -58,9 +61,10 @@ run() { # name, signing key file or none; sets W and the exit status of the Job 
   cat "$W/init.out" "$W/dump.out" > "$W/out" 2>/dev/null
 }
 written() { ls "$W/backups" | grep -E '^maity-[0-9]{8}T[0-9]{6}Z\.(dump|attachments\.tar)\.gpg$' ; }
-verify() { # file: verifies against the signing key's public half in a fresh home, prints the signer's fingerprint
+verify() { # file: verifies against the signing key's public half in a fresh home, prints the signer's fingerprint and the signed name
   local h; h=$(gh "v-$(basename "$W")"); gpg --batch --quiet --homedir "$h" --import "$work/signing.pub" 2>/dev/null
-  gpg --batch --homedir "$h" --status-fd 1 --verify "$1.sig" "$1" 2>/dev/null | awk '$2 == "VALIDSIG" {print $3}'
+  gpg --batch --homedir "$h" --status-fd 1 --verify "$1.sig" "$1" 2>/dev/null \
+    | awk '$2 == "VALIDSIG" {v = $3} $2 == "NOTATION_NAME" {n = $3} $2 == "NOTATION_DATA" && n == "backup-file@maity" {d = $3} END {print v, d}'
 }
 
 # 1. No signing key: both files written, no signature, a warning, "unsigned" in the dump ok line.
@@ -79,7 +83,7 @@ if [ "$rc" != 0 ]; then fail "signed: the Job failed ($rc)" "$W/out"
 else
   for f in $(written); do
     got=$(verify "$W/backups/$f")
-    [ "$got" = "$signer" ] && echo "ok   signed: $f verifies with the signing key" || fail "signed: $f does not verify (got '$got')" "$W/out"
+    [ "$got" = "$signer $f" ] && echo "ok   signed: $f verifies with the signing key, under its own name" || fail "signed: $f does not verify (got '$got')" "$W/out"
   done
   [ "$(written | wc -l)" = 2 ] || fail "signed: not both files written" "$W/out"
   grep -q "^dump ok: .*(encrypted, signed by $signer;" "$W/out" && echo "ok   signed: the dump ok line names the fingerprint" || fail "signed: dump ok line" "$W/out"
@@ -88,16 +92,72 @@ else
   ls "$W/backups" | grep -q '\.part$' && fail "signed: a .part is left" || echo "ok   signed: no .part left"
   # a changed byte in the encrypted file no longer verifies
   f=$(written | head -1); printf 'x' >> "$W/backups/$f"
-  [ -z "$(verify "$W/backups/$f")" ] && echo "ok   signed: a changed file does not verify" || fail "signed: a changed file verifies"
+  [ "$(verify "$W/backups/$f")" = " " ] && echo "ok   signed: a changed file does not verify" || fail "signed: a changed file verifies"
 fi
 
-# 3. Keys that cannot sign: the Job fails before it writes anything.
-for k in locked signing.pub; do
-  key="$work/$k"; [ "$k" = locked ] && key="$work/locked.key"
-  run "cannot-$k" "$key"
-  if [ "$rc" = init ] && [ -z "$(written)" ] && grep -q "backup failed: maity-backup-signing-key" "$W/out"; then
-    echo "ok   $k: the Job fails before writing"
-  else fail "$k: rc=$rc, written: $(written | tr '\n' ' ')" "$W/out"; fi
+# 3. Keys that cannot sign, or must not: the Job fails before it writes anything.
+gk --armor --export-secret-keys "enc <e@example.org>" > "$work/enc.key"
+gk --passphrase "" --quick-gen-key "other <o@example.org>" default default never   # signs and decrypts, not the recipient
+gk --armor --export-secret-keys "other <o@example.org>" > "$work/other.key"
+refused() { # name, signing key, expected message, [public key for maity-backup-key]
+  run "$1" "$2" "${4:-}"
+  if [ "$rc" = init ] && [ -z "$(written)" ] && grep -q "backup failed: maity-backup-signing-key $3" "$W/out"; then
+    echo "ok   $1: the Job fails before writing ($3)"
+  else fail "$1: rc=$rc, written: $(written | tr '\n' ' ')" "$W/out"; fi
+}
+refused passphrase "$work/locked.key" "cannot sign"
+refused public-only "$work/signing.pub" "cannot sign"
+refused decrypting "$work/other.key" "can also decrypt"
+refused encryption-key "$work/enc.key" "can also decrypt"
+# the signing key itself as maity-backup-key: same fingerprint, though it cannot decrypt
+refused same-key "$work/signing.key" "is the key in maity-backup-key" "$work/signing.pub"
+
+# 4. The documented restore blocks with the real gpg, against the files of a fresh Job run. The fingerprint is set; GNUPGHOME
+# has the decryption key and the signing key's public half.
+extract() { # file, the line that ends the block, prefix to strip (as in test-restore-blocks.sh)
+  awk -v end="$2" -v pre="$3" '
+    { line = $0; if (pre != "" && index(line, pre) == 1) line = substr(line, length(pre) + 1); sub(/^[ \t]+/, "", line) }
+    inside && index(line, end) == 1 { exit }
+    inside { print line }
+    index(line, "sh -eu -c '"'"'") == 1 { inside = 1 }
+  ' "$1"
+}
+extract "$root/docs/install/README.md" "' restore <kube context> maity-<UTC time>.dump.gpg" "" > "$work/db-block"
+extract "$root/deploy/k3s-single/restore-attachments.yaml" "' restore <kube context>" "#   " > "$work/att-block"
+for b in db-block att-block; do grep -q "NOTATION_DATA" "$work/$b" || { echo "FAIL the $b has no name check"; exit 1; }; done
+cat > "$work/bin/kubectl" <<'STUB'
+#!/bin/bash
+echo "kubectl $*" >> "$R/log"
+case "$*" in
+  *"get deploy"*) printf 0;;
+  *" exec "*)     cat > /dev/null;;
+esac
+exit 0
+STUB
+printf '#!/bin/sh\nexit 0\n' > "$work/bin/pg_restore"
+chmod +x "$work/bin/kubectl" "$work/bin/pg_restore"
+run restore "$work/signing.key"
+[ "$rc" = 0 ] || fail "restore: the Job failed ($rc)" "$W/out"
+new=$(written | grep 'dump\.gpg$' | sed 's/maity-\(.*\)Z\.dump\.gpg/\1/')
+# a genuine backup and its genuine signature, renamed to a later night's time stamp
+for kind in dump attachments.tar; do
+  for x in "" .sig; do cp "$W/backups/maity-${new}Z.$kind.gpg$x" "$W/backups/maity-29991231T000000Z.$kind.gpg$x"; done
+done
+restore() { # name, block, file in $W/backups, want: restores | stops
+  export R="$work/r-$1"; mkdir -p "$R"; : > "$R/log"
+  ( cd "$W/backups" && GNUPGHOME="$K" MAITY_BACKUP_SIGNER=$signer PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$2")" restore test-context "$3" ) > "$R/out" 2>&1
+  local got=$? reached=stops
+  grep -q " exec " "$R/log" && reached=restores
+  local status_ok=no
+  if [ "$4" = restores ]; then [ "$got" = 0 ] && status_ok=yes; else [ "$got" != 0 ] && status_ok=yes; fi
+  if [ "$reached" = "$4" ] && [ "$status_ok" = yes ]; then echo "ok   restore/$1 ($reached, exit $got)"
+  else fail "restore/$1: $reached with exit $got (want $4)" "$R/out"; fi
+}
+for kind in dump attachments.tar; do
+  b=db-block; [ "$kind" = dump ] || b=att-block
+  restore "$kind-own-name" $b "maity-${new}Z.$kind.gpg" restores
+  restore "$kind-renamed" $b "maity-29991231T000000Z.$kind.gpg" stops
+  grep -q "signed under another name" "$work/r-$kind-renamed/out" && echo "ok   restore/$kind-renamed: names the reason" || fail "restore/$kind-renamed: no reason" "$work/r-$kind-renamed/out"
 done
 
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures failure(s)"; exit 1; }
