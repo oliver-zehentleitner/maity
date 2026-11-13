@@ -243,3 +243,74 @@ def test_a_replay_answers_the_view_get_gives_the_caller(
     assert again.headers.get("Idempotent-Replayed") == "true"
     assert again.json() == admin.get(f"{PROJECT}/members/{member.id}").json() == first.json()
     assert "briefing" not in again.json() and "owner" not in again.json()
+
+
+def _stored_as(engine: Engine, key: str, resource_type: str) -> None:
+    """Give a stored key the discriminator a member PATCH wrote before it answered
+    `member_read`: such a key lives for a day across the upgrade (§1.5)."""
+    with engine.begin() as conn:
+        done = conn.execute(
+            update(t.idempotency_key)
+            .where(t.idempotency_key.c.idem_key == key)
+            .values(resource_type=resource_type)
+        )
+        assert done.rowcount == 1
+
+
+@pytest.mark.parametrize("stored", ["member", "member_team"])
+def test_an_old_key_of_a_managers_patch_replays_without_the_briefing(
+    stored: str, owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The manager's GET has no briefing of its subordinate (§6.2), so neither has the
+    replay of a key stored before this answer was the GET view."""
+    manager = flow.agent(make_client, owner, role="manager", reports_to=owner.id)
+    below = flow.agent(make_client, owner, reports_to=manager.id, briefing="Below the manager.")
+    path = f"/api/v1{PROJECT}/members/{below.id}"
+    key = f"old-manager-key-{stored}"
+    headers = manager.auth | {"Idempotency-Key": key}
+    first = manager.client.patch(path, json={"areas": ["web/"]}, headers=headers)
+    assert first.status_code == 200, first.text
+    _stored_as(migrated, key, stored)
+    again = manager.client.patch(path, json={"areas": ["web/"]}, headers=headers)
+    assert (again.status_code, again.headers.get("Idempotent-Replayed")) == (200, "true")
+    assert again.json() == manager.get(f"{PROJECT}/members/{below.id}").json()
+    assert "briefing" not in again.json()
+
+
+def test_an_old_key_replays_with_the_callers_rights_at_the_replay(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """An admin's old `member` key replayed after the admin became a plain member: the
+    view their GET gives them now, without the briefing and the details it gave before."""
+    deputy = _member_human(make_client, migrated, "deputy", "admin")
+    colleague = _member_human(make_client, migrated, "colleague", "member")
+    _set(migrated, _member_id(migrated, colleague.id), briefing="The colleague's briefing.")
+    path = f"/api/v1{PROJECT}/members/{colleague.id}"
+    key = "old-admin-key-0001"
+    headers = {"X-CSRF-Token": deputy.csrf, "Idempotency-Key": key}
+    first = deputy.client.patch(path, json={"areas": ["docs/"]}, headers=headers)
+    assert first.status_code == 200, first.text
+    assert first.json().keys() >= DETAILS and "briefing" in first.json()
+    _stored_as(migrated, key, "member")
+    demoted = owner.patch(f"{PROJECT}/members/{deputy.id}", {"trust": "member"})
+    assert demoted.status_code == 200, demoted.text
+    again = deputy.client.patch(path, json={"areas": ["docs/"]}, headers=headers)
+    assert (again.status_code, again.headers.get("Idempotent-Replayed")) == (200, "true")
+    read = deputy.get(f"{PROJECT}/members/{colleague.id}").json()
+    assert again.json() == read
+    assert not DETAILS & read.keys() and "briefing" not in read
+
+
+def test_an_old_key_of_another_member_write_keeps_its_answer(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`member` stays the answer of the other member writes: an isolation's replay is the
+    member as `load_member` gives it, briefing included, not the PATCH's GET view."""
+    agent = flow.agent(make_client, owner, briefing="An isolated agent.")
+    path = f"/api/v1{PROJECT}/members/{agent.id}/isolate"
+    headers = {"X-CSRF-Token": owner.csrf, "Idempotency-Key": "isolate-key-0001"}
+    first = owner.client.post(path, json={"reason": "a test"}, headers=headers)
+    assert first.status_code == 200, first.text
+    again = owner.client.post(path, json={"reason": "a test"}, headers=headers)
+    assert again.headers.get("Idempotent-Replayed") == "true"
+    assert "briefing" in again.json() and "manages" not in again.json()

@@ -232,14 +232,26 @@ def _patched(
 
 
 def load_member_as_read(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
-    """A replayed member `PATCH`: the view `GET` gives the caller now, as on the first answer."""
+    """A replayed member `PATCH`: the view `GET` gives the caller now, read with the caller's
+    rights at the replay (§1.5, §6.2), never a briefing or detail their `GET` would withhold."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
     slug = namespace.name_of(conn, row.project_id)
     return _answer_as_read(conn, request.state.caller, slug, row.id)
 
 
+def load_member_write(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
+    """A replayed member write stored as `member`. A member `PATCH` stored its keys so before
+    it answered `member_read`, and those keys live for a day (§1.5): they replay as
+    `member_read` does. The other writes that store `member` (`DELETE …/members/{id}`, the
+    isolation, `PATCH /me`, `POST /me/limit`) keep their answer, `load_member`."""
+    if getattr(request.scope.get("route"), "endpoint", None) is patch_member:
+        return load_member_as_read(conn, membership_id, request)
+    return load_member(conn, membership_id)
+
+
 idempotency.LOADERS["member_read"] = load_member_as_read
-# A key stored before the PATCH answered `member_read` replays as one (§1.5).
+# Keys a member `PATCH` stored before it answered `member_read` replay as one (§1.5): those
+# of its rulebook, owner and dormant paths as `member_team`, the rest as `member` (below).
 idempotency.LOADERS["member_team"] = load_member_as_read
 
 
@@ -248,7 +260,7 @@ def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
     return credential_view(conn, row)
 
 
-idempotency.LOADERS["member"] = idempotency.plain(load_member)
+idempotency.LOADERS["member"] = load_member_write
 idempotency.LOADERS["credential"] = idempotency.plain(load_credential)
 
 

@@ -1339,8 +1339,16 @@ member read again after the write. So `owner`, `credentials`, `manages`,
 `owner_preferences` and `shared_environment` are in the answer where that
 caller's `GET` has them, and the briefing only where its `GET` has it (the
 member itself and `members:admin`). A replay of the same `Idempotency-Key`
-answers the view as `GET` gives it then. A `202` (a consent filed) and the
-`204` of an owner outside the project stay as they were.
+answers the view as `GET` gives it then, with the caller's rights at the
+replay. That holds for the keys a member `PATCH` stored before this change
+too (a day's worth, §1.5): those stored as `member_team` and those stored
+as `member`. The `member` loader tells a member `PATCH` apart from the other
+writes that store `member` (`DELETE …/members/{id}`, the isolation,
+`PATCH /me`, `POST /me/limit`) by the replaying request's route. The key's
+stored fingerprint binds method and route, so a replay is always the
+stored call's route. Those other writes keep their answer. A `202` (a
+consent filed) and the `204` of an owner outside the project stay as they
+were.
 
 **Reason:** the answer of a member write left out five fields the same
 caller reads with `GET`, so a client had to read the member again after
@@ -1352,6 +1360,9 @@ wrong, the same reasoning as the overview's "no member view repeated".
 - Leaving the answer without those fields, a client reading the member
   again after a change: the extra read on every edit, the reason for the
   decision.
+- Turning the generic `member` loader into the `GET` view for every write
+  that stores it: the answers of `DELETE`, the isolation, `PATCH /me` and
+  `POST /me/limit` are not this decision's, and they would change with it.
 - What req-a6g57dnyxxev proposed and why option 1 replaced it: unknown —
   that request could not be read from this member's seat.
 
