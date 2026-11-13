@@ -13,6 +13,7 @@ from maity_hub import (
     API_VERSION,
     CLI_VERSION,
     __version__,
+    agent_owners,
     availability,
     avatars,
     bridges,
@@ -234,6 +235,11 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
     settings = settings_of(request)
     with events.transaction(engine_of(request)) as conn:
         mine = _own_membership(conn, caller)
+        if mine.row.role_base == agent_owners.FALLS_BACK and mine.row.isolated_since is None:
+            # An outsider's agent may hold no security team (§6.2): one that held it before the
+            # rule settles now, as `coder` or isolated, so no migration has to find it.
+            agent_owners.settle(conn, mine.project, mine.row, agent_owners.HUB)
+            mine = _own_membership(conn, caller)
         if mine.row.isolated_since is not None:
             return _isolated_packet(conn, mine, caller)  # no session, no event, no presence
         # Serialise with other writes to the project: two resumes of one

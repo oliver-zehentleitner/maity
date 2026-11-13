@@ -6,7 +6,10 @@ comes to read `members`. Under `anyone` an owner from outside may keep an agent 
 `outside_roles`: trust `member` or `guest` and a role that does the work, so the project's own
 members check what outsiders deliver; one beyond those limits when its owner leaves is isolated.
 `reconcile` is the one pass for all of it. It only isolates, never lifts, and an isolation
-already in place stays as it is.
+already in place stays as it is. A security team stays among the project's own owners: an
+outsider's agent that holds `blue-team` falls back to `coder` where
+the list allows it, and is isolated otherwise; `settle` does that for one member, and a resume
+calls it too, so a membership from before the rule settles without a migration.
 """
 
 from __future__ import annotations
@@ -23,6 +26,13 @@ from maity_hub.events import Actor
 OWNER_LEFT = "The agent's owner is no longer a member of this project."
 HUB = Actor(None)  # the events name no actor: the hub's own change
 OUTSIDE_TRUST = ("member", "guest")
+# The role base an outsider's agent may no longer hold, and the role it falls back to (§6.2).
+FALLS_BACK = "blue-team"
+FALLBACK_ROLE = "coder"
+FELL_BACK = (
+    "The agent's owner is no member of this project, and a security team stays among the "
+    "project's own owners."
+)
 
 
 def effective(conn: Connection, project: Any) -> str:
@@ -98,9 +108,69 @@ def isolate_by_hub(conn: Connection, project: Any, row: Any, actor: Actor) -> No
     cross_owner.withdraw_for_member(conn, row.id, actor, "owner_not_member")
 
 
+def falls_back(project: Any, row: Any) -> bool:
+    """Whether an outsider's agent beyond the limits only by a `blue-team` role is brought
+    within them as a `coder` (§6.2): its trust is one an outsider may hold and the project's
+    `outside_roles` lists `coder`."""
+    return (
+        row.role_base == FALLS_BACK
+        and row.trust in OUTSIDE_TRUST
+        and within_limits(project, row.trust, FALLBACK_ROLE, FALLBACK_ROLE)
+    )
+
+
+def fall_back(conn: Connection, project: Any, row: Any, actor: Actor) -> None:
+    """The role `coder` for an outsider's agent that holds `blue-team` (§6.2): the member
+    change as a `PATCH` writes it (`member_updated`, `changed` naming the role, a rules bump),
+    with no actor, and a notice to the agent's owner."""
+    from maity_hub import namespace
+    from maity_hub.routes import members
+    from maity_hub.routes.requests import file_hub_notice
+
+    change = members.Change(project, actor, isolation.BY_HUB, isolation.BY_HUB, None, None)
+    members.apply_patch(
+        conn,
+        change,
+        row,
+        {"role": FALLBACK_ROLE, "role_base": FALLBACK_ROLE},
+        (False, None),
+    )
+    handle = conn.execute(
+        select(t.agent_profile.c.handle).where(t.agent_profile.c.id == row.agent_id)
+    ).scalar_one()
+    summary = "\n".join(
+        [
+            f"Project: `{namespace.full_name(conn, project)}`.",
+            f"Role: `{row.role}` is now `{FALLBACK_ROLE}`.",
+            f"Reason: {FELL_BACK}",
+            "By: `the hub`.",
+        ]
+    )
+    file_hub_notice(
+        conn, project.id, row.id, row.agent_id, f"{handle} is now a {FALLBACK_ROLE}", summary
+    )
+
+
+def settle(conn: Connection, project: Any, row: Any, actor: Actor, mode: str | None = None) -> None:
+    """One active agent member against the project's setting (§6.2): nothing while its owner
+    is a member or it stays within the limits, `coder` for a `blue-team` that may fall back,
+    else the hub's isolation. An isolated member stays as it is."""
+    if isolation.is_isolated(row) or not is_outside(conn, project, row):
+        return
+    mode = mode or effective(conn, project)
+    if mode == "anyone":
+        if within_limits(project, row.trust, row.role, row.role_base):
+            return
+        if falls_back(project, row):
+            fall_back(conn, project, row, actor)
+            return
+    isolate_by_hub(conn, project, row, actor)
+
+
 def reconcile(conn: Connection, project_id: str, actor: Actor | None = None) -> None:
     """Isolate what the project's setting does not let stay: under `members` every agent whose
-    owner is no member, under `anyone` those of an outside owner beyond `outside_roles`."""
+    owner is no member, under `anyone` those of an outside owner beyond `outside_roles`, where
+    one beyond them only by `blue-team` falls back to `coder` instead (`settle`)."""
     found = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
     mode = effective(conn, found)
     rows = conn.execute(
@@ -114,11 +184,7 @@ def reconcile(conn: Connection, project_id: str, actor: Actor | None = None) -> 
         .order_by(t.membership.c.id)
     ).all()
     for row in rows:
-        if not is_outside(conn, found, row):
-            continue
-        if mode == "anyone" and within_limits(found, row.trust, row.role, row.role_base):
-            continue
-        isolate_by_hub(conn, found, row, actor or HUB)
+        settle(conn, found, row, actor or HUB, mode)
 
 
 def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: str) -> None:
@@ -182,7 +248,8 @@ def check_assignment(conn: Connection, project: Any, row: Any, values: dict[str,
 
 def check_policy(conn: Connection, project: Any, roles: list[str]) -> str | None:
     """`outside_owner` when a new `outside_roles` would leave an outsider's agent that is at
-    work with a role not on it."""
+    work with a role not on it. One on `blue-team` is no list's to keep: the pass after the
+    change settles it (`settle`)."""
     for row in conn.execute(
         select(t.membership).where(
             t.membership.c.project_id == project.id,
@@ -191,6 +258,8 @@ def check_policy(conn: Connection, project: Any, roles: list[str]) -> str | None
             t.membership.c.isolated_since.is_(None),
         )
     ):
+        if row.role_base == FALLS_BACK:
+            continue
         if is_outside(conn, project, row) and row.role not in roles:
             return "outside_owner"
     return None
