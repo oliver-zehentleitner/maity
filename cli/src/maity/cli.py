@@ -683,6 +683,12 @@ def _event_line(event: dict[str, Any]) -> str:
             f"#{onboarding.inline(event.get('seq'))} chat_unread: {unread} unread in {where}: "
             f"maity chat {chat_id}"
         )
+    if event.get("kind") == "chat_rules_changed":
+        # §9.6: the payload names the entry only, never the texts; they are read here.
+        return (
+            f"#{onboarding.inline(event.get('seq'))} chat_rules_changed: your owner changed the "
+            "rules for a side you chat with: maity resume shows them, maity chat <id> each chat's"
+        )
     if event.get("kind") == "session_model_changed":
         before = onboarding.get(event, "payload", "from") or {}
         after = onboarding.get(event, "payload", "to") or {}
@@ -690,6 +696,28 @@ def _event_line(event: dict[str, Any]) -> str:
     if title:
         line += f": {onboarding.inline(title)[:120]}"
     return line + _attachments_suffix(event) + onboarding.standing(event) + _chat_suffix(event)
+
+
+def _group_chat_of(event: dict[str, Any]) -> str | None:
+    """The group chat a chat message is in, when its id is one the CLI puts in a path."""
+    if event.get("kind") != "message" or onboarding.get(event, "payload", "type") != "chat":
+        return None
+    group = onboarding.get(event, "payload", "conversation")
+    chat = group.get("id") if isinstance(group, dict) else None
+    if not isinstance(chat, str) or not chat.startswith("cnv-") or not FETCHABLE_ID.fullmatch(chat):
+        return None
+    return chat
+
+
+def _chat_rules(session: Session, chat: str) -> list[str]:
+    """The rules per side that hold in this group chat (§9.6, the chat's view as the agent
+    reads it), as lines; none when there are none or the view cannot be read now: the rules
+    stay in the resume packet, and a failed read must not cost the wake."""
+    try:
+        view = session.client.call("GET", session.project_path("conversations", chat))
+    except hub.HubError:
+        return []
+    return onboarding.chat_rules_lines(_field(view, "chat_rules"), chats=False)
 
 
 def _chat_suffix(event: dict[str, Any]) -> str:
@@ -991,10 +1019,17 @@ def cmd_wait(args: argparse.Namespace) -> int:
                     _err(note)
                 for line in onboarding.jour_fixe_lines(event):  # §20.9: what it asks of you
                     _err(line)
+            ruled: dict[str, list[str]] = {}  # one read of a chat's view per wake
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
                 for line in _attachment_lines(event):  # part of the message: open them first
                     print(line, file=sys.stderr)  # no `maity:` prefix: the line is the command
+                chat = _group_chat_of(event)
+                if chat is not None:
+                    if chat not in ruled:
+                        ruled[chat] = _chat_rules(session, chat)
+                    for line in ruled[chat]:  # binding with every message of that chat (§9.6)
+                        print(f"  {line}", file=sys.stderr)
             if any(event.get("kind") == "message" for event in taken):
                 _err(DATA_NOTE)
             _print_json(taken[0] if args.one else taken)
@@ -2094,6 +2129,9 @@ def cmd_chat(args: argparse.Namespace) -> int:
     handles = _handles(listed) if listed else {}
     limit = args.limit or CHAT_DEFAULT
     notes: list[str] = []
+    # Read before the messages: what holds in this chat comes first (§9.6, "Rules per side").
+    group = conversation.startswith("cnv-") and FETCHABLE_ID.fullmatch(conversation)
+    rules = _chat_rules(session, conversation) if group and not args.json else []
     if args.before is not None:
         items, page = _back(session, conversation, args.before, limit)
         earlier = _field(page, "earlier")
@@ -2111,6 +2149,8 @@ def cmd_chat(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(items)
         return EXIT_OK
+    for line in rules:  # above the messages (§9.6)
+        print(line)
     for m in items:
         sender = m.get("from")
         who = handles.get(sender, sender) if isinstance(sender, str) else sender
