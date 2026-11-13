@@ -98,8 +98,7 @@ def test_the_invitation_page_sends_no_referrer_and_the_others_keep_theirs(
     assert client.get("/maintainer/maity/board").headers["referrer-policy"] == "same-origin"
 
 
-# Every path the shell answers, signed in or not: the dashboard and the pages before a sign-in
-# (docs/api.md §1.1, §16.11).
+# A sample of the paths the shell answers (docs/api.md §1.1, §16.11).
 SHELL_PATHS = (
     "/",
     "/maintainer/maity/board",

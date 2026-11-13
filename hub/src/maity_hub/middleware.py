@@ -73,9 +73,9 @@ _LANDING_PREVIEWS = (
     "/api/v1/admin/settings/legal/preview",
     f"{_AUTH_PAGES}/check",
 )
-# The policy of every HTML document that brings none of its own: the app shell at every path,
-# the signed-in dashboard and the pages before a sign-in alike (§1.1, §16.11). `base-uri` is
-# `'self'`, not `'none'`: the shell's own `<base href="/assets/">` (shell.BASE) must keep working.
+# The policy of every HTML document that brings none of its own: the app shell at every path
+# (§1.1, §16.11). `base-uri` is `'self'`, not `'none'`: the shell's own `<base href="/assets/">`
+# (shell.BASE) must keep working.
 CSP = (
     "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
     "object-src 'none'"

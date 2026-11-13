@@ -104,7 +104,7 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   `Permissions-Policy: camera=(), microphone=(), geolocation=(),
   payment=(), usb=()`, unless its route sets one of them itself. A
   document without a policy of its own (the app shell at every path,
-  §16.11, the dashboard and the pages before a sign-in alike) gets
+  §16.11) gets
   `Content-Security-Policy: default-src 'self'; frame-ancestors 'none';
   base-uri 'self'; form-action 'self'; object-src 'none'` (`base-uri
   'self'` for the shell's own `<base href="/assets/">`) and, unless its
