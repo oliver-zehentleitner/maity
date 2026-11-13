@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, delete, insert, select, update
 
 from maity_hub import chat_gate, clock, events
 from maity_hub import tables as t
@@ -210,3 +210,55 @@ def test_an_entry_whose_until_passes_is_a_change(
     assert len(after) == before + 1
     assert after[-1].payload == {"entry_id": entry["id"]}
     assert after[-1].audience == [f"member:{theirs.id}"]
+
+
+@pytest.mark.parametrize("read", ["view", "packet"])
+def test_an_entry_retargeted_during_the_read_never_shows_another_agents_rules(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    read: str,
+) -> None:
+    """v5vp's hint on #1733: an entry moved from agent A to agent B, with a new text, between the
+    statements of A's read. On PostgreSQL each statement sees what was committed when it began
+    (READ COMMITTED), so the entries, their agents and their texts are read in one statement and
+    the texts are not read again; A then gets the old text or none, never B's."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("a single read sees one snapshot on SQLite and MariaDB")
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    second = flow.agent(make_client, other)
+    entry = allow(other, agents=[theirs.id], owner_id=owner.id, their_human=True, allowed="for A")
+    chat = create(owner, theirs.id).json()
+    original = chat_gate.chats_of_owner
+    moved: list[bool] = []
+
+    def retarget_first(conn: Any, who: str) -> Any:
+        if not moved:
+            moved.append(True)
+            g = t.chat_access_agent.c
+            with migrated.begin() as other_conn:  # its own connection, committed at once
+                other_conn.execute(delete(t.chat_access_agent).where(g.entry_id == entry["id"]))
+                other_conn.execute(
+                    insert(t.chat_access_agent).values(
+                        entry_id=entry["id"], side="own", agent_id=second.id
+                    )
+                )
+                other_conn.execute(
+                    update(t.chat_access)
+                    .where(t.chat_access.c.id == entry["id"])
+                    .values(allowed="for B only")
+                )
+        return original(conn, who)
+
+    monkeypatch.setattr(chat_gate, "chats_of_owner", retarget_first)
+    if read == "view":
+        got = view(theirs, chat["id"])
+        assert got.status_code == 200, got.text
+        rules = got.json()["chat_rules"]
+    else:
+        rules = theirs.resume().json()["chat_rules"]
+    assert moved
+    assert "for B only" not in str(rules)
+    assert [r["allowed"] for r in rules] in ([], ["for A"])

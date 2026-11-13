@@ -38,9 +38,10 @@ Texts = tuple[str | None, str | None]
 
 @dataclass
 class _Reach:
-    """One allow entry: its texts, and the chats it admits each agent to, as
+    """One allow entry as read (`row`), its texts, and the chats it admits each agent to, as
     `(agent, project, conversation)`."""
 
+    row: Any
     texts: Texts
     chats: set[tuple[str, str, str]] = field(default_factory=set)
 
@@ -54,11 +55,11 @@ def _reach(
     """Every allow entry of `owner` with a text, and what it admits the owner's agents to in
     their open group chats; with `agent`, only that agent's chats. An entry in `lapsing` counts
     as if its `until` had not passed yet."""
-    entries = chat_gate._entries(conn, [owner])[owner]
+    entries = _entries(conn, owner)
     found = {
-        e.id: _Reach((e.allowed, e.denied))
+        e.id: _Reach(e, (e.allowed, e.denied))
         for e in entries.rows
-        if e.kind == chat_access.ALLOW and (e.allowed is not None or e.denied is not None)
+        if e.allowed is not None or e.denied is not None
     }
     if not found:
         return found
@@ -86,19 +87,40 @@ def _reach(
     return found
 
 
+def _entries(conn: Connection, owner: str) -> chat_gate._Entries:
+    """The owner's allow entries with the agents each names on each side, read in one statement:
+    on PostgreSQL every statement of a read sees what was committed when it began, so a second
+    statement could pair an entry's texts with the agents of a write committed in between, and
+    an agent read the rules written for another (v5vp's hint on #1733). The texts the items carry
+    are these rows' (`_items`), never read again."""
+    c, g = t.chat_access.c, t.chat_access_agent.c
+    found = chat_gate._Entries()
+    seen: set[str] = set()
+    for r in conn.execute(
+        select(t.chat_access, g.side.label("named_side"), g.agent_id.label("named_agent"))
+        .outerjoin(t.chat_access_agent, g.entry_id == c.id)
+        .where(c.human_id == owner, c.kind == chat_access.ALLOW)
+        .order_by(c.id)
+    ):
+        if r.id not in seen:
+            seen.add(r.id)
+            found.rows.append(r)
+        if r.named_agent is not None:
+            side = found.own if r.named_side == chat_access.OWN else found.theirs
+            side[r.id].add(r.named_agent)
+    return found
+
+
 def _items(conn: Connection, reach: dict[str, _Reach], keep: Any) -> list[dict[str, Any]]:
-    """The items of the entries whose chats `keep` lets through, oldest entry first."""
+    """The items of the entries whose chats `keep` lets through, oldest entry first, with the
+    texts as `_entries` read them."""
     chosen = {
         entry_id: sorted({c for _, _, c in filter(keep, r.chats)}) for entry_id, r in reach.items()
     }
     chosen = {k: v for k, v in chosen.items() if v}
     if not chosen:
         return []
-    rows = conn.execute(
-        select(t.chat_access)
-        .where(t.chat_access.c.id.in_(list(chosen)))
-        .order_by(t.chat_access.c.since, t.chat_access.c.id)
-    ).all()
+    rows = sorted((reach[k].row for k in chosen), key=lambda r: (r.since, r.id))
     return [
         {
             "entry_id": view["id"],
