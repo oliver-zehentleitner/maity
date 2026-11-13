@@ -19,6 +19,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     bridges,
+    chat_request,
     clock,
     cover,
     cross_owner,
@@ -110,6 +111,18 @@ class ForwardIn(Strict):
     reason: str | None = markdown(default=None)
 
 
+class ChatAccessIn(Strict):
+    """What the owner sets beside an allow reply to the request to chat with their agents
+    (§9.6): the ticked agents (never `"all"`), the reach on the other side, its human, and
+    the rules for the entries the answer writes."""
+
+    agents: list[str] | None = Field(default=None, max_length=1000)
+    their_agents: Literal["all", "none"] | list[str] | None = None
+    their_human: bool | None = None
+    allowed: str | None = None
+    denied: str | None = None
+
+
 class AnswerIn(Written):
     on_behalf_of: str | None = None  # the owner whose answer a proxy records (§2.3)
     reply_id: str | None = Field(default=None, max_length=64)
@@ -118,6 +131,18 @@ class AnswerIn(Written):
     # A human's edit of a preference proposal, with the version it was made on (§19.4).
     markdown: str | None = Field(default=None, max_length=16384)
     base_version: int | None = Field(default=None, ge=0)
+    chat_access: ChatAccessIn | None = None
+
+    def chat_access_body(self) -> dict[str, Any] | None:
+        """`chat_access` as the settlement reads it: what was sent, a `null` reach left out."""
+        if self.chat_access is None:
+            return None
+        sent = self.chat_access.model_dump(exclude_unset=True)
+        return {
+            k: v
+            for k, v in sent.items()
+            if v is not None or k not in ("agents", "their_agents", "their_human")
+        }
 
 
 class WithdrawIn(Strict):
@@ -1289,6 +1314,7 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
         raise invalid({"markdown": "not_a_preference_proposal"})
     if edits and (body.reply_id != "go" or body.markdown is None or body.base_version is None):
         raise invalid({"markdown": "go_with_markdown_and_base_version"})
+    chat_request.check_answer(row, body.reply_id, body.chat_access_body())
 
 
 def _relayed_owner(conn: Connection, mine: Membership, body: AnswerIn) -> str | None:
@@ -2485,6 +2511,7 @@ def answer_personal(
             reply_id=body.reply_id,
             hub=settings_of(request),
             answerer=caller,
+            chat_access=body.chat_access_body(),
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)
@@ -2555,6 +2582,7 @@ def withdraw_personal(
                 "withdrawn",
                 None,
                 caller.actor(member.id) if member is not None else None,
+                answerer=caller,
             )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)

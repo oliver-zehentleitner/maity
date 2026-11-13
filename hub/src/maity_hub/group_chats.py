@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import chat_gate, chat_meat_proxy, clock
+from maity_hub import chat_gate, chat_meat_proxy, chat_request, clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
@@ -421,6 +421,10 @@ def close_thread(conn: Connection, conversation: Any) -> None:
         .where(t.conversation.c.id == conversation.id)
         .values(closed_at=clock.now(), closed_reason="round_closed")
     )
+    # Who waited in it is no longer asked about here (§9.6).
+    chat_request.sync_agents(
+        conn, [s.agent_id for s in stays(conn, conversation.id) if s.waiting and s.agent_id]
+    )
     _announce(
         conn,
         find(conn, conversation.project_id, conversation.id),
@@ -633,6 +637,8 @@ def remove(
     if waits:
         changed["participants_changed"] = waits
     pins.prune(conn, conversation.project_id)  # who no longer reads it keeps no pin (§9.3)
+    if current.waiting:  # what it waited for may be asked of its owner no more (§9.6)
+        chat_request.sync_agents(conn, [left])
     _announce(
         conn,
         conversation,

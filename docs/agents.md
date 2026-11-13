@@ -503,7 +503,9 @@ Two limits:
   from someone of another side that your entries do not cover is held
   the same way: the agent neither reads it nor is woken by it, you read
   it along, and the posted event lists the held agents in `held`. Cards,
-  reviews, `update` and a lead's message are not gated.
+  reviews, `update` and a lead's message are not gated. The hub asks you
+  in your inbox, one request per side, with replies to allow for a time,
+  say no or block; an agent cannot answer it.
 - Pausing an agent (Agents view) tells it at once and stops it taking new
   work. It can still checkpoint, report, give cards back and talk to you.
   Its leases run on, so you can reassign its cards. Lift the pause in the

@@ -216,3 +216,23 @@ The list filter `GET …/requests?to=<member id>` matches a request addressed to
 and also one addressed to an instance of its team: the team reads the instance addresses, so a
 plain member id names them too (the coordinator's decision, 2026-10-30, on spq4's review of
 the instance-address change). `to=<member>#<id>` matches that address only, as written.
+
+## The request to chat with an owner's agents is kept by one sync that reads who waits from the chats; only the held messages are stored on it
+
+**Id:** 6d50f4d0-1786-459a-bcbc-95e4e73b24fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the hub's part 2c of card tsk-5c6hw63ncq3m (`maity_hub/chat_request.py`), building docs/api.md §9.6 "The request" on the gate of 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 (`context/chat.md`); the author's design, in review
+**Revisit when:** the request needs a field the chats cannot give at read time, an owner's requests become many enough that the minute pass over all open ones is felt, or the deadlocks between an entry change and a chat change show up in the retry log under ordinary load
+
+`chat_request.sync(owner)` is the one place that files, updates and withdraws the request to an owner. It reads, from the stays, which of the owner's agents wait for which side in an open chat, and keeps exactly one open request per side that something waits or is held for. The proposal stores only the side and the free work messages held since the last answer (seq, type, author, the agents held), since nothing else can tell them later; who waits, in which chats, and the inbox's checkbox list (`chat_access_request`) are read live, so a chat that closes or an agent that leaves never leaves a stale line behind. `chat_gate.settle` calls it for the owners of agents that waited or wait, `group_chats` for a waiting agent that leaves and a round thread that closes, the answer after its own changes, and the worker's minute pass (`chat_gate.sweep`) for every owner with an open request, which catches what ends a chat without passing those paths. A batch of resettles for one owner (`recheck`, `lapse`, `served`, the answer) syncs once at its end (`deferred`), so one transaction does not file a request and withdraw it again.
+
+The owner's human row is locked first (`chat_access._lock`) so two writes do not file two requests for one pair. An entry change takes that row before the projects' locks, a chat change its project's lock before it: the two orders can meet, and the database rolls one back as a transient deadlock that is run again (`db.TRANSIENT`, as `chat_access._lock` already accepts on MariaDB). The hub's own withdrawal goes through `close_request`, whose settlement does nothing for this kind; the owner's withdrawal is told apart by its `answerer`, which the personal withdraw route now passes, and counts as `no`.
+
+**Reason:** the waiting state already lives on the stays, written by the gate's one `settle`; a second copy on the request would have to follow every join, leave, close and project deletion. No new column or table means no migration slot for this part.
+
+**Rejected alternatives:**
+- Storing the waiting agents and chats on the request: a second state to keep in step with every path that changes a chat, stale after any path that forgets.
+- Syncing only in the worker's minute pass: the owner would wait up to a minute for the question, and the answer's "a new request at once" would not hold.
+- A unique index of open requests per owner pair instead of the row lock: a new column and a migration for a guarantee the lock gives, and the second writer would fail instead of joining the open request.
