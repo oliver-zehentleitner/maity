@@ -2743,6 +2743,16 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
         [address, password],
     )
     page.goto(catcher.link_in(address, "/mail/register/"))
+    # The registration link's page stands in the door frame, as /login does (§2.7.1, §16.7.5).
+    expect(page.locator("header.site-header")).to_be_visible()
+    expect(page.locator("footer.site-footer")).to_be_visible()
+    expect(page.locator(".door-page")).to_have_css("display", "grid")
+    run.shot(page, "registration-link")
+    run.a11y(page, "the registration link's page")
+    page.set_viewport_size({"width": 390, "height": 844})
+    run.shot(page, "registration-link-390")
+    run.a11y(page, "the registration link's page at 390 px")
+    page.set_viewport_size({"width": 1280, "height": 900})
     page.locator("#password").fill(password)
     page.locator("#handle").fill(handle)
     page.locator("#display_name").fill("Ada")

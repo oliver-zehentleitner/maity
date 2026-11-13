@@ -19,7 +19,7 @@ from typing import Any
 from urllib.parse import unquote_to_bytes
 
 from sqlalchemy import Engine
-from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
@@ -356,7 +356,17 @@ class HubMiddleware:
 
             response = Response(status_code=503, headers=headers)
         else:
-            response = maintenance.refusal_page(found)
+            # The frame where it can be read; a hub whose landing setting cannot be read (a
+            # migration under way) still answers the small page (§16.12), and so does the join
+            # host, which serves none of the frame's stylesheets (§1.1).
+            frame = None
+            if not scope["state"].get("on_join_host"):
+                try:
+                    frame = await run_in_threadpool(maintenance.frame_of, self.engine)
+                except SQLAlchemyError:
+                    frame = None
+            accept = Request(scope).headers.get("accept-language")
+            response = maintenance.refusal_page(found, frame, accept)
         await response(scope, receive, send)
         _access(scope, 503)
         return True

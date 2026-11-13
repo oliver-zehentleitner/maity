@@ -24,7 +24,6 @@ from maity_hub import (
     render,
 )
 from maity_hub import tables as t
-from maity_hub.routes import register_page
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_email_sign_in import ask, mail, setup
@@ -181,7 +180,8 @@ def strict(response: Any) -> str:
     return page
 
 
-def test_the_maintenance_page_ends_with_the_line_and_sends_no_referrer() -> None:
+def test_the_maintenance_page_without_its_frame_ends_with_the_line_and_sends_no_referrer() -> None:
+    # Where the landing setting could not be read (§16.12): the small page, never none.
     found: dict[str, Any] = {"until": "2026-11-03T12:00:00Z", "text": "Upgrade"}
     response = maintenance.refusal_page(found)
     page = strict(response)
@@ -189,14 +189,23 @@ def test_the_maintenance_page_ends_with_the_line_and_sends_no_referrer() -> None
     assert response.headers["Retry-After"]
 
 
-def test_the_registration_link_page_ends_with_the_line() -> None:
-    page = bytes(register_page._dead().body).decode()
-    assert 'class="product-line"' in page
-    # Its policy allows its stylesheet: the line centred and muted, the mark follows a dark
-    # theme there (§16.13).
-    assert product_line.STYLE + product_line.DARK in page
-    german = render.form_document(lang="de", title="t", content="", footer="")
-    assert "Einen Fehler gefunden?" in german  # in the page's language
+def test_the_maintenance_page_stands_in_the_frame(migrated: Engine) -> None:
+    # §16.7.5, §16.12 (tsk-tp97v64vpy5z): the landing page's header and footer around the door,
+    # the frame's footer in the product line's place.
+    found: dict[str, Any] = {"until": "2026-11-03T12:00:00Z", "text": "Upgrade <now>"}
+    response = maintenance.refusal_page(found, maintenance.frame_of(migrated), "de")
+    assert response.status_code == 503 and response.headers["Retry-After"]
+    page = framed(response)
+    assert "<h1>Maintenance</h1>" in page and "Back at 2026-11-03T12:00:00Z UTC." in page
+    assert "Upgrade &lt;now&gt;" in page and 'class="product-line"' not in page
+
+
+def test_the_registration_link_page_stands_in_the_frame(make_client: ClientFactory) -> None:
+    # §2.7.1, §16.7.5 (tsk-tp97v64vpy5z): the dead link in the door, no product line, no cache.
+    dead = make_client().get("/mail/register/garbage")
+    assert dead.status_code == 404 and dead.headers["Cache-Control"] == "no-store"
+    page = framed(dead)
+    assert "<h1>This link no longer works.</h1>" in page and 'class="product-line"' not in page
 
 
 def test_a_mail_link_page_stands_in_the_frame_in_the_humans_language(
@@ -285,7 +294,7 @@ def framed(response: Any) -> str:
     """A sign-in link page in the frame (§16.7.5): the landing page's header, door and footer
     under the landing page's stylesheets, no script, no inline style, no product line, and its
     policy and no referrer (the token is in the address)."""
-    page = str(response.text)
+    page = str(response.text) if hasattr(response, "text") else bytes(response.body).decode()
     assert response.headers["Content-Security-Policy"] == render.DOOR_CSP
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert page.count('<header class="site-header') + page.count("<header lang=") == 1

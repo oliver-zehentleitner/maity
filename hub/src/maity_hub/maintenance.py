@@ -131,23 +131,60 @@ PAGE = (
 )
 
 
-def refusal_page(found: dict[str, Any]) -> Any:
-    """The small `503` page of the hub's own pages while a window runs (§16.12)."""
+def frame_of(engine: Engine) -> dict[str, Any]:
+    """What the frame of the pages without a session is drawn from (§16.7.5): the landing
+    setting, the legal pages served and the counters its sections name."""
+    from maity_hub import landing, landing_stats, legal
+
+    with engine.begin() as conn:
+        setting = landing.stored(conn)
+        return {
+            "setting": setting,
+            "legal": legal.public(legal.stored(conn)),
+            "stats": landing_stats.for_frame(conn, setting),
+        }
+
+
+def refusal_page(
+    found: dict[str, Any],
+    frame: dict[str, Any] | None = None,
+    accept_language: str | None = None,
+) -> Any:
+    """The `503` page of the hub's own pages while a window runs (§16.12): in the landing page's
+    header and footer around the door (§16.7.5) where `frame` could be read, else the small page
+    with the product line, so it never depends on more than the window it reports."""
     from html import escape
 
     from starlette.responses import HTMLResponse
 
-    from maity_hub import product_line
+    from maity_hub import product_line, render
 
+    headers = {"Retry-After": str(retry_after(found))}
+    if frame is not None:
+        content = (
+            "<h1>Maintenance</h1>"
+            f'<p class="intro">Back at {escape(found["until"])} UTC.</p>'
+            f"<p>{escape(found['text'])}</p>"
+        )
+        page = render.door_document(
+            lang="en",
+            title="Maintenance",
+            content=content,
+            setting=frame["setting"],
+            legal=frame["legal"],
+            stats=frame["stats"],
+            accept_language=accept_language,
+        )
+        # It also answers the paths with a token in them (`/join/…`, `/mail/…`): no referrer.
+        door = {"Content-Security-Policy": render.DOOR_CSP, "Referrer-Policy": "no-referrer"}
+        return HTMLResponse(page, status_code=503, headers={**headers, **door})
     page = PAGE.format(
         until=escape(found["until"]),
         text=escape(found["text"]),
         style=product_line.HEAD,
         product=product_line.html("en"),
     )
-    # It also answers the paths with a token in them (`/join/…`, `/mail/…`): no referrer.
-    headers = {"Retry-After": str(retry_after(found)), **product_line.HEADERS}
-    return HTMLResponse(page, status_code=503, headers=headers)
+    return HTMLResponse(page, status_code=503, headers={**headers, **product_line.HEADERS})
 
 
 def retry_after(found: dict[str, Any]) -> int:

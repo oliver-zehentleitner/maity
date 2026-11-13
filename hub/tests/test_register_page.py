@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, product_line
+from maity_hub import clock, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.notifications import tokens
@@ -453,38 +453,51 @@ def test_terms_set_while_the_page_was_open_ask_first(
     assert humans(migrated) == []
 
 
+def store_legal(engine: Engine, served: dict[str, str | None]) -> None:
+    """Legal pages as the admin's setting stores them: a version per page, `None` not set."""
+    with engine.begin() as conn:
+        for page, version in served.items():
+            if version is not None:
+                conn.execute(
+                    t.legal_version.insert(),
+                    {
+                        "page": page,
+                        "version": version,
+                        "languages": {"en": {"title": page, "markdown": "x"}},
+                        "created_at": clock.now(),
+                    },
+                )
+            conn.execute(t.legal_page.insert(), {"page": page, "current": version})
+
+
+def footer_of(page: Any) -> str:
+    text: str = page.text
+    return text.split('<footer class="site-footer">', 1)[1].split("</footer>", 1)[0]
+
+
 def test_the_page_links_the_legal_pages_the_instance_serves(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     client, link = start(make_client, migrated, hub())
     page = client.get(link)
-    assert 'href="/privacy"' not in page.text and 'href="/terms"' not in page.text  # none set
-    with migrated.begin() as conn:
-        conn.execute(
-            t.legal_page.insert(),
-            [
-                {"page": "privacy", "current": "v1"},
-                {"page": "terms", "current": "v2"},
-                {"page": "imprint", "current": None},
-            ],
-        )
+    assert "/privacy" not in page.text and "/terms" not in page.text  # none set
+    store_legal(
+        migrated,
+        {"privacy": "2026-11-01T00:00:00Z", "terms": "2026-11-02T00:00:00Z", "imprint": None},
+    )
     page = client.get(link)
-    # The privacy notice and the terms, as the dashboard's registration form links them
-    # (§16.7.1); a page that is not set is no link.
-    assert '<a href="/privacy">Privacy notice</a> · <a href="/terms">Terms of use</a>' in page.text
-    assert 'href="/impressum"' not in page.text
+    # The frame's footer links the legal pages that are set (§16.7.5); one not set is no link.
+    footer = footer_of(page)
+    assert re.search(r'<a href="/privacy(\?lang=en)?">', footer), footer
+    assert re.search(r'<a href="/terms(\?lang=en)?">', footer), footer
+    assert "/impressum" not in page.text
 
 
 def serve_legal(engine: Engine) -> None:
-    with engine.begin() as conn:
-        conn.execute(
-            t.legal_page.insert(),
-            [
-                {"page": "imprint", "current": "v1"},
-                {"page": "privacy", "current": "v2"},
-                {"page": "terms", "current": None},
-            ],
-        )
+    store_legal(
+        engine,
+        {"imprint": "2026-11-01T00:00:00Z", "privacy": "2026-11-02T00:00:00Z", "terms": None},
+    )
 
 
 def test_the_legal_links_are_in_the_page_language(
@@ -493,12 +506,12 @@ def test_the_legal_links_are_in_the_page_language(
     client, link = start(make_client, migrated, hub(), language="de-AT")
     serve_legal(migrated)
     page = client.get(link)
-    # In the order of legal.PAGES, each label in the registration's language (§2.7.1).
-    assert (
-        '<a href="/impressum">Impressum</a> · <a href="/privacy">Datenschutzerklärung</a>'
-        in page.text
-    )
-    assert 'href="/terms"' not in page.text
+    # The frame in the registration's language (§2.7.1, §16.7.5), its footer with the labels
+    # of that language.
+    assert page.text.startswith('<!doctype html><html lang="de"')
+    footer = footer_of(page)
+    assert re.search(r'<a href="/impressum(\?lang=de)?">Impressum</a>', footer), footer
+    assert "/terms" not in page.text
 
 
 def test_a_refused_answer_draws_the_page_again_with_its_legal_links(
@@ -509,45 +522,35 @@ def test_a_refused_answer_draws_the_page_again_with_its_legal_links(
     page = client.get(link)
     refused = answer(client, link, page, handle="x")  # a bad handle: the form comes back
     assert refused.status_code == 400, refused.text
-    assert (
-        '<a href="/impressum">Imprint</a> · <a href="/privacy">Privacy notice</a>' in refused.text
-    )
+    assert footer_of(refused) == footer_of(page)
     assert humans(migrated) == []
 
 
-def test_the_page_wears_the_legal_pages_shell_and_loads_nothing_from_elsewhere(
+def test_the_page_stands_in_the_door_frame_and_loads_nothing_from_elsewhere(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """The legal pages' head, colours and panel, one inline style and no script; every address
-    on the page is the hub's own, since the token is in this page's address (§2.7.1)."""
+    """The landing page's header and footer around the door, as `/login` draws it, no script;
+    every address the page loads is the hub's own, since the token is in this page's address
+    (§2.7.1, §16.7.5)."""
     client, link = start(make_client, migrated, hub(**TERMS), language="de")
     serve_legal(migrated)
     for page in (client.get(link), client.get("/mail/register/not-a-token")):
         assert page.text.startswith("<!doctype html><html lang=")
-        assert '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a>' in (
-            page.text
-        )
-        assert '<div class="panel">' in page.text and "--accent:" in page.text
-        assert "prefers-color-scheme:dark" in page.text  # light and dark
+        assert '<header class="site-header dz">' in page.text
+        assert 'class="door-page"' in page.text
+        assert '<footer class="site-footer">' in page.text
         assert 'name="viewport" content="width=device-width, initial-scale=1"' in page.text
-        assert "<script" not in page.text and "<link" not in page.text
-        # Nothing loads from elsewhere; the product line's four links are links (§16.13).
-        external = {
-            product_line.ISSUES,
-            product_line.SECURITY,
-            product_line.GITHUB,
-            product_line.PROFILE,
-        }
-        for address in re.findall(r'(?:src|href|action)="([^"]*)"', page.text):
-            if address in external:
-                continue
+        assert "<script" not in page.text
+        # What the page loads is the hub's own; links may lead elsewhere (§16.13).
+        for address in re.findall(r'(?:src|action)="([^"]*)"', page.text) + re.findall(
+            r'<link [^>]*href="([^"]*)"', page.text
+        ):
             assert address.startswith("/") and not address.startswith("//"), address
-        policy = page.headers["content-security-policy"]
-        assert "default-src 'none'" in policy and "form-action 'self'" in policy
+        assert page.headers["content-security-policy"] == render.DOOR_CSP
+        assert page.headers["referrer-policy"] == "no-referrer"
         assert page.headers["cache-control"] == "no-store"
     form = client.get(link)
-    assert '<html lang="de">' in form.text
-    assert '<footer><div class="wrap"><p><a href="/impressum">Impressum</a>' in form.text
+    assert '<html lang="de"' in form.text and "Impressum" in footer_of(form)
 
 
 def test_a_fields_error_stands_under_it_and_is_tied_to_it(

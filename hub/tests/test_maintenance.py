@@ -242,6 +242,22 @@ def test_the_root_is_the_shell_for_a_signed_in_reader_and_the_503_page_for_a_vis
     assert page.headers["Retry-After"] == str(25 * 60)
 
 
+def test_the_503_page_stands_in_the_frame_on_the_public_host_and_small_on_the_join_host(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    # §16.7.5, §16.12 (tsk-tp97v64vpy5z): the door frame where its stylesheets are served; the
+    # join host serves none of them (§1.1), so its page stays the small one with the line.
+    put(admin)
+    running(now)
+    framed = make_client().get("/explore")
+    assert framed.status_code == 503 and '<header class="site-header dz">' in framed.text
+    assert 'class="product-line"' not in framed.text
+    joined = make_client(base_url="https://join.example", join_url="https://join.example")
+    small = joined.get("/join/not-a-token", headers={"Accept": "text/html"})
+    assert small.status_code == 503 and "Maintenance" in small.text
+    assert "site-header" not in small.text and 'class="product-line"' in small.text
+
+
 def test_a_window_does_not_refuse_once_it_is_over_inside_the_cache(
     admin: flow.Human, now: Clock
 ) -> None:

@@ -145,3 +145,31 @@ and made unrelated PRs red. A test that wants the cache to expire moves `mainten
 - Raising `CACHE_SECONDS`: it only makes the race rarer, and the value is chosen for production.
 - Counting without the window's read in each counting test: every such test, present and future, would
   have to know about it, and a filter on the table name hides a real extra read of that table.
+
+## The hub's 503 page stands in the frame where it can, and stays the small page where it cannot
+
+**Id:** 60989914-5970-4892-a84a-7da016e73402
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-tp97v64vpy5z, PR 4, as lotse#wtwy split it (2026-11-13); `maintenance.refusal_page`, `maintenance.frame_of`, `middleware.HubMiddleware._maintenance_refused`. The fallbacks are this entry's reading
+**Revisit when:** the join host serves the landing stylesheets, or the frame is drawn from something that is not in the database
+
+While a window runs, the `503` page of the hub's own pages (`/explore`, `/for/…`, `/r/…`, `/mail/…`,
+`/join/…` in a browser) is drawn by `render.door_document` in English: the landing page's header
+and footer around the door, "Maintenance", when the hub is back and the window's text, with
+`render.DOOR_CSP`, `Referrer-Policy: no-referrer` (some of these paths hold a token) and
+`Retry-After`. The frame is read once per refused request, in the threadpool. Two cases keep the
+small page with the product line: the join host, which serves none of the frame's stylesheets
+(§1.1), and a hub whose landing setting cannot be read (`SQLAlchemyError`, a migration under way).
+
+**Reason:** a visitor who meets the window on a public page should see the same frame the page has
+when it works. The `503` must still never depend on more than the window it reports, so a failed
+read of the frame falls back instead of turning the `503` into a `500`.
+
+**Rejected alternatives:**
+- The frame on the join host too: its stylesheets and the header's links lead to paths the join
+  host does not serve, so the page would show only its fallback style there.
+- Failing the request when the frame cannot be read: the page that says the hub is down for
+  maintenance would then be an error page.
+

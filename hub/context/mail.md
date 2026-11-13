@@ -253,7 +253,8 @@ password sees an error that depends on an account (a taken handle).
 
 **Id:** f63430e9-d5ca-430e-afef-d44ec980bd35
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** e3267520-bfef-40e3-aa6f-17cecd17147c
 **Evidence:** inferred
 **Source:** the card tsk-7sw2a2bd5srp from the coordinator, 2026-10-31: the maintainer, testing the registration live, found the page bare HTML (no stylesheet) and asked for the legal pages' shell; docs/api.md §2.7.1 and §16.7.1. Why not the app and not the landing assets is this entry's reading
 **Revisit when:** the dashboard takes over the form, or the legal pages move to the landing page's stylesheet and fonts
@@ -308,3 +309,32 @@ the inviter passes the link on; the account mails follow the same rule so the tw
   delivers stale news once mail comes back.
 - Mail in the registration's language: the account registration does not keep it; keeping it would
   need a column and a migration for four mails the card asked to have in English.
+
+## The registration's link page stands in the frame of the pages without a session, like the sign-in link's page
+
+**Id:** e3267520-bfef-40e3-aa6f-17cecd17147c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-tp97v64vpy5z, PR 4, as lotse#wtwy split it (2026-11-13): the registration link page and the maintenance page go into the door frame; `routes/register_page.py`, `render.door_document`. The reasons are this entry's reading of the sign-in link page's entry (email-links.md, 89e8318d)
+**Revisit when:** the dashboard takes the form over, the page needs a script, or the dashboard's `/login` gets the product line back
+
+`GET /mail/register/{token}`, its refusals and its dead-link page are drawn by
+`render.door_document`, as the sign-in link's page is: the landing page's header and footer around
+the door of `public-pages.css`, the form in the form's column. The form keeps its fields, its
+errors under each field (`aria-invalid`, `aria-describedby`), its signed terms version and its
+statuses; the legal links that stood under it are the frame footer's Legal column now, so the page
+has no links of its own and no words for them (`register_page.legal_*` are gone). The answers carry
+`render.DOOR_CSP` and `Referrer-Policy: no-referrer`, with `Cache-Control: no-store` as before.
+`render.form_document` and its inline style are removed; nothing else used them.
+
+**Reason:** the page is the step after the mail on the way into the dashboard, and every other page
+a person reaches without a session (`/login`, `/register`, the sign-in link, §18.6) already stands in
+this frame. The old shell looked like the legal pages as they were before they took the landing
+stylesheets (landing.md, dde46a41), so it had become the one page unlike its neighbours.
+
+**Rejected alternatives:**
+- Keep the legal pages' old shell (mail.md, f63430e9): unlike every page around it.
+- The product line under the frame's footer: the framed pages end with the frame's footer
+  (email-links.md, 89e8318d).
+
