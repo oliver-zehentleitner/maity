@@ -31,6 +31,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import catalog, clock, worker_runs
 from maity_hub import tables as t
+from maity_hub.auth import second_factor
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
@@ -53,7 +54,8 @@ NEVER_MAILED = ("registration_pending", "mail_disabled")
 SIGN_IN_ALERT = records.SIGN_IN
 # A takeover under way: a security mail of its own at once, whatever the mode, never held
 # by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
-AT_ONCE = ("second_factor_changed", "second_factor_failed", "password_reset")
+AT_ONCE = ("second_factor_changed", "second_factor_failed", "password_reset", "password_changed")
+PASSWORD = ("password_reset", "password_changed")
 
 
 _SCHEME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-")
@@ -193,11 +195,10 @@ def for_human(
     queued = 0
     # Security mails of their own; quiet hours do not hold them (§2.6.5, §18.4).
     for item in pending:
-        if item.record_type in AT_ONCE:
-            told = (
-                _password_reset_mail if item.record_type == "password_reset" else _two_factor_mail
-            )
-            told(conn, row, item, prefs, public_url, local)
+        if item.record_type in PASSWORD:
+            _password_mail(conn, row, item, prefs, public_url, local)
+        elif item.record_type in AT_ONCE:
+            _two_factor_mail(conn, row, item, prefs, signing_key, public_url, local)
         elif item.record_type == SIGN_IN_ALERT and modes.get("security") == "immediate":
             _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
         else:
@@ -535,12 +536,14 @@ def _two_factor_mail(
     row: Any,
     item: Item,
     prefs: dict[str, Any],
+    signing_key: bytes | None,
     public_url: str,
     local: datetime,
 ) -> None:
     """A change of the second factor, or wrong codes after a sign-in (§2.8.1): what happened
-    and when, and where to look; never a code, a secret or a link that changes anything. No
-    mode turns it off, so it carries no unsubscribe link (§18.4)."""
+    and when, and where to look; never a code or a secret. The one link that changes anything
+    is the daily cap's (§2.8.6): it lifts the cap for the rest of that day, once. No mode turns
+    it off, so it carries no unsubscribe link (§18.4)."""
     words = catalog.section("mail", prefs["language"])
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
     body = words["two_factor_body"].format(
@@ -548,6 +551,18 @@ def _two_factor_mail(
         time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
         security=f"{public_url}/account/security",
     )
+    data = record.data or {}
+    if (
+        record.type == "second_factor_failed"
+        and data.get("method") == second_factor.DAILY_LIMIT
+        and signing_key is not None
+        and isinstance(data.get("day"), str)
+        and isinstance(data.get("unlocks"), int)
+    ):
+        token = second_factor.unlock_token(signing_key, row.human_id, data["day"], data["unlocks"])
+        body += "\n" + words["two_factor_unlock"].format(
+            link=f"{public_url}/mail/second-factor-unlock/{token}"
+        )
     body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
     body += "\n\n" + words["only"].format(url=public_url) + "\n"
     outbox.enqueue(
@@ -560,7 +575,7 @@ def _two_factor_mail(
     )
 
 
-def _password_reset_mail(
+def _password_mail(
     conn: Connection,
     row: Any,
     item: Item,
@@ -568,13 +583,15 @@ def _password_reset_mail(
     public_url: str,
     local: datetime,
 ) -> None:
-    """A completed reset (§2.10): when and from where, that every session has ended, and what
-    to do if it was not the human. At once whatever the mode, so no unsubscribe link."""
+    """A completed reset (§2.10) or a changed password (§2.1): when and from where, which
+    sessions have ended, and what to do if it was not the human. At once whatever the mode, so
+    no unsubscribe link."""
     words = catalog.section("mail", prefs["language"])
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
     data = record.data or {}
     unknown = catalog.section("notify", prefs["language"])
-    body = words["password_reset_body"].format(
+    kind = str(record.type)  # `password_reset` or `password_changed`
+    body = words[f"{kind}_body"].format(
         time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
         browser=data.get("browser") or unknown["a_browser"],
         os=data.get("os") or unknown["unknown_os"],
@@ -588,7 +605,7 @@ def _password_reset_mail(
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=f"[Maity] {words['password_reset_subject']}",
+        subject=f"[Maity] {words[f'{kind}_subject']}",
         body=body,
     )
 

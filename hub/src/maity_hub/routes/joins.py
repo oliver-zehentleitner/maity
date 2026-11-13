@@ -37,6 +37,7 @@ from maity_hub import (
     handover,
     idempotency,
     instances,
+    invitations,
     join_line,
     landing,
     landing_stats,
@@ -632,7 +633,24 @@ def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) 
             conn.execute(
                 update(t.join_link)
                 .where(t.join_link.c.id == join_id)
-                .values(revoked_at=clock.now())
+                .values(revoked_at=clock.now(), revoked_by=caller.principal_id)
+            )
+            # Who revoked it, as `invitation_revoked` (§3.1, §8.2): the join's creator and
+            # the project's human `members:admin` holders; never the URL or the code.
+            emit(
+                conn,
+                row.project_id,
+                "join_revoked",
+                invitations.audience(conn, row.project_id, f"member:{row.created_by}"),
+                {
+                    "id": row.id,
+                    "agent_id": row.agent_id,
+                    "trust": row.trust,
+                    "role": row.role,
+                    "revoked_by": caller.principal_id,
+                },
+                actor=caller.actor(mine.id),
+                subject=("join", row.id),
             )
         return idempotency.Outcome(200, "join", join_id, load_join(conn, join_id))
 

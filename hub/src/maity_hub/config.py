@@ -141,6 +141,10 @@ class Settings:
     # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
     # leaves it to the instance admin.
     sign_in_second_factor: str | None = None
+    # MAITY_SECOND_FACTOR_WRONG_PER_DAY: wrong second-factor codes per human and UTC day, 10 to
+    # 10000; at it every check of that human is refused until the day ends or the link mailed
+    # then lifts it (§2.8.6).
+    second_factor_wrong_per_day: int = 50
     # MAITY_MAX_AGENTS_PER_HUMAN, MAITY_MAX_ORGS_PER_HUMAN, MAITY_MAX_PROJECTS_PER_OWNER (§16.5):
     # a number from 1 to 10000 or `unlimited`; None where the environment leaves the value to
     # the instance admin.
@@ -259,6 +263,9 @@ class Settings:
             ),
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
+            second_factor_wrong_per_day=parse_whole(
+                env, "MAITY_SECOND_FACTOR_WRONG_PER_DAY", 50, 10, 10000
+            ),
             public_pages=parse_choice(env, "MAITY_PUBLIC_PAGES", ("on", "off"), "off") == "on",
             public_pages_render=parse_choice(
                 env, "MAITY_PUBLIC_PAGES_RENDER", ("on_change", "interval"), "on_change"

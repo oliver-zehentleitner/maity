@@ -300,7 +300,12 @@ def _code_right(
     if body.code is None and body.recovery_code is None:
         return False  # no guess: refused, neither compared nor counted
     used = second_factor.check(
-        conn, hub, human_id, code=body.code, recovery_code=body.recovery_code
+        conn,
+        hub,
+        human_id,
+        code=body.code,
+        recovery_code=body.recovery_code,
+        seen=(ip, browser, system),
     )
     if used is not None:
         return True

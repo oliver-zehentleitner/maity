@@ -582,10 +582,11 @@ NOTE_KINDS = frozenset({"note_added", "note_resolved", "note_edited"})
 SEE_ALL_TRUSTS = ("owner", "admin")
 # Kinds no agent reads, whatever its role or audience (§8.2): one names who shares an
 # environment, which only the humans responsible may know; invitations are a human's
-# business from issue to use, and never wake an agent (§3.4).
+# business from issue to use, and never wake an agent (§3.4); so is a join's revocation (§3.1).
 HUMANS_ONLY_KINDS = frozenset(
     {
         "shared_environment_detected",
+        "join_revoked",
         "invitation_created",
         "invitation_revoked",
         "invitation_voided",
