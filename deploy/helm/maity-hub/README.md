@@ -62,8 +62,10 @@ example; any cluster with the same pieces works.
    workflow `publish-image` builds them; until its first release you build
    the image yourself. Pin it by digest (`image.digest`) when you can; the
    workflow's run summary prints it. Each published digest is signed with
-   cosign, keyless, by that workflow on a `v*` tag or on `main`; check the
-   signature before you pin a digest:
+   cosign, keyless, by that workflow on a `v*` tag or on `main`, and the
+   workflow builds either one only after the same release gate (ci and the
+   MariaDB suite passed on that commit); check the signature before you pin a
+   digest:
 
    ```sh
    cosign verify ghcr.io/oliver-zehentleitner/maity-hub@sha256:<digest> \

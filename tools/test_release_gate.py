@@ -411,6 +411,18 @@ class Workflows(unittest.TestCase):
             block = text[text.index(f"\n  {dependent}:") :]
             self.assertRegex(block, rf"needs: (\[[^\]]*\b{job}\b[^\]]*\]|{job})", name)
 
+    def test_a_hand_started_image_build_runs_the_same_gate_as_a_tag(self):
+        text = (ROOT / ".github/workflows/publish-image.yml").read_text(encoding="utf-8")
+        gate_job = text[text.index("\n  gate:") : text.index("\n  image:")]
+        image_job = text[text.index("\n  image:") : text.index("\n  sign:")]
+        # The gate runs on main (a hand start) as well as on a v* tag ...
+        self.assertIn("github.ref == 'refs/heads/main'", gate_job)
+        self.assertIn("startsWith(github.ref_name, 'v')", gate_job)
+        # ... and the image is built only after it passed, never when it was skipped.
+        self.assertIn("needs.gate.result == 'success' &&", image_job)
+        self.assertNotIn("'skipped'", image_job)
+        self.assertNotIn("always()", image_job)
+
     def test_hand_title_names_the_tested_commit(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
         self.assertIn("format('hand {0}', inputs.sha || 'head')", text)
