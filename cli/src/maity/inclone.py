@@ -21,6 +21,7 @@ import errno
 import os
 import secrets
 import stat
+import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import IO
@@ -170,21 +171,26 @@ def create(
     *,
     make: str | None = None,
     mode: int = 0o644,
+    kept: Callable[[str], None] | None = None,
 ) -> None:
     """A new file at `given`, in the clone and outside `.git`, with what `fill` writes.
     `opened` is the clone as `clonecheck.opened_clone` checked it. An existing name is
     refused before `fill` runs and again when the file gets its name, so a race leaves it
     untouched: maity never replaces a file under a placement. The bytes go to a file of
     maity's own first (without a name where the system allows it); an exception from `fill`
-    (a digest that does not match) leaves nothing behind. The descriptor `fill` wrote to is
-    what gets the name (`_publish`). `make` names a last directory created when missing."""
+    (a digest that does not match) gives no file the target's name. The descriptor `fill`
+    wrote to is what gets the name (`_publish`). A named staging file is removed afterwards
+    only while its name still holds it (`_drop_staging`); a name that holds another file is
+    left and handed to `kept` (by default a line on standard error). `make` names a last
+    directory created when missing."""
     path = names(root, given, what)
     exists = Refused(
         f"{what} {given}: exists; under a runner placement maity never replaces a file"
         " (--force included): remove it first or name another file"
     )
     with _walk(root, path[:-1], opened, given, what, make) as directory:
-        _new_file(directory, path[-1], fill, mode, exists, f"{what} {given}")
+        shown = os.path.dirname(given)
+        _new_file(directory, path[-1], fill, mode, exists, f"{what} {given}", shown, kept)
 
 
 def create_in_git(
@@ -195,6 +201,7 @@ def create_in_git(
     opened: clonecheck.Opened | None,
     *,
     mode: int = 0o644,
+    kept: Callable[[str], None] | None = None,
 ) -> None:
     """A new file `leaf` in `.git/<folder>/` of the clone `opened` holds, with what `fill`
     writes: outside the work tree, where no test runner collects it and `git add -A` does not
@@ -218,7 +225,7 @@ def create_in_git(
         os.mkdir(folder, 0o700, dir_fd=opened.git)
     directory = _open_at(opened.git, folder, FOLDER, f".git/{folder}/{leaf}", what)
     try:
-        _new_file(directory, leaf, fill, mode, exists, said)
+        _new_file(directory, leaf, fill, mode, exists, said, f".git/{folder}", kept)
     finally:
         os.close(directory)
 
@@ -230,8 +237,11 @@ def _new_file(
     mode: int,
     exists: Refused,
     said: str,
+    shown: str,
+    kept: Callable[[str], None] | None,
 ) -> None:
-    """The file `leaf` in `directory`, new, with what `fill` writes (`create`)."""
+    """The file `leaf` in `directory`, new, with what `fill` writes (`create`); `shown` is
+    the directory as a refusal or a kept staging name names it."""
     try:
         os.stat(leaf, dir_fd=directory, follow_symlinks=False)
         raise exists
@@ -244,10 +254,39 @@ def _new_file(
         os.fchmod(fd, mode)
         _publish(directory, fd, part, leaf, mode, exists, said)
     finally:
-        os.close(fd)
-        if part is not None:
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(part, dir_fd=directory)
+        try:
+            if part is not None:  # while `fd` is open, so its inode is not reused
+                staged = os.path.join(shown, part)
+                _drop_staging(directory, part, os.fstat(fd), staged, kept or _say_kept)
+        finally:
+            os.close(fd)
+
+
+def _drop_staging(
+    directory: int, part: str, staged: os.stat_result, shown: str, kept: Callable[[str], None]
+) -> None:
+    """Remove maity's staging name `part` only while it holds the file maity staged (device
+    and inode); a name that holds another file by then is left and handed to `kept`. POSIX
+    has no removal of a name only while it holds a given file, so between this check and the
+    removal a file put there by code that can write this directory can still be removed;
+    such code can remove that file itself (cli/context/runner.md 818828af)."""
+    try:
+        there = os.stat(part, dir_fd=directory, follow_symlinks=False)
+    except OSError:  # no name left, or none that can be checked: nothing is removed
+        return
+    if not _same(there, staged):
+        kept(shown)
+        return
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(part, dir_fd=directory)
+
+
+def _say_kept(shown: str) -> None:
+    print(
+        f"maity: left {shown} in place: it no longer holds the file maity staged; check it and"
+        " delete it yourself",
+        file=sys.stderr,
+    )
 
 
 def _fresh(directory: int) -> tuple[int, str | None]:
@@ -294,7 +333,7 @@ def _publish(
         # another file, which then went away with it), and Linux links no such file.
         if exc.errno not in NO_HARD_LINKS and not (via_proc and exc.errno == errno.ENOENT):
             raise
-        _copy(directory, fd, leaf, mode, exists, replaced)
+        _copy(directory, fd, leaf, mode, exists, replaced, said)
         return
     # As in `_copy`: a name that holds another file now is refused and left alone; it is
     # not maity's file, and removing it could take someone else's.
@@ -304,13 +343,15 @@ def _publish(
 
 
 def _copy(
-    directory: int, fd: int, leaf: str, mode: int, exists: Refused, replaced: Refused
+    directory: int, fd: int, leaf: str, mode: int, exists: Refused, replaced: Refused, said: str
 ) -> None:
     """A new file `leaf` in `directory`, created exclusively without following a link, with
     the bytes of `fd` from its start: maity's own descriptor, never a name reopened. It
-    succeeds as the link does, only when `leaf` still names the file written here (device
-    and inode); otherwise it is refused and the name is left alone, since what it names now
-    is not maity's file. On an error the name is removed only while it is still that file."""
+    counts as saved, as the link does, when `leaf` names the file written here (device and
+    inode) at the moment of that check; otherwise it is refused and the name is left alone,
+    since what it names then is not maity's file. A failed write is not cleaned up by name
+    either: POSIX has no removal of a name only while it names a given file, and a file put
+    there in between would be the one removed. The refusal names the partial file instead."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     try:
         out = os.open(leaf, flags, mode, dir_fd=directory)
@@ -318,10 +359,6 @@ def _copy(
         raise exists from None
     try:
         written = os.fstat(out)
-    except BaseException:
-        os.close(out)
-        raise
-    try:
         offset = 0
         while chunk := os.pread(fd, CHUNK, offset):
             offset += len(chunk)
@@ -335,16 +372,10 @@ def _copy(
             named = None
         if named is None or not _same(named, written):
             raise replaced
-    except BaseException as exc:
+    except OSError as exc:
+        raise Refused(
+            f"{said}: writing the file failed ({exc.strerror or exc}); a partial file may be"
+            " left under that name: delete it, then fetch the file again"
+        ) from None
+    finally:
         os.close(out)
-        if exc is not replaced:
-            _unlink_if(directory, leaf, written)
-        raise
-    os.close(out)
-
-
-def _unlink_if(directory: int, leaf: str, ours: os.stat_result) -> None:
-    """Remove `leaf` only while it names the file `ours` describes."""
-    with contextlib.suppress(OSError):
-        if _same(os.stat(leaf, dir_fd=directory, follow_symlinks=False), ours):
-            os.unlink(leaf, dir_fd=directory)

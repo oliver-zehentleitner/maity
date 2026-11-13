@@ -310,12 +310,17 @@ def test_a_root_exchanged_after_the_check_is_not_written_to(
 @walks
 @pytest.mark.parametrize("how", ["as-is", "named", "named-no-proc", "no-hard-links"])
 def test_the_checked_bytes_are_what_gets_the_name(
-    placed: Path, served: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch, how: str
+    placed: Path,
+    served: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    how: str,
 ) -> None:
     """While the download runs, another file takes the name of maity's file (`.maity-*.part`
     beside the target). What gets the target's name is the file maity wrote and checked, or
-    nothing: never the other one. `as-is` is this system's way (a file without a name on
-    Linux); the others force a named file, without /proc, and without hard links."""
+    nothing: never the other one. The other file stays under the staging name, and maity
+    says so. `as-is` is this system's way (a file without a name on Linux); the others force
+    a named file, without /proc, and without hard links."""
     if how != "as-is":
         monkeypatch.delattr(os, "O_TMPFILE", raising=False)
     if how == "named-no-proc":
@@ -327,12 +332,10 @@ def test_the_checked_bytes_are_what_gets_the_name(
             raise OSError(errno.EPERM, "no hard links here")
 
         monkeypatch.setattr(os, "link", no_link)
-    other = placed.parent / "other"
+    taken = staging_taken(placed)
 
     def racing(s: Any) -> tuple[int, bytes]:
-        for part in placed.glob(".maity-*.part"):
-            other.write_bytes(b"OTHER")
-            os.replace(other, part)
+        taken()
         return 200, b"hello"
 
     served.routes[("GET", f"{P}/attachments/att-0042/content")] = racing
@@ -344,7 +347,35 @@ def test_the_checked_bytes_are_what_gets_the_name(
         assert code == cli.EXIT_ERROR and not target.exists()
     else:
         assert code == cli.EXIT_OK and target.read_bytes() == b"hello"
-    assert parts(placed) == []
+    others_stay(placed, taken.names, capsys.readouterr().err)
+
+
+class _Taker:
+    """Puts another file at each staging name maity has in the clone's root when called."""
+
+    def __init__(self, placed: Path) -> None:
+        self.placed = placed
+        self.names: list[str] = []
+
+    def __call__(self) -> None:
+        other = self.placed.parent / "other"
+        for part in self.placed.glob(".maity-*.part"):
+            other.write_bytes(b"OTHER")
+            os.replace(other, part)
+            self.names.append(part.name)
+
+
+def staging_taken(placed: Path) -> _Taker:
+    return _Taker(placed)
+
+
+def others_stay(placed: Path, names: list[str], err: str) -> None:
+    """Each staging name another file took still holds that file, and maity named it; no
+    staging file of maity's own is left."""
+    for name in names:
+        assert (placed / name).read_bytes() == b"OTHER"
+        assert f"left {name} in place" in err
+    assert sorted(p.name for p in parts(placed)) == sorted(names)
 
 
 @posix
@@ -427,3 +458,71 @@ def test_a_link_whose_name_was_taken_meanwhile_is_refused_and_left_alone(
     assert "was replaced before it got its name" in capsys.readouterr().err
     assert target.read_bytes() == b"OTHER"
     assert parts(placed) == []
+
+
+@walks
+def test_a_failed_copy_leaves_its_file_and_removes_nothing_by_name(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without hard links, a copy that fails part way is not cleaned up by name: a file put
+    under that name in between would be the one removed. The refusal names the partial
+    file; nothing under the target's name is ever removed."""
+    monkeypatch.delattr(os, "O_TMPFILE", raising=False)
+
+    def no_link(*args: Any, **kwargs: Any) -> None:
+        raise OSError(errno.EPERM, "no hard links here")
+
+    def failing(fd: int, size: int, offset: int) -> bytes:
+        raise OSError(errno.EIO, "input/output error")
+
+    real_unlink = os.unlink
+    target = placed / "out.txt"
+    other = placed.parent / "other"
+
+    def replaced_first(path: Any, *args: Any, **kwargs: Any) -> None:
+        if str(path) == "out.txt":  # a file put under the name just before a removal
+            target.rename(placed.parent / "ours-moved")
+            other.write_bytes(b"OTHER")
+            os.replace(other, target)
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "link", no_link)
+    monkeypatch.setattr(os, "pread", failing)
+    monkeypatch.setattr(os, "unlink", replaced_first)
+    assert get("-o", "out.txt") == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "a partial file may be left under that name" in err and "out.txt" in err
+    assert target.exists()  # the partial file, left in place; no other file was removed
+    assert not (placed.parent / "ours-moved").exists()
+    assert parts(placed) == []
+
+
+@walks
+@pytest.mark.parametrize("result", ["saved", "digest refused"])
+def test_a_staging_name_taken_by_another_file_is_left_alone(
+    placed: Path,
+    served: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    result: str,
+) -> None:
+    """With a named staging file (no `O_TMPFILE`), another file takes its name during the
+    download: whether the file is then saved or refused over its digest, maity removes
+    nothing under that name and says it left it."""
+    monkeypatch.delattr(os, "O_TMPFILE", raising=False)
+    taken = staging_taken(placed)
+    body = b"hello" if result == "saved" else b"HELLO"
+
+    def racing(s: Any) -> tuple[int, bytes]:
+        taken()
+        return 200, body
+
+    served.routes[("GET", f"{P}/attachments/att-0042/content")] = racing
+    code = get("-o", "out.txt")
+    target = placed / "out.txt"
+    if result == "saved":
+        assert code == cli.EXIT_OK and target.read_bytes() == b"hello"
+    else:
+        assert code == cli.EXIT_ERROR and not target.exists()
+    assert taken.names, "the download ran while maity's staging file had a name"
+    others_stay(placed, taken.names, capsys.readouterr().err)
