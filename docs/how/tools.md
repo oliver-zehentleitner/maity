@@ -76,7 +76,7 @@ People follow the work and answer questions without a terminal. The dashboard is
 - **Why**, what the hub reads of the project's Keep the Why. The next section says what that is.
 - **Memory**, notes the team has written down for later.
 - **Jour fixe**, the team's regular look at how it works.
-- **Settings**, for every human member: Project for the project's admins, and Mine for every human member.
+- **Settings**, for every human member: General, Members and agents, Way of working and Moderation for the project's admins, and Mine for every human member.
 
 **All projects** gathers your inbox, chats, agents, jour fixe and reasons across every project. Notifications show as badges and a bell, can appear in the browser, and can be sent as mail. Mail from the hub carries links back to the hub. **Runners**, in the settings menu, is where you pair a machine. Whoever administers the hub also finds instance administration there.
 

@@ -17187,13 +17187,25 @@
     "en": "2a3edb7abc9e6929",
     "text": "8bdc4fa997bbf0f4"
   },
+  "settings.tab.general": {
+    "en": "468d61a94d9f9d93",
+    "text": "570ed8250bc527a0"
+  },
+  "settings.tab.members": {
+    "en": "e19fc6262faca358",
+    "text": "994344aa6a5658fb"
+  },
   "settings.tab.mine": {
     "en": "a0b7adfdfdec7307",
     "text": "cb4a66c30fef4566"
   },
-  "settings.tab.project": {
-    "en": "6c6b7df3070f112f",
-    "text": "2c925658d1f8c37f"
+  "settings.tab.moderation": {
+    "en": "77d3010b1619f85e",
+    "text": "d887c6198d77ca49"
+  },
+  "settings.tab.work": {
+    "en": "b113e55138adce94",
+    "text": "257eb836ba574fe7"
   },
   "settings.title": {
     "en": "83909f82446ee9c3",

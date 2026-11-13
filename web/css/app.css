@@ -2068,7 +2068,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
 .member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
-/* A view's own tabs (Overview, the Team page): links, the shown one marked. */
+/* A view's own tabs (Overview, the Team page, a project's Settings): links, the shown one marked. */
 .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
 .view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
@@ -2103,11 +2103,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .review-cite { display: grid; gap: 0 8px; grid-template-columns: minmax(0, auto) minmax(0, 1fr); overflow-wrap: anywhere; }
 .review-quote { white-space: pre-wrap; }
 @media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
-
-/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
-.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
-.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
-.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
 
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
