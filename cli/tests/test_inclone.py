@@ -304,3 +304,34 @@ def test_a_link_put_at_the_clones_path_after_the_check_gets_nothing(
     assert {p.relative_to(placed): b for p, b in before.items()} == {
         p.relative_to(moved): b for p, b in after.items()
     }
+
+
+@walks
+def test_a_copy_whose_name_was_taken_meanwhile_is_not_reported_saved(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without hard links the file is copied under its name; when another file takes that
+    name during the copy, the copy is refused like the link, and the other file is left as
+    it is."""
+    monkeypatch.delattr(os, "O_TMPFILE", raising=False)
+
+    def no_link(*args: Any, **kwargs: Any) -> None:
+        raise OSError(errno.EPERM, "no hard links here")
+
+    monkeypatch.setattr(os, "link", no_link)
+    real_pread = os.pread
+    target = placed / "out.txt"
+    other = placed.parent / "other"
+
+    def taken(fd: int, size: int, offset: int) -> bytes:
+        if offset == 0 and target.exists():
+            target.rename(placed.parent / "ours-moved")
+            other.write_bytes(b"OTHER")
+            os.replace(other, target)
+        return real_pread(fd, size, offset)
+
+    monkeypatch.setattr(os, "pread", taken)
+    assert get("-o", "out.txt") == cli.EXIT_ERROR
+    assert "was replaced before it got its name" in capsys.readouterr().err
+    assert target.read_bytes() == b"OTHER"
+    assert parts(placed) == []
