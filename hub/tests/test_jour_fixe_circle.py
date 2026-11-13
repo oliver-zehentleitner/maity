@@ -640,6 +640,12 @@ def test_an_outside_moderators_owner_does_not_read_the_round(
     assert pending.status_code == 202, pending.text
     [request_id] = pending.json()["requests"]
     assert consent(other, request_id, "go").status_code == 200
+    # Its owner lets it meet the circle's side, so it does not wait in the thread (§9.6).
+    allowed = other.post(
+        "/me/chat-access/allow",
+        {"agents": [outside.id], "owner_id": friend.id, "their_human": True},
+    )
+    assert allowed.status_code == 201, allowed.text
     started = friend.post(f"{BASE}/jour-fixe/series/{sid}/rounds", {"reason": "look back"})
     assert started.status_code == 201, started.text
     round_id, thread = started.json()["id"], started.json()["conversation_id"]

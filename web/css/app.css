@@ -573,6 +573,9 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .reply.later, .reply.talk { background: transparent; }
 .reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
+/* An option is the agent's own label, a word or five lines: a rounded box that grows in height with
+   it and wraps inside it. A pill would turn round around a long label and let it run over its edge. */
+.reply.option { border-radius: var(--r-field); white-space: normal; overflow-wrap: anywhere; min-height: 44px; max-width: 100%; }
 
 .free-text { margin-top: 12px; display: grid; gap: 6px; }
 .free-text label { font-size: 0.85rem; color: var(--muted); }
@@ -1363,8 +1366,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .facts dt { margin-top: 4px; }
   /* The answers two by two, a thumb's size; Send across the whole row. */
   .replies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .reply { min-height: 40px; min-width: 0; }
-  .reply.send, .reply:only-child { grid-column: 1 / -1; }
+  .reply { min-height: 44px; min-width: 0; }
+  /* An option one per row, its label from the start of the line. */
+  .reply.send, .reply.option, .reply:only-child { grid-column: 1 / -1; }
+  .reply.option { text-align: start; }
 }
 
 /* Pictures on the account (docs/api.md §6.10). */

@@ -1665,3 +1665,83 @@ def test_join_seq_fills_every_membership_in_batches_and_runs_again(engine: Engin
             )
     migrate(engine, revision)
     assert stored() == expected
+
+
+def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Engine) -> None:
+    """§9.6, "this section ships": after the upgrade every agent in an open group chat with
+    someone of another side waits for that side, whatever entries exist; a human, an agent of
+    the chat's only side and a closed chat's stays are left alone. The downgrade drops the
+    columns and nothing else: the stays, chats and entries are kept, and upgrading again
+    makes the same agents wait."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func, insert, select, text
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    now = datetime(2026, 11, 12, tzinfo=UTC)
+    a, b = factory.human(engine, "a"), factory.human(engine, "b")
+    project_id = factory.project(engine, "p", owner_id=a)
+    human_a = factory.membership(engine, project_id, "owner", human_id=a)
+    factory.membership(engine, project_id, "admin", human_id=b)
+    agent_a = factory.agent(engine, project_id, a, with_session=False)
+    agent_b = factory.agent(engine, project_id, b, with_session=False)
+    rooms = {  # chat: (closed, members)
+        "cnv-mixed": (False, [human_a, agent_a.membership_id, agent_b.membership_id]),
+        "cnv-alone": (False, [human_a, agent_a.membership_id]),
+        "cnv-closed": (True, [human_a, agent_b.membership_id]),
+    }
+    with engine.begin() as conn:
+        for chat, (closed, members) in rooms.items():
+            conn.execute(
+                insert(t.conversation).values(
+                    id=chat, project_id=project_id, created_by=human_a, created_at=now,
+                    closed_at=now if closed else None,
+                )
+            )  # fmt: skip
+            for membership_id in members:
+                conn.execute(
+                    insert(t.conversation_participant).values(
+                        conversation_id=chat, membership_id=membership_id, joined_at=now,
+                        window_after=0, here=True,
+                    )
+                )  # fmt: skip
+
+    def counts() -> tuple[int, int]:
+        with engine.connect() as conn:
+            return (
+                conn.execute(select(func.count()).select_from(t.conversation_participant))
+                .scalar_one(),
+                conn.execute(select(func.count()).select_from(t.conversation)).scalar_one(),
+            )  # fmt: skip
+
+    before = counts()
+    downgrade(engine, _before(engine, "20261113010000_firewall_waiting"))
+    assert counts() == before == (7, 3)
+    migrate(engine)
+    assert counts() == before
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT p.conversation_id, m.agent_id, m.human_id, p.waiting_for, p.waiting"
+                " FROM conversation_participant p JOIN membership m ON m.id = p.membership_id"
+            )
+        ).all()
+    found = {(r[0], r[1] or r[2]): (r[3], bool(r[4])) for r in rows}
+    if engine.dialect.name in ("mysql", "mariadb", "sqlite"):
+        import json
+
+        found = {
+            k: (json.loads(w) if isinstance(w, str) else w, flag) for k, (w, flag) in found.items()
+        }
+    assert found == {
+        ("cnv-mixed", a): (None, False),
+        ("cnv-mixed", agent_a.agent_id): ([b], True),
+        ("cnv-mixed", agent_b.agent_id): ([a], True),
+        ("cnv-alone", a): (None, False),
+        ("cnv-alone", agent_a.agent_id): (None, False),
+        ("cnv-closed", a): (None, False),
+        ("cnv-closed", agent_b.agent_id): (None, False),
+    }

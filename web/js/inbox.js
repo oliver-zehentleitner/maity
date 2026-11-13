@@ -502,7 +502,9 @@ window.Maity = window.Maity || {};
         // The primary reply last, the others in the hub's order before it.
         [...replies.filter((r) => replyClass(req, r) !== "reply primary"),
           ...replies.filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
-          h("button", { type: "button", class: replyClass(req, r), onclick: () => send(withText({ reply_id: r.id })) }, r.label)),
+          // "option": the asking agent's words, of any length; a rounded box that grows with them
+          // (css/app.css), not the pill of Later and Talk.
+          h("button", { type: "button", class: [replyClass(req, r), "option"].join(" "), onclick: () => send(withText({ reply_id: r.id })) }, r.label)),
         sendText),
       why.length ? h("p", { class: "muted reply-hint", id: hintId }, why.join(" ")) : null,
       stepSlot, status.el);

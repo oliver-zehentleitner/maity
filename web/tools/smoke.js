@@ -608,7 +608,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let c2 = main.querySelector(".current");
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · member · reviewer"), "consent without options, on_behalf_of shown");
   expect(btn(c2, "go") && btn(c2, "no") && !btn(c2, "Discuss"), "replies go/no from the hub, no discuss");
-  expect(btn(c2, "go").className === "reply primary" && btn(c2, "no").className === "reply", "only the hub's go of a consent is primary");
+  expect(btn(c2, "go").className === "reply primary option" && btn(c2, "no").className === "reply option" && btn(c2, "Later").className === "reply later", "only the hub's go of a consent is primary");
   expect(JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Talk", "no", "go", "Send"]),
     "the replies at the right edge: Later and Talk first, the hub's replies, Send last");
   // A consent takes no words alone (a proposal's would be read as No, §15.6): Send stays, disabled, and says why.
