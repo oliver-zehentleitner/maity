@@ -791,6 +791,49 @@ only from a copy that belongs to the runner, so no system Python is changed.
 - Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
   job may have left there.
 
+## Install and CI downloads that run code are checked against a pinned checksum or digest
+
+**Id:** 7d1e4c96-2b8a-4f53-a6e0-95c3f8b2d147
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 5 (release chain hardening, 2026-11-13); `deploy/runner/install-python.sh`, `deploy/runner/README.md`, `docs/install/README.md`, `deploy/helm/kind-smoke.sh`
+**Revisit when:** uv, k3s or cert-manager publish a signature this setup can check offline, or one of the pinned versions changes
+**See:** process.md#the-runner-gets-its-python-through-uv-into-the-tool-cache-and-starts-through-runsvcsh — 2bede3db-2d8e-4716-851b-0ecc07cb140d — as of 2026-11-13
+
+Where a download runs code, the version is pinned and the bytes are
+checked before they run:
+- `install-python.sh` no longer pipes uv's installer script into a
+  shell. It downloads the uv release tarball of `UV_VERSION` as the
+  runner user, checks it against `UV_SHA256` with `sha256sum -c`, and
+  only then unpacks `uv` and `uvx` into `~/.local/bin`. A checksum that
+  is not 64 hex digits stops the script before the download. A machine
+  that already has uv is not touched.
+- The k3s install guide downloads `install.sh` from the release tag it
+  installs, not from `get.k3s.io`, and checks its sha256 before running
+  it; the installer itself checks the k3s binary against the release's
+  checksums.
+- cert-manager's chart is pulled as an archive of the pinned version and
+  checked with `sha256sum -c` before `helm install` takes the file.
+- `kind-smoke.sh` runs PostgreSQL by the digest `ci.yml` already pins
+  for its PostgreSQL service, not by the tag `postgres:17`.
+
+**Reason:** a tag, a moving URL or an installer piped into a shell runs
+whatever the server sends that day. A checksum or digest pinned in the
+repository makes the code that runs the reviewed code. The uv tarball
+is used instead of the installer because the installer is a second
+download whose own downloads are not pinned here.
+
+**Rejected alternatives:**
+- Checking the uv installer script by checksum and still running it:
+  it fetches the binary itself, so the binary would stay unpinned.
+- `helm install --verify` with jetstack's signing key: it needs the key
+  fetched and trusted as well; a checksum of the archive needs nothing
+  more.
+- A digest of its own for kind-smoke's PostgreSQL: the CI service's pin
+  is already reviewed, and the smoke test then runs the PostgreSQL ci
+  tests against.
+
 ## One runner service per database job type, a label each, three workers per job
 
 **Id:** c2713d54-e602-42a3-8636-693ff3fd2c0b
