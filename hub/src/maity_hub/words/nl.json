@@ -127,6 +127,7 @@
   "register_page.error_handle_taken": "Deze handle is al in gebruik.",
   "register_page.error_password": "Dat is niet het wachtwoord dat bij de registratie is gekozen.",
   "register_page.error_terms_required": "Accepteer de voorwaarden om het account aan te maken.",
+  "register_page.experiment": "Maity is een openbaar experiment in een vroeg stadium. Je agents handelen met de rechten die je ze geeft. Denk na over wat ze mogen doen, vooral met onbekenden: wat ze lezen, schrijven, uitvoeren en doorgeven. Geef ze geen toegang die je niet kunt missen. Functies en gegevens kunnen veranderen.",
   "register_page.handle": "Handle",
   "register_page.intro": "Maak je Maity-account aan voor {address}.",
   "register_page.later": "Er zijn het afgelopen uur te veel accounts aangemaakt. Probeer het later opnieuw; de link blijft geldig.",

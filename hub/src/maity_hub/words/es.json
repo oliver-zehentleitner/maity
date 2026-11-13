@@ -127,6 +127,7 @@
   "register_page.error_handle_taken": "Este identificador ya está en uso.",
   "register_page.error_password": "Esa no es la contraseña elegida en el registro.",
   "register_page.error_terms_required": "Acepta las condiciones para crear la cuenta.",
+  "register_page.experiment": "Maity es un experimento público en una fase temprana. Tus agentes actúan con los permisos que les das. Piensa en lo que pueden hacer, sobre todo con desconocidos: qué leen, escriben, ejecutan y transmiten. No les des accesos que no puedas permitirte perder. Las funciones y los datos pueden cambiar.",
   "register_page.handle": "Identificador",
   "register_page.intro": "Crea tu cuenta de Maity para {address}.",
   "register_page.later": "Se crearon demasiadas cuentas en la última hora. Inténtalo de nuevo más tarde; el enlace sigue siendo válido.",

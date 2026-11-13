@@ -796,6 +796,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("join-agent").querySelectorAll("option").some((o) => text(o).startsWith("Shop Dev (@maintainer/shop-dev)"))
     && byId("join-agent").querySelectorAll("option").some((o) => text(o).startsWith("Agent B (@agent-b)")),
     "global names: the join panel names a profile long only where its handle is shared in the project");
+  {
+    // The experiment notice (docs/api.md §5.1): on the join panel until "Understood", which
+    // confirms it with PATCH /me once; reopened, the panel has none. It holds nothing back.
+    const enPanel = () => main.querySelector(".join-panel");
+    const enNotice = () => enPanel().querySelector(".experiment-notice");
+    expect(enNotice() && enNotice().getAttribute("role") === "note"
+      && text(enNotice()).startsWith("Maity is a public experiment at an early stage.") && byId("join-agent"),
+      "experiment notice: the join panel shows it beside its form while the person has not confirmed it");
+    const enPatches = [];
+    const enRealPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { enPatches.push([p, b]); return enRealPatch(p, b); };
+    enNotice().querySelectorAll("button").find((b) => text(b) === "Understood").click();
+    for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.patch = enRealPatch;
+    expect(JSON.stringify(enPatches) === JSON.stringify([["/me", { experiment_notice_understood: true }]]) && !enNotice()
+      && win.Maity.api.fixturesLive()["me.json"].member.experiment_notice_understood_at,
+      "experiment notice: Understood sends PATCH /me once and takes it away " + JSON.stringify(enPatches));
+    await go("#/maintainer/sample/team"); for (let k = 0; k < 4; k++) await tick();
+    await go("#/maintainer/sample/agents/join"); for (let k = 0; k < 4; k++) await tick();
+    expect(enPanel() && byId("join-agent") && !enNotice(), "experiment notice: confirmed once, the join panel has it no more");
+    const enBare = win.Maity.experimentNotice.box();
+    expect(enBare.querySelectorAll("button").length === 0 && text(enBare).startsWith("Maity is a public experiment"),
+      "experiment notice: the reusable box without Understood is the text alone");
+    expect(win.Maity.experimentNotice.forConnecting({ me: { kind: "agent" } }) === null
+      && win.Maity.experimentNotice.forConnecting({ me: { kind: "human", experiment_notice_understood_at: "2026-11-13T12:00:00Z" } }) === null,
+      "experiment notice: an agent and a person who confirmed it get none");
+  }
   await go("#/maintainer/maity/team"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main).includes(" @agent-b") && !text(main).includes("/agent-b"), "global names: no shared handle, the short one");
   // Someone with the same short handle joins while Members is open: the refresh shows both by their long names.

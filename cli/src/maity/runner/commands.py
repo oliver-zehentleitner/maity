@@ -24,6 +24,7 @@ from . import (
     limitread,
     loop,
     operate,
+    plaincall,
     serve,
     stub,
     supervisor,
@@ -375,7 +376,7 @@ def _check_harness(
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness, as_user, agent_path)
+        _check_claude_code(report, harness, as_user, agent_path, found.version)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -386,7 +387,11 @@ def _check_harness(
 
 
 def _check_claude_code(
-    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = ""
+    report: Report,
+    harness: config.Harness,
+    as_user: AsUser = RUNNER,
+    agent_path: str = "",
+    version: str | None = None,
 ) -> None:
     # On the agents' PATH, as their user finds it: that is where the sandbox starts.
     tools = capabilities.claude_sandbox_tools()
@@ -396,6 +401,8 @@ def _check_claude_code(
         line = f"harness claude-code: no OS sandbox on {sys.platform}; agents run unsandboxed"
     elif missing:
         line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
+    elif not capabilities.sandbox_version_ok(harness.id, version):
+        line = capabilities.sandbox_version_line(version)
     if line is not None:
         (report.error if harness.require_sandbox else report.warn)(line)
     else:
@@ -491,7 +498,10 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             if warning is not None:
                 report.warn(f"{name}: {warning}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
-                line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
+                if capabilities.sandbox_version_ok(harness.id, probe.version):
+                    line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
+                else:
+                    line = f"{name}: {capabilities.sandbox_version_line(probe.version)}"
                 (report.error if harness.require_sandbox else report.warn)(line)
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
@@ -716,6 +726,10 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("home")
     r.add_argument("clone")
     r.set_defaults(handler=lambda a: trust.main([a.home, a.clone]))
+    # Internal too: the hook a placed Claude Code session runs before each tool call
+    # (plaincall), reading its input on stdin.
+    r = rsub.add_parser("plaincall")
+    r.set_defaults(handler=lambda a: plaincall.main([]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)

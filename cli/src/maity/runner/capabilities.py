@@ -23,12 +23,57 @@ from . import config
 from .asuser import RUNNER, AsUser
 
 VERSION_TIMEOUT = 10.0
-_VERSION = re.compile(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.]+)?")
+# A version as a harness prints it, whole: its prerelease and build metadata may hold `-`
+# (`2.1.295--rc`), so neither is cut short into a release. Both probes read with it (local
+# here, ssh in targets).
+VERSION = re.compile(r"\d+(?:\.\d+)+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
 # The harness versions whose sandbox behaviour was checked for a call with something placed
 # in front of `maity` (runner.md, the adapters entry). Another version still runs; the runner
 # says that it was not checked.
 CHECKED = {"claude-code": "2.1.318"}
+
+
+# The oldest Claude Code whose hooks refuse the call when they fail or time out
+# (`onFailure: "block"`): the runner's sandboxed sessions rely on it (adapters.claude_settings),
+# so its sandbox is switched on only from this version (cli/context/runner.md).
+CLAUDE_SANDBOX_MIN = (2, 1, 295)
+# A SemVer 2.0.0 version: MAJOR.MINOR.PATCH without leading zeros, an optional prerelease
+# (`-…`, dot-separated identifiers, a numeric one without a leading zero) and build metadata
+# (`+…`); no identifier is empty. Anything else is no version the gate reads.
+_NUMBER = r"(?:0|[1-9]\d*)"
+_PRE_ID = rf"(?:{_NUMBER}|\d*[A-Za-z-][0-9A-Za-z-]*)"
+_BUILD_ID = r"[0-9A-Za-z-]+"
+_RELEASE = re.compile(
+    rf"({_NUMBER})\.({_NUMBER})\.({_NUMBER})"
+    rf"(-{_PRE_ID}(?:\.{_PRE_ID})*)?(\+{_BUILD_ID}(?:\.{_BUILD_ID})*)?"
+)
+
+
+def sandbox_version_ok(harness_id: str, version: str | None) -> bool:
+    """Whether the runner may switch the harness's sandbox on at this version: for Claude Code
+    CLAUDE_SANDBOX_MIN or later, read from the probed version; an unknown or unreadable
+    version is not, nor is any other shape. A prerelease sorts before its release (SemVer
+    §11), so `2.1.295-rc.1` is below the minimum; build metadata (`+…`) does not count.
+    Other harnesses: always."""
+    if harness_id != "claude-code":
+        return True
+    match = _RELEASE.fullmatch(version or "")
+    if match is None:
+        return False
+    release = tuple(int(part) for part in match.groups()[:3])
+    if match.group(4) is not None:  # a prerelease of `release`
+        return release > CLAUDE_SANDBOX_MIN
+    return release >= CLAUDE_SANDBOX_MIN
+
+
+def sandbox_version_line(version: str | None) -> str:
+    """Why Claude Code's sandbox stays off at this version, for `check` and the log."""
+    oldest = ".".join(str(part) for part in CLAUDE_SANDBOX_MIN)
+    return (
+        f"harness claude-code: version {version or 'unknown'} is older than {oldest} or"
+        " unknown; its sandbox is not switched on (the runner's hook needs `onFailure`)"
+    )
 
 
 def unchecked(harness_id: str, version: str | None) -> str | None:
@@ -79,7 +124,7 @@ def probe(harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER) ->
     lines = (done.stdout or done.stderr).strip().splitlines()
     if done.returncode != 0 or not lines:
         return Probe(found, None, "version_failed")
-    match = _VERSION.search(lines[0])
+    match = VERSION.search(lines[0])
     return Probe(found, ascii_text(match.group(0) if match else lines[0], 80), None)
 
 
@@ -148,7 +193,11 @@ def harness_entry(
     sandbox: bool | None = None,
     as_user: AsUser = RUNNER,
 ) -> dict[str, Any]:
-    on = sandbox_available(harness, path, as_user) if sandbox is None else sandbox
+    if sandbox is None:
+        sandbox = sandbox_available(harness, path, as_user) and sandbox_version_ok(
+            harness.id, found.version
+        )
+    on = sandbox
     return {
         "id": harness.id,
         "version": found.version,

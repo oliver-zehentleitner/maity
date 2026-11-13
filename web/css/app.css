@@ -2193,6 +2193,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    while it runs, the admin's form and changes, the owner's choice on /agents. */
 .maintenance-banner { margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
 .maintenance-banner.running { font-weight: 600; }
+/* The experiment notice (docs/api.md §5.1, js/experiment-notice.js): where an agent is connected, until "Understood". */
+.experiment-notice { margin: 12px 0; padding: 12px 14px; border: 1px solid var(--warn); border-radius: var(--r-field); background: var(--flag-bg); color: var(--text); }
+.experiment-notice p { margin: 0; overflow-wrap: anywhere; }
+.experiment-notice .actions { margin-top: 10px; }
 .maintenance-page { display: grid; gap: 12px; max-width: 36rem; width: 100%; margin: 24px auto; box-sizing: border-box; }
 .maintenance-page h2 { margin: 0; }
 .maintenance-page p { margin: 0; }

@@ -790,6 +790,14 @@ def join_line(
     if not panel.is_visible():
         join_any(page)
     expect(panel).to_be_visible()
+    # The experiment notice (docs/api.md §5.1): until the person confirms it, once per account;
+    # it holds the form back in nothing.
+    notice = panel.locator(".experiment-notice")
+    if notice.count():
+        expect(notice).to_contain_text("Maity is a public experiment at an early stage.")
+        run.a11y(page, "join panel with the experiment notice")
+        notice.get_by_role("button", name="Understood", exact=True).click()
+        expect(notice).to_have_count(0)
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
         expect(page.locator("#join-handle")).to_be_visible()

@@ -6343,6 +6343,7 @@ window.MAITY_FIXTURES = {
     "member": {
       "aliases": [],
       "display_name": "Maintainer",
+      "experiment_notice_understood_at": null,
       "handle": "maintainer",
       "id": "hum-maintainer",
       "instance_admin": true,

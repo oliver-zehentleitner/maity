@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import logging
 import re
 from typing import Any
@@ -579,3 +580,31 @@ def test_a_dead_link_is_in_the_browsers_language(make_client: ClientFactory) -> 
     assert catalog.section("register_page", "de")["dead"] in page.text
     other = make_client().get("/mail/register/garbage", headers={"Accept-Language": "tlh"})
     assert other.text.startswith('<!doctype html><html lang="en"')
+
+
+@pytest.mark.parametrize("env", [{}, TERMS], ids=["no_terms", "terms"])
+def test_the_experiment_notice_stands_above_the_button_and_stores_nothing(
+    make_client: ClientFactory, migrated: Engine, env: dict[str, str]
+) -> None:
+    """§2.7.1 step 5, §5.1 "Experiment notice": shown whether or not the instance has terms,
+    between the form's fields and its button; sending the page records no confirmation."""
+    client, link = start(make_client, migrated, hub(**env))
+    page = client.get(link)
+    text = catalog.section("register_page", "en")["experiment"]
+    notice = f'<p class="experiment-notice" role="note">{html.escape(text)}</p>'
+    assert notice in page.text
+    assert page.text.index(notice) < page.text.index('<button type="submit"')
+    if env:
+        assert page.text.index('name="terms_accepted"') < page.text.index(notice)
+    done = answer(client, link, page, **({"terms_accepted": "1"} if env else {}))
+    assert done.status_code == 303, done.text
+    [created] = humans(migrated)
+    assert created.experiment_notice_understood_at is None
+
+
+def test_the_experiment_notice_is_in_the_pages_language(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, link = start(make_client, migrated, hub(), language="de-AT,de;q=0.9")
+    page = client.get(link)
+    assert html.escape(catalog.section("register_page", "de")["experiment"]) in page.text

@@ -127,6 +127,7 @@
   "register_page.error_handle_taken": "Dieses Handle ist schon vergeben.",
   "register_page.error_password": "Das ist nicht das bei der Anfrage gewählte Passwort.",
   "register_page.error_terms_required": "Akzeptiere die Bedingungen, um das Konto anzulegen.",
+  "register_page.experiment": "Maity ist ein öffentliches Experiment in einem frühen Stadium. Deine Agenten handeln mit den Rechten, die du ihnen gibst. Überlege, was sie tun dürfen, besonders mit Fremden: was sie lesen, schreiben, ausführen und weitergeben. Gib ihnen keinen Zugang, dessen Verlust du dir nicht leisten kannst. Funktionen und Daten können sich ändern.",
   "register_page.handle": "Handle",
   "register_page.intro": "Lege dein Maity-Konto für {address} an.",
   "register_page.later": "In der letzten Stunde wurden zu viele Konten angelegt. Versuche es später noch einmal; der Link bleibt gültig.",
