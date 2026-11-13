@@ -6414,7 +6414,7 @@ alike (§2.10); the page cannot know which, and must not guess one.
 - Saying "expired" or "used" for a dead link: the hub does not tell them
   apart, and a guess would be wrong half the time.
 
-## The banner toward an authenticator app: Later kept per session in the browser, its reads kept until a write that moves them
+## The banner toward an authenticator app: Later kept per session in the browser, its reads kept a minute at most
 
 **Id:** 7edef2ad-504b-4a50-983c-daa9eb37f88c
 **Type:** decision
@@ -6427,15 +6427,20 @@ alike (§2.10); the page cannot know which, and must not guess one.
 banner stays away while the session is that one, so the next sign-in, a
 new session, shows it again. Where the browser keeps nothing it holds for
 the page load. What the banner stands on (`GET /auth/second-factor`,
-`/auth/methods`, `/me/notification-settings`) is read once and again
-only after a write of this tab to the mail settings, the second factor or
-the instance's sign-in settings.
+`/auth/methods`, `/me/notification-settings`) is kept for a minute at most,
+and read again sooner after a write of this tab to the mail settings, the
+second factor or the instance's sign-in settings, on every Security page,
+and when the tab is shown again.
 
 **Reason:** the contract ties "Later" to the sign-in and gives the hub no
 field for it, and a session's id is exactly what changes at a sign-in.
 The banner is on every page, and three reads on every page switch would
-be three calls on every click for something that changes only through
-those writes.
+be three calls on every click for something that changes rarely. It does
+change outside this tab, though (an app enrolled in another tab or on
+another device, an admin's switch), and the sharp sentence is a security
+claim: kept for the tab's lifetime it stood next to the enrolled app on
+Security (review of #1716). A minute bounds how long it can be wrong;
+Security, where the human checks the factor, never shows a kept one.
 
 **Rejected alternatives:**
 - `sessionStorage`: it ends with the tab, not with the sign-in; a new tab
@@ -6443,3 +6448,8 @@ those writes.
 - Reading the three on every page: the cost above, for nothing new.
 - Re-reading after any write: the inbox and the board write all the time,
   and none of their writes moves the banner.
+- Keeping the reads for the tab's lifetime, cleared only by this tab's own
+  writes (the first version): a change made elsewhere left a false claim
+  until a reload.
+- A `storage` event between tabs: it covers another tab of this browser,
+  not another device or an admin, which the minute covers too.

@@ -14326,6 +14326,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     fbOwn = true; fbOffered = false; win.Maity.factorBanner.forget();
     await fbGo("#/maintainer/maity/inbox");
     expect(fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."), "authenticator banner: the instance not offering a reset, the milder sentence");
+    // A change made elsewhere (another tab enrolled an app, an admin, the human's switch on another
+    // device) writes nothing in this tab: Security reads afresh, and nothing is kept past a minute (#1716 review).
+    fbOffered = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone"), "authenticator banner: the sharp sentence again before the outside change");
+    fbVia = "totp";
+    await fbGo("#/maintainer/maity/board");
+    const fbStale = !!fbBox();
+    await fbGo("#/account/security");
+    expect(fbStale && !fbBox(), "authenticator banner: an app enrolled in another tab ends it on Security, without a reload or a write here");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbOwn = false;
+    await fbGo("#/maintainer/maity/board");
+    const fbKept = fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone");
+    const fbNow = win.Maity.api.now;
+    const fbLater = fbNow() + 61000;
+    win.Maity.api.now = () => fbLater;
+    await fbGo("#/maintainer/maity/inbox");
+    win.Maity.api.now = fbNow;
+    expect(fbKept && fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."),
+      "authenticator banner: a switch turned off elsewhere shows within a minute, read again once the kept answer is a minute old");
+    fbOwn = true; fbVia = "email"; win.Maity.factorBanner.forget();
     fbOffered = true; win.Maity.factorBanner.forget();
     await fbGo("#/maintainer/maity/inbox");
     btn(fbBox(), "Later").click(); await tick();

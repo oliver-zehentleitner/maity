@@ -2191,7 +2191,8 @@ window.Maity = window.Maity || {};
     if (!M.factorBanner || !ctx.me || ctx.me.kind !== "human") return;
     const main = document.getElementById("main");
     const seq = ++factorSeq;
-    M.factorBanner.banner(factorSession).then((b) => {
+    const security = /^\/account\/security(?:\/|$)/.test(M.route.current().path);
+    M.factorBanner.banner(factorSession, security).then((b) => {
       if (seq !== factorSeq) return;
       const old = main.querySelector(".factor-banner");
       if (old) main.removeChild(old);

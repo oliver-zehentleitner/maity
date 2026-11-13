@@ -12,20 +12,30 @@ window.Maity = window.Maity || {};
   // The session "Later" was chosen in; a new sign-in is a new session, and the banner is back.
   const LATER = "maity.factor-banner.later";
 
-  // What the banner stands on, read once and again after a write of this tab that may change
-  // it (a switch turned off, TOTP enrolled): three reads on each page would be three calls on
-  // every click.
+  // What the banner stands on, kept for a minute at most: three reads on each page would be
+  // three calls on every click. Read again before that after a write of this tab that may
+  // change it (a switch turned off, TOTP enrolled), on Security, where the human looks at the
+  // factor, and when the tab is shown again: another tab, another device or an admin may have
+  // changed it meanwhile, and a banner that says the mailbox alone signs in must not outlive
+  // an app enrolled elsewhere (#1716 review).
+  const MAX_AGE_MS = 60000;
   let reading = null;
+  let readAt = 0;
   let laterHere = null; // where the browser keeps nothing, "Later" holds for this page load
 
   function forget() { reading = null; }
+  if (window.document && window.document.addEventListener) {
+    window.document.addEventListener("visibilitychange", () => { if (window.document.visibilityState === "visible") forget(); });
+  }
   // A write that may change it: the human's mail settings (their switch), the second factor
   // (TOTP enrolled ends the banner), the instance's sign-in settings (the reset offered).
   const MOVES = /^\/(?:me\/notification-settings|auth\/second-factor|admin\/settings\/sign-in)(?:[/?]|$)/;
   function wrote(path) { if (typeof path === "string" && MOVES.test(path)) forget(); }
 
   function read() {
+    if (reading && M.api.now() - readAt >= MAX_AGE_MS) forget();
     if (!reading) {
+      readAt = M.api.now();
       reading = (async () => {
         const factor = await M.api.get("/auth/second-factor");
         if (!factor || factor.via !== "email") return null;
@@ -51,9 +61,11 @@ window.Maity = window.Maity || {};
     try { window.localStorage.setItem(LATER, sessionId); } catch (err) { /* this browser keeps nothing */ }
   }
 
-  // The banner for this session, or null. sessionId: GET /auth/session's `session_id`.
-  async function banner(sessionId, onHide) {
+  // The banner for this session, or null. sessionId: GET /auth/session's `session_id`;
+  // fresh: read again whatever is kept (Security).
+  async function banner(sessionId, fresh, onHide) {
     if (sessionId && laterFor() === sessionId) return null;
+    if (fresh) forget();
     let state;
     try {
       state = await read();
