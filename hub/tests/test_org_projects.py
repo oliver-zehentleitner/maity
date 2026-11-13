@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
+from maity_hub.events import newest_seq
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_orgs import delete_org, make_org, team
@@ -129,6 +130,7 @@ def test_an_owner_made_later_joins_every_project_archived_ones_included(
                 areas=["/"],
                 capabilities=[],
                 joined_at=joined,
+                joined_seq=newest_seq(conn, pid),
                 last_seen_at=joined,
             )
         )

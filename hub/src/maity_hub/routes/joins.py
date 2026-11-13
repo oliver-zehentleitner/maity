@@ -61,7 +61,7 @@ from maity_hub.config import Settings
 from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -1067,6 +1067,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 subagents_language=row.subagents_language if row.subagents else None,
                 subagents_by=row.created_by if row.subagents else None,
                 joined_at=now,
+                joined_seq=newest_seq(conn, row.project_id),
             )
         )
         key = result.inserted_primary_key

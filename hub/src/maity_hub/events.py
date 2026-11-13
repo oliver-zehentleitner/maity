@@ -252,6 +252,16 @@ def lock_project(conn: Connection, project_id: str) -> Any:
     ).one()
 
 
+def newest_seq(conn: Connection, project_id: str) -> int:
+    """The project's newest event seq, 0 for none: one step down the index (project_id, seq).
+    A new membership stores it as `joined_seq`, read under the project's lock that its
+    caller holds, so no event of the project lands between this read and the insert."""
+    found = conn.execute(
+        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project_id)
+    ).scalar()
+    return int(found or 0)
+
+
 WATCHERS = "watchers:"
 # A notice about an event, and the payload field that names that event.
 _READ_AS_THEIR_EVENT = {"event_redacted": "seq", "attachment_deleted": "message_seq"}

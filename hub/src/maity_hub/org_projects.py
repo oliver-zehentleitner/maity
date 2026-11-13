@@ -24,7 +24,7 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import clock, restricted, start_tabs
 from maity_hub import tables as t
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.views import member_view
 
 HUB = Actor(None)  # the events name no actor: the hub's own change
@@ -79,6 +79,7 @@ def keep_owner(conn: Connection, project: Any, human_id: str, by: str | None = N
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
+                joined_seq=newest_seq(conn, project.id),
                 last_seen_at=now,
                 org_keep="created",
             )

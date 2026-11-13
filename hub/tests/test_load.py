@@ -87,13 +87,13 @@ def histories(
     """A bell with `UNIT` unread requests; calling the result grows it to `GROWTH` times."""
     inbox_item(make_client, owner)
     template = {"request": _request_of(migrated)}
-    # Joining never replays history (§18.2): the human joined before the window began, so
-    # that every seeded event is news to them.
+    # Joining never replays history (§18.2): the human joined before the window began and
+    # before any event, so that every seeded event is news to them.
     with migrated.begin() as conn:
         conn.execute(
             update(t.membership)
             .where(t.membership.c.human_id == owner.id)
-            .values(joined_at=clock.now() - timedelta(days=WINDOW_DAYS + 1))
+            .values(joined_at=clock.now() - timedelta(days=WINDOW_DAYS + 1), joined_seq=0)
         )
     seed(migrated, template, UNIT - 1, 1)
 
