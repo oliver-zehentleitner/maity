@@ -864,6 +864,56 @@ def test_a_trickling_forge_is_cut_off_at_the_deadline(
         assert time.monotonic() - started < 2.0
 
 
+def test_a_stalled_tls_handshake_is_cut_off_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The forge's own opener over TLS: the server takes the connection and never answers the
+    # handshake. The socket is held from the TCP connection on, so the deadline ends the
+    # handshake, not the per-recv TIMEOUT.
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.5)
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    held: list[socket.socket] = []
+    threading.Thread(target=lambda: held.append(listener.accept()[0]), daemon=True).start()
+    opener = urllib.request.build_opener(forge._SameHostOnly, forge._BoundedHTTPS)  # no stub
+    try:
+        started = time.monotonic()
+        with (
+            pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"),
+            forge.bounded(),
+        ):
+            opener.open(f"https://127.0.0.1:{port}/repos/a/b", timeout=5.0)
+        assert time.monotonic() - started < 2.0
+    finally:
+        listener.close()
+        for conn in held:
+            conn.close()
+
+
+def test_a_socket_held_after_the_deadline_is_shut_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A connection whose handshake ends after the deadline gives its socket to a read whose
+    # timer has already fired: the socket is shut as it is held, and the read after it ends
+    # at once instead of trickling on unbounded.
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.1)
+    ours, theirs = socket.socketpair()
+    try:
+        with (
+            pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"),
+            forge.bounded(),
+        ):
+            time.sleep(0.3)
+            forge._hold(ours)
+            ours.settimeout(5.0)
+            started = time.monotonic()
+            assert ours.recv(1) == b""
+            assert time.monotonic() - started < 1.0
+    finally:
+        ours.close()
+        theirs.close()
+
+
 @contextlib.contextmanager
 def _short(head: bytes, body: bytes) -> Any:
     """A server that sends `head`, then `body`, and closes: less than it declared."""

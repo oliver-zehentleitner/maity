@@ -734,6 +734,11 @@ def test_safe_url_drops_userinfo_and_query() -> None:
         ("http://127.0.0.1:9/skill", "http://127.0.0.1:9/skill"),
         ("https://h.example/r/join/abc123", "https://h.example/r/<token>/<token>"),
         ("https://join.example/Ab3_xY9-kLm0pQr7sTu2vW", "https://join.example/<token>"),
+        ("https://join.example/AbcDef-GhiJkl-MnoPqrs", "https://join.example/<token>"),
+        (
+            "https://h.example/api/v1/invitations/abc123",
+            "https://h.example/api/v1/invitations/<token>",
+        ),
     ],
 )
 def test_safe_url_hides_the_token_of_a_link(url: str, shown: str) -> None:

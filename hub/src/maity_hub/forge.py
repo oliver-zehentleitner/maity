@@ -86,24 +86,80 @@ def repository_of(url: str) -> str:
     return f"{owner}/{name.removesuffix('.git')}"
 
 
-_held = threading.local()  # the sockets the current thread's `bounded` read has opened
+class _Deadline:
+    """The sockets one `bounded` read has opened, and whether its time is up. Holding a
+    socket and the deadline take one lock, so a socket comes either before the deadline,
+    which then shuts it, or after it, and is shut as it is held."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.socks: list[Any] = []
+        self.expired = False
+
+    def hold(self, sock: Any) -> None:
+        with self.lock:
+            self.socks.append(sock)
+            if self.expired:
+                _shut(sock)
+
+    def expire(self) -> None:
+        with self.lock:
+            self.expired = True
+            socks = list(self.socks)
+        for sock in socks:
+            _shut(sock)
+
+
+def _shut(sock: Any) -> None:
+    """Shuts the connection under `sock` for both directions. The plain socket's shutdown
+    also for a TLS socket: its own drops the TLS object a read in the other thread is
+    using, which then fails with an AttributeError instead of an OSError."""
+    with suppress(OSError):
+        socket.socket.shutdown(sock, socket.SHUT_RDWR)
+
+
+_held = threading.local()  # the `_Deadline` of the current thread's `bounded` read
+
+
+def _hold(sock: Any) -> Any:
+    """Gives `sock` to the running `bounded` read, so its deadline can shut it."""
+    deadline = getattr(_held, "deadline", None)
+    if deadline is not None:
+        deadline.hold(sock)
+    return sock
 
 
 class _Registering:
-    """A connection that tells the running `bounded` read its socket, so the deadline can
-    end a read blocked anywhere: in the TLS handshake, the headers or the body."""
+    """A connection that tells the running `bounded` read its socket as soon as the TCP
+    connection stands, so the deadline can end a read blocked anywhere: in the TLS
+    handshake, the headers or the body."""
 
     sock: Any
+    _create_connection: Any
 
-    def connect(self) -> None:
-        super().connect()  # type: ignore[misc]
-        socks = getattr(_held, "socks", None)
-        if socks is not None:
-            socks.append(self.sock)
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        create = self._create_connection
+        self._create_connection = lambda *a, **k: _hold(create(*a, **k))
 
 
 class _RegisteringHTTPS(_Registering, http.client.HTTPSConnection):
-    pass
+    """`HTTPSConnection.connect` with the handshake after the TLS socket is held: wrapping
+    takes the descriptor from the TCP socket, which a shutdown then no longer reaches.
+    """
+
+    _context: Any
+    _tunnel_host: Any
+
+    def connect(self) -> None:
+        http.client.HTTPConnection.connect(self)
+        self.sock = self._context.wrap_socket(
+            self.sock,
+            server_hostname=self._tunnel_host or self.host,
+            do_handshake_on_connect=False,
+        )
+        _hold(self.sock)
+        self.sock.do_handshake()
 
 
 class _BoundedHTTPS(urllib.request.HTTPSHandler):
@@ -118,29 +174,21 @@ def bounded() -> Iterator[None]:
     deadline, which ends a recv however slowly the bytes come: a per-recv timeout cannot,
     since a forge sending a byte before each one runs out never trips it. What the shut
     socket raises, or a body it cut short, is `ForgeUnavailableError` (timeout)."""
-    socks: list[Any] = []
-    expired = threading.Event()
-
-    def expire() -> None:
-        expired.set()
-        for sock in socks:
-            with suppress(OSError):
-                sock.shutdown(socket.SHUT_RDWR)
-
-    timer = threading.Timer(READ_SECONDS, expire)
+    deadline = _Deadline()
+    timer = threading.Timer(READ_SECONDS, deadline.expire)
     timer.daemon = True
-    _held.socks = socks
+    _held.deadline = deadline
     timer.start()
     try:
         yield
     except (OSError, ValueError, http.client.HTTPException, ForgeUnavailableError):
-        if expired.is_set():  # whatever the shut socket made of the read, it was the deadline
+        if deadline.expired:  # whatever the shut socket made of the read, it was the deadline
             raise ForgeUnavailableError("the forge did not answer: timeout") from None
         raise
     finally:
         timer.cancel()
-        _held.socks = None
-    if expired.is_set():  # the body ended where the timer cut it
+        _held.deadline = None
+    if deadline.expired:  # the body ended where the timer cut it
         raise ForgeUnavailableError("the forge did not answer: timeout")
 
 

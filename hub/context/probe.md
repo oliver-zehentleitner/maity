@@ -482,7 +482,13 @@ through `unknown` needs a stored value the observation does not have today.
 Every request the hub makes to the forge's API, the probe's (`forge.Forge._send`)
 and the GitHub App's (`github_app._open`), runs inside `forge.bounded`: a timer
 shuts the sockets the request opened (`_Registering`) `READ_SECONDS` (10 s)
-after it starts, so the connection, the headers and the body all end there. The
+after it starts, so the connection, the headers and the body all end there. A
+socket is held from the moment its TCP connection stands, and the TLS
+handshake runs only after the TLS socket is held too, since wrapping takes the
+descriptor from the TCP socket; holding and the deadline take one lock, so a
+socket that comes after the deadline is shut as it is held. The timer shuts a
+TLS socket through the plain socket's shutdown, which leaves the TLS object a
+read in the other thread is using in place. The
 body is read one recv at a time (`read1`), and a JSON answer past `ANSWER_CAP`
 (16 MiB) is refused as `ForgeUnavailableError`, and so is a body that ends
 before its declared length: a read with a byte count returns nothing there
