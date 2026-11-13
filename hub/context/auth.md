@@ -729,3 +729,47 @@ that a member that calls is never shown away.
   write at T, a call at T + 59 that wrote nothing, a read at T + 121), and a session in use could
   expire up to a minute early.
 - Other options of the first request: unknown.
+
+## The daily cap of wrong second-factor codes is a row per human and UTC day, refuses before the compare, and its alert mail carries the one link that lifts it
+
+**Id:** bdb3d207-90bb-4f5c-999c-110a8a9f10fb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 (a daily cap per human, a setting with default 50, refused until the next day or a mail confirmation); `auth/second_factor.py` `refuse_over_day`, `_count_day`, `unlock`; docs/api.md §2.8.6, §18.6
+**Revisit when:** the 15-minute window or the per-session limit changes, a human asks for the cap per instance in the admin settings rather than the environment, or the hub keeps a sliding day for another limit
+**See:** auth.md#two-factor-sign-in-whether-a-session-must-enrol-is-worked-out-per-call-and-the-second-step-re-keys-the-session-in-place — ff8b8099-8384-4d68-906a-1b4d7b17bc47 — as of 2026-11-13
+
+Every wrong TOTP or recovery code of an enrolled human (`second_factor.check`: the sign-in step,
+a step-up, a password reset) adds one to `second_factor_day(human_id, day)`, the UTC date, under
+the factor's row lock the check already holds. At `MAITY_SECOND_FACTOR_WRONG_PER_DAY` (default
+50) the check refuses with `rate_limited` (`reason: daily_limit`) before it compares anything, so
+a right code is refused too, until the UTC day ends. The code that reaches the cap writes
+`second_factor_failed` with `method: daily_limit`, the day and `unlocks`; the mailer's at-once
+mail of that record carries `/mail/second-factor-unlock/{token}`, a signed token of the human,
+the day and `unlocks`. Its `POST` resets the day's count to zero and moves `unlocks` in one
+conditional update, so the link works once and dies with the day. The mail factor's codes and an
+enrolment's confirm do not count: neither is a guess at an enrolled secret.
+
+**Reason:** the 15-minute window alone lets 960 guesses through a day. A count in the database,
+unlike the in-process limiters, survives a restart, which a limit over a whole day must; and
+lifting it needs one human's count reset, which a row gives directly. Comparing a code after the
+cap would answer whether it was right, so the refusal comes first. The calendar day follows the
+card ("until the next day") and `email_sign_in_day`, and gives one `Retry-After`. Putting the
+link into the alert's own mail sends one mail, not two, and the `unlocks` counter makes it
+single-use without a table of nonces.
+
+**Rejected alternatives:**
+- A `Limiter` with a 24-hour window: shared across replicas only on PostgreSQL, forgotten on a
+  restart on SQLite and MariaDB, and no way to lift one human's count but clearing its bucket.
+- A sliding 24 hours: the count of a refused human would never fall to a clear moment for the
+  `Retry-After` and the mail's "until the end of the day".
+- Comparing the code at the cap and only refusing a wrong one: an oracle for the guesser.
+- A separate unlock mail beside the alert: two mails for one event, and the alert's mail would
+  still say nothing about the way back.
+- A stored nonce per link (as the admin's reset keeps): one more table where a counter on the
+  day's row already decides "once".
+
+`password_changed` is a record type of its own rather than `password_reset` with a method: the
+text differs (every other session ends, not every one), and the bell and the mail name what the
+human did in the account apart from a reset by mail.
