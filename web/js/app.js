@@ -756,7 +756,8 @@ window.Maity = window.Maity || {};
       }
     };
 
-    const panel = h("div", { class: "panel", id: "project-panel" });
+    // The settings' forms share one reading column (web/context/views.md).
+    const panel = h("div", { class: "panel form-column", id: "project-panel" });
     const language = (ctx.project.settings || {}).language || "en";
     const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
     if (humanAdmin) {
@@ -2483,7 +2484,9 @@ window.Maity = window.Maity || {};
     if (["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
-    const root = h("section", { class: "view view-" + viewName });
+    // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
+    // are forms: one reading column (web/context/views.md).
+    const root = h("section", { class: "view view-" + viewName + (["account", "orgs", "settings"].includes(viewName) ? " form-column" : "") });
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:
