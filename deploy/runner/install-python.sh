@@ -13,7 +13,10 @@
 # restarts the service.
 # Usage: RUNNER_DIR=/opt/actions-runner-pg SERVICE=maity-runner@pg [RUNNER_USER=gh-runner] [RUNNER_HOME=...] \
 #        [PYTHON_SERIES=3.12] install-python.sh      (once per runner directory)
-#        (FORCE=1 restarts the service even while a job runs; UV_VERSION pins the uv installer)
+#        (FORCE=1 restarts the service even while a job runs; UV_VERSION and UV_SHA256 pin uv: a different version
+#        needs the sha256 of its uv-x86_64-unknown-linux-gnu.tar.gz from the release's checksums)
+# uv comes from its release tarball, checked against UV_SHA256 before anything in it runs; no installer script is
+# piped into a shell.
 set -euo pipefail
 cd /   # a neutral directory: uv looks for a config in the current one, which the runner user may not read (/root)
 RU=${RUNNER_USER:-gh-runner}
@@ -22,6 +25,11 @@ RUNNER_DIR=${RUNNER_DIR:-/opt/actions-runner}
 SERVICE=${SERVICE:-maity-runner}
 SERIES=${PYTHON_SERIES:-3.12}
 UV_VERSION=${UV_VERSION:-0.13.6}
+# TODO(tsk-6zh891gy6cvz): the sha256 of uv-x86_64-unknown-linux-gnu.tar.gz of uv 0.13.6, from the release's
+# uv-x86_64-unknown-linux-gnu.tar.gz.sha256 (github.com/astral-sh/uv/releases/tag/0.13.6). Until it is filled in,
+# the script refuses to install uv.
+UV_SHA256=${UV_SHA256:-PLACEHOLDER-sha256-of-uv-0.13.6-x86_64-unknown-linux-gnu.tar.gz}
+UV_TARGET=uv-x86_64-unknown-linux-gnu
 TOOL=$RUNNER_DIR/_work/_tool
 as_ru() { runuser -u "$RU" -- env HOME="$HOME_RU" PATH="$HOME_RU/.local/bin:/usr/local/bin:/usr/bin:/bin" UV_PYTHON_PREFERENCE=only-managed "$@"; }
 
@@ -30,7 +38,23 @@ if pgrep -u "$RU" -f Runner.Worker >/dev/null && [ -z "${FORCE:-}" ]; then
   exit 1
 fi
 
-[ -x "$HOME_RU/.local/bin/uv" ] || as_ru sh -c "curl -LsSf https://astral.sh/uv/$UV_VERSION/install.sh | sh"
+if [ ! -x "$HOME_RU/.local/bin/uv" ]; then
+  [ "$(uname -m)" = x86_64 ] || { echo "uv is pinned for x86_64 only; this machine is $(uname -m)" >&2; exit 1; }
+  case "$UV_SHA256" in
+    *[!0-9a-f]*|'') echo "UV_SHA256 is not a sha256 ('$UV_SHA256'): set the checksum of $UV_TARGET.tar.gz for uv $UV_VERSION" >&2; exit 1;;
+  esac
+  [ "${#UV_SHA256}" = 64 ] || { echo "UV_SHA256 must be 64 hex digits" >&2; exit 1; }
+  # As the runner user, in a directory of its own: download, check, and only then unpack and install.
+  as_ru sh -c '
+    set -eu
+    t=$(mktemp -d); trap "rm -rf \"\$t\"" EXIT
+    curl -fsSL -o "$t/uv.tar.gz" "https://github.com/astral-sh/uv/releases/download/$1/$3.tar.gz"
+    echo "$2  $t/uv.tar.gz" | sha256sum -c --quiet -
+    tar -xzf "$t/uv.tar.gz" -C "$t"
+    install -d "$HOME/.local/bin"
+    install -m 0755 "$t/$3/uv" "$t/$3/uvx" "$HOME/.local/bin/"
+  ' sh "$UV_VERSION" "$UV_SHA256" "$UV_TARGET"
+fi
 as_ru uv python install "$SERIES"
 PY=$(as_ru uv python find "$SERIES")                       # UV_PYTHON_PREFERENCE=only-managed (in as_ru) limits it to uv-managed Pythons;
 #                                                              # the flag --managed-python cannot be combined with that setting; .../cpython-3.12.X-linux-x86_64-gnu/bin/python3.12

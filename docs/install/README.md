@@ -205,12 +205,15 @@ ufw allow from 10.42.0.0/16 to any   # pods
 ufw allow from 10.43.0.0/16 to any   # services
 ```
 
-**2. k3s.** Download the installer, read it, then run it with a pinned
-version (tested: v1.36.5+k3s1). Then put the Traefik configuration where
-k3s watches for it:
+**2. k3s.** Download the installer of the pinned version (tested:
+v1.36.5+k3s1) from its release tag, check its checksum, read it, then run
+it with that version. The installer checks the k3s binary against the
+release's own checksums. Then put the Traefik configuration where k3s
+watches for it:
 
 ```sh
-curl -sfL -o k3s-install.sh https://get.k3s.io
+curl -sfL -o k3s-install.sh https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh
+echo "PLACEHOLDER-sha256-of-k3s-install.sh-at-v1.36.5+k3s1  k3s-install.sh" | sha256sum -c
 INSTALL_K3S_VERSION=v1.36.5+k3s1 sh k3s-install.sh
 cp deploy/k3s-single/traefik-config.yaml /var/lib/rancher/k3s/server/manifests/
 ```
@@ -220,12 +223,15 @@ client addresses, and redirects plain HTTP to HTTPS at Traefik. Its syntax
 is Traefik chart v40's: `ports.web.http.redirections.entryPoint`.
 
 **3. cert-manager**, from its Helm chart with the CRDs, pinned (tested:
-v1.20.4):
+v1.20.4). The chart archive is checked against its checksum before it is
+installed:
 
 ```sh
 helm repo add jetstack https://charts.jetstack.io
-helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace \
-  --version v1.20.4 --set crds.enabled=true
+helm pull jetstack/cert-manager --version v1.20.4
+echo "PLACEHOLDER-sha256-of-cert-manager-v1.20.4.tgz  cert-manager-v1.20.4.tgz" | sha256sum -c
+helm install cert-manager ./cert-manager-v1.20.4.tgz -n cert-manager --create-namespace \
+  --set crds.enabled=true
 ```
 
 **4. Namespace and secrets.**

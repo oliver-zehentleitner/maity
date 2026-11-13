@@ -123,7 +123,8 @@ So the machine is capped, not trusted:
 4. For each instance, as root, with no job running (it restarts the service if it is running and never starts one; the script refuses otherwise unless
    `FORCE=1`): `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> install-python.sh`. The jobs use
    `actions/setup-python` for 3.12, which has no Python for Debian and would fail; the script installs 3.12 with
-   uv as the runner user, puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
+   uv as the runner user (uv itself from its release tarball, checked against the pinned `UV_SHA256` before it
+   runs; a different `UV_VERSION` needs its own checksum), puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
    "externally managed" marker from that private copy (without it `pip install` fails in the jobs), and replaces
    the stored `.path`.
 5. `systemctl enable --now maity-runner@pg` (the instance(s) you installed, one at a time); GitHub shows it as Idle.

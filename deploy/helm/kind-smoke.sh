@@ -73,7 +73,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:17
+          image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # ci.yml's pin
           env:
             - {name: POSTGRES_USER, value: maity}
             - {name: POSTGRES_DB, value: maity}
