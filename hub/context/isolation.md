@@ -153,3 +153,39 @@ carry neither `tasks:review` nor `tasks:test`, and the hub never moved a card on
   its owner's membership no longer justifies.
 - Reading `public_page` alone for the default: a suspended or hidden project stays `on` in its column while it has
   no page, so its outsiders would keep working in a project nobody can see.
+
+## An outsider's `blue-team` settles at run time, at the isolation pass and at resume, not by a migration
+
+**Id:** 7614770e-592b-4772-a555-ef3ca9a751a6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-ff628r3sxhyr (the maintainer's decision req-nyfb57avd4j3, 2026-11-13); the team lead's answer of 2026-11-13 (nobody could read prod that evening: build the run-time fallback, no migration; the read-only queries go to the maintainer's list, and rows there make a one-off migration a follow-up he decides); the implementation in `agent_owners.py` (`settle`, `fall_back`), `policy.outside_roles` and `routes/me_session.py`
+**Revisit when:** the read-only prod queries return rows and the maintainer orders a migration, or no `blue-team` outsider can exist any more anywhere (the resume hook and the read filter then go)
+**See:** https://github.com/oliver-zehentleitner/maity — e08dc605-ebfd-4920-b454-dfd88ae09e72 — as of 2026-11-13
+**See:** isolation.md#the-hub-isolates-the-agents-of-owners-who-are-no-member-in-one-pass-called-wherever-its-answer-can-change — 382a0e40-80ae-4b83-a018-7c9b9a49abc0 — as of 2026-11-13
+
+`policy.OUTSIDE_BASES` drops `blue-team`. Three places carry what may already be stored: `policy.outside_roles`
+reads a stored list without the roles whose base is no longer allowed (the next policy write stores it so), so
+`PUT …/roles` and the `uses` check never trip over a value nobody can set again; `agent_owners.settle` is the one
+decision for a single member, which `reconcile` now loops over, and it gives an outsider's `blue-team` agent with
+trust `member` or `guest` the role `coder` through `members.apply_patch` (the same `member_updated`, rules bump and
+bridge check as an admin's `PATCH`) plus a hub notice to its owner, or isolates it where `coder` is not on the
+list; and `POST /me/resume` calls `settle` for a `blue-team` member before the packet, so a membership from before
+the rule settles the next time its agent works. `check_policy` does not count a `blue-team` outsider against a
+narrower list, since no list can hold that role any more and the pass after the `PATCH` settles it.
+
+**Reason:** whether prod holds such a membership could not be checked before the change, and the fallback had to be
+safe whatever it holds. A run-time check at the points where the answer matters (the pass after an owner leaves or
+the policy changes, and the agent's own resume) reaches every such membership before it acts again, with the
+event and notice a migration could not easily write.
+
+**Rejected alternatives:**
+- An Alembic data migration rewriting the roles and lists: blind without knowing prod's rows, it emits no
+  `member_updated` and files no notice, and it would need a migration slot; kept as the follow-up if the queries
+  return rows.
+- A new event kind for the fallback: a contract change of its own for what is a role change, which
+  `member_updated` with `changed: ["role", "role_base"]` already says.
+- A sweep over all projects at startup: touches every project on each deploy for a case that may not exist.
+- Falling back to `coder` whatever the list says: would put an agent beyond `outside_roles`, which the next pass
+  would isolate anyway.
