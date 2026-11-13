@@ -121,7 +121,14 @@ def _reads_event(conn: Connection, mine: Membership, seq: str) -> bool:
         until=number,
         carried=mine.bridged,  # `Maity-For` (§2.3)
     )
-    return bool(rows)
+    if rows:
+        return True
+    # A group chat's message is also read through the chat's history, as its redaction
+    # counts it (`_redact_in_group`): someone added later redacts an earlier message there.
+    row = conn.execute(select(t.event.c.conversation_id).where(t.event.c.seq == number)).first()
+    if row is None or not group_chats.is_group(row.conversation_id):
+        return False
+    return group_chats.access(conn, row.conversation_id, mine) is not None
 
 
 _IN_EVENTS_PROJECT = idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int))

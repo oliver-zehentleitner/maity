@@ -58,12 +58,18 @@ answer is `not_found`, as the caller's GET would be. For a project's
 resources, `in_project` checks the active membership with `project:read`,
 plus the rule the resource's own GET adds (the invitation and join lists,
 a credential's managers, a request's readers, a group chat's messages, an
-attachment's readers, the webhook's admins). Outside projects, the check
+attachment's readers, the webhook's admins, an agent's own placements). Outside projects, the check
 is the GET's rule as well: an agent's owner, the runner and the people who
 see it, a cross-owner chat's readers. A human's own records (`/me`, their
 preferences and chat-access lists, their reports) need no further look,
 since the key is theirs. One's own membership stays visible after a
-leave, so the leave's retry still replays. `tests/test_replay_access.py`
+leave, so the leave's retry still replays. Where a route lets someone act
+on what its GET does not show them, the check admits them too, for the
+final state their action left: a bridge agent's owner from outside the
+project ending the connection, an owner of either side or an admin
+withdrawing a pair's request, someone added to a group chat later
+redacting an earlier message it reads in the history.
+`tests/test_replay_access.py`
 names every registered type, so a new loader fails it until someone
 decides what its replay may show.
 
@@ -85,3 +91,6 @@ required argument, and the test makes a new type a deliberate choice.
   restricted set), so it would not be enough on its own.
 - Patching only the loaders found without a check: it leaves the next
   loader to whoever adds it, with nothing that fails.
+- Admitting the member who forwarded an owners' round request on: the
+  request stays open, so the replay would show what the next holder does
+  with it, which the round keeps from them. Their retry gets `not_found`.

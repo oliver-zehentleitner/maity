@@ -333,7 +333,11 @@ session of the same credential replays the same key — and kept for
   resource's own `GET` would let them (an active membership with `project:read` and the
   resource's read rule; outside a project its owner or readers). Otherwise it is
   `not_found`, as that `GET` is. A caller's own membership stays readable to them, so
-  the retry of a leave still replays (§6.2, "Leaving a project").
+  the retry of a leave still replays (§6.2, "Leaving a project"). Where a route lets
+  someone act on what its `GET` does not show them, the replay shows them the state their
+  action left: a bridge agent's owner outside the project ending the connection (§2.3), an
+  owner of either side or an admin withdrawing a pair's request (§6.2), a group chat's
+  later participant redacting an earlier message (§8.5).
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
 §6.10; a watch, §6.4): the key is optional there for every caller. After

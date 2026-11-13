@@ -542,9 +542,25 @@ def may_see(conn: Connection, request_id: str, caller: Caller) -> bool:
         mine = membership(conn, caller, namespace.name_of(conn, row.project_id))
     except ApiError:
         return False
+    if _withdrew_the_pair(conn, row, mine):
+        return True
     if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
         return False
     return inbox.may_read(conn, row, mine)
+
+
+def _withdrew_the_pair(conn: Connection, row: Any, mine: Membership) -> bool:
+    """A withdrawn pair's request (a cross-owner `reports_to`, a bridge's consent) to whom
+    `withdraw` lets withdraw it: an owner of either side or an admin need not read it to
+    withdraw it, and its retry finds it as the withdrawal left it, which nothing changes."""
+    if row.status != "withdrawn":
+        return False
+    kind = (row.proposal or {}).get("kind")
+    if kind in bridges.KINDS:
+        return bridges.may_withdraw(conn, row, mine) is True
+    if row.personal and kind == cross_owner.KIND:
+        return cross_owner.may_withdraw(conn, row, mine) is True
+    return False
 
 
 idempotency.register("request", idempotency.plain(load_request), may_see)

@@ -365,6 +365,28 @@ def test_an_owner_of_the_edge_who_is_a_member_without_scopes_withdraws_on_the_pr
     assert friend.post(f"{PROJECT}/requests/{again}/withdraw", {}).status_code == 200
 
 
+def test_an_admins_withdrawal_of_a_pair_replays_for_them(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = flow.human(make_client, migrated, "friend")
+    other = flow.human(make_client, migrated, "other")
+    for human in (friend, other):
+        factory.membership(migrated, _project(migrated), human_id=human.id, role="coder")
+    bea = flow.human(make_client, migrated, "bea")  # neither asked nor was asked
+    factory.membership(migrated, _project(migrated), "admin", human_id=bea.id)
+    lent = _lent(migrated, friend)
+    boss = factory.agent(migrated, _project(migrated), other.id).agent_id
+    request_id = put(owner, lent, reports_to=boss).json()["id"]
+    path = f"/api/v1{PROJECT}/requests/{request_id}/withdraw"
+    headers = {"X-CSRF-Token": bea.csrf, "Idempotency-Key": "withdraw-pair-admin-01"}
+    done = bea.client.post(path, json={}, headers=headers)
+    assert done.status_code == 200, done.text
+    again = bea.client.post(path, json={}, headers=headers)
+    assert again.status_code == 200, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert (again.json()["id"], again.json()["status"]) == (request_id, "withdrawn")
+
+
 def test_a_human_boss_who_is_not_the_agents_owner_withdraws_as_an_owner_of_the_edge(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
