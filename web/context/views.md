@@ -6502,3 +6502,43 @@ took the keyboard focus off its link (third review of #1716).
   the change, and a page left open kept the claim.
 - Replacing the banner at every refresh (the third version): the same
   sentence drawn anew, and the focus on its link lost to the page.
+
+## The request to chat with one's agents: boxes from its full read, the allows waiting for a ticked agent, a rule sent only when written
+
+**Id:** 1eb6c907-2d70-4661-bd42-4451bc02a14d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13
+**Revisit when:** the request view carries what an answer ticked, the reach on the other side (`their_agents`) is wanted in the inbox, or the hub accepts an allow with no agent as a no
+
+The inbox draws the request's boxes from `chat_access_request`, which the
+read in full of every open personal request (`GET /requests/{id}`, already
+made for a preference proposal) brings along; a list never carries it, so
+no read is added. A box per agent on it, all ticked, says why the agent is
+there (it waits in a chat, a message is held for it); the box for that
+side's human is not ticked and always shown, its hint saying, where the
+human sits in one of the chats, that unticked the agents go on waiting
+there. The two rules (`allowed`, `denied`) are optional fields of at most
+1000 characters. An allow reply sends `chat_access` with the ticked agents,
+the human's box and each rule that holds text after trimming; No and Block
+send none, since the hub refuses `chat_access` beside them. With no agent
+ticked the allow buttons are disabled and point to the line that says a tick
+is needed; No and Block stay. The reach on the other side is not offered:
+the hub's default (that side's agents in the chats and the authors of the
+held messages) goes, and a narrower one is set through the API.
+
+**Reason:** an allow with no agent writes no entry, and the hub files a
+new request at once: the owner's click would seem to do nothing. The
+human's box covers the human's own free work messages too, not only the
+chats, so it is shown even where the human is in no chat. An empty rule
+sent as `""` would be stored as a rule saying nothing.
+
+**Alternatives considered:**
+- Sending an allow with no agent and letting the hub ask again: rejected
+  for the click that seems lost.
+- Showing the human's box only where `their_human_in_chat` is true:
+  rejected, the tick also admits the human's held free work messages.
+- A field for the reach (`their_agents`): left out of this part; the
+  default covers what the request names, and the lists page is where an
+  entry is narrowed.

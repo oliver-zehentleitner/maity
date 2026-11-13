@@ -11219,6 +11219,73 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "personal request: answered through /requests/{id}/answer");
   win.Maity.api.post = psPost;
 
+  // The request to chat with one's agents (§9.6): a box per waiting or held agent, all ticked, one for
+  // that side's human, not ticked, and the two rules; an allow takes them along as chat_access, No none.
+  {
+    // The live fixture store (as for Leave project below): the request is put in and taken out again.
+    const caFx = win.Maity.api.fixturesLive();
+    const caItems = caFx["personal-requests.json"].items;
+    const caAllow = [["allow_hour", "Allow for an hour"], ["allow_day", "Allow for a day"], ["allow_week", "Allow for a week"], ["allow_always", "Allow always"]];
+    caItems.push({ id: "req-ch01", class: "consent", title: "guest and their agents want to chat with your agents",
+      summary: "agent-x waits in “Launch” (ada/elsewhere), added by guest.", tried: null, options: [],
+      replies: caAllow.map(([id, label]) => ({ id, label })).concat([{ id: "no", label: "No" }, { id: "block", label: "Block" }]),
+      priority: "normal", to: "human:" + caFx["me.json"].member.id, filed_by: "hub", asked_by: null, on_behalf_of: null,
+      task_id: null, task: null, while_open: "wait", needs_in_session: null, ktw_ref: null, report: null, personal: true,
+      status: "open", answer: null, created_at: "2026-10-23T06:00:00Z", answered_at: null, project: null,
+      chat_access_request: { side: { id: "hum-guest", handle: "guest" }, their_human_in_chat: true,
+        agents: [{ id: "agt-x", handle: "agent-x", waiting: true, held: false }, { id: "agt-y", handle: "agent-y", waiting: false, held: true }] } });
+    const caList = await win.Maity.api.get("/requests");
+    expect(caList.items.some((r) => r.id === "req-ch01") && !caList.items.some((r) => "chat_access_request" in r),
+      "chat request: listed without its boxes, which only GET /requests/{id} carries (§9.6)");
+    const caCalls = [];
+    win.Maity.api.post = (p, b) => { caCalls.push([p, b]); return p === "/requests/req-ch01/answer" && b.reply_id === "no"
+      ? Promise.reject(new win.Maity.api.ApiError("no", 503, p, "unavailable", {})) : psPost(p, b); };
+    await go("#/all"); await hgSettle();
+    const caHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("want to chat with your agents"));
+    if (caHead().attrs["aria-expanded"] !== "true") { caHead().click(); await tick(); }
+    const caEntry = () => main.querySelector(".current");
+    const caBox = (id) => caEntry().querySelectorAll("input").find((i) => i.id === "chat-access-req-ch01-" + id);
+    const caAllowBtns = () => caAllow.map(([, label]) => btn(caEntry(), label));
+    expect(caEntry().querySelector("fieldset.chat-access") && caBox("agent-agt-x").checked && caBox("agent-agt-y").checked && !caBox("human").checked,
+      "chat request: a box per waiting or held agent, all ticked, and the side's human not ticked");
+    expect(text(caEntry().querySelector("fieldset.chat-access")).includes("@agent-y · a message from them is held for it")
+      && text(caEntry()).includes("@guest sits in a chat where your agents wait: unticked, your agents go on waiting there."),
+      "chat request: each agent says why it is on the request, and the human's box says what unticked means in a chat");
+    expect(caAllowBtns().every((b) => b && !b.disabled) && !btn(caEntry(), "No").disabled && btn(caEntry(), "Talk").disabled,
+      "chat request: the allow replies are offered; Talk is not, the hub filed it");
+    // No tick: the allows wait for one and point to the line that says so; No and Block stay.
+    ["agent-agt-x", "agent-agt-y"].forEach((id) => { caBox(id).checked = false; caBox(id).dispatch("change"); });
+    const caNone = caEntry().querySelectorAll("p").find((p) => p.id === "chat-access-req-ch01-none");
+    expect(caAllowBtns().every((b) => b.disabled && b.getAttribute("aria-describedby") === "chat-access-req-ch01-none") && !caNone.hidden
+      && !btn(caEntry(), "No").disabled && !btn(caEntry(), "Block").disabled,
+      "chat request: with no agent ticked the allows are disabled and say why; No and Block are not");
+    // No carries no chat_access (the hub refuses it with no or block); refused here, the controls come back as they were.
+    btn(caEntry(), "No").click(); await hgSettle();
+    expect(caCalls.length === 1 && caCalls[0][1].reply_id === "no" && !("chat_access" in caCalls[0][1]),
+      "chat request: No is sent without chat_access");
+    expect(caAllowBtns().every((b) => b.disabled) && !caBox("human").disabled && !caBox("agent-agt-x").disabled,
+      "chat request: after a refused answer the boxes come back, and the allows still wait for a tick");
+    caCalls.length = 0;
+    caBox("agent-agt-x").checked = true; caBox("agent-agt-x").dispatch("change");
+    caBox("human").checked = true;
+    caEntry().querySelectorAll("textarea").find((t) => t.id === "chat-access-req-ch01-allowed").value = "  web and frontend  ";
+    expect(caAllowBtns().every((b) => !b.disabled && !b.getAttribute("aria-describedby")), "chat request: one tick gives the allows back");
+    btn(caEntry(), "Allow for a day").click(); await hgSettle();
+    expect(caCalls.length === 1 && caCalls[0][0] === "/requests/req-ch01/answer"
+      && JSON.stringify(caCalls[0][1]) === JSON.stringify({ reply_id: "allow_day", chat_access: { agents: ["agt-x"], their_human: true, allowed: "web and frontend" } }),
+      "chat request: an allow sends the ticked agents, the human's box and a written rule as chat_access, an empty rule left out");
+    // The mock refuses as the hub does (§9.6, docs/api.md: details.fields).
+    const caRefused = (b) => psPost("/requests/req-ch01/answer", b).then(() => null, (e) => e.details && e.details.fields);
+    caItems.find((r) => r.id === "req-ch01").status = "open";
+    expect(JSON.stringify(await caRefused({ reply_id: "no", chat_access: {} })) === JSON.stringify({ chat_access: "allow_only" })
+      && JSON.stringify(await caRefused({ reply_id: "allow_day", chat_access: { agents: ["agt-z"] } })) === JSON.stringify({ "chat_access.agents": "not_on_this_request" })
+      && JSON.stringify(await caRefused({ reply_id: "allow_day", chat_access: { denied: "x".repeat(1001) } })) === JSON.stringify({ denied: "format" })
+      && JSON.stringify(await psPost("/requests/req-p002/answer", { reply_id: "go", chat_access: {} }).then(() => null, (e) => e.details.fields)) === JSON.stringify({ chat_access: "not_a_chat_request" }),
+      "chat request: the mock refuses chat_access on another request, beside No, for an agent not on it, and a rule over 1000 characters");
+    caItems.splice(caItems.findIndex((r) => r.id === "req-ch01"), 1);
+    win.Maity.api.post = psPost;
+  }
+
   // Attachments (docs/api.md §8.7): upload when chosen, name when sent, images inline, files as downloads.
   const atCalls = [];
   const atRaw = win.Maity.api.postRaw, atPost = win.Maity.api.post, atDel = win.Maity.api.del, atUrl = win.Maity.api.attachmentUrl;
