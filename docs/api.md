@@ -16589,7 +16589,7 @@ owner choose):
   layout a runner uses on the operator's own machine is the runner's
   configuration (open: §12 1 of the design); the contract carries
   whichever it advertises.
-- `harnesses[].id` is one of `claude-code`, `codex`, `opencode`, `pi`,
+- `harnesses[].id` is one of `claude-code`, `codex`, `opencode`, `antigravity`, `pi`,
   `hermes`, `kimi`, `cline`, `omp`, `stub`. `confinement`: `allowlist`
   (the harness's own command allowlist), `sandbox` (no command allowlist,
   the harness's OS sandbox is the boundary — `codex`; a placement whose
@@ -16608,6 +16608,60 @@ owner choose):
 - `harnesses[].default_mode` is the mode a placement gets when it names
   none. Which mode each adapter defaults to is the runner's (open: §12 5
   of the design).
+- `antigravity` (not built yet, tsk-ydpnmpdzpc0a) is Google's Antigravity
+  CLI, `agy`. Its confinement is `allowlist`: its own permission rules,
+  with its terminal sandbox around the commands no rule allows.
+  - **Never in the clone.** agy loads the configuration of the directory
+    it starts in, hooks, MCP servers, plugins, skills and rules, also for
+    a headless run in a directory nobody has trusted, and hooks and MCP
+    servers run outside its sandbox. No setting switches that off. The
+    runner therefore starts it in the placement's workspace folder, which
+    holds the clone and nothing else (§15.5), never in the clone and
+    never with the clone as an added directory. The start prompt names
+    the clone's `AGENTS.md` and tells the agent to work in the clone.
+    Inside a git work tree agy also loads the configuration of every
+    directory up to that tree's root, so the folder must lie in none: at
+    every start the runner refuses a folder where the folder's parent or
+    any directory above it, up to `/`, has an entry `.git`
+    (`workspace_in_use`, `workspace_in_repository`, §15.7). Outside a
+    work tree agy reads no directory above the folder. agy finds the work
+    tree from the path it was started under (`$PWD`), not from the
+    physical directory, so the runner starts it under the folder's real
+    path and refuses, the same way, a folder whose path is not its real
+    path (a symbolic link in it): then that path and the physical one
+    are the same, and the walk covers both.
+  - **Session settings.** Before every launch the runner writes the
+    settings agy gets for that session (`--settings`), outside the
+    workspace folder: the agent mode set to the default one, not `auto`,
+    whose reviewer model may let a command leave the sandbox; commands
+    that no permission rule matches run in the sandbox without asking
+    (`proceed-in-sandbox`), while a deny rule still refuses and an ask
+    rule still asks, which headless is a refusal (deny before ask before
+    allow); the sandbox on; the workspace folder trusted,
+    so an interactive start shows no trust question; the file tools
+    denied the clone's `.git/maity`; `maity` and the repository's `allow`
+    list allowed. A command an allow rule matches may run outside the
+    sandbox. `maity` has to, for its credential and the network; outside
+    the sandbox any allowed command can read the credential, as with
+    Claude Code.
+  - **The user's settings apply too.** agy merges the session settings
+    with the settings of the OS user the agents run as (its `~/.gemini`).
+    The runner neither reads nor changes them: their rules apply to every
+    agent of that user, and an allow rule there widens every agent's
+    grant. The same holds for that user's own customizations, which agy
+    loads for every agent: global rules and skills, and hooks, MCP
+    servers and plugins, which run outside the sandbox with the user's
+    rights. The operator keeps that home free of what agents should not
+    run. The runner gives agy no home of its own per placement.
+  - **Modes.** Both. `supervised` runs `agy -p` headless and continues
+    with `-c`, which agy scopes to the working directory, so to the
+    placement's workspace folder. `interactive` starts `agy -i` with the
+    start prompt in the pane and continues with `-c` as well.
+  - `sandbox` is `on` only where the runner has seen agy's sandbox start
+    on that host: agy runs a command without it, and without saying so,
+    where it cannot start. Where it is `off`, the runner starts agy only
+    as far as its configuration allows a harness to run without its
+    sandbox (`sandbox_unavailable`, §15.7).
 - `models` are names the runner offers; how the agents get model access
   (a login on the host, keys, a cluster Secret) is the runner's
   configuration and never reaches the hub (open: §12 2 of the design).
@@ -16694,7 +16748,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
-| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it |
+| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3, not built yet) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts: a path in the other one is `workspace_in_use`. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
 | `desired` | `running`, `stopped` |
 | `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` workspace report does not increment it, as the next start makes a new clone anyway (§15.5); the runner reports which generation it acted on |
@@ -16705,7 +16759,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
 | `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`, `replaced`, `replace_failed` (§15.14) |
 | `workspace_epoch` | which clone of the placement is meant: `1` for its first clone, raised by one when the hub takes a `removed` report, since the next start makes a new clone. The runner keeps the value it read when the placement started in that clone (one that continues another placement's clone starts at its own value) and names it in each workspace report (§15.8). After removing a clone, the runner makes the placement's next clone only once the hub has taken that `removed` report, and keeps the `workspace_epoch` of that answer, so no clone carries the epoch of the one before. The hub keeps and raises it; the runner side is not built yet, tsk-34gb7frfbsk7 |
-| `workspace_outcome` | the clone after a stop or a close (§15.5): `null` while the placement runs and until the runner reports; else `{state, reason, unsaved, size_bytes, removes_at, epoch, remove_requested, remove_requested_at, reported_at}`. `state` `retained` (the clock runs; `removes_at` the deadline), `removed` (final) or `kept`; `reason` `null` but for `kept`: `unsaved_work` (git found uncommitted or untracked files, commits on no remote branch or stashes), `in_use` (a running placement of the runner names the clone, or a process holds it), `not_inspectable` (git cannot run in it or could not say what is in it, `not_a_plain_clone` included), `not_recorded` (the path is not the one the runner recorded for the clone, or a symbolic link), `remove_failed` (the file system refused); `unsaved` the number of entries git listed, `0` unless `unsaved_work`; `size_bytes` the clone's size when the runner last measured it, `null` once removed; `epoch` the clone the outcome is about (`workspace_epoch` below); `remove_requested` true after a removal by hand was asked (§15.6), with `remove_requested_at`, until a report names that request. Never a file name or a commit. The hub stores and shows it; the runner does not report yet and the dashboard does not show it yet, tsk-34gb7frfbsk7 |
+| `workspace_outcome` | the clone after a stop or a close (§15.5): `null` while the placement runs and until the runner reports; else `{state, reason, unsaved, size_bytes, removes_at, epoch, remove_requested, remove_requested_at, reported_at}`. `state` `retained` (the clock runs; `removes_at` the deadline), `removed` (final) or `kept`; `reason` `null` but for `kept`: `unsaved_work` (git found uncommitted or untracked files, commits on no remote branch or stashes; for `antigravity` also an entry beside `repo` in the workspace folder), `in_use` (a running placement of the runner names the clone, or a process holds it), `not_inspectable` (git cannot run in it or could not say what is in it, `not_a_plain_clone` included), `not_recorded` (the path is not the one the runner recorded for the clone, or a symbolic link), `remove_failed` (the file system refused); `unsaved` the number of entries git listed, plus for `antigravity` the entries beside `repo`, `0` unless `unsaved_work`; `size_bytes` the clone's size when the runner last measured it, `null` once removed; `epoch` the clone the outcome is about (`workspace_epoch` below); `remove_requested` true after a removal by hand was asked (§15.6), with `remove_requested_at`, until a report names that request. Never a file name or a commit. The hub stores and shows it; the runner does not report yet and the dashboard does not show it yet, tsk-34gb7frfbsk7 |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
 | `open_run` | supervised only: `{id, opened_at}` of the run the hub saw open, else `null`. `id` is opaque, issued by the hub, unique within the placement and never issued again; `opened_at` is the `reported_at` of the report that opened it (§15.7). The runner names `id` in the run's usage record (§15.15). A new `generation` sets it to `null` |
@@ -17054,6 +17108,8 @@ placement as `reported`; the history is the `placement_reported` events.
 | `network`, or the hub's error code: `code_invalid`, `expired`, `not_found`, `rate_limited`, `insecure_transport`, `instance_quota`, `pickup_not_allowed`, `pickup_used`, a `forbidden`'s reason such as `member_join_limit`, `member_agents_max` or `project_not_allowed` (§3.1, §6.3), and any other | `join_failed` |
 | `origin_mismatch`, `other_agent`, `workspace_unrecorded`, `locked_by_process` | `workspace_in_use` |
 | `not_a_plain_clone` | `workspace_in_use`: the clone's `.git` has an entry outside the layout maity accepts, a directory that cannot be listed, or a configuration key outside its list, such as a `commondir`, `worktrees/` or a `config.worktree` with content, which an earlier session of the agent may have left; the runner starts nothing in it and deletes nothing, and its log names what it found, without file contents (req-2adhtsb3ct75) |
+| `workspace_in_repository` | `workspace_in_use`: an `antigravity` workspace folder lies inside a git work tree, an entry `.git` in its parent or a directory above, or its path is not its real path (§15.3); the runner starts nothing, and its log names that directory (not built yet) |
+| `workspace_not_bare` | `workspace_in_use`: an `antigravity` workspace folder holds an entry besides the clone `repo` (§15.5), such as agy configuration a run left there; the runner starts nothing and deletes nothing, and its log names the entries, without their contents (not built yet) |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
 | `hot_loop` | `crash_loop` in `supervised` mode |
@@ -17488,7 +17544,8 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
 ```
 
 - `<harness>` is a harness id of §15.3 that has a local adapter (at
-  first `claude-code`, `codex` and `opencode`). The action names of
+  first `claude-code`, `codex` and `opencode`; `antigravity` has none,
+  since local mode works in the clone itself). The action names of
   `maity runner` (`pair`, `serve`, `check`, `status`, `logs`, …, the
   internal `loop` and `stub`) win over harness ids: `stub` is not
   available in local mode, and no harness id may take an action's name.

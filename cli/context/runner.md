@@ -462,6 +462,78 @@ runner's profile, and one reviewer saw that switch the sandbox off.
 - Build an exec-policy layer for Codex now: unverified against the
   shipped Codex, and the sandbox already sets the boundary that matters.
 
+## Antigravity starts in a workspace folder that holds only the clone, in a mode the runner sets
+
+**Id:** b0646ec1-c909-456c-842d-28f2d4facd54
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's go for the adapter, relayed 2026-11-12 (req-1vm61j2rm2ye): a workspace folder per placement with the clone inside, agy started in the folder, no home directory per placement for now; test runs of agy 1.5.7 recorded in the notes of card tsk-e062xzrgfxxc (2026-11-12); docs/api.md §15.3 and §15.5
+**Revisit when:** agy gains a switch that keeps a directory's own configuration out, or a settings directory per session without a first-run consent; or the owner wants the agents' agy settings apart from those of the user they run as
+
+An `antigravity` placement runs agy in a folder the runner creates per
+placement, with the clone as `repo` inside it and nothing else. The
+runner refuses to start when the folder holds anything else. Every
+session gets settings the runner writes (`--settings`): the default agent
+mode, commands in the sandbox without asking, the sandbox on, the folder
+trusted, `.git/maity` denied to the file tools, `maity` and the
+repository's grants allowed. agy uses the home of the user the agents run
+as, so that user's own agy settings apply to every agent.
+
+**Reason:** agy loads the start directory's hooks, MCP servers, plugins,
+skills and rules even for a headless run in an untrusted directory, and
+the hooks and MCP servers ran outside its sandbox in the test. None of
+its settings switches that off; unknown keys are refused. Started one
+level above the clone, it loaded none of the clone's configuration, also
+after the agent had worked in the clone. The folder is writable for the
+agent, so a run could leave configuration there for the next one: hence
+the check at every start. The mode is set because agy 1.5.7 made `auto`
+the default, also headless, and in the test its reviewer model let a
+command leave the sandbox and list `.git/maity`. The settings are merged
+with the user's own, not replacing them; the owner accepted that for
+now. Resuming with `-c` is enough, because agy scopes it to the working
+directory and the folder is per placement (a headless `-c` continued the
+folder's conversation in the test).
+
+The folder must not lie inside a git work tree either: agy then loads
+the configuration of every directory up to that tree's root. In a test
+(2026-11-12), a folder that was no repository, below a repository with
+agy rules and an MCP server, loaded those rules and started the server;
+with the ancestor's `.git` moved away it loaded nothing from above. With
+the session's git variables set (`GIT_COMMON_DIR` naming the clone's
+`.git`), a run in the folder still loaded nothing from the clone. So the
+runner refuses a start when any directory above the folder has a `.git`
+entry. agy takes the work tree from `$PWD`, not the physical directory:
+started through a symbolic link inside a repository, at a folder that
+physically lay outside, it loaded the repository's rules, skills and MCP
+server; the reverse loaded nothing. So the folder's path must be its
+real path, and the walk then covers both. An entry beside the clone also counts as unsaved work before a
+removal: git in the clone cannot see it, and a retention expiry must not
+delete what the agent left there.
+
+**Rejected alternatives:**
+- The clone as the working directory, or added with `--add-dir`: the
+  repository's agy configuration loads and runs unsandboxed code.
+- A home directory per placement (as `CODEX_HOME` for Codex): it would
+  keep the operator's agy settings and conversations away from the
+  agents, but an interactive start in a fresh home shows agy's first-run
+  terms and data-use consent, and a changed `HOME` reaches the agent's
+  git, `gh` and `maity` as well. The owner chose the shared settings.
+- Checking the folder for agy's known configuration names only
+  (`.agents/`, `GEMINI.md`, `AGENTS.md`, …): the set agy reads can grow
+  with any release; anything besides the clone is refused instead.
+- Cleaning the folder before a start: it could delete the agent's work;
+  the runner deletes nothing and names what it found.
+- Checking only the folder itself: an ancestor work tree's
+  configuration loads all the same (review of the contract, confirmed by
+  the test above).
+- Resuming with `--conversation <id>` from the previous run's JSON: the
+  supervised loop would have to read and keep it, for no gain over `-c`
+  in a folder of its own.
+- Leaving agy's mode as it comes: `auto` lets a model decide whether a
+  command leaves the sandbox.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
