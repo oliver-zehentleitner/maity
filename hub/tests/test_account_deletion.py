@@ -599,6 +599,11 @@ def test_the_deletion_does_what_the_contract_lists(
         assert invitation.voided_at is not None
         join = conn.execute(select(t.join_link).where(t.join_link.c.id == w["join"]["id"])).one()
         assert join.revoked_at is not None
+        # The hub's own revocation: nobody named, nobody told (§3.1).
+        assert join.revoked_by is None
+        assert (
+            conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all() == []
+        )
         # The decision it held went back to the admins.
         held = conn.execute(select(t.request).where(t.request.c.id == w["held"])).one()
         assert (held.holder_member, held.holder_pool) == (None, True)

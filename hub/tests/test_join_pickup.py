@@ -129,6 +129,13 @@ def test_a_lost_answer_is_recovered_and_three_pickups_is_all(
     second = pick_up(setup, placement).json()
     assert second["pickup"] == 2
     assert exchange(make_client(), first).status_code == 404  # revoked by the second
+    with setup.engine.connect() as conn:  # the hub's own revocation: nobody named or told
+        revoked = conn.execute(
+            select(t.join_link.c.revoked_by).where(t.join_link.c.revoked_at.is_not(None))
+        ).all()
+        assert len(revoked) == 1 and revoked[0].revoked_by is None
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+        assert told == []
     assert pick_up(setup, placement).json()["pickup"] == 3
     fourth = pick_up(setup, placement)
     assert (fourth.status_code, error(fourth)) == (409, "pickup_used")
@@ -259,9 +266,14 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
     assert answer.status_code == 200, answer.text
     with setup.engine.connect() as conn:
         joins = conn.execute(
-            select(t.join_link.c.revoked_at).where(t.join_link.c.placement_id.is_not(None))
+            select(t.join_link.c.revoked_at, t.join_link.c.revoked_by).where(
+                t.join_link.c.placement_id.is_not(None)
+            )
         ).all()
     assert joins and all(j.revoked_at is not None for j in joins)
+    # The hub's own revocation, whoever moved the placement: nobody named or told (§3.1).
+    assert all(j.revoked_by is None for j in joins)
+    assert events_of(setup, "join_revoked") == []
     _unrevoke_joins(setup)
     members = _members(setup)
     refused = exchange(make_client(), picked)
