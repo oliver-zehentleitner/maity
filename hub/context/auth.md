@@ -736,7 +736,7 @@ that a member that calls is never shown away.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 (a daily cap per human, a setting with default 50, refused until the next day or a mail confirmation); `auth/second_factor.py` `refuse_over_day`, `_count_day`, `unlock`; docs/api.md §2.8.6, §18.6
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 (a daily cap per human, a setting with default 50, refused until the next day or a mail confirmation); review of #1756 by maity-review-team-grok#axvg, 2026-11-13 (the link outlived a password change; a lowered cap refused without an alert); `auth/second_factor.py` `refuse_over_day`, `_count_day`, `unlock`; `auth/password_resets.py` `password_changed`; docs/api.md §2.8.6, §18.6
 **Revisit when:** the 15-minute window or the per-session limit changes, a human asks for the cap per instance in the admin settings rather than the environment, or the hub keeps a sliding day for another limit
 **See:** auth.md#two-factor-sign-in-whether-a-session-must-enrol-is-worked-out-per-call-and-the-second-step-re-keys-the-session-in-place — ff8b8099-8384-4d68-906a-1b4d7b17bc47 — as of 2026-11-13
 
@@ -744,12 +744,15 @@ Every wrong TOTP or recovery code of an enrolled human (`second_factor.check`: t
 a step-up, a password reset) adds one to `second_factor_day(human_id, day)`, the UTC date, under
 the factor's row lock the check already holds. At `MAITY_SECOND_FACTOR_WRONG_PER_DAY` (default
 50) the check refuses with `rate_limited` (`reason: daily_limit`) before it compares anything, so
-a right code is refused too, until the UTC day ends. The code that reaches the cap writes
-`second_factor_failed` with `method: daily_limit`, the day and `unlocks`; the mailer's at-once
-mail of that record carries `/mail/second-factor-unlock/{token}`, a signed token of the human,
-the day and `unlocks`. Its `POST` resets the day's count to zero and moves `unlocks` in one
-conditional update, so the link works once and dies with the day. The mail factor's codes and an
-enrolment's confirm do not count: neither is a guess at an enrolled secret.
+a right code is refused too, until the UTC day ends. The first wrong code at or over the cap
+writes `second_factor_failed` with `method: daily_limit`, the day, `unlocks` and the human's
+`password_generation`, and sets the row's `alerted`; the refusal needs `alerted` as well as the
+count. The mailer's at-once mail of that record carries `/mail/second-factor-unlock/{token}`, a
+signed token of the human, the day, `unlocks` and the password generation. Its `POST` resets the
+day's count to zero, clears `alerted` and moves `unlocks` in one conditional update, so the link
+works once and dies with the day. A password change moves the generation, which kills the link,
+and clears `alerted`, so the next wrong code mails a link of the new password. The mail factor's
+codes and an enrolment's confirm do not count: neither is a guess at an enrolled secret.
 
 **Reason:** the 15-minute window alone lets 960 guesses through a day. A count in the database,
 unlike the in-process limiters, survives a restart, which a limit over a whole day must; and
@@ -757,7 +760,12 @@ lifting it needs one human's count reset, which a row gives directly. Comparing 
 cap would answer whether it was right, so the refusal comes first. The calendar day follows the
 card ("until the next day") and `email_sign_in_day`, and gives one `Retry-After`. Putting the
 link into the alert's own mail sends one mail, not two, and the `unlocks` counter makes it
-single-use without a table of nonces.
+single-use without a table of nonces. Refusing only once the alert is written keeps the promise
+that the refused human holds a way back: a count over a cap the operator lowered during the day,
+or one whose link a password change voided, would otherwise refuse with no mail at all; the cost
+is one more compared code in those two cases. The link carries the password generation as the
+reset links do (§2.10): a link mailed under a password someone else may have known should not
+outlive the human's change of it.
 
 **Rejected alternatives:**
 - A `Limiter` with a 24-hour window: shared across replicas only on PostgreSQL, forgotten on a
@@ -769,6 +777,11 @@ single-use without a table of nonces.
   still say nothing about the way back.
 - A stored nonce per link (as the admin's reset keeps): one more table where a counter on the
   day's row already decides "once".
+- Alerting only on the code that hits the cap exactly (`==`): a lowered cap is passed without
+  ever being hit, and the human is refused with neither notice nor link.
+- Leaving the link alive across a password change: it is single-use and dies with the day, but
+  every other mailed link of the human dies with the old password, and this one should not be
+  the exception.
 
 `password_changed` is a record type of its own rather than `password_reset` with a method: the
 text differs (every other session ends, not every one), and the bell and the mail name what the
