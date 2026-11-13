@@ -889,6 +889,7 @@ def main() -> int:
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
                     jour_fixe_settings_layout(run, browser)
+                    form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
@@ -4225,6 +4226,162 @@ def jour_fixe_settings_layout(run: Run, browser) -> None:
                             run.a11y(page, f"fixtures: jour fixe settings, {scheme}")
                 finally:
                     context.close()
+
+
+# The form column (web/context/views.md, tsk-0t3vdzjvm2vq), each `.form-column` on its own (one
+# inside another is measured as its own): its parts (block boxes; lists, tables and the parts
+# that hold one aside) end at one right edge, no wider than --form-column; every field, button
+# and help text outside a list stays inside it, one that fills its box (a box's padding aside)
+# reaches it; every list outside a form keeps the column's full width (a box's padding aside);
+# a row of buttons (.actions, .row, Remove) and a form's own buttons start at its left.
+FORM_COLUMN_MEASURE = """(selector) => {
+  const problems = [], columns = Array.from(document.querySelectorAll(selector)).filter((c) => c.offsetParent);
+  if (!columns.length) return { problems: ['no ' + selector], edges: [] };
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const most = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--form-column')) * rem;
+  const name = (el) => el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : '');
+  const LISTS = 'nav, ul, ol, table, .table-wrap, .full-width';
+  const wide = (el) => el.matches(LISTS) || !!el.querySelector(LISTS);
+  const edges = [];
+  for (const col of columns) {
+    const own = (el) => el.offsetParent && el.parentElement.closest('.form-column') === col;
+    // An ancestor between el and the column (never above it: a column may stand in a table or list).
+    const within = (el, sel) => { for (let x = el.parentElement; x && x !== col; x = x.parentElement) if (x.matches(sel)) return true; return false; };
+    const box = col.getBoundingClientRect(), cs = getComputedStyle(col);
+    const left = box.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
+    const full = box.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+    // Its parts: the block boxes without a list, and inside a part that holds one, its own such
+    // parts, level by level down to the list.
+    const parts = [];
+    const collect = (node) => { for (const el of node.children) {
+      if (!el.offsetParent || el.matches(LISTS) || el.matches('.form-column, button, a, label, input, select, textarea')) continue;
+      if (el.querySelector(LISTS) && getComputedStyle(el).maxWidth === 'none') collect(el);  // a wrapper; one with a width of its own is a part
+      else if (['block', 'grid', 'flex', 'flow-root'].includes(getComputedStyle(el).display)) parts.push(el);
+    } };
+    collect(col);
+    if (!parts.length) { problems.push(name(col) + ': no part'); continue; }
+    const edge = Math.max(...parts.map((el) => el.getBoundingClientRect().right));
+    edges.push(Math.round(edge - left));
+    if (edge - left > most + 0.5) problems.push(name(col) + ': the column is ' + Math.round(edge - left) + ' px, over ' + most);
+    for (const el of parts) {
+      const r = el.getBoundingClientRect().right;
+      if (Math.abs(r - edge) > 0.5) problems.push(name(col) + ' > ' + name(el) + ' ends at ' + Math.round(r - left) + ', the column at ' + Math.round(edge - left));
+    }
+    const inside = Array.from(col.querySelectorAll('input:not([type=hidden]), select, textarea, button, p.hint, p.muted, .actions'))
+      .filter((el) => own(el) && !el.matches(LISTS) && !within(el, LISTS));
+    for (const el of inside) {
+      const r = el.getBoundingClientRect(), up = el.parentElement, ucs = getComputedStyle(up);
+      if (r.right > edge + 0.5 || r.left < left - 0.5) problems.push(name(el) + ' in ' + name(up) + ' outside the column: ' + Math.round(r.left - left) + '..' + Math.round(r.right - left));
+      const room = up.getBoundingClientRect().right - parseFloat(ucs.paddingRight) - parseFloat(ucs.borderRightWidth);
+      const fills = el.matches('p, textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=file])') && r.right >= room - 0.5
+        && ['block', 'grid'].includes(ucs.display);
+      if (fills && r.right < edge - 24) problems.push(name(el) + ' in ' + name(up) + ' ends at ' + Math.round(r.right - left) + ', the column at ' + Math.round(edge - left));
+    }
+    for (const list of col.querySelectorAll('ul, ol, table, .table-wrap')) {
+      if (!own(list) || within(list, 'ul, ol, table, .table-wrap, form, fieldset')) continue;
+      const r = list.getBoundingClientRect();
+      if (r.right < full - 48) problems.push(name(list) + ' ends at ' + Math.round(r.right - left) + ', the full width at ' + Math.round(full - left));
+    }
+    for (const row of col.querySelectorAll('.actions, .row, .member-remove')) {
+      if (!own(row) || within(row, 'ul, ol, table, .table-wrap')) continue;
+      const first = Array.from(row.children).find((c) => c.offsetParent);  // a button, or the keys beside one
+      if (first && first.getBoundingClientRect().left - row.getBoundingClientRect().left > 24) problems.push(name(row) + ': it does not start at the left');
+    }
+    for (const b of col.querySelectorAll(':is(form, .field-stack, .image-row) > button')) {
+      const up = b.parentElement;
+      if (own(b) && getComputedStyle(up).display === 'grid' && b.getBoundingClientRect().left - up.getBoundingClientRect().left > 24) problems.push(name(up) + ' > ' + name(b) + ' is not at the left');
+      if (own(b) && getComputedStyle(up).display === 'grid' && b.getBoundingClientRect().width > up.getBoundingClientRect().width - 2) problems.push(name(up) + ' > ' + name(b) + ' is stretched across the form');
+    }
+  }
+  return { problems, edges };
+}"""
+
+# Outside a form column a form keeps its own width (the review of #1731: Organisations' form
+# widened when the token was every form's width).
+FORM_OWN_WIDTHS = {
+    "inline-form": "512px", "project-form": "512px", "image-row": "512px", "not-listening-settings": "512px",
+    "mail-address": "512px", "mail-modes": "512px", "preferences-form": "768px", "preferences-projects": "768px",
+    "preferences-history": "768px", "leave-project": "576px", "user-reset": "672px", "memory-add": "672px",
+}
+
+
+def form_column_layout(run: Run, browser) -> None:
+    """One width for the forms and help texts of a settings or manage panel (tsk-0t3vdzjvm2vq)
+    in fixture mode at 1280 x 900, 390 x 844 and 360 x 780 (FORM_COLUMN_MEASURE on each column):
+    Team → Manage (an agent with credentials, one with a dormant instance), Agents → Manage with
+    its settings opened, a project's Settings (Project and Mine), every account tab, an
+    organisation's page and the cards of /agents; nothing wider than the window; outside a column
+    a form keeps its own width (FORM_OWN_WIDTHS)."""
+    run.step("fixtures: forms and help texts in one column (Manage rows, Settings and Mine, the account's tabs, organisations, /agents), lists full width, buttons at the left")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844), (360, 780)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+
+            def measure(selector: str, where: str) -> None:
+                m = page.evaluate(FORM_COLUMN_MEASURE, selector)
+                wide = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
+                assert not m["problems"] and not errors and wide <= 0, f"{where} at {width}: {m['problems'] + errors}, {wide} px too wide"
+
+            def open_page(path: str) -> None:
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#{path}")
+
+            def open_all(selector: str) -> None:
+                page.evaluate("(s) => document.querySelectorAll(s).forEach((d) => { d.open = true; })", selector)
+
+            for agent in ("Agent A", "Agent B"):
+                open_page("/maintainer/maity/team")
+                page.get_by_role("button", name=f"Manage {agent}", exact=True).click()
+                expect(page.locator("main tr.member-manage .member-remove button")).to_be_visible()
+                measure("main tr.member-manage td.form-column", f"Team → Manage {agent}")
+                run.shot(page, f"fixtures-form-column-team-{agent[-1]}-{width}")
+            # The briefing's form: its buttons too.
+            page.locator("main tr.member-manage").get_by_role("button", name=re.compile("briefing", re.I)).first.click()
+            expect(page.locator("main tr.member-manage form.briefing-form")).to_be_visible()
+            measure("main tr.member-manage td.form-column", "Team → Manage with the briefing's form")
+            open_page("/maintainer/maity/agents")
+            page.locator("main button", has_text="Manage").first.click()
+            expect(page.locator("main tr.agent-manage li.agent-card").first).to_be_visible()
+            open_all("main tr.agent-manage details")
+            measure("main tr.agent-manage .form-column", "Agents → Manage, its settings open")
+            open_page("/agents")
+            page.locator("main button", has_text="Manage").first.click()
+            expect(page.locator("main li.agent-card").first).to_be_visible()
+            open_all("main li.agent-card details")
+            measure("main li.agent-card", "/agents → Manage, its settings open")
+            run.shot(page, f"fixtures-form-column-agents-{width}")
+            for path in ("/maintainer/maity/settings", "/maintainer/maity/settings/mine"):
+                open_page(path)
+                expect(page.locator("main section.view-settings > h2")).to_be_visible()
+                page.wait_for_timeout(300)  # Mine reads the member's settings
+                measure("main .form-column", f"Settings at {path}")
+                run.shot(page, "fixtures-form-column" + path.replace("/", "-") + f"-{width}")
+            for path, tab, sub, part in ACCOUNT_TABS:
+                open_page(path)
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                measure("main section.view.form-column", f"the account at {path}")
+                if path in ("/account/security/sessions", "/account/security/forge", "/account/orgs"):
+                    run.shot(page, "fixtures-form-column-account" + path.replace("/", "-") + f"-{width}")
+            # German, the longest words: the notifications' choices (the review of #1731 found a select 59 px too wide at 360).
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=de#/account/notifications")
+            expect(page.locator("main form.not-listening-settings")).to_be_visible()
+            measure("main section.view.form-column", "the account's notifications in German")
+            open_page("/account/orgs/oz-team")
+            expect(page.locator("main form.org-settings")).to_be_visible()
+            measure("main section.view.form-column", "the organisation oz-team")
+            if width == 1280:
+                run.a11y(page, "fixtures: an organisation's page in the form column")
+            own = page.evaluate("""(names) => Object.fromEntries(names.map((n) => {
+              const el = document.createElement('div'); el.className = n; document.body.appendChild(el);
+              const w = getComputedStyle(el).maxWidth; el.remove(); return [n, w]; }))""", list(FORM_OWN_WIDTHS))
+            assert own == FORM_OWN_WIDTHS, f"outside a column the forms' own widths: {own}"
+        finally:
+            context.close()
 
 
 def account_tabs_layout(run: Run, browser) -> None:

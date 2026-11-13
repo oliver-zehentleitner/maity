@@ -232,7 +232,8 @@ window.Maity = window.Maity || {};
     function credentialsPart(m) {
       const P = M.agentParts;
       if (!P) return null;
-      const slot = h("div", { class: "member-credentials" });
+      // A list: it keeps the panel's full width beside the form column (web/context/views.md).
+      const slot = h("div", { class: "member-credentials full-width" });
       // A revocation reads this row's list again, in place: the row stays
       // open and the focus goes to the list's heading.
       const revoked = () => {
@@ -801,7 +802,7 @@ window.Maity = window.Maity || {};
       // sets (§2.3, §6.18, §19.4): whom it reports to, its rulebook, its
       // preferences switch.
       if (!ctx.canAdmin) {
-        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell", class: "form-column" },
           P.reportsToPart(m, memberPath), P.rolePart(m, memberPath), P.expertPart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           P.teamForm(m, memberPath), P.dormantPart(m, memberPath), P.bridgesPart(m, memberPath)));
@@ -816,7 +817,7 @@ window.Maity = window.Maity || {};
         parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.dormantPart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
-      return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
+      return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell", class: "form-column" }, parts));
     }
 
     // Would m reporting to boss close a circle? Follow boss's chain upwards.

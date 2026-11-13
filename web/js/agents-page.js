@@ -254,7 +254,8 @@ window.Maity = window.Maity || {};
   // project), here (what belongs to this project's membership, or none)}.
   function profileCard(ctx, a, o) {
     const marked = o.wanted === a.id;
-    return h("li", { class: "agent-card" + (marked ? " wanted" : ""), "data-agent": a.id },
+    // The card is its forms' reading column (web/context/views.md): its lists keep its width.
+    return h("li", { class: "agent-card form-column" + (marked ? " wanted" : ""), "data-agent": a.id },
       h("div", { class: "agent-card-head" }, M.avatar(a, 48),
         h("h3", { class: "agent-card-title", tabindex: marked ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle)))),
       (a.memberships || []).length
