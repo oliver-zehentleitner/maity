@@ -2193,7 +2193,13 @@ window.Maity = window.Maity || {};
     const main = document.getElementById("main");
     const seq = ++factorSeq;
     const security = /^\/account\/security(?:\/|$)/.test(M.route.current().path);
-    M.factorBanner.banner(factorSession, security).then((b) => {
+    // The banner gone while the focus was in it (Later, or an app enrolled elsewhere): the focus
+    // goes to the page it stood on, not to the document's body (review of #1716).
+    const toPage = () => {
+      if (!main.getAttribute("tabindex")) main.setAttribute("tabindex", "-1");
+      main.focus({ preventScroll: true });
+    };
+    M.factorBanner.banner(factorSession, security, toPage).then((b) => {
       if (seq !== factorSeq) return;
       const old = main.querySelector(".factor-banner");
       // Kept current while it stands: a change made elsewhere ends it on this page too.
@@ -2204,7 +2210,7 @@ window.Maity = window.Maity || {};
       const focused = old && document.activeElement && old.contains(document.activeElement) ? document.activeElement.tagName : null;
       if (old) main.removeChild(old);
       M.factorBanner.keep(null);
-      if (!b) return;
+      if (!b) { if (focused) toPage(); return; }
       const signin = main.querySelector(".signin-banner");
       main.insertBefore(b, signin ? signin.nextSibling : main.firstChild);
       // A changed sentence: the focus moves to the same control in the new one.
@@ -2355,13 +2361,10 @@ window.Maity = window.Maity || {};
             M.maintenance.fullPage(main, document.getElementById("header"), { brand: brandTitle(false), tools: themeMenu(), signIn: true });
             return;
           }
-          // A public page of this address, read-only (§16.9); otherwise the login.
-          // A frame of the sign-in drawn before stays until the page is known, then goes.
+          // A public page of this address, read-only (§16.9), in the landing's frame as the
+          // sign-in is (js/visitor.js); otherwise the login.
           const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
-          if (shown) {
-            if (seq === renderSeq) M.siteChrome.leave();
-            return;
-          }
+          if (shown) return;
           // The hub's own page in <main> stands when its data could not be read. A dashboard
           // route asks for the sign-in; an address that shows a visitor nothing says so
           // (js/not-found.js), with the sign-in one link away, but only where the hub said it
