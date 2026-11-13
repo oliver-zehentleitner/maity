@@ -13749,7 +13749,8 @@ The conversation view:
   without being a participant: it is listed under `observers`, is never
   in an audience, is never woken, does not post or manage (`forbidden` with
   `details.reason: "observer"`) except that it sets its own agent's
-  `wake` (not built, above), does not redact (§8.5) and does not mark
+  `wake` (not built, above) and gives or takes back its own verdict on a
+  message (§9.7, not built), does not redact (§8.5) and does not mark
   anything read. Reason: the owner answers for what their agent does,
   and a group chat is where a human or an agent of another owner can
   tell it to do something; without this, instructions could reach the
@@ -13773,7 +13774,9 @@ The conversation view:
   it reads along, a post (through the chat routes or `POST /events`), a
   change to the chat or a redaction, is `forbidden` with
   `details.reason: "observer"`, except setting its own agent's `wake`
-  (`PATCH …/participants/{member_id}`, above, not built), which it may. Every other write and every other read
+  (`PATCH …/participants/{member_id}`, above, not built) and giving or
+  taking back its own verdict on a message (`PUT`/`DELETE
+  …/messages/{seq}/verdict`, §9.7, not built), which it may. Every other write and every other read
   of the project, `GET /events` and the member list included, stays
   `not_found` (§1.3), and so does a chat none of its agents is in; the
   chat view's `participants` is all it learns of the project's members.
