@@ -297,3 +297,134 @@ def test_the_override_inside_a_policy_stops_grace_revokes_at_once(
     assert bystander.get("/me").status_code == 200
     [(payload, _)] = _announced(setup)
     assert payload["credential_id"] == setup.agent.credential_id
+
+
+# --- the clones still on the machine, and a pickup racing the stop (§15.3, §15.5, §15.9) ---------
+
+
+def closed_by_delete(s: Setup) -> dict[str, Any]:
+    """A placement whose agent held a credential, closed the ordinary way: its clone stays
+    on the runner for its retention, with the credential in it."""
+    first = running(s)
+    deleted = s.owner.delete(f"/projects/maintainer/maity/placements/{first['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert placement(s, first["id"])["closed_reason"] == "removed"
+    return first
+
+
+def test_a_stop_revokes_the_credential_of_a_placement_closed_before(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    closed_by_delete(setup)
+    bystander = flow.agent(make_client, setup.owner)  # on no placement of this runner
+    answer = revoke(setup, agents="stop")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["on_runner_revoke"][0]["stopped"] == []  # nothing ran
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+    assert bystander.get("/me").status_code == 200
+    [(payload, _)] = _announced(setup)
+    assert payload == {"credential_id": setup.agent.credential_id, "reason": "runner_revoked"}
+
+
+def test_a_removal_with_stop_revokes_it_in_a_detached_project_too(setup: Setup) -> None:
+    closed_by_delete(setup)
+    detached = setup.owner.delete(f"/projects/maintainer/maity/runners/{setup.runner.id}")
+    assert detached.status_code == 200, detached.text
+    answer = remove(setup, agents="stop")
+    assert answer.status_code == 200, answer.text
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+
+
+def test_a_stop_on_a_key_revoked_already_revokes_it(setup: Setup) -> None:
+    closed_by_delete(setup)
+    assert revoke(setup).status_code == 200  # keep: the clone's credential lives on
+    assert setup.agent.get("/me").status_code == 200
+    assert revoke(setup, agents="stop").status_code == 200
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+
+
+def test_a_clone_reported_removed_took_its_credential_and_needs_no_stop(setup: Setup) -> None:
+    """Only a clone not reported removed counts as on the machine; one reported removed
+    revoked its credential when the runner said so (§15.5)."""
+    first = closed_by_delete(setup)
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == first["id"])
+            .values(workspace_state="removed")
+        )
+    assert revoke(setup, agents="stop").status_code == 200
+    assert setup.agent.get("/me").status_code == 200  # not this runner's to revoke any more
+
+
+def _picked_up(s: Setup) -> tuple[dict[str, Any], Any]:
+    """An approved placement and the join row its runner picked up, not yet exchanged."""
+    from tests.test_join_pickup import _allow_instances, pick_up
+
+    _allow_instances(s.engine, s.agent.id, 2)  # the joined clone plus the placement's
+    first = placed(s)
+    assert pick_up(s, first).status_code == 201
+    with s.engine.connect() as conn:
+        row = conn.execute(
+            select(t.join_link).where(t.join_link.c.placement_id == first["id"])
+        ).one()
+    return first, row
+
+
+def _stop(conn: Any, s: Setup) -> list[dict[str, Any]]:
+    from maity_hub import runner_revoke
+
+    return runner_revoke.apply(
+        conn, s.runner.id, agents="stop", instance_rule="keep", removing=False, by=s.owner.id
+    )
+
+
+def test_a_pickup_exchanged_while_the_stop_waits_is_revoked_by_it(setup: Setup) -> None:
+    """The exchange holds the project's lock; the stop waits for it and then reads the
+    credential the exchange wrote (PostgreSQL, MariaDB)."""
+    from maity_hub.routes import joins
+    from tests.concurrency import finished, race, waiting
+
+    first, row = _picked_up(setup)
+    with race(setup.engine) as r:
+        exchange, stop = r.first, r.second
+        minted = joins._consume(exchange, row, "maity-cli/test")[1]
+        step = r.run(stop, lambda: _stop(stop, setup))
+        assert waiting(step)  # blocked on the project's lock
+        exchange.commit()
+        assert finished(step)[0]["stopped"] == [first["id"]]
+        stop.commit()
+    with setup.engine.connect() as conn:
+        written = conn.execute(
+            select(t.credential.c.revoked_at, t.credential.c.revoked_reason).where(
+                t.credential.c.id == minted
+            )
+        ).one()
+    assert written.revoked_at is not None and written.revoked_reason == "runner_revoked"
+
+
+def test_a_pickup_exchanged_after_the_stop_is_not_found(setup: Setup) -> None:
+    """The stop holds the project's lock; the exchange waits for it and then finds its
+    placement closed: no credential is minted (PostgreSQL, MariaDB)."""
+    from maity_hub.errors import ApiError
+    from maity_hub.routes import joins
+    from tests.concurrency import finished, race, waiting
+
+    first, row = _picked_up(setup)
+    with race(setup.engine) as r:
+        stop, exchange = r.first, r.second
+        assert _stop(stop, setup)[0]["stopped"] == [first["id"]]
+        step = r.run(exchange, lambda: joins._consume(exchange, row, "maity-cli/test"))
+        assert waiting(step)  # blocked on the project's lock
+        stop.commit()
+        with pytest.raises(ApiError) as refused:
+            finished(step)
+        assert refused.value.code == "not_found"
+        exchange.rollback()
+    with setup.engine.connect() as conn:
+        assert (
+            conn.execute(
+                select(t.placement.c.credential_id).where(t.placement.c.id == first["id"])
+            ).scalar()
+            is None
+        )
