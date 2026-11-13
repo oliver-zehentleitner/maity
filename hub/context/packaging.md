@@ -318,6 +318,43 @@ registry alone.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
 
+## The deploy script verifies the image signature before it deploys a digest
+
+**Id:** 4e8b2d71-a6c3-4f19-8d5e-71b0c9e3a6d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 3 (release chain hardening, 2026-11-13); `deploy/scripts/helm-upgrade.sh`, `deploy/scripts/test-helm-upgrade.sh`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** the chart or the cluster checks signatures itself (an admission policy), the signing identity changes, or deploys stop going through `helm-upgrade.sh`
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+
+`deploy/scripts/helm-upgrade.sh` renders the upgrade first
+(`helm upgrade --dry-run` with the caller's own arguments), takes every
+`image:` it would run, and requires each to be pinned by digest and to
+pass `cosign verify` with the issuer and identity regexp of the chart
+README's install step 2 (the stub test holds the two equal). All of this
+happens before the dump, the migrate Job and the scale-down, so a refusal
+changes nothing. A missing cosign is a refusal too. `NO_SIGNATURE_CHECK=1`
+is the only way past the check, for an image someone built themselves,
+and the script prints a warning when it is set.
+
+**Reason:** the README asked operators to verify before they pin a
+digest, but the script that deploys did not, so nothing held the
+deployed digest to the signature. Rendering with the same arguments
+finds the image exactly as Helm will, whether it comes from a values
+file, `--set` or `--reuse-values`. A tag is refused because the
+signature is for a digest and a tag can move between the check and the
+pull.
+
+**Rejected alternatives:**
+- Skipping the check silently when cosign is missing: a deploy host
+  without cosign would never check, and nobody would notice.
+- Taking the image from an extra argument or variable: it could differ
+  from what the values make Helm deploy.
+- `helm template` for the rendering: it does not accept every
+  `helm upgrade` flag (`--reuse-values`, `--install`), so it would fail
+  or render something else for those calls.
+
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
 **Id:** 843b8d35-45c7-4b91-827f-7109f470ca54
