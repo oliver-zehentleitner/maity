@@ -295,8 +295,21 @@ window.Maity = window.Maity || {};
     // Who is in it, and who else reads it (§9.2: shown in the chat itself).
     // Lists of nodes: the comma between them is a separator, the sentence around them the catalog's.
     const listed = (nodes) => nodes.map((n, i) => [i ? ", " : null, n]);
+    // An agent of another owner than a side in the chat waits for its owner's yes (§9.6, "Waiting"):
+    // `waiting_for` names the human of each side it waits for, [] or missing once admitted.
+    const waitsFor = (p) => (p.kind === "agent" && Array.isArray(p.waiting_for) ? p.waiting_for : []);
     const people = () => h("p", { class: "muted group-people-line" }, M.tn("group.people.in", {
-      people: listed(view.participants.map((p) => p.kind === "agent" ? M.tn("group.people.agent", { member: M.dom.memberRef(ctx, p.member_id) }) : M.dom.memberRef(ctx, p.member_id))) }));
+      people: listed(view.participants.map((p) => (p.kind !== "agent" ? M.dom.memberRef(ctx, p.member_id)
+        : waitsFor(p).length ? M.tn("group.people.agent_waiting", { member: M.dom.memberRef(ctx, p.member_id),
+          sides: listed(waitsFor(p).map((id) => M.dom.memberRef(ctx, id))) })
+          : M.tn("group.people.agent", { member: M.dom.memberRef(ctx, p.member_id) })))) }));
+    // One's own waiting agents: the yes is one's own, in the inbox (§9.6, "The request").
+    const ownWaiting = () => {
+      const mine = view.participants.filter((p) => p.owner_id === ctx.me.id && waitsFor(p).length);
+      return mine.length ? h("p", { class: "hint group-waiting", role: "note" }, M.tn("group.people.your_waiting", {
+        agents: listed(mine.map((p) => M.dom.memberRef(ctx, p.member_id))),
+        inbox: h("a", { href: "/all" }, M.t("group.people.your_waiting_inbox")) })) : null;
+    };
     const observers = () => ((view.observers || []).length
       ? h("p", { class: "muted group-observers" }, M.tn("group.people.observers", {
         observers: listed(view.observers.map((o) => {
@@ -451,7 +464,7 @@ window.Maity = window.Maity || {};
       const had = document.activeElement && head.contains(document.activeElement) ? document.activeElement.id : null;
       heading.textContent = titleOf();
       pane.setAttribute("aria-label", M.t("group.pane", { title: titleOf() }));
-      append(clear(head), people(), observers(), manage());
+      append(clear(head), people(), ownWaiting(), observers(), manage());
       const again = had && Array.from(head.querySelectorAll("input, select, button")).find((e) => e.id === had);
       if (again) again.focus();
       hintMention();

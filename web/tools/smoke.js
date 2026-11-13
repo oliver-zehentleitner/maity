@@ -10933,6 +10933,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(obLine && /Outside Bridge \(carries for Agent A\)/.test(text(obLine)), "bridges: a cross-owner bridge stands among a group chat's observers, carrying for its participant " + (obLine ? text(obLine) : "none"));
     win.Maity.api.get = obGet;
   }
+  {
+    // Waiting (§9.6): anna and her agent join; her agent waits for the maintainer's side, Agent B (the
+    // maintainer's) for anna's. The line says whom each waits for; the reader's own waiting agent leads to the inbox.
+    const wtGet = win.Maity.api.get;
+    const anna = { id: "hum-anna", kind: "human", handle: "anna", display_name: "Anna", trust: "member", role: "coder", areas: [], capabilities: [], presence: "online" };
+    const annaAgent = { id: "agt-an", kind: "agent", handle: "anna-bot", display_name: "Anna Bot", owner_id: "hum-anna", trust: "member", role: "coder",
+      areas: [], capabilities: [], presence: "online", paused: null, bridges: [], bridging_for: [] };
+    win.Maity.api.get = (p, ...r) => (/\/members$/.test(p) ? wtGet(p, ...r).then((x) => Object.assign({}, x, { items: x.items.concat([anna, annaAgent]) }))
+      : /\/conversations\/cnv-0007$/.test(p) ? wtGet(p, ...r).then((v) => Object.assign({}, v, { participants: v.participants.map((x) => (x.member_id === "agt-b" ? Object.assign({}, x, { waiting_for: ["hum-anna"] }) : x))
+        .concat([{ member_id: "hum-anna", kind: "human", handle: "anna", joined_at: "2026-11-13T10:00:00Z" },
+          { member_id: "agt-an", kind: "agent", handle: "anna-bot", owner_id: "hum-anna", joined_at: "2026-11-13T10:00:00Z", waiting_for: ["hum-maintainer"] }]) }))
+        : wtGet(p, ...r));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007"); for (let k = 0; k < 6; k++) await tick();
+    const wtLine = text(main.querySelector(".group-chat .group-people-line"));
+    const wtOwn = main.querySelector(".group-chat .group-waiting");
+    expect(wtLine.includes("Agent A (agent),") && wtLine.includes("Agent B (agent, waiting for its owner's yes to Anna)")
+      && wtLine.includes("Anna Bot (agent, waiting for its owner's yes to Maintainer)"),
+      "waiting: an agent that waits names the side it waits for; an admitted one reads as before " + wtLine);
+    expect(wtOwn && text(wtOwn) === "Waiting here for your yes, given in your inbox: Agent B. Until then they read nothing of this chat."
+      && wtOwn.querySelector("a").getAttribute("href") === "#/all",
+      "waiting: the reader's own waiting agent leads to the inbox, where the yes is given; anna's is hers to answer " + (wtOwn ? text(wtOwn) : "none"));
+    win.Maity.api.get = wtGet;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007"); for (let k = 0; k < 6; k++) await tick();
+    expect(!main.querySelector(".group-chat .group-waiting") && !text(main.querySelector(".group-chat .group-people-line")).includes("waiting"),
+      "waiting: a chat where nobody waits says nothing of it");
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
   const gcNull = gcList().querySelectorAll("li.msg")[1];
   expect(text(gcNull).includes("This message was removed.") && !btn(gcNull, "Quote") && !btn(gcNull, "Remove"), "group chat: body null reads as removed, nothing to quote or remove");
