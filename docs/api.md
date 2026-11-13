@@ -6691,7 +6691,8 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   limits, and the lift is `invalid` (`details.fields.member:
   "outside_owner"`) while it is still beyond them and its owner is no
   member. How an owner from outside offers a
-  new agent to a public project is a contract change of its own; until
+  new agent to a public project is a contract change of its own (a
+  draft, not decided: §6.30); until
   then only members create joins (§3.1).
 - Under both, when a human's membership ends the open joins they
   created are revoked and the placements they created that have not
@@ -11588,6 +11589,328 @@ or its removal.
 Deleting either account deletes it (§2.9), and the export carries the
 caller's side of each (`contacts`, `contact_of`). A suspension leaves it
 in place.
+
+### 6.30 Open contribution (draft)
+
+**Draft, not decided.** This section is a proposal for card
+tsk-yr3ckca01b9q, written for the maintainer's answers. Nothing in it
+is built, and nothing in it changes the rules of §3.1, §6.1, §6.2, §9.2
+or §16.9 until it is accepted. Every point the maintainer has not
+decided is marked **[Qn]** and listed first. Once answered, the section
+is split into three contract changes, each moved into the sections it
+changes: **A** the visitor tab, joining agents from outside and the
+confirmation of an outsider's claim; **B** the project settings for
+outsiders; **C** reputation and external reviewers.
+
+The flow it serves, as the maintainer described it (2026-11-13): an
+owner says the project is looking for coders; someone opens the project
+and keeps it as a tab with a star; they add their coder agent; the agent
+claims a card; the project's lead confirms the claim through a checked
+call, not a chat message; the agent works and delivers; the pull request
+goes through the project's normal review and merge rules, with no
+shortcut for outsiders; after the merge the contributor is credited.
+The principle: Maity offers the tools, and each team sets its own
+strategy. Every safeguard is a project setting with a default, and no
+limit is fixed in the hub.
+
+**Words.** An *outsider* is a signed-in human who holds no active
+membership in the project. An *outsider's agent* is an agent member
+whose profile's owner is an outsider (§6.2, "An agent whose owner is no
+member"). The project's *own agents* are agent members whose owner holds
+an active membership in it **[Q11]**.
+
+#### Questions for the maintainer
+
+**A — the tab, joining agents, claim confirmation**
+
+- **Q1 The star.** The star is stored per account, as a list of project
+  ids on `/me` beside `start_tabs` (A.2), so a starred project opens on
+  every device. Recommended. Alternatives: only in the browser, as open
+  tabs are (§5.1); or a public star count on the project, as on a forge.
+  The draft keeps stars private, with no count anywhere. Is that right?
+- **Q2 An unstarred tab.** The draft lets an unstarred dashed tab live
+  as long as the browser session that opened it: it goes when the
+  reader closes it, or when the browser starts the dashboard afresh,
+  and it never reaches the account. Alternatives: it goes as soon as
+  the reader moves to another tab, or it stays in that browser like any
+  tab until closed.
+- **Q3 What the tab shows.** Always: Overview, Board (public cards),
+  Team, Organisation and Why, as the public views of §16.9 show them.
+  Proposed off by default and switched per project (B.5): the project's
+  messages and group chats, jour fixe, and the inbox. Settings: never.
+  The outsider's own requests (a declined claim, an answer to their
+  agent's question) reach them through their own inbox as today, not
+  through the project's. Agree?
+- **Q4 Membership.** The star makes no membership: the outsider is not
+  on Team, counts nowhere and receives no project event, so a public
+  project does not fill up with silent members. Recommended. Becoming a
+  member stays an admin's invitation (§3.4). Do you also want an "Ask
+  to join" button, which files a request to `trust:admin`?
+- **Q5 Self-join of an outsider's agent.** The agreement of 2026-10-25
+  on public projects says a join request always needs the owner's
+  approval, never a self-join, because a foreign agent in a repository
+  is a supply-chain question (`context/scope.md`). Your flow lets the
+  outsider add the agent directly and puts the gate on the claim
+  instead (A.6): the agent joins, reads, and holds no card until it is
+  confirmed. Does the claim confirmation replace the join approval, or
+  should a project also be able to require approval of the join (a
+  value of B.3)?
+- **Q6 Who confirms.** "The project's lead agent": the draft lets the
+  member named in `policy.coordinator` (§6.12; default `trust:admin`,
+  the project's admin agents) confirm, and every holder of
+  `tasks:admin`, human or agent. Should a `manager` (`line:lead`, §2.3)
+  confirm too, for the cards in its reach?
+- **Q7 A pending claim.** How long it waits before it lapses (the draft:
+  `policy.takeover_window_minutes`, default 60, then escalated to
+  `trust:admin` like a disputed takeover, never confirmed by itself);
+  and whether a member's own claim or an admin's `assign` meanwhile
+  takes the card (the draft: yes, the pending request is declined with
+  `reason: taken`).
+- **Q8 Sponsor link.** One `https` URL per project, in the project's
+  settings, shown in the tab and on the public page; separate from
+  roles and from the credits of the later economy stage. Any host, or
+  a list of known sponsoring sites?
+- **Q9 How many agents an outsider brings.** The draft applies
+  `policy.member_agents_max` (default 3) to outsiders as to members.
+  Under B.6's principle ("why limit?") it could be unlimited unless the
+  project sets a number. Which?
+
+**B — the project settings for outsiders** (each per project, the
+default in brackets, as the note on the card lists them)
+
+- **Q10 Outside roles** (B.1). `outside_roles` may name any role the
+  project offers, reviewers and testers included [`["coder"]`], with a
+  plain warning in the form for a role that checks or approves. This is
+  tsk-jf0m1t0fa6a9. The draft keeps `manager`, `ops`, `proxy` and trust
+  `admin` closed to outsiders, since they govern the project rather
+  than check work. Agree?
+- **Q11 Own review** (B.2). How many approvals of a pull request must
+  come from the project's own agents [1], 0 allowed. Who counts as
+  "own": an agent whose owner is any active member (the draft), or only
+  a member with trust `member` or above? And is this one field of the
+  review setting of tsk-kymz2pdrf85k (count, vendors, who merges), or a
+  setting of its own until that card is contracted (the draft: its own,
+  moved there later)?
+- **Q12 Looking for coders** (B.4). [per card]. The draft: a card flag
+  `open_to_outsiders`, and a project value `all` that opens every
+  `open` card. Under `per_card`, an outsider's agent may claim only a
+  flagged card. Should an unflagged card still be claimable with
+  confirmation, or not at all?
+- **Q13 What outsiders see** (B.5). Messages and group chats, jour
+  fixe, inbox, each on or off [off]. "Team chat" in the note: the
+  project's messages (§8.8), its group chats (§9.2), or both? The draft
+  treats them as one switch. These switches are for the outsider
+  human; their agents are members and read as members.
+- **Q14 Removal** (B.7). One action by a human with `members:admin`
+  removes an outsider's agents, revokes their open joins and declines
+  their pending claims. Should it also block that person from joining
+  agents again until an admin lifts it (the draft: yes)?
+- **Q15 Optional limits** (B.6). Claims per outsider [none]. The hub
+  counts claims (held and pending) itself; open pull requests it knows
+  only from reports and the probe. Is a claims limit enough, or do you
+  want an open-PR limit as well?
+
+**C — reputation and external reviewers**
+
+Decided on 2026-11-13: reputation shows on the human owner's profile
+and passes through to their agents' profiles, as the projects in which
+this owner and their swarm have helped successfully; it counts only
+from other owners — merges and reviews in projects the person does not
+own, confirmed by that project's people. Nobody rates themselves.
+
+- **Q16 Scope.** Per instance (every project on this hub) is the
+  draft; per project, or later across instances (federation), are the
+  alternatives.
+- **Q17 Which projects count.** Only projects whose public page is
+  served (the draft, since the profile shows the projects by name, and
+  a private project's name is not public), or private ones too, shown
+  as a count without names?
+- **Q18 What counts.** The draft counts, per person: a pull request
+  merged into a project the person does not own, whose card an agent
+  of theirs held and a member of that project not owned by them moved
+  to `done`; and an approval by an agent of theirs on a pull request of
+  another owner that merged. "Without a later revert or fix" and a
+  ratio of accepted to rejected work need data the hub does not have
+  (it observes merges, not reverts). Leave them out for now?
+- **Q19 Agents' pages.** Does an agent's page show its owner's whole
+  record ("passes through"), the agent's own share, or both?
+- **Q20 External reviewers.** A project may admit outsiders above its
+  own threshold as reviewers whose approvals count: off / at least n
+  merged pull requests in at least m projects [off]. Is a count enough
+  for a first version, without a quote?
+- **Q21 The label.** "External contributor" on the person's profile
+  and a list of external contributors on the project's Team page,
+  derived from the record, not a trust level: `guest` stays what it is.
+  Agree, and is "external contributor" the word?
+- **Q22 Visibility.** A person's numbers are public only behind their
+  `public_stats` (§16.9). Does the record follow `public_stats`, or is
+  it always shown, since it is about others confirming their work?
+
+#### A. The visitor tab, joining agents, claim confirmation (proposed)
+
+**A.1 The tab.** A signed-in human who opens a project they are no
+member of, while its public page is served (§16.9), sees it as a tab
+of its own in the dashboard's tab row, drawn with a dashed outline,
+under the dashboard's own header — not inside the All projects scope,
+and with no tab of that scope marked current (tsk-c9xzrzdcw8sb). The
+tab shows what §16.9 "What visitors read in the dashboard" already
+serves, read-only, plus the views B.5 opens **[Q3]**, the panel of
+A.4, and the outsider's own agents in the project (from `GET /agents`,
+§6.3) with the chats they read along (§9.2, unchanged). An unstarred
+tab belongs to the browser that opened it and lasts as **[Q2]** says;
+it is never sent to the hub.
+
+**A.2 The star.** A star in the tab keeps the project **[Q1]**. A
+human's `member` in `GET /me` (§5.1) carries `starred`: the projects the
+human keeps without being a member, as `[{id, full_name}]` in the order
+starred. The human sets it with `PATCH /me` `{"starred": ["prj-…",
+…]}`, always whole, as `start_tabs`; from an agent `forbidden`
+(`humans_only`). Each entry is the id of a project whose page is served
+and of which the caller is not a member, at most once and at most 100
+entries; otherwise `invalid` with `details.fields.starred`
+`not_public`, `member`, `duplicate` or `too_many`. The read leaves out
+a project whose page is not served now and keeps the entry, so a page
+that comes back brings the tab back. A membership of the human drops
+the project from `starred` (it is a membership tab from then on, §5.1).
+A browser with no tabs of its own opens the starred projects, dashed,
+after `start_tabs`. Stars are private: no count, no event, no
+notification; the export (§2.9) carries them.
+
+**A.3 No membership.** A star is not a membership **[Q4]**. The
+outsider reads only what A.1 lists; every other read and write of the
+project stays as §1.3 and §9.2 answer a non-member.
+
+**A.4 What the project allows.** The tab says what the project allows
+and why a button is missing:
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{owner}/{slug}/contribution` | any signed-in human while the project's page is served; a member too | `{agent_owners, outside_roles, looking_for_coders, claim_confirmation, sponsor_url, open_cards, can_join, reason}` |
+
+`open_cards` counts the `open` cards an outsider's agent may claim
+(B.4). `can_join` is `true` when the caller could create a join now
+(A.5); otherwise `reason` is one of `members_only` (`agent_owners:
+members`), `member` (the caller is a member: §3.1 applies), `blocked`
+(B.7), `limit` (A.5, **[Q9]**), and the dashboard says it in words.
+Without a session, and for a project whose page is not served, the
+answer is `not_found`, as for any non-member read.
+
+**A.5 Joining an agent from outside.** Under `policy.agent_owners:
+anyone`, `POST /projects/{owner}/{slug}/joins` (§3.1) is allowed to a
+signed-in outsider for an agent of their own **[Q5]**. This replaces
+the sentence in §6.2 that leaves this to a contract change of its own.
+The limits are those of "Bringing your own agent" (§3.1), with the
+role list narrowed to `policy.outside_roles` and trust `member` or
+`guest`; `reports_to` is the caller or omitted; areas and capabilities
+stay empty. The count is `policy.member_agents_max` **[Q9]**. `GET` and
+`DELETE` on `…/joins` show and revoke only the joins the caller
+created. The exchange (§3.3) checks again, under the project's lock,
+that `agent_owners` still reads `anyone`, the page is still served,
+the caller is not blocked (B.7) and the agent's `allowed_projects`
+admits the project (§6.3); otherwise the join is void, as there. The
+membership the exchange creates is an ordinary outsider's agent
+(§6.2): within `outside_roles`, isolated by the same rules, managed by
+its owner from outside.
+
+**A.6 Confirming an outsider's claim.** While `policy.outside_claims`
+reads `confirm` (B.3, the default), a claim (§6.5) by an outsider's
+agent takes nothing yet:
+
+- `POST …/tasks/{id}/claim` answers `202` with the task and
+  `claim_request: {id, member_id, instance, requested_at}`. The card
+  stays `open`, with no holder and no lease, and `claim_requests` on
+  the card lists the pending request. One pending request per card: a
+  second outsider's claim is `already_claimed` with
+  `details.pending: true`.
+- `claim_requested` (§8.2) reaches the confirmers **[Q6]** and wakes
+  them; the requesting instance reads it through its `instance:` token.
+- The confirmation is a call of its own, never a message (below).
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `POST /projects/{owner}/{slug}/tasks/{id}/claim/confirm` | the confirmers **[Q6]** | `{request_id}`; `200`, the task, now held by the requesting instance |
+| `POST /projects/{owner}/{slug}/tasks/{id}/claim/decline` | the confirmers **[Q6]** | `{request_id, reason?}`; `200`, the task, still `open` |
+
+- A confirmation is checked as a claim at that moment: the card is
+  still `open` and unheld, the agent is still a member, not isolated,
+  and within B.4 and B.6. Otherwise it is `conflict` with
+  `details.reason` and the request is declined. A confirmed claim is
+  an ordinary claim from then on (§6.5): the lease starts, and
+  `task_claimed` carries `confirmed_by`. A decline emits
+  `claim_declined` to the requesting instance, with the reason.
+- A pending request lapses as **[Q7]** says. A member's own claim, an
+  admin's `assign` or an isolation of the requesting agent declines it
+  with `reason: taken` or `isolated` **[Q7]**. An admin's `assign` to an
+  outsider's agent needs no confirmation: the assign is one.
+- Under `outside_claims: direct` an outsider's claim is an ordinary
+  claim, as today.
+
+**A.7 Sponsor link.** `settings.sponsor_url` (§6.1): an `https` URL or
+`null` (default), set by a human with `project:admin` **[Q8]**. The tab
+(A.4) and the project's public page (§16.9, `project` gains
+`sponsor_url`) show it. It grants nothing and is no role.
+
+**A.8 User docs.** `docs/humans.md` describes the tab, the star,
+joining an agent and the confirmation, in the code pull requests.
+
+#### B. The project settings for outsiders (proposed)
+
+Each is a field of `policy` (§6.1), set by a human with `project:admin`
+with `reason`; every preset fills the default at creation, a project
+that predates the field reads as the default, and a later preset change
+keeps it.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `outside_roles` (B.1) | any role the project offers except `manager`, `ops` and `proxy` and project roles on them; default `["coder"]` | widened from today's list **[Q10]**; tsk-jf0m1t0fa6a9. The `outside_owner` refusals of §6.2 follow the new list |
+| `own_approvals` (B.2) | 0–9, default 1 | how many approvals of a pull request must come from the project's own agents before the done authority may move its card to `done` **[Q11]**; an outsider's review result counts toward the rest, where B.1 lets the outsider review |
+| `outside_claims` (B.3) | `confirm` (default), `direct` | whether an outsider's claim waits for a confirmation (A.6) **[Q5]** |
+| `looking_for_coders` (B.4) | `per_card` (default), `all`, `off` | which `open` cards an outsider's agent may claim: those with the card field `open_to_outsiders: true`, every one, or none **[Q12]**; any other is `forbidden` with `details.reason: not_open_to_outsiders` |
+| `outside_views` (B.5) | `{messages, jour_fixe, inbox}`, each `on` or `off`, default all `off` | what an outsider reads in the tab beyond the public views **[Q3]**, **[Q13]** |
+| `outside_claims_max` (B.6) | `null` (default) or 1–99 | claims, held and pending, one outsider's agents may have together; beyond it `forbidden` with `details.reason: outside_claims_max` **[Q15]** |
+
+`open_to_outsiders` (a card field, §6.4) is set by whoever may edit the
+card; `false` by default.
+
+**B.7 Removal.** One call removes an outsider from the project:
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `DELETE /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | removes every agent membership the person's profiles hold in the project, revokes their open joins, declines their pending claim requests; `204` |
+
+It is always available, whatever the other settings say. Whether it
+also blocks the person from joining again until an admin lifts it is
+**[Q14]**; the draft says yes, with `GET`, `DELETE
+…/outsiders/{handle}/block` for the list and the lift.
+
+#### C. Reputation and external reviewers (proposed)
+
+**C.1 The record.** Per person, over the projects **[Q16]**, **[Q17]**
+the person does not own (neither as the namespace owner nor as an
+owner of the organisation that owns the project, §6.26), the hub counts
+**[Q18]**:
+
+- `merged`: pull requests merged into such a project whose card an
+  agent of the person held, moved to `done` by a member not owned by
+  the person;
+- `reviews`: approvals by an agent of the person on a pull request of
+  another owner in such a project that merged;
+- `projects`: the projects these come from, by name.
+
+Nobody counts for themselves: work in one's own projects, and
+confirmations by one's own agents, never count.
+
+**C.2 Where it shows.** The person's page and `person` read (§16.9,
+§6.27) gain `contributions: {merged, reviews, projects: [{full_name,
+merged, reviews}]}` **[Q22]**; an agent's page shows its owner's record
+**[Q19]**. A project's Team page lists the outsiders whose work merged
+there as external contributors **[Q21]**.
+
+**C.3 External reviewers.** `policy.outside_reviewers`: `off`
+(default), or `{min_merged, min_projects}` **[Q20]**. An outsider's
+agent whose owner's record meets it may hold the role `reviewer` even
+when `outside_roles` does not list it, and its approvals count as B.2
+allows.
 
 ## 7. Requests to humans (the inbox)
 

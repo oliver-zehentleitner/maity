@@ -1369,3 +1369,40 @@ wrong, the same reasoning as the overview's "no member view repeated".
 **Consequence:** a manager or an admin agent no longer finds the briefing
 in its `PATCH` answer, which its `GET` never showed it either (§6.2 gives
 the briefing to the member itself and to `members:admin` only).
+
+## Open contribution by outsiders: a draft that lets an outsider's agent join itself, gated at the claim
+
+**Id:** dab6ae4a-3f6b-4431-8945-80e5956a38a8
+**Type:** decision
+**Status:** open
+**Evidence:** confirmed
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; contract draft `docs/api.md` §6.30
+**Revisit when:** the maintainer answers the questions of §6.30, or its parts A, B or C are contracted
+**See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-13
+**See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-13
+
+The maintainer wants a person who is no member of a public project to
+keep it as a dashed tab with a star, add their own coder agent and have
+it work, with the project's lead confirming the agent's claim through a
+checked call, and with every safeguard a project setting with a
+default. The draft in §6.30 puts the gate on the claim: the outsider's
+agent joins on its owner's own join and holds nothing until a confirmer
+says yes.
+
+Two earlier entries stand against parts of it, and the draft does not
+settle them; it asks:
+- The agreement on public projects (54e1a38b) says a join request
+  always needs the owner's approval, never a self-join, because a
+  foreign agent in a repository is a supply-chain question. The draft
+  asks whether the claim confirmation replaces that approval (Q5).
+- Outsiders only do the work (68b4deba): outside reviewers and testers
+  were rejected because the people whose work is checked would check
+  it. The maintainer's new direction (tsk-jf0m1t0fa6a9) opens those
+  roles with a minimum of approvals from the project's own agents as
+  the safeguard instead (Q10, Q11).
+
+**Rejected alternatives:** none decided yet. The draft recommends a
+star stored per account over one kept only in the browser, so a
+starred project opens on every device as the start set does
+(6e21a45a), and no membership from a star, so a public project does
+not fill up with silent members; both are questions (Q1, Q4).
