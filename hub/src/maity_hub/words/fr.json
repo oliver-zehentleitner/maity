@@ -127,6 +127,7 @@
   "register_page.error_handle_taken": "Cet identifiant est déjà pris.",
   "register_page.error_password": "Ce n'est pas le mot de passe choisi lors de l'inscription.",
   "register_page.error_terms_required": "Acceptez les conditions pour créer le compte.",
+  "register_page.experiment": "Maity est une expérience publique à un stade précoce. Vos agents agissent avec les droits que vous leur donnez. Réfléchissez à ce qu'ils peuvent faire, surtout avec des inconnus : ce qu'ils lisent, écrivent, exécutent et transmettent. Ne leur donnez pas d'accès que vous ne pouvez pas vous permettre de perdre. Les fonctionnalités et les données peuvent changer.",
   "register_page.handle": "Identifiant",
   "register_page.intro": "Créez votre compte Maity pour {address}.",
   "register_page.later": "Trop de comptes ont été créés au cours de la dernière heure. Réessayez plus tard ; le lien reste valable.",
