@@ -14286,6 +14286,149 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("section.sessions .send-status.failed")).includes("Could not read your sessions"), "sessions: a failed read is said as an error");
   win.Maity.api.get = sesGet;
 
+  // Toward an authenticator app (§2.10): a banner on every page while the mail is the second
+  // factor; its sentence says whether a reset by mail could reach the human; Later until the
+  // next sign-in; what it stands on read once, again after a write.
+  {
+    const fbGet = win.Maity.api.get;
+    const fbLs = win.localStorage;
+    const fbStore = {};
+    win.localStorage = { getItem: (k) => (k in fbStore ? fbStore[k] : null), setItem: (k, v) => { fbStore[k] = String(v); }, removeItem: (k) => { delete fbStore[k]; } };
+    const fbBox = () => main.querySelector(".factor-banner");
+    let fbVia = "totp", fbOffered = true, fbOwn = true, fbReads = 0;
+    win.Maity.api.get = async (p, o) => {
+      if (p === "/auth/second-factor") { fbReads += 1; return { enrolled: fbVia === "totp", enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: fbVia }; }
+      const v = await fbGet(p, o);
+      if (p === "/auth/methods") return Object.assign({}, v, { password_reset: fbOffered });
+      if (p === "/me/notification-settings") return Object.assign({}, v, { email: Object.assign({}, v.email, { password_reset: fbOwn }) });
+      return v;
+    };
+    const fbGo = async (route) => { await go(route); for (let k = 0; k < 6; k++) await tick(); };
+    win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(!fbBox(), "authenticator banner: none while the app is the second factor");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbLink = fbBox() && fbBox().querySelector('a[href="#/account/security"]');
+    expect(fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone: whoever reads it can reset your password and sign in. Set up an authenticator app.")
+      && fbLink && text(fbLink) === "Set up an authenticator app" && btn(fbBox(), "Later") && fbBox().getAttribute("role") === "region",
+      "authenticator banner: the mail as the factor and a reset that could reach the human, linked to Security, with Later ");
+    const fbRead = fbReads;
+    await fbGo("#/maintainer/maity/board");
+    expect(fbBox() && fbReads === fbRead, "authenticator banner: on the next page too, without reading again (" + fbReads + ")");
+    win.Maity.onWrite("/projects/maintainer/maity/tasks");
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && fbReads === fbRead, "authenticator banner: a write elsewhere reads nothing again (" + fbReads + ")");
+    fbOwn = false; win.Maity.onWrite("/me/notification-settings");
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox. Set up an authenticator app: it is the stronger one.") && fbReads === fbRead + 1,
+      "authenticator banner: the human's own switch off, the milder sentence, read again after a write");
+    fbOwn = true; fbOffered = false; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."), "authenticator banner: the instance not offering a reset, the milder sentence");
+    // A change made elsewhere (another tab enrolled an app, an admin, the human's switch on another
+    // device) writes nothing in this tab: Security reads afresh, and nothing is kept past a minute (#1716 review).
+    fbOffered = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone"), "authenticator banner: the sharp sentence again before the outside change");
+    fbVia = "totp";
+    await fbGo("#/maintainer/maity/board");
+    const fbStale = !!fbBox();
+    await fbGo("#/account/security");
+    expect(fbStale && !fbBox(), "authenticator banner: an app enrolled in another tab ends it on Security, without a reload or a write here");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbOwn = false;
+    await fbGo("#/maintainer/maity/board");
+    const fbKept = fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone");
+    const fbNow = win.Maity.api.now;
+    const fbLater = fbNow() + 61000;
+    win.Maity.api.now = () => fbLater;
+    await fbGo("#/maintainer/maity/inbox");
+    win.Maity.api.now = fbNow;
+    expect(fbKept && fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."),
+      "authenticator banner: a switch turned off elsewhere shows within a minute, read again once the kept answer is a minute old");
+    // The banner on screen and the page left as it is: drawn again once its reads are a minute
+    // old, and when the tab is shown again, not only on the next page (#1716 review).
+    const fbSettle = async () => { for (let k = 0; k < 6; k++) await tick(); };
+    fbOwn = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbIdle = fbReads;
+    fbVia = "totp";
+    await fireIntervals(); await fbSettle();
+    const fbWithin = !!fbBox() && fbReads === fbIdle;
+    const fbAged = fbNow() + 61000;
+    win.Maity.api.now = () => fbAged;
+    await fireIntervals(); await fbSettle();
+    win.Maity.api.now = fbNow;
+    expect(fbWithin && !fbBox() && fbReads === fbIdle + 1,
+      "authenticator banner: an app enrolled elsewhere ends it on a page left as it is, once its reads are a minute old (" + fbReads + ")");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbVia = "totp";
+    const fbVis = document.visibilityState;
+    document.visibilityState = "hidden"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    const fbHidden = !!fbBox();
+    document.visibilityState = "visible"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    document.visibilityState = fbVis;
+    expect(fbHidden && !fbBox(), "authenticator banner: and at once when the tab is shown again");
+    // A refresh that says the same keeps the banner standing (the reader's focus stays in it), and a
+    // hidden tab reads nothing on the minute's check; shown again, it reads at once (#1716 review).
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbStanding = fbBox(), fbBefore = fbReads;
+    const fbAged2 = fbNow() + 61000;
+    win.Maity.api.now = () => fbAged2;
+    await fireIntervals(); await fbSettle();
+    win.Maity.api.now = fbNow;
+    expect(fbStanding && fbBox() === fbStanding && fbReads === fbBefore + 1,
+      "authenticator banner: a refresh that says the same leaves the standing banner in place (" + fbReads + ")");
+    const fbVis2 = document.visibilityState;
+    document.visibilityState = "hidden"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    const fbAged3 = fbNow() + 122000;
+    win.Maity.api.now = () => fbAged3;
+    fbVia = "totp";
+    await fireIntervals(); await fbSettle();
+    const fbHiddenReads = fbReads === fbBefore + 1 && !!fbBox();
+    document.visibilityState = "visible"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    win.Maity.api.now = fbNow; document.visibilityState = fbVis2;
+    expect(fbHiddenReads && !fbBox(), "authenticator banner: a hidden tab reads nothing on the minute's check, and catches up when shown (" + fbReads + ")");
+    // No watch left behind: none while no banner stands, none after Later, none once the page is gone.
+    const fbTimers = intervals.size;
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbWatched = intervals.size === fbTimers + 1 && !!docListeners.visibilitychange;
+    await fbGo("#/maintainer/maity/board");
+    const fbOnBoard = intervals.size;
+    const fbOne = !!fbBox() && fbOnBoard >= fbTimers + 1;
+    btn(fbBox(), "Later").click(); await tick();
+    const fbAfterLater = intervals.size === fbOnBoard - 1 && !docListeners.visibilitychange;
+    delete fbStore["maity.factor-banner.later"]; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbBox().remove(); await fireIntervals(); await fbSettle();
+    expect(fbTimers === intervals.size && fbWatched && fbOne && fbAfterLater && fbReads > 0,
+      "authenticator banner: one watch while it stands, none after Later or once it is gone (" + [fbTimers, intervals.size, fbWatched, fbOne, fbAfterLater] + ")");
+    fbOwn = true; fbVia = "email"; win.Maity.factorBanner.forget();
+    fbOffered = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    btn(fbBox(), "Later").click(); await tick();
+    const fbSession = (await win.Maity.api.get("/auth/session")).session_id;
+    expect(!fbBox() && fbStore["maity.factor-banner.later"] === fbSession, "authenticator banner: Later hides it, kept for this session " + JSON.stringify(fbStore));
+    await fbGo("#/maintainer/maity/board");
+    expect(!fbBox(), "authenticator banner: Later holds on the next page");
+    fbStore["maity.factor-banner.later"] = "an-earlier-session";
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox(), "authenticator banner: back after the next sign-in");
+    // A browser that keeps nothing: Later still holds for this page load.
+    win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+    btn(fbBox(), "Later").click(); await tick();
+    await fbGo("#/maintainer/maity/board");
+    expect(!fbBox(), "authenticator banner: Later without storage holds for this page load");
+    fbVia = "totp"; win.Maity.factorBanner.forget();
+    win.localStorage = fbLs;
+    win.Maity.api.get = fbGet;
+  }
+
   // Ctrl+Enter (Cmd+Enter on a Mac) sends every multi-line form; plain Enter never does, nor a disabled submit button.
   const ceCalls = [];
   const cePost = win.Maity.api.post, cePatch = win.Maity.api.patch;

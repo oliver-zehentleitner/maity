@@ -2134,7 +2134,7 @@ window.Maity = window.Maity || {};
   // change them: the next drawing reads afresh.
   // Counted too: a drawing or a read again that began before a write keeps nothing it read.
   let writes = 0;
-  M.onWrite = () => { kept = null; writes += 1; };
+  M.onWrite = (path) => { kept = null; writes += 1; if (M.factorBanner) M.factorBanner.wrote(path); };
   const keptKey = (session, me) => JSON.stringify([
     session.member && session.member.id, session.second_factor || null, session.session_id || null,
     me.member, me.maintenance || null, me.limit || null,
@@ -2183,6 +2183,36 @@ window.Maity = window.Maity || {};
   let bannerShown = false;
   let bannerSeq = 0;
   const sessionsRev = () => M.notify.state.sessionsRev;
+  // The banner toward an authenticator app (§2.10), under the sign-in banner: a human whose
+  // second factor is the mail. What it stands on is read again after a write of this tab, and
+  // the banner drawn again once that is a minute old or the tab is shown again.
+  let factorSession = null;
+  let factorSeq = 0;
+  function renderFactorBanner(ctx) {
+    if (!M.factorBanner || !ctx.me || ctx.me.kind !== "human") return;
+    const main = document.getElementById("main");
+    const seq = ++factorSeq;
+    const security = /^\/account\/security(?:\/|$)/.test(M.route.current().path);
+    M.factorBanner.banner(factorSession, security).then((b) => {
+      if (seq !== factorSeq) return;
+      const old = main.querySelector(".factor-banner");
+      // Kept current while it stands: a change made elsewhere ends it on this page too.
+      const watch = (box) => M.factorBanner.keep(box, () => main.contains(box), () => renderFactorBanner(ctx));
+      // The same sentence for the same session: the one standing stays, and with it the
+      // reader's focus (review of #1716).
+      if (old && b && old.factorKey === b.factorKey) { watch(old); return; }
+      const focused = old && document.activeElement && old.contains(document.activeElement) ? document.activeElement.tagName : null;
+      if (old) main.removeChild(old);
+      M.factorBanner.keep(null);
+      if (!b) return;
+      const signin = main.querySelector(".signin-banner");
+      main.insertBefore(b, signin ? signin.nextSibling : main.firstChild);
+      // A changed sentence: the focus moves to the same control in the new one.
+      const same = focused && b.querySelector(focused === "A" ? "a" : "button");
+      if (same) same.focus();
+      watch(b);
+    });
+  }
   function renderBanner(ctx) {
     if (!M.sessions || !ctx.me || ctx.me.kind !== "human") return; // a human's sessions only
     const main = document.getElementById("main");
@@ -2309,6 +2339,7 @@ window.Maity = window.Maity || {};
       let session;
       try {
         session = reuse ? reuse.session : await (early || M.api.get("/auth/session"));
+        factorSession = session && session.session_id || null;
       } catch (err) {
         // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
         if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
@@ -2510,6 +2541,7 @@ window.Maity = window.Maity || {};
     // they are in the page and have a width: the current tab in sight, the fade on the side with more.
     root.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     renderBanner(ctx);
+    renderFactorBanner(ctx);
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
     ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
