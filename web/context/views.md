@@ -3252,7 +3252,7 @@ named in the digest can be resumed or ended only from one's agents.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30
+**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11
 **Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
 
 `/<handle>` (one segment, not one of the dashboard's own words) is the
@@ -3269,6 +3269,15 @@ Overview, any other to its public page. An alias answers with the
 current handle and the address follows it; `not_found` says that there
 is nobody to see, as for an unknown name.
 
+A person's view has two tabs, **Profile** at `/<handle>` and **Agents**
+at `/<handle>/agents` (card tsk-zrjxhxanfwzd, 2026-11-11: the public
+agents page existed, the signed-in address showed nothing). The Agents
+tab draws the same answer's `agents` (§6.27), as the public agents page
+lists them (§16.9); it does not read `GET /public/pages/<handle>/agents`
+signed in. Signed out, the dashboard's copy of that page
+(`person_agents`, `js/visitor.js`) draws its list with the same helper
+and carries the same tabs, so the address shows one list either way.
+
 **Reason:** what a reader may see of another person (the bio only while
 the page is public, the links by `links_visible`, a picture by §6.10)
 is the hub's to decide per reader; one read that already answers that
@@ -3283,6 +3292,10 @@ shares no project with, and no organisation for a non-member. A
 generated avatar from the handle: it would differ from the one every
 other view draws for the same person, and change with a rename. Hiding
 the picture's place: the layout would jump from one person to the next.
+For the Agents tab, reading the visitors' route signed in as well: §6.27
+names `GET /people` as the dashboard's read of a person, and gives the
+same list there (the hub's `listed_agents` serves both), so a second
+route would add a read without adding anything to see.
 
 ## The fixture hub serves an organisation's page by its switch, which the hub does not yet
 

@@ -135,11 +135,16 @@ def test_an_alternates_file_in_any_case_is_refused(placed: Path, name: str) -> N
 
 
 # What one sandboxed Claude Code session left in a clone, and a plain clone has not: Claude
-# Code 2.1.321, bubblewrap (cli/context/runner.md). A trailing `/` is an empty directory.
+# Code 2.1.321, bubblewrap; `glab-cli/` and `worktrees/` from 2.1.323 on the runner's host, and
+# `modules/` from the same list of protected paths in the binary (tsk-ydxv7x37fg08;
+# cli/context/runner.md). A trailing `/` is an empty directory.
 SANDBOX_LEFT = (
     "config.worktree",
     "objects/info/alternates",
+    "glab-cli/",
+    "modules/",
     "remotes/",
+    "worktrees/",
     "info/.claude-sandbox-noreplace/",
     "objects/info/.claude-sandbox-noreplace/",
     "objects/info/commit-graphs/.claude-sandbox-noreplace/",
@@ -170,6 +175,8 @@ def test_what_the_sandbox_leaves_empty_reads_as_before(placed: Path) -> None:
         "objects/info/alternates",
         "objects/info/http-alternates",
         "remotes/origin",
+        "glab-cli/config.yml",
+        "worktrees/other/gitdir",
         "info/.claude-sandbox-noreplace/hook",
         "objects/info/.claude-sandbox-noreplace/pack",
         "objects/info/commit-graphs/.claude-sandbox-noreplace/graph",
@@ -215,7 +222,15 @@ def test_a_link_in_place_of_a_placeholder_is_refused(placed: Path, entry: str) -
         gitfacts.collect(placed)
 
 
-@pytest.mark.parametrize("entry", ["remotes/.hidden", "info/.claude-sandbox-noreplace/.hidden"])
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "remotes/.hidden",
+        "glab-cli/.hidden",
+        "worktrees/.hidden",
+        "info/.claude-sandbox-noreplace/.hidden",
+    ],
+)
 def test_a_hidden_entry_in_a_placeholder_is_refused(placed: Path, entry: str) -> None:
     _leave(placed, SANDBOX_LEFT)
     (placed / ".git" / entry).touch()
@@ -871,11 +886,13 @@ def test_the_copy_by_path_refuses_refs_that_are_a_link(placed: Path, tmp_path: P
 @pytest.mark.parametrize(
     ("change", "feature"),
     [
-        (lambda c: (c / ".git" / "modules").mkdir(), "Submodules are"),
+        # Empty, `modules/` is the sandbox's guard (tsk-ydxv7x37fg08); a submodule has one.
+        (lambda c: (c / ".git" / "modules" / "lib").mkdir(parents=True), "Submodules are"),
         (lambda c: git(c, "config", "submodule.lib.url", "../lib.git"), "Submodules are"),
         (lambda c: (c / ".git" / "lfs").mkdir(), "Git LFS is"),
         (lambda c: git(c, "config", "filter.lfs.required", "true"), "Git LFS is"),
-        (lambda c: (c / ".git" / "worktrees").mkdir(), "Worktrees are"),
+        # Empty, `worktrees/` is the sandbox's guard (tsk-ydxv7x37fg08); a linked worktree has one.
+        (lambda c: (c / ".git" / "worktrees" / "other").mkdir(parents=True), "Worktrees are"),
         (lambda c: git(c, "config", "core.sparseCheckout", "true"), "Sparse checkout is"),
     ],
 )
@@ -970,3 +987,23 @@ def test_an_inode_in_other_digits_is_refused(placed: Path, monkeypatch: pytest.M
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, "\u00b2")
     with pytest.raises(proc.ToolError, match="restart the placement"):
         proc.run([*proc.GIT, "status"], placed)
+
+
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        ("glab-cli/config.yml", "not a plain clone's"),
+        ("modules/lib/HEAD", "Submodules are not supported"),
+        ("worktrees/other/gitdir", "Worktrees are not supported"),
+    ],
+)
+def test_the_guards_with_content_say_what_they_are(placed: Path, entry: str, expected: str) -> None:
+    """Empty, the sandbox's guards pass (tsk-ydxv7x37fg08); with content, `glab-cli/` is no
+    plain clone's, `modules/` a submodule and `worktrees/` a linked worktree, which the
+    runner does not support."""
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x\n")
+    with pytest.raises(gitfacts.FactsError, match=expected):
+        gitfacts.collect(placed)

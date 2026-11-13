@@ -2087,7 +2087,7 @@ window.Maity = window.Maity || {};
         return Object.assign({ kind: "human", handle: self.handle, display_name: self.display_name, avatar_url: self.avatar_url || null,
           // Every active account has its page (§16.9), whatever public_profile says; the fixture's caller is active.
           page_served: true, public_bio: self.public_bio || null,
-          website: self.website || null, social: self.social || {} }, listed(own));
+          website: self.website || null, social: self.social || {}, agents: [] }, listed(own));
       }
       const org = orgsData().items.find((o) => o.handle === name || (o.aliases || []).includes(name));
       if (!org) fail(404, "not_found", "no such person or organisation", path);
