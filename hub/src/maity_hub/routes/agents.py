@@ -28,7 +28,7 @@ from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, title
 from maity_hub.views import agent_view
 
 router = APIRouter()
@@ -36,13 +36,13 @@ router = APIRouter()
 
 class AgentCreate(Strict):
     handle: str = title(pattern=HANDLE_PATTERN)
-    display_name: str = title()
+    display_name: Name = title()
     git_identity: GitIdentity | None = None
 
 
 class AgentPatch(Strict):
     handle: str | None = None  # checked by handles.rename: format, taken, aliases (§6.24)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
     git_identity: GitIdentity | None = None
     # null: any project; a list of full names limits where the agent may go (§6.3)
     allowed_projects: Any = None
