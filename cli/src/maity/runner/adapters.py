@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,13 +40,16 @@ GIT_PROMPT = (
     "origin <branch>`; never `push -u`, `--set-upstream`, `--track` or `branch -m`, which "
     "store an upstream or rename one and print an error. `maity report` needs no upstream."
 )
-# Claude Code's sandbox hides the clone's credential; only a command that is a `maity` call
-# alone matches `excludedCommands` and runs outside it (cli/context/runner.md).
+# Claude Code's sandbox hides the clone's credential; `maity` runs outside it, and only as
+# one plain call: the runner's hook (plaincall) refuses anything else on its line
+# (cli/context/runner.md).
 CLAUDE_MAITY_PROMPT = (
-    " Run every `maity` command alone: in a pipe, chained with `;`, `&&` or `||`, sent to the "
-    "background with `&` or inside `$(...)` it runs "
-    "inside the sandbox and cannot read this clone's credential."
+    " Run every `maity` command alone, as one plain call: a line that pipes, chains with `;`, "
+    "`&&` or `||`, redirects, sends it to the background with `&`, uses `$(...)`, a heredoc "
+    "or a `$` is refused. Pass longer text in a file in this clone (`--body-file`)."
 )
+# What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
+MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")
 # An interactive session the runner ended because its agent stopped listening (§15.14) starts
 # again on the same conversation with this line, where the harness can resume one.
 RESUME_PROMPT = (
@@ -337,6 +341,22 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          *(f"{git}/{name}" for name in GIT_PROTECTED)]},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
+        # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
+        # that starts with `maity` and holds anything else (plaincall). It runs for every
+        # tool, outside the sandbox, from the runner's own code; a hook that fails or times
+        # out refuses the call (`onFailure`, Claude Code 2.1.295 and later: the sandbox is not
+        # switched on for an older one, capabilities.sandbox_version_ok). Shell form, so a
+        # version that predates exec form runs it too; `|| exit 2` refuses on any version
+        # when the hook cannot start or fails.
+        module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
+        hook = f"{module} || exit 2"
+        settings["hooks"] = {
+            "PreToolUse": [
+                {"hooks": [{"type": "command", "command": hook, "timeout": 30,
+                            "onFailure": "block"}]},
+            ],
+        }  # fmt: skip
+        settings["disableAllHooks"] = False  # over a `true` in the agents' user settings
     return settings
 
 
@@ -541,8 +561,11 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins.
+    # After the allows: the last match wins. A `maity` call only as one plain call, as the
+    # Claude Code hook has it (plaincall): opencode checks each command its scanner finds,
+    # and a redirect or a substitution on maity's line would pass `maity *`.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
+    bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited
     # (agents commit through git; its config and hooks would turn a git call into anything).
