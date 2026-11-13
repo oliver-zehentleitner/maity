@@ -2484,8 +2484,9 @@ window.Maity = window.Maity || {};
     if (["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
-    // The account's tabs are forms: one reading column (web/context/views.md).
-    const root = h("section", { class: "view view-" + viewName + (viewName === "account" ? " form-column" : "") });
+    // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
+    // are forms: one reading column (web/context/views.md).
+    const root = h("section", { class: "view view-" + viewName + (["account", "orgs", "settings"].includes(viewName) ? " form-column" : "") });
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:

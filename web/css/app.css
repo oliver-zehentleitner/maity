@@ -2033,7 +2033,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-actions { white-space: nowrap; }
 .member-actions .member-chat + button { margin-left: 6px; }
 /* Agents that stop listening, on the account (js/notify-settings.js). */
-.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
+.not-listening-settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
 .mail-address { margin: 16px 0; max-width: 32rem; }
@@ -2252,7 +2252,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* The form column's buttons (web/context/views.md): at the column's left, Remove included, after
    the forms' own rules above that put them at the right edge. */
-.form-column .actions { justify-content: flex-start; }
-.form-column :is(.inline-form, .project-form) button { justify-self: start; }
-/* Inside the column a form fills it: its own width (32 or 48rem) holds only outside one. */
-.form-column :is(.inline-form, .project-form, .image-row, .preferences-form, .preferences-projects, .preferences-history, .not-listening-settings, .mail-address, .mail-modes) { max-width: var(--form-column); }
+.form-column :is(.actions, .row) { justify-content: flex-start; }
+.form-column :is(.inline-form, .project-form, .image-row) button { justify-self: start; }
+/* Inside the column a form fills it: its own width (32, 36 or 48rem) holds only outside one;
+   the preferences' versions are a list, at the full width. */
+.form-column :is(.inline-form, .project-form, .image-row, .preferences-form, .preferences-projects, .not-listening-settings, .mail-address, .mail-modes, .leave-project) { max-width: var(--form-column); }
+.form-column .preferences-history { max-width: none; }
+/* A fieldset's own side margin (2px by the browser) would end it past the column's edge. */
+.form-column > fieldset { margin-inline: 0; }

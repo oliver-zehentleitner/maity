@@ -6624,12 +6624,14 @@ which a phone hides, so the owner sees it there too.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-0t3vdzjvm2vq (one width for forms and help texts in settings and manage panels) and the project lead's answer on it: a `--form-column: 42rem` token, a `.form-column` class, lists and tables full width, buttons left inside the column, Remove included; web/css/app.css, web/tools/e2e.py `form_column_layout`, 2026-11-13
+**Source:** the card tsk-0t3vdzjvm2vq (one width for forms and help texts in settings and manage panels) and the project lead's answer on it: a `--form-column: 42rem` token, a `.form-column` class, lists and tables full width, buttons left inside the column, Remove included; the reviews of PR #1731 (lists inside wrappers, the forms' widths outside the panels, the panels left out); web/css/app.css, web/tools/e2e.py `form_column_layout`, 2026-11-13
 **Revisit when:** a panel needs two columns side by side, a form inside a column needs to be wider than 42rem, or the dashboard gets a layout grid of its own
 
-A panel that holds forms (Team → Manage, Agents → Manage, Project
-settings, the account's tabs) carries the class `.form-column`. Its
-parts stop at `--form-column` (42rem) and start at its left; lists,
+A panel that holds forms carries the class `.form-column`: Team →
+Manage, an agent's card (Agents → Manage and /agents), a project's
+Settings (Project and Mine, the settings panel a column of its own
+inside) and the account's tabs, Organisations and an organisation's page
+among them. Its parts stop at `--form-column` (42rem) and start at its left; lists,
 tables, tab rows and a part marked `.full-width` (an agent's
 credentials) keep the panel's whole width. A part that holds such a
 list, however deep (the account's sessions, its forge links and
@@ -6638,14 +6640,17 @@ its own parts without one stop at the column again, level by level down
 to the list (`:has()`). A `dl` of facts is text here, not a list: short
 pairs that read better in the column. Inside the column fields and
 help texts fill it, so a panel has one right edge, and a form's buttons
-(`.actions`, `.inline-form`, `.project-form`, Remove) start at its
-left, next to what they send. A form's own width (32 or 48rem) still
-holds outside a column (Organisations, the admin area): inside one the
-form fills the column. The rules that put buttons at the column's left
-and fill forms stand at the end of app.css, after the forms' own rules.
-The e2e step `form_column_layout` measures Team and Agents → Manage,
-Project settings and every account tab at 1280, 390 and 360 px, the
-named lists at full width and Organisations' form at its own 32rem.
+(`.actions`, `.row`, `.inline-form`, `.project-form`, `.image-row`,
+Remove) start at its left, next to what they send; a form's own button
+is not stretched across it. A form's own width (32, 36 or 48rem) still
+holds outside a column (the admin area, the inbox, the sign-in): inside
+one the form fills the column. The instance admin area is not in this
+decision's scope; its forms keep their widths. The rules that put
+buttons at the column's left and fill forms stand at the end of app.css, after the forms' own rules.
+The e2e step `form_column_layout` measures every column on those pages
+at 1280, 390 and 360 px (the notifications also in German): one edge,
+every list outside a form at the full width, the buttons at the left,
+and the forms' own widths outside a column.
 
 **Reason:** each form brought its own width (32, 42 or 48rem, some none
 at all), so help texts ran to the panel's edge while the fields beside
@@ -6665,5 +6670,7 @@ panel the same edge, and a new form inside it needs no width of its own.
   five levels deep and a new one would need the class again; `:has()`
   finds them.
 - The token as every form's width everywhere: rejected in review, it
-  widened forms outside the panels in scope (Organisations' new
-  organisation from 512 to 672 px).
+  widened forms outside the panels in scope.
+- A `dl` of facts at the full width like a list: rejected, its pairs are
+  short, and in a padded box (the settings' webhook) the column's parts
+  beside it would end the box's padding past the column's edge.
