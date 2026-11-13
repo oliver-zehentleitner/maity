@@ -266,6 +266,50 @@ def test_an_allow_that_ends_lets_the_agent_wait_again(
     assert item(view(owner, chat["id"]).json(), theirs.id)["waiting_for"] == []
 
 
+def test_a_renewal_during_the_sweep_is_not_marked_lapsed(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """v5vp on #1717 (P1): a renewal that commits while the sweep runs keeps its new `until`
+    and stays unmarked, so the agent waits again once the new deadline passes. The sweep takes
+    the owner's human row before it reads the expired entries, as the renewal does."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import threading
+
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    entry = allow(other, agents=[theirs.id], owner_id=owner.id, their_human=True, duration="hour")
+    chat = create(owner, theirs.id).json()
+    c = t.chat_access.c
+
+    def until(at: Any) -> None:
+        with migrated.begin() as conn:
+            conn.execute(update(t.chat_access).where(c.id == entry["id"]).values(until=at))
+
+    until(clock.now() - timedelta(minutes=1))
+    swept: list[int] = []
+    with migrated.begin() as conn:  # as PATCH …/allow/{id} renews it: the human's row first
+        chat_access._lock(conn, other.id)
+        conn.execute(
+            update(t.chat_access)
+            .where(c.id == entry["id"])
+            .values(until=clock.now() + timedelta(days=1), lapsed_at=None)
+        )
+        racer = threading.Thread(target=lambda: swept.append(chat_gate.sweep(migrated)))
+        racer.start()
+        racer.join(1.0)
+        assert racer.is_alive()  # it waits for the renewal
+    racer.join(15)
+    assert swept == [0]
+    with migrated.connect() as conn:
+        lapsed = conn.execute(select(c.lapsed_at).where(c.id == entry["id"])).scalar_one()
+    assert lapsed is None
+    assert item(view(owner, chat["id"]).json(), theirs.id)["waiting_for"] == []
+    until(clock.now() - timedelta(minutes=1))  # the new deadline passes: it lapses after all
+    assert chat_gate.sweep(migrated) == 1
+    assert item(view(owner, chat["id"]).json(), theirs.id)["waiting_for"] == [owner.id]
+
+
 def test_the_owners_yes_takes_the_human_then_the_projects_in_order(
     owner: flow.Human,
     make_client: ClientFactory,
