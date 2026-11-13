@@ -262,7 +262,7 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, M.t("agents.card.no_project")),
       o.here || null,
       o.add ? addToProject(ctx, a) : null,
-      h("details", { class: "agent-settings", open: marked && !o.here ? true : null },
+      h("details", { class: "agent-settings form-column", open: marked && !o.here ? true : null },
         h("summary", null, M.t("agents.card.settings")),
         editForm(a, o.changed),
         allowedForm(ctx, a, o.changed),
@@ -652,7 +652,7 @@ window.Maity = window.Maity || {};
     function here(m) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const inHere = M.t("agents.project.in", { name: ctx.project.name || ctx.slug });
-      return h("section", { class: "agent-here", "aria-label": inHere },
+      return h("section", { class: "agent-here form-column", "aria-label": inHere },
         h("h4", null, inHere),
         h("p", { class: "muted" }, M.trust.words(m), " · ", M.presenceNodes(m, ctx.canAdmin, ctx),
           m.paused && !ctx.canAdmin ? [" · ", P.pausedText(m)] : null),

@@ -889,6 +889,7 @@ def main() -> int:
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
                     jour_fixe_settings_layout(run, browser)
+                    form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
@@ -4225,6 +4226,101 @@ def jour_fixe_settings_layout(run: Run, browser) -> None:
                             run.a11y(page, f"fixtures: jour fixe settings, {scheme}")
                 finally:
                     context.close()
+
+
+# The form column (web/context/views.md, tsk-0t3vdzjvm2vq): in a settings or manage panel the
+# column's own parts (block boxes, lists and tables aside) end at one right edge, no wider than
+# --form-column; every field and help text stays inside it, one that fills its box (a box's
+# padding aside) reaches it; a form's buttons start at its left.
+FORM_COLUMN_MEASURE = """(selector) => {
+  const problems = [], columns = Array.from(document.querySelectorAll(selector)).filter((c) => c.offsetParent);
+  if (!columns.length) return { problems: ['no ' + selector], edges: [] };
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const most = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--form-column')) * rem;
+  const name = (el) => el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : '');
+  const wide = (el) => el.matches('nav, ul, ol, table, dl, .table-wrap, .full-width');
+  const edges = [];
+  for (const col of columns) {
+    const box = col.getBoundingClientRect(), cs = getComputedStyle(col);
+    const left = box.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
+    const parts = Array.from(col.children).filter((el) => el.offsetParent && !wide(el)
+      && ['block', 'grid', 'flex', 'flow-root'].includes(getComputedStyle(el).display));
+    if (!parts.length) { problems.push(name(col) + ': no part'); continue; }
+    const edge = Math.max(...parts.map((el) => el.getBoundingClientRect().right));
+    edges.push(Math.round(edge - left));
+    if (edge - left > most + 0.5) problems.push(name(col) + ': the column is ' + Math.round(edge - left) + ' px, over ' + most);
+    for (const el of parts) {
+      const r = el.getBoundingClientRect().right;
+      if (Math.abs(r - edge) > 0.5) problems.push(name(col) + ' > ' + name(el) + ' ends at ' + Math.round(r - left) + ', the column at ' + Math.round(edge - left));
+    }
+    const inside = Array.from(col.querySelectorAll('input:not([type=hidden]), select, textarea, button, p.hint, p.muted, .actions'))
+      .filter((el) => el.offsetParent && !el.closest('nav, ul, ol, table, dl, .table-wrap, .full-width'));
+    for (const el of inside) {
+      const r = el.getBoundingClientRect(), up = el.parentElement, ucs = getComputedStyle(up);
+      if (r.right > edge + 0.5 || r.left < left - 0.5) problems.push(name(el) + ' in ' + name(up) + ' outside the column: ' + Math.round(r.left - left) + '..' + Math.round(r.right - left));
+      const room = up.getBoundingClientRect().right - parseFloat(ucs.paddingRight) - parseFloat(ucs.borderRightWidth);
+      const fills = el.matches('p, textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=file])') && r.right >= room - 0.5
+        && ['block', 'grid'].includes(ucs.display);
+      if (fills && r.right < edge - 24) problems.push(name(el) + ' in ' + name(up) + ' ends at ' + Math.round(r.right - left) + ', the column at ' + Math.round(edge - left));
+    }
+    for (const row of col.querySelectorAll('.actions, .member-remove')) {
+      const b = row.querySelector('button');
+      if (b && b.offsetParent && b.getBoundingClientRect().left - row.getBoundingClientRect().left > 24) problems.push(name(row) + ': its first button is not at the left');
+    }
+    for (const b of col.querySelectorAll(':is(.inline-form, .project-form) > button')) {
+      const up = b.parentElement;
+      if (b.offsetParent && getComputedStyle(up).display === 'grid' && b.getBoundingClientRect().left - up.getBoundingClientRect().left > 24) problems.push(name(up) + ' > button is not at the left');
+    }
+  }
+  return { problems, edges };
+}"""
+
+
+def form_column_layout(run: Run, browser) -> None:
+    """One width for the forms and help texts of a settings or manage panel (tsk-0t3vdzjvm2vq)
+    in fixture mode at 1280 x 900, 390 x 844 and 360 x 780: Team → Manage, Agents → Manage,
+    Project settings and the account's profile (FORM_COLUMN_MEASURE on each), nothing wider than
+    the window."""
+    run.step("fixtures: forms and help texts in one column in Team and Agents → Manage, Project settings and the account")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 900), (390, 844), (360, 780)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+
+            def measure(selector: str, where: str) -> list[int]:
+                m = page.evaluate(FORM_COLUMN_MEASURE, selector)
+                wide = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
+                assert not m["problems"] and not errors and wide <= 0, f"{where} at {width}: {m['problems'] + errors}, {wide} px too wide"
+                return m["edges"]
+
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=en#/maintainer/maity/team")
+            page.get_by_role("button", name="Manage Agent A", exact=True).click()
+            remove = page.locator("main tr.member-manage .member-remove button")
+            expect(remove).to_be_visible()
+            measure("main tr.member-manage td.form-column", "Team → Manage")
+            run.shot(page, f"fixtures-form-column-team-{width}")
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=en#/maintainer/maity/agents")
+            page.locator("main button", has_text="Manage").first.click()
+            expect(page.locator("main tr.agent-manage .form-column").first).to_be_visible()
+            measure("main tr.agent-manage .form-column", "Agents → Manage")
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=en#/maintainer/maity/settings")
+            expect(page.locator("main #project-panel")).to_be_visible()
+            measure("main #project-panel", "Project settings")
+            run.shot(page, f"fixtures-form-column-settings-{width}")
+            page.goto("about:blank")
+            page.goto(f"{index}?lang=en#/account")
+            expect(page.locator("main section.view-account")).to_be_visible()
+            measure("main section.view-account", "the account's profile")
+            if width == 1280:
+                run.a11y(page, "fixtures: the account's profile in the form column")
+        finally:
+            context.close()
 
 
 def account_tabs_layout(run: Run, browser) -> None:

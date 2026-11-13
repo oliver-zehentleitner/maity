@@ -6588,3 +6588,36 @@ entry names an agent by id only, so the same lists give its handle.
   everywhere.
 - A page of its own in the account: rejected, the entries are per agent and
   the agents' tabs are where an owner looks for them.
+
+## A settings or manage panel's forms share one column, --form-column (42rem), its buttons at the left
+
+**Id:** 7c1cf0ae-ac5b-4f72-8d3e-acd05e1771b4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-0t3vdzjvm2vq (one width for forms and help texts in settings and manage panels) and the project lead's answer on it: a `--form-column: 42rem` token, a `.form-column` class, lists and tables full width, buttons left inside the column, Remove included; web/css/app.css, web/tools/e2e.py `form_column_layout`, 2026-11-13
+**Revisit when:** a panel needs two columns side by side, a form inside a column needs to be wider than 42rem, or the dashboard gets a layout grid of its own
+
+A panel that holds forms (Team → Manage, Agents → Manage, Project
+settings, the account's tabs) carries the class `.form-column`. Its
+direct parts stop at `--form-column` (42rem) and start at its left;
+lists, tables, tab rows and a part marked `.full-width` (an agent's
+credentials) keep the panel's whole width. Inside the column fields and
+help texts fill it, so a panel has one right edge, and a form's buttons
+(`.actions`, `.inline-form`, `.project-form`, Remove) start at its
+left, next to what they send. The rules that put buttons at the column's
+left stand at the end of app.css, after the forms' own rules that end
+them at the right elsewhere. The e2e step `form_column_layout` measures
+the four panels at 1280, 390 and 360 px.
+
+**Reason:** each form brought its own width (32, 42 or 48rem, some none
+at all), so help texts ran to the panel's edge while the fields beside
+them stopped at 26 or 32rem, and Remove sat at the far right, away from
+the form it belongs to. One token and one container class give every
+panel the same edge, and a new form inside it needs no width of its own.
+
+**Alternatives considered:**
+- A width per form, as before: rejected, the widths drifted apart, and
+  parts with no form (help paragraphs, sections) had none.
+- Buttons at the column's right edge: rejected, the project lead chose
+  the left, Remove included, so a button stands where the eye ends the form.
