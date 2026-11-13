@@ -314,3 +314,34 @@ list first lacked `public_page` and `public_about`, which §6.1 names below its 
   documentation gaps of the other direction first; that direction is a later step.
 - Fixing the roles gap in the same change: it is product work (descriptions, guides per
   §6.28, scopes) with its own card.
+
+## The conftest resets every limiter it finds in the hub's modules, not a hand-kept list
+
+**Id:** 4debb183-43cc-4ae5-8730-d2b4e8e03fc5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-knmx8yw3s1xa (the flake on #1717 and #1723, CI run 43405647189) and its reproduction; implementation session, 2026-11-13; `process_limiters` in `hub/tests/conftest.py`
+**Revisit when:** a limiter is held deeper than one attribute below a module, or the in-process limiters move into a registry of the hub's own
+
+Between tests, `_fresh_process_state` resets every `Limiter` that a module
+of `maity_hub` holds as an attribute, or one attribute further down (a
+`RequestLimits` of three). On SQLite and MariaDB the limiters count in the
+test process, and the suite comes from one source address and a few fixed
+addresses: the hand-kept list had missed 24 of the 44, among them the
+sign-in link's pair limit (3 per 15 minutes), so a fourth link for
+`ada@example.com` on one worker was answered `202` with no mail, and a test
+that waited for the mail failed now and then (reproduced in one process:
+red on main, green with the reset).
+
+**Reason:** a limiter added later is reset without anyone remembering a line
+for it, which is the very gap that caused the flake; the search costs about
+2 ms per test.
+
+**Rejected alternatives:**
+- Adding the missing limiters to the explicit list (the first plan for
+  the card): fixes today's 24, and the next new limiter leaks again.
+- A fresh limiter per test file, as `test_email_sign_in.py` swaps in: the
+  leak is between files, so every file that reaches a limit would need it.
+- A registry of every limiter in `ratelimit`: a change to the hub for the
+  tests' sake, where a search from the tests finds the same set.

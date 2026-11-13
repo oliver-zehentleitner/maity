@@ -5163,6 +5163,10 @@
     "en": "7d1a6447df0e803b",
     "text": "f09e7a319b38c8d2"
   },
+  "group.people.agent_waiting": {
+    "en": "4a7361af89805413",
+    "text": "58713032764e7f2b"
+  },
   "group.people.bridge": {
     "en": "c939ca42e5f3c313",
     "text": "14311573c46822ea"
@@ -5178,6 +5182,14 @@
   "group.people.observers": {
     "en": "b8c990c01b6e6f08",
     "text": "b126cfe598ec255a"
+  },
+  "group.people.your_waiting": {
+    "en": "6ff7e8ae9a0b7f9d",
+    "text": "7c8d94f41c371db7"
+  },
+  "group.people.your_waiting_inbox": {
+    "en": "3bf608033d0fd639",
+    "text": "93a68d620828ba5b"
   },
   "group.readonly.closed": {
     "en": "5a69ff91b6f7b067",

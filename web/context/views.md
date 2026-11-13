@@ -6589,6 +6589,35 @@ entry names an agent by id only, so the same lists give its handle.
 - A page of its own in the account: rejected, the entries are per agent and
   the agents' tabs are where an owner looks for them.
 
+## A waiting agent is said in a group chat's people line; one's own lead to the inbox, not to the request
+
+**Id:** 57ad0b3e-1846-4063-9315-0d4ecdfbb200
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.6 ("Waiting": the participant item's `waiting_for`, `participants_changed`; "The request": one request per owner and side, filed by the hub); the card tsk-5c6hw63ncq3m, its PR 3 (the web: "waiting" in the chat's participant list); the dashboard's implementation, 2026-11-13
+**Revisit when:** the chat view or the participant item names the request a waiting agent's owner answers, or the people line is shown on a phone again
+
+In a group chat's **In it:** line an agent with a non-empty `waiting_for`
+reads "(agent, waiting for its owner's yes to …)", the humans of the sides
+it waits for named as members; an admitted agent reads "(agent)" as before.
+Under the line, a hint names the reader's own waiting agents and links to
+the inbox (`/all`), where the request to chat with them is answered. It is
+drawn with the head, so a `conversation_updated` that changes
+`waiting_for` redraws it as any change of the participants does.
+
+**Reason:** the owner reads along in the chat while the agent waits and is
+the one who decides, so the chat is where they see it; the other
+participants see why the agent says nothing. The chat view does not name
+the request, and one request holds every chat of a side, so the link leads
+to the inbox, not to one request. The hint stands outside the people line,
+which a phone hides, so the owner sees it there too.
+
+**Alternatives considered:**
+- A link to the request itself: rejected, its id is not in the chat's view.
+- The waiting mark in the Manage list only: rejected, only managers open it,
+  and the owner of the waiting agent may not be one.
+
 ## A settings or manage panel's forms share one column, --form-column (42rem), its buttons at the left
 
 **Id:** 7c1cf0ae-ac5b-4f72-8d3e-acd05e1771b4
