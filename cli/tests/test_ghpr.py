@@ -556,11 +556,11 @@ def test_a_body_under_the_checked_git_is_refused_after_a_rename(placed: dict[str
     descriptor: renamed after the check, with a decoy under the old name, the real one is
     still no body's way."""
     clone: Path = placed["clone"]
-    with clonecheck.opened_git(clone) as dot_git:
+    with clonecheck.opened_clone(clone) as opened:
         os.rename(clone / ".git", clone / ".git-moved")
         (clone / ".git").mkdir()
         with pytest.raises(ghpr.Refused, match="under the clone's .git"):
-            ghpr.body_file(clone, ".git-moved/maity/pull_requests", dot_git)
+            ghpr.body_file(clone, ".git-moved/maity/pull_requests", opened)
 
 
 @walks  # `opened_git` yields a descriptor only where maity walks
@@ -579,20 +579,34 @@ def test_the_record_comes_from_the_checked_git_after_a_rename(
         assert ghpr.granted(clone, dot_git) == (REPOSITORY, placed["gh"])
 
 
+@walks  # `opened_clone` yields descriptors only where maity walks
+def test_a_body_is_read_from_the_checked_root_after_an_exchange(placed: dict[str, Any]) -> None:
+    """The walk starts at the root `opened_clone` checked with `.git`, by its descriptor: a
+    directory put at the clone's path after the check, with a body of its own, is not read."""
+    clone: Path = placed["clone"]
+    (clone / "body.md").write_text("real\n")
+    moved = clone.parent / "moved"
+    with clonecheck.opened_clone(clone) as opened:
+        os.rename(clone, moved)
+        clone.mkdir()
+        (clone / "body.md").write_text("decoy\n")
+        assert ghpr.body_file(clone, str(clone / "body.md"), opened) == b"real\n"
+
+
 def renamed_after_the_check(monkeypatch: pytest.MonkeyPatch, clone: Path, decoy_gh: str) -> None:
-    """`opened_git` checks the real `.git`, then sandboxed code renames it and puts a decoy
+    """`opened_clone` checks the real `.git`, then sandboxed code renames it and puts a decoy
     with its own record under the old name, before `maity gh` reads anything."""
-    checked = clonecheck.opened_git
+    checked = clonecheck.opened_clone
 
     @contextlib.contextmanager
-    def then_renamed(root: Path) -> Iterator[int | None]:
-        with checked(root) as dot_git:
+    def then_renamed(root: Path) -> Iterator[clonecheck.Opened | None]:
+        with checked(root) as opened:
             os.rename(clone / ".git", clone / ".git-moved")
             (clone / ".git" / "maity").mkdir(parents=True)
             (clone / ghpr.PULL_REQUESTS_PATH).write_text(f"github.com/attacker/other\n{decoy_gh}\n")
-            yield dot_git
+            yield opened
 
-    monkeypatch.setattr(clonecheck, "opened_git", then_renamed)
+    monkeypatch.setattr(clonecheck, "opened_clone", then_renamed)
 
 
 @walks

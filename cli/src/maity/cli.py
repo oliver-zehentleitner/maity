@@ -1843,8 +1843,8 @@ def cmd_files_get(args: argparse.Namespace) -> int:
                 raise CommandError("SHA-256 mismatch: the hub sent other bytes; nothing was saved")
 
         try:
-            with clonecheck.opened_git(root) as dot_git:
-                inclone.create(root, given, what, fill, dot_git,
+            with clonecheck.opened_clone(root) as opened:  # the root and .git, checked once
+                inclone.create(root, given, what, fill, opened,
                                make=None if args.output else FILES_DIR)  # fmt: skip
         except (clonecheck.Refused, inclone.Refused) as exc:
             raise CommandError(str(exc)) from None
