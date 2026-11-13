@@ -51,16 +51,13 @@ class World:
 
     def history_id(self) -> str:
         with self.engine.connect() as conn:
-            found: str = (
-                conn.execute(
-                    select(t.card_history.c.id)
-                    .where(t.card_history.c.card_id == self.card_id)
-                    .order_by(t.card_history.c.id)
-                )
-                .scalars()
-                .first()
-            )
-        return found
+            found = conn.execute(
+                select(t.card_history.c.id)
+                .where(t.card_history.c.card_id == self.card_id)
+                .order_by(t.card_history.c.id)
+            ).scalar()
+        assert found is not None
+        return str(found)
 
     def group_chat(self) -> str:
         made = self.bea.post(CHATS, {"title": "Bea's chat", "participants": [self.owner.id]})
@@ -101,6 +98,11 @@ CASES: dict[str, Case] = {
         f"{PROJECT}/credentials/{w.agent.credential_id}/revoke",
         {},
     ),
+    "event": lambda w: (
+        "POST",
+        f"{PROJECT}/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "bea notes"},
+    ),
     "message": lambda w: ("POST", f"{CHATS}/{w.group_chat()}/messages", {"body": "bea says"}),
     "participation": lambda w: (
         "DELETE",
@@ -140,6 +142,27 @@ def test_a_replay_never_shows_what_changed_after_the_removal(
     assert renamed.status_code == 200, renamed.text
     gone = world.send(world.bea, call, "replay-access-rename")
     assert gone.status_code == 404
+    assert "Secret plans" not in gone.text
+
+
+def test_a_guests_no_op_patch_does_not_replay_after_the_removal(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A `PATCH` of the project that needs no write scope (only a `reason`) still stores its
+    key; once the guest is removed, its replay is `not_found`, not the project as it is."""
+    world = World(make_client, migrated)
+    guest = flow.human(make_client, migrated, "gus")
+    factory.membership(migrated, world.project_id, "guest", human_id=guest.id)
+    call = ("PATCH", PROJECT, {"reason": "x"})
+    first = world.send(guest, call, "replay-access-guest")
+    assert first.status_code == 200, first.text
+    again = world.send(guest, call, "replay-access-guest")
+    assert again.headers["Idempotent-Replayed"] == "true"
+    removed = world.owner.delete(f"{PROJECT}/members/{guest.id}")
+    assert removed.status_code == 200, removed.text
+    world.owner.patch(PROJECT, {"name": "Secret plans"})
+    gone = world.send(guest, call, "replay-access-guest")
+    assert gone.status_code == 404, gone.text
     assert "Secret plans" not in gone.text
 
 

@@ -107,8 +107,29 @@ def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, 
     return event_views(conn, [row], reader)[0]
 
 
+def _reads_event(conn: Connection, mine: Membership, seq: str) -> bool:
+    """What `GET …/events/{seq}` reads (§8.9): the event list's own read, bounded to this one
+    `seq`, so a replay shows an event only to whom that read serves it now."""
+    number = int(seq)
+    rows, _, _ = events.read(
+        conn,
+        mine.project.id,
+        mine.row,
+        mine.principal_id,
+        number - 1,
+        1,
+        until=number,
+        carried=mine.bridged,  # `Maity-For` (§2.3)
+    )
+    return bool(rows)
+
+
 _IN_EVENTS_PROJECT = idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int))
-idempotency.register("event", _load_for_caller, _IN_EVENTS_PROJECT)
+idempotency.register(
+    "event",
+    _load_for_caller,
+    idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int), _reads_event),
+)
 
 
 # --- reading and waiting -------------------------------------------------------------------
@@ -1075,6 +1096,8 @@ def _blind(seq: int) -> dict[str, Any]:
     return {"seq": seq, "redacted": True}
 
 
+# A blind redaction's answer is `{seq, redacted}` alone, and its event was never the
+# redacting admin's to read (§8.5): the replay checks the project, not the event.
 idempotency.register(
     "blind_redaction",
     idempotency.plain(lambda _conn, seq: _blind(int(seq))),
