@@ -2655,7 +2655,8 @@ window.Maity = window.Maity || {};
     // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
     ["GET", /^\/auth\/second-factor$/, () => (mockFactorOn ? { enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
       last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" }
-      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null })],
+      // Not enrolled under the instance's mail factor (§2.8.8): the mail is the factor.
+      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: signInSetting.second_factor.value === "email" ? "email" : null })],
     ["POST", /^\/auth\/second-factor\/totp$/, () => ({ secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
       otpauth_uri: "otpauth://totp/Maity:maintainer?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Maity&digits=6&period=30", expires_in: 600 })],
     ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
@@ -5899,7 +5900,7 @@ window.Maity = window.Maity || {};
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
-    if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite();
+    if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite(path);
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
     // place (js/maintenance.js), and the caller gets the refusal as before.

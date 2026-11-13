@@ -1209,6 +1209,25 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   it. It is built again on the 15-second round while it stands and when
   the security count moves, so a confirm elsewhere or an approved session
   ending elsewhere shows without navigating.
+- **The banner toward an authenticator app** (`js/factor-banner.js`,
+  `docs/api.md` §2.10): while `GET /auth/second-factor` says `via: email`,
+  every page shows it under the sign-in banner, linking to Security. Where
+  `GET /auth/methods` offers `password_reset` and the human's own
+  `email.password_reset` is on, it says the mailbox alone can reset the
+  password and sign in; otherwise that the mailbox is the second factor
+  and an app the stronger one. **Later** hides it until the next sign-in
+  (the session's id kept in the browser, for this page load where the
+  browser keeps nothing). The three reads are kept for a minute at most and
+  made again sooner after a write of this tab to the mail settings, the
+  second factor or the instance's sign-in settings and on every Security
+  page. The banner on screen is drawn again once its reads are a minute old
+  (checked every five seconds while the tab is shown; a hidden tab reads
+  nothing) and when the tab is shown again, so a page left open does not
+  keep it. A redraw that says the same leaves the banner standing, and the
+  keyboard focus in it. An app enrolled in this tab ends it at the
+  next page, on Security at once; one enrolled in another tab ends it when
+  this tab is shown again; one enrolled on another device, or a switch an
+  admin turns, within about a minute.
 - Times are compared as instants on the hub's clock (`Maity-Server-Time`).
   A check each minute draws the section again when this session crosses
   an hour or a day of age, which changes what it may do.
@@ -1904,6 +1923,7 @@ web/
 ├── js/device-sign-in.js  a code from another device and a link by mail on the login page; Sign in another device
 ├── js/memory.js      the project's Memory: entries, and one's own agents' souls
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
+├── js/factor-banner.js  the banner toward an authenticator app while the mail is the second factor
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password
 ├── js/agents-page.js (3) Your agents (/agents), every profile across projects; a project's Agents

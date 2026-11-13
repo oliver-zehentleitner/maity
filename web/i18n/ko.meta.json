@@ -4315,6 +4315,26 @@
     "en": "76c012bc07d476ba",
     "text": "5d68d41316df74bc"
   },
+  "factor_banner.label": {
+    "en": "ca4ae1ba2d424523",
+    "text": "ab98a7a230833fac"
+  },
+  "factor_banner.later": {
+    "en": "c19525e91f26d3c4",
+    "text": "4fc872d06a8af018"
+  },
+  "factor_banner.link": {
+    "en": "d9294a6d54015834",
+    "text": "10270db4be888603"
+  },
+  "factor_banner.mailbox": {
+    "en": "c678a8096fbd36fd",
+    "text": "e3c2aa9209527895"
+  },
+  "factor_banner.mailbox_alone": {
+    "en": "5b757446e6b8144e",
+    "text": "2f8b9d56a9343630"
+  },
   "forge.app.hint": {
     "en": "41c994450fc4018e",
     "text": "e38068b1e4e8e9d6"
