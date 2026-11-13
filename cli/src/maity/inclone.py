@@ -101,6 +101,9 @@ def _walk(
     if opened is not None:
         fd = os.dup(opened.top)
         git = os.fstat(opened.git)
+        if _same(os.fstat(fd), git):  # never true for a checked clone; kept as a second guard
+            os.close(fd)
+            raise Refused(f"{what} {given}: the clone's root is its .git; maity writes no file")
     else:
         fd = os.open(root, FOLDER | os.O_NOFOLLOW)
         try:

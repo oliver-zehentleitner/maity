@@ -276,3 +276,31 @@ def test_the_checked_bytes_are_what_gets_the_name(
     else:
         assert code == cli.EXIT_OK and target.read_bytes() == b"hello"
     assert parts(placed) == []
+
+
+@posix
+@walks
+@pytest.mark.parametrize("target", ["hooks/post-checkout", "maity/git"])
+def test_a_link_put_at_the_clones_path_after_the_check_gets_nothing(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """After the check, the clone's path names a link into its own `.git`: the walk still
+    starts at the root that was checked, so nothing lands under `.git`."""
+    checked = clonecheck.opened_clone
+    moved = placed.parent / "moved"
+
+    @contextlib.contextmanager
+    def then_linked(root: Path) -> Iterator[clonecheck.Opened | None]:
+        with checked(root) as opened:
+            os.rename(placed, moved)
+            placed.symlink_to(moved / ".git", target_is_directory=True)
+            yield opened
+
+    monkeypatch.setattr(clonecheck, "opened_clone", then_linked)
+    before = {p: p.read_bytes() for p in (placed / ".git").rglob("*") if p.is_file()}
+    for given in (str(placed / target), target):
+        assert get("-o", given, "--force") == cli.EXIT_ERROR
+    after = {p: p.read_bytes() for p in (moved / ".git").rglob("*") if p.is_file()}
+    assert {p.relative_to(placed): b for p, b in before.items()} == {
+        p.relative_to(moved): b for p, b in after.items()
+    }
