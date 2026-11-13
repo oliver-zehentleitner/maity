@@ -2504,9 +2504,18 @@ only inside the runner's clone, never under its `.git`
 file, moved there: the path is worked out on its text, then the clone's
 root is opened and each directory after it from the one before, without
 following a link, and refused when it is the `.git` that
-`clonecheck.opened_git` checked. The bytes go into a fresh file in the
-last directory and are linked to the name, which fails on an existing
-one. So no file is replaced there, `--force` included. Without `-o` the
+`clonecheck.opened_clone` checked. The walk starts at the root's
+descriptor that check opened (without following a link) and read `.git`
+from, so a directory put at the clone's path after the check is not
+written to (review of #1749). The bytes go into a file of maity's own in
+the last directory, without a name where the system has `O_TMPFILE`, and
+that open file is what gets the name: linked through `/proc/self/fd`, or
+by its own name compared by device and inode before and after the link,
+or, without hard links or once its name is gone, copied from maity's own
+descriptor into an exclusively created file. Linking fails on an
+existing name, so no file is replaced there, `--force` included; another
+file that took the temporary name never gets the target's (review of
+#1749). Without `-o` the
 file goes to `./maity-files/` as before, created 0700 through the same
 walk. Where a name cannot be opened through a directory's descriptor
 (Windows), only `-o -` is taken. Outside a placement nothing changes.
@@ -2545,6 +2554,12 @@ there.
 - A variable naming the git program: it would work too; the directory
   holds both records in one place the runner already makes and maity
   already checks.
+
+**Known gap:** where the system has no `O_TMPFILE` (macOS, some file
+systems), maity's file has a name in the clone until it is linked, and
+code running as the same user can write into it by that name between the
+digest check and the link; the target then holds the checked file with
+those writes. Its identity is kept, its content is not.
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
