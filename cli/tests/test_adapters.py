@@ -3,8 +3,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -13,7 +15,7 @@ import pytest
 
 from maity import __version__, clonecheck
 from maity.runner import adapters, config, loop, supervisor
-from maity.runner.asuser import AsUser
+from maity.runner.asuser import AsUser, Ssh
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
 # Under the sandbox: the git commands that fail, and `maity` alone.
@@ -155,7 +157,7 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
-    assert "sandbox" not in settings
+    assert "sandbox" not in settings and "hooks" not in settings  # no exclusion, no hook
     strict = adapters.claude_settings(
         context(tmp_path / "s", sandbox=True, hosts=("maity.team", "github.com"))
     )["sandbox"]
@@ -181,6 +183,69 @@ def test_claude_code_grant(tmp_path: Path) -> None:
         "allowedDomains": ["github.com", "maity.team"],
         "strictAllowlist": True,
     }
+
+
+def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
+    settings = adapters.claude_settings(context(tmp_path, sandbox=True))
+    assert settings["disableAllHooks"] is False
+    (entry,) = settings["hooks"]["PreToolUse"]
+    assert "matcher" not in entry  # every tool, not only Bash
+    (hook,) = entry["hooks"]
+    assert hook["type"] == "command" and hook["onFailure"] == "block"
+    # The runner's own interpreter and module, isolated from the session's environment.
+    module = [sys.executable, "-I", "-m", "maity.runner.plaincall"]
+    # A hook that cannot start or fails refuses the call on any version, not only with onFailure.
+    assert shlex.split(hook["command"]) == [*module, "||", "exit", "2"]
+    assert "args" not in hook  # shell form: also runs on a version without exec form
+    remote = Ssh(name="b", address="b.lan", login="m", known_hosts=tmp_path / "k")
+    remote_hook = adapters.claude_settings(context(tmp_path / "r", sandbox=True, as_user=remote))
+    command = remote_hook["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert command == "maity runner plaincall || exit 2"  # the host's maity, as for the loop
+
+
+@pytest.mark.parametrize(
+    ("harness_id", "version", "ok"),
+    [("claude-code", "2.1.294", False), ("claude-code", "2.1.295", True),
+     ("claude-code", "2.2.0", True), ("claude-code", "3.0.0-beta", True),
+     ("claude-code", "2.1.295-rc.1", False), ("claude-code", "2.1.295-dev", False),
+     ("claude-code", "2.1.295+build", True), ("claude-code", "2.1.296-rc.1", True),
+     ("claude-code", "2.1.295-rc.1+build.7", False), ("claude-code", "2.1.295.1", False),
+     ("claude-code", "2.1.295--rc", False), ("claude-code", "2.1.295-x-y", False),
+     ("claude-code", "02.1.295", False), ("claude-code", "2.1.0295", False),
+     ("claude-code", "2.1.296-01", False), ("claude-code", "2.1.296-rc..1", False),
+     ("claude-code", "2.1.295+", False), ("claude-code", "2.1.295+b..1", False),
+     ("claude-code", "2.1.296-0.rc-1+b-2", True),
+     ("claude-code", None, False), ("claude-code", "2.1", False), ("claude-code", "x", False),
+     ("codex", None, True)],
+)  # fmt: skip
+def test_claude_codes_sandbox_needs_the_hook_failure_policy(
+    harness_id: str, version: str | None, ok: bool
+) -> None:
+    from maity.runner import capabilities
+
+    assert capabilities.sandbox_version_ok(harness_id, version) is ok
+
+
+def test_the_hook_refuses_when_it_cannot_start(tmp_path: Path) -> None:
+    """The shell form's `|| exit 2`: a missing module or interpreter is exit 2, a refusal."""
+    hook = adapters.claude_settings(context(tmp_path, sandbox=True))["hooks"]["PreToolUse"]
+    command = hook[0]["hooks"][0]["command"].replace("maity.runner.plaincall", "maity.nowhere")
+    done = subprocess.run(["sh", "-c", command], input="{}", capture_output=True, text=True,
+                          check=False, timeout=60)  # fmt: skip
+    assert done.returncode == 2
+
+
+def test_the_plain_call_hook_is_a_runner_command(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    from maity import cli
+
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "maity a | x"}})
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(payload.encode())))
+    assert cli.main(["runner", "plaincall"]) == 2
+    assert "one plain call" in capsys.readouterr().err
 
 
 def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
@@ -517,7 +582,12 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
     denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED)
-    assert list(rules["bash"])[-1] in denied  # denies last: the last match wins
+    maity = [f"maity *{char}*" for char in adapters.MAITY_NOT_PLAIN]
+    # Denies last: the last match wins. `maity` only as one plain call, as for Claude Code.
+    assert list(rules["bash"])[-len(maity) - len(denied) :] == [*denied, *maity]
+    assert all(rules["bash"][rule] == "deny" for rule in maity)
+    assert {"maity *>*", "maity *|*", "maity *;*", "maity *&*", "maity *$*", "maity *<*",
+            "maity *`*", "maity *\n*"} == set(maity)  # fmt: skip
     assert rules["read"] == {"*": "allow", f"{ctx.clone}/.git/maity/*": "deny"}
     assert rules["edit"] == {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     assert rules["webfetch"] == "deny" and rules["external_directory"] == "deny"
@@ -631,12 +701,21 @@ def test_a_dangling_login_link_is_replaced(tmp_path: Path, monkeypatch: pytest.M
 
 @pytest.mark.parametrize("harness_id", ["claude-code", "codex", "stub"])
 def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) -> None:
-    """maity refuses its git in a marked clone whose session variables are gone."""
+    """maity refuses its git in a marked clone whose session variables are gone. The git
+    maity starts is recorded in the runner's directory for the agent, which the sandbox
+    hides, never in the clone (only Codex, whose maity runs in its sandbox, keeps it there)."""
     ctx = context(tmp_path, harness_id)
     (ctx.clone / ".git").mkdir(parents=True)
-    adapters.launch(ctx)
+    launch = adapters.launch(ctx)
     assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"
-    recorded = (ctx.clone / ".git" / "maity" / "git").read_text().strip()
+    if harness_id == "codex":
+        where = ctx.clone / ".git" / "maity"
+    else:
+        where = Path(launch.env[clonecheck.GIT_PRIVATE_ENV])
+        assert where == ctx.agent_dir / "git"
+        assert not (ctx.clone / ".git" / "maity" / "git").exists()
+        assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
+    recorded = (where / "git").read_text().strip()
     assert recorded == shutil.which("git") and os.path.isabs(recorded)
 
 
@@ -669,7 +748,8 @@ def test_no_placed_session_runs_gh_even_with_pull_requests(tmp_path: Path) -> No
     o_ctx = context(tmp_path / "o", "opencode", grant=PULLS)
     bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
     assert all(bash[rule] == "deny" for rule in adapters.GH_DENIED)
-    assert list(bash)[-1] in (*adapters.GIT_DENIED, *adapters.GH_DENIED)
+    assert list(bash)[-1] in (*adapters.GIT_DENIED, *adapters.GH_DENIED,
+                              *(f"maity *{c}*" for c in adapters.MAITY_NOT_PLAIN))  # fmt: skip
 
 
 def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
@@ -680,8 +760,9 @@ def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     (ctx.clone / ".git").mkdir(parents=True)
     launch = adapters.launch(ctx)
-    record = (ctx.clone / ".git" / "maity" / "pull_requests").read_text()
+    record = (ctx.agent_dir / "git" / "pull_requests").read_text()
     assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
     assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
 
@@ -694,9 +775,10 @@ def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
     ctx = context(tmp_path, sandbox=True,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     (ctx.clone / ".git" / "maity").mkdir(parents=True)
-    (ctx.clone / ".git" / "maity" / "pull_requests").write_text("github.com/o/other\n/bin/gh\n")
+    (ctx.agent_dir / "git").mkdir(parents=True)
+    (ctx.agent_dir / "git" / "pull_requests").write_text("github.com/o/other\n/bin/gh\n")
     launch = adapters.launch(ctx)
-    assert (ctx.clone / ".git" / "maity" / "pull_requests").read_text() == ""
+    assert (ctx.agent_dir / "git" / "pull_requests").read_text() == ""
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED
 
 

@@ -1935,8 +1935,9 @@ At a session's start the runner records the inode of the clone's `.git`
 (`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
 runner cannot read it itself). Before maity starts git there, it opens
 the clone's root, then `.git` from it once, without following a link,
-and refuses a directory with another inode. It reads the recorded git
-and copies the refs through that descriptor, so a `.git` renamed after
+and refuses a directory with another inode. It copies the refs (and,
+for Codex, reads the recorded git; for the others it is read from the
+runner's directory since 818828af) through that descriptor, so a `.git` renamed after
 the check is not read. git's own repository for the run (its
 configuration, HEAD, refs) is made outside the clone, in the runner's
 directory for the agent, which the sandbox hides (`MAITY_GIT_PRIVATE`);
@@ -2353,13 +2354,15 @@ listed: it is real, untracked work that `git status` must keep showing.
 **Evidence:** confirmed
 **Source:** card tsk-3qb19f0r56zf (the runner test of 2026-11-11: after its first `maity resume`, a placed agent ran `maity` in pipes and chains, read "this clone has not joined a project", took the hub for broken and stopped without `maity wait`; its session transcript)
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
+**See:** runner.md#a-placed-claude-code-agents-maity-line-is-one-plain-call-held-to-that-by-a-hook — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-13
 **Revisit when:** Claude Code matches `excludedCommands` per part of a compound command, or the credential becomes readable inside the sandbox
 
 Claude Code's sandbox hides `.git/maity`, and only a command that matches
-`excludedCommands` (`maity *`) runs outside it. A pipe or a chain with
-`;`, `&&` or `||` is one command that does not match, so its `maity`
-runs inside and finds no credential. The start prompt of a Claude Code
-placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
+`excludedCommands` (`maity *`) runs outside it. A pipe or a chain that
+does not start with `maity` does not match, so its `maity` runs inside
+and finds no credential; a line that starts with `maity` and holds more
+than the call is refused before it runs (63492c65). The start prompt of
+a Claude Code placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
 is set and no credential is readable, `maity` says that instead of "has not
 joined a project".
 
@@ -2371,6 +2374,83 @@ do, and hid that the cause was the shape of its own command.
   allowed build or test command runs could then read it (ea36c196).
 - Rewriting the agent's command in a hook: hooks are switched off for
   placements (`--setting-sources user`), and the harness owns the command.
+
+## A placed Claude Code agent's `maity` line is one plain call, held to that by a hook
+
+**Id:** 63492c65-e6bf-4fd8-9a73-5a599f11707e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
+**See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
+**See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
+
+Under its sandbox, a placed Claude Code session runs a hook before every
+tool call (`runner/plaincall.py`), written by the runner into the
+session's settings beside `excludedCommands`. A command line that starts
+with `maity` passes only as one plain call: words of letters, digits and
+`_-./:=@%+,~^#`, a backslash before any character but a newline,
+single-quoted text, and double-quoted text without `$`, a backtick or
+`!`, with no newline inside. Anything else on such a line (a pipe, `;`,
+`&&`, `||`, `&`, a redirect, `$(…)`, backticks, `<(…)`, a heredoc, a
+`$`) is refused before it runs, with the way out: the text in a file in
+the clone, passed with `--body-file`. So `maity say … - <<'EOF'` does not
+run for a placed Claude Code agent. Before looking for `maity`, every
+leading character that is not a letter or a digit is skipped, so a line
+counts however the harness trims it; a line that starts with a variable
+or another command is left to the permission rules.
+
+The hook is the runner's own interpreter and module (`-I -m
+maity.runner.plaincall`; on an ssh host `maity runner plaincall`, as for
+the loop), outside the clone and not the agent's to change. It has no
+matcher, so it sees every tool, and checks any tool input with a
+`command`. A hook that fails, cannot start or times out refuses the call
+(`onFailure: "block"`), and unreadable input is refused too. The session's
+settings set `disableAllHooks: false` over the agents' user settings.
+Because the hook's refusal on failure needs `onFailure` (Claude Code
+2.1.295), the runner switches Claude Code's sandbox on only from that
+version (`capabilities.sandbox_version_ok`); an unknown or unreadable
+version counts as older, and so does a prerelease of 2.1.295 (SemVer
+sorts `2.1.295-rc.1` before `2.1.295`; build metadata does not count). With `require_sandbox` that is an error in
+`maity runner check` and a refused start (`harness_refused`); without
+it the session runs unsandboxed (`sandbox_unavailable`), with no
+exclusion for the hook to guard, as on a host without the sandbox's
+tools. The hook's shell form ends in `|| exit 2`, so a hook that cannot
+start or fails refuses the call on any version; only a timeout needs
+`onFailure`.
+opencode, which runs without a sandbox and gets no hook, denies
+`maity *<c>*` for each of `;&|<>$`, a backtick and a newline, after its
+allows; whether its scanner hands a redirect to the rule with the
+command is not checked.
+
+**Reason:** only `maity` itself needs to run outside the sandbox. A line
+that holds more than maity's call is held to the rules every other
+command is, and the check does not rely on the shell to tell the parts
+apart. A grammar of what may appear rather than a list of operators: a
+spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
+
+**Rejected alternatives:**
+- A narrower `excludedCommands` pattern: the exclusion is a pattern
+  over the line, and nothing in it says what may not follow `maity`.
+- A list of refused operators (the order's first shape): an expansion
+  nobody listed would pass.
+- Letting heredocs through: their line holds `<` and a newline like any
+  other redirection; a file in the clone carries the same text.
+- `maity` checking its own command line: a program sees its arguments,
+  not the line around it; a redirect is done before it starts.
+- The hook in exec form (`args`): the shell form with the runner's
+  quoted paths also runs on a harness version that predates exec form.
+- No exclusion for `maity` at all: a larger change, for a card of its
+  own.
+- Only a warning for a Claude Code older than 2.1.295 (the first round
+  of #1752): there a hook that fails or times out lets the call through,
+  so the promise above would not hold for a version the runner accepts
+  (review of #1752).
+- Refusing every Claude Code placement on such a version, sandbox
+  required or not: without the sandbox there is no exclusion and nothing
+  for the hook to hold; a runner without `require_sandbox` already runs
+  such sessions where the sandbox's tools are missing.
 
 ## Placed agents open their pull requests through `maity gh`, pinned to the clone's repository
 
@@ -2389,7 +2469,8 @@ and its agents then run `maity gh pr create` and `maity gh pr view`
 sandbox. It takes only the options it knows, with no abbreviations, so
 bundles such as `-dR` are refused. It does not take `--repo`, a URL, or an
 option gh would read a file with. It starts gh with `--repo=` set to the
-repository the runner wrote into `.git/maity/pull_requests` at launch, and
+repository the runner recorded at launch (`pull_requests`, in its directory for the agent
+since 818828af; `.git/maity/pull_requests` before), and
 it gives gh only the environment it names (`ghpr.ENV_PASSED`: `HOME`,
 the locale, the temporary directory, proxies and certificates), so no
 variable names another repository, configuration or login, or a program
@@ -2484,6 +2565,97 @@ of its own, and with it the record that names gh. Since #1683
 opens `.git` once from the root's descriptor, refusing a different one;
 `maity gh` reads the record and compares the walk through that
 descriptor.
+
+## Under a placement maity writes a file only inside the clone, and reads its records from the runner's directory
+
+**Id:** 818828af-24cb-4b2a-be54-1bff2211ccb0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m (the rule, and the lead's order for a first pull request with `files get` and the recorded git only), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
+**See:** runner.md#placed-agents-open-their-pull-requests-through-maity-gh-pinned-to-the-clones-repository — 9f43804d-cfdc-4496-b07b-b01e65fc6410 — as of 2026-11-13
+**See:** runner.md#maity-takes-the-clones-git-only-as-the-directory-the-runner-recorded — e44249f8-15d0-4104-8940-5ff48decd412 — as of 2026-11-13
+**Revisit when:** the other paths maity reads or writes for the agent (`files put`, `--attach`, the `--*-file` options, `api --json`, `--action-body`) go through the same walk; a harness runs `maity` inside its sandbox; the runner stops setting `MAITY_GIT_PRIVATE`; someone needs `--force` under a placement
+
+Under a runner placement (`MAITY_PLACEMENT`) `maity files get` writes
+only inside the runner's clone, never under its `.git`
+(`maity/inclone.py`). The walk is the one `maity gh` uses for its body
+file, moved there: the path is worked out on its text, then the clone's
+root is opened and each directory after it from the one before, without
+following a link, and refused when it is the `.git` that
+`clonecheck.opened_clone` checked. The walk starts at the root's
+descriptor that check opened (without following a link) and read `.git`
+from, so a directory put at the clone's path after the check is not
+written to (review of #1749). The bytes go into a file of maity's own in
+the last directory, without a name where the system has `O_TMPFILE`, and
+that open file is what gets the name: linked through `/proc/self/fd`, or
+by its own name compared by device and inode before and after the link,
+or, without hard links or once its name is gone, copied from maity's own
+descriptor into an exclusively created file. Either way it counts as
+saved when the name holds that file (device and inode) at the moment of
+that check; a failed copy is left under its name and named in the
+refusal, never removed by name, since POSIX cannot remove a name only
+while it holds a given file. A named staging file (no `O_TMPFILE`) is
+removed afterwards only when its name still holds maity's file at that
+check, made while maity's descriptor is still open; a name that holds
+another file by then, or none, is left untouched, and a left name is
+noted on standard error. A saved file is not refused over it. Linking fails on an existing name, so no file is replaced
+there, `--force` included; another file that took the temporary name
+never gets the target's, and one that took the target's name during the
+copy is refused and left alone (review of #1749). Without `-o` the
+file goes to `./maity-files/` as before, created 0700 through the same
+walk. Where a name cannot be opened through a directory's descriptor
+(Windows), only `-o -` is taken. Outside a placement nothing changes.
+
+The git maity starts under the runner and the record `maity gh` reads
+(`git`, `pull_requests`) are written by the runner into its directory
+for the agent, the one `MAITY_GIT_PRIVATE` names (`clonecheck.runner_record`),
+not into the clone's `.git/maity`. A record left there is not read. Only
+Codex keeps them in `.git/maity` (the value `clone`): its `maity` runs
+inside its sandbox with the agent's own rights. A session started by an
+older runner has no record there and runs no git until its placement is
+restarted.
+
+**Reason:** under a placement `maity` runs outside the harness's
+sandbox and reads and writes paths the agent names. A path must not take
+it where the sandbox keeps the agent out, and a program maity starts must
+not be named by a file inside the clone, which the agent writes. The
+runner's directory for the agent is outside the clone, hidden from the
+sandbox, and already checked by maity before git's own repository is made
+there.
+
+**Rejected alternatives:**
+- One helper that checks a path and returns it (`placement_path`): the
+  path is looked up again by name when it is opened, and between the two
+  a directory can become a link (rounds 3 and 4 of #1663's review).
+- Replacing an existing file under `--force` when maity wrote it: what
+  maity wrote would need a record of its own, kept where the agent cannot
+  write. The agent can remove the file itself, inside its sandbox, and
+  then fetch it again.
+- On Windows, checking the path by name: it is racy, and `-o -` remains
+  (the body file's choice).
+- Confining the writes alone and keeping the records in the clone:
+  without the harness's sandbox the clone's `.git/maity` is writable
+  anyway, and every other path maity writes for the agent would have to
+  be closed first.
+- A variable naming the git program: it would work too; the directory
+  holds both records in one place the runner already makes and maity
+  already checks.
+
+**Known gap:** a file with a name can be opened by that name. Where the
+system has no `O_TMPFILE` (macOS, some file systems), maity's file has a
+name in the clone until it is linked, and code running as the same user
+can write into it between the digest check and the link. In the copy
+without hard links the target has its name while maity writes it, and
+such code can write into it as well. The target is then the file maity
+made, with those writes: its identity is checked, its content is not.
+The identity check itself is a snapshot: such code can rename or replace
+the name after it, before maity reports the file saved. The same holds
+for the staging file's removal: between the check and the unlink such
+code can put another file under the staging name, and that file is then
+removed. POSIX has no unlink only while a name holds a given inode; the
+window is accepted, since the name is maity's own unpredictable one in
+the clone and code that can put a file there can remove it itself.
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
