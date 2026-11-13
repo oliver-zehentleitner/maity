@@ -2611,3 +2611,30 @@ a tool that only sends what it is given is the place to refuse one before it is 
 - Chasing every Markdown form that renders a label (shortcut reference links were next, in round
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
+
+## The README's translations are held to README.md's headings by a check, and each names the commit it was translated from
+
+**Id:** ceef8737-c419-47ef-806d-55fd060c2238
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on card tsk-1e2qmy78kams, 2026-11-13
+**Revisit when:** the web client gains or drops a language, or a translation falls behind more often than the check catches
+
+`README.md` is translated into every language of the web client but English (`web/js/i18n/languages.js`),
+one `README.<lang>.md` next to it, and every version carries the same language line. `tools/readme_sync.py`,
+run in CI's changelog job, fails when a translation is missing, when it lacks the line or its first-line
+comment `<!-- translated-from: README.md@<commit> -->`, when its headings are not the same headings at the
+same levels in the same order, or when its link and image targets differ.
+
+**Reason:** a translated README goes stale silently: a section added in English is invisible in the
+others until a reader notices. A section added or moved now fails CI in the pull request that makes it, and
+the comment names the commit to diff against (`git diff <commit> -- README.md`) when the translations
+follow. The language names are each language's own, as in the web client's language menu.
+
+**Rejected alternatives:**
+- Failing whenever `README.md` changed since the named commit: every typo fix would then need nine
+  translations in the same pull request. The check holds the structure; a reworded sentence is caught up
+  at the next translation pass.
+- Translating in CI: the translations are reviewed text in the glossary's terms and forms of address
+  (`web/i18n/glossary.md`), not generated output.
