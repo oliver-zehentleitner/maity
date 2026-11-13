@@ -18,6 +18,9 @@
           "type": "string",
           "pattern": "^(|sha256:[0-9a-f]{64})$"
         },
+        "allowTag": {
+          "type": "boolean"
+        },
         "pullPolicy": {
           "enum": [
             "Always",

@@ -318,6 +318,43 @@ registry alone.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
 
+## The chart pulls by digest by default; a tag is an explicit opt-in
+
+**Id:** b62d9e4a-3c17-4a8f-9e50-d4a1f7c28b93
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 4 (release chain hardening, 2026-11-13); `deploy/helm/maity-hub/templates/_helpers.tpl`, `values.yaml`, `values.schema.json`, `README.md`, `deploy/helm/check.sh`, `deploy/helm/kind-smoke.sh`
+**Revisit when:** the chart gets an image other than the hub's, or installs need a moving tag on purpose (a channel)
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+**See:** packaging.md#every-deploy-of-maityteam-is-a-release-a-version-bump-as-the-last-merge-then-the-maintainers-v-tag — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-13
+
+The chart's image is `repository@digest`, and `image.digest` is
+required. A tag is used only with `image.allowTag: true` and an
+explicit `image.tag` (and no digest); the chart's `appVersion` is no
+longer a default tag, so an install that sets neither stops at render
+with a message naming both ways. `appVersion` still names the version
+label when no tag is set. `values.yaml` no longer calls a tag
+immutable. Installs that already pin a digest (maity.team,
+`deploy/k3s-single/hub-values.yaml`) render the same; an install by
+tag or by the `appVersion` default has to set the digest, or opt in to
+the tag, at its next upgrade. `kind-smoke.sh` opts in, since its image
+is a local build loaded into kind, which has no registry digest.
+
+**Reason:** the signature an operator checks is for a digest, and a
+tag names whatever the registry points it at when the pod starts, so a
+default by tag would deploy bytes nobody checked. The `appVersion`
+default was the case where nobody chose a tag at all.
+
+**Rejected alternatives:**
+- Keeping the `appVersion` default behind the opt-in: the opt-in should
+  name the tag it pulls, not inherit one from the chart.
+- Removing the tag path entirely: a local or air-gapped build without a
+  registry digest (the kind smoke test) would have no way in.
+- A digest default in `values.yaml` per chart release: the chart would
+  need a bump for every image, and the digest exists only after the
+  workflow ran.
+
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
 **Id:** 843b8d35-45c7-4b91-827f-7109f470ca54
@@ -410,6 +447,7 @@ version to name, and the package path stays untested).
 **Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump and redoing the fold before the final MERGE-READY set by the team lead); the maintainer's answer to req-k3acfg3wva0g, 2026-11-10 (fold the changelog at every release); the log of the `v0.1.0a1` run of publish-image (job 129086565903); `.github/workflows/publish-image.yml`; `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
 **Revisit when:** a deploy runs an image no tag built, the deploy stops being a manual step on the maintainer's command, or the hub reaches its beta and leaves the `0.1.0aN` pre-releases
 **See:** packaging.md#the-hub-is-published-to-pypi-as-maity-hub-from-the-same-v-tag-as-the-image-built-from-a-hashed-lock — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-10
+**See:** packaging.md#the-chart-pulls-by-digest-by-default-a-tag-is-an-explicit-opt-in — b62d9e4a-3c17-4a8f-9e50-d4a1f7c28b93 — as of 2026-11-14
 
 Until deploy 5, maity.team ran images built from main by commit, and
 only `0.1.0a1` was ever tagged. From deploy 6 on, every deploy also
@@ -429,17 +467,20 @@ through the same steps:
 4. Ops deploys the image that tag built.
 
 The deployment itself (manual approvals, the maintainer's command) does
-not change. The chart's `appVersion` follows the bump so that its default
-image tag names the image the release tag builds. It had stayed at
-`0.1.0.dev0`, which was never published. For that image to exist,
+not change. The chart's `appVersion` follows the bump, so `Chart.yaml`
+and the `app.kubernetes.io/version` label name the release. Until
+2026-11-13 it also gave the chart's default image tag, so that the
+default named the image the release tag builds; since then the chart
+pulls by digest and has no default tag (see b62d9e4a). It had stayed at
+`0.1.0.dev0`, which was never published. For that tagged image to exist,
 `publish-image.yml` tags the image with `type=pep440` rather than
 `type=semver`. The pinned metadata-action drops a PEP 440 pre-release such
 as `0.1.0a1` as invalid SemVer, so the
 `v0.1.0a1` run logged `v0.1.0a1 is not a valid semver` and pushed only
 the commit-SHA tag (found in the review of this change). The deploy of
-maity.team pins the image by digest, so the default tag only matters to a
-chart install that sets neither `image.tag` nor `image.digest`. The labels
-`app.kubernetes.io/version` show `appVersion` either way.
+maity.team pins the image by digest, so the default tag only mattered to
+a chart install that set neither `image.tag` nor `image.digest`. The
+`app.kubernetes.io/version` label shows `appVersion` unless a tag is set.
 
 **Reason:** this is the maintainer's decision; no reason beyond it was
 stated.
