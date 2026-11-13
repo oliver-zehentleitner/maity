@@ -6565,6 +6565,16 @@ deny also one person alone or one agent. A person or another owner's agent
 is chosen from the members of one's projects (`M.membersOnce`), a project
 from one's projects.
 
+What the hub would refuse and the page can see is said by the form before
+anything is sent: no agent ticked, a side's allow that names none of its
+agents and not its human (`names_no_one`). A refusal it cannot foresee is
+said in the form that was sent, in the page's own words where it has them
+(`too_many_entries`, `not_yours`, `self`, `not_found`); the hub's
+`invalid` alone reads as a generic sentence in any language but English.
+An edit compares one's agents as a set, so an entry the hub lists in
+another order sends nothing; Cancel, or a save with nothing changed, gives
+the focus back to Edit.
+
 **Reason:** the entries need ids (`owner_id`, `human_id`, `agent_id`),
 and the one read from a handle, `GET /people/{handle}`, answers none and
 refuses agents; the member lists carry both, and an agent that is in a chat

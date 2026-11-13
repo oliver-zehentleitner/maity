@@ -17522,6 +17522,58 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && await caRefused({ agents: "all", owner_id: "hum-anna", project: { owner: "maintainer", slug: "sample" } }) === JSON.stringify({ owner_id: "one_subject", project: "one_subject" })
       && await caRefused({ agents: "all", project: { owner: "maintainer", slug: "sample" }, their_human: true }) === JSON.stringify({ their_human: "project_entry" }),
       "chat access: the mock refuses an entry naming no one, another's agent, two subjects and a side's field on a project entry");
+    expect(await caRefused({ agents: [], owner_id: "hum-anna" }) === JSON.stringify({ agents: "format" }),
+      "chat access: the mock refuses an empty list of agents, as the hub does");
+    // Review of #1726. A subject not chosen is hidden, and the stylesheet keeps it so under .field-stack's grid.
+    const caDenyForm2 = () => caPage().querySelectorAll("form.chat-access-add")[1];
+    const caRowsOf = (form) => form.querySelectorAll("div.field-stack").filter((d) => d.querySelector("select"));
+    const caKind2 = caSelects(caDenyForm2())[0];
+    const caShown = [];
+    for (const k of ["owner_id", "human_id", "agent_id", "project"]) {
+      caKind2.value = k; caKind2.dispatch("change");
+      caShown.push(caRowsOf(caDenyForm2()).map((d) => (d.hidden ? 0 : 1)).join(""));
+    }
+    expect(JSON.stringify(caShown) === JSON.stringify(["100", "100", "010", "001"])
+      && fs.readFileSync(path.join(WEB, "css/app.css"), "utf8").includes(".chat-access-page [hidden] { display: none; }"),
+      "chat access: each subject shows its own row alone, and [hidden] wins over the grid " + JSON.stringify(caShown));
+    // An unchanged edit sends nothing, whatever order the entry lists the agents in, and gives the focus back to Edit.
+    await caPatch("/me/chat-access/allow/cha-0001", { agents: ["agt-b", "agt-a"] });
+    caSent.splice(0);
+    await go("#/agents"); await go("#/agents/chat-access"); await mtSettle();
+    const caOld2 = () => caRows("allow").find((li) => text(li).includes("nothing about releases"));
+    const caFocusProto = Object.getPrototypeOf(main);
+    const caFocus0 = caFocusProto.focus;
+    caFocusProto.focus = function () { document.activeElement = this; };
+    btn(caOld2(), "Edit").click(); await tick();
+    caOld2().querySelector("form.chat-access-edit").dispatch("submit"); await mtSettle();
+    expect(!caSent.length && !caOld2().querySelector("form.chat-access-edit") && document.activeElement === btn(caOld2(), "Edit"),
+      "chat access: an edit with nothing changed sends nothing, whatever the agents' order, and the focus is back on Edit");
+    // What the hub would refuse is said by the form, nothing sent: no agent ticked, a side's entry naming no one.
+    btn(caOld2(), "Edit").click(); await tick();
+    const caEdit2 = caOld2().querySelector("form.chat-access-edit");
+    caBoxes(caEdit2).forEach((b) => { b.checked = false; b.dispatch("change"); });
+    caEdit2.dispatch("submit"); await mtSettle();
+    const caNoAgent = text(caEdit2.querySelector(".field-error"));
+    caBoxes(caEdit2)[1].checked = true;
+    caSelects(caEdit2)[1].value = "none";
+    caEdit2.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && caNoAgent === "Tick at least one of your agents, or all of them."
+      && text(caEdit2.querySelector(".field-error")) === "This would allow no one: choose some of their agents, or tick the person themselves.",
+      "chat access: an edit with no agent, or naming no one, says so by the form and sends nothing");
+    // A refusal the client cannot foresee is said in words, in the form that was sent.
+    win.Maity.api.post = (p, b) => { caSent.push(["POST", p, b]); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { reason: "too_many_entries" })); };
+    const caAllow2 = caPage().querySelectorAll("form.chat-access-add")[0];
+    const caSel2 = caSelects(caAllow2);
+    caSel2[1].value = "hum-anna";
+    caAllow2.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && text(caAllow2.querySelector(".send-status")) === "Not saved: You keep 1,000 entries already, the most there can be: remove one first.",
+      "chat access: a refusal is said in the page's words, by the form " + text(caAllow2.querySelector(".send-status")));
+    caSent.splice(0);
+    caSel2[4].value = "none";
+    caAllow2.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && text(caAllow2.querySelector(".field-error")) === "This would allow no one: choose some of their agents, or tick the person themselves.",
+      "chat access: a new allow naming no one is not sent, and says why");
+    caFocusProto.focus = caFocus0; document.activeElement = undefined;
     caMembers.splice(caMembers.findIndex((x) => x.id === "hum-anna"), 1);
     win.Maity.api.post = caPost; win.Maity.api.patch = caPatch; win.Maity.api.del = caDel; win.confirm = caConfirm;
   }

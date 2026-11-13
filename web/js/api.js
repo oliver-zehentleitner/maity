@@ -1878,7 +1878,7 @@ window.Maity = window.Maity || {};
   });
   function chatAccessAgents(raw, path) {
     if (raw === "all") return "all";
-    if (!Array.isArray(raw) || raw.some((a) => typeof a !== "string")) fail(400, "invalid", "agents is all or a list of ids", path, { fields: { agents: "format" } });
+    if (!Array.isArray(raw) || !raw.length || raw.some((a) => typeof a !== "string")) fail(400, "invalid", "agents is all or a list of ids", path, { fields: { agents: "format" } });
     if (new Set(raw).size !== raw.length) fail(400, "invalid", "an id twice in agents", path, { fields: { agents: "duplicate" } });
     const own = new Set(fixtures()["agents.json"].items.filter((a) => a.owner_id === me().member.id && !a.deleted_at).map((a) => a.id));
     if (raw.some((a) => !own.has(a))) fail(400, "invalid", "only your own agents", path, { fields: { agents: "not_yours" } });

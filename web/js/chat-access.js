@@ -73,6 +73,23 @@ window.Maity = window.Maity || {};
   // A rule as the hub keeps it: the text, or null for none.
   const ruleOf = (field) => field.el.value.trim() || null;
 
+  // One's agents as an entry names them: "all", or a list whose order says nothing.
+  const sameAgents = (a, b) => (a === "all" || b === "all" ? a === b
+    : a.length === b.length && a.every((x) => b.includes(x)));
+
+  // A refusal of §9.6's lists in the page's own words, where it has them; null for the hub's.
+  // The hub answers `invalid` with details.fields (chat_access.py) or details.reason.
+  function refusal(err) {
+    const d = (err && err.details) || {};
+    if (d.reason === "too_many_entries") return M.t("chat_access.refused.too_many");
+    const codes = Object.values(d.fields || {});
+    if (codes.includes("names_no_one")) return M.t("chat_access.refused.names_no_one");
+    if (codes.includes("not_yours")) return M.t("chat_access.refused.not_yours");
+    if (codes.includes("self")) return M.t("chat_access.refused.self");
+    if (codes.includes("not_found")) return M.t("chat_access.refused.not_found");
+    return null;
+  }
+
   function part(ctx, profiles) {
     const box = h("section", { class: "chat-access-page", "aria-labelledby": "chat-access-heading" },
       h("h2", { id: "chat-access-heading", tabindex: "-1" }, M.t("chat_access.title")),
@@ -132,13 +149,16 @@ window.Maity = window.Maity || {};
           load(M.t("chat_access.removed"));
         } catch (err) {
           ev.target.disabled = false;
-          status.fail(M.t("chat_access.remove_failed"), err);
+          const words = refusal(err);
+          status.fail(M.t("chat_access.remove_failed"), words ? { message: words } : err);
         }
       } }, M.t("chat_access.remove"));
     }
 
     // An allow entry edited in place: only what changed is sent; a duration chosen starts again from now.
     function editForm(e, close) {
+      const formStatus = M.statusLine();
+      const error = h("p", { class: "field-error", role: "alert" });
       const agents = agentsField(profiles, e.agents, M.t("chat_access.agents"));
       const duration = select(uid("duration"), [["keep", M.t("chat_access.duration.keep")]].concat(DURATIONS.map(([v, l]) => [v, l()])), "keep");
       const side = !e.project;
@@ -158,13 +178,18 @@ window.Maity = window.Maity || {};
         h("label", { for: durationId }, M.t("chat_access.duration_label")), duration,
         side ? [h("label", { for: theirId }, M.t("chat_access.their_agents", { handle: e.handle || e.owner_id })), their,
           h("label", { class: "check", for: humanId }, human, " " + M.t("chat_access.their_human", { handle: e.handle || e.owner_id }))] : null,
-        allowed.nodes, deniedText.nodes,
-        h("div", { class: "actions" }, save, h("button", { type: "button", onclick: close }, M.t("chat_access.cancel"))));
+        allowed.nodes, deniedText.nodes, error,
+        h("div", { class: "actions" }, save, h("button", { type: "button", onclick: close }, M.t("chat_access.cancel"))), formStatus.el);
       form.addEventListener("submit", async (ev) => {
         ev.preventDefault();
+        error.textContent = "";
         const patch = {};
         const a = agents.value();
-        if (JSON.stringify(a) !== JSON.stringify(e.agents)) patch.agents = a;
+        // What the hub would refuse is said here, before anything is sent.
+        if (a !== "all" && !a.length) { error.textContent = M.t("chat_access.choose_agents"); return; }
+        const theirNow = their ? (their.value === "keep" ? e.their_agents : their.value) : null;
+        if (side && theirNow === "none" && !human.checked) { error.textContent = M.t("chat_access.refused.names_no_one"); their.focus(); return; }
+        if (!sameAgents(a, e.agents)) patch.agents = a;
         if (duration.value !== "keep") patch.duration = duration.value || null;
         if (their && their.value !== "keep" && their.value !== e.their_agents) patch.their_agents = their.value;
         if (human && human.checked !== !!e.their_human) patch.their_human = human.checked;
@@ -172,14 +197,15 @@ window.Maity = window.Maity || {};
         if (ruleOf(deniedText) !== (e.denied || null)) patch.denied = ruleOf(deniedText);
         if (!Object.keys(patch).length) { close(); return; }
         save.disabled = true;
-        status.busy(M.t("chat_access.saving"));
+        formStatus.busy(M.t("chat_access.saving"));
         try {
           await M.api.patch(PATH + "/allow/" + encodeURIComponent(e.id), patch);
-          status.done();
+          formStatus.done();
           load(M.t("chat_access.saved"));
         } catch (err) {
           save.disabled = false;
-          status.fail(M.t("chat_access.save_failed"), err);
+          const words = refusal(err);
+          formStatus.fail(M.t("chat_access.save_failed"), words ? { message: words } : err);
         }
       });
       return form;
@@ -190,7 +216,8 @@ window.Maity = window.Maity || {};
       const slot = h("div");
       const edit = h("button", { type: "button", "aria-expanded": "false", onclick: () => {
         if (slot.firstChild) { clear(slot); edit.setAttribute("aria-expanded", "false"); return; }
-        append(slot, editForm(e, () => { clear(slot); edit.setAttribute("aria-expanded", "false"); }));
+        // Closed by Cancel or by a save with nothing changed: the focus goes back to Edit.
+        append(slot, editForm(e, () => { clear(slot); edit.setAttribute("aria-expanded", "false"); edit.focus(); }));
         edit.setAttribute("aria-expanded", "true");
       } }, M.t("chat_access.edit"));
       append(row,
@@ -269,13 +296,14 @@ window.Maity = window.Maity || {};
       const allowed = textField(M.t("chat_access.allowed"));
       const deniedText = textField(M.t("chat_access.denied"));
       const error = h("p", { class: "field-error", role: "alert" });
+      const formStatus = M.statusLine();
       const save = h("button", { type: "submit" }, allow ? M.t("chat_access.add_allow") : M.t("chat_access.add_deny"));
       subject.onChange((k) => { sideOnly.hidden = k !== "owner_id"; });
       const form = h("form", { class: "inline-form chat-access-add field-stack", novalidate: true },
         h("h3", null, allow ? M.t("chat_access.new_allow") : M.t("chat_access.new_deny")),
         agents.el, subject.nodes,
         allow ? [sideOnly, h("label", { for: durationId }, M.t("chat_access.duration_label")), duration, allowed.nodes, deniedText.nodes] : null,
-        error, h("div", { class: "actions" }, save));
+        error, h("div", { class: "actions" }, save), formStatus.el);
       subject.show();
       form.addEventListener("submit", async (ev) => {
         ev.preventDefault();
@@ -284,6 +312,9 @@ window.Maity = window.Maity || {};
         if (a !== "all" && !a.length) { error.textContent = M.t("chat_access.choose_agents"); return; }
         const s = subject.value();
         if (s.missing) { error.textContent = M.t("chat_access.choose_subject"); s.missing.focus(); return; }
+        if (allow && subject.kind() === "owner_id" && their.value === "none" && !human.checked) {
+          error.textContent = M.t("chat_access.refused.names_no_one"); their.focus(); return;
+        }
         const sent = Object.assign({ agents: a }, s);
         if (allow) {
           if (subject.kind() === "owner_id") Object.assign(sent, { their_agents: their.value, their_human: human.checked });
@@ -292,14 +323,15 @@ window.Maity = window.Maity || {};
           if (ruleOf(deniedText)) sent.denied = ruleOf(deniedText);
         }
         save.disabled = true;
-        status.busy(M.t("chat_access.saving"));
+        formStatus.busy(M.t("chat_access.saving"));
         try {
           await M.api.post(PATH + "/" + kind, sent);
-          status.done();
+          formStatus.done();
           load(allow ? M.t("chat_access.allow_added") : M.t("chat_access.deny_added"));
         } catch (err) {
           save.disabled = false;
-          status.fail(M.t("chat_access.save_failed"), err);
+          const words = refusal(err);
+          formStatus.fail(M.t("chat_access.save_failed"), words ? { message: words } : err);
         }
       });
       return form;

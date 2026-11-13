@@ -3475,6 +3475,26 @@
     "en": "41ace7f688e49189",
     "text": "b497cb32cedca299"
   },
+  "chat_access.refused.names_no_one": {
+    "en": "801c92d4d602926c",
+    "text": "9c16f620f89ba290"
+  },
+  "chat_access.refused.not_found": {
+    "en": "d8b046d8d365e980",
+    "text": "18209307bfbe245b"
+  },
+  "chat_access.refused.not_yours": {
+    "en": "e9a1531519525089",
+    "text": "f89da2e41a298ff7"
+  },
+  "chat_access.refused.self": {
+    "en": "0c944610cd295433",
+    "text": "982013eff4f5407d"
+  },
+  "chat_access.refused.too_many": {
+    "en": "d76f4b2adff21c54",
+    "text": "0e3a34bd951c3fcd"
+  },
   "chat_access.remove": {
     "en": "9469a102f04ea196",
     "text": "1050589a96b5a37d"
