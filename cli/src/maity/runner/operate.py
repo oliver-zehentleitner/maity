@@ -16,12 +16,13 @@ from typing import Any
 
 from .. import clonecheck, hub, onboarding, state
 from ..redact import without_userinfo
-from . import config, serve, supervisor, targets, workspace
+from . import config, limitread, serve, supervisor, targets, workspace
 from .asuser import RUNNER, AsUser
 from .tmux import Session, Tmux, TmuxError
 
 STOP_ALL_GRACE = 30
 FOLLOW_EVERY = 1.0
+LOG_CHUNK = 1024 * 1024
 # git run by the operator in an agent's clone: nothing the agent wrote may run (§7.5). The
 # overrides below are a second line; the first is `not_inspectable`.
 SAFE_GIT = [
@@ -114,10 +115,18 @@ def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
 
     shown = 0
     while True:
-        data = as_user.read(path, shown)  # only what is new: the agent sets the log's size
+        try:  # only what is new, a chunk at a time: the agent sets the log's size
+            data = as_user.read(path, shown, limit=LOG_CHUNK)
+        except limitread.Behind:  # the log was cut to its kept tail (logcap): from its start
+            shown = 0
+            continue
+        except OSError as exc:
+            raise Refused(f"the log for {pid} cannot be read: {exc}") from None
         if data:
             emit(data)
             shown += len(data)
+            if len(data) == LOG_CHUNK:
+                continue  # more may follow at once
         if not args.follow:
             return 0
         time.sleep(FOLLOW_EVERY)

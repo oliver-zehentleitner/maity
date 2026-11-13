@@ -106,8 +106,8 @@ history and the process list.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner design v2 §5.2, §8 and §10.1; implementation of runner slice R2, 2026-10-22 (which answers count as fatal, the superseded stream, `KillMode`)
-**Revisit when:** the hub gains a reason to answer a runner 4xx that a later retry could clear, or the runner runs more than one service per credential by design
+**Source:** runner design v2 §5.2, §8 and §10.1; implementation of runner slice R2, 2026-10-22 (which answers count as fatal, the superseded stream, `KillMode`); card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13: a full disk must not stop the runner service for good), 2026-11-14
+**Revisit when:** the hub gains a reason to answer a runner 4xx that a later retry could clear, or the runner runs more than one service per credential by design, or the service gets a way to tell a state directory that is gone from one that is full
 
 `maity runner serve` backs off and says `hello` again only on no answer,
 a 5xx, 408, 429 or a clock skew. A revoked credential, any other 4xx and
@@ -123,7 +123,11 @@ make them supersede each other forever. On one host a lock on the state
 directory refuses the second service at its start, so the running one
 keeps the stream. A state directory the service cannot write ends it with
 78 too, so a unit pointed at the wrong path does not restart every ten
-seconds. The agents run in a tmux server
+seconds; that is decided at the start (the lock file in the state
+directory). Once serving, a status that cannot be written (a full disk)
+backs off and says `hello` again like a hub outage: an exit with 78 there
+would leave the agents running unsupervised until someone started the
+service by hand, and the disk may have room again a minute later. The agents run in a tmux server
 the runner started, inside the unit's cgroup, so systemd's default
 `KillMode=control-group` would end every agent on a service restart. The
 design keeps agents running across runner restarts and hub outages, so
@@ -134,6 +138,12 @@ only the runner's own process may be signalled.
   wrong configuration behind an endless reconnect.
 - Backing off on `superseded` and reconnecting: two services would take
   the stream from each other in turn.
+- Ending with 78 on any local write that fails while serving, as before
+  2026-11-14: a full disk then stopped the service for good while its
+  agents ran on without stops, kills or status.
+- Ending with another exit code there, for systemd to restart: the
+  restart lands in the same full disk, and an in-process backoff keeps
+  the supervisor and its agents' state in memory.
 - Leaving `KillMode` at its default: a `systemctl restart` for an
   upgrade would end every agent mid-work.
 - `PrivateTmp` in the unit: with the agents outliving the service, the
@@ -2981,3 +2991,80 @@ repository. Rejected: the repository declaring its own checks in a
 committed file. The project's committed configuration is never loaded
 (adapters' module docstring), because a branch could then widen its own
 grant. `git apply` stays ungranted (the lead's decision).
+
+## Files on the agents' side are read bounded, and a clone only in the start task
+
+**Id:** 096be6c1-a4b4-400e-9e1d-f876c8000edd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 1, and the fix it named); implementation 2026-11-14
+**Revisit when:** the runner reads the agents' side through a channel of its own instead of running commands there, or the supervisor stops holding one lock for every placement
+**See:** runner.md#the-limit-file-is-read-on-the-agents-side-by-the-runners-own-module-not-by-dd — aa29acab-65eb-4f60-a8da-ee284877266f — as of 2026-11-14
+
+Every file the runner reads from the agents' side (a clone's
+`.git/config`, its `.git/info/exclude` and `.git/maity/state.json`, a
+pane log, the agents' user's Claude Code settings) goes through
+`AsUser.read`, which reads the way the limit file was already read
+(`limitread`): no link followed, no wait on a FIFO, a regular file only,
+at most a limit the caller names. In the runner's own process that is
+`limitread.take`; through sudo or on an ssh host it is the runner's own
+module there (`--bytes`, `--offset`), within `READ_TIMEOUT`, a timeout
+turned into an `OSError` every caller handles. The supervisor's tick,
+which holds the lock `update` and the reports wait on, reads only the
+runner's own workspace record of an existing clone (`workspace.owned`);
+the clone's `.git` is checked (`clonecheck`) and then read for its origin
+by the start task (`workspace.prepare`).
+
+**Reason:** the agents can replace any of these files, and the clone's
+`.git` too, between two looks at it. A read that follows a link to an
+endless device, waits on a FIFO or takes a huge file into memory, done
+while the supervisor holds its lock, stops every placement on the runner,
+not only the one whose clone it is. One way of reading for everything on
+that side means a new caller cannot pick the unsafe one by accident.
+
+**Rejected alternatives:**
+- `tail -c` and `head -c` through sudo, as the logs were read: bounded in
+  size with `head`, but they follow links and wait on a FIFO, and a
+  killed `sudo` leaves them waiting.
+- `dd` with `iflag=nofollow,nonblock`: macOS's `dd` has no `iflag`
+  (aa29acab).
+- Keeping the origin check in the tick with a safe read: still a command
+  through sudo or ssh, up to its timeout, under the lock every placement
+  needs.
+- Falling back to `tail` where an ssh host's `maity` is older than the
+  runner's: it would keep the unsafe read alive. Such a host reads
+  nothing, as for the limit file, and an existing clone there is refused
+  as `origin_mismatch` until the host's `maity` is updated.
+
+## A placement's log is held to `log_keep_bytes` by its own writer, keeping the newest half
+
+**Id:** 9bdc2aa5-b5dc-489a-bda6-db7c06d3eed5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 2: `limits.log_keep_bytes` was documented and never applied); implementation 2026-11-14. Which way to hold the limit was the implementer's choice, not confirmed yet
+**Revisit when:** someone needs a pane's older output after the limit, or tmux's `pipe-pane` gains a size limit of its own
+
+tmux's `pipe-pane` hands a pane's output to `maity.runner.logcap` (`maity
+runner logcap` on an ssh host) instead of `cat >>`. The module runs on the
+agents' side, appends to `<agent_files>/logs/<placement>.log`, and when
+the next chunk would take the log past `limits.log_keep_bytes` it first
+cuts the file to its newest half, through a copy renamed over it. A
+write that fails (a full disk) drops that chunk and the module reads on.
+`maity runner logs --follow` starts again at the log's beginning when it
+finds the log shorter than what it showed.
+
+**Reason:** the writer is the only process that sees every byte as it
+arrives, so it holds the limit exactly and without a second process
+watching the file. Keeping the newest half leaves the output that
+explains a failure, which is what the log is read for, and bounds the
+disk to one limit per placement.
+
+**Rejected alternatives:**
+- Rotating to `<placement>.log.1`: twice the limit on the disk, and a
+  second file `logs` would have to know about.
+- The supervisor cutting the logs on its tick: a command through sudo or
+  ssh per log and tick, racing the writer's appends.
+- Emptying the log when it is full: drops the output that led up to the
+  limit, usually the part someone wants to read.

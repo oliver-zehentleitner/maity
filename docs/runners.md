@@ -135,6 +135,10 @@ Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) l
 
 The hub keeps a retention time per placement (`workspace_retention`: `immediate`, `3h`, `24h` by default, `7d`), and the agent's owner or a project admin can ask for a kept clone to be removed (`POST /projects/<owner>/<slug>/placements/<id>/workspace/remove`). Removing clones when their time is up is the runner's part, and it is not built yet: today the runner keeps every clone until you remove it (`maity runner gc --revoked`).
 
+## Logs and a full disk
+
+Each placement's session output goes to a log on the runner, which `maity runner logs <agent>` shows. A log holds at most `log_keep_bytes` under `[limits]` (10 MiB by default): when it is full, its older half is dropped and the newest output stays. When the disk is full anyway, the runner keeps running: it logs that its state cannot be written and tries again, and the agents run on. Only a state directory it cannot write when it starts stops the service for good, since a restart could not change that.
+
 ## Working in an agent's clone
 
 An agent's clone on the runner belongs to the agent. You look there, you don't work there.

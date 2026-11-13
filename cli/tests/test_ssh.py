@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +63,18 @@ def fake_ssh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "remote" / "home"
     home.mkdir(parents=True)
     (tmp_path / "remote" / "bin").mkdir()
+    # The host's `maity` on the agents' PATH: the runner reads the agents' files through it
+    # (`maity runner limitread`). This one, its read started straight away, since loading the
+    # whole CLI on a busy machine outlasts what `settle` waits; a test of the host's own
+    # install replaces it.
+    host_maity = tmp_path / "remote" / "bin" / "maity"
+    host_maity.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = runner ] && [ "$2" = limitread ]; then shift 2; '
+        f'exec {sys.executable} -m maity.runner.limitread "$@"; fi\n'
+        f'exec {sys.executable} -m maity "$@"\n'
+    )
+    host_maity.chmod(0o755)
     log = tmp_path / "ssh.log"
     script = bin_dir / "ssh"
     script.write_text(

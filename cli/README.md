@@ -1377,6 +1377,15 @@ maity runner gc --revoked [--yes]      # workspaces whose credential is revoked:
 maity runner workspace claim prj-7k2m9q/agent-h --agent agt-h   # record a clone made by hand
 ```
 
+A placement's log holds at most `limits.log_keep_bytes` (10 MiB by
+default); when it is full, its older half is dropped and the newest output
+stays. `logs --follow` starts again at the log's beginning when that
+happens. Whatever the runner reads from the agents' side (a clone's
+`.git/config`, a log, the loop's limit file) it reads as a regular file
+only, never through a link and never waiting on a FIFO, up to a fixed
+size; it reads a clone only while it starts an agent there, never while
+it decides what to start or stop.
+
 `gc` asks the hub through each clone's own `maity`, so the runner never
 holds an agent's credential, and asks the hub which placements are active,
 so a clone a new placement continues is kept. git runs in a clone only

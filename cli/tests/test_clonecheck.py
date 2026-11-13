@@ -325,8 +325,8 @@ def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
     read = clonecheck.Local.read
     rewritten: list[bool] = []
 
-    def then_rewrite(self: clonecheck.Local, path: Path, offset: int = 0) -> bytes:
-        data = read(self, path, offset)
+    def then_rewrite(self: clonecheck.Local, path: Path, offset: int = 0, *, limit: int) -> bytes:
+        data = read(self, path, offset, limit=limit)
         if path.name == "config" and not rewritten:  # once the check has its copy
             rewritten.append(True)
             with path.open("a") as config:
