@@ -2212,3 +2212,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .leave-dialog h3 { margin: 0 0 0.5rem; }
 .leave-dialog .actions { justify-content: flex-end; }
 .leave-agents { margin: 0.35rem 0 0; padding-left: 1.2rem; }
+/* The page as the focus's place where what held it went (the authenticator banner): no ring
+   around the whole page. */
+#main[tabindex="-1"]:focus { outline: none; }

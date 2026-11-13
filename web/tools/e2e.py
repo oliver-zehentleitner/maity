@@ -3022,6 +3022,22 @@ def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         kept = page.evaluate("() => [document.querySelector('.factor-banner') && document.querySelector('.factor-banner').dataset.e2e,"
                              " document.activeElement && document.activeElement.textContent]")
         assert kept == ["standing", "Set up an authenticator app"], f"the minute's refresh replaced the banner or moved the focus: {kept}"
+        # Gone while the focus is in it (an app enrolled elsewhere, here its answer changed in the
+        # browser): the focus goes to the page, not the document's body (review of #1716).
+        def enrolled(route):
+            answer = route.fetch()
+            route.fulfill(response=answer, json=dict(answer.json(), via="totp", enrolled=True))
+        page.route("**/api/v1/auth/second-factor", enrolled)
+        banner.get_by_role("link", name="Set up an authenticator app", exact=True).focus()
+        # Two minutes on: the refresh before read its answer at a clock a minute ahead.
+        page.evaluate("() => { Maity.api.now = () => window.e2eNow() + 122000; }")
+        expect(page.locator(".factor-banner")).to_have_count(0, timeout=15000)
+        page.evaluate("() => { Maity.api.now = window.e2eNow; }")
+        page.unroute("**/api/v1/auth/second-factor", enrolled)
+        assert page.evaluate("document.activeElement && document.activeElement.id") == "main", "the banner went and the focus with it"
+        page.reload()
+        expect(page.locator("header .me")).to_contain_text("Owner")
+        expect(banner).to_contain_text("Your sign-in rests on your mailbox alone")
         banner.get_by_role("button", name="Later", exact=True).click()
         expect(banner).to_have_count(0)
         page.reload()
@@ -4733,6 +4749,48 @@ def stored_page_layout(run: Run, browser) -> None:
             context.close()
 
 
+def visitor_layout(run: Run, browser) -> None:
+    """A public page the dashboard draws for a visitor, in the frame of §16.7.5 as the sign-in and
+    the stored pages are (tsk-tp97v64vpy5z, PR 3): the landing page's header and footer around it,
+    the app's bar hidden, Sign in coming back to the page, nothing wider than the window, no policy
+    refusal, axe clean."""
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            seen = context.new_page()
+            refused: list[str] = []
+            seen.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+            for path, kind in (("/owner/e2e-alpha", "project"), ("/owner/e2e-alpha/board", "board")):
+                where = f"{path} for a visitor at {width}x{height} {scheme}"
+                if kind == "project":
+                    seen.goto(f"{run.base}{path}")
+                    # The shell carries the hub's stored page in <main> until the dashboard draws
+                    # (§16.9); the dashboard's policy refuses that page's own style attributes, one
+                    # refusal each, before any script runs. Those are the shell's, not the frame's.
+                    served = seen.request.get(f"{run.base}{path}", headers={"Cookie": ""}).text()
+                    expect(seen.locator(f'section.view-visitor.stored-page[data-kind="{kind}"] h1')).to_be_visible()
+                    assert len(refused) <= served.count(' style="'), f"{where}: {len(refused)} refusals, {served.count(' style=')} in the shell"
+                    refused.clear()
+                else:
+                    # Drawn by the dashboard alone, from the project's tab: no refusal at all.
+                    seen.locator("section.view-visitor nav.view-tabs").get_by_role("link", name="Board", exact=True).click()
+                expect(seen.locator(f'section.view-visitor.stored-page[data-kind="{kind}"] h1')).to_be_visible()
+                expect(seen.locator("header.site-header")).to_be_visible()
+                expect(seen.locator("footer.site-footer")).to_be_visible()
+                expect(seen.locator("#header")).to_be_hidden()
+                sign_in = seen.locator("header.site-header a.signin")
+                if width >= 960:
+                    expect(sign_in).to_be_visible()
+                assert f"next=%2Fowner%2Fe2e-alpha" in (sign_in.get_attribute("href") or ""), f"{where}: {sign_in.get_attribute('href')}"
+                wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+                assert wide <= 0, f"{where}: {wide} px wider than the window"
+                assert not refused, f"{where}: {refused[:2]}"
+                run.shot(seen, f"visitor-{kind}-{width}-{scheme}")
+                if width == 1280:
+                    run.a11y(seen, f"{path} for a visitor, {scheme}")
+            context.close()
+
+
 def visitor_step(run: Run, page: Page) -> None:
     """A browser without a session never ends at the login on a public address (tsk-jj1tfre7n6zb)."""
     run.step("public pages: a visitor reaches them, a dashboard address links them from the login")
@@ -4763,15 +4821,16 @@ def visitor_step(run: Run, page: Page) -> None:
     guest.locator('a[href="/owner/e2e-alpha"]').click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
     expect(guest.locator("#login-email")).to_have_count(0)
-    # The dashboard draws the page, read-only, with the way to sign in.
+    # The dashboard draws the page, read-only, in the landing's frame with the way to sign in.
     expect(guest.locator("section.view-visitor")).to_be_visible()
     expect(guest.locator("section.view-visitor button")).to_have_count(0)
-    expect(guest.locator(".visitor-sign-in")).to_be_visible()
-    guest.get_by_role("link", name="Board", exact=True).click()
+    expect(guest.locator("header.site-header a.signin")).to_be_visible()
+    guest.locator("section.view-visitor").get_by_role("link", name="Board", exact=True).click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha/board")
     expect(guest.locator('section.view-visitor[data-kind="board"]')).to_be_visible()
+    visitor_layout(run, page.context.browser)
     # The way to sign in leads to the form, and the address it came from is kept.
-    guest.locator(".visitor-sign-in").click()
+    guest.locator("header.site-header a.signin").click()
     expect(guest.locator("#login-email")).to_be_visible()
     assert "next=" in guest.url, guest.url
     # A hub page whose data cannot be read stays readable, with its links working.

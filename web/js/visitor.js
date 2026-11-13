@@ -250,7 +250,7 @@ window.Maity = window.Maity || {};
     // its id with the project. Signed out, a link to the sign-in that comes back with the form open.
     const report = M.report ? reportOf(answer, base) : null;
     const reporting = report ? M.report.control(report.target, report.what, { signedOut: signedIn ? null : path }) : null;
-    append(clear(main), h("section", { class: "view-visitor", "data-kind": answer.kind },
+    const content = [
       h("h1", null, title),
       reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
@@ -259,8 +259,15 @@ window.Maity = window.Maity || {};
         // A card's page belongs to the Board, the tab it is reached from.
         "aria-current": base + v.path === answer.path || (answer.kind === "card" && v.path === "/board") ? "page" : null,
       }, v.label))) : null,
-      draw[answer.kind] ? draw[answer.kind](d, base) : null));
+      draw[answer.kind] ? draw[answer.kind](d, base) : null];
+    // Signed out the page stands in the landing's frame (§16.7.5), as the hub's stored pages do:
+    // its header and footer around it, the content in the stored pages' look (public-pages.css,
+    // .stored-page). The app's bar above stays only for where the frame cannot be read.
+    append(clear(main), signedIn
+      ? h("section", { class: "view-visitor", "data-kind": answer.kind }, content)
+      : h("section", { class: "view-visitor stored-page", "data-kind": answer.kind }, h("div", { class: "wrap" }, content)));
     document.title = title;
+    if (!signedIn) M.siteChrome.enter(path, null, { next: path });
     if (reporting && reporting.open && M.report.asked()) reporting.open();
     return true;
   }
