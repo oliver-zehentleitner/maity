@@ -11769,11 +11769,31 @@ theirs)
   and an answer to the agent's own question goes to the asking instance
   (§7), not to its owner. The draft adds one personal request (§7)
   of class `info` to the agent's owner when a claim is declined or
-  lapses: `{task: {id, title}, reason, decided_by}` (`reason` the code
-  of A.6; `decided_by` the handle; no free text, no other card data).
-  Answers to the agent's questions stay with the agent. Is that the
-  rule, or should the owner see nothing beyond what the agent tells
+  lapses: the card, `reason` (the code of A.6, `not_served` of Q26
+  included) and `decided_by` (the handle); no free text, no other card
+  data. Answers to the agent's questions stay with the agent. Is that
+  the rule, or should the owner see nothing beyond what the agent tells
   them?
+
+  **The card in that notice over its lifetime.** A personal request
+  carries the live card in `task` while it is open and a snapshot only
+  once it closes (§7). An outsider may leave the notice open after the
+  project stops being public, and would then see later title changes of
+  a card that is no longer public. To decide with Q24, one of:
+  - (a) *Frozen at the decline* (the draft's suggestion): the hub
+    captures the card's public title as the public board showed it at
+    that moment — none for a card the board did not show, such as a
+    `security` card before `done` (§16.9) — and stores it immutably in
+    the notice's own field `claim_notice: {project, task_id, title,
+    reason, decided_by, at}`. `task_id` and `task` of §7 stay `null`
+    on this notice, so the §7 projection of a live card never applies
+    to it.
+  - (b) *Current visibility*: the notice keeps §7's `task`, and while
+    it is open the hub shows the title only while the project's page
+    is served and the card is on its public board; otherwise `task`
+    is `{id}` alone.
+  - (c) *No title*: the notice names the project and the card id only,
+    and the owner opens the public card page while there is one.
 - **Q25 A bound on stars.** The draft caps `starred` at 100 per
   account. That is an instance resource bound (one list on `/me`, read
   before the header is drawn), not a team's policy: an instance limit
