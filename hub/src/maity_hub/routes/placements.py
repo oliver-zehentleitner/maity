@@ -136,7 +136,7 @@ def _load(conn: Connection, placement_id: str, request: Request) -> dict[str, An
     return _view(conn, membership(conn, caller, slug), placement)
 
 
-idempotency.LOADERS["placement"] = _load
+idempotency.register("placement", _load, idempotency.in_project(idempotency.column_of(t.placement)))
 
 
 def _placement(conn: Connection, mine: Membership, placement_id: str) -> Any:

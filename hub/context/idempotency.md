@@ -39,3 +39,49 @@ a retry after a lost answer, rare, and the same call with a new key works.
   allowed in both projects, and still gets the wrong project's resource.
 - The raw request path in the hash: an old name of the project, which
   still resolves, would turn a retry after a rename into a mismatch.
+
+## A replay passes the same read as a fresh request, before anything is loaded
+
+**Id:** 3f8b1c80-d1f3-49fc-be29-16f4f076bf28
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-cjafxd0mchhh (authorization hardening), 2026-11-13
+**Revisit when:** a resource type is added to `idempotency.LOADERS`, or a replay is meant to answer someone who no longer reads the resource
+**See:** idempotency.md#a-key-replays-only-the-call-it-was-first-used-for-method-route-resource-and-body — be28183d-90cd-4acd-b043-59819643f89d — as of 2026-11-13
+
+A replay answers with the resource as it is now, not with a stored
+response. So it re-checks access first: every resource type is registered
+with `idempotency.register(type, loader, may_see)`, and `_replay` asks
+`may_see(conn, id, caller)` before the loader runs. Where it says no, the
+answer is `not_found`, as the caller's GET would be. For a project's
+resources, `in_project` checks the active membership with `project:read`,
+plus the rule the resource's own GET adds (the invitation and join lists,
+a credential's managers, a request's readers, a group chat's messages, an
+attachment's readers, the webhook's admins). Outside projects, the check
+is the GET's rule as well: an agent's owner, the runner and the people who
+see it, a cross-owner chat's readers. A human's own records (`/me`, their
+preferences and chat-access lists, their reports) need no further look,
+since the key is theirs. One's own membership stays visible after a
+leave, so the leave's retry still replays. `tests/test_replay_access.py`
+names every registered type, so a new loader fails it until someone
+decides what its replay may show.
+
+**Reason:** before this, `_replay` ran before the route's action, where
+the checks live, and several loaders built the view without looking at
+the caller. A loader that looks for itself is one forgotten check away
+from the same gap. Registering the check next to the loader makes it a
+required argument, and the test makes a new type a deliberate choice.
+
+**Rejected alternatives:**
+- Running the route's authorization before `_replay`: the checks sit
+  inside each action, mixed with the write and taken under its locks, so
+  they cannot be run apart from it without splitting every route. A
+  write's check is also stricter than a read's: someone who may still
+  read the resource, but no longer change it, would lose the answer to
+  their own earlier call.
+- Dropping a member's stored keys when the membership ends: access is
+  also lost in other ways (a role or scope change, leaving a chat, a
+  restricted set), so it would not be enough on its own.
+- Patching only the loaders found without a check: it leaves the next
+  loader to whoever adds it, with nothing that fails.

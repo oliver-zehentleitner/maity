@@ -219,7 +219,7 @@ def _load(conn: Connection, card_id: str, _request: Request) -> dict[str, Any]:
     return _state(conn, card_id, _row(conn, card_id))
 
 
-idempotency.LOADERS[RESOURCE] = _load
+idempotency.register(RESOURCE, _load, idempotency.in_project(idempotency.column_of(t.card)))
 
 
 # --- caps ------------------------------------------------------------------------------------

@@ -107,7 +107,8 @@ def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, 
     return event_views(conn, [row], reader)[0]
 
 
-idempotency.LOADERS["event"] = _load_for_caller
+_IN_EVENTS_PROJECT = idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int))
+idempotency.register("event", _load_for_caller, _IN_EVENTS_PROJECT)
 
 
 # --- reading and waiting -------------------------------------------------------------------
@@ -1074,4 +1075,8 @@ def _blind(seq: int) -> dict[str, Any]:
     return {"seq": seq, "redacted": True}
 
 
-idempotency.LOADERS["blind_redaction"] = idempotency.plain(lambda _conn, seq: _blind(int(seq)))
+idempotency.register(
+    "blind_redaction",
+    idempotency.plain(lambda _conn, seq: _blind(int(seq))),
+    _IN_EVENTS_PROJECT,
+)

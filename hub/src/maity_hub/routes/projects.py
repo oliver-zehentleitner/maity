@@ -768,7 +768,7 @@ def load_project(conn: Connection, project_id: str, request: Request) -> dict[st
     return _view(conn, _load(conn, project_id), request)
 
 
-idempotency.LOADERS["project"] = load_project
+idempotency.register("project", load_project, idempotency.in_project(idempotency.the_project))
 
 
 @router.get("/projects")

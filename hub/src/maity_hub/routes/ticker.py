@@ -317,7 +317,11 @@ def _load_subscription(conn: Connection, membership_id: str, _request: Request) 
     return _subscription_view(ticker.subscription_of(conn, int(membership_id)))
 
 
-idempotency.LOADERS["ticker_subscription"] = _load_subscription
+idempotency.register(
+    "ticker_subscription",
+    _load_subscription,
+    idempotency.in_project(idempotency.column_of(t.membership, key=int)),
+)
 
 
 @router.get("/projects/{owner}/{slug}/ticker/subscription")

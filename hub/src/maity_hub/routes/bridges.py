@@ -189,4 +189,6 @@ def _load(conn: Connection, bridge_id: str) -> dict[str, Any]:
     return bridges.view(conn, row)
 
 
-idempotency.LOADERS["bridge"] = idempotency.plain(_load)
+idempotency.register(
+    "bridge", idempotency.plain(_load), idempotency.in_project(idempotency.column_of(t.bridge))
+)

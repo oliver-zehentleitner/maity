@@ -328,6 +328,12 @@ session of the same credential replays the same key — and kept for
   id, so a call through an alias of the same project (§6.24, §6.25) is the same call. A
   key stored before this rule answers `idempotency_mismatch` on every repeat until it
   expires (24 hours).
+- A replay passes the same read as a fresh request: since it answers with the resource
+  as it is now, the hub first checks that the caller may still read it, as the
+  resource's own `GET` would let them (an active membership with `project:read` and the
+  resource's read rule; outside a project its owner or readers). Otherwise it is
+  `not_found`, as that `GET` is. A caller's own membership stays readable to them, so
+  the retry of a leave still replays (§6.2, "Leaving a project").
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
 §6.10; a watch, §6.4): the key is optional there for every caller. After

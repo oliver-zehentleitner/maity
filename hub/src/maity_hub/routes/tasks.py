@@ -201,7 +201,7 @@ def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any
     return task_view(conn, card, reader_of(request), viewer)
 
 
-idempotency.LOADERS["task"] = load_task
+idempotency.register("task", load_task, idempotency.in_project(idempotency.column_of(t.card)))
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:

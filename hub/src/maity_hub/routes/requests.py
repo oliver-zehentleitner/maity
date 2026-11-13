@@ -523,8 +523,32 @@ def load_member_patch(conn: Connection, request_id: str) -> dict[str, Any]:
     return view
 
 
-idempotency.LOADERS["request"] = idempotency.plain(load_request)
-idempotency.LOADERS["member_patch"] = idempotency.plain(load_member_patch)
+def may_see(conn: Connection, request_id: str, caller: Caller) -> bool:
+    """Whether the caller reads the request now: as `GET /requests/{id}` lets the human it
+    is personal to, or as `GET …/requests/{request_id}` lets a member (§7). A replayed write
+    of a request answers only them (§1.5)."""
+    row = conn.execute(select(t.request).where(t.request.c.id == request_id)).first()
+    if row is None:
+        return False
+    if row.personal and caller.kind == "human":
+        try:
+            _personal(conn, caller, request_id, asker=True)
+            return True
+        except ApiError:
+            pass
+    if row.project_id is None:
+        return False
+    try:
+        mine = membership(conn, caller, namespace.name_of(conn, row.project_id))
+    except ApiError:
+        return False
+    if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
+        return False
+    return inbox.may_read(conn, row, mine)
+
+
+idempotency.register("request", idempotency.plain(load_request), may_see)
+idempotency.register("member_patch", idempotency.plain(load_member_patch), may_see)
 
 
 def _row(conn: Connection, request_id: str) -> Any:
