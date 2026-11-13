@@ -98,8 +98,9 @@ budget and kills it past that; a timeout, a kill past a limit or a crash is
 `undecodable` to the client, and logged with its exit code, signal and the
 last line of stderr, so an operator can tell a crash from a plain refusal.
 It keeps the hub's user, so this narrows what an exploited decoder holds;
-it is not a sandbox. A semaphore sized `MAITY_AVATAR_DECODES` admits
-the decodes; with every slot taken the call is `rate_limited`. The decode
+it is not a sandbox. `MAITY_AVATAR_DECODES` slots admit the decodes;
+with every slot taken, or the caller's share of them (c7e48df4), the call
+is `rate_limited`. The decode
 runs before the transaction, so no lock is held while it runs. The
 answer is rebuilt with `Image.frombytes` before it is saved, because
 Pillow's PNG writer copies an `icc_profile` from the source image's
@@ -151,6 +152,41 @@ the decode keeps the limit in front of the parser rather than behind it.
 
 **Alternatives:** counting only accepted changes. It is closer to the
 wording "changes", but it leaves the decoder unguarded.
+
+## One human takes at most all but one decode slot
+
+**Id:** c7e48df4-a6af-4461-8c3d-3ee153adee1b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-x2gd2w0146jm, hardening from the security rounds (tsk-v9kheekgq115), 2026-11-13; the share and its key are the implementer's choice
+**Revisit when:** decodes move out of the hub's process (a pool or a service), or the hub runs several workers per replica that would each need their own share
+**See:** images.md#an-avatar-is-decoded-in-a-process-of-its-own-that-limits-itself — 28da8cdf-5d46-4306-a49a-9ef02bb2185d — as of 2026-11-13
+
+The decode slots of one process (`avatars.DecodeSlots`, `MAITY_AVATAR_DECODES`
+of them) count who holds each: the human behind the call, for an agent its
+owner, so one person's sessions and agents share one share. A holder takes
+at most all but one of the slots (one when there is only one); a call past
+its share, like a call that finds every slot taken, is `rate_limited` at
+once, never queued, and an attachment upload refused so is not counted
+against the upload rate. The size mode, which the hub starts itself for a
+stored picture, takes a slot with no holder.
+
+**Reason:** the slots were one try-once semaphore, so a few slow images
+from one account could hold every slot for seconds at a time and every
+other upload, an avatar included, got `rate_limited`. Keeping one slot out
+of any single holder's reach means another human's decode still finds room.
+Keying by the human and not the membership keeps one person from getting a
+share per project or per agent.
+
+**Rejected alternatives:**
+- A waiting queue with fair turns: a request would hold a worker thread
+  while it waits, and the contract already answers a busy decoder with
+  `rate_limited` and `Retry-After`.
+- A share per membership or per credential: one human with several projects
+  or agents would hold several shares and could still take every slot.
+- Half the slots per holder: with the default of two it is the same; with
+  more slots it would turn away a lone uploader while slots stand idle.
 
 ## A GitHub logo is the owner's avatar only for an organization
 

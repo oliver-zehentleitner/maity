@@ -593,9 +593,9 @@ def test_a_membership_holds_a_bounded_number_of_pending_uploads(
     decoded: list[int] = []
     real = avatars.decode_attachment
 
-    def counted(*args: Any) -> Any:
+    def counted(*args: Any, **kw: Any) -> Any:
         decoded.append(1)
-        return real(*args)
+        return real(*args, **kw)
 
     monkeypatch.setattr(avatars, "decode_attachment", counted)
     image = put(owner, "4.png", png(), "image/png")
@@ -852,17 +852,92 @@ def _membership_key(migrated: Engine, who: str) -> str:
     return str(row.id)
 
 
-def test_a_refused_reencoded_image_gives_back_what_it_was_charged(
+def test_a_decoded_image_refused_for_its_room_keeps_what_it_was_charged(
     owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The image was decoded before the byte bound refused it: the decode counts, at the
+    size that was sent, not the re-encoded size's share. A file refused there is given back."""
     big = png((200, 200), compress_level=0)  # far larger than its re-encoded form
     assert len(big) > 100_000
     monkeypatch.setattr(attachments, "PENDING_BYTES", 10)
     refused = put(owner, "big.png", big, "image/png")
     assert refused.status_code == 409 and refused.json()["error"]["details"]["scope"] == "pending"
     key = _membership_key(migrated, owner.id)
+    assert _counted(attachments.UPLOADS, key) == 1
+    assert _counted(attachments.VOLUME, key) == -(-len(big) // attachments.RATE_UNIT)
+    file = put(owner, "big.bin", b"x" * 2048, "application/octet-stream")
+    assert file.status_code == 409 and file.json()["error"]["details"]["scope"] == "pending"
+    assert _counted(attachments.UPLOADS, key) == 1  # a file was neither decoded nor stored
+
+
+def test_refused_images_count_against_the_upload_limit(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An image the decoder refuses was decoded: it counts, as a refused avatar does, so a
+    stream of malformed images runs into the limit instead of decoding for free."""
+    monkeypatch.setattr(attachments, "UPLOADS", Limiter(3, 600, name="attachments.UPLOADS"))
+    broken = png()[:40]
+    for _ in range(3):
+        refused = put(owner, "b.png", broken, "image/png")
+        assert refused.status_code == 400
+        assert refused.json()["error"]["details"]["fields"] == {"body": "undecodable"}
+    over = put(owner, "b.png", broken, "image/png")
+    assert over.status_code == 429 and int(over.headers["retry-after"]) >= 1
+    assert put(owner, "ok.txt", b"x").status_code == 429  # the limit is the membership's
+    key = _membership_key(migrated, owner.id)
+    assert _counted(attachments.UPLOADS, key) == 3
+
+
+def test_refused_images_count_their_bytes_too(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused image's size counts against the byte limit as a stored file's does."""
+    monkeypatch.setattr(attachments, "VOLUME", Limiter(4, 600, name="attachments.VOLUME"))
+    broken = png()[:40] + b"\0" * (2 * attachments.RATE_UNIT - 40)  # two units
+    assert put(owner, "a.png", broken, "image/png").status_code == 400
+    assert put(owner, "b.png", broken, "image/png").status_code == 400
+    over = put(owner, "c.png", broken, "image/png")
+    assert over.status_code == 429
+
+
+def test_a_slot_busy_refusal_gives_the_upload_back(
+    owner: flow.Human, migrated: Engine, settings: Settings
+) -> None:
+    """Nothing was decoded when every decode slot was taken: the call is not counted."""
+    slots = avatars._slots_for(settings.avatar_decodes)
+    taken = 0
+    try:
+        while slots.acquire(blocking=False):
+            taken += 1
+        busy = put(owner, "a.png", png(), "image/png")
+        assert busy.status_code == 429 and busy.json()["error"]["code"] == "rate_limited"
+    finally:
+        for _ in range(taken):
+            slots.release()
+    key = _membership_key(migrated, owner.id)
     assert _counted(attachments.UPLOADS, key) == 0
-    assert _counted(attachments.VOLUME, key) == 0  # not the re-encoded size's share
+    assert _counted(attachments.VOLUME, key) == 0
+    assert put(owner, "a.png", png(), "image/png").status_code == 201
+
+
+def test_one_human_takes_at_most_all_but_one_decode_slot(
+    stored: ClientFactory, owner: flow.Human, migrated: Engine, settings: Settings
+) -> None:
+    """The human behind a call, an agent's owner for an agent, holds its share of the slots;
+    the slot left is another human's, and a call refused for its share is not counted."""
+    agent = flow.agent(stored, owner)
+    slots = avatars._slots_for(settings.avatar_decodes)
+    assert settings.avatar_decodes == 2 and slots.share == 1
+    assert slots.acquire(blocking=False, holder=owner.id)  # the owner's one decode running
+    try:
+        mine = put(owner, "a.png", png(), "image/png")
+        assert mine.status_code == 429 and mine.json()["error"]["code"] == "rate_limited"
+        theirs = put(agent, "a.png", png(), "image/png")  # the owner's agent shares the share
+        assert theirs.status_code == 429
+        assert _counted(attachments.UPLOADS, _membership_key(migrated, owner.id)) == 0
+    finally:
+        slots.release(owner.id)
+    assert put(owner, "a.png", png(), "image/png").status_code == 201
 
 
 def test_a_project_closed_during_the_decode_refuses_the_upload(
@@ -870,8 +945,8 @@ def test_a_project_closed_during_the_decode_refuses_the_upload(
 ) -> None:
     real = avatars.decode_attachment
 
-    def closing(settings: Settings, data: bytes, content_type: str) -> Any:
-        found = real(settings, data, content_type)
+    def closing(settings: Settings, data: bytes, content_type: str, **kw: Any) -> Any:
+        found = real(settings, data, content_type, **kw)
         with migrated.begin() as conn:  # the project is archived while the image decodes
             conn.execute(update(t.project).values(state="archived"))
         return found

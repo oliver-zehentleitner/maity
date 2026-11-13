@@ -148,6 +148,35 @@ def test_a_decode_that_finds_every_slot_taken_is_rate_limited(settings: Settings
             slots.release()
 
 
+def test_one_holder_takes_at_most_all_but_one_slot_and_another_gets_the_rest(
+    settings: Settings,
+) -> None:
+    slots = avatars.DecodeSlots(3)
+    assert slots.acquire(holder="hum-a") and slots.acquire(holder="hum-a")
+    assert not slots.acquire(holder="hum-a")  # its share is two of three
+    assert slots.acquire(holder="hum-b")  # the slot left is another's
+    assert not slots.acquire(holder="hum-c") and not slots.acquire()  # every slot taken
+    slots.release("hum-a")
+    assert slots.acquire(holder="hum-a")
+    for holder in ("hum-a", "hum-a", "hum-b"):
+        slots.release(holder)
+    with pytest.raises(ValueError):
+        slots.release()
+    single = avatars.DecodeSlots(1)  # one slot: the one holder may take it
+    assert single.share == 1 and single.acquire(holder="hum-a")
+    single.release("hum-a")
+    shared = avatars._slots_for(settings.avatar_decodes)
+    assert shared.acquire(holder="hum-a")
+    try:
+        with pytest.raises(ApiError) as caught:
+            avatars.decode_attachment(settings, make("PNG", (8, 8)), "image/png", holder="hum-a")
+        assert caught.value.code == "rate_limited"
+        done = avatars.decode_attachment(settings, make("PNG", (8, 8)), "image/png", holder="hum-b")
+        assert (done.width, done.height) == (8, 8)
+    finally:
+        shared.release("hum-a")
+
+
 # --- a source profile of the image's own space is applied before the image is flattened ---------
 
 

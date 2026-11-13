@@ -120,10 +120,12 @@ the read before the removal closes that.
 
 **Id:** d079ff73-8c38-435c-9881-522363f62400
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: the read rule, "30 uploads and 100 MiB per membership in 10 minutes", a replay counts against nothing)
-**Revisit when:** a message can name attachments (the read rule then follows the message), or the limiter can count bytes directly
+**Verification:** corroborated — re-checked 2026-11-13 (card tsk-x2gd2w0146jm) after its first trigger had fired: a message names attachments since 627630f3, and the read rule here holds only until then, as written; the units are unchanged; what a refused image costs changed and is in eefdb1cf
+**Revisit when:** the limiter can count bytes directly
+**See:** attachments.md#an-image-that-was-decoded-counts-against-the-upload-rate-even-when-it-is-refused — eefdb1cf-b662-4247-a598-e9a127539248 — as of 2026-11-13
 
 Until a message names it, an attachment is read, listed in full and deleted
 by its uploader only; a human with `members:admin` lists and deletes every
@@ -132,14 +134,49 @@ name or type (the contract's reason: a name is content). Another member gets
 `not_found`, an agent of the admin role `forbidden` with `humans_only`. The
 limiter counts events, so the 100 MiB per 10 minutes is counted in units of
 64 KiB (1600 of them) and an upload takes at least one: thirty tiny uploads
-cost thirty units. A refused or failed upload gives its count back, and a
-replay is answered before anything is counted.
+cost thirty units. An upload refused before anything was decoded or
+stored gives its count back; an image that was decoded keeps it (eefdb1cf).
+A replay is answered before anything is counted.
 
 **Reason:** the one rule of the contract, "readable as its message is",
 gives a pending upload no audience but its uploader.
 
 **Rejected alternative:** a second limiter with a byte-exact window: new code
 for a cap whose exact edge nobody relies on.
+
+## An image that was decoded counts against the upload rate, even when it is refused
+
+**Id:** eefdb1cf-b662-4247-a598-e9a127539248
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-x2gd2w0146jm, hardening from the security rounds (tsk-v9kheekgq115), 2026-11-13
+**See:** images.md#the-avatar-change-limit-is-checked-before-decoding-and-counts-refused-images — b293dec9-60d0-4e36-b0e9-1c136e04377f — as of 2026-11-13
+
+An image upload is charged against the membership's 30 uploads and 100 MiB
+(in 64 KiB units of the bytes sent) before its decode. The charge stays when
+the decoder refuses the image (`undecodable`, `dimensions`, a timeout or a
+killed child) and when the decoded image is then refused for its room (the
+pending bytes, the project's or the instance's storage). It is given back
+only where nothing was decoded: the pending count or a failed read before
+the decode, and a call that found no decode slot free or its human's share
+of them taken (`rate_limited`). A file that is not an image is still given
+back when it is refused before the store is written.
+
+**Reason:** the avatar change limit already counts refused images (b293dec9)
+for the same reason: the limit is what stands in front of the most exposed
+parser of the hub. Giving every refusal back let a member send malformed
+images without end, each one a decode, and never reach the limit; the byte
+units also bound how much a member can feed the decoder in ten minutes.
+
+**Rejected alternatives:**
+- A decode limiter of its own per membership that counts refusals: once a
+  refusal keeps its upload charge, the upload limit already is that limiter,
+  with the bytes counted too; a second one would be one more bucket to tune
+  for the same bound.
+- Giving back a decoded image refused for its room, as before: a member
+  whose pending bytes are full could then have any number of valid images
+  decoded and refused for free.
 
 ## A message names its attachments in the transaction that writes it, and its payload always carries the list
 
