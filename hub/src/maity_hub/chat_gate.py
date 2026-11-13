@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
@@ -204,6 +205,22 @@ def refuse_denied(conn: Connection, conversation: Any, current: list[Any], agent
             "the agent's owner does not let it chat with someone here",
             {"reason": "chat_denied"},
         )
+
+
+def lock_for_yes(conn: Connection, owner: str, project_id: str, agent_ids: Iterable[str]) -> None:
+    """Before a chat write in `project_id` that may be `owner`'s yes for some of `agent_ids`
+    (§9.6, the owner's add): when one of them is the owner's, take the owner's human row, then
+    the project of each open chat of the owner's agents and `project_id`, in ascending order.
+    That is the order a write under `/me/chat-access` takes them in (`chat_access._lock`, then
+    `recheck`), so `owner_yes` counts and writes the owner's entries under the human's lock and
+    the `recheck` after it takes no project lock out of order. Without such an agent, nothing."""
+    if owner not in owners_of(conn, agent_ids).values():
+        return
+    from maity_hub import events
+
+    chat_access._lock(conn, owner)
+    for found in sorted({project_id, *(c.project_id for c in chats_of_owner(conn, owner))}):
+        events.lock_project(conn, found)
 
 
 def owner_yes(conn: Connection, conversation: Any, current: list[Any], agent_id: str) -> None:
@@ -393,37 +410,64 @@ def recheck(conn: Connection, owner: str) -> None:
             group_chats.resettle(conn, chat, owner)
 
 
-def lapse(conn: Connection) -> int:
-    """The worker's pass: the allow entries whose `until` passed since the last pass let the
-    agents they admitted wait again in each open chat that needs them. Returns how many."""
+def _expired(owner: str | None, now: Any) -> Any:
+    c = t.chat_access.c
+    query = select(c.id, c.human_id).where(
+        c.kind == chat_access.ALLOW, c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now
+    )
+    return query if owner is None else query.where(c.human_id == owner)
+
+
+def lapse(conn: Connection, owner: str) -> int:
+    """The worker's pass for one owner: the allow entries whose `until` passed since the last
+    pass let the agents they admitted wait again in each open chat that needs them. Returns how
+    many. The owner's human row is taken first, as every write of the owner's entries does
+    (`chat_access._lock`), and the expired entries are read again under it with their rows
+    locked: a renewal (`PATCH …/allow/{id}` with a new `duration`) that committed before is
+    seen and not marked lapsed, one that comes after waits (v5vp on #1717, P1). The marker is
+    still written only where the entry is expired and unmarked."""
+    from maity_hub import group_chats
+
+    chat_access._lock(conn, owner)
     c = t.chat_access.c
     now = clock.now()
-    rows = conn.execute(
-        select(c.id, c.human_id).where(
-            c.kind == chat_access.ALLOW, c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now
-        )
-    ).all()
-    if not rows:
+    ids = [r.id for r in conn.execute(_expired(owner, now).order_by(c.id).with_for_update())]
+    if not ids:
         return 0
-    conn.execute(update(t.chat_access).where(c.id.in_([r.id for r in rows])).values(lapsed_at=now))
-    from maity_hub import chat_request, group_chats
+    conn.execute(
+        update(t.chat_access)
+        .where(c.id.in_(ids), c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now)
+        .values(lapsed_at=now)
+    )
+    from maity_hub import chat_request
 
     with chat_request.deferred(conn):
-        for owner in sorted({r.human_id for r in rows}):
-            for chat in chats_of_owner(conn, owner):
-                group_chats.resettle(conn, chat, None)
-    return len(rows)
+        for chat in chats_of_owner(conn, owner):
+            group_chats.resettle(conn, chat, None)
+    return len(ids)
 
 
 def sweep(engine: Any) -> int:
-    """`lapse` in a transaction of its own, for the worker's minute pass, then the requests to
-    the owners (`chat_request.sweep_owners`) in another."""
+    """`lapse` for each owner with an expired entry, each in a transaction of its own (the
+    human's row, then the projects', as a write under /me/chat-access takes them), then the
+    requests to the owners (`chat_request.sweep_owners`) in another; each run again after a
+    transient deadlock with a chat write (`db.retrying`)."""
     from maity_hub import chat_request, events
+    from maity_hub.db import retrying
 
-    with events.transaction(engine) as conn:
-        lapsed = lapse(conn)
-    with events.transaction(engine) as conn:
-        chat_request.sweep_owners(conn)
+    with engine.connect() as conn:
+        owners = sorted({r.human_id for r in conn.execute(_expired(None, clock.now()))})
+
+    def one(owner: str) -> int:
+        with events.transaction(engine) as conn:
+            return lapse(conn, owner)
+
+    def asking() -> None:
+        with events.transaction(engine) as conn:
+            chat_request.sweep_owners(conn)
+
+    lapsed = sum(retrying(partial(one, owner)) for owner in owners)
+    retrying(asking)
     return lapsed
 
 
