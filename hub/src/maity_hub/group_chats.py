@@ -9,6 +9,9 @@ so that no channel among agents of different owners exists without a human in it
 
 The hub's own thread for a jour fixe round (§20.5, `hub_thread`) has no creator and is
 exempt from the participant cap, `use_direct` and the quota; its round bounds it.
+
+An agent of another side than someone in the chat may take part as waiting until its owner
+says yes (§9.6, `chat_gate`): it is in the chat, but reads, posts and hears nothing of it.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
 
-from maity_hub import chat_meat_proxy, clock
+from maity_hub import chat_gate, chat_meat_proxy, chat_request, clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project
@@ -84,6 +87,7 @@ def windows(conn: Connection, membership_id: int) -> dict[str, int]:
         ).where(
             t.conversation_participant.c.membership_id == membership_id,
             t.conversation_participant.c.here.is_(True),
+            t.conversation_participant.c.waiting.is_(False),  # it reads nothing yet (§9.6)
         )
     ).all()
     return {r.conversation_id: int(r.window_after) for r in rows}
@@ -196,7 +200,7 @@ def access(conn: Connection, conversation_id: str, mine: Any) -> str | None:
     """`participant`, `observer` (a human owning an agent participant), or None: then
     the chat does not exist for the caller (§9.2)."""
     current = stays(conn, conversation_id)
-    if any(s.membership_id == mine.id for s in current):
+    if any(s.membership_id == mine.id and not s.waiting for s in current):
         return "participant"
     if mine.kind != "human":
         return None
@@ -285,7 +289,14 @@ def view(
         "title": conversation.title,
         "created_by": creator[conversation.created_by]["member_id"] if creator else None,
         "created_at": ts(conversation.created_at),
-        "participants": [{**found[s.membership_id], "joined_at": ts(s.joined_at)} for s in current],
+        "participants": [
+            {
+                **found[s.membership_id],
+                "joined_at": ts(s.joined_at),
+                **({} if s.waiting_for is None else {"waiting_for": list(s.waiting_for)}),
+            }
+            for s in current
+        ],
         "observers": shown_observers(
             current,
             _observers(conn, conversation, current),
@@ -351,7 +362,9 @@ def reason_readers(conn: Connection, conversation_ids: Iterable[str]) -> dict[st
 
 
 def audience(current: list[Any]) -> list[str]:
-    return [f"member:{principal(s)}" for s in current]
+    """The chat's participants as an event's audience (§8.2): a waiting agent as
+    `waiting:<id>`, which it does not read and its owner reads along by (§9.6)."""
+    return [f"{'waiting' if s.waiting else 'member'}:{principal(s)}" for s in current]
 
 
 def _highest_seq(conn: Connection, project_id: str) -> int:
@@ -407,6 +420,10 @@ def close_thread(conn: Connection, conversation: Any) -> None:
         update(t.conversation)
         .where(t.conversation.c.id == conversation.id)
         .values(closed_at=clock.now(), closed_reason="round_closed")
+    )
+    # Who waited in it is no longer asked about here (§9.6).
+    chat_request.sync_agents(
+        conn, [s.agent_id for s in stays(conn, conversation.id) if s.waiting and s.agent_id]
     )
     _announce(
         conn,
@@ -522,7 +539,22 @@ def create(
             .values(conversation_id=conversation_id)
         )
     conversation = find(conn, project.id, conversation_id)
+    current = stays(conn, conversation_id)
+    agents = [r.agent_id for r in members.values() if r.agent_id]
+    said_yes = False
+    if not hub_thread:
+        for agent_id in agents:
+            chat_gate.refuse_denied(conn, conversation, current, agent_id)
+        for agent_id in agents:
+            if _owner_of(conn, agent_id) == creator.human_id:
+                chat_gate.owner_yes(conn, conversation, current, agent_id)
+                said_yes = True
+    _, denied = chat_gate.settle(conn, conversation, by, fresh=[r.id for r in members.values()])
     _announce(conn, conversation, "conversation_created", {}, [], actor)
+    for membership_id in denied:  # a round's circle: an agent its owner says no to leaves
+        remove(conn, conversation, membership_id, None, chat_gate.DENIED, actor)
+    if said_yes:  # the yes is an entry like any other: it admits in the owner's other chats too
+        chat_gate.recheck(conn, creator.human_id)
     return conversation_id
 
 
@@ -540,14 +572,22 @@ def add(conn: Connection, conversation: Any, member_id: str, by: str, actor: Act
     if not conversation.hub_thread and len(stays(conn, conversation.id)) >= MAX_PARTICIPANTS:
         raise invalid({"participants": "too_many"}, "a group chat has at most twelve")
     _join(conn, conversation.id, row.id, by, _highest_seq(conn, conversation.project_id))
-    _announce(
-        conn,
-        conversation,
-        "conversation_updated",
-        {"participants_added": [{"member_id": member_id, "by": by}]},
-        [],
-        actor,
-    )
+    said_yes = False
+    if row.agent_id is not None:
+        current = stays(conn, conversation.id)
+        chat_gate.refuse_denied(conn, conversation, current, row.agent_id)
+        said_yes = _owner_of(conn, row.agent_id) == by
+        if said_yes:  # the owner's add is the yes (§9.6)
+            chat_gate.owner_yes(conn, conversation, current, row.agent_id)
+    waits, denied = chat_gate.settle(conn, conversation, by, fresh=[row.id])
+    changed: dict[str, Any] = {"participants_added": [{"member_id": member_id, "by": by}]}
+    if waits:
+        changed["participants_changed"] = waits
+    _announce(conn, conversation, "conversation_updated", changed, [], actor)
+    for membership_id in denied:  # someone its owner said no to joined (§9.6)
+        remove(conn, conversation, membership_id, None, chat_gate.DENIED, actor)
+    if said_yes:  # the yes admits in the owner's other chats too
+        chat_gate.recheck(conn, by)
     return True
 
 
@@ -559,9 +599,10 @@ def remove(
     reason: str,
     actor: Actor | None,
 ) -> Any:
-    """End the member's stay (`removed`, `left` or `membership_removed`) and close the
-    chat when no human is left in it; returns the ended stay. Allowed in a closed
-    project, as everything that removes is (§9.2)."""
+    """End the member's stay (`removed`, `left`, `membership_removed`, `declined` or
+    `denied_participant`) and close the chat when no human is left in it; returns the ended
+    stay. Allowed in a closed project, as everything that removes is (§9.2). Who still waits
+    is settled again: the one who left may have been the side an agent waited for (§9.6)."""
     lock_project(conn, conversation.project_id)
     conversation = find(conn, conversation.project_id, conversation.id)  # as of the lock
     current = stay(conn, conversation.id, membership_id)
@@ -591,13 +632,19 @@ def remove(
         changed["closed"] = {"closed_reason": "no_human"}
     from maity_hub import pins  # pins reads chats through this module
 
+    conversation = find(conn, conversation.project_id, conversation.id)
+    waits, _ = chat_gate.settle(conn, conversation, by)  # fewer met: no one newly denied
+    if waits:
+        changed["participants_changed"] = waits
     pins.prune(conn, conversation.project_id)  # who no longer reads it keeps no pin (§9.3)
+    if current.waiting:  # what it waited for may be asked of its owner no more (§9.6)
+        chat_request.sync_agents(conn, [left])
     _announce(
         conn,
-        find(conn, conversation.project_id, conversation.id),
+        conversation,
         "conversation_updated",
         changed,
-        [f"member:{left}"],
+        [] if current.waiting else [f"member:{left}"],  # a waiting agent hears nothing (§9.6)
         actor,
     )
     return conn.execute(
@@ -622,6 +669,22 @@ def rename(conn: Connection, conversation: Any, title: str | None, actor: Actor 
         [],
         actor,
     )
+
+
+def resettle(conn: Connection, conversation: Any, by: str | None) -> None:
+    """Settle who waits in the chat after a change of an owner's entries (§9.6), announce it,
+    and remove the agents a deny entry now stops."""
+    lock_project(conn, conversation.project_id)
+    conversation = find(conn, conversation.project_id, conversation.id)  # as of the lock
+    if conversation is None or conversation.closed_at is not None:
+        return
+    waits, denied = chat_gate.settle(conn, conversation, by)
+    if waits:
+        _announce(
+            conn, conversation, "conversation_updated", {"participants_changed": waits}, [], None
+        )
+    for membership_id in denied:
+        remove(conn, conversation, membership_id, by, chat_gate.DENIED, None)
 
 
 def membership_removed(

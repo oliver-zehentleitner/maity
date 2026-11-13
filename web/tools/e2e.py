@@ -1209,6 +1209,7 @@ def scenario(run: Run, page: Page) -> None:
     id_links_step(run, page, alpha, task["id"])
     asker_links_step(run, page, alpha)
     send_talk_step(run, page, alpha)
+    long_options_step(run, page, alpha)
     wide_lines_step(run, page, alpha, task["id"])
     note_edit_survives_redraw_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
@@ -1404,6 +1405,62 @@ def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
     current.get_by_role("button", name="Send", exact=True).click()
     expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
     no_problems(run, "asker links")
+
+
+# Each option button of the current entry: its box, its corner, and whether its label fits inside it.
+OPTIONS_FIT_JS = """() => [...document.querySelectorAll("li.entry.current .replies .reply.option")].map((b) => {
+  const box = b.getBoundingClientRect(), range = document.createRange();
+  range.selectNodeContents(b);
+  const text = range.getBoundingClientRect();
+  return { label: b.textContent, height: box.height, width: box.width,
+    radius: parseFloat(getComputedStyle(b).borderTopLeftRadius),
+    fits: text.left >= box.left - 0.5 && text.right <= box.right + 0.5 && text.top >= box.top - 0.5
+      && text.bottom <= box.bottom + 0.5 && b.scrollWidth <= b.clientWidth && b.scrollHeight <= b.clientHeight };
+})"""
+
+
+def long_options_step(run: Run, page: Page, alpha: Path) -> None:
+    """An option with a long label (tsk-796fysedq8hg): a rounded box that grows with its label, never
+    a circle it runs over; one per row and at least 44 px on a phone. Light and dark, wide and narrow."""
+    run.step("inbox: long option labels wrap inside their buttons")
+    options = [
+        "Ship the hotfix tonight and write the follow-up card for the remaining edge cases tomorrow morning",
+        "Hold the release until the reviewer has checked the migration on MariaDB and PostgreSQL both",
+        "Neither for now",
+    ]
+    assert all(len(o) >= 80 for o in options[:2])
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (1280, 900, "dark"), (390, 844, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            args = ["ask", f"Which way at {where}?\nThree long options.", "--to", "human", "--class", "decision"]
+            for option in options:
+                args += ["--option", option]
+            request_id = re.search(r"req-[0-9a-z]+", run.maity(alpha, *args)).group(0)
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+            current = page.locator("li.entry.current")
+            expect(current).to_contain_text(f"Which way at {where}?")
+            expect(current.locator(".replies .reply.option")).to_have_count(3)
+            boxes = page.evaluate(OPTIONS_FIT_JS)
+            for box in boxes:
+                assert box["fits"], f"{where}: the label runs over its button {box}"
+                assert box["radius"] < box["height"] / 2, f"{where}: the button is a pill or a circle {box}"
+                assert box["height"] >= 44 - 0.5, f"{where}: the button is under 44 px {box}"
+            if width == 390:
+                # One per row: each option as wide as the row of answers.
+                row = current.locator(".replies").bounding_box()
+                for box in boxes:
+                    assert box["width"] >= row["width"] - 1, f"{where}: an option is not a row of its own {box}"
+            run.shot(page, f"long-options-{width}-{scheme}")
+            if scheme == "light":
+                run.a11y(page, f"inbox, long option labels at {width} px")
+            current.get_by_role("button", name=options[2], exact=True).click()
+            expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "long option labels")
 
 
 def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
@@ -4821,6 +4878,24 @@ def visitor_layout(run: Run, browser) -> None:
                 run.shot(seen, f"visitor-{kind}-{width}-{scheme}")
                 if width == 1280:
                     run.a11y(seen, f"{path} for a visitor, {scheme}")
+            if (width, scheme) == (390, "light"):
+                # An empty board scrolls sideways with no card to focus: its columns take the focus
+                # themselves (axe scrollable-region-focusable, review of #1719).
+                def empty(route):
+                    answer = route.fetch()
+                    data = answer.json()
+                    data["data"]["columns"] = [dict(c, cards=[]) for c in data["data"]["columns"]]
+                    route.fulfill(response=answer, json=data)
+                seen.route("**/api/v1/public/pages/owner/e2e-alpha/board", empty)
+                seen.goto(f"{run.base}/owner/e2e-alpha/board")
+                expect(seen.locator('section.view-visitor[data-kind="board"] .columns[tabindex="0"][role="region"][aria-label="Board"]')).to_be_visible()
+                expect(seen.locator("section.view-visitor article.card")).to_have_count(0)
+                run.a11y(seen, "/owner/e2e-alpha/board for a visitor, an empty board")
+                seen.unroute("**/api/v1/public/pages/owner/e2e-alpha/board", empty)
+                # With its cards again, the columns add no focus stop before the first card's link.
+                seen.goto(f"{run.base}/owner/e2e-alpha/board")
+                expect(seen.locator("section.view-visitor article.card").first).to_be_visible()
+                expect(seen.locator('section.view-visitor[data-kind="board"] .columns[tabindex]')).to_have_count(0)
             context.close()
 
 

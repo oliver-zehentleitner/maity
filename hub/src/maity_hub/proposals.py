@@ -43,8 +43,12 @@ class Settlement:
     hub: Settings | None = None
     # The answering caller, for a kind whose `go` makes the answerer a member and writes the
     # change in their name as they become one (§3.4's invitation by handle: `closer` is None
-    # there, as a non-member has no membership to act as); None where the hub closes it.
+    # there, as a non-member has no membership to act as); on a withdrawal the human who
+    # withdrew their personal request (§9.6 reads it as their `no`); None where the hub closes it.
     answerer: Any = None
+    # What the answer set beside its reply, on the request to chat with the owner's agents
+    # (§9.6's `chat_access`): the ticked agents, the reach and the rules; None elsewhere.
+    chat_access: dict[str, Any] | None = None
 
 
 class Stale(Exception):
@@ -171,6 +175,7 @@ def settle(
     reply_id: str | None = None,
     hub: Settings | None = None,
     answerer: Any = None,
+    chat_access: dict[str, Any] | None = None,
 ) -> None:
     """Settle the request's proposal, if it carries one, in the caller's transaction."""
     proposal = of(request)
@@ -189,5 +194,16 @@ def settle(
     proposer = Actor(request.asked_by, request.asked_session_id, credential)
     _kind(request).settle(
         conn,
-        Settlement(request, proposal, outcome, proposer, approver, closer, reply_id, hub, answerer),
+        Settlement(
+            request,
+            proposal,
+            outcome,
+            proposer,
+            approver,
+            closer,
+            reply_id,
+            hub,
+            answerer,
+            chat_access,
+        ),
     )

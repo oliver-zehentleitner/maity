@@ -2019,8 +2019,14 @@ conversation_participant = Table(
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
+    # removed, left, membership_removed, membership_isolated, declined, denied_participant
+    Column("reason", String(32)),
     Column("here", Boolean, default=True),
+    # An agent of another side than someone in the chat (§9.6, "Waiting"): the human of each
+    # side its owner has not admitted it for, `[]` once admitted; null on a human and on an
+    # agent of the chat's only side. `waiting` is whether that list holds anyone, for queries.
+    Column("waiting_for", JSON_VALUE),
+    Column("waiting", Boolean, nullable=False, server_default=false()),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
     ),
@@ -2117,7 +2123,11 @@ chat_access = Table(
     Column("denied", String(1000)),
     _ref("by", "human.id", nullable=False),
     Column("since", UtcDateTime, nullable=False),
+    # When the hub saw `until` pass and let the agents it admitted wait again (§9.6); a
+    # `PATCH` that sends `duration` clears it.
+    Column("lapsed_at", UtcDateTime),
     Index("ix_chat_access_human", "human_id", "kind", "since"),
+    Index("ix_chat_access_until", "kind", "lapsed_at", "until"),
     Index("ix_chat_access_owner", "owner_id"),
     Index("ix_chat_access_subject_human", "subject_human_id"),
     Index("ix_chat_access_subject_agent", "subject_agent_id"),

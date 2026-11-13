@@ -608,7 +608,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let c2 = main.querySelector(".current");
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · member · reviewer"), "consent without options, on_behalf_of shown");
   expect(btn(c2, "go") && btn(c2, "no") && !btn(c2, "Discuss"), "replies go/no from the hub, no discuss");
-  expect(btn(c2, "go").className === "reply primary" && btn(c2, "no").className === "reply", "only the hub's go of a consent is primary");
+  expect(btn(c2, "go").className === "reply primary option" && btn(c2, "no").className === "reply option" && btn(c2, "Later").className === "reply later", "only the hub's go of a consent is primary");
   expect(JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Talk", "no", "go", "Send"]),
     "the replies at the right edge: Later and Talk first, the hub's replies, Send last");
   // A consent takes no words alone (a proposal's would be read as No, §15.6): Send stays, disabled, and says why.
@@ -14777,6 +14777,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !viPress().length,
     "visitor: the board of a project one is no member of, its text as text, and nothing to press");
   expect(viView().querySelectorAll("a.card-id").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/tasks/tsk-1")), "visitor: the board links each card to its own page");
+  {
+    const cols = viView().querySelector(".columns");
+    expect(cols && !cols.getAttribute("tabindex") && !cols.getAttribute("role") && !cols.getAttribute("aria-label"),
+      "visitor: a board with cards adds no focus stop before them, its card links scroll the columns");
+  }
   await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "team" && viAsked.includes("/public/pages/stranger/tool/team")
     && text(viView()).includes("(sam)") && text(viView()).includes("2 ×")
