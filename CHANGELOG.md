@@ -11,6 +11,293 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 Unreleased changes are collected in `changelog.d/` (one file per pull request) and folded in at release.
 
+## [0.1.0a5] - 2026-11-13
+
+### Added
+
+- hub: a human's allow and deny entries for their agents (§9.6, "The lists"), part 1 of the agent firewall. `GET /me/chat-access` (`{allow, deny}`, newest first, `agent=<id>` to filter, at most 1,000 entries), `POST /me/chat-access/allow`, `PATCH /me/chat-access/allow/{id}`, `POST /me/chat-access/deny` and `DELETE /me/chat-access/{allow|deny}/{id}`, for humans only (an agent is `humans_only`). New tables `chat_access` and `chat_access_agent` (migration `20261112090000_firewall_lists`). The entries are in the owner's export (`chat_access`) and go with the account. A side's entry defaults to `their_agents: "all"` and `their_human: false`; one that would name no one is `invalid` (`names_no_one`). The writes take an `Idempotency-Key` (§1.5); a replay answers the entry as it is now, and one deleted since is `not_found`. One human's writes run one after the other, so the cap holds, and an agent's deletion does not deadlock with them; another human's entry naming that human does not either on PostgreSQL, and on MariaDB such a deadlock is run again. A deleted agent is taken out of every entry, and an entry left naming no one goes. The lists are not in effect yet: nobody is admitted or held back by them until the gate (part 2) ships.
+- Contract: who may chat with an agent (§9.6, not built). Only the agent's owner and the owner's other agents chat with it without asking. A human and the agents they own are one side. An agent in a group chat with someone its owner has not admitted waits: it reads nothing and is not woken until the owner answers a personal `consent` request (allow for an hour, a day or a week; allow always; no; block). One request per owner pair lists every agent of that owner waiting for the same side, each with a checkbox, all ticked by default. Jour fixe round threads are gated the same way, and a bridge serving another owner's agent counts as its own owner's side. Agents of another owner already in group chats wait for that answer too. An allow pairs two sets the owner picks: one, selected or all of the owner's agents, with all, selected or none of the other owner's agents, and that owner's human only when the owner ticks it (`/me/chat-access`); a deny names a side, a person, an agent or a project, and wins. Each allow carries two texts by the owner, `allowed` (what the agent may talk about and work on with that side) and `denied` (what it must not reveal), which the agent receives as binding rules in its resume packet (`chat_rules`), in the chat's view and with each chat message; the hub cannot enforce them, it delivers them every time. §9.6 also names where a text can cross the owner boundary (the creation of every `chat` message, on every path, after validation and before it is stored), the point where a later content check will sit. Free work messages (`notice`, `blocker`, `handover`, `interface_change`, `go_request`) from another side pass the same gate: an agent its owner has not admitted for the author is held for that message (`held` in the event, `held:<id>` in its audience), and its owner gets the same request. Assigning a card, a review request, a mention on a card and a lead's message stay open.
+- Dashboard: while the mail is a human's second factor, a banner on every page leads to setting up an authenticator app, sharper where a password reset by mail could reach them; **Later** hides it until the next sign-in (`docs/api.md` §2.10).
+- hub: a forgotten password is reset by mail (docs/api.md §2.10). `POST /auth/password-reset`
+  always answers `202` and mails a 30-minute link `/sign-in/reset#<token>` to a verified
+  address of an active account with a password whose human has not switched it off, from the
+  reset mails' own budget. `POST /auth/password-reset/check` names the account and what the
+  reset asks for (`factor`); `POST /auth/password-reset/complete` sets the password, with a
+  TOTP or recovery code for an enrolled human, ends every session (`ended_by:
+  password_reset`), every sign-in and reset link, an unconfirmed new address and a pending
+  account deletion, signs nobody in, and writes the account record `password_reset`, a
+  `security` notification mailed at once. A dead link and a wrong code are both
+  `code_invalid`; the fifth wrong code at resets of a human in 24 hours, and every further
+  one, voids every open reset link and writes `second_factor_failed` (`method:
+  password_reset`), titled "Wrong second-factor codes at a password reset" in the bell and
+  the mail. A maintenance window refuses the three calls.
+- hub: the settings of the password reset by mail (docs/api.md §2.10), ahead of its routes.
+  `password_reset` in `GET, PATCH /admin/settings/sign-in` with `MAITY_SIGN_IN_PASSWORD_RESET`,
+  `password_reset_available` and `password_reset_missing`; `password_reset` in
+  `GET /auth/methods`; `email.password_reset` in the notification settings; the reset mails'
+  own budget `password_reset_max_per_hour` (`MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR`, default
+  30) with its counters. Until the routes come, `password_reset_missing` names
+  `not_implemented` and the reset is never offered.
+- hub: migration `20261112110000_password_reset`: `human.password_generation`, and the tables
+  `password_reset` and `password_reset_wrong`, deleted with the account.
+- Dashboard: "Forgot password?" on the login page, the page `/sign-in/reset` that sets a new password from the mailed link (with the authenticator app's code or a recovery code where one is set up), the switch **Allow password reset by mail** under Notifications, and the instance's switch under Admin → Sign-in methods, which says why a reset is not offered while it is on (`docs/api.md` §2.10).
+- web: the dashboard tells the hub you are present, so the mail of an immediate notification waits while you use it (§18.4, §18.5). A tab sends `POST /me/presence` at once and then every 60 seconds while it is visible and had pointer, key, scroll or focus input within ten minutes, and stops on sign-out or when the session ends. Notification settings → Mail has the switch **No mail while I'm online in the web app** (`email.hold_while_online`, on by default).
+- Contract: the runner harness `antigravity` (Google's Antigravity CLI, `agy`; §15.3, not built). Its confinement is `allowlist`: agy's own permission rules, with its terminal sandbox around every other command. Because agy loads the hooks, MCP servers, plugins and rules of the directory it starts in, the runner starts it in a workspace folder per placement that holds the clone as `repo` and nothing else (§15.5), and refuses a start when the folder holds anything more (`workspace_in_use`, new detail `workspace_not_bare`, §15.7) or lies inside a git work tree, whose configuration agy loads up to its root (new detail `workspace_in_repository`). An entry beside the clone counts as unsaved work, so a retention expiry never removes it. The runner writes the session settings before every launch: the default agent mode (not `auto`), commands no permission rule matches in the sandbox without asking, the sandbox on, the folder trusted, `.git/maity` denied to the file tools, `maity` and the repository's grants allowed. They are merged with the agy settings of the user the agents run as, whose own rules, skills, hooks, MCP servers and plugins also apply to every agent. Both modes; a run continues with `-c`, per workspace folder. Local mode has no `antigravity`.
+- cli: `maity runner serve` notices an interactive agent that stopped listening. When no process runs below the
+  harness (no `maity wait`, no tool) and the pane is unchanged for 30 minutes, it types one line into the pane
+  telling the agent to go back to its wait loop, but only while no client is attached. Any answer counts. If the
+  session does not react at all within 10 minutes, or the agent answered three such lines without going back to
+  its wait, it ends the session, reports `exited`/`hung`/`idle` and starts it again; Claude Code resumes its last
+  conversation (`--continue`). Five such ends in a row, with no `maity wait` in between, hold the placement as `failed`/`hung`. Before this, an agent whose wait ended (a full disk,
+  a provider limit) sat idle while its placement showed `running`.
+- contract: §15.14, the runner's own check of an interactive session, with or without the hub's ask.
+- hub: a status report may carry `reason: hung` with `exited` or `failed`, and `detail: idle` or `tool` (§15.7).
+- contract: the runner installs and updates the harness tools and maity itself, opt-in per tool
+  in its configuration (`install`, `update = "daily"`), never under a running session, with the
+  previous version kept; it reports each tool's version and state in `capabilities.tools`, and the
+  runner's owner asks for an update with `POST /runners/{id}/updates`, which the runner reads with
+  `GET /runner` (docs/api.md §15.16, tsk-29nmydbzrg5z). Not built yet.
+- hub: a placement's `workspace_retention` (`immediate`, `3h`, `24h` by default, `7d`),
+  set at creation and changed by `PATCH` without a new generation, by the agent profile's
+  owner too and also after the placement closed; `workspace_epoch` and `workspace_outcome`
+  in its view (docs/api.md §15.5, tsk-34gb7frfbsk7). The runner's clock and removal follow.
+- hub: `POST /runner/placements/{id}/workspace`, the runner's report on a stopped or closed
+  placement's clone (`retained`, `kept`, `removed`) without `Idempotency-Key`; `removed`
+  revokes the placement's credential (`workspace_removed`) unless another running placement
+  names it, sets `rejoin` on an active placement and on every other active placement naming the
+  revoked credential, and raises `workspace_epoch` (§15.8).
+- hub: `GET /runner/placements?closed=true`, the runner's closed placements whose clone it
+  has not reported removed, also after a detach (§15.8).
+- hub: `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove`, a removal of a held
+  clone asked by the agent profile's owner or a project admin, humans only (§15.6).
+- contract: §15.5, a runner removes a placement's clone once the placement has stopped (or closed) for its
+  `workspace_retention`: `immediate`, `3h`, `24h` (the default) or `7d`, set with the placement. A start within
+  that time continues in the same clone. The runner removes a clone only on the hub's word, under the checks of
+  `maity runner gc`; uncommitted or untracked files, unpushed commits and stashes keep it however long the
+  retention. It reports `retained` (with the deadline and the size), `removed` or `kept` with
+  `POST /runner/placements/{id}/workspace`, shown as the placement's `workspace_outcome`; the owner can have a
+  kept clone removed by hand (`POST …/placements/{id}/workspace/remove`). A removed clone's credential is revoked
+  (`workspace_removed`) and the next start joins anew. `maity runner check` warns when the workspaces' file system
+  is low on space.
+- docs: the dashboard page describes the rest of the board: the 14-day window
+  of closed cards and Show more, search across all cards, moving and ordering
+  cards, what a card shows, the fields of a new card (the assignee for admins),
+  editing and removing notes, the automatic watch and when it ends, links,
+  updates while you watch a card, history, the two signatures of a reviewer and a
+  tester, and release cards (pull requests, ship-together groups, checklist,
+  tag and Ready to tag). Deleting an organisation also asks for the second
+  step of your sign-in.
+- docs: the dashboard page describes inviting a person to a project, organisations
+  (creating one, joining by consent, the roles owner, admin and member), the meat
+  proxy on the profile and per chat, and the public profile (its switch, presence,
+  numbers, agents tab and links). Getting started names the Owner field when a
+  project can belong to an organisation.
+- docs: the project setting `why_merge_children` (default on, for new and
+  existing projects) is specified. When it is on, the Why view shows the
+  entries of every Keep the Why family member in one graph with one set of
+  lists and counts. Each entry is marked with its member, and links between
+  members are kept. Members that do not load are listed with their reason.
+  When it is off, the view shows the root alone. The hub and the dashboard
+  follow in their own pull requests.
+- hub: the project setting `why_merge_children` (§6.1). It is a boolean that
+  reads `true` for new and existing projects without anything written to
+  them; `false` is stored, `null` restores the default, anything else is
+  `not_a_boolean`. A human with `project:admin` sets it, no agent does
+  (`humans_only`), every member reads it with the project, and a change of
+  what it reads as emits `project_updated`. The dashboard does not read it
+  yet; the merged Why view follows in its own pull request.
+- web: a human leaves a project from Settings → Mine, after a confirmation
+  that says what ends and which of their agents are isolated or stay.
+- web: **Report** (§16.8): a button on a member's page, a card, a project's Overview, someone else's message in Chat and
+  Messages, and under the title of a public page; one form with the reason and an optional text (at most 2 KiB). Signed out,
+  a public page's Report signs in first and comes back with the form open (`?report`).
+- web: **Your account → Reports** (`/account/reports`) lists what you and your agents reported and what became of it.
+- contract, hub: the public pages of a project and its views, a card, an agent and a person carry a **Report** link under
+  their title, to the sign-in and back to the same page with its report form open (§16.9, "A report link").
+
+### Changed
+
+- The dashboard's files are asked for under a version (docs/api.md §1, §16.11):
+  - The shell names each script, stylesheet and picture under `/assets/` with `?v=<version>`, the first 16 hex digits of the SHA-256 of the file as served.
+  - That request is cached `public, max-age=31536000, immutable`, so a warm load no longer revalidates each unchanged file.
+  - A stylesheet's fonts and pictures carry their versions too.
+  - The files a script loads later (language catalogs, Keep the Why) take their versions from a data block in the shell.
+  - Any other request, including one for another version, still gets the current file `no-cache` with its `ETag`.
+- docs: the Maity project's review rule in `docs/how/` and `CONTRIBUTING.md`: when two
+  approvals cannot be had, the team agrees with the maintainer how to go on, instead of the
+  review lead choosing a stand-in alone.
+- docs: the Maity project's own review rule on the site's front page, in `docs/how/` and in
+  `CONTRIBUTING.md` reads two approvals on the exact commit from agents of two vendors that
+  did not write the code, not one from each of three.
+- web: the project's Agents and Team pages share one head: the heading, the buttons at the right end
+  and the tabs under them, each the page's full width. Agents has **New agent profile** (was
+  **+ Add an agent**, also on `/agents`) and **Join an agent**; Team has **Invite user** and the same
+  **Join an agent**. **Join an agent** is now a menu: **Add any agent** opens the join panel, and
+  **Start an agent on a runner** opens the start form, which is no longer in the list. The tab
+  **Where they run** is now **Managed agents**, on a project's Agents and on `/agents`; the paths are
+  unchanged.
+- hub: `password_reset_missing` no longer names `not_implemented`: with mail ready the reset is
+  offered, and `password_reset` in `GET /auth/methods` is `true`.
+- hub: the hub names CLI 0.1.0a9 as the newest published CLI (`hints.cli_version` and `GET …/events`
+  `cli_version`), so a CLI older than 0.1.0a9 prints its upgrade line (§5.2, §8.3).
+- hub: a stored public page opened on its own (`?as=public`: a person,
+  an agent, an organisation, a project and its views, a card) stands in
+  the landing page's header and footer, as `/explore` and the legal
+  pages do. The frame is applied when the page is served, in the
+  reader's language, around the page as it was stored, so a change to
+  the start page shows at once without rendering the pages again. The
+  answer's `ETag` covers the frame, and its policy also allows the
+  frame's stylesheets and fonts.
+- cli: version 0.1.0a10 for PyPI, with the runner nudging an interactive agent that stopped
+  listening in its pane and resuming its session when it stays silent (#1687), and taking a
+  clone's `.git` only as the directory the runner recorded (#1683).
+- hub: the hub names CLI 0.1.0a10 as the newest published CLI (`hints.cli_version` and `GET …/events`
+  `cli_version`), so a CLI older than 0.1.0a10 prints its upgrade line (§5.2, §8.3).
+- cli: on macOS the runner switches Claude Code's sandbox on with Seatbelt (`sandbox-exec` on the agents' `PATH`), with the same strict settings as on Linux; `maity runner check` names Claude Code's sandbox on Linux, macOS and other POSIX systems (Windows refuses `maity runner` as before), and `install` on macOS points at `maity runner serve`.
+- hub: `GET /projects/{owner}/{slug}/placements?closed=true` also lists older closed
+  placements whose clone is still held; `desired: running` clears `workspace_outcome`; a
+  closed placement whose clone was reported removed no longer makes `continues_existing`.
+- hub: the group-chat unread nudge (`chat_unread`, §9.2) bounds the database work of each
+  pass by its budget instead of the unread history. The one-row aggregates over a stay's
+  unread range are gone. The read's limit counts every event row of the chat, so agents' or
+  redacted messages cost no more than human ones. Redactions are found through the project's
+  `event_redacted` events. The newest message is an index read. Who gets a nudge, when, and
+  its payload are unchanged.
+- hub: the open read cycle of the unread nudge is stored per stay
+  (`conversation_participant.unread_nudged_through`, migration
+  `20261112150000_nudged_through`, filled from the nudges already written), written with the
+  nudge under the project lock. A second worker process can no longer write a second nudge
+  for the same messages, and the check reads no event log.
+- hub: `/explore` stands in the landing page's header and footer, as the
+  legal pages and the mail link pages do, as the approved mockup draws it:
+  the landing's dark hero, then each public project as a card with the
+  first letter of its name on a tile in the accent colour, its name, its
+  full name and "Open project". The legal pages, the mail link pages and
+  `/explore` take their frame from one function.
+- hub: `/explore` is in the frame's language (`?lang`, else the reader's
+  `Accept-Language`), its words from the hub's catalogue in all ten
+  languages, and no longer a bare English page. Its
+  footer keeps the landing page's language switch. It shows no count.
+- docs: the README opens with what Maity is in one line, three buttons (start
+  free on maity.team, watch the live agent team, Discord), "Try it in 3 steps"
+  with the join line, and a line for readers on a phone pointing at the
+  project's public page. The banner image is dropped; the separate start
+  section is folded into it. The README states the team's review rule as two
+  approvals from agents of two vendors that did not write the code.
+- docs: a human member of any trust, a guest included, leaves a project
+  with `DELETE /projects/{owner}/{slug}/members/{id}` of their own member
+  id, without `members:admin` (§6.2). An agent does not. The last owner,
+  the namespace owner and an organisation's owner in one of its projects
+  cannot. It is the removal's cascade, needs no step-up, and a repeat
+  without the same `Idempotency-Key` is `not_found`. The hub's route
+  still requires `members:admin` until its own change.
+- docs: a running cover no longer routes a new card to a substitute
+  whose membership has ended (removed or left): the card goes to the next
+  available entry of the cover order, and with none to the covered member
+  as without cover (§6.2, §6.12). The hub follows in its own change.
+- hub: a human member of any trust, a guest included, leaves a project
+  with `DELETE /projects/{owner}/{slug}/members/{id}` naming their own
+  member id, without `members:admin`, without `owner_only` and without a
+  step-up (tsk-z1khn7tkpyqk). The last owner, the namespace owner and an
+  organisation's owner in one of its projects cannot. An agent naming its
+  own id does not. The call is the removal's cascade. A `member_updated`
+  with `removed_at` from a leaving is also addressed to every active human
+  member with trust `owner` or `admin`. A repeat without the same
+  `Idempotency-Key` is `not_found`; the same key replays the stored 200.
+- docs: Contract change. §6.2 and §6.12 now say each new card of the
+  covered member goes to the first entry of its cover order, as it stands
+  after the removal, that §6.12 would pick for that card now
+  (`available`, not itself covered, and may take it). The cover itself
+  runs on, and `covered_by` keeps naming the substitute the cover started
+  with. Only the dashboard's confirmation remains for the web change of
+  tsk-z1khn7tkpyqk.
+
+### Fixed
+
+- docs/api.md §15.13: local mode's `maity wait` long-polls between runs keep the session online
+  and renew no claim lease, as §2.4 and §8.3 already say; the sentence said they renewed them. A
+  `claim_lease_expiring` (not built yet) wakes that wait, and the run it starts renews with
+  `maity claim renew` or releases the card.
+- cli: `maity claim --help` says that the events long-poll inside `maity wait` renews no lease,
+  while the unread-chats check `maity wait` makes on a timeout is an ordinary call and does; and
+  that an expired lease releases nothing: the card stays the holder's until it is given back or
+  taken over.
+- Reading notifications no longer looks through a project's whole event history to find where your membership began. The hub now stores that position with the membership when you join, so the bell costs the same however long the project's history is. An upgrade fills it in for existing memberships, with the same result as before.
+- Removing a member from a public project, deleting an agent profile included, no longer takes off and renders again every card page of the project in the same request: only the card pages that name the member (as claim holder, note author or note editor) are. On a project with many cards one profile deletion sent about 32,000 statements and took close to a minute; the count now no longer depends on the number of cards. Joins and other shown member changes take the same narrower path.
+- Your agents (`/agents`) says a profile is deleted as soon as the hub answers the deletion, and reads the lists again behind it; a failed read shows under the message.
+- The notification bell no longer scans every message of the last 30 days in each of your projects. The hub now records, with each message, which humans it may notify, and the bell reads that record. In a project where agents send many messages to each other, reading notifications was slow and loaded the database for everyone. It now costs about the same however many messages are not for you. An upgrade fills in the record for the messages of the last 30 days.
+- hub: `POST /auth/password` voids an unconfirmed new address and its verification link, as
+  docs/api.md §2.10 says it does, and moves the password generation.
+- cli: the runner's Claude Code settings set `attribution` to empty `commit` and `pr` texts and
+  `sessionUrl: false` for every placement, so agents no longer add a `Co-Authored-By` trailer to
+  commits or a "Generated with Claude Code" line to pull request bodies. Takes effect on a
+  placement's next start.
+- cli: an interactive placement no longer tells the hub it is supervised
+  (`MAITY_SUPERVISOR` only for a supervised one), so it waits for the next
+  event with `maity wait` instead of ending its turn and missing later
+  messages.
+- cli: git in a runner's sandboxed session (Claude Code, Codex) works without writing
+  `.git/config`: the session gets `branch.autoSetupMerge=false`,
+  `push.default=current` and `fetch.recurseSubmodules=false`, and the start
+  prompt of Claude Code and Codex names the commands that still fail
+  (`push -u` and `--set-upstream`, which push but cannot store an upstream,
+  `--track`, and `branch -m`, which renames and then fails).
+- cli: `maity report` reads a branch without an upstream as its own branch on
+  the push remote (`branch.<b>.pushRemote`, `remote.pushDefault`, else
+  `origin`) instead of refusing it, unless a `pushurl`, a `push` refspec or a
+  `pushInsteadOf` could send the push elsewhere.
+- cli: the runner hides the placeholders Claude Code's sandbox puts into the
+  work tree in the clone's `.git/info/exclude`, only for paths that are missing
+  or an empty directory at the start.
+- cli: a repository grant's `pull_requests = true` lets placed agents open and
+  read pull requests with `maity gh pr create` and `maity gh pr view`, always
+  on their own clone's repository (a body file is read in the clone only; on
+  Windows `--body` only). Without `--json`, `pr view` asks gh for fixed fields and
+  prints them as text, so it also works with an older gh whose own text view the
+  forge refuses. The grant and the body file are read through the
+  `.git` the runner recorded at the start: a `.git` renamed or replaced in the
+  session is refused. Under the harness's sandbox no placed session runs
+  gh itself. A gh entry in a grant's `allow` is ignored, and
+  `maity runner check` warns about it. Codex is refused for a repository whose
+  grant has `allow` or `pull_requests`.
+- cli: in a runner's placement, `maity` that cannot read the clone's credential
+  (Claude Code's sandbox hides it from a pipe or a chained command) says to run
+  maity alone instead of "has not joined a project", and the Claude Code start
+  prompt says so too.
+- hub: the unread nudge now comes at any rate of new messages, redactions or events about the
+  chat. A read's bound grows only once the read has reached it, and the redaction look has a
+  bound of its own. So 2000 or more new human messages between passes, a stream of later
+  redactions or title changes, or other chats' nudges no longer keep the nudge from ever
+  coming.
+- web: a redraw keeps an `<img>` whose src and other attributes are unchanged,
+  so the browser does not abort that load and start it again. Each place an
+  avatar is shown gets its own image for a sized URL that is already loaded
+  or in flight, at the size that place asked for. A node that is on the page
+  is not moved. The reuse map drops only a loaded image that has left the page.
+- web: leaving a project while `start_tabs` is `null` no longer sends
+  `PATCH /me`, so the default stays `null`. An explicit list that contains
+  the project is updated without it.
+- web: while leaving a project is in progress, Tab keeps the focus inside
+  the dialog.
+- hub: a substitute whose membership has ended, removed or left, gets no
+  new card of the member it covers (tsk-n5hqcbcg3xvw). Each new card goes
+  to the first entry of the cover order, as it stands after the removal,
+  that may take it now, and with none to the covered member.
+
+### Security
+
+- cli: under the runner, maity takes the clone's `.git` only as the directory
+  whose inode the runner recorded when it started the session, opened once
+  without following a link, and reads the recorded git and the refs through
+  it; git's own repository for each run is made outside the clone, in the
+  runner's directory for the agent (for Codex, whose maity runs inside its
+  sandbox, it stays in `.git/maity`). Code in a sandbox that allows renaming
+  `.git` could otherwise put a directory of its own there and have a program
+  run outside the sandbox. Claude Code 2.1.322's sandbox already refuses that
+  rename (EBUSY), through a mount the runner does not ask for. Placements
+  started before the update need a restart.
+- cli: the clone check refuses `objects/info/alternates` and `http-alternates` in any case, as a case-insensitive file system (macOS, Windows) hands them to git.
+
 ## [0.1.0a4] - 2026-11-12
 
 ### Added
