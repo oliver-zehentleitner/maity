@@ -537,16 +537,20 @@ def create(
     conversation = find(conn, project.id, conversation_id)
     current = stays(conn, conversation_id)
     agents = [r.agent_id for r in members.values() if r.agent_id]
+    said_yes = False
     if not hub_thread:
         for agent_id in agents:
             chat_gate.refuse_denied(conn, conversation, current, agent_id)
         for agent_id in agents:
             if _owner_of(conn, agent_id) == creator.human_id:
                 chat_gate.owner_yes(conn, conversation, current, agent_id)
+                said_yes = True
     _, denied = chat_gate.settle(conn, conversation, by, fresh=[r.id for r in members.values()])
     _announce(conn, conversation, "conversation_created", {}, [], actor)
     for membership_id in denied:  # a round's circle: an agent its owner says no to leaves
         remove(conn, conversation, membership_id, None, chat_gate.DENIED, actor)
+    if said_yes:  # the yes is an entry like any other: it admits in the owner's other chats too
+        chat_gate.recheck(conn, creator.human_id)
     return conversation_id
 
 
@@ -564,10 +568,12 @@ def add(conn: Connection, conversation: Any, member_id: str, by: str, actor: Act
     if not conversation.hub_thread and len(stays(conn, conversation.id)) >= MAX_PARTICIPANTS:
         raise invalid({"participants": "too_many"}, "a group chat has at most twelve")
     _join(conn, conversation.id, row.id, by, _highest_seq(conn, conversation.project_id))
+    said_yes = False
     if row.agent_id is not None:
         current = stays(conn, conversation.id)
         chat_gate.refuse_denied(conn, conversation, current, row.agent_id)
-        if _owner_of(conn, row.agent_id) == by:  # the owner's add is the yes (§9.6)
+        said_yes = _owner_of(conn, row.agent_id) == by
+        if said_yes:  # the owner's add is the yes (§9.6)
             chat_gate.owner_yes(conn, conversation, current, row.agent_id)
     waits, denied = chat_gate.settle(conn, conversation, by, fresh=[row.id])
     changed: dict[str, Any] = {"participants_added": [{"member_id": member_id, "by": by}]}
@@ -576,6 +582,8 @@ def add(conn: Connection, conversation: Any, member_id: str, by: str, actor: Act
     _announce(conn, conversation, "conversation_updated", changed, [], actor)
     for membership_id in denied:  # someone its owner said no to joined (§9.6)
         remove(conn, conversation, membership_id, None, chat_gate.DENIED, actor)
+    if said_yes:  # the yes admits in the owner's other chats too
+        chat_gate.recheck(conn, by)
     return True
 
 

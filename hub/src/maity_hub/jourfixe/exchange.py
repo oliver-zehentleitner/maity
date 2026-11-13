@@ -167,6 +167,7 @@ def _post_message(
         "conversation_id": conversation.id,
         "task_id": None,
         "mentions": [],  # posts are not scanned for mentions (§20.5)
+        "held": [],  # a chat message is never held, and every message carries the field (§8.2)
         "conversation": {"id": conversation.id, "kind": "group", "title": conversation.title},
         "jour_fixe": {
             "round_id": round_row.id,

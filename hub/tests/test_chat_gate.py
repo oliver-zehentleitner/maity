@@ -176,6 +176,31 @@ def test_the_owners_add_is_the_yes(
     assert entry["duration"] is None and entry["by"] == other.id
 
 
+def test_the_owners_yes_admits_in_the_owners_other_chats_too(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    first = create(owner, theirs.id).json()
+    assert item(first, theirs.id)["waiting_for"] == [owner.id]
+    second = create(other, owner.id, theirs.id).json()  # the owner's own add: the yes
+    assert item(second, theirs.id)["waiting_for"] == []
+    assert item(view(owner, first["id"]).json(), theirs.id)["waiting_for"] == []
+    assert view(theirs, first["id"]).status_code == 200
+
+
+def test_the_owners_add_admits_in_the_owners_other_chats_too(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    first = create(owner, theirs.id).json()
+    room = create(owner, other.id).json()
+    added = add(other, room["id"], theirs.id)  # the owner's own add: the yes
+    assert added.status_code == 200, added.text
+    assert item(view(owner, first["id"]).json(), theirs.id)["waiting_for"] == []
+
+
 def test_someone_not_covered_joins_and_the_agent_waits(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

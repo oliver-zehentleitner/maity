@@ -161,6 +161,7 @@ def test_the_statement_numbers_its_parts_and_opens_the_responses(round_: Round) 
         message.seq
     )
     assert "Cache the venv" in message.payload["body"]
+    assert message.payload["held"] == []  # every message carries it (§8.2)
     [opened] = kinds(round_.engine, "jour_fixe_step_opened")
     assert opened.payload["kind"] == "response" and opened.payload["step"] == 2
     assert f"member:{round_.owner.id}" in opened.audience
