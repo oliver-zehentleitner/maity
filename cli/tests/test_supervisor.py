@@ -189,6 +189,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
+        "GIT_AUTHOR_NAME": "Maity agent", "GIT_AUTHOR_EMAIL": "maity-agent@invalid",
+        "GIT_COMMITTER_NAME": "Maity agent", "GIT_COMMITTER_EMAIL": "maity-agent@invalid",
     }  # fmt: skip
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
@@ -602,7 +604,7 @@ def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     for entry in ("config.worktree", "objects/info/alternates"):
         (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
         (place.path / ".git" / entry).write_text("")
-    for entry in ("remotes", "info/.claude-sandbox-noreplace",
+    for entry in ("glab-cli", "modules", "remotes", "worktrees", "info/.claude-sandbox-noreplace",
                   "objects/info/.claude-sandbox-noreplace",
                   "objects/info/commit-graphs/.claude-sandbox-noreplace"):  # fmt: skip
         (place.path / ".git" / entry).mkdir(parents=True)
