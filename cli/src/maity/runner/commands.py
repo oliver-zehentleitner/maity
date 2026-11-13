@@ -116,10 +116,11 @@ def cmd_pair(args: argparse.Namespace) -> int:
         },
         name=STATE_FILE,
     )
-    attached = ", ".join(result.attached) or "none yet"
+    attached = ", ".join(onboarding.inline(name) for name in result.attached) or "none yet"
     print(
-        f"paired as runner {result.runner_id}; attached to: {attached}; credential "
-        f"{result.credential_id} stored in {stored} (mode 0600, not printed)",
+        f"paired as runner {onboarding.inline(result.runner_id)}; attached to: {attached}; "
+        f"credential {onboarding.inline(result.credential_id)} stored in {stored} "
+        "(mode 0600, not printed)",
         file=sys.stderr,
     )
     if created:

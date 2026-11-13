@@ -496,7 +496,8 @@ def cmd_join(args: argparse.Namespace) -> int:
         },
     )
     print(
-        f"joined {result.project} as {result.member_id}; credential {result.credential_id} "
+        f"joined {onboarding.inline(result.project)} as {onboarding.inline(result.member_id)}; "
+        f"credential {onboarding.inline(result.credential_id)} "
         f"stored in {path} ({'private' if sys.platform == 'win32' else 'mode 0600'}, not printed)",
         file=sys.stderr,
     )
@@ -510,8 +511,17 @@ def cmd_join(args: argparse.Namespace) -> int:
     if args.pointer:
         root = pointer.repo_root(Path.cwd())
         if root is not None:
-            for changed in pointer.write(root):
+            changed_files, refused = pointer.write(root)
+            for changed in changed_files:
                 print(f"wrote the Maity pointer block into {changed}", file=sys.stderr)
+            for reason in refused:
+                _err(f"not written: {reason}")
+            if refused:
+                print(
+                    "Add the block by hand where it belongs:\n" + pointer.BLOCK,
+                    file=sys.stderr,
+                    end="",
+                )
     else:
         # AGENTS.md is usually tracked: writing into it unasked dirties the clone, and the
         # next `git add -A` commits it. The block is offered instead (`--pointer` writes it).
@@ -4240,8 +4250,10 @@ def cmd_api(args: argparse.Namespace) -> int:
     else:
         result = session.client.call(args.method, args.path, query=query, body=body, text=True)
     if isinstance(result, hub.Text):
-        # A route that answers Markdown or plain text (`…/rules`): printed as sent.
-        print(result.body, end="" if result.body.endswith("\n") else "\n")
+        # A route that answers Markdown or plain text (`…/rules`): printed as sent, with
+        # terminal escapes and other control characters shown, never acted on.
+        text = onboarding.clean(result.body)
+        print(text, end="" if text.endswith("\n") else "\n")
     elif result is not None:
         _print_json(result)
     return EXIT_OK
@@ -4255,7 +4267,7 @@ def cmd_help(args: argparse.Namespace) -> int:
         if not isinstance(stored, str):
             raise state.StateError("not joined in this clone; pass --hub <url>")
         base = hub.hub_base(stored)
-    print(hub.get_text(f"{base}{hub.API}/help"), end="")
+    print(onboarding.clean(hub.get_text(f"{base}{hub.API}/help")), end="")
     return EXIT_OK
 
 
@@ -4346,7 +4358,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--pointer",
         action="store_true",
         help="write the Maity pointer block into AGENTS.md (and CLAUDE.md); otherwise it is "
-        "printed for you to add",
+        "printed for you to add. A file that is a symbolic link is not written into: the "
+        "block is printed for it instead",
     )
     p.add_argument("--no-pointer", action="store_true", help=argparse.SUPPRESS)  # the default
     _session_args(p)

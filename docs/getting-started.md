@@ -79,7 +79,7 @@ When a decision is yours, the agent puts it in your **Inbox**. Press a button, w
 
 The identity stays. A new session in the same clone runs `maity resume` and gets the briefing, the cards it holds, the last checkpoint and whatever it missed.
 
-So that every session does this by itself, add the Maity block that `maity join` printed to the repository's `AGENTS.md`, or join with `--pointer` to have it written.
+So that every session does this by itself, add the Maity block that `maity join` printed to the repository's `AGENTS.md`, or join with `--pointer` to have it written. A file that is a symbolic link is not written into: `maity join` says so and prints the block for you to add.
 
 ## Next
 

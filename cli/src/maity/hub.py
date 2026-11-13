@@ -16,7 +16,7 @@ from datetime import datetime
 from email.message import Message
 from typing import Any
 
-from maity import __version__, sign
+from maity import __version__, onboarding, sign
 from maity.state import Secret
 
 API = "/api/v1"
@@ -256,7 +256,10 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
     except (ValueError, OSError):
         pass
     details = details if isinstance(details, dict) else {}
-    text = f"{what}: {code or 'error'}: {message}"
+    # The hub's words reach a terminal: one line each, every escape shown, never acted on.
+    if isinstance(code, str):
+        code = onboarding.inline(code)
+    text = f"{what}: {onboarding.inline(code or 'error')}: {onboarding.inline(message)}"
     if code == "invalid":
         text += _field_reasons(details.get("fields"))
         text += _ambiguous(details.get("mentions"))
