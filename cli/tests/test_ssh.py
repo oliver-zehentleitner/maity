@@ -579,7 +579,7 @@ def test_codexs_sandbox_is_tried_on_the_host(tmp_path: Path, fake_ssh: Path) -> 
 @pytest.mark.parametrize(
     ("version", "on"),
     [("2.1.294", False), ("2.1.295", True), ("2.1.295-rc.1", False), ("2.1.295-dev", False),
-     ("2.1.295+build", True), ("2.1.296-rc.1", True)],
+     ("2.1.295+build", True), ("2.1.296-rc.1", True), ("2.1.295--rc", False)],
 )  # fmt: skip
 def test_claude_codes_sandbox_on_a_host_needs_the_hook_failure_policy(
     tmp_path: Path, fake_ssh: Path, version: str, on: bool

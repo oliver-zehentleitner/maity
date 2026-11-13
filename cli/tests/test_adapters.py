@@ -209,6 +209,11 @@ def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: 
      ("claude-code", "2.1.295-rc.1", False), ("claude-code", "2.1.295-dev", False),
      ("claude-code", "2.1.295+build", True), ("claude-code", "2.1.296-rc.1", True),
      ("claude-code", "2.1.295-rc.1+build.7", False), ("claude-code", "2.1.295.1", False),
+     ("claude-code", "2.1.295--rc", False), ("claude-code", "2.1.295-x-y", False),
+     ("claude-code", "02.1.295", False), ("claude-code", "2.1.0295", False),
+     ("claude-code", "2.1.296-01", False), ("claude-code", "2.1.296-rc..1", False),
+     ("claude-code", "2.1.295+", False), ("claude-code", "2.1.295+b..1", False),
+     ("claude-code", "2.1.296-0.rc-1+b-2", True),
      ("claude-code", None, False), ("claude-code", "2.1", False), ("claude-code", "x", False),
      ("codex", None, True)],
 )  # fmt: skip
