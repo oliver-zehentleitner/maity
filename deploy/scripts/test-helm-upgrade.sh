@@ -40,10 +40,25 @@ exit 0
 STUB
 cat > "$work/bin/helm" <<'STUB'
 #!/bin/bash
+# The rendering before anything changes (--dry-run) is logged apart: "helm ran" means the upgrade itself.
+case " $* " in
+  *" --dry-run "*)
+    echo "helm-dry $*" >> "$STUB_STATE/log"
+    [ "$FAIL" = render ] && exit 1
+    printf 'MANIFEST:\n    spec:\n      containers:\n        - name: hub\n          image: %s\n' "${IMAGE_REF:-$DIGEST_REF}"
+    printf 'HOOKS:\n          image: "%s"\n' "${IMAGE_REF:-$DIGEST_REF}"
+    exit 0;;
+esac
 echo "helm $*" >> "$STUB_STATE/log"
 [ "$FAIL" = helm ] && exit 7
 # Helm resets the scaled Deployment to the count the release renders, when the test names one.
 [ -n "${RENDERED:-}" ] && echo "$RENDERED" > "$STUB_STATE/replicas"
+exit 0
+STUB
+cat > "$work/bin/cosign" <<'STUB'
+#!/bin/bash
+echo "cosign $*" >> "$STUB_STATE/log"
+[ "$FAIL" = unsigned ] && { echo "error: no matching signatures" >&2; exit 1; }
 exit 0
 STUB
 cat > "$work/bin/sleep" <<'STUB'
@@ -51,6 +66,9 @@ cat > "$work/bin/sleep" <<'STUB'
 exit 0
 STUB
 chmod +x "$work/bin/"*
+unset NO_SIGNATURE_CHECK IMAGE_REF
+export COSIGN="$work/bin/cosign"
+export DIGEST_REF="ghcr.io/oliver-zehentleitner/maity-hub@sha256:$(printf 'a%.0s' {1..64})"
 
 failures=0
 run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no), expected final replicas, [pods left], [max seconds]
@@ -66,6 +84,10 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
   local end; end=$(cat "$STUB_STATE/replicas")
   if [ -n "$maxsecs" ] && [ "$took" -gt "$maxsecs" ]; then
     echo "FAIL $name: took $took s, more than $maxsecs s (it must not wait out the timeout)"; failures=$((failures + 1)); return
+  fi
+  # UNTOUCHED=1: the script must stop before the dump, the migrate Job and any scaling.
+  if [ "${UNTOUCHED:-}" = 1 ] && grep -qE '^kubectl .*(create job|delete job|scale)' "$STUB_STATE/log"; then
+    echo "FAIL $name: it changed the cluster before stopping"; failures=$((failures + 1)); return
   fi
   if [ "$got" = "$want" ] && [ "$ran" = "$helm" ] && [ "$end" = "$final" ]; then
     echo "ok   $name (exit $got, helm $ran, replicas $end${maxsecs:+, ${took} s})"
@@ -100,4 +122,24 @@ RENDERED=3 run helm_fails_keeps_old helm 1 7 yes 1
 RENDERED=2 run initial0_rendered none 0 0 yes 0
 # Helm succeeded, the rollout check then fails: the rendered count stays (the release's), exit 4.
 RENDERED=3 run rollout_rendered rollout 1 4 yes 3
+# The image's signature, checked before anything changes; NO_SIGNATURE_CHECK=1 is the only way past it.
+if grep -qF -- "cosign verify $DIGEST_REF --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp ^https://" "$work/all_good/log"; then
+  echo "ok   signature_checked (the digest, with the issuer and the identity)"
+else
+  echo "FAIL signature_checked: no cosign verify of $DIGEST_REF in the log"; failures=$((failures + 1))
+fi
+UNTOUCHED=1 run unsigned unsigned 1 1 no 1
+UNTOUCHED=1 run render_fails render 1 1 no 1
+UNTOUCHED=1 IMAGE_REF=ghcr.io/oliver-zehentleitner/maity-hub:0.1.0a2 run tag_not_digest none 1 1 no 1
+UNTOUCHED=1 COSIGN=no-such-cosign run cosign_missing none 1 1 no 1
+NO_SIGNATURE_CHECK=1 COSIGN=no-such-cosign run opt_out_without_cosign none 1 0 yes 1
+NO_SIGNATURE_CHECK=1 IMAGE_REF=registry.example.org/maity-hub:mine run opt_out_tag none 1 0 yes 1
+grep -q '^cosign ' "$work/opt_out_tag/log" && { echo "FAIL opt_out_tag: cosign ran with NO_SIGNATURE_CHECK=1"; failures=$((failures + 1)); }
+# The identity the script checks is the one the install docs name.
+identity=$(sed -n "s/^IDENTITY='\(.*\)'\$/\1/p" "$here/helm-upgrade.sh")
+if [ -n "$identity" ] && grep -qF -- "--certificate-identity-regexp '$identity'" "$here/../helm/maity-hub/README.md"; then
+  echo "ok   identity_matches_readme"
+else
+  echo "FAIL identity_matches_readme: the script's IDENTITY is not the README's --certificate-identity-regexp"; failures=$((failures + 1))
+fi
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }

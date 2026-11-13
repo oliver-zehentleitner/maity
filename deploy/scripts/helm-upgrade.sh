@@ -12,7 +12,14 @@
 #   CHART (the chart next to this script), HELM_TIMEOUT (10m), DUMP_CRONJOB (a CronJob to run as a
 #   dump first, e.g. maity-pg-dump; unset = no dump), DUMP_TIMEOUT (seconds to wait for it, 300), DUMP_REQUIRES_ATTACHMENTS (1: the
 #   dump's mark must carry the attachment tar; set it when the release has attachments.existingClaim), STOP_TIMEOUT (seconds to wait for the hub's
-#   pods to be gone, 180), KUBECONFIG as usual.
+#   pods to be gone, 180), NO_SIGNATURE_CHECK (1: deploy without checking the image's signature,
+#   e.g. for your own build; unset = checked), COSIGN (the cosign binary, cosign), KUBECONFIG as usual.
+#
+# Before anything is changed, the script renders the upgrade (`helm upgrade --dry-run` with the same
+# arguments) and checks every image it would run: each must be pinned by digest (repository@sha256:…)
+# and carry the signature the install docs name (deploy/helm/maity-hub/README.md, step 2), checked with
+# `cosign verify` (v3 or later). A tag, a failed check or a missing cosign stops it before the dump; only
+# NO_SIGNATURE_CHECK=1 skips the check, and the script says so.
 #
 # helm upgrade only runs when the hub is verifiably stopped: a failed scale-down or pods still
 # there after STOP_TIMEOUT end the script before Helm. Once Helm succeeded the hub keeps the
@@ -56,6 +63,34 @@ trap 'exit 130' INT TERM
 case "${DUMP_TIMEOUT:-300}" in
   *[!0-9]*|'') echo "DUMP_TIMEOUT must be a number of seconds, not '${DUMP_TIMEOUT}'; nothing was changed" >&2; exit 1;;
 esac
+
+# The signing identity of published images: the same issuer and regexp as the README's `cosign verify`
+# (test-helm-upgrade.sh holds them equal).
+ISSUER='https://token.actions.githubusercontent.com'
+IDENTITY='^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+COSIGN=${COSIGN:-cosign}
+if [ "${NO_SIGNATURE_CHECK:-0}" = 1 ]; then
+  echo "WARNING: NO_SIGNATURE_CHECK=1: the image's signature is not checked" >&2
+else
+  command -v "$COSIGN" >/dev/null ||
+    { echo "cosign is not installed, so the image's signature cannot be checked (install cosign v3 or later, or set NO_SIGNATURE_CHECK=1 for an image you built yourself); nothing was changed" >&2; restored=1; exit 1; }
+  # Every image the upgrade would run, from the same arguments, rendered without changing anything.
+  rendered_manifest=$(helm -n "$NAMESPACE" upgrade "$RELEASE" "$CHART" --dry-run "$@") ||
+    { echo "could not render the upgrade to find its image; nothing was changed" >&2; restored=1; exit 1; }
+  images=$(printf '%s\n' "$rendered_manifest" | sed -n 's/^[[:space:]]*image:[[:space:]]*//p' | tr -d "\"'" | sort -u)
+  [ -n "$images" ] || { echo "the rendered upgrade names no image; nothing was changed" >&2; restored=1; exit 1; }
+  while IFS= read -r image; do
+    case "$image" in
+      *@sha256:*) ;;
+      *) echo "$image is not pinned by digest: set image.digest (the signature is for a digest, a tag can be moved); nothing was changed" >&2
+         restored=1; exit 1;;
+    esac
+    "$COSIGN" verify "$image" --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$IDENTITY" </dev/null >/dev/null ||
+      { echo "$image has no valid signature from the release workflow (see deploy/helm/maity-hub/README.md, step 2); nothing was changed" >&2; restored=1; exit 1; }
+    echo "signature checked: $image"
+  done <<<"$images"
+fi
+
 if [ -n "${DUMP_CRONJOB:-}" ]; then
   job="pre-upgrade-$(date +%H%M%S)"
   # Complete or Failed, whichever comes first: `kubectl wait` takes one condition and would sit out its whole timeout on a failed Job.
