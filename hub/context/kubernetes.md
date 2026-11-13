@@ -523,3 +523,57 @@ the rest of the host, so one address may reach the values once on each.
 - **The limit on by default:** the first chart update would switch it on for
   agents whose `maity wait` still ends on a 429.
 - **The host's 100 open requests for uploads too:** that is the 1 GiB above.
+
+## The upgrade script takes a dump by default; `NO_DUMP=1` is the only way to skip it
+
+**Id:** 4541f719-bcc4-4e81-bcae-6c89e5ded9b5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** deploy hardening card tsk-xesvyydh2yd3 (item 3), from the security rounds of card tsk-v9kheekgq115; `deploy/scripts/helm-upgrade.sh`, `deploy/scripts/test-helm-upgrade.sh`
+**See:** kubernetes.md#an-upgrade-with-a-migration-stops-the-hub-first — d295eb2a-38ad-4e27-9dfa-524bb0963a24 — as of 2026-11-13
+**Revisit when:** the chart gains a schema downgrade, or the dump moves out of a CronJob (an object store's snapshots, a managed database)
+
+`helm-upgrade.sh` runs a Job from the CronJob `maity-pg-dump` before every upgrade unless `NO_DUMP=1` is
+set; `DUMP_CRONJOB` names another CronJob. A missing CronJob stops the script before it changes anything,
+with a message naming both settings. `NO_DUMP` takes 1 or nothing; any other value stops the script too.
+
+**Reason:** there is no downgrade (see "A hub serves only on its own schema head"), so the dump taken
+right before the migration is the only way back, and an opt-in dump was skipped whenever the variable was
+forgotten. Failing on a missing CronJob keeps "no dump" a decision someone wrote down on the command line.
+
+**Rejected alternatives:**
+- Keeping the dump opt-in (`DUMP_CRONJOB` unset meant no dump): the safe path needed a variable, the unsafe
+  one needed nothing.
+- Taking the dump when the CronJob exists and skipping it silently otherwise: a renamed or missing CronJob
+  would turn every upgrade into one without a backup, with no message.
+
+## The attachment restore checks that the hub is stopped, from inside the Job, right before it empties the volume
+
+**Id:** 652b6ac8-f221-43fd-b01b-0412cf7fe287
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** deploy hardening card tsk-xesvyydh2yd3 (item 4); the ServiceAccount with a minimal Role and the documented shell check beside it agreed by the team lead, 2026-11-13; `deploy/k3s-single/restore-attachments.yaml`, docs/install/README.md
+**See:** kubernetes.md#the-k3s-backups-are-encrypted-with-gpg-to-a-public-key-in-a-secret-and-the-job-fails-without-it — f6cd5dc1-f718-4490-92fc-285f88085514 — as of 2026-11-13
+**Revisit when:** the hub image loses Python, the restore moves into the chart, or the release name stops being fixed in the k3s files
+
+The restore Job's script, after the streamed tar has arrived whole and before `find -delete`, asks the
+Kubernetes API whether the hub's Deployment wants 0 replicas and whether any pod with the hub's labels is
+left, terminating ones included. Anything else, or an error asking, ends the exec with the volume
+unchanged. The Job runs the hub's image (it has Python for the request, and tar and sha256sum) under a
+ServiceAccount of its own whose Role gets the one Deployment by name and lists pods in the namespace;
+only this pod mounts the token. The documented block checks the same with `kubectl` before it decrypts
+anything, and names the kube context on every call.
+
+**Reason:** the volume is emptied up to an hour after the Job starts, while the operator streams the tar;
+a check at pod start, or only in the operator's shell, does not see a hub scaled up in between. The hub's
+files and a restored database must not be written by a running hub at the same moment.
+
+**Rejected alternatives:**
+- The check only in the documented shell block: it holds when the block is run as written, not when the
+  exec line is run again by hand after a failure, which the file tells the operator to do.
+- An init container: it checks once, at start, not when the volume is emptied.
+- The postgres image the Job used before: it has no HTTP client to ask the API.
+- A kubectl image: another image to pin and trust in the restore path; the hub's image is already pinned
+  in the operator's values.
