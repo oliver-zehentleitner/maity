@@ -6600,15 +6600,23 @@ entry names an agent by id only, so the same lists give its handle.
 
 A panel that holds forms (Team → Manage, Agents → Manage, Project
 settings, the account's tabs) carries the class `.form-column`. Its
-direct parts stop at `--form-column` (42rem) and start at its left;
-lists, tables, tab rows and a part marked `.full-width` (an agent's
-credentials) keep the panel's whole width. Inside the column fields and
+parts stop at `--form-column` (42rem) and start at its left; lists,
+tables, tab rows and a part marked `.full-width` (an agent's
+credentials) keep the panel's whole width. A part that holds such a
+list, however deep (the account's sessions, its forge links and
+repositories, the settings' attach list), keeps the whole width too, and
+its own parts without one stop at the column again, level by level down
+to the list (`:has()`). A `dl` of facts is text here, not a list: short
+pairs that read better in the column. Inside the column fields and
 help texts fill it, so a panel has one right edge, and a form's buttons
 (`.actions`, `.inline-form`, `.project-form`, Remove) start at its
-left, next to what they send. The rules that put buttons at the column's
-left stand at the end of app.css, after the forms' own rules that end
-them at the right elsewhere. The e2e step `form_column_layout` measures
-the four panels at 1280, 390 and 360 px.
+left, next to what they send. A form's own width (32 or 48rem) still
+holds outside a column (Organisations, the admin area): inside one the
+form fills the column. The rules that put buttons at the column's left
+and fill forms stand at the end of app.css, after the forms' own rules.
+The e2e step `form_column_layout` measures Team and Agents → Manage,
+Project settings and every account tab at 1280, 390 and 360 px, the
+named lists at full width and Organisations' form at its own 32rem.
 
 **Reason:** each form brought its own width (32, 42 or 48rem, some none
 at all), so help texts ran to the panel's edge while the fields beside
@@ -6621,3 +6629,12 @@ panel the same edge, and a new form inside it needs no width of its own.
   parts with no form (help paragraphs, sections) had none.
 - Buttons at the column's right edge: rejected, the project lead chose
   the left, Remove included, so a button stands where the eye ends the form.
+- Only the column's direct parts exempt when they are lists: rejected in
+  review, the account wraps its lists in sections, which then shrank from
+  1168 to 672 px.
+- `.full-width` on each wrapper of a list: rejected, the lists sit two to
+  five levels deep and a new one would need the class again; `:has()`
+  finds them.
+- The token as every form's width everywhere: rejected in review, it
+  widened forms outside the panels in scope (Organisations' new
+  organisation from 512 to 672 px).

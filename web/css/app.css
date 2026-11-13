@@ -63,11 +63,14 @@
 }
 
 /* One reading column for the forms of a settings or manage panel (web/context/views.md): the
-   panel's direct parts stop at --form-column, left-aligned; its lists, tables and tab rows keep the
-   panel's full width (.full-width for one built of other elements). Inside the column, fields
-   and help texts fill it and a form's buttons start at its left. */
+   panel's parts stop at --form-column, left-aligned; its lists, tables and tab rows keep the
+   panel's full width (.full-width for one built of other elements). A part that holds a list,
+   however deep, keeps the full width too, and its own parts without one stop at the column
+   again, level by level down to the list. Inside the column, fields and help texts fill it and
+   a form's buttons start at its left. */
 :root { --form-column: 42rem; }
-.form-column > :not(nav, ul, ol, table, dl, .table-wrap, .full-width) { max-width: var(--form-column); }
+:is(.form-column, .form-column :not(nav, ul, ol, table, .table-wrap, .full-width, :is(ul, ol, table, .table-wrap, .full-width) *):has(nav, ul, ol, table, .table-wrap, .full-width))
+  > :not(nav, ul, ol, table, .table-wrap, .full-width, :has(nav, ul, ol, table, .table-wrap, .full-width)) { max-width: var(--form-column); }
 /* Its buttons start at the column's left: the block at the end of this file, after the forms' own rules. */
 
 /* Dark: by the system's choice unless this browser picked Light, or when it
@@ -820,7 +823,7 @@ a.icon-button:hover { border-color: var(--accent); }
    would be cut; an image of another shape gets margins instead. */
 .project-banner { display: block; width: 100%; max-width: 960px; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: var(--radius); margin: 0 auto 12px; }
 .images { display: grid; gap: 10px; margin-top: 12px; }
-.image-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: var(--form-column); }
+.image-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; max-width: 32rem; }
 .image-row label { font-size: 0.85rem; color: var(--muted); }
 .image-preview-logo { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
 .image-preview-banner { width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: contain; background: var(--surface-2); border-radius: 6px; }
@@ -1248,8 +1251,7 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 .panel { display: grid; gap: 12px; margin: 8px 0; padding: 10px; background: var(--surface-2); border-radius: var(--r-card); }
 /* minmax(0, 1fr): a select is as wide as its longest option otherwise, and
    "Agent Name (@handle) · already a member" pushed the page past 390 px. */
-.inline-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: var(--form-column); }
-.login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
+.inline-form, .login { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .inline-form h3 { margin: 0; }
 /* The settings panel sits under the page's h1: its sections are h2, styled small. */
 .panel-title { margin: 0; font-size: 1rem; font-family: var(--display); }
@@ -1286,7 +1288,7 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 .joins .join-open .join-state { color: var(--accent); }
 .closed-joins li { color: var(--muted); }
 .closed-joins .join-state { font-weight: 500; }
-.project-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: var(--form-column); }
+.project-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; }
 .project-form label { font-size: 0.85rem; color: var(--muted); }
 .project-form label.check { display: flex; align-items: center; gap: 6px; color: var(--text); margin-top: 6px; }
 .project-form button { justify-self: end; margin-top: 6px; }
@@ -1669,14 +1671,14 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .waiting-item .muted { font-size: .85rem; }
 
 /* Preferences (js/preferences.js): the editor in the account, a proposal's review in the inbox. */
-.preferences-form { display: grid; gap: 6px; max-width: var(--form-column); }
+.preferences-form { display: grid; gap: 6px; max-width: 48rem; }
 .preferences-form textarea, .pref-edit textarea { width: 100%; font-family: var(--mono); }
 .preferences-form .actions, .pref-edit .actions, .preferences-conflict .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .preferences-form .hint.over { color: var(--bad); }
-.preferences-projects { border: 1px solid var(--border); border-radius: var(--radius); margin: 12px 0; max-width: var(--form-column); }
+.preferences-projects { border: 1px solid var(--border); border-radius: var(--radius); margin: 12px 0; max-width: 48rem; }
 .preferences-projects ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .preferences-projects li { display: flex; align-items: center; gap: 8px; min-height: 28px; }
-.preferences-history { margin: 8px 0; max-width: var(--form-column); }
+.preferences-history { margin: 8px 0; max-width: 48rem; }
 .preferences-history summary { cursor: pointer; }
 .preferences-versions { padding-inline-start: 1.2rem; }
 pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 6px; padding: 8px; margin: 4px 0 12px; max-height: 20rem; overflow: auto; }
@@ -2031,15 +2033,15 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-actions { white-space: nowrap; }
 .member-actions .member-chat + button { margin-left: 6px; }
 /* Agents that stop listening, on the account (js/notify-settings.js). */
-.not-listening-settings { display: grid; gap: 6px; max-width: var(--form-column); margin: 16px 0; }
+.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
-.mail-address { margin: 16px 0; max-width: var(--form-column); }
+.mail-address { margin: 16px 0; max-width: 32rem; }
 .mail-address h3 { margin: 0 0 6px; }
 .mail-address-state { margin: 0 0 6px; }
 .mail-address-form { display: grid; gap: 6px; }
 .mail-address-form .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.mail-modes { margin: 16px 0; max-width: var(--form-column); }
+.mail-modes { margin: 16px 0; max-width: 32rem; }
 .mail-modes h3 { margin: 0 0 6px; }
 .mail-modes-form { display: grid; gap: 6px; }
 .mail-kinds, .mail-quiet { display: grid; gap: 6px; }
@@ -2163,7 +2165,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .meat-chat-toggle[aria-pressed="true"] .meat-chat-icon { -webkit-mask-image: url("../brand/meat-proxy.svg"); mask-image: url("../brand/meat-proxy.svg"); }
 
 /* Admin → Users: reset two-factor sign-in (§2.8.7). */
-.user-reset { margin-top: 16px; max-width: var(--form-column); }
+.user-reset { margin-top: 16px; max-width: 42rem; }
 .user-reset label { display: block; margin-bottom: 4px; }
 .user-reset textarea { width: 100%; box-sizing: border-box; }
 
@@ -2171,7 +2173,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .memory-filter { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin-bottom: 8px; }
 .memory-entries .field, .memory-souls .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 8px 0; }
 .memory-entries .field[hidden] { display: none; }
-.memory-add, .memory-souls { margin-top: 24px; max-width: var(--form-column); }
+.memory-add, .memory-souls { margin-top: 24px; max-width: 42rem; }
 .memory-add textarea, .soul-form textarea { width: 100%; box-sizing: border-box; }
 .memory-list { list-style: none; padding: 0; }
 .memory-list li { border-top: 1px solid var(--border); padding: 8px 0; }
@@ -2252,3 +2254,5 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    the forms' own rules above that put them at the right edge. */
 .form-column .actions { justify-content: flex-start; }
 .form-column :is(.inline-form, .project-form) button { justify-self: start; }
+/* Inside the column a form fills it: its own width (32 or 48rem) holds only outside one. */
+.form-column :is(.inline-form, .project-form, .image-row, .preferences-form, .preferences-projects, .preferences-history, .not-listening-settings, .mail-address, .mail-modes) { max-width: var(--form-column); }

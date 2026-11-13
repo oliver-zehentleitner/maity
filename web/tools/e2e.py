@@ -4229,16 +4229,18 @@ def jour_fixe_settings_layout(run: Run, browser) -> None:
 
 
 # The form column (web/context/views.md, tsk-0t3vdzjvm2vq): in a settings or manage panel the
-# column's own parts (block boxes, lists and tables aside) end at one right edge, no wider than
-# --form-column; every field and help text stays inside it, one that fills its box (a box's
-# padding aside) reaches it; a form's buttons start at its left.
-FORM_COLUMN_MEASURE = """(selector) => {
+# column's own parts (block boxes; lists, tables and the parts that hold one aside) end at one
+# right edge, no wider than --form-column; every field and help text outside a list stays inside
+# it, one that fills its box (a box's padding aside) reaches it; a form's buttons start at its
+# left. The lists named in `wide` keep the column's full width (a box's padding aside).
+FORM_COLUMN_MEASURE = """([selector, wideLists]) => {
   const problems = [], columns = Array.from(document.querySelectorAll(selector)).filter((c) => c.offsetParent);
   if (!columns.length) return { problems: ['no ' + selector], edges: [] };
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
   const most = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--form-column')) * rem;
   const name = (el) => el.tagName.toLowerCase() + (el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : '');
-  const wide = (el) => el.matches('nav, ul, ol, table, dl, .table-wrap, .full-width');
+  const LISTS = 'nav, ul, ol, table, .table-wrap, .full-width';
+  const wide = (el) => el.matches(LISTS) || !!el.querySelector(LISTS);
   const edges = [];
   for (const col of columns) {
     const box = col.getBoundingClientRect(), cs = getComputedStyle(col);
@@ -4254,7 +4256,7 @@ FORM_COLUMN_MEASURE = """(selector) => {
       if (Math.abs(r - edge) > 0.5) problems.push(name(col) + ' > ' + name(el) + ' ends at ' + Math.round(r - left) + ', the column at ' + Math.round(edge - left));
     }
     const inside = Array.from(col.querySelectorAll('input:not([type=hidden]), select, textarea, button, p.hint, p.muted, .actions'))
-      .filter((el) => el.offsetParent && !el.closest('nav, ul, ol, table, dl, .table-wrap, .full-width'));
+      .filter((el) => el.offsetParent && !el.closest(LISTS));
     for (const el of inside) {
       const r = el.getBoundingClientRect(), up = el.parentElement, ucs = getComputedStyle(up);
       if (r.right > edge + 0.5 || r.left < left - 0.5) problems.push(name(el) + ' in ' + name(up) + ' outside the column: ' + Math.round(r.left - left) + '..' + Math.round(r.right - left));
@@ -4264,12 +4266,17 @@ FORM_COLUMN_MEASURE = """(selector) => {
       if (fills && r.right < edge - 24) problems.push(name(el) + ' in ' + name(up) + ' ends at ' + Math.round(r.right - left) + ', the column at ' + Math.round(edge - left));
     }
     for (const row of col.querySelectorAll('.actions, .member-remove')) {
-      const b = row.querySelector('button');
-      if (b && b.offsetParent && b.getBoundingClientRect().left - row.getBoundingClientRect().left > 24) problems.push(name(row) + ': its first button is not at the left');
+      const first = Array.from(row.children).find((c) => c.offsetParent);  // a button, or the keys beside one
+      if (first && first.getBoundingClientRect().left - row.getBoundingClientRect().left > 24) problems.push(name(row) + ': it does not start at the left');
     }
     for (const b of col.querySelectorAll(':is(.inline-form, .project-form) > button')) {
       const up = b.parentElement;
       if (b.offsetParent && getComputedStyle(up).display === 'grid' && b.getBoundingClientRect().left - up.getBoundingClientRect().left > 24) problems.push(name(up) + ' > button is not at the left');
+    }
+    const full = box.right - parseFloat(cs.paddingRight) - parseFloat(cs.borderRightWidth);
+    for (const list of col.querySelectorAll(wideLists)) {
+      const r = list.getBoundingClientRect();
+      if (list.offsetParent && r.right < full - 48) problems.push(name(list) + ' ends at ' + Math.round(r.right - left) + ', the panel at ' + Math.round(full - left));
     }
   }
   return { problems, edges };
@@ -4279,9 +4286,10 @@ FORM_COLUMN_MEASURE = """(selector) => {
 def form_column_layout(run: Run, browser) -> None:
     """One width for the forms and help texts of a settings or manage panel (tsk-0t3vdzjvm2vq)
     in fixture mode at 1280 x 900, 390 x 844 and 360 x 780: Team → Manage, Agents → Manage,
-    Project settings and the account's profile (FORM_COLUMN_MEASURE on each), nothing wider than
-    the window."""
-    run.step("fixtures: forms and help texts in one column in Team and Agents → Manage, Project settings and the account")
+    Project settings and every tab of the account (FORM_COLUMN_MEASURE on each), the lists
+    among them at the panel's full width, nothing wider than the window; outside a column a
+    form keeps its own width (Organisations' new organisation, 32rem)."""
+    run.step("fixtures: forms and help texts in one column in Team and Agents → Manage, Project settings and the account's tabs, lists full width")
     index = (WEB / "index.html").as_uri()
     for width, height in ((1280, 900), (390, 844), (360, 780)):
         context = browser.new_context(viewport={"width": width, "height": height})
@@ -4290,35 +4298,46 @@ def form_column_layout(run: Run, browser) -> None:
         page.on("pageerror", lambda err: errors.append(str(err)))
         try:
 
-            def measure(selector: str, where: str) -> list[int]:
-                m = page.evaluate(FORM_COLUMN_MEASURE, selector)
+            def measure(selector: str, where: str, lists: str = "ul.never-a-list") -> list[int]:
+                m = page.evaluate(FORM_COLUMN_MEASURE, [selector, lists])
                 wide = page.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
                 assert not m["problems"] and not errors and wide <= 0, f"{where} at {width}: {m['problems'] + errors}, {wide} px too wide"
                 return m["edges"]
 
-            page.goto("about:blank")
-            page.goto(f"{index}?lang=en#/maintainer/maity/team")
+            def open_page(path: str) -> None:
+                page.goto("about:blank")
+                page.goto(f"{index}?lang=en#{path}")
+
+            open_page("/maintainer/maity/team")
             page.get_by_role("button", name="Manage Agent A", exact=True).click()
             remove = page.locator("main tr.member-manage .member-remove button")
             expect(remove).to_be_visible()
-            measure("main tr.member-manage td.form-column", "Team → Manage")
+            measure("main tr.member-manage td.form-column", "Team → Manage", "tr.member-manage .member-credentials")
             run.shot(page, f"fixtures-form-column-team-{width}")
-            page.goto("about:blank")
-            page.goto(f"{index}?lang=en#/maintainer/maity/agents")
+            open_page("/maintainer/maity/agents")
             page.locator("main button", has_text="Manage").first.click()
             expect(page.locator("main tr.agent-manage .form-column").first).to_be_visible()
             measure("main tr.agent-manage .form-column", "Agents → Manage")
-            page.goto("about:blank")
-            page.goto(f"{index}?lang=en#/maintainer/maity/settings")
+            open_page("/maintainer/maity/settings")
             expect(page.locator("main #project-panel")).to_be_visible()
-            measure("main #project-panel", "Project settings")
+            measure("main #project-panel", "Project settings", "#project-panel ul.attach-admin")
             run.shot(page, f"fixtures-form-column-settings-{width}")
-            page.goto("about:blank")
-            page.goto(f"{index}?lang=en#/account")
-            expect(page.locator("main section.view-account")).to_be_visible()
-            measure("main section.view-account", "the account's profile")
+            for path, tab, sub, part in ACCOUNT_TABS:
+                if path == "/account/orgs":
+                    continue  # no form column: below
+                open_page(path)
+                expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                measure("main section.view-account", f"the account at {path}", "main :is(ul.session-list, ul.forge-links, ul.forge-repos)")
+                if path in ("/account/security/sessions", "/account/security/forge"):
+                    run.shot(page, "fixtures-form-column-account" + path.replace("/", "-") + f"-{width}")
             if width == 1280:
-                run.a11y(page, "fixtures: the account's profile in the form column")
+                run.a11y(page, "fixtures: the account's forge access in the form column")
+            # Outside a column a form keeps its own width: Organisations' new organisation.
+            open_page("/account/orgs")
+            org = page.locator("main form.org-create")
+            expect(org).to_be_visible()
+            wide = org.evaluate("(f) => [Math.round(f.getBoundingClientRect().width), getComputedStyle(f).maxWidth]")
+            assert wide[1] == "512px" and wide[0] <= 512, f"Organisations at {width}: the new organisation's form is {wide}"
         finally:
             context.close()
 
