@@ -729,3 +729,34 @@ that a member that calls is never shown away.
   write at T, a call at T + 59 that wrote nothing, a read at T + 121), and a session in use could
   expire up to a minute early.
 - Other options of the first request: unknown.
+
+## The credential filter has no boundary in front, and reads a JSON body's decoded strings too
+
+**Id:** d539d36c-45e7-4178-8428-835e67549e0f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-bg5f4cv0894w (credential filter hardening), 2026-11-13
+**Revisit when:** a body arrives in an encoding other than JSON that can escape characters, or the filter's matches start revoking credentials nobody leaked
+
+`credentials.PATTERN` (§2.2) matches `mty1.<id>.<secret>` whatever
+character stands right before it, and `find_all` scans a JSON body twice:
+the raw bytes, and every key and string value it decodes to. The CLI's
+check before sending (`sign.CREDENTIAL_IN_TEXT_RE`, `hub._guard_payload`)
+does the same, so it refuses what the hub would refuse.
+
+**Reason:** with a word boundary in front, a credential right after a
+letter, a digit or `_` did not match, and in a JSON body that includes
+every escape that ends in a letter: the `n` of `\n`, the `t` of `\t`.
+Dropping the boundary costs nothing in safety: a match is refused, and
+only a credential whose secret verifies is revoked, so a false match
+only refuses a request. Escapes such as `\u006d` change the bytes of
+the credential itself, which no pattern over the raw bytes can see.
+Reading the decoded strings catches them.
+
+**Rejected alternatives:**
+- Keeping the boundary and scanning only the decoded strings: a
+  credential right after a letter in plain text, or in a body that is
+  no JSON, would still pass.
+- Scanning only the decoded strings: the raw scan is what covers a
+  body that is not JSON, or JSON that does not decode, and the query.

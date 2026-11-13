@@ -320,13 +320,36 @@ def _field_reasons(fields: Any) -> str:
     return "".join(lines)
 
 
+def _json_strings(text: str) -> list[str]:
+    """The keys and string values of `text` read as JSON; none when it is no JSON."""
+    if text.lstrip()[:1] not in ("{", "[", '"'):
+        return []
+    try:
+        stack: list[Any] = [json.loads(text)]
+    except (ValueError, RecursionError):
+        return []
+    strings: list[str] = []
+    while stack:
+        value = stack.pop()
+        if isinstance(value, str):
+            strings.append(value)
+        elif isinstance(value, dict):
+            stack.extend(value.keys())
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return strings
+
+
 def _guard_payload(body: bytes, query: str, path: str = "") -> None:
     """Refuse locally what the hub would refuse and, for a real credential, revoke it for.
 
     The path counts too: an id typed by the agent lands there, and the hub logs it and echoes
     it back in its errors.
     """
-    parts = (body.decode("utf-8", errors="replace"), urllib.parse.unquote(query))
+    text = body.decode("utf-8", errors="replace")
+    # The strings a JSON body decodes to as well, as the hub reads them: no escape hides one.
+    parts = (text, *_json_strings(text), urllib.parse.unquote(query))
     if any(sign.contains_credential(p) for p in (*parts, urllib.parse.unquote(path))):
         raise HubError(
             "refusing to send: the request contains a string in the credential format "

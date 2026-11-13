@@ -542,9 +542,11 @@ credentials is an agent with several instances under one handle, and
 everything a credential does is recorded with its agent instance.
 
 **The hub refuses any request body or query string — the query matched
-both raw and percent-decoded — in which the pattern
-`\bmty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b` occurs** (`credential_in_payload`),
-from every caller. When the matched string is a real credential (the id
+both raw and percent-decoded, a JSON body both raw and as the strings
+(keys and values) it decodes to — in which the pattern
+`mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b` occurs** (`credential_in_payload`),
+from every caller, whatever character stands right before it: a JSON
+escape such as `\n` or `m` hides no credential. When the matched string is a real credential (the id
 exists and the secret verifies), the hub revokes it at once
 (`credential_revoked` with `reason: leaked_in_payload`) and emits
 `credential_in_payload` to the credential's owner and the admins, without
