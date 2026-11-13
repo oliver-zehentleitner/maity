@@ -785,6 +785,29 @@ def test_a_project_admin_reads_only_their_projects_part_of_the_runner(
     assert own == advertised
 
 
+def test_a_proposing_agent_reads_its_projects_part_of_the_runner(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §15.3, §15.4: an agent that proposes placements is not the runner's owner either, and
+    # reads the part of its own project as a project admin does, not an empty one.
+    advertised = {
+        **CAPABILITIES,
+        "projects": ["maintainer/maity", "maintainer/secret"],
+        "repositories": ["github.com/oliver-zehentleitner/*", "gitlab.example/private/*"],
+    }
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.runner).where(t.runner.c.id == setup.runner.id).values(capabilities=advertised)
+        )
+    proposer = admin_agent(make_client, setup)
+    [listed] = proposer.get("/projects/maintainer/maity/runners").json()["items"]
+    seen = listed["runner"]["capabilities"]
+    assert seen["projects"] == ["maintainer/maity"]
+    assert seen["repositories"] == ["github.com/oliver-zehentleitner/*"]
+    assert seen["targets"][0]["isolation"] == {"kind": "shared_user", "runner_separate": False}
+    assert listed["runner"]["projects"] == ["maintainer/maity"]
+
+
 def test_a_credential_carries_over_to_the_same_clone(setup: Setup) -> None:
     body = placed(setup)
     with setup.engine.begin() as conn:

@@ -127,7 +127,7 @@ def live_credential_id(conn: Connection, runner_id: str) -> str | None:
 
 
 def _project_slugs(conn: Connection, runner_id: str, viewer_id: str | None) -> list[str]:
-    """The runner's projects by full name (§6.25); for a human only those they are a
+    """The runner's projects by full name (§6.25); for a viewer only those they are a
     member of (§15.3)."""
     ids = _project_ids(conn, runner_id, viewer_id)
     return sorted(namespace.full_names(conn, ids).values())
@@ -144,10 +144,11 @@ def _project_ids(conn: Connection, runner_id: str, viewer_id: str | None) -> lis
         .order_by(t.project.c.slug)
     )
     if viewer_id is not None:
+        # A human's membership or an agent's: a proposing agent reads its project's part.
         query = query.join(
             t.membership,
             (t.membership.c.project_id == t.project.c.id)
-            & (t.membership.c.human_id == viewer_id)
+            & ((t.membership.c.human_id == viewer_id) | (t.membership.c.agent_id == viewer_id))
             & t.membership.c.active.is_(True),
         )
     return list(conn.execute(query).scalars())

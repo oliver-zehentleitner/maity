@@ -16665,7 +16665,8 @@ owner choose):
   hub neither sees nor checks either. Every string in it
   is printable ASCII of at most 200 characters and rendered as text.
   The runner's owner reads it whole. Any other viewer (a project admin
-  through `GET /runners/{id}` or `GET …/runners`) reads only what
+  through `GET /runners/{id}` or `GET …/runners`, an agent that proposes
+  placements through `GET …/runners`) reads only what
   concerns their own projects of the runner: `projects` keeps those
   projects, `repositories` the patterns that match one of their
   repositories, and `targets[].isolation` has no `user`. The rest of the
