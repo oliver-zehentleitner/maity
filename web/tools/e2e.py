@@ -5366,10 +5366,10 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
 def agents_page_tabs(run: Run, page: Page) -> None:
     """/agents's tabs (§16.11, tsk-3s3eb6bsp15n): the list, Managed agents across one's projects, and
     Maintenance notices, which stood under the list before."""
-    run.step("agents: /agents has the tabs Agents, Managed agents and Maintenance notices")
+    run.step("agents: /agents has the tabs Agents, Managed agents, Maintenance notices and Chat access")
     page.goto(f"{run.base}/agents")
     tabs = page.locator("main nav.agents-tabs")
-    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Maintenance notices"])
+    expect(tabs.locator("a")).to_have_text(["Agents", "Managed agents", "Maintenance notices", "Chat access"])
     expect(page.locator("main section.broadcasts")).to_have_count(0)
     tabs.get_by_role("link", name="Managed agents", exact=True).click()
     expect(page).to_have_url(re.compile(r"/agents/placements$"))
@@ -5382,6 +5382,47 @@ def agents_page_tabs(run: Run, page: Page) -> None:
     expect(page.get_by_role("heading", name="Maintenance notices", exact=True, level=2)).to_be_visible()
     expect(page.locator("#broadcasts-mode")).to_be_visible()
     run.a11y(page, "agents, maintenance notices")
+    agents_chat_access(run, page, tabs)
+
+
+def agents_chat_access(run: Run, page: Page, tabs) -> None:
+    """/agents/chat-access (§9.6, "The lists"): each subject choice shows its own row alone (a
+    `hidden` row stays hidden under .field-stack's grid), an allow for a project added, its edit
+    form opened with the agents' boxes enabled, all checked by axe, then the entry removed."""
+    run.step("agents: Chat access shows one subject row at a time, adds an allow, opens its edit form")
+    tabs.get_by_role("link", name="Chat access", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/agents/chat-access$"))
+    tab = page.locator("main section.chat-access-page")
+    expect(page.get_by_role("heading", name="Chat access", exact=True, level=2)).to_be_visible()
+    run.a11y(page, "agents, chat access")
+    deny = tab.locator("form.chat-access-add").nth(1)
+    kind = deny.get_by_label("Who", exact=True)
+    rows = {"person": deny.get_by_label("Person", exact=True), "agent": deny.get_by_label("Agent", exact=True),
+            "project": deny.get_by_label("Project", exact=True)}
+    for value, shown in (("owner_id", "person"), ("human_id", "person"), ("agent_id", "agent"), ("project", "project")):
+        kind.select_option(value)
+        for name, field in rows.items():
+            if name == shown:
+                expect(field).to_be_visible()
+            else:
+                expect(field).to_be_hidden()
+    allow = tab.locator("form.chat-access-add").first
+    allow.get_by_label("Who", exact=True).select_option("project")
+    expect(allow.get_by_label("Which of their agents", exact=True)).to_be_hidden()
+    allow.get_by_label("Project", exact=True).select_option("owner/e2e-alpha")
+    allow.get_by_role("button", name="Add the allow", exact=True).click()
+    entry = tab.locator("ul.chat-access-list.allow li").filter(has_text="everyone in the project owner/e2e-alpha")
+    expect(entry).to_have_count(1)
+    entry.get_by_role("button", name="Edit", exact=True).click()
+    edit = entry.locator("form.chat-access-edit")
+    edit.get_by_label("all your agents", exact=True).uncheck()
+    expect(edit.locator("fieldset.chat-access-agents input[type=checkbox]").nth(1)).to_be_enabled()
+    run.a11y(page, "agents, chat access, an allow being edited")
+    edit.get_by_role("button", name="Cancel", exact=True).click()
+    expect(entry.get_by_role("button", name="Edit", exact=True)).to_be_focused()
+    page.once("dialog", lambda d: d.accept())
+    entry.get_by_role("button", name="Remove", exact=True).click()
+    expect(tab.locator("ul.chat-access-list.allow li").filter(has_text="everyone in the project owner/e2e-alpha")).to_have_count(0)
 
 
 def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:

@@ -4860,7 +4860,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const boxes = main.querySelectorAll("section.placements");
     const here = boxes.find((b) => text(b.childNodes[0]).includes("maintainer/maity"));
     const ids = boxes.map((b) => b.getAttribute("aria-labelledby"));
-    expect(JSON.stringify(agentsTabRow()) === JSON.stringify([["Agents", "#/agents", null], ["Managed agents", "#/agents/placements", "page"], ["Maintenance notices", "#/agents/maintenance", null]])
+    expect(JSON.stringify(agentsTabRow()) === JSON.stringify([["Agents", "#/agents", null], ["Managed agents", "#/agents/placements", "page"], ["Maintenance notices", "#/agents/maintenance", null], ["Chat access", "#/agents/chat-access", null]])
       && boxes.length === where.size && here && ownRows.length > 0 && ownRows.length < 6
       && JSON.stringify(here.querySelectorAll("li.placement").map((li) => li.attrs["data-placement"]).sort()) === JSON.stringify(ownRows)
       && !main.querySelector("button.placement-new-open") && !main.querySelector(".placement-new-none")
@@ -17451,15 +17451,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   "maintenance: the sign-in still offers the mailed link when a window refuses the methods; another failure offers nothing, as before");
   // The owner's choice, the /agents page's tab Maintenance notices (§16.11): which agents get the notice.
   await go("#/agents"); await mtSettle();
-  const mtTabs = JSON.stringify([["Agents", "#/agents", "page"], ["Managed agents", "#/agents/placements", null], ["Maintenance notices", "#/agents/maintenance", null]]);
+  const mtTabs = JSON.stringify([["Agents", "#/agents", "page"], ["Managed agents", "#/agents/placements", null], ["Maintenance notices", "#/agents/maintenance", null], ["Chat access", "#/agents/chat-access", null]]);
   expect(JSON.stringify(agentsTabRow()) === mtTabs && !main.querySelector("section.broadcasts") && main.querySelector("table.agents-list"),
-    "broadcasts: /agents is the list's tab, with Managed agents and Maintenance notices beside it and the choice no longer under the list " + JSON.stringify(agentsTabRow()));
+    "broadcasts: /agents is the list's tab, with Managed agents, Maintenance notices and Chat access beside it and the choice no longer under the list " + JSON.stringify(agentsTabRow()));
   await go("#/agents/maintenance"); await mtSettle();
   const mtChoice = main.querySelector("section.broadcasts");
   const mtMode = byId("broadcasts-mode");
   expect(mtChoice && mtMode && mtMode.value === "accept_all" && mtChoice.querySelector("fieldset").hidden
     && byId("broadcasts-heading") && byId("broadcasts-heading").tagName === "H2" && !main.querySelector("table.agents-list")
-    && JSON.stringify(agentsTabRow().map((t) => t[2])) === JSON.stringify([null, null, "page"]),
+    && JSON.stringify(agentsTabRow().map((t) => t[2])) === JSON.stringify([null, null, "page", null]),
     "broadcasts: /agents/maintenance shows the choice under its own heading, all agents by default");
   mtMode.value = "accept_only"; mtMode.dispatch("change");
   byId("broadcasts-agent-agt-b").checked = true;
@@ -17469,6 +17469,141 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector("section.broadcasts fieldset").hidden, "broadcasts: only the agents ticked, saved as the hub has it");
   const mtBad = await win.Maity.api.patch("/me/broadcasts", { mode: "refuse_all", agents: ["agt-b"] }).then(() => null, (err) => err);
   expect(mtBad && mtBad.details.fields.agents === "not_allowed", "broadcasts: a list with refuse_all is refused, as the hub refuses it");
+
+  // Who may chat with one's agents (§9.6, "The lists"), the tab Chat access: the entries, an allow
+  // and a deny added, an allow edited (only what changed), a deny removed. A person to name is one of
+  // the members of one's projects: anna is put into sample's member list for this and taken out again.
+  {
+    const caFx = win.Maity.api.fixturesLive();
+    const caMembers = caFx["sample/members.json"].items;
+    caMembers.push({ id: "hum-anna", kind: "human", handle: "anna", display_name: "Anna", trust: "member", role: "coder", owner_id: null });
+    const caSent = [];
+    const caPost = win.Maity.api.post, caPatch = win.Maity.api.patch, caDel = win.Maity.api.del, caConfirm = win.confirm;
+    win.Maity.api.post = (p, b) => { caSent.push(["POST", p, b]); return caPost(p, b); };
+    win.Maity.api.patch = (p, b) => { caSent.push(["PATCH", p, b]); return caPatch(p, b); };
+    win.Maity.api.del = (p, b) => { caSent.push(["DELETE", p]); return caDel(p, b); };
+    win.confirm = () => true;
+    await go("#/agents/chat-access"); await mtSettle();
+    const caPage = () => main.querySelector("section.chat-access-page");
+    const caRows = (kind) => caPage().querySelectorAll("ul.chat-access-list." + kind + " li");
+    expect(caPage() && byId("chat-access-heading").tagName === "H2"
+      && JSON.stringify(agentsTabRow().map((t) => t[2])) === JSON.stringify([null, null, null, "page"]),
+      "chat access: /agents/chat-access is the page's fourth tab, under its own heading");
+    expect(caRows("allow").length === 1 && text(caRows("allow")[0]).includes("@anna's side · all their agents · not @anna themselves")
+      && text(caRows("allow")[0]).includes("for @agent-a · for good") && text(caRows("allow")[0]).includes("nothing about releases")
+      && caRows("deny").length === 1 && text(caRows("deny")[0]).includes("the agent @shop-dev") && text(caRows("deny")[0]).includes("for all your agents"),
+      "chat access: an allow names the side, its agents, its human, one's agents, the time and the rules; a deny names whom by handle " + text(caPage()).slice(0, 400));
+    const [caAllowForm, caDenyForm] = caPage().querySelectorAll("form.chat-access-add");
+    const caSelects = (form) => form.querySelectorAll("select");
+    const caBoxes = (form) => form.querySelectorAll("input");
+    // Nobody chosen: said beside the button, nothing sent.
+    caAllowForm.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && text(caAllowForm).includes("Choose whom the entry names."), "chat access: an allow naming nobody is not sent, and says so");
+    // An allow for anna's side: none of her agents, anna herself, a day, one rule.
+    const [caKind, caPerson, , , caTheir, caDuration] = caSelects(caAllowForm);
+    expect(caKind.value === "owner_id" && caPerson.querySelectorAll("option").some((o) => (o.getAttribute("value") || o.value) === "hum-anna"),
+      "chat access: a person is chosen among the members of one's projects");
+    caPerson.value = "hum-anna"; caTheir.value = "none"; caDuration.value = "day";
+    caBoxes(caAllowForm).find((b) => b.id && /-human-/.test(b.id)).checked = true;
+    caAllowForm.querySelectorAll("textarea")[0].value = " web only ";
+    caAllowForm.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][1] === "/me/chat-access/allow"
+      && JSON.stringify(caSent[0][2]) === JSON.stringify({ agents: "all", owner_id: "hum-anna", their_agents: "none", their_human: true, duration: "day", allowed: "web only" })
+      && caRows("allow").length === 2 && text(caPage()).includes("Allow entry added."),
+      "chat access: an allow is sent as the hub takes it, an empty rule left out, and listed first " + JSON.stringify(caSent[0]));
+    // Edit the older one: a week from now and its first rule cleared; nothing else is sent.
+    caSent.length = 0;
+    const caOld = caRows("allow").find((li) => text(li).includes("the shop's frontend"));
+    btn(caOld, "Edit").click(); await tick();
+    const caEdit = caOld.querySelector("form.chat-access-edit");
+    const caEditSelects = caSelects(caEdit);
+    expect(caEditSelects[0].value === "keep" && caEditSelects[1].value === "all", "chat access: an edit keeps the time and the reach until changed");
+    caEditSelects[0].value = "week";
+    caEdit.querySelectorAll("textarea")[0].value = "  ";
+    caEdit.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][0] === "PATCH" && caSent[0][1] === "/me/chat-access/allow/cha-0001"
+      && JSON.stringify(caSent[0][2]) === JSON.stringify({ duration: "week", allowed: null })
+      && text(caRows("allow").find((li) => text(li).includes("for @agent-a"))).includes("until "),
+      "chat access: an edit sends only what changed, a cleared rule as null, and the entry ends a week on " + JSON.stringify(caSent[0]));
+    // A deny for agent-a alone toward the project sample; then the older deny removed.
+    caSent.length = 0;
+    const caDenyBoxes = caBoxes(caDenyForm);
+    caDenyBoxes[0].checked = false; caDenyBoxes[0].dispatch("change");
+    caDenyBoxes[1].checked = true;
+    const caDenyKind = caSelects(caDenyForm)[0];
+    caDenyKind.value = "project"; caDenyKind.dispatch("change");
+    caSelects(caDenyForm)[3].value = "maintainer/sample";
+    caDenyForm.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][1] === "/me/chat-access/deny"
+      && JSON.stringify(caSent[0][2]) === JSON.stringify({ agents: ["agt-a"], project: { owner: "maintainer", slug: "sample" } })
+      && caRows("deny").length === 2 && text(caRows("deny")[0]).includes("everyone in the project maintainer/sample"),
+      "chat access: a deny for one agent toward a project is sent and listed first " + JSON.stringify(caSent[0]));
+    caSent.length = 0;
+    btn(caRows("deny").find((li) => text(li).includes("@shop-dev")), "Remove").click(); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][0] === "DELETE" && caSent[0][1] === "/me/chat-access/deny/cha-0002" && caRows("deny").length === 1,
+      "chat access: Remove, confirmed, deletes the entry and the list is read again");
+    // The mock refuses as the hub does (chat_access.py: details.fields).
+    const caRefused = (b) => caPost("/me/chat-access/allow", b).then(() => null, (e) => JSON.stringify(e.details.fields));
+    expect(await caRefused({ agents: "all", owner_id: "hum-anna", their_agents: "none", their_human: false }) === JSON.stringify({ their_agents: "names_no_one" })
+      && await caRefused({ agents: ["agt-zz"], owner_id: "hum-anna" }) === JSON.stringify({ agents: "not_yours" })
+      && await caRefused({ agents: "all", owner_id: "hum-anna", project: { owner: "maintainer", slug: "sample" } }) === JSON.stringify({ owner_id: "one_subject", project: "one_subject" })
+      && await caRefused({ agents: "all", project: { owner: "maintainer", slug: "sample" }, their_human: true }) === JSON.stringify({ their_human: "project_entry" }),
+      "chat access: the mock refuses an entry naming no one, another's agent, two subjects and a side's field on a project entry");
+    expect(await caRefused({ agents: [], owner_id: "hum-anna" }) === JSON.stringify({ agents: "format" }),
+      "chat access: the mock refuses an empty list of agents, as the hub does");
+    // Review of #1726. A subject not chosen is hidden, and the stylesheet keeps it so under .field-stack's grid.
+    const caDenyForm2 = () => caPage().querySelectorAll("form.chat-access-add")[1];
+    const caRowsOf = (form) => form.querySelectorAll("div.field-stack").filter((d) => d.querySelector("select"));
+    const caKind2 = caSelects(caDenyForm2())[0];
+    const caShown = [];
+    for (const k of ["owner_id", "human_id", "agent_id", "project"]) {
+      caKind2.value = k; caKind2.dispatch("change");
+      caShown.push(caRowsOf(caDenyForm2()).map((d) => (d.hidden ? 0 : 1)).join(""));
+    }
+    expect(JSON.stringify(caShown) === JSON.stringify(["100", "100", "010", "001"])
+      && fs.readFileSync(path.join(WEB, "css/app.css"), "utf8").includes(".chat-access-page [hidden] { display: none; }"),
+      "chat access: each subject shows its own row alone, and [hidden] wins over the grid " + JSON.stringify(caShown));
+    // An unchanged edit sends nothing, whatever order the entry lists the agents in, and gives the focus back to Edit.
+    await caPatch("/me/chat-access/allow/cha-0001", { agents: ["agt-b", "agt-a"] });
+    caSent.splice(0);
+    await go("#/agents"); await go("#/agents/chat-access"); await mtSettle();
+    const caOld2 = () => caRows("allow").find((li) => text(li).includes("nothing about releases"));
+    const caFocusProto = Object.getPrototypeOf(main);
+    const caFocus0 = caFocusProto.focus;
+    caFocusProto.focus = function () { document.activeElement = this; };
+    btn(caOld2(), "Edit").click(); await tick();
+    caOld2().querySelector("form.chat-access-edit").dispatch("submit"); await mtSettle();
+    expect(!caSent.length && !caOld2().querySelector("form.chat-access-edit") && document.activeElement === btn(caOld2(), "Edit"),
+      "chat access: an edit with nothing changed sends nothing, whatever the agents' order, and the focus is back on Edit");
+    // What the hub would refuse is said by the form, nothing sent: no agent ticked, a side's entry naming no one.
+    btn(caOld2(), "Edit").click(); await tick();
+    const caEdit2 = caOld2().querySelector("form.chat-access-edit");
+    caBoxes(caEdit2).forEach((b) => { b.checked = false; b.dispatch("change"); });
+    caEdit2.dispatch("submit"); await mtSettle();
+    const caNoAgent = text(caEdit2.querySelector(".field-error"));
+    caBoxes(caEdit2)[1].checked = true;
+    caSelects(caEdit2)[1].value = "none";
+    caEdit2.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && caNoAgent === "Tick at least one of your agents, or all of them."
+      && text(caEdit2.querySelector(".field-error")) === "This would allow no one: choose some of their agents, or tick the person themselves.",
+      "chat access: an edit with no agent, or naming no one, says so by the form and sends nothing");
+    // A refusal the client cannot foresee is said in words, in the form that was sent.
+    win.Maity.api.post = (p, b) => { caSent.push(["POST", p, b]); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { reason: "too_many_entries" })); };
+    const caAllow2 = caPage().querySelectorAll("form.chat-access-add")[0];
+    const caSel2 = caSelects(caAllow2);
+    caSel2[1].value = "hum-anna";
+    caAllow2.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && text(caAllow2.querySelector(".send-status")) === "Not saved: You keep 1,000 entries already, the most there can be: remove one first.",
+      "chat access: a refusal is said in the page's words, by the form " + text(caAllow2.querySelector(".send-status")));
+    caSent.splice(0);
+    caSel2[4].value = "none";
+    caAllow2.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && text(caAllow2.querySelector(".field-error")) === "This would allow no one: choose some of their agents, or tick the person themselves.",
+      "chat access: a new allow naming no one is not sent, and says why");
+    caFocusProto.focus = caFocus0; document.activeElement = undefined;
+    caMembers.splice(caMembers.findIndex((x) => x.id === "hum-anna"), 1);
+    win.Maity.api.post = caPost; win.Maity.api.patch = caPatch; win.Maity.api.del = caDel; win.confirm = caConfirm;
+  }
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
