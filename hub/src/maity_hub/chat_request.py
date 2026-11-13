@@ -556,17 +556,19 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         return
     reply = "no" if s.outcome == "withdrawn" else s.reply_id
     body: dict[str, Any] = s.chat_access or {}
+    from maity_hub import chat_rules
+
     with deferred(conn):
-        chat_access._lock(conn, owner)
-        if reply in DURATION:
-            _allow(conn, request, str(reply), body)
-        elif reply == "block":
-            agents = agents_of(conn, request)
-            if agents:
-                chat_access.create_deny(conn, owner, {"agents": agents, "owner_id": side})
-        else:
-            _decline(conn, request, DECLINED)
-        chat_gate.recheck(conn, owner)
+        with chat_rules.announcing(conn, owner):  # takes the owner's row first (`_lock`)
+            if reply in DURATION:
+                _allow(conn, request, str(reply), body)
+            elif reply == "block":
+                agents = agents_of(conn, request)
+                if agents:
+                    chat_access.create_deny(conn, owner, {"agents": agents, "owner_id": side})
+            else:
+                _decline(conn, request, DECLINED)
+            chat_gate.recheck(conn, owner)
         sync(conn, owner)
 
 

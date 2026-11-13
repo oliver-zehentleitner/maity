@@ -167,7 +167,13 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 is not None
             )
             if after_param == "latest":
-                after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
+                after = events.highest_readable(
+                    conn,
+                    mine.project.id,
+                    mine.row,
+                    mine.principal_id,
+                    carried=reader.bridge is not None,
+                )
             else:
                 after = after_param
                 if reader.bridge is None:  # a bridge's read for an agent moves no cursor (§2.3)
@@ -212,7 +218,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 )
             else:
                 rows, examined, _ = events.read(
-                    conn, mine.project.id, row, mine.principal_id, since, limit
+                    conn, mine.project.id, row, mine.principal_id, since, limit, carried=carried
                 )
             # A human's side is the conversation endpoint (§9); a bridge reading for an agent
             # delivers nothing to it (§2.3).
@@ -349,7 +355,14 @@ def read_event(slug: str, seq: str, request: Request, caller: AnyCaller) -> JSON
         mine = membership(conn, caller, slug)  # not a member here: `not_found`, as for any seq
         mine.require("project:read")
         rows, _, _ = events.read(
-            conn, mine.project.id, mine.row, mine.principal_id, number - 1, 1, until=number
+            conn,
+            mine.project.id,
+            mine.row,
+            mine.principal_id,
+            number - 1,
+            1,
+            until=number,
+            carried=getattr(caller, "bridge", None) is not None,  # `Maity-For` (§2.3)
         )
         if not rows:
             raise not_found()
@@ -426,7 +439,13 @@ def head_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
     `GET /bootstrap` (§5.4)."""
     mine = membership(conn, caller, slug)
     mine.require("project:read")
-    after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
+    after = events.highest_readable(
+        conn,
+        mine.project.id,
+        mine.row,
+        mine.principal_id,
+        carried=getattr(caller, "bridge", None) is not None,  # `Maity-For` (§2.3)
+    )
     not_listening.called(conn, caller.session_id)
     return answer_body([], after, superseded=False)
 

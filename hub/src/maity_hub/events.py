@@ -822,10 +822,17 @@ def _isolated(membership: Any) -> bool:
 
 
 def readable_by(
-    row: Any, membership: Any, principal: str, hidden: frozenset[str] = frozenset()
+    row: Any,
+    membership: Any,
+    principal: str,
+    hidden: frozenset[str] = frozenset(),
+    *,
+    carried: bool = False,
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
-    own; owners and admins read every event of the project."""
+    own; owners and admins read every event of the project. `carried` is a bridge's read for
+    the agent (`Maity-For`, §2.3), which reads as the agent but never what is the agent's
+    alone towards its owner (`chat_rules_changed`, §9.6)."""
     if _isolated(membership):
         return False  # an isolated agent is left out of every audience (§6.2)
     if in_window(row, membership):
@@ -849,9 +856,15 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
-    if row.kind in ("cross_chat_mention", "chat_unread"):
+    if row.kind == "chat_rules_changed" and carried:
+        # The rules an owner sets are for its own agent: a bridge serving it across owners
+        # (§2.3) neither reads nor wakes on their change (§9.6). The other two kinds below make
+        # no such promise; a bridge reads them for the agent as the agent would.
+        return False
+    if row.kind in ("cross_chat_mention", "chat_unread", "chat_rules_changed"):
         # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5);
-        # the unread nudge names a group chat's title, which the see-all does not read (§9.2).
+        # the unread nudge names a group chat's title, which the see-all does not read (§9.2);
+        # a change of the rules its owner set is the agent's alone, not its owner's (§9.6).
         return _names_team(audience, principal)
     if row.actor_membership == membership.id:
         return True
@@ -896,13 +909,15 @@ def read(
     *,
     chat_windows: dict[str, int] | None = None,
     until: int | None = None,
+    carried: bool = False,
 ) -> tuple[list[Any], int, bool]:
     """Readable events after `after` (and up to `until`, when given), oldest first: (rows,
     highest seq examined, truncated).
     With `chat_windows` (the resume packet, §5.2: each group chat the member is in now,
     and the seq its current stay's window starts after), a group chat's message is kept
     only when it mentions `principal` and lies in that window; any other is passed over
-    and does not count against `limit`."""
+    and does not count against `limit`. `carried`: a bridge's read for the agent
+    (`readable_by`)."""
 
     def wanted(row: Any, hidden: frozenset[str]) -> bool:
         if chat_windows is not None and _group_chat(row) and row.kind == "message":
@@ -912,7 +927,7 @@ def read(
                 return False
             if not any(m.get("member_id") == principal for m in mentioned):
                 return False
-        return readable_by(row, membership, principal, hidden)
+        return readable_by(row, membership, principal, hidden, carried=carried)
 
     scope = t.event.c.project_id == project_id
     if until is not None:
@@ -1226,7 +1241,9 @@ def read_waking(
         ).scalar()
         is not None
     )
-    rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
+    rows, examined, truncated = read(
+        conn, project_id, membership, principal, after, 10_000, carried=carried
+    )
     # The notice of a removed ticker item is read like the item, and woken by never (§17.5).
     notices = hidden_redactions(conn, [r for r in rows if r.kind == "event_redacted"])
     watched = watched_seqs(conn, rows, membership)
@@ -1243,12 +1260,15 @@ def read_waking(
     return found, examined
 
 
-def highest_readable(conn: Connection, project_id: str, membership: Any, principal: str) -> int:
-    """`after=latest`: the highest seq this reader may read, or 0."""
+def highest_readable(
+    conn: Connection, project_id: str, membership: Any, principal: str, *, carried: bool = False
+) -> int:
+    """`after=latest`: the highest seq this reader may read, or 0 (`carried`: a bridge's read
+    for the agent, `readable_by`)."""
     return _highest(
         conn,
         t.event.c.project_id == project_id,
-        lambda row, hidden: readable_by(row, membership, principal, hidden),
+        lambda row, hidden: readable_by(row, membership, principal, hidden, carried=carried),
         membership,
     )
 

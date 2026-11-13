@@ -814,3 +814,48 @@ into `False`, and that route's `Outsider` branch cannot apply, as an outsider ne
   and a link opened is not a wait for events.
 - A shortcut for a `seq` beyond the head or `0`: it would answer a missing event with
   fewer reads than a hidden one for no gain, and the contract leaves time open anyway (§8.9).
+
+## `chat_rules_changed` comes from each entry's reach read before and after the write; the reading before takes the owner's row only
+
+**Id:** 088c296c-003d-46d1-8b06-f7760e2b4b03
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dq1229pyh333 (the hub step), building docs/api.md §9.6 "Rules per side" and the `chat_rules_changed` row of §8.2; how the hub gets there is the implementer's
+**Revisit when:** a chat write (a join, a leave, a new participant) is to announce the rules too, or the owner's entry writes come to take the projects before the other human's `account_lock`
+
+Every write of an owner's entries runs inside `chat_rules.announcing`: the `/me/chat-access`
+writes, the inbox answer (`chat_request.settle`) and the lapse of an `until`
+(`chat_gate.lapse`). It reads, for each allow entry with a text, which agent it admits to
+which chat (`_reach`), before the write and again after the `recheck`. For each entry, a
+change of its texts goes to every `(agent, project)` of both readings, and with the texts
+unchanged to each `(agent, project)` of a chat in only one of them: the readings are
+compared per chat, so an entry that comes to admit the agent to a second chat of a project
+is a change there too. An entry whose `until` passed and that the worker has not lapsed yet
+(`lapsed_at` empty) is judged just before its `until`, in every reading: `_allows` already
+sees it passed, while the stays still hold the admission, and an owner's write between the
+`until` and the lapse would otherwise read it as admitting nothing both before and after.
+The reading before takes the owner's human row only (`chat_access._lock`), not the
+projects.
+
+An entry with neither text gives no item and no event: it sets no rule, and an item would
+only print an empty heading in the agent's packet.
+
+**Reason:** what an entry admits depends on the stays and on the owner's other entries
+(`waiting_for`), so only the two readings show what a write changed for each agent; a
+change of the texts reaches every agent the entry covers before or after it. Taking the
+projects before the write would turn an order round that a write already has: the owner's
+row, the other human's `account_lock` (shared, `chat_access._human`), then the projects
+in `recheck`. Without them a chat write may come in between; what it changes shows as a
+difference too, and the agent gets an event that is still true (its entry came to admit it
+or stopped), never one less for the entry's own change.
+
+**Rejected alternatives:**
+- An event only on the texts' change: an agent a narrowing, a removal or an `until` takes
+  out of an entry's reach would keep reading rules that no longer apply until its next
+  resume; §9.6 names those cases.
+- Locking every project of the owner's chats before the reading: the deadlock order above.
+- An item for every admitting entry, texts or not: the literal reading of "one item per
+  entry"; it fills the packet with entries that say nothing, and §5.2 calls the field "the
+  rules its owner set". The contract now says so (an open point of the PR for the
+  maintainer).
