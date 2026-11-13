@@ -713,8 +713,9 @@ def _chat_rules(session: Session, chat: str, budget: float | None = None) -> lis
     """The rules per side that hold in this group chat (§9.6, the chat's view as the agent
     reads it), as lines; none when there are none or the view cannot be read now: the rules
     stay in the resume packet, and a failed read must not cost the wake. With `budget` (what is
-    left of a wait's --timeout) the read takes at most that long, and none is made under half a
-    second, as for the unread-chats note."""
+    left of a wait's --timeout) that is the read's timeout, and none is made under half a
+    second, as for the unread-chats note. Like that note's, the timeout bounds each socket
+    operation, not the whole read: a hub that trickles its answer can still run past it."""
     if budget is not None and budget < 0.5:
         return []
     try:
