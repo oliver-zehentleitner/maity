@@ -72,12 +72,19 @@ def _matches(data: bytes) -> list[Presented]:
 
 
 def _json_strings(data: bytes) -> list[str]:
-    """The keys and string values of `data` read as JSON; none when it is no JSON."""
-    if data.lstrip()[:1] not in (b"{", b"[", b'"'):
+    """The keys and string values of `data` read as JSON; none when it is no JSON.
+
+    Decoded as the app's parser decodes a body (`json.loads` on bytes: a UTF-8 BOM, UTF-16
+    and UTF-32 in either byte order), so no body the app reads as JSON skips this scan."""
+    try:
+        text = data.decode(json.detect_encoding(data))
+    except (UnicodeDecodeError, LookupError):
+        return []
+    if text.lstrip()[:1] not in ("{", "[", '"'):
         return []
     try:
-        stack: list[Any] = [json.loads(data)]
-    except (ValueError, RecursionError):  # UnicodeDecodeError is a ValueError
+        stack: list[Any] = [json.loads(text)]
+    except (ValueError, RecursionError):
         return []
     strings: list[str] = []
     while stack:

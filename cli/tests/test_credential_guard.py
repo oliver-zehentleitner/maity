@@ -33,3 +33,14 @@ def test_a_unicode_escape_hides_no_credential() -> None:
 def test_a_body_without_one_is_sent() -> None:
     hub._guard_payload(json.dumps({"body": "mty1 crd-1 abc"}).encode(), "")
     hub._guard_payload(b"[" * 100_000, "")  # too deep to decode: the raw scan stays
+
+
+ENCODINGS = ["utf-8-sig", "utf-16", "utf-16-be", "utf-16-le", "utf-32", "utf-32-be", "utf-32-le"]
+
+
+@pytest.mark.parametrize("encoding", ENCODINGS)
+def test_a_body_the_hub_reads_as_json_is_checked_in_any_encoding(encoding: str) -> None:
+    body = '{"body": "see \\u006dty1.crd-dummy.abc_DEF-9"}'.encode(encoding)
+    assert DUMMY.encode() not in body
+    with pytest.raises(hub.HubError, match="refusing to send"):
+        hub._guard_payload(body, "")

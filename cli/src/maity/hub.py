@@ -320,8 +320,15 @@ def _field_reasons(fields: Any) -> str:
     return "".join(lines)
 
 
-def _json_strings(text: str) -> list[str]:
-    """The keys and string values of `text` read as JSON; none when it is no JSON."""
+def _json_strings(body: bytes) -> list[str]:
+    """The keys and string values of `body` read as JSON; none when it is no JSON.
+
+    Decoded as the hub's parser decodes a body (`json.loads` on bytes: a UTF-8 BOM, UTF-16
+    and UTF-32 in either byte order), so no body the hub reads as JSON skips this check."""
+    try:
+        text = body.decode(json.detect_encoding(body))
+    except (UnicodeDecodeError, LookupError):
+        return []
     if text.lstrip()[:1] not in ("{", "[", '"'):
         return []
     try:
@@ -349,7 +356,7 @@ def _guard_payload(body: bytes, query: str, path: str = "") -> None:
     """
     text = body.decode("utf-8", errors="replace")
     # The strings a JSON body decodes to as well, as the hub reads them: no escape hides one.
-    parts = (text, *_json_strings(text), urllib.parse.unquote(query))
+    parts = (text, *_json_strings(body), urllib.parse.unquote(query))
     if any(sign.contains_credential(p) for p in (*parts, urllib.parse.unquote(path))):
         raise HubError(
             "refusing to send: the request contains a string in the credential format "

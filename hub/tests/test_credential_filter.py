@@ -46,14 +46,27 @@ def test_no_json_and_no_credential_find_nothing() -> None:
     assert credentials.find_all(b"[" * 100_000) == []  # too deep to decode: the raw scan stays
 
 
+ENCODINGS = ["utf-8-sig", "utf-16", "utf-16-be", "utf-16-le", "utf-32", "utf-32-be", "utf-32-le"]
+
+
+@pytest.mark.parametrize("encoding", ENCODINGS)
+def test_a_body_the_app_reads_as_json_is_scanned_in_any_encoding(encoding: str) -> None:
+    raw = '{"body": "see \\u006dty1.crd-dummy.abc_DEF-9"}'.encode(encoding)
+    assert json.loads(raw) == {"body": f"see {DUMMY}"}  # the app's parser reads it
+    assert [p.credential_id for p in credentials.find_all(raw)] == ["crd-dummy"]
+
+
 def _escaped(value: str, how: str) -> bytes:
     """A login body whose password holds `value` behind `how`."""
-    if how == "unicode":  # the `m` of the prefix as `m`
+    if how == "unicode":  # the `m` of the prefix as `\u006d`
         return b'{"email": "x", "password": "cfg: \\u006d' + value[1:].encode() + b'"}'
+    if how in ("bom", "utf-16-be"):  # the same, in an encoding the app's parser also reads
+        hidden = '{"email": "x", "password": "cfg: \\u006d' + value[1:] + '"}'
+        return hidden.encode("utf-8-sig" if how == "bom" else how)
     return json.dumps({"email": "x", "password": f"cfg:{how}{value}"}).encode()
 
 
-@pytest.mark.parametrize("how", ["\n", "\t", "_", "a", "unicode"])
+@pytest.mark.parametrize("how", ["\n", "\t", "_", "a", "unicode", "bom", "utf-16-be"])
 def test_a_real_credential_after_any_character_is_refused_and_revoked(
     how: str, make_client: ClientFactory, migrated: Engine
 ) -> None:

@@ -752,7 +752,10 @@ Dropping the boundary costs nothing in safety: a match is refused, and
 only a credential whose secret verifies is revoked, so a false match
 only refuses a request. Escapes such as `\u006d` change the bytes of
 the credential itself, which no pattern over the raw bytes can see.
-Reading the decoded strings catches them.
+Reading the decoded strings catches them. The body is decoded as the
+app's JSON parser decodes it (`json.detect_encoding`: a UTF-8 byte
+order mark, UTF-16 and UTF-32), since a body the app reads as JSON
+but the scan does not would carry an escaped credential past it.
 
 **Rejected alternatives:**
 - Keeping the boundary and scanning only the decoded strings: a
