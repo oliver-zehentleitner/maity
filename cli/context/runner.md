@@ -2518,8 +2518,8 @@ link. Linking fails on an existing name, so no file is replaced there,
 `--force` included; another file that took the temporary name never gets
 the target's, and one that took the target's name during the copy is
 refused and left alone (review of #1749). Without `-o` the
-file goes to `./maity-files/` as before, created 0700 through the same
-walk. Where a name cannot be opened through a directory's descriptor
+file goes to the clone's `.git/maity-files/`, outside the work tree,
+opened from the checked `.git` (d1d6b49d in commands.md). Where a name cannot be opened through a directory's descriptor
 (Windows), no file is saved; `-o -` is not offered either since
 783e476c. Outside a placement nothing changes.
 

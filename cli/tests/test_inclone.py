@@ -1,5 +1,6 @@
-"""`maity files get` under a runner placement: only into the clone, outside its `.git`, never
-through a link and never over an existing file (inclone, cli/context/runner.md). Outside a
+"""`maity files get` under a runner placement: without `-o` into the clone's `.git/maity-files/`,
+with `-o` only into the clone outside its `.git`; never through a link and never over an
+existing file (inclone, cli/context/runner.md). Outside a
 placement it behaves as before (test_chats_files.py)."""
 
 from __future__ import annotations
@@ -9,9 +10,10 @@ import errno
 import hashlib
 import os
 import stat
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import fakehub
 import pytest
@@ -53,6 +55,10 @@ def placed(
     return clone
 
 
+def write_x(fh: IO[bytes]) -> None:
+    fh.write(b"x")
+
+
 def get(*extra: str) -> int:
     return cli.main(["files", "get", "att-0042", *extra])
 
@@ -63,17 +69,39 @@ def parts(directory: Path) -> list[Path]:
 
 @posix
 @walks
-def test_the_default_lands_in_maity_files_in_the_clone(placed: Path) -> None:
+def test_the_default_lands_in_the_clones_git_maity_files(
+    placed: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     old = os.umask(0o022)
     try:
         assert get() == cli.EXIT_OK
     finally:
         os.umask(old)
-    saved = placed / "maity-files" / "build-log.txt"
+    saved = placed / ".git" / "maity-files" / "build-log.txt"
     assert saved.read_bytes() == b"hello"
     assert stat.S_IMODE(saved.stat().st_mode) == 0o644
     assert stat.S_IMODE(saved.parent.stat().st_mode) == 0o700
+    assert str(saved) in capsys.readouterr().out
     assert parts(placed) == []
+    # The clone still passes the check, so the next maity call under the placement works.
+    with clonecheck.opened_clone(placed):
+        pass
+    assert get() == cli.EXIT_ERROR  # never over the one saved before
+
+
+@posix
+@walks
+def test_a_collected_file_stays_out_of_the_work_tree(placed: Path, served: fakehub.FakeHub) -> None:
+    served.routes[("GET", f"{P}/attachments/att-0042")] = lambda s: (
+        200, attachment(name="conftest.py"))  # fmt: skip
+    assert get() == cli.EXIT_OK
+    assert (placed / ".git" / "maity-files" / "conftest.py").read_bytes() == b"hello"
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all", "--ignored"],
+        cwd=placed, capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    assert status.stdout == ""
+    assert not [p for p in placed.rglob("conftest.py") if ".git" not in p.parts]
 
 
 @walks
@@ -148,9 +176,34 @@ def test_a_link_on_the_way_or_at_the_name_is_refused(
 @posix
 @walks
 def test_maity_files_as_a_link_is_refused(placed: Path, tmp_path: Path) -> None:
-    (placed / "maity-files").symlink_to(placed / ".git", target_is_directory=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (placed / ".git" / "maity-files").symlink_to(elsewhere, target_is_directory=True)
     assert get() == cli.EXIT_ERROR
-    assert not (placed / ".git" / "build-log.txt").exists()
+    assert list(elsewhere.iterdir()) == []
+
+
+@posix
+@walks
+def test_the_folder_is_opened_without_following_a_link(tmp_path: Path) -> None:
+    """Past the clone check (a link put there after it): the folder is not followed."""
+    git = tmp_path / "git"
+    git.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (git / "maity-files").symlink_to(elsewhere, target_is_directory=True)
+    top = os.open(tmp_path, os.O_RDONLY)
+    fd = os.open(git, os.O_RDONLY)
+    opened = clonecheck.Opened(top, fd)
+    try:
+        with pytest.raises(inclone.Refused, match="a link"):
+            inclone.create_in_git("maity-files", "x.txt", "files get", write_x, opened)
+        with pytest.raises(inclone.Refused, match="not a name"):
+            inclone.create_in_git("maity-files", "../x", "files get", write_x, opened)
+    finally:
+        os.close(fd)
+        os.close(top)
+    assert list(elsewhere.iterdir()) == []
 
 
 @walks

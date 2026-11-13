@@ -9,3 +9,11 @@
   option takes it. Outside a placement nothing changes.
 - cli: under a runner placement, `maity files get -o -` is refused before any call; the
   attachment goes into a new file in the clone.
+
+### Changed
+
+- cli: `maity files get` without `-o` saves attachments outside the work tree: into
+  `files/` in the state directory (`<git common dir>/maity/files/` by default), and under a
+  runner placement into the clone's `.git/maity-files/`, no longer into `./maity-files/`,
+  where test runners collected them and `git add -A` committed them. The printed line names
+  the path; `-o` is unchanged.
