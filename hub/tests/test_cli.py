@@ -598,6 +598,21 @@ def test_owner_create_refuses_anything_but_one_address_before_the_password(
     assert stdin.tell() == 0  # the password was never asked for
 
 
+@pytest.mark.parametrize("bad", ["\x85", "\u2028", "\n"])
+def test_owner_create_refuses_a_display_name_with_a_line_break(
+    bad: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    assert main(["migrate"]) == 0
+    stdin = io.StringIO(ACCOUNT_PASSWORD + "\n")
+    monkeypatch.setattr("sys.stdin", stdin)
+    args = ["--handle", "maintainer", "--display-name", f"Ma{bad}int", "--email", "me@example.org"]
+    assert main(["owner", "create", *args]) == 2
+    assert "--display-name" in capsys.readouterr().err
+    assert stdin.tell() == 0  # the password was never asked for
+
+
 def test_owner_create_refuses_an_address_another_account_holds(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

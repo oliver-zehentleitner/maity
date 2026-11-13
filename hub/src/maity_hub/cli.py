@@ -53,6 +53,7 @@ from maity_hub.db import current_revision, head_revision, make_engine, migrate
 from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
 from maity_hub.mail import address as addresses
+from maity_hub.models import one_line
 from maity_hub.notifications import preferences
 
 EXIT_FAILURE = 1
@@ -318,6 +319,8 @@ def _owner_create(
         return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
     if not display_name.strip() or len(display_name) > 200:
         return _fail("--display-name: 1 to 200 characters", EXIT_CONFIG)
+    if not one_line(display_name):
+        return _fail("--display-name: one line, no control character", EXIT_CONFIG)
     email = email.strip()
     if not addresses.valid(email):
         return _fail("--email: one address, local-part@domain (docs/api.md §18.4)", EXIT_CONFIG)

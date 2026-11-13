@@ -294,6 +294,39 @@ def test_an_agent_display_name_refuses_a_line_break(
     assert patched.json()["error"]["details"]["fields"] == {"display_name": "control_character"}
 
 
+@pytest.mark.parametrize("bad", ["\x85", "\u2028", "\u2029", "\n"])
+def test_a_join_that_creates_an_agent_refuses_a_line_break_in_its_display_name(
+    make_client: ClientFactory, migrated: Engine, bad: str
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "maity")
+    refused = owner.post(
+        "/projects/maintainer/maity/joins",
+        {"agent": {"handle": "evil", "display_name": f"Evil{bad}x"}, "trust": "member"},
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {
+        "agent.display_name": "control_character"
+    }
+    with migrated.begin() as conn:
+        assert conn.execute(select(t.agent_profile)).first() is None
+
+
+def test_creating_a_profile_refuses_a_line_break_whichever_body_carried_it(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    from maity_hub.errors import ApiError
+    from maity_hub.routes.agents import create_profile
+
+    owner = flow.human(make_client, migrated)
+    with migrated.begin() as conn, pytest.raises(ApiError) as refused:
+        create_profile(conn, owner.id, "evil", "Evil\x85x", None)
+    assert (refused.value.code, refused.value.details) == (
+        "invalid",
+        {"fields": {"display_name": "control_character"}},
+    )
+
+
 def test_human_and_organisation_display_names_refuse_c1_and_unicode_line_breaks(
     migrated: Engine,
 ) -> None:

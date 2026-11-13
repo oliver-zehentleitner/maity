@@ -28,7 +28,7 @@ from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, one_line, title
 from maity_hub.views import agent_view
 
 router = APIRouter()
@@ -88,7 +88,11 @@ def create_profile(
     at `limit − 1` give one profile and one `agent_limit`, whichever endpoint they came by.
     `invalid` when the handle is the handle or an alias of another of their profiles (a
     deleted profile's are free, §6.3), or an active placement will create one with it
-    (§6.24) unless `placement`: this is that placement's pickup."""
+    (§6.24) unless `placement`: this is that placement's pickup. A display name with a
+    control or line-break character is `control_character` here too, whichever body
+    carried it (§1.7)."""
+    if not one_line(display_name):
+        raise invalid({"display_name": "control_character"})
     if limit is not None:
         conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update())
         count = int(
