@@ -1321,3 +1321,40 @@ left would be a second cascade on the one removal path.
   no item of the cover names them. Rejected because the return already
   tells whoever the cover's items name, and the fallback for nothing
   moved already names the one the cover started with.
+
+## A member `PATCH` answers the member view exactly as `GET` gives it to the same caller
+
+**Id:** 76f27814-7350-4423-8b38-48c58b5d7965
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision of 2026-11-12 (req-mwvn5ra1tvep, option 1, replacing req-a6g57dnyxxev), card tsk-vbd33mrjj81d; `docs/api.md` §6.2, the row of `PATCH /projects/{owner}/{slug}/members/{id}`
+**Revisit when:** `GET …/members/{id}` gets a field that only a separate read may give, or a member write answers something other than the member view
+**See:** https://github.com/oliver-zehentleitner/maity — a1733a10-7836-48d8-930e-ba4a85aa72ed — as of 2026-11-13
+
+A `200` of `PATCH …/members/{id}` is the member view as `GET …/members/{id}`
+gives it to the same caller, built by the same function (`member_as_read` in
+`hub/src/maity_hub/routes/members.py`), with the caller's membership and the
+member read again after the write. So `owner`, `credentials`, `manages`,
+`owner_preferences` and `shared_environment` are in the answer where that
+caller's `GET` has them, and the briefing only where its `GET` has it (the
+member itself and `members:admin`). A replay of the same `Idempotency-Key`
+answers the view as `GET` gives it then. A `202` (a consent filed) and the
+`204` of an owner outside the project stay as they were.
+
+**Reason:** the answer of a member write left out five fields the same
+caller reads with `GET`, so a client had to read the member again after
+every change, and the web fixtures had to list that as a hub gap. One
+function for both answers leaves one place to get a field's visibility
+wrong, the same reasoning as the overview's "no member view repeated".
+
+**Rejected alternatives:**
+- Leaving the answer without those fields, a client reading the member
+  again after a change: the extra read on every edit, the reason for the
+  decision.
+- What req-a6g57dnyxxev proposed and why option 1 replaced it: unknown —
+  that request could not be read from this member's seat.
+
+**Consequence:** a manager or an admin agent no longer finds the briefing
+in its `PATCH` answer, which its `GET` never showed it either (§6.2 gives
+the briefing to the member itself and to `members:admin` only).

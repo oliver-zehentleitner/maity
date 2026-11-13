@@ -194,16 +194,53 @@ def load_member(conn: Connection, membership_id: str) -> dict[str, Any]:
     return member_view(conn, row, briefing=True)
 
 
-def load_member_for_team(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
-    """A replayed rulebook change: the briefing only for a reader with `members:admin`,
-    as on the first answer (§6.2, §6.18)."""
+def member_as_read(conn: Connection, mine: Membership, row: Any) -> dict[str, Any]:
+    """The member view `GET …/members/{id}` gives `mine` (§6.2): the briefing to the member
+    itself and to `members:admin`; `owner`, `credentials`, `shared_environment` and
+    `owner_preferences` to `members:admin` and to the agent's owner; a human's links where
+    their `links_visible` admits the reader; `manages` to everyone. A `PATCH` answers with
+    it too, for the same caller, so a client need not read the member again."""
+    own = row.id == mine.id
+    admin = mine.may("members:admin")
+    details = admin or row.agent_id in _owned_agents(conn, mine)
+    view = member_view(
+        conn,
+        row,
+        briefing=own or admin,
+        details=details,
+        links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
+    )
+    view["manages"] = instance_counts.for_member(conn, row)
+    return view
+
+
+def _answer_as_read(
+    conn: Connection, caller: Caller, slug: str, membership_id: int
+) -> dict[str, Any]:
+    """`member_as_read` after a write: the caller's membership and the member's row read
+    again, as the `GET` that follows would read them (the write may have changed either)."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    return member_as_read(conn, membership(conn, caller, slug), row)
+
+
+def _patched(
+    conn: Connection, caller: Caller, slug: str, membership_id: int
+) -> idempotency.Outcome:
+    """The `200` of a member `PATCH` (§6.2): the member view as `GET` gives it to the caller."""
+    view = _answer_as_read(conn, caller, slug, membership_id)
+    return idempotency.Outcome(200, "member_read", str(membership_id), view)
+
+
+def load_member_as_read(conn: Connection, membership_id: str, request: Request) -> dict[str, Any]:
+    """A replayed member `PATCH`: the view `GET` gives the caller now, as on the first answer."""
     row = conn.execute(select(t.membership).where(t.membership.c.id == int(membership_id))).one()
     slug = namespace.name_of(conn, row.project_id)
-    reader = membership(conn, request.state.caller, slug)
-    return member_view(conn, row, briefing=reader.may("members:admin"))
+    return _answer_as_read(conn, request.state.caller, slug, row.id)
 
 
-idempotency.LOADERS["member_team"] = load_member_for_team
+idempotency.LOADERS["member_read"] = load_member_as_read
+# A key stored before the PATCH answered `member_read` replays as one (§1.5).
+idempotency.LOADERS["member_team"] = load_member_as_read
 
 
 def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
@@ -406,18 +443,7 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
-        own = row.id == mine.id
-        admin = mine.may("members:admin")
-        details = admin or row.agent_id in _owned_agents(conn, mine)
-        view = member_view(
-            conn,
-            row,
-            briefing=own or admin,
-            details=details,
-            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
-        )
-        view["manages"] = instance_counts.for_member(conn, row)
-        return JSONResponse(view)
+        return JSONResponse(member_as_read(conn, mine, row))
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:
@@ -667,8 +693,7 @@ def patch_member(
             if reader is None:
                 # An owner outside the project sees nothing of it (§1.3): no body.
                 return idempotency.Outcome(204, None, None, {})
-            view = member_view(conn, target, briefing=reader.may("members:admin"))
-            return idempotency.Outcome(200, "member_team", str(target.id), view)
+            return _patched(conn, caller, slug, target.id)
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
         if given & {"subagents", "subagents_language"}:
@@ -811,7 +836,7 @@ def patch_member(
             )
         if asked:
             return idempotency.Outcome(202, "request", asked[0], _request(conn, asked[0]))
-        return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+        return _patched(conn, caller, slug, target.id)
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -833,8 +858,7 @@ def _dormant(
         return idempotency.Outcome(202, "request", asked, _request(conn, asked))
     if reader is None:
         return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
-    view = member_view(conn, target, briefing=reader.may("members:admin"))
-    return idempotency.Outcome(200, "member_team", str(target.id), view)
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owner_lifts_line_pause(
@@ -878,10 +902,7 @@ def _owner_lifts_line_pause(
     set_paused(conn, change, target, None, instance=body.instance)
     if reader is None:
         return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
-    view = member_view(
-        conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-    )
-    return idempotency.Outcome(200, "member_team", str(target.id), view)
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owner_sets_role(
@@ -939,7 +960,7 @@ def _owner_sets_role(
         raise joins.member_join_limit("role")
     agent_owners.check_assignment(conn, mine.project, target, values)
     apply_patch(conn, change_of(mine, caller), target, values, (False, None))
-    return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owner_sets_reports_to(
@@ -1003,10 +1024,7 @@ def _owner_sets_reports_to(
     apply_patch(conn, change, target, values, (False, None))
     if reader is None:
         return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
-    view = member_view(
-        conn, conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
-    )
-    return idempotency.Outcome(200, "member_team", str(target.id), view)
+    return _patched(conn, caller, slug, target.id)
 
 
 def _owns_member(conn: Connection, caller: Caller, project_id: str, principal: str) -> bool:
@@ -1039,8 +1057,7 @@ def _owner_preferences(
     row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
     if reader is None:
         return idempotency.Outcome(204, None, None, {})
-    view = member_view(conn, row, briefing=reader.may("members:admin"))
-    return idempotency.Outcome(200, "member_team", str(row.id), view)
+    return _patched(conn, caller, slug, row.id)
 
 
 def _expert_fields(
@@ -1078,7 +1095,7 @@ def _expert_fields(
             raise invalid({"expert_sources": "invalid_path"}, "a source is a repository path")
         values["expert_sources"] = list(dict.fromkeys(sources)) or None
     apply_patch(conn, change_of(mine, caller), target, values, (False, None))
-    return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
+    return _patched(conn, caller, slug, target.id)
 
 
 def _subagents(
@@ -1164,8 +1181,7 @@ def _subagents(
             actor=Actor(mine.id, via=caller.via),
             subject=("member", member_id),
         )
-    view = member_view(conn, row, briefing=mine.may("members:admin"))
-    return idempotency.Outcome(200, "member", str(row.id), view)
+    return _patched(conn, caller, slug, row.id)
 
 
 def _policy_humans_only(

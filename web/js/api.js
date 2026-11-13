@@ -900,6 +900,32 @@ window.Maity = window.Maity || {};
     return String(body.to).trim() ? null : "invalid";
   }
 
+  // §6.2: a member as the member reads give it to the caller — `manages` to everyone, and
+  // `owner`, `credentials` and `shared_environment` to an admin and to an agent's owner on
+  // their own agents. The list and a member PATCH's answer both read through it.
+  function fixtureMembersAsRead(slug, items) {
+    const admin = membersAdmin(slug);
+    const creds = fixtures()[slug + "/credentials.json"] || {};
+    const monthAgo = Date.now() - 30 * 86400000;
+    const counted = fixtureManages(items);
+    return (x0) => {
+      const x = Object.assign({}, x0, { manages: counted[x0.id] });
+      if (!admin && x.owner_id !== me().member.id) return x;
+      if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null, shared_environment: [] });
+      const all = (creds[x.id] || { items: [] }).items;
+      const active = all.filter((c) => !c.revoked_at);
+      const used = active.filter((c) => c.last_used_at).sort((a, b) => (a.last_used_at < b.last_used_at ? 1 : -1))[0];
+      return Object.assign({}, x, {
+        // The hub's owner carries its picture's URL, null without one (§6.10).
+        owner: Object.assign(humanOf(x.owner_id), { avatar_url: (x.owner_id === me().member.id && me().member.avatar_url) || null }),
+        credentials: { active: active.length, never_resumed: active.filter((c) => !c.resumed_at).length,
+          revoked_recent: all.filter((c) => c.revoked_at && Date.parse(c.revoked_at) >= monthAgo).length,
+          last_used_at: used ? used.last_used_at : null, last_used_via: used ? used.last_used_via || null : null },
+        shared_environment: x.shared_environment || [],
+      });
+    };
+  }
+
   function fixtureManages(items) {
     const below = {};
     items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
@@ -4957,29 +4983,15 @@ window.Maity = window.Maity || {};
     // agent's owner on their own agents; never for anyone else.
     ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => {
       const list = file(m[1], "members.json", path);
-      const admin = membersAdmin(m[1]);
-      const creds = fixtures()[m[1] + "/credentials.json"] || {};
-      const monthAgo = Date.now() - 30 * 86400000;
-      const counted = fixtureManages(list.items);
-      return { next_cursor: null, items: list.items.map((x0) => {
-        const x = Object.assign({}, x0, { manages: counted[x0.id] });
-        if (!admin && x.owner_id !== me().member.id) return x;
-        if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null });
-        const all = (creds[x.id] || { items: [] }).items;
-        const active = all.filter((c) => !c.revoked_at);
-        const used = active.filter((c) => c.last_used_at).sort((a, b) => (a.last_used_at < b.last_used_at ? 1 : -1))[0];
-        return Object.assign({}, x, {
-          owner: humanOf(x.owner_id),
-          credentials: { active: active.length, never_resumed: active.filter((c) => !c.resumed_at).length,
-            revoked_recent: all.filter((c) => c.revoked_at && Date.parse(c.revoked_at) >= monthAgo).length,
-            last_used_at: used ? used.last_used_at : null, last_used_via: used ? used.last_used_via || null : null },
-        });
-      }) };
+      const read = fixtureMembersAsRead(m[1], list.items);
+      return { next_cursor: null, items: list.items.map(read) };
     }],
     // §6.2 as the hub does it: every field checked first, each bad one
     // named at once, then one write. A reports-to circle or self is `cycle`
-    // (#118). An admin agent stays within §2.3 ᵃ.
+    // (#118). An admin agent stays within §2.3 ᵃ. A `200` is the member as the member
+    // reads give it to the caller (fixtureMembersAsRead); a consent stays as filed.
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
+      const asRead = (x) => fixtureMembersAsRead(m[1], file(m[1], "members.json", path).items)(x);
       const who = caller(m[1], path);
       // §19.4: the agent's owner, and nobody else, gives it their preferences.
       if ("owner_preferences" in body) {
@@ -4987,7 +4999,7 @@ window.Maity = window.Maity || {};
         if (Object.keys(body).length !== 1 || typeof body.owner_preferences !== "boolean") fail(400, "invalid", "set owner_preferences on its own", path, { fields: { owner_preferences: "alone" } });
         if (target.kind !== "agent" || target.owner_id !== who.member.id) fail(403, "forbidden", "the profile's owner only", path, { reason: "not_the_owner" });
         target.owner_preferences = body.owner_preferences;
-        return target;
+        return asRead(target);
       }
       // §6.17: an instance put to rest or woken, by a human only: the profile's
       // owner, member or not, or members:admin, whose change to another
@@ -5011,7 +5023,7 @@ window.Maity = window.Maity || {};
         const active = target.instances.filter((i) => !i.revoked_at);
         if (active.every((i) => i.dormant)) target.availability = { state: "limited", since: nowIso(), source: "dormant" };
         else if (target.availability && target.availability.source === "dormant") target.availability = { state: "available", since: nowIso() };
-        return target;
+        return asRead(target);
       }
       // §6.18: the team's rulebook, by the human who owns the agent profile only.
       if ("team" in body) {
@@ -5028,7 +5040,7 @@ window.Maity = window.Maity || {};
         else if (body.team.lead_instance && (target.instances || []).some((i) => i.id === body.team.lead_instance && i.dormant)) errors["team.lead_instance"] = "dormant";
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
-        return target;
+        return asRead(target);
       }
       // §2.3: a human sets the reports_to of an agent they own to null or to a
       // member they own (themselves or another of their agents), whatever their
@@ -5048,7 +5060,7 @@ window.Maity = window.Maity || {};
             seen.add(at);
           }
           target.reports_to = to;
-          return target;
+          return asRead(target);
         }
       }
       // §6.2 "An expert's fields": alone in their PATCH, by the agent's human owner or
@@ -5079,7 +5091,7 @@ window.Maity = window.Maity || {};
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         if ("expert_for" in body) target.expert_for = (body.expert_for || "").split(/\s+/).filter(Boolean).join(" ") || null;
         if ("expert_sources" in body) target.expert_sources = [...new Set(body.expert_sources || [])];
-        return target;
+        return asRead(target);
       }
       // §3.1 "The owner changes the role": the human who owns the agent, without
       // members:admin, sets its role alone while they could let it join now
@@ -5105,7 +5117,7 @@ window.Maity = window.Maity || {};
           if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
           target.role = body.role;
           target.role_base = base;
-          return target;
+          return asRead(target);
         }
       }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
@@ -5180,7 +5192,7 @@ window.Maity = window.Maity || {};
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
-      return foreign || target;
+      return foreign || asRead(target);
     }],
     // §11.4: the namespace owner confirms the repository for their grants, only
     // the URL the project carries now; a changed one is a conflict.
