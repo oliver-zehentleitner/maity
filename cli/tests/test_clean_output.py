@@ -11,6 +11,7 @@ import dataclasses
 import io
 import json
 import os
+import sys
 import urllib.error
 from email.message import Message
 from pathlib import Path
@@ -114,6 +115,8 @@ def test_join_prints_the_exchange_headers_cleaned(
     assert "joined a\\x1b[2J" in out
 
 
+# The runner does not run on Windows (conftest's collect_ignore leaves its test files out there).
+@pytest.mark.skipif(sys.platform == "win32", reason="the runner does not run on Windows")
 def test_runner_pair_prints_the_exchange_headers_cleaned(
     tmp_path: Path,
     fake: fakehub.FakeHub,
