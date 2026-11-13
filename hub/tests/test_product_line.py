@@ -386,14 +386,67 @@ def test_a_door_page_without_the_stylesheets_carries_the_style_its_policy_allows
     assert f"<style>{render.STYLE}</style>" in page and "<link" not in page
 
 
+def test_the_join_page_in_a_browser_stands_in_the_frame_on_the_public_host(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    # §3.2, §16.7.5 (tsk-tp97v64vpy5z): the landing page's header and footer around the page's
+    # text, in English; the join host keeps its own page (above), as it serves no stylesheets.
+    token = token_of(create(owner))
+    response = make_client().get(
+        f"/join/{token}", headers={"Accept": "text/html", "Accept-Language": "de"}
+    )
+    assert response.status_code == 200
+    page = response.text
+    assert response.headers["Content-Security-Policy"] == render.DOOR_CSP
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert page.startswith('<!doctype html><html lang="en"')
+    assert page.count('<header class="site-header') + page.count("<header lang=") == 1
+    assert page.count('class="site-footer"') == 1 and 'class="legal-page join-page"' in page
+    for sheet in ("landing.css", "public-pages.css"):
+        assert f'href="/assets/landing/{sheet}?v=' in page
+    assert "<script" not in page and "<form" not in page and 'class="product-line"' not in page
+    assert '<p class="note">This page is documentation for the agent you are adding.' in page
+    # A dead token on the public host: the dead-link page, in the same frame.
+    dead = make_client().get("/join/AAAAAAAAAAAAAAAAAAAAAA", headers={"Accept": "text/html"})
+    assert dead.status_code == 404 and dead.headers["Maity-Error"] == "not_found"
+    assert (
+        "This join link no longer works" in dead.text
+        and 'class="legal-page join-page"' in dead.text
+    )
+
+
+def test_the_join_pages_markdown_for_agents_is_what_the_page_renders_byte_for_byte(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    # tsk-tp97v64vpy5z: framing the browser's answer leaves the agents' Markdown as it was, on
+    # both hosts: the bytes are the join page's own text (§3.2), with nothing of the frame.
+    from maity_hub.config import Settings
+    from maity_hub.routes import joins
+
+    token = token_of(create(owner))
+    for client, on_join_host in ((make_client(), False), (join_client(make_client), True)):
+        answer = client.get(f"/{token}" if on_join_host else f"/join/{token}")
+        assert answer.status_code == 200
+        assert answer.headers["content-type"] == "text/markdown; charset=utf-8"
+        settings: Settings = client.app.state.settings  # type: ignore[attr-defined]
+        with migrated.begin() as conn:
+            expected, _ = joins.render_page(
+                conn, joins._usable(conn, token), token, settings, on_join_host
+            )
+        assert answer.content == expected.encode("utf-8")
+        assert "site-header" not in answer.text and "product-line" not in answer.text
+
+
 def test_the_join_page_in_a_browser_ends_with_the_line_and_sends_no_referrer(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:
     token = token_of(create(owner))
     html = join_client(make_client).get(f"/{token}", headers={"Accept": "text/html"})
     strict(html)
+    # On the public host the page stands in the frame instead (§16.7.5).
     public = make_client().get(f"/join/{token}", headers={"Accept": "text/html"})
-    strict(public)
+    assert public.headers["Content-Security-Policy"] == render.DOOR_CSP
+    assert 'class="product-line"' not in public.text
     # The agent's Markdown answer carries no line (§16.13).
     markdown = make_client().get(f"/join/{token}")
     assert "product-line" not in markdown.text and "Found a bug?" not in markdown.text

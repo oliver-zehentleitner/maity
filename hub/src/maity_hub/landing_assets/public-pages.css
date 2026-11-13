@@ -156,3 +156,11 @@
 .door-form .error{color:var(--bad,#b42318);font-size:.875rem;margin:4px 0 0}
 .door-form input[aria-invalid=true]{border-color:var(--bad,#b42318)}
 .door-form .note{color:var(--muted);font-size:.9rem;margin:12px 0 0}
+.join-page h2{font:700 1.4rem/1.25 var(--font-display);margin:36px 0 10px}
+.join-page pre{overflow-x:auto;padding:14px 16px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);font:14px/1.5 var(--font-mono)}
+.join-page code{font-family:var(--font-mono);font-size:.92em;overflow-wrap:anywhere}
+.join-page pre code{overflow-wrap:normal}
+.join-page table{border-collapse:collapse;width:100%}
+.join-page th,.join-page td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+.join-page blockquote{margin:16px 0;padding-left:16px;border-left:3px solid var(--border);color:var(--muted)}
+.join-page .note{margin-top:40px;color:var(--muted)}

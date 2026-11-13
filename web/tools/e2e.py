@@ -968,6 +968,16 @@ def scenario(run: Run, page: Page) -> None:
     url, code = join_line(run, page, "e2e-alpha", "e2e-agent")
     run.shot(page, "join-line")
     run.a11y(page, "join with a paste line")
+    # The join page in a browser on the public host stands in the landing page's frame (§3.2,
+    # §16.7.5). No screenshot: the page shows the token, and the artifacts are public.
+    doc = page.context.new_page()
+    watch_page(run, doc)
+    doc.goto(url)
+    expect(doc.locator("header.site-header")).to_be_visible()
+    expect(doc.locator(".join-page h1")).to_be_visible()
+    expect(doc.locator("footer.site-footer")).to_be_visible()
+    run.a11y(doc, "the join page in a browser")
+    doc.close()
     alpha = run.clone("clone-alpha")
     out = run.maity(
         alpha,

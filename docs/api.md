@@ -3680,7 +3680,8 @@ GET /api/v1/join/{token}
 
 Unauthenticated. Both paths serve the same document. `Accept: text/html`
 (a browser) gets an HTML rendering of the same text with a link to the
-dashboard — documentation only, no form, nothing on that page performs
+dashboard — on the public host in the frame of §16.7.5, on the join
+host as its own small page — documentation only, no form, nothing on that page performs
 the exchange, so a credential is never displayed on a screen; anything
 else gets `text/markdown`. An unknown, used, expired, burned or revoked
 token is `not_found` on both, never saying which of the reasons applies.
@@ -20403,6 +20404,13 @@ from the hub's catalogue in `language`.
   which serves none of the frame's stylesheets (§1.1), and while the
   frame's settings cannot be read, it is the small page with the product
   line (§16.13).
+- **The join page in a browser** (§3.2) on the public host stands in the
+  frame: its text in the legal pages' column, in `en`, the note with the
+  dashboard link under it, no language switch, with the same policy and
+  `Referrer-Policy: no-referrer`; so does its page for a link that no
+  longer works. The join host keeps its own small page with the product
+  line, as it serves none of the frame's stylesheets (§1.1). The
+  Markdown answer for an agent is the same on both hosts and unchanged.
 - **`/explore`** (§16.9) stands in the model's header and footer around
   the landing page's dark hero with its title, and the projects as cards.
   Each card is one link to the project's page: the first letter of its
@@ -21800,7 +21808,8 @@ back to the English sentence.
 | the hub's `503 maintenance` page (§16.12) on the join host, or while the frame's settings cannot be read | yes |
 | the hub's `503 maintenance` page (§16.12) in the frame of §16.7.5 | no: the frame's footer |
 | the mail link pages in the frame of §16.7.5: the sign-in link's page `/mail/sign-in/{token}` (§2.6.3), registration's link page `/mail/register/{token}` (§2.7.1) and the pages of §18.6 (§2.9 among them), each with its page for a link that no longer works | no: the frame's footer |
-| the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
+| the join page in a browser on the join host, `/{token}` as HTML (§3.2, §1.1), below its own note | yes |
+| the join page in a browser on the public host, `/join/{token}` as HTML (§3.2), in the frame of §16.7.5 | no: the frame's footer |
 | the join page for an agent, the Markdown answer (§3.2) | no |
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
 | `/explore` in the frame of §16.7.5 (§16.9) | no: the frame's footer |

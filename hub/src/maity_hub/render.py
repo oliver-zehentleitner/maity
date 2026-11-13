@@ -1089,6 +1089,39 @@ def door_document(
     )
 
 
+def join_document(
+    *,
+    title: str,
+    content: str,
+    note: str,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    accept_language: str | None,
+) -> str:
+    """The join page (§3.2) in a browser on the public host, in the frame of §16.7.5: the
+    landing page's header and footer around the page's text in the legal pages' column, in
+    English like the page. No language switch: the page has one language. `content` and `note`
+    are HTML of escaped text and elements; the join host keeps its own page, as it serves none
+    of the frame's stylesheets (§1.1)."""
+    model = chrome(setting, legal, lang="en", accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    frame = public_frame(model, "en")
+    body = (
+        frame.header + '<main><div class="legal-page join-page"><div class="wrap">'
+        f'{content}<p class="note">{note}</p></div></div></main>' + frame.footer
+    )
+    return _document(
+        lang="en",
+        title=title,
+        description="",
+        head=frame.head,
+        body=body,
+        languages=[],
+        style=frame.style,
+    )
+
+
 # A stored public page (§16.9) as `page_document` wrote it: its title, description, canonical
 # link and robots line in the head, its content in `<main class="wrap">`. The app shell takes
 # the same parts out (shell.py), and so does the frame below.
