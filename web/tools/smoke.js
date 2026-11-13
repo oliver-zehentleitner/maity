@@ -14838,7 +14838,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
   // stored public page the hub put into <main> stands without it, the next view has it again.
   expect(productLine.querySelectorAll("a").length === 4, "product line: under a public address the dashboard draws");
-  // From the framed sign-in to a public address: the frame goes once the public page is drawn, the line with it.
+  // From the framed sign-in to a public address: the frame stays (the visitor's page stands in it too, tsk-tp97v64vpy5z),
+  // its footer in the product line's place.
   // Signed out for this step, as a visitor is: the sign-in in the frame first.
   const viChromeGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(frModel({}))
@@ -14850,7 +14851,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   const viAfter = [!!viView(), !!frFoot(), header.hidden, productLine.querySelectorAll("a").length];
   const rpOut = viView() && viView().querySelector("a.report-open");
-  expect(rpOut && rpOut.getAttribute("href").replace(/^#/, "") === "/login?next=%2Fstranger%2Ftool%3Freport" && text(rpOut) === "Sign in to report",
+  expect(rpOut && rpOut.getAttribute("href").replace(/^#/, "") === "/login?next=%2Fstranger%2Ftool%3Freport" && text(rpOut) === "Sign in to report"
+    && !rpOut.getAttribute("aria-label") && rpOut.getAttribute("title") === "Report this project to the instance's admins",
     "report: signed out, a public page's Report is a link to the sign-in that comes back with the form open " + (rpOut && rpOut.getAttribute("href")));
   // An address that shows a visitor nothing (tsk-h1e5zmq1wnhj): "not found" in the frame instead of
   // the sign-in form, worded so that a private name and a missing one read alike (routing.md
@@ -14885,8 +14887,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   viSignedOut = false;
   win.Maity.api.get = viChromeGet;
   await win.Maity.api.get("/auth/session");
-  expect(viFramed && JSON.stringify(viAfter) === "[true,false,false,4]",
-    "product line: from the framed sign-in to a public address, the frame gone, the line back " + viFramed + JSON.stringify(viAfter));
+  expect(viFramed && JSON.stringify(viAfter) === "[true,true,true,0]",
+    "product line: from the framed sign-in to a public address, the frame stays, its footer in the line's place " + viFramed + JSON.stringify(viAfter));
   main.hasAttribute = (k) => k in main.attrs;
   main.setAttribute("data-public-page", "");
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
@@ -14932,6 +14934,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
   viOverview("visitor: without a session, /overview of a public project is its public overview, not the login");
   expect(header.querySelector(".visitor-sign-in") && !byId("login-email"), "visitor: without a session, /overview has the way to the sign-in in its header");
+  // In the landing's frame (§16.7.5) as the sign-in is: its header and footer around the page, the
+  // content in the stored pages' look, Sign in coming back here; the app's bar only where the frame cannot be read.
+  {
+    const vfHead = () => body.childNodes.find((x) => x.tagName === "HEADER" && x.className === "site-header dz") || null;
+    const vfFoot = () => body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
+    const vfOn = () => (document.documentElement.className || "").split(" ").includes("public-frame");
+    const vfIn = vfHead() && vfHead().querySelector("a.signin");
+    expect(vfOn() && vfHead() && vfFoot() && header.hidden === true && viView().classList.contains("stored-page") && viView().firstChild.className === "wrap"
+      && vfIn && vfIn.getAttribute("href") === "#/login?lang=en&next=" + encodeURIComponent("/stranger/tool/overview") && !vfIn.getAttribute("aria-current"),
+      "visitor: without a session, the page stands in the landing's frame, Sign in coming back to it " + (vfIn ? vfIn.getAttribute("href") : null));
+    const vfGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(new win.Maity.api.ApiError("down", 503, p, "unavailable")) : vfGet(p));
+    await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+    expect(viView() && viView().getAttribute("data-kind") === "board" && !vfHead() && !vfFoot() && header.hidden === false && header.querySelector(".visitor-sign-in"),
+      "visitor: where the frame cannot be read, the app's bar with Sign in stands instead");
+    win.Maity.api.get = vfGet;
+  }
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));

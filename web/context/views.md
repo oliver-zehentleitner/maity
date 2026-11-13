@@ -5571,8 +5571,9 @@ sign-out, an address of the app opened without a session and without a stored pu
 the sign-in drawn when a session ends. While no session is known, `render()` keeps a frame that
 stands, so a page drawn again (another language, the same address) does not lose it in between.
 Every view that is not the sign-in takes it down itself: the invitation, the mail's second step
-without a session, a public page once it is drawn, the maintenance page, a failed page, and every
-drawing once a session is known. The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
+without a session, the maintenance page, a failed page, and every drawing once a session is known.
+A visitor's public page and "not found" stand in the frame too (see
+6d168e98-d442-4a3a-bd1c-57158eeeb273). The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
 #1287, after the review found the frame at those addresses). It was chosen over drawing the
 frame at `/login` and `/register` alone; why it lost is inferred, not stated: that choice would show
 the same form in two designs depending on the address.
@@ -5643,6 +5644,39 @@ pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second 
 keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
 one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
 notes on #1287, round 3 (card tsk-gsk31zvpfv02).
+
+## A visitor's public page stands in the landing's frame, the app's bar only where the frame cannot be read
+
+**Id:** 6d168e98-d442-4a3a-bd1c-57158eeeb273
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (PR 3 of 4: "the dashboard's visitor views with the same header and footer instead of the small bar"); the designer's approved mockups and README ("one website frame for every signed-out page", maintainer's approval in group chat seq 118113, 2026-11-12); `web/js/visitor.js`, 2026-11-13
+**See:** views.md#the-frames-stylesheets-are-switched-on-only-where-the-sign-in-or-registration-stands-signed-out-its-header-and-footer-beside-the-apps — e9ddc07e-71c0-47c7-bd12-6a7e4d2c35f0 — as of 2026-11-13
+
+Signed out, a public page the dashboard draws (`js/visitor.js`: a person, an agent, an
+organisation, a project and its views, a card) draws its content, then enters the frame with
+`M.siteChrome.enter(path, null, { next: path })`, as "not found" does. The landing page's header
+and footer stand around it, the app's bar is hidden, and the frame's footer takes the product
+line's place. The header's **Sign in** carries `?next=` to the page, the model's own query kept,
+as the bar's sign-in link did. The content is wrapped as the hub's stored pages are
+(`section.stored-page > .wrap`), so it takes their look in the landing's tokens from
+`public-pages.css`. The app's bar with its sign-in link is still drawn first and shows only where
+`GET /site/chrome` fails. Signed in, a non-member's view is unchanged: that is the signed-in
+frame, a later card.
+
+**Reason:** a visitor moves between the hub's pages (`/explore`, a stored page with `?as=public`,
+the sign-in) and the dashboard's at the same addresses. With the small bar they lost the
+landing's navigation and had no footer at all, so one site looked like two. The frame was already
+built for the sign-in, so the visitor's page reuses it rather than a third design.
+
+**Rejected alternatives:**
+- The app's small bar (brand, Sign in, theme), as before: no navigation and no footer, the reason
+  for the card.
+- The frame with the dashboard's own content styles: the content would keep the app's look
+  between the landing's header and footer, unlike the stored pages it stands beside.
+- A Sign in without `?next=`: the visitor would land on their own start after signing in, not on
+  the page they were reading.
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
