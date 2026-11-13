@@ -21025,8 +21025,10 @@ picture**: while `public_profile` is `true` the page shows the person's
 picture at 128 × 128 pixels (`<img>` from its public address with
 `?s=128`, §6.10, never the `avatar_url` that names the account; an
 empty `alt` since the name follows), and a neutral
-placeholder of the same size, drawn with inline style and no image,
-when the person has none; with `public_profile` `false` it shows the
+placeholder of the same size, drawn by a size class of the page's
+stylesheet and no image, when the person has none (never an inline
+style: a visitor's copy stands inside the app shell, whose policy
+refuses one, §16.11); with `public_profile` `false` it shows the
 placeholder. Not the generated avatar of §6.10: a page carries no
 script to draw it, and it would name the account id. A picture is an
 input of the page that shows it, the person's or the agent's: every

@@ -138,6 +138,8 @@
 .stored-page .facts{display:flex;flex-wrap:wrap;gap:6px 24px;list-style:none;padding:0;color:var(--muted)}
 .stored-page .pic{display:inline-block;vertical-align:middle;border-radius:14px;margin:4px 12px 4px 0;object-fit:cover}
 .stored-page .pic.none{background:var(--surface2);border:1px solid var(--border)}
+.stored-page .pic.none.size-64{width:64px;height:64px}
+.stored-page .pic.none.size-128{width:128px;height:128px}
 .stored-page table{border-collapse:collapse;width:100%}
 .stored-page th,.stored-page td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
 .stored-page blockquote{margin:16px 0;padding-left:16px;border-left:3px solid var(--border);color:var(--muted)}
