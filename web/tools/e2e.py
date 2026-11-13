@@ -5182,7 +5182,8 @@ def explore_layout(run: Run, browser) -> None:
 def stored_page_layout(run: Run, browser) -> None:
     """A stored public page on its own (`?as=public`) in the frame of §16.7.5, put around it when it
     is served (tsk-tp97v64vpy5z): the landing page's header and footer around the page as stored,
-    the stylesheets loaded, nothing wider than the window, no policy refusal, axe clean."""
+    the stylesheets loaded, the landing page's theme switch and language row (req-q34v0gr2rbw2),
+    nothing wider than the window, no policy refusal, axe clean."""
     for width, height in ((1280, 900), (390, 844)):
         for scheme in ("light", "dark"):
             where = f"/owner/e2e-alpha?as=public at {width}x{height} {scheme}"
@@ -5195,7 +5196,23 @@ def stored_page_layout(run: Run, browser) -> None:
             expect(seen.locator("header.site-header")).to_be_visible()
             expect(seen.locator("footer.site-footer")).to_be_visible()
             expect(seen.locator("main .stored-page h1")).to_be_visible()
-            assert seen.locator("script").count() == 0, f"{where}: a script on the page"
+            # The landing page's controls (req-q34v0gr2rbw2): its one script, the theme switch, the
+            # language row keeping `as=public`.
+            scripts = seen.evaluate("[...document.scripts].map(s => (s.src || 'inline').split('/').pop().split('?')[0])")
+            assert scripts == ["landing.js"], f"{where}: scripts {scripts}"
+            toggle = seen.locator("header.site-header button[data-lp-theme]")
+            expect(toggle).to_be_visible()
+            langs = seen.locator("footer.site-footer p.langs a")
+            assert langs.count() > 1, f"{where}: no language row"
+            hrefs = langs.evaluate_all("as => as.map(a => a.getAttribute('href'))")
+            assert all(h.startswith("?as=public&lang=") for h in hrefs), f"{where}: {hrefs}"
+            before = seen.evaluate("getComputedStyle(document.body).backgroundColor")
+            toggle.click()
+            flipped = "dark" if scheme == "light" else "light"
+            expect(seen.locator("html")).to_have_attribute("data-theme", flipped)
+            after = seen.evaluate("getComputedStyle(document.body).backgroundColor")
+            assert after != before, f"{where}: the switch changed nothing ({before})"
+            toggle.click()
             sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
             assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
             wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
