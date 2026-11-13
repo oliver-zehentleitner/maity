@@ -5202,10 +5202,14 @@ def stored_page_layout(run: Run, browser) -> None:
             assert scripts == ["landing.js"], f"{where}: scripts {scripts}"
             toggle = seen.locator("header.site-header button[data-lp-theme]")
             expect(toggle).to_be_visible()
-            langs = seen.locator("footer.site-footer p.langs a")
-            assert langs.count() > 1, f"{where}: no language row"
-            hrefs = langs.evaluate_all("as => as.map(a => a.getAttribute('href'))")
-            assert all(h.startswith("?as=public&lang=") for h in hrefs), f"{where}: {hrefs}"
+            # The language row is the landing page's: the same languages (none on a hub whose
+            # landing page has one), each link keeping `as=public`.
+            hrefs = seen.locator("footer.site-footer p.langs a").evaluate_all(
+                "as => as.map(a => a.getAttribute('href'))"
+            )
+            landing = seen.request.get(f"{run.base}/", headers={"Cookie": ""}).text()
+            tags = re.findall(r'<a href="\?lang=([a-z-]+)" lang="', landing)
+            assert hrefs == [f"?as=public&lang={tag}" for tag in tags], f"{where}: {hrefs}, landing {tags}"
             before = seen.evaluate("getComputedStyle(document.body).backgroundColor")
             toggle.click()
             flipped = "dark" if scheme == "light" else "light"
