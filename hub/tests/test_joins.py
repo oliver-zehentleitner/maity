@@ -9,7 +9,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, render
+from maity_hub import clock, events, render
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -92,6 +92,7 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
         "used_at",
         "burned",
         "revoked_at",
+        "revoked_by",
         "via",
         "new_instance",
         "replaces",
@@ -222,6 +223,35 @@ def test_delete_revokes_an_unused_join_and_refuses_a_spent_one(
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "invalid_transition"
     assert response.json()["error"]["details"] == {"from": "used", "to": "revoked"}
+
+
+def test_a_revocation_names_who_revoked_and_tells_the_humans_once(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.1, §8.2: `revoked_by` on the join, and one `join_revoked` to its creator and the
+    human `members:admin` holders, never the URL or the code; agents read none of it."""
+    unused = flow.join(owner, "maity")
+    revoked = owner.delete(f"/projects/maintainer/maity/joins/{unused['id']}").json()
+    assert revoked["revoked_by"] == owner.id
+    owner.delete(f"/projects/maintainer/maity/joins/{unused['id']}")  # idempotent: no event
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.event).where(t.event.c.kind == "join_revoked")).all()
+    [event] = rows
+    assert event.payload == {
+        "id": unused["id"],
+        "agent_id": unused["agent_id"],
+        "trust": "member",
+        "role": "coder",
+        "revoked_by": owner.id,
+    }
+    assert event.audience == [f"member:{owner.id}"]
+    assert (event.subject_type, event.subject_id) == ("join", unused["id"])
+    assert "join_revoked" in events.HUMANS_ONLY_KINDS
+    listed = owner.get("/projects/maintainer/maity/joins").json()["items"]
+    assert [j["revoked_by"] for j in listed if j["id"] == unused["id"]] == [owner.id]
+    fresh = flow.join(owner, "maity")
+    listed = owner.get("/projects/maintainer/maity/joins").json()["items"]
+    assert [j["revoked_by"] for j in listed if j["id"] == fresh["id"]] == [None]
 
 
 # --- §3.2 the join page ---------------------------------------------------------------

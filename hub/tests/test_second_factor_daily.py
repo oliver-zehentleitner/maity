@@ -34,9 +34,7 @@ def enrolled(make_client: ClientFactory, migrated: Engine, moment: Clock) -> tup
     """Ada, signed in with a verified address and an enrolled app; a cap of `CAP`."""
     anonymous, human_id = setup(make_client, migrated)
     hub = anonymous.app.state.settings
-    client = make_client(
-        mail=hub.mail, secret_key=hub.secret_key, second_factor_wrong_per_day=CAP
-    )
+    client = make_client(mail=hub.mail, secret_key=hub.secret_key, second_factor_wrong_per_day=CAP)
     assert factory.login_handle(client, "ada").status_code == 200
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     ada = flow.Human(client, csrf, human_id)
@@ -82,12 +80,22 @@ def security_mails(engine: Engine) -> list[Any]:
         )
 
 
-def unlock_link(engine: Engine, ada: flow.Human) -> str:
+def unlock_mail(engine: Engine, ada: flow.Human) -> Any:
+    """The newest security mail with an unlock link, after a pass of the mailer."""
     assert mailer.run(engine, ada.client.app.state.settings.mail, None, PUBLIC) >= 1
-    mail = security_mails(engine)[-1]
+    found = [m for m in security_mails(engine) if "/mail/second-factor-unlock/" in m.body]
+    assert found, [m.subject for m in security_mails(engine)]
+    return found[-1]
+
+
+def link_of(mail: Any) -> str:
     found = re.search(r"https://hub\.example(/mail/second-factor-unlock/\S+)", mail.body)
     assert found, mail.body
     return found.group(1)
+
+
+def unlock_link(engine: Engine, ada: flow.Human) -> str:
+    return link_of(unlock_mail(engine, ada))
 
 
 def test_at_the_cap_even_a_right_code_is_refused_until_the_day_ends(
@@ -125,9 +133,10 @@ def test_the_alert_mail_carries_a_link_that_lifts_the_cap_once(
 ) -> None:
     ada, secret = enrolled(make_client, migrated, moment)
     reach_the_cap(ada, secret, moment)
-    link = unlock_link(migrated, ada)
-    mail = security_mails(migrated)[-1]
+    mail = unlock_mail(migrated, ada)
     assert mail.subject.startswith("[Maity] Second-factor codes refused for today")
+    assert "List-Unsubscribe" not in (mail.headers or {})
+    link = link_of(mail)
     page = ada.client.get(link)
     assert page.status_code == 200 and "Let me try again today" in page.text
     moment.move(seconds=31)
@@ -172,8 +181,9 @@ def test_the_setting_has_its_range() -> None:
     base = {"MAITY_DATABASE_URL": "sqlite://"}
     assert Settings.from_env(base).second_factor_wrong_per_day == 50
     assert (
-        Settings.from_env({**base, "MAITY_SECOND_FACTOR_WRONG_PER_DAY": "200"})
-        .second_factor_wrong_per_day
+        Settings.from_env(
+            {**base, "MAITY_SECOND_FACTOR_WRONG_PER_DAY": "200"}
+        ).second_factor_wrong_per_day
         == 200
     )
     for bad in ("9", "10001", "many"):
