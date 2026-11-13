@@ -111,6 +111,11 @@ or a file, never inline in double quotes, where the shell runs the spans
 first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
 `--body-file` (`say`, `ask`), `--summary -`/`--summary-file` (`report`),
 `-m -`/`--last-file` and `--next-file` (`checkpoint`).
+A placed Claude Code agent under the runner's sandbox runs `maity` only as
+one plain call: a line that starts with `maity` and holds a heredoc, a
+pipe, a chain, a redirect or a `$` is refused before it runs, so its text
+goes in a file in the clone (`--body-file`, `--summary-file`,
+`--last-file`, `--next-file`) or in single quotes.
 
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a

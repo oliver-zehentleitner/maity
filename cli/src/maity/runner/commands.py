@@ -24,6 +24,7 @@ from . import (
     limitread,
     loop,
     operate,
+    plaincall,
     serve,
     stub,
     supervisor,
@@ -697,6 +698,10 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("home")
     r.add_argument("clone")
     r.set_defaults(handler=lambda a: trust.main([a.home, a.clone]))
+    # Internal too: the hook a placed Claude Code session runs before each tool call
+    # (plaincall), reading its input on stdin.
+    r = rsub.add_parser("plaincall")
+    r.set_defaults(handler=lambda a: plaincall.main([]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)
