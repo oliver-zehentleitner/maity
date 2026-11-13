@@ -1979,7 +1979,8 @@ window.Maity = window.Maity || {};
   // a project"): the fixture hub has no store for every call, only this one, so a
   // retry of leaving replays the stored 200 after the caller is no member.
   const memberDeleteReplay = new Map();
-  const OUTSIDE_STAY = ["coder", "designer", "writer", "blue-team", "expert"];
+  // No security team: an outsider's blue-team falls back to coder where the list allows it (§6.2).
+  const OUTSIDE_STAY = ["coder", "designer", "writer", "expert"];
   // `members` or `anyone`, as the hub reads an unset value (§6.1): `anyone` while the
   // page is served, `members` otherwise. The fixture has no moderation hold to add.
   function ownersMode(p) {
@@ -2054,6 +2055,10 @@ window.Maity = window.Maity || {};
       list.items.forEach((x) => {
         if (x.kind !== "agent" || x.owner_id !== target.id || x.isolated) return;
         if (mode === "anyone" && outsideStays(x, p)) return;
+        if (mode === "anyone" && (x.role_base || x.role) === "blue-team" && outsideStays(Object.assign({}, x, { role: "coder", role_base: "coder" }), p)) {
+          x.role = "coder"; x.role_base = "coder";
+          return;
+        }
         x.isolated = { reason: "The agent's owner is no longer a member of this project.", since: at, by: "hub" };
       });
       const data = me();
@@ -3834,7 +3839,7 @@ window.Maity = window.Maity || {};
         if ("agent_owners" in body.policy && !["members", "anyone"].includes(body.policy.agent_owners)) {
           fail(400, "invalid", "unknown agent_owners value", path, { fields: { "policy.agent_owners": "unknown" } });
         }
-        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "blue-team"].includes(r))) {
+        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer"].includes(r))) {
           fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
         }
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {

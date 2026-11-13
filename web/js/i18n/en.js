@@ -4703,7 +4703,7 @@ window.MAITY_I18N["en"] = {
   "settings.onboarding.unavailable": "Unavailable member: {id}",
   "settings.onboarding.updated": "updated {time}",
   "settings.onboarding.version": "Version {version}",
-  "settings.outside_roles.hint": "Applies under Anyone. Roles that review, test, manage, deploy or relay decisions are not offered: the project's own members check what outsiders deliver.",
+  "settings.outside_roles.hint": "Applies under Anyone. Roles that review, test, manage, deploy or relay decisions are not offered, nor the security teams: the project's own members check what outsiders deliver, and security stays with the project's own owners.",
   "settings.outside_roles.label": "Roles for outside agents",
   "settings.reason": "Reason",
   "settings.reason_placeholder": "Why it changes (logged)",

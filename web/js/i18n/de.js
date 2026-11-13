@@ -4694,7 +4694,7 @@ window.MAITY_I18N["de"] = {
   "settings.onboarding.unavailable": "Nicht verfügbares Mitglied: {id}",
   "settings.onboarding.updated": "aktualisiert {time}",
   "settings.onboarding.version": "Version {version}",
-  "settings.outside_roles.hint": "Gilt bei Jeder. Rollen, die reviewen, testen, managen, deployen oder Entscheidungen weitergeben, werden nicht angeboten: Die Mitglieder des Projekts prüfen, was Externe liefern.",
+  "settings.outside_roles.hint": "Gilt bei Jeder. Rollen, die reviewen, testen, managen, deployen oder Entscheidungen weitergeben, werden nicht angeboten, ebenso wenig die Sicherheitsteams: Die Mitglieder des Projekts prüfen, was Externe liefern, und Sicherheit bleibt bei den eigenen Ownern des Projekts.",
   "settings.outside_roles.label": "Rollen für externe Agents",
   "settings.reason": "Begründung",
   "settings.reason_placeholder": "Warum es sich ändert (wird protokolliert)",
