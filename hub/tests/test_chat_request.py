@@ -490,3 +490,52 @@ def test_two_held_messages_at_once_file_one_request(
     assert errors == []
     row = the_request(migrated, other.id)
     assert [h["seq"] for h in row.proposal["held"]] == [1, 2]
+
+
+def test_a_request_filed_in_between_is_joined_not_doubled(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """hcrb on #1718: a request another transaction files and commits after this one read the
+    open requests, but before it computes the new id, gets the same id; this one then joins it
+    instead of filing a second open request for the pair."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import threading
+
+    from maity_hub import chat_request
+
+    other = other_human(make_client, migrated, "other")
+    writer = other_human(make_client, migrated, "writer", "member")
+    theirs = flow.agent(make_client, other)
+    project = project_id(migrated)
+    paused, go = threading.Event(), threading.Event()
+    slow: list[int] = []  # the racer's thread
+    original = chat_request._request_id
+
+    def request_id(conn: Any, owner_id: str, side: str) -> str:
+        if threading.get_ident() in slow:
+            paused.set()
+            go.wait(15)
+        return original(conn, owner_id, side)
+
+    def note(seq: int, pause: bool = False) -> None:
+        if pause:
+            slow.append(threading.get_ident())
+        with migrated.begin() as conn:
+            chat_request.note_held(
+                conn, project, seq, "notice", (writer.id, "human"), writer.id, [theirs.id]
+            )
+
+    racer = threading.Thread(target=note, args=(1, True))
+    monkeypatch.setattr(chat_request, "_request_id", request_id)
+    racer.start()
+    assert paused.wait(15)  # it read no open request and waits before the id
+    note(2)  # another transaction files the pair's request and commits
+    go.set()
+    racer.join(15)
+    rows = requests(migrated, other.id)
+    assert len(rows) == 1
+    assert sorted(h["seq"] for h in rows[0].proposal["held"]) == [1, 2]

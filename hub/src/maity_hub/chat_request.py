@@ -14,16 +14,16 @@ changes of one owner (`deferred`) syncs once at its end, so a request is not fil
 withdrawn again within one transaction.
 
 No owner-wide lock is taken here (9s6p on #1718). Each open request is locked as its row
-(`FOR UPDATE`); `sync` skips one another transaction holds (an answer, a held message), which
-syncs that owner itself at its end. Two transactions that file for one pair at once give the
-request the same id (`_request_id`, from the pair and how many requests it had), so the second
-insert waits for the first and fails and is dropped; a held message then joins the request the
-first one filed. So a chat change that only brings an open request up to date, under its
-project's lock, never waits for an entry change, which holds the owner's human row before the
-projects'. Filing or withdrawing one writes the owner's notification record, which locks the
+(`FOR UPDATE`); `sync` skips one another transaction holds (an answer, a held message), which syncs
+that owner itself at its end. Two transactions that file for one pair at once give the request
+the same id (`_request_id`, from the pair and how many of its requests are closed), so the
+second insert waits for the first and fails and is dropped; a held message then joins the
+request the first one filed. So a chat change that only brings an open request up to date, under
+its project's lock, never waits for an entry change, which holds the owner's human row before
+the projects'. Filing or withdrawing one writes the owner's notification record, which locks the
 human's row as every record does (`records.lock_human`), and an answer meets a held message of
-the same pair on the request's row: those orders can still meet, and the database rolls one
-back as a transient deadlock that is run again (`db.TRANSIENT`).
+the same pair on the request's row: those orders can still meet, and the database rolls one back
+as a transient deadlock that is run again (`db.TRANSIENT`).
 """
 
 from __future__ import annotations
@@ -128,10 +128,14 @@ def _open(conn: Connection, owner: str, lock: str | None = None) -> dict[str, An
 
 def _request_id(conn: Connection, owner: str, side: str) -> str:
     """The id the next request for this pair gets: the same in every transaction that files it
-    from the same history, so that two of them collide on the key instead of filing two."""
+    from the same history, so that two of them collide on the key instead of filing two. Only
+    the pair's closed requests are counted: a request another transaction files and commits
+    between this one's read of the open requests and this count leaves the count as it was,
+    so this one collides with it (hcrb on #1718). Filing happens only where no request of the
+    pair is open, and closing one is what moves the count on."""
     asked = sum(
         1
-        for row in conn.execute(_mine(owner)).all()
+        for row in conn.execute(_mine(owner).where(t.request.c.status != "open")).all()
         if (row.proposal or {}).get("kind") == KIND and row.proposal.get("side") == side
     )
     digest = hashlib.sha256(f"{KIND}|{owner}|{side}|{asked}".encode()).digest()
