@@ -6413,3 +6413,58 @@ alike (§2.10); the page cannot know which, and must not guess one.
   instead of the link's page.
 - Saying "expired" or "used" for a dead link: the hub does not tell them
   apart, and a guess would be wrong half the time.
+
+## The banner toward an authenticator app: Later kept per session in the browser, its reads kept a minute at most and the banner on screen drawn again
+
+**Id:** 7edef2ad-504b-4a50-983c-daa9eb37f88c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.10 ("Toward an authenticator app": every page, Later until the next sign-in, enrolling ends it); the card tsk-yksxdpd2pk0m; the dashboard's implementation, 2026-11-12
+**Revisit when:** the hub keeps "Later" itself, or `GET /me` or `/bootstrap` starts to carry the second factor's `via`
+
+"Later" stores the current session's id in the browser's storage; the
+banner stays away while the session is that one, so the next sign-in, a
+new session, shows it again. Where the browser keeps nothing it holds for
+the page load. What the banner stands on (`GET /auth/second-factor`,
+`/auth/methods`, `/me/notification-settings`) is kept for a minute at most,
+and read again sooner after a write of this tab to the mail settings, the
+second factor or the instance's sign-in settings, and on every Security
+page. The banner on screen is drawn again from fresh reads once they are a
+minute old (a check every five seconds, no call, none in a hidden tab) and
+when the tab is shown again, so it does not stand on a page left open. A
+redraw that says the same for the same session leaves the standing banner
+in place; a changed one moves the focus to the same control in the new.
+
+**Reason:** the contract ties "Later" to the sign-in and gives the hub no
+field for it, and a session's id is exactly what changes at a sign-in.
+The banner is on every page, and three reads on every page switch would
+be three calls on every click for something that changes rarely. It does
+change outside this tab, though (an app enrolled in another tab or on
+another device, an admin's switch), and the sharp sentence is a security
+claim: kept for the tab's lifetime it stood next to the enrolled app on
+Security (review of #1716). A minute bounds how long it can be wrong,
+also on a page nobody leaves: dropping the kept reads alone only helped
+the next page, and an idle tab kept the claim on screen (second review of
+#1716). Security, where the human checks the factor, never shows a kept
+one. A hidden tab reads nothing on the minute, as on the dashboard's other
+intervals (refresh.md, 6cb02c3d-063d-473b-b86b-8f8324c11f14): it shows
+nothing, and shown again it reads at once. Replacing an unchanged banner
+took the keyboard focus off its link (third review of #1716).
+
+**Rejected alternatives:**
+- `sessionStorage`: it ends with the tab, not with the sign-in; a new tab
+  of the same session would show the banner again.
+- Reading the three on every page: the cost above, for nothing new.
+- Re-reading after any write: the inbox and the board write all the time,
+  and none of their writes moves the banner.
+- Keeping the reads for the tab's lifetime, cleared only by this tab's own
+  writes (the first version): a change made elsewhere left a false claim
+  until a reload.
+- A `storage` event between tabs: it covers another tab of this browser,
+  not another device or an admin, which the minute covers too.
+- Dropping the kept reads at the minute and on the tab's return without
+  drawing the banner again (the second version): only the next page saw
+  the change, and a page left open kept the claim.
+- Replacing the banner at every refresh (the third version): the same
+  sentence drawn anew, and the focus on its link lost to the page.
