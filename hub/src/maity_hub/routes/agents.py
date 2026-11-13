@@ -348,3 +348,9 @@ def delete_profile(
 
     cross_chats.profile_left(conn, agent_id, by, "membership_removed")
     chat_access.forget_agent(conn, agent_id)  # out of every allow and deny entry (§9.6)
+    from maity_hub import chat_request
+
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar_one()
+    chat_request.sync(conn, owner)  # out of its owner's open requests, withdrawn when empty

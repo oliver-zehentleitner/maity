@@ -348,3 +348,145 @@ def test_the_sweep_withdraws_what_ended_out_of_band(
     chat_gate.sweep(migrated)
     [closed] = requests(migrated, other.id, status=None)
     assert closed.status == "withdrawn"
+
+
+def hold_for(writer: Any, *agents: str) -> None:
+    for agent in agents:
+        sent = writer.post(
+            f"{PROJECT}/events", {"kind": "message", "type": "notice", "to": agent, "body": "hi"}
+        )
+        assert sent.status_code == 201, sent.text
+
+
+def held_two(
+    make_client: ClientFactory, migrated: Engine
+) -> tuple[flow.Human, flow.Human, Any, Any, Any]:
+    other = other_human(make_client, migrated, "other")
+    writer = other_human(make_client, migrated, "writer", "member")
+    gone, kept = flow.agent(make_client, other), flow.agent(make_client, other)
+    hold_for(writer, gone.id, kept.id)
+    row = the_request(migrated, other.id)
+    deleted = other.delete(f"/agents/{gone.id}?cascade=true")
+    assert deleted.status_code == 200, deleted.text
+    return other, writer, gone, kept, row
+
+
+def test_a_deleted_agent_is_asked_about_no_more(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """9s6p on #1718 (P2): an agent deleted while its request is open leaves the request, so the
+    view no longer offers it and `block` names only the agents that are left."""
+    other, writer, gone, kept, row = held_two(make_client, migrated)
+    again = the_request(migrated, other.id)
+    assert again.id == row.id
+    assert [a for h in again.proposal["held"] for a in h["agents"]] == [kept.id]
+    shown = other.get(f"/requests/{row.id}").json()["chat_access_request"]
+    assert [a["id"] for a in shown["agents"]] == [kept.id]
+    got = answer(other, row.id, reply_id="block")
+    assert got.status_code == 200, got.text
+    [deny] = other.get("/me/chat-access").json()["deny"]
+    assert deny["agents"] == [kept.id] and deny["owner_id"] == writer.id
+
+
+def test_the_default_allow_after_a_deletion_admits_the_agents_left(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other, writer, gone, kept, row = held_two(make_client, migrated)
+    got = answer(other, row.id, reply_id="allow_day", chat_access={"their_human": True})
+    assert got.status_code == 200, got.text
+    [entry] = other.get("/me/chat-access").json()["allow"]
+    assert entry["agents"] == [kept.id] and entry["owner_id"] == writer.id
+
+
+def test_a_request_whose_only_agent_is_deleted_is_withdrawn(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_human(make_client, migrated, "other")
+    writer = other_human(make_client, migrated, "writer", "member")
+    gone = flow.agent(make_client, other)
+    hold_for(writer, gone.id)
+    row = the_request(migrated, other.id)
+    assert other.delete(f"/agents/{gone.id}?cascade=true").status_code == 200
+    [closed] = requests(migrated, other.id, status=None)
+    assert closed.id == row.id and closed.status == "withdrawn"
+    shown = other.get(f"/requests/{row.id}").json()["chat_access_request"]
+    assert shown["agents"] == []
+
+
+def test_a_chat_change_does_not_wait_for_the_owners_entry_change(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """9s6p on #1718 (P2): a chat change that brings the owner's open request up to date holds
+    its project's lock and then only the request's row, so a write under /me/chat-access, which
+    holds the owner's human row and then takes the projects', does not meet it in the opposite
+    order. (Filing a new request writes the owner's notification record, which locks the
+    human's row as every record does: that path still meets it, and is run again.)"""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import threading
+
+    from maity_hub import chat_access, events
+
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    create(owner, theirs.id, title="Release")
+    row = the_request(migrated, other.id)
+    outcome: list[int] = []
+
+    def create_chat() -> None:
+        made = owner.post(BASE, {"title": "Docs", "participants": [theirs.id]})
+        outcome.append(made.status_code)
+
+    with migrated.begin() as conn:  # as /me/chat-access holds it: the owner's human row
+        chat_access._lock(conn, other.id)
+        racer = threading.Thread(target=create_chat)
+        racer.start()
+        racer.join(10)
+        done = not racer.is_alive()
+        if done:
+            events.lock_project(conn, project_id(migrated))  # then the project: free again
+    racer.join(15)
+    assert done, "the chat change waited for the owner's human row"
+    assert outcome == [201]
+    again = the_request(migrated, other.id)
+    assert again.id == row.id and '"Docs"' in again.summary
+
+
+def test_two_held_messages_at_once_file_one_request(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Two transactions that file for one pair at once collide on the request's id: the second
+    waits for the first, then adds its held message to the request the first filed."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("two writers at once need PostgreSQL; SQLite serialises them already")
+    import threading
+
+    from maity_hub import chat_request
+
+    other = other_human(make_client, migrated, "other")
+    writer = other_human(make_client, migrated, "writer", "member")
+    theirs = flow.agent(make_client, other)
+    project = project_id(migrated)
+    errors: list[BaseException] = []
+
+    def note(seq: int) -> None:
+        try:
+            with migrated.begin() as conn:
+                chat_request.note_held(
+                    conn, project, seq, "notice", (writer.id, "human"), writer.id, [theirs.id]
+                )
+        except BaseException as error:  # pragma: no cover - reported below
+            errors.append(error)
+
+    with migrated.begin() as conn:
+        chat_request.note_held(
+            conn, project, 1, "notice", (writer.id, "human"), writer.id, [theirs.id]
+        )
+        racer = threading.Thread(target=note, args=(2,))
+        racer.start()
+        racer.join(1.0)
+        assert racer.is_alive()  # its insert waits for this one's
+    racer.join(15)
+    assert errors == []
+    row = the_request(migrated, other.id)
+    assert [h["seq"] for h in row.proposal["held"]] == [1, 2]

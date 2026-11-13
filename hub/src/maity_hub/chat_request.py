@@ -13,25 +13,34 @@ pass (`sweep`) for anything that ends a chat or a project without passing those.
 changes of one owner (`deferred`) syncs once at its end, so a request is not filed and then
 withdrawn again within one transaction.
 
-The owner's human row is locked before the owner's requests are read (`chat_access._lock`), so
-two transactions do not file two requests for one pair. A chat change holds its project's lock
-before it, an entry change the human's row before its projects': the two orders can meet, and
-the database then rolls one back as a transient deadlock, which is run again (`db.TRANSIENT`).
+No owner-wide lock is taken here (9s6p on #1718). Each open request is locked as its row
+(`FOR UPDATE`); `sync` skips one another transaction holds (an answer, a held message), which
+syncs that owner itself at its end. Two transactions that file for one pair at once give the
+request the same id (`_request_id`, from the pair and how many requests it had), so the second
+insert waits for the first and fails and is dropped; a held message then joins the request the
+first one filed. So a chat change that only brings an open request up to date, under its
+project's lock, never waits for an entry change, which holds the owner's human row before the
+projects'. Filing or withdrawing one writes the owner's notification record, which locks the
+human's row as every record does (`records.lock_human`), and an answer meets a held message of
+the same pair on the request's row: those orders can still meet, and the database rolls one
+back as a transient deadlock that is run again (`db.TRANSIENT`).
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import chat_access, clock, namespace, proposals
 from maity_hub import tables as t
 from maity_hub.errors import invalid
-from maity_hub.ids import new_id
+from maity_hub.ids import CROCKFORD, PREFIXES
 from maity_hub.notifications import records
 
 KIND = "chat_access"
@@ -88,18 +97,17 @@ def _waiting(conn: Connection, owner: str) -> dict[str, dict[str, list[Any]]]:
     return found
 
 
-def _open(conn: Connection, owner: str) -> dict[str, Any]:
-    """The owner's open requests of this kind, by side."""
+def _mine(owner: str) -> Any:
     r = t.request.c
-    rows = conn.execute(
-        select(t.request).where(
-            r.to_human == owner,
-            r.personal.is_(True),
-            r.status == "open",
-            r.filed_by == "hub",
-            r.proposal.is_not(None),
-        )
-    ).all()
+    return select(t.request).where(
+        r.to_human == owner,
+        r.personal.is_(True),
+        r.filed_by == "hub",
+        r.proposal.is_not(None),
+    )
+
+
+def _by_side(rows: Iterable[Any]) -> dict[str, Any]:
     return {
         (row.proposal or {})["side"]: row
         for row in rows
@@ -107,15 +115,67 @@ def _open(conn: Connection, owner: str) -> dict[str, Any]:
     }
 
 
+def _open(conn: Connection, owner: str, lock: str | None = None) -> dict[str, Any]:
+    """The owner's open requests of this kind, by side; with `lock` "wait" their rows locked,
+    with "skip" those rows locked that no other transaction holds (the rest left out)."""
+    query = _mine(owner).where(t.request.c.status == "open").order_by(t.request.c.id)
+    if lock == "wait":
+        query = query.with_for_update()
+    elif lock == "skip":
+        query = query.with_for_update(skip_locked=True)
+    return _by_side(conn.execute(query).all())
+
+
+def _request_id(conn: Connection, owner: str, side: str) -> str:
+    """The id the next request for this pair gets: the same in every transaction that files it
+    from the same history, so that two of them collide on the key instead of filing two."""
+    asked = sum(
+        1
+        for row in conn.execute(_mine(owner)).all()
+        if (row.proposal or {}).get("kind") == KIND and row.proposal.get("side") == side
+    )
+    digest = hashlib.sha256(f"{KIND}|{owner}|{side}|{asked}".encode()).digest()
+    tail = "".join(CROCKFORD[b % len(CROCKFORD)] for b in digest[:12])
+    return f"{PREFIXES['request']}-{tail}"
+
+
 def _held_agents(proposal: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(a for h in proposal.get("held", []) for a in h["agents"]))
+
+
+def _live(conn: Connection, owner: str, ids: Iterable[str]) -> set[str]:
+    """Those of `ids` that are agents of `owner` now: not deleted, not given to another."""
+    wanted = sorted(set(ids))
+    if not wanted:
+        return set()
+    a = t.agent_profile.c
+    return set(
+        conn.execute(
+            select(a.id).where(a.id.in_(wanted), a.owner_id == owner, a.deleted_at.is_(None))
+        ).scalars()
+    )
+
+
+def pruned(conn: Connection, owner: str, proposal: dict[str, Any]) -> dict[str, Any]:
+    """The proposal with each held message's agents cut to the owner's live agents, and a
+    message left with none dropped: a deleted agent, or one given to another owner, is asked
+    about no more (9s6p on #1718). An author that is gone stays named, as the message stays."""
+    held = proposal.get("held", [])
+    live = _live(conn, owner, _held_agents(proposal))
+    kept = []
+    for h in held:
+        agents = [a for a in h["agents"] if a in live]
+        if agents:
+            kept.append({**h, "agents": agents})
+    return {**proposal, "held": kept}
 
 
 def agents_of(conn: Connection, request: Any) -> list[str]:
     """The request's agents now: those waiting for its side, then those held for it."""
     side = request.proposal["side"]
     waiting = list(_waiting(conn, request.to_human).get(side, {}))
-    return list(dict.fromkeys([*waiting, *_held_agents(request.proposal)]))
+    held = _held_agents(pruned(conn, request.to_human, request.proposal))
+    return list(dict.fromkeys([*waiting, *held]))
 
 
 # Filing, updating, withdrawing ------------------------------------------------------------------
@@ -190,8 +250,23 @@ def _summary(conn: Connection, owner: str, side: str, proposal: dict[str, Any]) 
 
 
 def _file(conn: Connection, owner: str, side: str, held: list[dict[str, Any]]) -> Any:
+    """File the pair's request, or None when another transaction filed it first: its row then
+    has the same id (`_request_id`), and the insert waits for that transaction and fails."""
     proposal = {"kind": KIND, "side": side, "held": held}
-    request_id = new_id("request")
+    request_id = _request_id(conn, owner, side)
+    try:
+        with conn.begin_nested():
+            _insert(conn, request_id, owner, side, proposal)
+    except IntegrityError:
+        return None
+    row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+    records.personal_request(conn, row)
+    return row
+
+
+def _insert(
+    conn: Connection, request_id: str, owner: str, side: str, proposal: dict[str, Any]
+) -> None:
     conn.execute(
         insert(t.request).values(
             {
@@ -218,9 +293,6 @@ def _file(conn: Connection, owner: str, side: str, held: list[dict[str, Any]]) -
             }
         )
     )
-    row = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
-    records.personal_request(conn, row)
-    return row
 
 
 def _refresh(conn: Connection, row: Any, proposal: dict[str, Any]) -> None:
@@ -267,12 +339,14 @@ def sync(conn: Connection, owner: str) -> None:
     if pending is not None:
         pending.add(owner)
         return
-    chat_access._lock(conn, owner)
     waiting = _waiting(conn, owner)
-    open_ = _open(conn, owner)
-    for side in sorted(set(waiting) | set(open_)):
+    seen = _open(conn, owner)
+    open_ = _open(conn, owner, lock="skip")
+    for side in sorted(set(waiting) | set(seen)):
+        if side in seen and side not in open_:
+            continue  # another transaction holds it (an answer, a held message) and syncs after
         row = open_.get(side)
-        held = (row.proposal or {}).get("held", []) if row is not None else []
+        held = pruned(conn, owner, row.proposal)["held"] if row is not None else []
         if not waiting.get(side) and not held:
             if row is not None:
                 _withdraw(conn, row)
@@ -317,7 +391,6 @@ def note_held(
         ]
         if not asked:
             continue
-        chat_access._lock(conn, owner)
         held = {
             "seq": seq,
             "project_id": project_id,
@@ -326,11 +399,21 @@ def note_held(
             "author_kind": author[1],
             "agents": asked,
         }
-        row = _open(conn, owner).get(side)
-        if row is None:
-            _file(conn, owner, side, [held])
-        else:
-            _refresh(conn, row, {**row.proposal, "held": [*row.proposal.get("held", []), held]})
+        _hold(conn, owner, side, held)
+
+
+def _hold(conn: Connection, owner: str, side: str, held: dict[str, Any]) -> None:
+    """Add a held message to the pair's open request, or file one with it. The open row is
+    waited for, not skipped, so that the message is never lost; a request another transaction
+    filed meanwhile is read again once that one has committed (`_file` returns None)."""
+    while True:
+        row = _open(conn, owner, lock="wait").get(side)
+        if row is not None:
+            proposal = {**row.proposal, "held": [*row.proposal.get("held", []), held]}
+            _refresh(conn, row, proposal)
+            return
+        if _file(conn, owner, side, [held]) is not None:
+            return
 
 
 def sweep_owners(conn: Connection) -> None:
@@ -373,7 +456,9 @@ def _their_agents(conn: Connection, request: Any, agent: str) -> list[str]:
     for h in request.proposal.get("held", []):
         if agent in h["agents"] and h["author_kind"] == "agent":
             found.append(h["author"])
-    return list(dict.fromkeys(found))
+    found = list(dict.fromkeys(found))
+    live = _live(conn, side, found)  # an author deleted or given away since is admitted no more
+    return [a for a in found if a in live]
 
 
 def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) -> None:
@@ -463,7 +548,7 @@ def _view(conn: Connection, request: Any, proposal: dict[str, Any]) -> dict[str,
     human_in = any(
         _people_in(conn, s.conversation_id, side)[1] for stays in waiting.values() for s in stays
     )
-    held = set(_held_agents(proposal)) if open_ else set()
+    held = set(_held_agents(pruned(conn, request.to_human, proposal))) if open_ else set()
     names = _handles(conn, {side, *agents})
     return {
         "chat_access_request": {
