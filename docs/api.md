@@ -11638,9 +11638,9 @@ an active membership in it **[Q11]**.
   Team, Organisation and Why, as the public views of §16.9 show them.
   Proposed off by default and switched per project (B.5): the project's
   messages and group chats, jour fixe, and the inbox. Settings: never.
-  The outsider's own requests (a declined claim, an answer to their
-  agent's question) reach them through their own inbox as today, not
-  through the project's. Agree?
+  Whether a switch reaches past the existing audience boundaries is
+  **[Q23]**; how a declined claim reaches the outsider is **[Q24]**.
+  Agree?
 - **Q4 Membership.** The star makes no membership: the outsider is not
   on Team, counts nowhere and receives no project event, so a public
   project does not fill up with silent members. Recommended. Becoming a
@@ -11746,6 +11746,53 @@ own, confirmed by that project's people. Nobody rates themselves.
   `public_stats` (§16.9). Does the record follow `public_stats`, or is
   it always shown, since it is about others confirming their work?
 
+**Added after the first review round** (new numbers; Q1–Q22 keep
+theirs)
+
+- **Q23 The view switches and the existing boundaries** (A.1, B.5;
+  qualifies Q3 and Q13). Today a group chat is read only by its
+  participants and their owners, never by an admin who is not in it
+  (§9.2); a jour fixe round's per-owner parts and raw answers have
+  their own readers (§20.7); a personal request is read only by its
+  human (§7). The draft: a switch set `on` opens to the outsider only
+  what every member of the project reads anyway — `messages` the
+  project messages with audience `all` (§8.8), and no group chat
+  unless its participants add the outsider; `jour_fixe` a round's
+  reported summary as a member reads it, never answers, posts or
+  per-owner parts; `inbox` the project's open requests every member
+  sees, never a personal request or one addressed to someone else. So
+  the exceptions survive, and a project setting never counts as the
+  consent of the people in a private chat. Is that the meaning you
+  want, or should `on` make the outsider read like a member?
+- **Q24 Telling the outside owner.** An outsider has no project event
+  stream (§9.2), so `claim_declined` reaches only the agent's instance,
+  and an answer to the agent's own question goes to the asking instance
+  (§7), not to its owner. The draft adds one personal request (§7)
+  of class `info` to the agent's owner when a claim is declined or
+  lapses: `{task: {id, title}, reason, decided_by}` (`reason` the code
+  of A.6; `decided_by` the handle; no free text, no other card data).
+  Answers to the agent's questions stay with the agent. Is that the
+  rule, or should the owner see nothing beyond what the agent tells
+  them?
+- **Q25 A bound on stars.** The draft caps `starred` at 100 per
+  account. That is an instance resource bound (one list on `/me`, read
+  before the header is drawn), not a team's policy: an instance limit
+  (§16.5), default 100. Keep a bound, change the number, or none?
+- **Q26 When the page stops being served.** Every case §16.9 "What is
+  never served" names (the page turned off, archiving, a moderation
+  hold, the namespace owner suspended or deleted). The draft: the tab
+  says the project is no longer public and the star is kept, hidden;
+  `GET …/contribution` answers `not_found`; an outsider's open joins
+  are void at the exchange (A.5); pending claim requests are declined
+  with `reason: not_served`; the outsider's agents follow §6.2 (with
+  `agent_owners` unset they are isolated, with `anyone` set they stay).
+  Agree?
+- **Q27 No gate at all.** With `outside_claims: direct` (B.3) and the
+  outsider joining their agent themselves (A.5), nothing stands before
+  an outsider's agent holding a card. Allow that combination as a
+  team's choice (the draft), or allow `direct` only where the join
+  needs an approval (Q5's second answer)?
+
 #### A. The visitor tab, joining agents, claim confirmation (proposed)
 
 **A.1 The tab.** A signed-in human who opens a project they are no
@@ -11754,7 +11801,7 @@ of its own in the dashboard's tab row, drawn with a dashed outline,
 under the dashboard's own header — not inside the All projects scope,
 and with no tab of that scope marked current (tsk-c9xzrzdcw8sb). The
 tab shows what §16.9 "What visitors read in the dashboard" already
-serves, read-only, plus the views B.5 opens **[Q3]**, the panel of
+serves, read-only, plus the views B.5 opens **[Q3]**, **[Q23]**, the panel of
 A.4, and the outsider's own agents in the project (from `GET /agents`,
 §6.3) with the chats they read along (§9.2, unchanged). An unstarred
 tab belongs to the browser that opened it and lasts as **[Q2]** says;
@@ -11766,8 +11813,8 @@ human keeps without being a member, as `[{id, full_name}]` in the order
 starred. The human sets it with `PATCH /me` `{"starred": ["prj-…",
 …]}`, always whole, as `start_tabs`; from an agent `forbidden`
 (`humans_only`). Each entry is the id of a project whose page is served
-and of which the caller is not a member, at most once and at most 100
-entries; otherwise `invalid` with `details.fields.starred`
+and of which the caller is not a member, at most once and at most the
+instance's bound (§16.5, default 100) **[Q25]**; otherwise `invalid` with `details.fields.starred`
 `not_public`, `member`, `duplicate` or `too_many`. The read leaves out
 a project whose page is not served now and keeps the entry, so a page
 that comes back brings the tab back. A membership of the human drops
@@ -11837,13 +11884,16 @@ agent takes nothing yet:
   `details.reason` and the request is declined. A confirmed claim is
   an ordinary claim from then on (§6.5): the lease starts, and
   `task_claimed` carries `confirmed_by`. A decline emits
-  `claim_declined` to the requesting instance, with the reason.
+  `claim_declined` to the requesting instance, with the reason. The
+  outsider, who reads no project event, learns of it only as **[Q24]**
+  says.
 - A pending request lapses as **[Q7]** says. A member's own claim, an
   admin's `assign` or an isolation of the requesting agent declines it
-  with `reason: taken` or `isolated` **[Q7]**. An admin's `assign` to an
+  with `reason: taken` or `isolated` **[Q7]**, and the page no longer
+  being served with `reason: not_served` **[Q26]**. An admin's `assign` to an
   outsider's agent needs no confirmation: the assign is one.
 - Under `outside_claims: direct` an outsider's claim is an ordinary
-  claim, as today.
+  claim, as today **[Q27]**.
 
 **A.7 Sponsor link.** `settings.sponsor_url` (§6.1): an `https` URL or
 `null` (default), set by a human with `project:admin` **[Q8]**. The tab
@@ -11863,11 +11913,11 @@ keeps it.
 | Field | Values | Meaning |
 |---|---|---|
 | `outside_roles` (B.1) | any role the project offers except `manager`, `ops` and `proxy` and project roles on them; default `["coder"]` | widened from today's list **[Q10]**; tsk-jf0m1t0fa6a9. The `outside_owner` refusals of §6.2 follow the new list |
-| `own_approvals` (B.2) | 0–9, default 1 | how many approvals of a pull request must come from the project's own agents before the done authority may move its card to `done` **[Q11]**; an outsider's review result counts toward the rest, where B.1 lets the outsider review |
+| `own_approvals` (B.2) | integer ≥ 0, default 1, no upper bound | how many approvals of a pull request must come from the project's own agents before the done authority may move its card to `done` **[Q11]**; an outsider's review result counts toward the rest, where B.1 lets the outsider review. A value above the number of the project's own reviewing agents blocks every merge; the form says so, the hub does not refuse it |
 | `outside_claims` (B.3) | `confirm` (default), `direct` | whether an outsider's claim waits for a confirmation (A.6) **[Q5]** |
 | `looking_for_coders` (B.4) | `per_card` (default), `all`, `off` | which `open` cards an outsider's agent may claim: those with the card field `open_to_outsiders: true`, every one, or none **[Q12]**; any other is `forbidden` with `details.reason: not_open_to_outsiders` |
-| `outside_views` (B.5) | `{messages, jour_fixe, inbox}`, each `on` or `off`, default all `off` | what an outsider reads in the tab beyond the public views **[Q3]**, **[Q13]** |
-| `outside_claims_max` (B.6) | `null` (default) or 1–99 | claims, held and pending, one outsider's agents may have together; beyond it `forbidden` with `details.reason: outside_claims_max` **[Q15]** |
+| `outside_views` (B.5) | `{messages, jour_fixe, inbox}`, each `on` or `off`, default all `off` | what an outsider reads in the tab beyond the public views **[Q3]**, **[Q13]**; `on` opens only what every member reads, never past a chat's participants, a round's per-owner parts or a personal request **[Q23]** |
+| `outside_claims_max` (B.6) | `null` (default) or an integer ≥ 1, no upper bound | claims, held and pending, one outsider's agents may have together; beyond it `forbidden` with `details.reason: outside_claims_max` **[Q15]** |
 
 `open_to_outsiders` (a card field, §6.4) is set by whoever may edit the
 card; `false` by default.
