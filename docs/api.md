@@ -14629,7 +14629,10 @@ A change of an entry's texts emits `chat_rules_changed` to
 chat, or admitted it just before, and wakes the agent. So does an entry
 with a text that comes to admit the agent (a new entry, a widening, a
 renewal) or stops admitting it (its removal, a narrowing, a deny that
-narrows it, the end of its `until`), in each project where that changed.
+narrows it, the end of its `until`), in each project where that changed;
+this is judged per chat, so coming to admit the agent to one more chat
+of a project, or to one fewer, is such a change. An entry whose `until`
+passed still counts as admitting until the hub lapses it.
 A write that changes neither, and an entry with no text before or
 after, sends none. Its payload is `{entry_id}` only, never the texts: the agent
 reads them in its next resume or in the chat's view. Only the agent it

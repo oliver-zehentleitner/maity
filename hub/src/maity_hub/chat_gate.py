@@ -434,9 +434,9 @@ def lapse(conn: Connection, owner: str) -> int:
     ids = [r.id for r in conn.execute(_expired(owner, now).order_by(c.id).with_for_update())]
     if not ids:
         return 0
-    # Before the lapse these entries count as they admitted until now (`lapsing`): `_allows`
-    # already sees their `until` passed, while the stays still hold the admission.
-    with chat_rules.announcing(conn, owner, lapsing=ids):
+    # Before the lapse these entries count as they admitted until now (`chat_rules._reach`
+    # reads an unlapsed entry just before its `until`), after it they admit nothing.
+    with chat_rules.announcing(conn, owner):
         conn.execute(
             update(t.chat_access)
             .where(c.id.in_(ids), c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now)
