@@ -2656,9 +2656,10 @@ included:
   session, writes it too, with `method: step_up`, and the fifth and every
   further wrong code at password resets in a day writes it with `method:
   password_reset` (§2.10). The wrong code that reaches the daily cap of
-  §2.8.6 writes it once with `method: daily_limit`, `day` (the UTC date)
-  and `unlocks` (how often the cap was lifted that day); its mail
-  carries the link that lifts the cap (§18.6).
+  §2.8.6 writes it once with `method: daily_limit`, `day` (the UTC date),
+  `unlocks` (how often the cap was lifted that day) and
+  `password_generation`; its mail carries the link that lifts the cap
+  (§18.6), which a password change voids.
 - **What the second-factor session carries.** The first factor's
   `method`, its `approved_by` (the device-code session that approved
   it, with that session's own lineage for "End this session", §2.6.5),
@@ -2837,7 +2838,7 @@ environment winning as there:
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
 | Codes at a password reset (§2.10) | 5 wrong per human in the 24 hours before each one, across all reset links; the fifth and every further one in that window voids every open reset link of the human and writes `second_factor_failed` (`method: password_reset`), the count never restarts and a right code is never refused for it; every one also counts in the per-human limit above |
-| Every TOTP or recovery code of an enrolled human, at the sign-in step, a step-up or a password reset | `MAITY_SECOND_FACTOR_WRONG_PER_DAY` wrong per human and UTC day (default 50, 10 to 10000). The wrong code that reaches it writes `second_factor_failed` (`method: daily_limit`, §2.8.2); from then on every such check of that human is `rate_limited` with `details.reason: daily_limit` and a `Retry-After` until the day ends, before the code is compared, so a right code is refused too, until the day ends or the human opens the link the alert's mail carries and presses its button (`/mail/second-factor-unlock/{token}`, §18.6): that starts the day's count again from zero, once per link. Codes of the mail factor (§2.8.8) and of a starting enrolment do not count |
+| Every TOTP or recovery code of an enrolled human, at the sign-in step, a step-up or a password reset | `MAITY_SECOND_FACTOR_WRONG_PER_DAY` wrong per human and UTC day (default 50, 10 to 10000). The first wrong code at or over it writes `second_factor_failed` (`method: daily_limit`, §2.8.2); from then on every such check of that human is `rate_limited` with `details.reason: daily_limit` and a `Retry-After` until the day ends, before the code is compared, so a right code is refused too, until the day ends or the human opens the link the alert's mail carries and presses its button (`/mail/second-factor-unlock/{token}`, §18.6): that starts the day's count again from zero, once per link. Nobody is refused before that alert is written: a count already over a cap lowered during the day lets the next code be compared, and a wrong one writes the alert. A password change voids the link and counts the alert as not written, so the next wrong code mails a new link. Codes of the mail factor (§2.8.8) and of a starting enrolment do not count |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -3560,10 +3561,18 @@ created_by, created_at, expires_at, used_at, burned, revoked_at, revoked_by, via
 new_instance, replaces, instance, takes_over, handover, subagents,
 subagents_language}` (`instance`: the id the exchange gave)
 and nothing that opens the join. `DELETE` revokes
-an unused join, records who did it as `revoked_by` (the human's id;
-`null` on a join the hub revoked itself, with an account's deletion,
-§2.9, and on joins revoked before it was recorded), writes
-`join_revoked` (§8.2), and returns it with `revoked_at` (200); a join already
+an unused join, records who did it as `revoked_by` (the human's id),
+writes `join_revoked` (§8.2), and returns it with `revoked_at` (200).
+Two cascades revoke unused joins on a person's word the same way, with
+`revoked_by` and one `join_revoked` each: deleting the agent profile
+the join names (§6.3, `revoked_by` the profile's owner) and the end of
+the creator's membership (§6.2, `revoked_by` whoever ended it, the
+creator when they left). `revoked_by` stays `null`, and no event is
+written, where the hub revokes a join on its own: a runner's unused
+pickup when its placement or runner goes or a new pickup replaces it
+(§15.9), an account's deletion with all it leaves behind (§2.9), the
+end of a membership the hub itself carries out, and joins revoked
+before it was recorded. A join already
 revoked answers 200 as it is (idempotent); a used, burned or expired join
 is `invalid_transition` with `details.from` (`used`, `burned`,
 `expired`) and `details.to: "revoked"`, and nothing changes.
@@ -12038,7 +12047,7 @@ learns its content.
 | `placement_nudged`, `placement_replaced`, `placement_flapping` | `runner:<id>` of the placement's runner, `member:<the placement's agent>`, the owner of the agent profile | `placement_id`; `nudge.id`, `by` for a nudge; `replaced_by`, `handover` for a replacement; `flapping_since`, `reasons` for flapping (§15.14) |
 | `runner_attached`, `runner_detached` | `runner:<id>`, `trust:owner` | `runner_id`, `attachment_id`, `project` |
 | `runner_credential_revoked` | `trust:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason`, `on_runner_revoke`, `stopped` (§15.10) |
-| `join_revoked` (§3.1) | `member:<id>` of the join's creator and of every human `members:admin` holder, as the invitation events (§3.4); no agent reads it, whatever its role or audience, and it never wakes one | `{id, agent_id, trust, role, revoked_by}`; never the URL or the code |
+| `join_revoked` (§3.1: a `DELETE`, a profile's deletion by its owner, the end of the creator's membership) | `member:<id>` of the join's creator and of every human `members:admin` holder, as the invitation events (§3.4); no agent reads it, whatever its role or audience, and it never wakes one | `{id, agent_id, trust, role, revoked_by}`; never the URL or the code |
 | `join_picked_up` | the owner of the agent profile, `trust:owner` | `placement_id`, `runner_id`, `join_id`, `pickup`; never the URL or the code |
 | `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
@@ -23462,7 +23471,7 @@ authority — with no cookie set or read:
 | `/mail/verify/{token}` | a page naming the address and a "Confirm" button | confirms the address; the page says so |
 | `/mail/unsubscribe/{token}` | a page naming the kind and a "Stop these mails" button | sets that kind's `mode` to `off`; also the RFC 8058 one-click `POST` with body `List-Unsubscribe=One-Click` |
 | `/mail/second-factor-reset/{token}` | a page naming the account and the admin who asked, with the reason as quoted text, and a "Reset my two-factor sign-in" button | resets it (§2.8.3); the page says so and that every session has ended |
-| `/mail/second-factor-unlock/{token}` | a page saying that too many wrong second-factor codes were entered today and the code is refused until the day ends, with a "Let me try again today" button | starts the day's count of wrong codes again from zero (§2.8.6); the page says so |
+| `/mail/second-factor-unlock/{token}` | a page saying that too many wrong second-factor codes were entered today and the code is refused until the day ends, with a "Let me try again today" button | starts the day's count of wrong codes again from zero (§2.8.6); the page says so. The link works once, on its UTC day, and not after a password change |
 | `/mail/account-deletion/{token}` | a page naming the account, saying what deletion removes and keeps (§2.9), with a link to the export and a "Delete my account" button | deletes the account (§2.9); the page says so, or why it did not (`namespace_owner`, `last_instance_admin`) |
 
 A `GET` never changes anything: mail scanners open links before the
