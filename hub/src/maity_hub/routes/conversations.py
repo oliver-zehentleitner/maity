@@ -20,7 +20,9 @@ from sqlalchemy import Connection, func, select
 
 from maity_hub import (
     attachments,
+    chat_gate,
     chat_meat_proxy,
+    chat_rules,
     conversation_list,
     events,
     group_chats,
@@ -605,7 +607,10 @@ def unpin_conversation(
 def create_group(slug: str, body: GroupIn, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
         # No chat to read along in yet: an owner outside gets not_found here (§9.2).
-        events.lock_project(conn, membership(conn, caller, slug).project.id)
+        project_id = membership(conn, caller, slug).project.id
+        if caller.human_id is not None:  # the creator's own agents: the add is the yes (§9.6)
+            chat_gate.lock_for_yes(conn, caller.human_id, project_id, body.participants)
+        events.lock_project(conn, project_id)
         mine = membership(conn, caller, slug)  # as of the lock
         if mine.kind != "human":  # the hub's jour fixe thread is no route (§20.5)
             raise humans_only("only a human creates a group chat")
@@ -648,7 +653,17 @@ def _load(conn: Connection, mine: Membership, conversation_id: str) -> dict[str,
     return {
         **group_chats.view(conn, group, found, _viewer(mine)),
         "pinned": _is_pinned(conn, mine, conversation_id),
+        **_rules(conn, mine, found, conversation_id),
     }
+
+
+def _rules(conn: Connection, mine: Any, found: str, conversation_id: str) -> dict[str, Any]:
+    """`chat_rules` for the agent participant reading its own chat (§9.6, "Rules per side"):
+    every other reader gets no such field, a bridge serving it included."""
+    agent_id = getattr(getattr(mine, "row", None), "agent_id", None)  # an owner outside: none
+    if agent_id is None or found != "participant" or getattr(mine, "bridged", False):
+        return {}
+    return {"chat_rules": chat_rules.for_chat(conn, agent_id, conversation_id)}
 
 
 def _viewer(mine: Any) -> str | None:
@@ -667,6 +682,7 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     return {
         **group_chats.view(conn, row, found, _viewer(mine)),
         "pinned": _is_pinned(conn, mine, conversation_id),
+        **_rules(conn, mine, found, conversation_id),
     }
 
 
@@ -723,6 +739,9 @@ def add_participant(
     slug: str, conversation_id: str, body: ParticipantIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
+        if caller.human_id is not None:  # its owner's add is the yes (§9.6)
+            project_id = writer(conn, caller, slug, conversation_id=conversation_id).project.id
+            chat_gate.lock_for_yes(conn, caller.human_id, project_id, [body.member_id])
         mine = _locked(conn, caller, slug, conversation_id)
         group = _manager(conn, mine, conversation_id)
         group_chats.add(conn, group, body.member_id, mine.principal_id, caller.actor(mine.id))
@@ -906,6 +925,8 @@ def send_message(
     def action(conn: Connection) -> idempotency.Outcome:
         mine = _locked(conn, caller, slug, conversation_id)
         if group_chats.is_group(conversation_id):
+            if chat_gate.waiting(conn, conversation_id, mine.id):
+                raise chat_gate.refuse_waiting()  # it does not post before its owner's yes
             _group(conn, mine, conversation_id)  # not_found for anyone without access
         else:
             _party(conn, mine, conversation_id, hidden=False)

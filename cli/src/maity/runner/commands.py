@@ -248,6 +248,25 @@ def _check_config_file(report: Report, path: Path) -> None:
         )
 
 
+def _check_repositories(report: Report, cfg: config.Config) -> None:
+    """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
+    `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). Said, never
+    an error, so a restart before the table is edited keeps every placement running."""
+    for name, grant in cfg.repositories.items():
+        if grant.refused:
+            listed = ", ".join(repr(rule) for rule in grant.refused)
+            report.warn(
+                f"repositories.{name}: allow {listed} is not applied: no session runs gh; "
+                "remove it and set pull_requests = true to let agents open pull requests "
+                "with `maity gh pr create`"
+            )
+        if grant.pull_requests and "api.github.com" in grant.network:
+            report.warn(
+                f"repositories.{name}: network api.github.com is not needed for pull requests "
+                "(`maity gh` runs outside the sandbox) and lets repository code reach the API"
+            )
+
+
 def _check_state(report: Report, cfg: config.Config) -> None:
     directory = cfg.state_dir
     if not directory.is_dir():
@@ -351,12 +370,18 @@ def _check_harness(
 def _check_claude_code(
     report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = ""
 ) -> None:
-    if sys.platform.startswith("linux"):
-        # On the agents' PATH, as their user finds it: that is where the sandbox starts.
-        missing = [t for t in ("bwrap", "socat") if not capabilities.which(t, agent_path, as_user)]
-        if missing:
-            line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
-            (report.error if harness.require_sandbox else report.warn)(line)
+    # On the agents' PATH, as their user finds it: that is where the sandbox starts.
+    tools = capabilities.claude_sandbox_tools()
+    missing = [t for t in tools or () if not capabilities.which(t, agent_path, as_user)]
+    line = None
+    if tools is None:
+        line = f"harness claude-code: no OS sandbox on {sys.platform}; agents run unsandboxed"
+    elif missing:
+        line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
+    if line is not None:
+        (report.error if harness.require_sandbox else report.warn)(line)
+    else:
+        report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
     _check_claude_settings(report, as_user, "")
 
 
@@ -504,6 +529,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         report.error(problem)
     _check_config_file(report, path)
     _check_state(report, cfg)
+    _check_repositories(report, cfg)
     if cfg.ssh is not None:
         _check_ssh(report, cfg, getattr(args, "target", None))
     elif getattr(args, "target", None):

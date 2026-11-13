@@ -120,6 +120,9 @@ window.Maity = window.Maity || {};
     // An organisation has no agents (§16.9): /<org>/agents names nothing.
     if (org && tab === "agents") { M.notFound.view(root); return; }
     const own = !org && ctx.me && ctx.me.handle === p.handle;
+    // Report this person to the instance's admins (§16.8, tsk-7ze5w6ymf7bw) by the current handle, the
+    // name this reader has; not oneself, and not an organisation, which §16.8 does not take yet.
+    const reporting = M.report && !org && !own ? M.report.control({ type: "profile", id: p.handle }, "person") : null;
     append(root,
       h("div", { class: "person-head" },
         picture(p, 64),
@@ -139,7 +142,8 @@ window.Maity = window.Maity || {};
     append(root,
       viewPublic,
       typeof p.public_bio === "string" && p.public_bio ? h("p", { class: "person-bio" }, p.public_bio) : null,
-      org ? null : links(p.website, p.social));
+      org ? null : links(p.website, p.social),
+      reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null);
     append(root, h("h3", null, own ? M.t("person.projects.yours") : M.t("person.projects")),
       projectList(p, org ? M.t("person.projects.none_org") : own ? M.t("person.projects.none_own") : M.t("person.projects.none")));
     if (org && Array.isArray(p.members)) {
@@ -148,6 +152,7 @@ window.Maity = window.Maity || {};
           picture(m, 20), " ",
           m.display_name || m.handle, h("span", { class: "muted" }, " " + M.t("person.member", { handle: m.handle, role: roleWords(m.role) }))))));
     }
+    if (reporting && M.report.asked()) reporting.open();
   };
 
   M.person = { links, tabs, agentList };

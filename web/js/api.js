@@ -291,6 +291,20 @@ window.Maity = window.Maity || {};
     if (body.reply_id != null && !(req.replies || []).some((r) => r.id === body.reply_id)) {
       fail(400, "invalid", "Unknown reply", path, { fields: { reply_id: "not_a_reply" } });
     }
+    // `chat_access` beside an answer (§9.6): on a request to chat with one's agents only, with an
+    // allow reply, naming only its waiting and held agents; its rules checked as /me/chat-access/allow checks them.
+    if (body.chat_access != null) {
+      const car = req.chat_access_request;
+      if (!car) fail(400, "invalid", "not a chat request", path, { fields: { chat_access: "not_a_chat_request" } });
+      if (!/^allow_(hour|day|week|always)$/.test(body.reply_id || "")) fail(400, "invalid", "chat_access goes with an allow reply", path, { fields: { chat_access: "allow_only" } });
+      const ca = body.chat_access;
+      if (ca.agents != null && (!Array.isArray(ca.agents) || ca.agents.some((a) => !car.agents.some((x) => x.id === a)))) {
+        fail(400, "invalid", "only the request's agents", path, { fields: { "chat_access.agents": "not_on_this_request" } });
+      }
+      ["allowed", "denied"].forEach((k) => {
+        if (ca[k] != null && (typeof ca[k] !== "string" || [...ca[k]].length > 1000)) fail(400, "invalid", k + " is text of at most 1000 characters", path, { fields: { [k]: "format" } });
+      });
+    }
     if (body.talk) {
       // The asker's profile: the project's member, else one of the human's own.
       const asking = req.asked_by && req.asked_by.member_id;
@@ -886,6 +900,32 @@ window.Maity = window.Maity || {};
     return String(body.to).trim() ? null : "invalid";
   }
 
+  // §6.2: a member as the member reads give it to the caller — `manages` to everyone, and
+  // `owner`, `credentials` and `shared_environment` to an admin and to an agent's owner on
+  // their own agents. The list and a member PATCH's answer both read through it.
+  function fixtureMembersAsRead(slug, items) {
+    const admin = membersAdmin(slug);
+    const creds = fixtures()[slug + "/credentials.json"] || {};
+    const monthAgo = Date.now() - 30 * 86400000;
+    const counted = fixtureManages(items);
+    return (x0) => {
+      const x = Object.assign({}, x0, { manages: counted[x0.id] });
+      if (!admin && x.owner_id !== me().member.id) return x;
+      if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null, shared_environment: [] });
+      const all = (creds[x.id] || { items: [] }).items;
+      const active = all.filter((c) => !c.revoked_at);
+      const used = active.filter((c) => c.last_used_at).sort((a, b) => (a.last_used_at < b.last_used_at ? 1 : -1))[0];
+      return Object.assign({}, x, {
+        // The hub's owner carries its picture's URL, null without one (§6.10).
+        owner: Object.assign(humanOf(x.owner_id), { avatar_url: (x.owner_id === me().member.id && me().member.avatar_url) || null }),
+        credentials: { active: active.length, never_resumed: active.filter((c) => !c.resumed_at).length,
+          revoked_recent: all.filter((c) => c.revoked_at && Date.parse(c.revoked_at) >= monthAgo).length,
+          last_used_at: used ? used.last_used_at : null, last_used_via: used ? used.last_used_via || null : null },
+        shared_environment: x.shared_environment || [],
+      });
+    };
+  }
+
   function fixtureManages(items) {
     const below = {};
     items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
@@ -1239,6 +1279,10 @@ window.Maity = window.Maity || {};
   // renames of the last 24 hours are counted, three at most; the handles of the orgs, of the
   // fixture people and the reserved first segments are taken.
   const selfRenames = [];
+  // The reports filed from this tab (§16.8, POST /reports), newest first, for GET /me/reports.
+  const ownReports = [];
+  // A text's length in UTF-8 bytes, as the hub counts a report's text (§16.8: at most 2 KiB).
+  const utf8Length = (s) => { let n = 0; for (const ch of s) { const c = ch.codePointAt(0); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; } return n; };
   function renameSelf(mm, wanted, path) {
     if (typeof wanted !== "string" || !/^[a-z0-9][a-z0-9-]{1,30}$/.test(wanted)) fail(400, "invalid", "handle", path, { fields: { handle: "format" } });
     if (wanted === mm.handle) return;
@@ -1809,12 +1853,15 @@ window.Maity = window.Maity || {};
     password: { value: true, source: "fixed" },
     device_code: { value: true, source: "default" },
     email_link: { value: true, source: "default" },
+    password_reset: { value: true, source: "default" },
     second_factor: { value: "optional", source: "default" },
     secret_key: true,
     signing_key: true,
     pending: false,
   };
   const signInMailReady = () => { const mail = fixtures()["admin-mail.json"]; return !!(mail.complete && mail.enabled); };
+  const resetLinks = { "reset-plain": null, "reset-totp": "totp", "reset-email": "email" };
+  const resetUsed = new Set();
   function signInView() {
     const missing = [];
     if (!signInSetting.email_link.value) missing.push("switched_off");
@@ -1823,8 +1870,14 @@ window.Maity = window.Maity || {};
     if (!signInSetting.signing_key) missing.push("signing_key");
     const available = !missing.length;
     if (!signInSetting.secret_key) missing.push("secret_key");
-    const { password, device_code, email_link, second_factor } = signInSetting;
-    return JSON.parse(JSON.stringify({ password, device_code, email_link, second_factor, email_link_available: available, missing }));
+    const { password, device_code, email_link, password_reset, second_factor } = signInSetting;
+    // §2.10: the reset's own reasons, without the second factor's.
+    const resetMissing = [];
+    if (!password_reset.value) resetMissing.push("switched_off");
+    if (!signInMailReady()) resetMissing.push("mail");
+    if (!signInSetting.signing_key) resetMissing.push("signing_key");
+    return JSON.parse(JSON.stringify({ password, device_code, email_link, password_reset, second_factor, email_link_available: available, missing,
+      password_reset_available: !resetMissing.length, password_reset_missing: resetMissing }));
   }
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
@@ -1840,6 +1893,50 @@ window.Maity = window.Maity || {};
   let maintenanceRow = null;
   const maintenanceChanges = [];
   let broadcastsChoice = { mode: "accept_all", agents: [] };
+  // §9.6 The fixture hub's allow and deny entries of the human (/me/chat-access), newest first:
+  // one allow for anna's side and one deny of her agent, so the tab has something to show.
+  let chatAccessLists = null;
+  const chatAccess = () => chatAccessLists || (chatAccessLists = {
+    allow: [{ id: "cha-0001", agents: ["agt-a"], owner_id: "hum-anna", handle: "anna", their_agents: "all", their_human: false,
+      project: null, duration: null, until: null, allowed: "the shop's frontend, may work on it", denied: "nothing about releases",
+      by: me().member.id, since: "2026-11-11T16:00:00Z" }],
+    deny: [{ id: "cha-0002", agents: "all", agent_id: "agt-s2", by: me().member.id, since: "2026-11-12T09:00:00Z" }],
+  });
+  function chatAccessAgents(raw, path) {
+    if (raw === "all") return "all";
+    if (!Array.isArray(raw) || !raw.length || raw.some((a) => typeof a !== "string")) fail(400, "invalid", "agents is all or a list of ids", path, { fields: { agents: "format" } });
+    if (new Set(raw).size !== raw.length) fail(400, "invalid", "an id twice in agents", path, { fields: { agents: "duplicate" } });
+    const own = new Set(fixtures()["agents.json"].items.filter((a) => a.owner_id === me().member.id && !a.deleted_at).map((a) => a.id));
+    if (raw.some((a) => !own.has(a))) fail(400, "invalid", "only your own agents", path, { fields: { agents: "not_yours" } });
+    return raw.slice();
+  }
+  function chatAccessHuman(raw, field, path) {
+    if (typeof raw !== "string" || !/^hum-/.test(raw)) fail(400, "invalid", field + " is a human id", path, { fields: { [field]: "format" } });
+    if (raw === me().member.id) fail(400, "invalid", "your own side needs no entry", path, { fields: { [field]: "self" } });
+    return raw;
+  }
+  // A person's handle from the member lists the fixtures hold, as the hub names them.
+  function chatAccessHandle(id) {
+    const all = Object.keys(fixtures()).filter((k) => /\/members\.json$/.test(k)).flatMap((k) => fixtures()[k].items || []);
+    const found = all.find((x) => x.id === id);
+    return found ? found.handle : id.replace(/^hum-/, "");
+  }
+  function chatAccessProject(raw, path) {
+    if (!raw || typeof raw !== "object" || typeof raw.owner !== "string" || typeof raw.slug !== "string") fail(400, "invalid", "project is {owner, slug}", path, { fields: { project: "format" } });
+    if (!me().projects.some((p) => p.full_name === raw.owner + "/" + raw.slug)) fail(400, "invalid", "no such project", path, { fields: { project: "not_found" } });
+    return { owner: raw.owner, slug: raw.slug };
+  }
+  function chatAccessDuration(raw, path) {
+    const steps = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3 };
+    if (raw == null) return { duration: null, until: null };
+    if (!(raw in steps)) fail(400, "invalid", "duration is hour, day, week or null", path, { fields: { duration: "format" } });
+    return { duration: raw, until: new Date(Date.now() + steps[raw]).toISOString().replace(/\.\d{3}Z$/, "Z") };
+  }
+  function chatAccessText(raw, field, path) {
+    if (raw == null) return null;
+    if (typeof raw !== "string" || [...raw].length > 1000) fail(400, "invalid", field + " is text of at most 1000 characters", path, { fields: { [field]: "format" } });
+    return raw;
+  }
   (function startWindow(wanted) {
     if (!["upcoming", "running"].includes(wanted)) return;
     const at = (minutes) => new Date(Date.now() + minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -1878,9 +1975,102 @@ window.Maity = window.Maity || {};
   // counted in characters (code points) as the hub counts them.
   const BRIEFING_CHARS = 16 * 1024;
 
-  // [method, pattern, handler(match, body, path, query)]. One row per
+  // A successful DELETE of a membership, by Idempotency-Key (§1.5, §6.2 "Leaving
+  // a project"): the fixture hub has no store for every call, only this one, so a
+  // retry of leaving replays the stored 200 after the caller is no member.
+  const memberDeleteReplay = new Map();
+  const OUTSIDE_STAY = ["coder", "designer", "writer", "blue-team", "expert"];
+  // `members` or `anyone`, as the hub reads an unset value (§6.1): `anyone` while the
+  // page is served, `members` otherwise. The fixture has no moderation hold to add.
+  function ownersMode(p) {
+    const set = p.policy && p.policy.agent_owners;
+    if (set === "members" || set === "anyone") return set;
+    return p.public_page === "on" && p.state !== "archived" ? "anyone" : "members";
+  }
+  function outsideStays(agent, p) {
+    const roles = (p.policy && p.policy.outside_roles) || ["coder"];
+    const base = agent.role_base || agent.role;
+    return (agent.trust === "member" || agent.trust === "guest") && roles.includes(agent.role) && OUTSIDE_STAY.includes(base);
+  }
+  // The human namespace owner, or an owner of the organisation that owns the project (§6.25, §6.26).
+  function namespaceBlocks(slug, targetId) {
+    const owner = (project(slug, "").owner) || {};
+    if (owner.id === targetId) return true;
+    if (typeof owner.id !== "string" || !owner.id.startsWith("org-")) return false;
+    const members = (orgsData().members || {})[owner.id] || [];
+    return (members.find((x) => x.id === targetId) || {}).role === "owner";
+  }
+  function headerOf(headers, name) {
+    if (!headers) return "";
+    const want = name.toLowerCase();
+    const found = Object.keys(headers).find((k) => k.toLowerCase() === want);
+    return found ? headers[found] : "";
+  }
+  function deleteMember(m, body, path, query, headers) {
+    const key = headerOf(headers, "idempotency-key");
+    const call = "DELETE /projects/" + m[1] + "/members/" + m[2];
+    if (key) {
+      const stored = memberDeleteReplay.get(key);
+      if (stored) {
+        if (stored.call !== call) fail(409, "idempotency_mismatch", "A different request was already sent under this key.", path);
+        return stored.body;
+      }
+    }
+    const who = caller(m[1], path);
+    const leaving = who.member.kind === "human" && who.member.id === m[2];
+    if (!who.admin && !leaving) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+    const list = file(m[1], "members.json", path);
+    list.removed = list.removed || [];
+    // A human who already left is no member: a repeat without the same key is not_found (§6.2).
+    if (leaving && !me().projects.some((p) => p.slug === m[1])) fail(404, "not_found", "Not found", path);
+    // A second DELETE by a caller who is still a member answers 200 with the removed member.
+    if (!leaving) {
+      const gone = list.removed.find((x) => x.id === m[2]);
+      if (gone) return gone;
+    }
+    if (namespaceBlocks(m[1], m[2])) {
+      fail(409, "namespace_owner", "the project's namespace owner is not removed", path, { projects: [fullOf(m[1])] });
+    }
+    const target = member(m[1], m[2], path);
+    if (!leaving) {
+      agentLimits(who.member, target, null, path);
+      const consent = consentFor(m[1], who.member, "Remove " + target.handle);
+      if (consent) return consent;
+      if (target.trust === "owner" && who.member.kind === "human" && trustIn(m[1]) !== "owner") {
+        fail(403, "forbidden", "only an owner removes an owner", path, { reason: "owner_only" });
+      }
+    }
+    if (target.trust === "owner" && list.items.filter((x) => x.trust === "owner").length === 1) {
+      fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
+    }
+    const at = nowIso();
+    ((fixtures()[m[1] + "/credentials.json"] || {})[target.id] || { items: [] }).items.forEach((c) => {
+      if (!c.revoked_at) { c.revoked_at = at; c.revoked_by = me().member.id; c.revoked_reason = "member_removed"; c.session_id = null; }
+    });
+    file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
+    if (leaving) {
+      const p = project(m[1], path);
+      const mode = ownersMode(p);
+      list.items.forEach((x) => {
+        if (x.kind !== "agent" || x.owner_id !== target.id || x.isolated) return;
+        if (mode === "anyone" && outsideStays(x, p)) return;
+        x.isolated = { reason: "The agent's owner is no longer a member of this project.", since: at, by: "hub" };
+      });
+      const data = me();
+      data.projects = data.projects.filter((row) => row.slug !== m[1] && row.id !== p.id);
+      if (Array.isArray(data.member.start_tabs)) data.member.start_tabs = data.member.start_tabs.filter((id) => id !== p.id);
+    }
+    list.items = list.items.filter((x) => x !== target);
+    list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
+    const removed = Object.assign({}, target, { removed_at: at });
+    list.removed.push(removed);
+    if (key) memberDeleteReplay.set(key, { call, body: JSON.parse(JSON.stringify(removed)) });
+    return removed;
+  }
+
+  // [method, pattern, handler(match, body, path, query, headers)]. One row per
   // endpoint the views use; the patterns match the path below /api/v1
-  // without the query string.
+  // without the query string. `headers` is set on a call that sends one.
   const routes = [
     // §6.27: a person or an organisation as this signed-in human may see
     // them; an alias answers with the current handle; whoever shows the
@@ -1920,7 +2110,30 @@ window.Maity = window.Maity || {};
     }],
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
     // phone has entered it by the second read, so the approval can be seen.
-    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: signInSetting.device_code.value, email_link: signInView().email_link_available, registration: false, terms: null })],
+    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: signInSetting.device_code.value, email_link: signInView().email_link_available,
+      password_reset: signInView().password_reset_available, registration: false, terms: null })],
+    // §2.10 a forgotten password. The fixture's links: reset-plain (no second factor), reset-totp
+    // (its code 123456, a recovery code ABCD-EFGH-JKMN), reset-email (the mail is the factor);
+    // any other token is dead. A link is used once.
+    ["POST", /^\/auth\/password-reset$/, (m, body, path) => {
+      if (!signInView().password_reset_available) fail(403, "forbidden", "resets by mail are off", path, { reason: "method_disabled" });
+      return { expires_in: 1800 };
+    }],
+    ["POST", /^\/auth\/password-reset\/check$/, (m, body, path) => {
+      if (!signInView().password_reset_available) fail(403, "forbidden", "resets by mail are off", path, { reason: "method_disabled" });
+      const factor = resetLinks[body.token];
+      if (factor === undefined || resetUsed.has(body.token)) fail(403, "code_invalid", "this link or code does not work", path);
+      return { display_name: "Maintainer", handle: "maintainer", factor };
+    }],
+    ["POST", /^\/auth\/password-reset\/complete$/, (m, body, path) => {
+      if (!signInView().password_reset_available) fail(403, "forbidden", "resets by mail are off", path, { reason: "method_disabled" });
+      if (typeof body.new !== "string" || [...body.new].length < 12) fail(400, "invalid", "a password has at least 12 characters", path, { fields: { new: "too_short" } });
+      const factor = resetLinks[body.token];
+      if (factor === undefined || resetUsed.has(body.token)) fail(403, "code_invalid", "this link or code does not work", path);
+      if (factor === "totp" && body.code !== "123456" && body.recovery_code !== "ABCD-EFGH-JKMN") fail(403, "code_invalid", "this link or code does not work", path);
+      resetUsed.add(body.token);
+      return {};
+    }],
     // §3.4: the invitation page and accepting, signed out and in; per token
     // fixtures/invitations.json says what the page shows or how accept refuses.
     ["GET", /^\/invitations\/([^/]+)$/, (m, body, path) => {
@@ -2526,7 +2739,8 @@ window.Maity = window.Maity || {};
     // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
     ["GET", /^\/auth\/second-factor$/, () => (mockFactorOn ? { enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
       last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" }
-      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null })],
+      // Not enrolled under the instance's mail factor (§2.8.8): the mail is the factor.
+      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: signInSetting.second_factor.value === "email" ? "email" : null })],
     ["POST", /^\/auth\/second-factor\/totp$/, () => ({ secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
       otpauth_uri: "otpauth://totp/Maity:maintainer?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Maity&digits=6&period=30", expires_in: 600 })],
     ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
@@ -2580,9 +2794,11 @@ window.Maity = window.Maity || {};
         if ("timezone" in e && e.timezone !== null && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
         if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
         if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
+        if ("password_reset" in e && typeof e.password_reset !== "boolean") fields["email.password_reset"] = "invalid";
+        if ("hold_while_online" in e && typeof e.hold_while_online !== "boolean") fields["email.hold_while_online"] = "invalid";
         if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
         Object.entries(e.kinds || {}).forEach(([k, v]) => { set.email.kinds[k] = Object.assign({}, set.email.kinds[k], v); });
-        ["daily_at", "weekly_on", "timezone", "quiet_hours", "sign_in_link"].forEach((key) => { if (key in e) set.email[key] = e[key]; });
+        ["daily_at", "weekly_on", "timezone", "quiet_hours", "sign_in_link", "password_reset", "hold_while_online"].forEach((key) => { if (key in e) set.email[key] = e[key]; });
       }
       if (body.email && "language" in body.email) {
         if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.email.language)) fail(400, "invalid", "unknown language", path);
@@ -2690,6 +2906,26 @@ window.Maity = window.Maity || {};
       Object.assign(agent, { deleted_at: at, memberships: [], avatar_url: null, avatar_source: null, avatar_motif: null });
       return agent;
     }],
+    // §16.8 A report by whoever is signed in: a target of the four types, one of the six reasons, a
+    // text of at most 2 KiB; 3 per target per account for good (`rate_limited`, no Retry-After). Read
+    // back by the reporter in GET /me/reports, newest first, status and action only.
+    ["POST", /^\/reports$/, (m, body, path) => {
+      const t = body && body.target;
+      if (!t || typeof t !== "object" || !["profile", "project", "message", "card"].includes(t.type)) fail(400, "invalid", "the request does not validate", path, { fields: { "target.type": "unknown" } });
+      if (typeof t.id !== "string" || !t.id) fail(400, "invalid", "the request does not validate", path, { fields: { "target.id": "missing" } });
+      if (["message", "card"].includes(t.type) && typeof t.project !== "string") fail(400, "invalid", "the request does not validate", path, { fields: { "target.project": "missing" } });
+      if (!["spam", "abuse", "illegal", "prompt_injection", "impersonation", "other"].includes(body.reason)) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "unknown" } });
+      if ("text" in body && (typeof body.text !== "string" || utf8Length(body.text) > 2048)) fail(400, "invalid", "the request does not validate", path, { fields: { text: "too_long" } });
+      const key = t.type + " " + t.id + " " + (t.project || "");
+      if (ownReports.filter((r) => r.key === key).length >= 3) fail(429, "rate_limited", "this target was reported 3 times already", path, {});
+      const made = { id: "rpt-f" + String(ownReports.length + 1).padStart(4, "0"), created_at: nowIso() };
+      ownReports.unshift(Object.assign({ key, target: { type: t.type, id: t.id, project: t.project || null }, reason: body.reason, status: "open", action: null }, made));
+      return made;
+    }],
+    ["GET", /^\/me\/reports$/, () => ({
+      items: ownReports.map((r) => ({ id: r.id, created_at: r.created_at, target: r.target, reason: r.reason, status: r.status, action: r.action })),
+      next_cursor: null,
+    })],
     // §16.8 Abuse reports for the instance admin: open ones first, each newest
     // first; one with its snapshot; resolved (again) with an action and a note.
     ["GET", /^\/admin\/reports$/, (m, body, path, query) => {
@@ -2760,7 +2996,7 @@ window.Maity = window.Maity || {};
       const fields = {};
       Object.entries(body).forEach(([k, v]) => {
         if (k === "password") fields[k] = "fixed";
-        else if (!["device_code", "email_link", "second_factor"].includes(k)) fields[k] = "extra_forbidden";
+        else if (!["device_code", "email_link", "password_reset", "second_factor"].includes(k)) fields[k] = "extra_forbidden";
         else if (signInSetting[k].source === "env") fields[k] = "set_by_environment";
         else if (k === "second_factor") {
           if (v !== null && !["off", "optional", "required_admins", "email"].includes(v)) fields[k] = "invalid";
@@ -2770,7 +3006,7 @@ window.Maity = window.Maity || {};
         } else if (v !== null && typeof v !== "boolean") fields[k] = "invalid";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
-      const defaults = { device_code: true, email_link: true, second_factor: "optional" };
+      const defaults = { device_code: true, email_link: true, password_reset: true, second_factor: "optional" };
       const waits = body.second_factor === "email";
       Object.entries(body).forEach(([k, v]) => {
         if (k === "second_factor" && waits) return;
@@ -2885,6 +3121,85 @@ window.Maity = window.Maity || {};
     ["GET", /^\/admin\/maintenance\/changes$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       return { items: maintenanceChanges.slice(), next_cursor: null };
+    }],
+    // §9.6 "The lists": checked as the hub checks them (chat_access.py), the same details.fields.
+    ["GET", /^\/me\/chat-access$/, () => JSON.parse(JSON.stringify(chatAccess()))],
+    ["POST", /^\/me\/chat-access\/(allow|deny)$/, (m, body, path) => {
+      const allow = m[1] === "allow";
+      const subjects = allow ? ["owner_id", "project"] : ["owner_id", "human_id", "agent_id", "project"];
+      const named = subjects.filter((k) => body[k] != null);
+      if (named.length !== 1) fail(400, "invalid", "an entry names exactly one subject", path, { fields: Object.fromEntries(subjects.map((k) => [k, "one_subject"])) });
+      const entry = { id: localId("cha"), agents: chatAccessAgents(body.agents, path) };
+      const k = named[0];
+      if (k === "owner_id" || k === "human_id") {
+        entry[k] = chatAccessHuman(body[k], k, path);
+        entry.handle = chatAccessHandle(entry[k]);
+      } else if (k === "agent_id") {
+        const own = fixtures()["agents.json"].items.some((a) => a.id === body.agent_id && a.owner_id === me().member.id);
+        if (typeof body.agent_id !== "string" || !/^agt-/.test(body.agent_id)) fail(400, "invalid", "agent_id is an agent id", path, { fields: { agent_id: "format" } });
+        if (own) fail(400, "invalid", "your own agents need no entry", path, { fields: { agent_id: "self" } });
+        entry.agent_id = body.agent_id;
+      } else {
+        entry.project = chatAccessProject(body.project, path);
+      }
+      if (allow) {
+        if (k === "owner_id") {
+          entry.their_agents = body.their_agents === undefined ? "all" : body.their_agents;
+          if (!["all", "none"].includes(entry.their_agents) && !Array.isArray(entry.their_agents)) fail(400, "invalid", "their_agents", path, { fields: { their_agents: "format" } });
+          entry.their_human = body.their_human === undefined ? false : body.their_human;
+          if (typeof entry.their_human !== "boolean") fail(400, "invalid", "their_human is true or false", path, { fields: { their_human: "format" } });
+          if (entry.their_agents === "none" && !entry.their_human) fail(400, "invalid", "names no one", path, { fields: { their_agents: "names_no_one" } });
+        } else {
+          ["their_agents", "their_human"].forEach((f) => { if (body[f] != null) fail(400, "invalid", "a project entry names no side", path, { fields: { [f]: "project_entry" } }); });
+          Object.assign(entry, { owner_id: null, handle: null, their_agents: null, their_human: null });
+        }
+        if (!("project" in entry)) entry.project = null;
+        Object.assign(entry, chatAccessDuration(body.duration, path), { allowed: chatAccessText(body.allowed, "allowed", path), denied: chatAccessText(body.denied, "denied", path) });
+      }
+      Object.assign(entry, { by: me().member.id, since: nowIso() });
+      const lists = chatAccess();
+      if (lists.allow.length + lists.deny.length >= 1000) fail(400, "invalid", "too many entries", path, { reason: "too_many_entries" });
+      // A deny removes the allows for the same agents and subject; an allow for all agents stays
+      // when the deny names some of them (a deny wins over it anyway).
+      if (!allow && (k === "owner_id" || k === "project")) {
+        const same = (a) => (k === "owner_id" ? a.owner_id === entry.owner_id : a.project && JSON.stringify(a.project) === JSON.stringify(entry.project));
+        lists.allow = lists.allow.flatMap((a) => {
+          if (!same(a)) return [a];
+          if (entry.agents === "all") return [];
+          if (a.agents === "all") return [a];
+          const left = a.agents.filter((x) => !entry.agents.includes(x));
+          return left.length ? [Object.assign(a, { agents: left })] : [];
+        });
+      }
+      lists[m[1]].unshift(entry);
+      return JSON.parse(JSON.stringify(entry));
+    }],
+    ["PATCH", /^\/me\/chat-access\/allow\/([^/]+)$/, (m, body, path) => {
+      const entry = chatAccess().allow.find((e) => e.id === m[1]);
+      if (!entry) fail(404, "not_found", "Not found", path);
+      const next = Object.assign({}, entry);
+      if ("agents" in body) next.agents = chatAccessAgents(body.agents, path);
+      if (("their_agents" in body || "their_human" in body) && !entry.owner_id) {
+        fail(400, "invalid", "a project entry names no side", path, { fields: { ["their_agents" in body ? "their_agents" : "their_human"]: "project_entry" } });
+      }
+      if ("their_agents" in body) {
+        if (!["all", "none"].includes(body.their_agents) && !Array.isArray(body.their_agents)) fail(400, "invalid", "their_agents", path, { fields: { their_agents: "format" } });
+        next.their_agents = body.their_agents;
+      }
+      if ("their_human" in body) {
+        if (typeof body.their_human !== "boolean") fail(400, "invalid", "their_human is true or false", path, { fields: { their_human: "format" } });
+        next.their_human = body.their_human;
+      }
+      if (entry.owner_id && next.their_agents === "none" && !next.their_human) fail(400, "invalid", "names no one", path, { fields: { their_agents: "names_no_one" } });
+      if ("duration" in body) Object.assign(next, chatAccessDuration(body.duration, path));
+      ["allowed", "denied"].forEach((f) => { if (f in body) next[f] = chatAccessText(body[f], f, path); });
+      Object.assign(entry, next);
+      return JSON.parse(JSON.stringify(entry));
+    }],
+    ["DELETE", /^\/me\/chat-access\/(allow|deny)\/([^/]+)$/, (m) => {
+      const lists = chatAccess();
+      lists[m[1]] = lists[m[1]].filter((e) => e.id !== m[2]);
+      return null;
     }],
     ["GET", /^\/me\/broadcasts$/, () => Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() })],
     ["PATCH", /^\/me\/broadcasts$/, (m, body, path) => {
@@ -3158,11 +3473,12 @@ window.Maity = window.Maity || {};
     ["GET", /^\/requests$/, () => ({
       items: me().projects.flatMap((p) => openFor(p.slug).map((r) => Object.assign(
         { project: { slug: project(p.slug, "").slug, full_name: p.full_name, name: p.name, state: project(p.slug, "").state } }, r)))
-        // A list shows no proposal (§7, §19.4): GET /requests/{id} has it.
+        // A list shows no proposal (§7, §19.4) and no chat request's boxes (§9.6): GET /requests/{id} has them.
         // A personal request addressed to another human is theirs, not this one's.
         .concat(personalRequests().filter((r) => r.status === "open" && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id)).map((r) => {
           const listed = Object.assign({}, r);
           delete listed.memory_proposal;
+          delete listed.chat_access_request;
           return listed;
         })),
       next_cursor: null,
@@ -4667,29 +4983,15 @@ window.Maity = window.Maity || {};
     // agent's owner on their own agents; never for anyone else.
     ["GET", /^\/projects\/([^/]+)\/members$/, (m, body, path) => {
       const list = file(m[1], "members.json", path);
-      const admin = membersAdmin(m[1]);
-      const creds = fixtures()[m[1] + "/credentials.json"] || {};
-      const monthAgo = Date.now() - 30 * 86400000;
-      const counted = fixtureManages(list.items);
-      return { next_cursor: null, items: list.items.map((x0) => {
-        const x = Object.assign({}, x0, { manages: counted[x0.id] });
-        if (!admin && x.owner_id !== me().member.id) return x;
-        if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null });
-        const all = (creds[x.id] || { items: [] }).items;
-        const active = all.filter((c) => !c.revoked_at);
-        const used = active.filter((c) => c.last_used_at).sort((a, b) => (a.last_used_at < b.last_used_at ? 1 : -1))[0];
-        return Object.assign({}, x, {
-          owner: humanOf(x.owner_id),
-          credentials: { active: active.length, never_resumed: active.filter((c) => !c.resumed_at).length,
-            revoked_recent: all.filter((c) => c.revoked_at && Date.parse(c.revoked_at) >= monthAgo).length,
-            last_used_at: used ? used.last_used_at : null, last_used_via: used ? used.last_used_via || null : null },
-        });
-      }) };
+      const read = fixtureMembersAsRead(m[1], list.items);
+      return { next_cursor: null, items: list.items.map(read) };
     }],
     // §6.2 as the hub does it: every field checked first, each bad one
     // named at once, then one write. A reports-to circle or self is `cycle`
-    // (#118). An admin agent stays within §2.3 ᵃ.
+    // (#118). An admin agent stays within §2.3 ᵃ. A `200` is the member as the member
+    // reads give it to the caller (fixtureMembersAsRead); a consent stays as filed.
     ["PATCH", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
+      const asRead = (x) => fixtureMembersAsRead(m[1], file(m[1], "members.json", path).items)(x);
       const who = caller(m[1], path);
       // §19.4: the agent's owner, and nobody else, gives it their preferences.
       if ("owner_preferences" in body) {
@@ -4697,7 +4999,7 @@ window.Maity = window.Maity || {};
         if (Object.keys(body).length !== 1 || typeof body.owner_preferences !== "boolean") fail(400, "invalid", "set owner_preferences on its own", path, { fields: { owner_preferences: "alone" } });
         if (target.kind !== "agent" || target.owner_id !== who.member.id) fail(403, "forbidden", "the profile's owner only", path, { reason: "not_the_owner" });
         target.owner_preferences = body.owner_preferences;
-        return target;
+        return asRead(target);
       }
       // §6.17: an instance put to rest or woken, by a human only: the profile's
       // owner, member or not, or members:admin, whose change to another
@@ -4721,7 +5023,7 @@ window.Maity = window.Maity || {};
         const active = target.instances.filter((i) => !i.revoked_at);
         if (active.every((i) => i.dormant)) target.availability = { state: "limited", since: nowIso(), source: "dormant" };
         else if (target.availability && target.availability.source === "dormant") target.availability = { state: "available", since: nowIso() };
-        return target;
+        return asRead(target);
       }
       // §6.18: the team's rulebook, by the human who owns the agent profile only.
       if ("team" in body) {
@@ -4738,7 +5040,7 @@ window.Maity = window.Maity || {};
         else if (body.team.lead_instance && (target.instances || []).some((i) => i.id === body.team.lead_instance && i.dormant)) errors["team.lead_instance"] = "dormant";
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
-        return target;
+        return asRead(target);
       }
       // §2.3: a human sets the reports_to of an agent they own to null or to a
       // member they own (themselves or another of their agents), whatever their
@@ -4758,7 +5060,7 @@ window.Maity = window.Maity || {};
             seen.add(at);
           }
           target.reports_to = to;
-          return target;
+          return asRead(target);
         }
       }
       // §6.2 "An expert's fields": alone in their PATCH, by the agent's human owner or
@@ -4789,7 +5091,7 @@ window.Maity = window.Maity || {};
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         if ("expert_for" in body) target.expert_for = (body.expert_for || "").split(/\s+/).filter(Boolean).join(" ") || null;
         if ("expert_sources" in body) target.expert_sources = [...new Set(body.expert_sources || [])];
-        return target;
+        return asRead(target);
       }
       // §3.1 "The owner changes the role": the human who owns the agent, without
       // members:admin, sets its role alone while they could let it join now
@@ -4815,7 +5117,7 @@ window.Maity = window.Maity || {};
           if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
           target.role = body.role;
           target.role_base = base;
-          return target;
+          return asRead(target);
         }
       }
       if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
@@ -4890,7 +5192,7 @@ window.Maity = window.Maity || {};
         target.paused = body.paused ? { reason: body.paused.reason, since: nowIso(), by: me().member.id } : null;
         target.presence = target.paused ? "paused" : (target.session ? "online" : "offline");
       }
-      return foreign || target;
+      return foreign || asRead(target);
     }],
     // §11.4: the namespace owner confirms the repository for their grants, only
     // the URL the project carries now; a changed one is a conflict.
@@ -4968,39 +5270,9 @@ window.Maity = window.Maity || {};
       list.push(req);
       return Object.assign({}, req);
     }],
-    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, (m, body, path) => {
-      const who = caller(m[1], path);
-      if (!who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
-      const list = file(m[1], "members.json", path);
-      // A second DELETE answers 200 with the removed member as it is.
-      list.removed = list.removed || [];
-      const gone = list.removed.find((x) => x.id === m[2]);
-      if (gone) return gone;
-      if ((project(m[1], path).owner || {}).id === m[2]) {
-        fail(409, "namespace_owner", "the project's namespace owner is not removed", path, { projects: [fullOf(m[1])] });
-      }
-      const target = member(m[1], m[2], path);
-      agentLimits(who.member, target, null, path);
-      const consent = consentFor(m[1], who.member, "Remove " + target.handle);
-      if (consent) return consent;
-      if (target.trust === "owner" && who.member.kind === "human" && trustIn(m[1]) !== "owner") {
-        fail(403, "forbidden", "only an owner removes an owner", path, { reason: "owner_only" });
-      }
-      if (target.trust === "owner" && list.items.filter((x) => x.trust === "owner").length === 1) {
-        fail(400, "invalid", "the last owner cannot be removed", path, { fields: { member: "last_owner" } });
-      }
-      // Its credentials revoked, its claims released (§6.2).
-      const at = nowIso();
-      ((fixtures()[m[1] + "/credentials.json"] || {})[target.id] || { items: [] }).items.forEach((c) => {
-        if (!c.revoked_at) { c.revoked_at = at; c.revoked_by = me().member.id; c.revoked_reason = "member_removed"; c.session_id = null; }
-      });
-      file(m[1], "tasks.json", path).items.forEach((t) => { if (t.claim && t.claim.holder === target.id) t.claim = null; });
-      list.items = list.items.filter((x) => x !== target);
-      list.items.forEach((x) => { if (x.reports_to === target.id) x.reports_to = null; });
-      const removed = Object.assign({}, target, { removed_at: at });
-      list.removed.push(removed);
-      return removed;
-    }],
+    // §6.2: members:admin removes someone; a human naming their own id leaves, any
+    // trust, a guest included, with no members:admin and outside owner_only.
+    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)$/, deleteMember],
     // §6.2 "Isolation": a human with members:admin isolates an agent member
     // with a reason, or lifts it; a repeat answers the member unchanged.
     ["POST", /^\/projects\/([^/]+)\/members\/([^/]+)\/isolate$/, (m, body, path) => isolate(m, body, path, true)],
@@ -5564,7 +5836,7 @@ window.Maity = window.Maity || {};
     }],
   ];
 
-  function fromFixtures(method, fullPath, body) {
+  function fromFixtures(method, fullPath, body, headers) {
     const q = fullPath.indexOf("?");
     const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
@@ -5572,6 +5844,21 @@ window.Maity = window.Maity || {};
     // unset, nothing waits for it.
     const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
     return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
+      // §5.4: the bundle is each single route's own answer for this caller, errors included; the
+      // route itself needs no session and stays open in a window. MAITY_FIXTURE_NO_BOOTSTRAP plays
+      // an older hub without it (404).
+      if (method === "GET" && asked === "/bootstrap") {
+        if (window.MAITY_FIXTURE_NO_BOOTSTRAP) fail(404, "not_found", "no such route", fullPath);
+        const project = query.get("project");
+        const ask = [["maintenance", "/maintenance"], ["session", "/auth/session"], ["me", "/me"]];
+        if (project) {
+          const base = "/projects/" + project;
+          ask.push(["head", base + "/events?after=latest&wait=0"], ["project", base], ["members", base + "/members"]);
+        }
+        return Promise.all(ask.map(([key, p]) => fromFixtures("GET", p).then((answer) => [key, { status: 200, body: answer }],
+          (err) => [key, { status: err.status || 500, body: { error: { code: err.code || "internal", message: err.message, details: err.details || {} } } }])))
+          .then((parts) => Object.fromEntries(parts));
+      }
       let path = asked;
       // §16.12: while a window runs the hub refuses nearly everything, before it asks who calls.
       const running = maintenanceView(false);
@@ -5582,7 +5869,7 @@ window.Maity = window.Maity || {};
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && path !== "/maintenance" && !path.startsWith("/invitations/")
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && path !== "/maintenance" && !path.startsWith("/invitations/")
         && path !== "/site/chrome" && !/^\/auth\/pages\/[^/]+$/.test(path)) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
@@ -5594,7 +5881,7 @@ window.Maity = window.Maity || {};
         if (verb !== method) continue;
         const match = pattern.exec(path);
         // Hand out copies, like a network answer would.
-        if (match) return JSON.parse(JSON.stringify(handler(match, body || {}, fullPath, query)));
+        if (match) return JSON.parse(JSON.stringify(handler(match, body || {}, fullPath, query, headers || null)));
       }
       return fail(404, "not_found", "No fixture for " + method + " " + path, fullPath);
     });
@@ -5623,7 +5910,7 @@ window.Maity = window.Maity || {};
 
   // signal: an AbortSignal that cancels the request (a held long-poll the
   // page no longer wants, js/notify.js).
-  async function fromApi(method, path, body, raw, signal) {
+  async function fromApi(method, path, body, raw, signal, headers) {
     const init = {
       method,
       credentials: "same-origin",
@@ -5643,6 +5930,11 @@ window.Maity = window.Maity || {};
     } else if (body !== undefined) {
       init.headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(body);
+    }
+    if (headers) {
+      Object.keys(headers).forEach((name) => {
+        if (headers[name] != null && headers[name] !== "") init.headers[name] = headers[name];
+      });
     }
     let res;
     try {
@@ -5682,6 +5974,59 @@ window.Maity = window.Maity || {};
 
   let skew = 0;
   let sessionBlocked = false;
+
+  // GET /bootstrap (docs/api.md §5.4): the boot's first reads in one call. prime() asks it and keeps
+  // its parts as one-shot answers for exactly those reads: the window, the session, /me and, for
+  // a project view, the project, its members and the event head. The boot's own calls stay where
+  // they are and take their answer from the part, through requestOnce's usual handling (the
+  // session's language, a 401, the 503 window, the time zone). An answer without parts (an older
+  // hub's 404, a limit, a refusal, no answer) keeps nothing: every read goes to its own route.
+  // unprime(token) ends them when that boot is done; they serve no read once `live()` says the
+  // drawing that asked is over; a newer prime replaces them; 15 s at most.
+  let primed = null;
+  let primes = 0;
+  const PRIMED_MS = 15000;
+  // What the fixture hub was asked from the page, in order (smoke counts the boot's calls).
+  const fixtureAsked = [];
+  function prime(project, live) {
+    const base = project ? "/projects/" + projectPath(project) : null;
+    const path = "/bootstrap" + (project ? "?project=" + projectPath(project) : "");
+    if (source === "fixtures") fixtureAsked.push("GET " + path);
+    const answer = (source === "fixtures" ? fromFixtures("GET", path) : fromApi("GET", path))
+      .then((parts) => (parts && parts.session && parts.me && parts.maintenance ? parts : null), () => null);
+    const paths = new Map([["/maintenance", "maintenance"], ["/auth/session", "session"], ["/me", "me"]]);
+    if (base) {
+      paths.set(base, "project");
+      paths.set(base + "/members", "members");
+      paths.set(base + "/events?after=latest&wait=0", "head");
+    }
+    primed = { token: ++primes, at: Date.now(), answer, paths, live: live || (() => true) };
+    return primed.token;
+  }
+  function unprime(token) {
+    if (primed && (token === undefined || primed.token === token)) primed = null;
+  }
+  // The part for this read, once, as a promise of its body or of the single route's ApiError; null
+  // when none is kept for it. `single` asks the route itself when the bundle brought no parts.
+  function fromPrimed(method, path, single) {
+    if (method !== "GET" || !primed || !primed.paths.has(path)) return null;
+    if (Date.now() - primed.at > PRIMED_MS || !primed.live()) { primed = null; return null; }
+    const key = primed.paths.get(path);
+    primed.paths.delete(path);
+    return primed.answer.then((parts) => {
+      const part = parts && parts[key];
+      if (!part) return single();
+      if (part.status >= 200 && part.status < 300) return part.body;
+      const e = (part.body && part.body.error) || {};
+      let details = e.details || {};
+      // A part carries no headers: the wait a 503 window's Retry-After gives comes from its end (§5.4).
+      if (part.status === 503 && details.until && !("retry_after" in details)) {
+        const wait = Math.ceil((Date.parse(details.until) - (Date.now() + skew)) / 1000);
+        if (Number.isFinite(wait)) details = Object.assign({}, details, { retry_after: Math.max(1, wait) });
+      }
+      throw new ApiError(e.message || e.code || ("HTTP " + part.status), part.status, path, e.code || null, details);
+    });
+  }
   const obsoleteSession = (path) => new ApiError("The session ended", 0, path, "aborted");
 
   // §5.1: every absolute time is shown in the account's zone, or the browser's without one. A GET
@@ -5689,9 +6034,9 @@ window.Maity = window.Maity || {};
   // refused before this) and no change of the zone was saved while it was on its way; a saved
   // change of the settings sets it from their answer.
   let zoneSaves = 0;
-  function request(method, path, body, raw, signal) {
+  function request(method, path, body, raw, signal, headers) {
     const saves = zoneSaves;
-    const answer = requestOnce(method, path, body, raw, signal);
+    const answer = requestOnce(method, path, body, raw, signal, headers);
     const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
     if (method === "GET" && path === "/me") {
       return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
@@ -5701,19 +6046,23 @@ window.Maity = window.Maity || {};
     }
     return answer;
   }
-  function requestOnce(method, path, body, raw, signal) {
+  function requestOnce(method, path, body, raw, signal, headers) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
-    if (method !== "GET" && M.onWrite) M.onWrite();
+    // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
+    if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite(path);
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
     // place (js/maintenance.js), and the caller gets the refusal as before.
     const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
-    const p = (source === "fixtures"
-      ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
-      : fromApi(method, path, body, raw, signal)).catch(told);
+    const single = () => {
+      if (source !== "fixtures") return fromApi(method, path, body, raw, signal, headers);
+      fixtureAsked.push(method + " " + path);
+      return fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body, headers);
+    };
+    const p = (fromPrimed(method, path, single) || single()).catch(told);
     if (path === "/auth/session") {
       // Only the newest session read of this session sets the language (review of #1524): an
       // older answer that comes back after it, a 401 above all, would switch a newer session's
@@ -5754,7 +6103,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
@@ -5791,6 +6140,10 @@ window.Maity = window.Maity || {};
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
     getAll,
+    // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
+    prime,
+    unprime,
+    fixtureAsked,
     post: (path, body) => request("POST", path, body || {}),
     put: (path, body) => request("PUT", path, body || {}),
     // PUT of an image as its raw bytes; type is the sniffed Content-Type.
@@ -5822,6 +6175,9 @@ window.Maity = window.Maity || {};
     },
     patch: (path, body) => request("PATCH", path, body || {}),
     // A body only where the route takes one (DELETE /orgs/{org}, its confirm).
-    del: (path, body) => request("DELETE", path, body),
+    // headers: a call that sends one, such as Idempotency-Key on leaving a project (§1.5).
+    del: (path, body, headers) => request("DELETE", path, body, undefined, undefined, headers),
+    // The live fixture store, so a test can set a caller and put the same objects back.
+    fixturesLive: () => (source === "fixtures" ? fixtures() : null),
   };
 })(window.Maity);

@@ -37,7 +37,7 @@ window.Maity = window.Maity || {};
     if (loading) return loading;
     loading = new Promise((resolve, reject) => {
       if (!styled) {
-        for (const name of STYLES) append(document.head, h("link", { rel: "stylesheet", href: DIR + name }));
+        for (const name of STYLES) append(document.head, h("link", { rel: "stylesheet", href: DIR + name + M.assetQuery(DIR + name) }));
         styled = true;
       }
       // In order, one after the other: each file uses the ones before it.
@@ -55,7 +55,7 @@ window.Maity = window.Maity || {};
           }
           return;
         }
-        const s = h("script", { src: DIR + SCRIPTS[i],
+        const s = h("script", { src: DIR + SCRIPTS[i] + M.assetQuery(DIR + SCRIPTS[i]),
           onload: () => { done.add(SCRIPTS[i]); next(i + 1); },
           onerror: () => { s.remove(); loading = null; reject(new Error(M.t("why.lib.not_loaded"))); } });
         append(document.head, s);

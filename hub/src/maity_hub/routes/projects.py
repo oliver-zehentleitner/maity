@@ -56,7 +56,7 @@ from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
 from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -310,12 +310,22 @@ class SettingsIn(Strict):
     contract_path: str | None = None
     # Who reads and writes the cards' restricted text (§6.1, §6.4); checked in the PATCH.
     restricted_access: RestrictedAccessIn | None = None
+    # Whether the Why view shows the whole Keep the Why family in one view (§6.1, §11.5);
+    # `null` restores the default `true`.
+    why_merge_children: bool | None = None
 
     @field_validator("language", mode="before")
     @classmethod
     def known_language(cls, value: Any) -> Any:
         if value is not None and not languages.known(value):
             raise PydanticCustomError("unknown_language", "not in GET /languages")
+        return value
+
+    @field_validator("why_merge_children", mode="before")
+    @classmethod
+    def a_boolean(cls, value: Any) -> Any:
+        if value is not None and not isinstance(value, bool):
+            raise PydanticCustomError("not_a_boolean", "true, false or null")
         return value
 
 
@@ -913,6 +923,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
+                joined_seq=newest_seq(conn, project_id),
                 last_seen_at=now,
                 changed_via=caller.via,
                 # an owner of the organisation holds a membership the hub keeps (§6.26)
@@ -1111,6 +1122,12 @@ def patch_project(
                     effective = dumped[key] or "en"
                     if effective != (merged.get(key) or "en"):
                         settings_changed["settings.language"] = effective
+                elif key == "why_merge_children":
+                    # Only a change of what it reads as is announced: `null` and `true` are the
+                    # same (§6.1).
+                    effective = dumped[key] is not False
+                    if effective != (merged.get(key) is not False):
+                        settings_changed["settings.why_merge_children"] = effective
                 elif key == "role_rules":
                     if merged.get(key) != dumped[key]:
                         settings_changed["settings.role_rules"] = _announced_role_rules(dumped[key])
@@ -1504,6 +1521,9 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
         raise humans_only("a project is renamed by a human")
     if body.settings is not None and "language" in body.settings.model_fields_set:
         raise humans_only("the project's language is set by a human")
+    if body.settings is not None and "why_merge_children" in body.settings.model_fields_set:
+        # Set by a human with `project:admin`, as the language is (§6.1).
+        raise humans_only("whether the Why view merges the children is set by a human")
     if body.settings is not None and "role_rules" in body.settings.model_fields_set:
         # An agent does not write the rules it works under (§6.1 "Role rules").
         raise humans_only("the role rules are set by a human")

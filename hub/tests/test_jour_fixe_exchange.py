@@ -161,6 +161,7 @@ def test_the_statement_numbers_its_parts_and_opens_the_responses(round_: Round) 
         message.seq
     )
     assert "Cache the venv" in message.payload["body"]
+    assert message.payload["held"] == []  # every message carries it (§8.2)
     [opened] = kinds(round_.engine, "jour_fixe_step_opened")
     assert opened.payload["kind"] == "response" and opened.payload["step"] == 2
     assert f"member:{round_.owner.id}" in opened.audience
@@ -347,3 +348,67 @@ def test_the_statement_and_posts_keep_their_byte_caps(round_: Round) -> None:
     long_post = round_.post(round_.lead, "response", body="ä" * 2049)
     assert long_post.json()["error"]["details"]["fields"] == {"body": "too_long"}
     assert round_.post(round_.lead, "response", body="ä" * 2048).status_code == 201
+
+
+def test_a_waiting_moderator_does_not_write_the_statement(round_: Round) -> None:
+    # The maintainer's o2 on req-a89crp06kjf3: a moderator that waits in the round's thread
+    # for its owner's yes is held back from the statement too (§9.6).
+    with round_.engine.begin() as conn:
+        lead = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == round_.lead.id)
+        ).scalar_one()
+        conn.execute(
+            t.conversation_participant.update()
+            .where(
+                t.conversation_participant.c.conversation_id == round_.thread,
+                t.conversation_participant.c.membership_id == lead,
+            )
+            .values(waiting=True, waiting_for=[round_.owner.id])
+        )
+    refused = round_.statement()
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "waiting"
+    with round_.engine.begin() as conn:
+        conn.execute(
+            t.conversation_participant.update()
+            .where(t.conversation_participant.c.membership_id == lead)
+            .values(waiting=False, waiting_for=[])
+        )
+    assert round_.statement().status_code == 201  # admitted: it writes it
+
+
+def _wait(round_: Round, agent: Any) -> None:
+    with round_.engine.begin() as conn:
+        member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent.id)
+        ).scalar_one()
+        conn.execute(
+            t.conversation_participant.update()
+            .where(
+                t.conversation_participant.c.conversation_id == round_.thread,
+                t.conversation_participant.c.membership_id == member,
+            )
+            .values(waiting=True, waiting_for=[round_.owner.id])
+        )
+
+
+def test_a_waiting_agent_posts_nothing_and_gets_the_round_without_its_text(
+    round_: Round,
+) -> None:
+    """fp3y on #1717: a waiting agent's post is `waiting`, and every answer with the round, a
+    replay's included, comes without the statement and the posts (§9.6)."""
+    assert round_.statement().status_code == 201
+    assert round_.post(round_.member, "response").status_code == 201
+    _wait(round_, round_.member)
+    refused = round_.post(round_.member, "response", body="again")
+    assert refused.status_code == 403 and refused.json()["error"]["details"]["reason"] == "waiting"
+    _wait(round_, round_.lead)
+    path = f"/api/v1{rounds_path(round_.id, '/steps')}"
+    headers = round_.lead.auth | {"Idempotency-Key": "waiting-agent-step-0001"}
+    first = round_.lead.client.post(path, json={"reason": "more"}, headers=headers)
+    assert first.status_code == 201, first.text
+    again = round_.lead.client.post(path, json={"reason": "more"}, headers=headers)
+    assert again.status_code == 201, again.text
+    for answered in (first.json(), again.json()):
+        assert answered["statement"] is None and answered["posts"] == []
+    assert round_.get()["statement"] is not None  # the owner reads it in full

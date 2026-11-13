@@ -101,6 +101,9 @@ human = Table(
     Column("handle", String(HANDLE), nullable=False, unique=True),
     Column("display_name", String(TITLE), nullable=False),
     Column("password_hash", String(255), nullable=False),  # scrypt, with parameters and salt
+    # Moves with every password change, `POST /auth/password` and a reset (§2.10): a reset
+    # link carries the generation it was made under and dies when it moves.
+    Column("password_generation", Integer, nullable=False, server_default="0"),
     Column("created_at", UtcDateTime, nullable=False),
     Column("last_login_at", UtcDateTime),  # the latest successful login (§16.1)
     Column("last_seen_at", UtcDateTime),
@@ -434,6 +437,9 @@ human_session = Table(
     Column("mail_sent", Integer, nullable=False, server_default="0"),
     Column("mail_sent_at", UtcDateTime),  # when the newest mail went: its code lives 15 minutes
     Column("next", String(512)),
+    # Until when a dashboard tab of this session said the human is present (`POST
+    # /me/presence`, §18.4): the mail hold's input only, never shown as presence (§18.5).
+    Column("present_until", UtcDateTime),
     **MYSQL_TABLE,
 )
 
@@ -570,6 +576,33 @@ email_sign_in_day = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("day", String(10), primary_key=True),
     Column("wrong_codes", Integer, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# A link to reset a forgotten password (§2.10): `sha256(nonce)` of its signed token, single
+# use. `source` is the address it was asked from, so a new request voids only the earlier
+# unused link from the same one.
+password_reset = Table(
+    "password_reset",
+    metadata,
+    Column("nonce_hash", String(HEX_SHA256), primary_key=True),
+    _ref("human_id", "human.id", nullable=False, index=True),
+    Column("source", String(64), nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    Column("expires_at", UtcDateTime, nullable=False),
+    Column("used_at", UtcDateTime),
+    **MYSQL_TABLE,
+)
+
+# Each wrong TOTP or recovery code at a reset (§2.10), counted per human over the 24 hours
+# before each one, across every link; older rows count for nothing and may be dropped.
+password_reset_wrong = Table(
+    "password_reset_wrong",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_password_reset_wrong_human_at", "human_id", "at"),
     **MYSQL_TABLE,
 )
 
@@ -815,6 +848,10 @@ membership = Table(
     Column("briefing_by", String(ID)),
     Column("briefing_updated_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
+    # The project's newest event seq when the membership was made, 0 for none: where its
+    # notifications begin, since joining never replays a project's history (§18.2). Written
+    # with the row (`events.newest_seq`), so no read looks for it in the event log.
+    Column("joined_seq", BIG_ID, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
     # True while the membership exists, NULL once removed: a removed member
@@ -1370,6 +1407,20 @@ placement = Table(
     Column("generation", Integer, nullable=False),
     Column("rejoin", Boolean, nullable=False),
     Column("stop_grace_seconds", Integer, nullable=False),
+    # The clone after a stop or a close (§15.5): how long the runner keeps it, which clone
+    # of the placement is meant, and the runner's latest report on it. Columns, not one
+    # JSON value: both closed lists select on the state in SQL (context/placements.md).
+    Column("workspace_retention", String(16), nullable=False, server_default="24h"),
+    Column("workspace_epoch", Integer, nullable=False, server_default="1"),
+    Column("workspace_state", String(16)),
+    Column("workspace_reason", String(32)),
+    Column("workspace_unsaved", Integer),
+    Column("workspace_size_bytes", BigInteger),
+    Column("workspace_removes_at", UtcDateTime),
+    Column("workspace_outcome_epoch", Integer),
+    Column("workspace_reported_at", UtcDateTime),
+    # A removal by hand (§15.6), until a report names it; null when none is asked.
+    Column("remove_requested_at", UtcDateTime),
     Column("approval_status", String(16), nullable=False),
     Column("pending_change", JSON_VALUE),  # an agent's proposed change of the spec
     Column("reason", MARKDOWN_TEXT),
@@ -1962,11 +2013,20 @@ conversation_participant = Table(
     _membership_ref("membership_id", nullable=False, index=True),
     Column("joined_at", UtcDateTime, nullable=False),
     Column("window_after", BIG_ID, nullable=False),
+    # The `newest_seq` of the last `chat_unread` written for this stay (§9.2): its read cycle
+    # is open while the read mark is below it. Written with the nudge, under the project lock.
+    Column("unread_nudged_through", BIG_ID),
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
+    # removed, left, membership_removed, membership_isolated, declined, denied_participant
+    Column("reason", String(32)),
     Column("here", Boolean, default=True),
+    # An agent of another side than someone in the chat (§9.6, "Waiting"): the human of each
+    # side its owner has not admitted it for, `[]` once admitted; null on a human and on an
+    # agent of the chat's only side. `waiting` is whether that list holds anyone, for queries.
+    Column("waiting_for", JSON_VALUE),
+    Column("waiting", Boolean, nullable=False, server_default=false()),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
     ),
@@ -2034,6 +2094,70 @@ conversation_meat_proxy = Table(
     Column("conversation_id", String(ID), nullable=False),
     Column("meat_proxy", Boolean, nullable=False),
     PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
+# A human's allow and deny entries for their agents (docs/api.md §9.6, "The lists"): who may
+# chat with them. `human_id` keeps the list; only that human reads and changes it. An allow
+# names a side (`owner_id`, with `their_agents` and `their_human`) or a project; a deny names
+# exactly one of a side, a human, an agent or a project. `agents_all` is the owner's `agents:
+# "all"`; otherwise the agents are `chat_access_agent` rows, as are the listed `their_agents`.
+# Deleted with the account, in its export; the agents, humans and projects it names are taken
+# out of it when they go.
+chat_access = Table(
+    "chat_access",
+    metadata,
+    _id(primary_key=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("kind", String(8), nullable=False),  # allow, deny
+    Column("agents_all", Boolean, nullable=False),
+    _ref("owner_id", "human.id"),  # a side: that human with their agents
+    _ref("subject_human_id", "human.id"),  # a deny of one human
+    _ref("subject_agent_id", "agent_profile.id"),  # a deny of one agent
+    _ref("project_id", "project.id"),
+    Column("their_agents", String(8)),  # all, list, none; null for a project or a deny
+    Column("their_human", Boolean),  # null for a project or a deny
+    Column("duration", String(8)),  # hour, day, week; null for no end
+    Column("until", UtcDateTime),
+    Column("allowed", String(1000)),
+    Column("denied", String(1000)),
+    _ref("by", "human.id", nullable=False),
+    Column("since", UtcDateTime, nullable=False),
+    # When the hub saw `until` pass and let the agents it admitted wait again (§9.6); a
+    # `PATCH` that sends `duration` clears it.
+    Column("lapsed_at", UtcDateTime),
+    Index("ix_chat_access_human", "human_id", "kind", "since"),
+    Index("ix_chat_access_until", "kind", "lapsed_at", "until"),
+    Index("ix_chat_access_owner", "owner_id"),
+    Index("ix_chat_access_subject_human", "subject_human_id"),
+    Index("ix_chat_access_subject_agent", "subject_agent_id"),
+    Index("ix_chat_access_project", "project_id"),
+    CheckConstraint("kind IN ('allow', 'deny')", name="kind"),
+    CheckConstraint(
+        "(CASE WHEN owner_id IS NULL THEN 0 ELSE 1 END)"
+        " + (CASE WHEN subject_human_id IS NULL THEN 0 ELSE 1 END)"
+        " + (CASE WHEN subject_agent_id IS NULL THEN 0 ELSE 1 END)"
+        " + (CASE WHEN project_id IS NULL THEN 0 ELSE 1 END) = 1",
+        name="one_subject",
+    ),
+    CheckConstraint(
+        "kind = 'deny' OR (subject_human_id IS NULL AND subject_agent_id IS NULL)",
+        name="allow_subject",
+    ),
+    **MYSQL_TABLE,
+)
+
+# The agents an entry of `chat_access` names: on the owner's side (`own`) and, for an allow of
+# a side with listed agents, on the other side (`theirs`).
+chat_access_agent = Table(
+    "chat_access_agent",
+    metadata,
+    _ref("entry_id", "chat_access.id", nullable=False),
+    Column("side", String(8), nullable=False),  # own, theirs
+    _ref("agent_id", "agent_profile.id", nullable=False),
+    PrimaryKeyConstraint("entry_id", "side", "agent_id"),
+    Index("ix_chat_access_agent_agent", "agent_id"),
+    CheckConstraint("side IN ('own', 'theirs')", name="side"),
     **MYSQL_TABLE,
 )
 
@@ -2615,6 +2739,26 @@ notification_read = Table(
     Column("seq", BIG_ID, nullable=False),
     Column("at", UtcDateTime, nullable=False),
     PrimaryKeyConstraint("human_id", "seq"),
+    **MYSQL_TABLE,
+)
+
+# The message events that may make a notification of a human (§18.1), written by
+# `events.emit` with the message: `chat` when a conversation's message names the human in
+# its audience, `mention` when its mentions name them. A superset of the items: a later
+# redaction leaves the row, and `notifications.items._classify` stays the exact test. The
+# notifications read these rows instead of matching the event's JSON as text, which scanned
+# every message of the window (hub/context/notifications.md fc79a4a6).
+notification_recipient = Table(
+    "notification_recipient",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Column("chat", Boolean, nullable=False),
+    Column("mention", Boolean, nullable=False),
+    PrimaryKeyConstraint("seq", "human_id"),
+    Index("ix_notification_recipient_window", "human_id", "project_id", "at", "seq"),
     **MYSQL_TABLE,
 )
 

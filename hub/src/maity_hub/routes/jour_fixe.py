@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import clock, events, group_chats, idempotency, namespace, paging
+from maity_hub import chat_gate, clock, events, group_chats, idempotency, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
@@ -150,7 +150,19 @@ def _readers(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
 
 def _views(conn: Connection, rows: list[Any], slug: str, reader: Any) -> list[dict[str, Any]]:
     now, readers = _now(conn, rows), _readers(conn, rows)
-    return [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+    found = [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+    for row, view in zip(rows, found, strict=True):
+        _mask_waiting(conn, row, view, reader)
+    return found
+
+
+def _mask_waiting(conn: Connection, row: Any, view: dict[str, Any], reader: Any) -> None:
+    """An agent waiting in the thread for its owner's yes reads the round without the thread's
+    text (§9.6), on every path that answers with the round, a replay's included."""
+    if reader is None or getattr(reader, "kind", None) != "agent":
+        return
+    if row.conversation_id and chat_gate.waiting(conn, row.conversation_id, reader.id):
+        view.update(statement=None, posts=[])
 
 
 def _round(conn: Connection, mine: Any, round_id: str) -> Any:
@@ -165,10 +177,14 @@ def _round(conn: Connection, mine: Any, round_id: str) -> Any:
     return row
 
 
-def round_view(conn: Connection, round_id: str) -> dict[str, Any]:
+def round_view(conn: Connection, round_id: str, caller: Any) -> dict[str, Any]:
+    """The round as a write answers it and its replay repeats it: no reader, no reason, but
+    without the thread's text for an agent `caller` that waits in the thread (§9.6)."""
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
     slug = namespace.name_of(conn, row.project_id)
-    return _views(conn, [row], slug, None)[0]  # a replay: no reader, no reason
+    view = _views(conn, [row], slug, None)[0]
+    _mask_waiting(conn, row, view, caller)
+    return view
 
 
 def answer_view(conn: Connection, answer_id: str) -> dict[str, Any]:
@@ -199,8 +215,8 @@ def _round_project(conn: Connection, round_id: str) -> str:
 
 
 def _replay_round(conn: Connection, round_id: str, request: Request) -> dict[str, Any]:
-    _member_now(conn, _round_project(conn, round_id), request)
-    return round_view(conn, round_id)
+    mine = _member_now(conn, _round_project(conn, round_id), request)
+    return round_view(conn, round_id, mine)
 
 
 def _replay_answer(conn: Connection, answer_id: str, request: Request) -> dict[str, Any]:
@@ -619,7 +635,7 @@ def start(
             reason=body.reason,
             actor=caller.actor(mine.id),
         )
-        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -690,7 +706,7 @@ def statement(
         row = _round(conn, mine, round_id)
         topics = [topic.model_dump(by_alias=True) for topic in body.topics]
         exchange.submit_statement(conn, row, mine, topics, caller.actor(mine.id))
-        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -730,7 +746,7 @@ def further_step(
         mine = membership(conn, caller, slug)
         row = _round(conn, mine, round_id)
         exchange.add_step(conn, row, mine, body.reason, body.members, body.topics)
-        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -738,20 +754,20 @@ def further_step(
 # --- the report (§20.6) -------------------------------------------------------------------------
 
 
-def report_view(conn: Connection, round_id: str) -> dict[str, Any]:
+def report_view(conn: Connection, round_id: str, caller: Any) -> dict[str, Any]:
     """The round, and what its report filed: the requests and the cards opened."""
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
     proposals = (row.report or {}).get("proposals", [])
     return {
-        "round": round_view(conn, round_id),
+        "round": round_view(conn, round_id, caller),
         "requests": [p["request_id"] for p in proposals if p["request_id"]],
         "tasks": [p["task_id"] for p in proposals if p["task_id"]],
     }
 
 
 def _replay_report(conn: Connection, round_id: str, request: Request) -> dict[str, Any]:
-    _member_now(conn, _round_project(conn, round_id), request)
-    return report_view(conn, round_id)
+    mine = _member_now(conn, _round_project(conn, round_id), request)
+    return report_view(conn, round_id, mine)
 
 
 idempotency.LOADERS["jour_fixe_report"] = _replay_report
@@ -770,7 +786,7 @@ def report(
         mine = membership(conn, caller, slug)
         row = _round(conn, mine, round_id)
         triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
-        return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id))
+        return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 

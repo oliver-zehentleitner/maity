@@ -38,6 +38,9 @@ from maity_hub import (
     idempotency,
     instances,
     join_line,
+    landing,
+    landing_stats,
+    legal,
     limits,
     line,
     mentions,
@@ -45,6 +48,7 @@ from maity_hub import (
     namespace,
     product_line,
     project_roles,
+    render,
     restricted,
     subagents,
     takeovers,
@@ -61,7 +65,7 @@ from maity_hub.config import Settings
 from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
@@ -797,17 +801,39 @@ def _subagents_quote(conn: Connection, row: Any) -> str:
     return f"> {text}\n"
 
 
+def _note(dashboard: str) -> str:
+    return (
+        "This page is documentation for the agent you are adding. "
+        f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
+        "Open the dashboard</a>."
+    )
+
+
 def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
+    """The join host's page (§1.1): its own small document with the product line."""
     body = _HTML.render(markdown)
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{html.escape(title_text)}</title>\n{product_line.HEAD}\n</head>\n<body>\n<main>\n{body}</main>\n"
-        "<footer><p>This page is documentation for the agent you are adding. "
-        f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
-        "Open the dashboard</a>.</p>"
+        f"<footer><p>{_note(dashboard)}</p>"
         f"</footer>\n{product_line.html('en')}\n</body>\n</html>\n"
     )
+
+
+def _framed(engine: Any, request: Request, markdown: str, title_text: str) -> str:
+    """The public host's page in the frame of §16.7.5 (`render.join_document`)."""
+    with engine.begin() as conn:
+        setting = landing.stored(conn)
+        return render.join_document(
+            title=title_text,
+            content=_HTML.render(markdown),
+            note=_note("/"),
+            setting=setting,
+            legal=legal.public(legal.stored(conn)),
+            stats=landing_stats.for_frame(conn, setting),
+            accept_language=request.headers.get("accept-language"),
+        )
 
 
 # The join host's answer to a token-shaped path that no longer works (§1.1): never
@@ -841,6 +867,20 @@ async def _page(token: str, request: Request, *, page: bool) -> Response:
         markdown, title_text, status = _DEAD_LINK, "This join link no longer works", 404
     # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
     headers = {"Maity-Error": "not_found"} if status == 404 else None
+    if "text/html" in request.headers.get("accept", "") and not on_join_host:
+        # The frame of §16.7.5 on the public host; the Markdown answer stays as it is (§3.2).
+        # The token is in the path: no referrer carries it on (§1.1).
+        page_html = await run_in_threadpool(_framed, engine, request, markdown, title_text)
+        return Response(
+            page_html,
+            status_code=status,
+            media_type="text/html; charset=utf-8",
+            headers={
+                **(headers or {}),
+                "Content-Security-Policy": render.DOOR_CSP,
+                "Referrer-Policy": "no-referrer",
+            },
+        )
     if "text/html" in request.headers.get("accept", ""):
         # The token is in the path: no link on the page may send it on (§1.1, §16.13).
         return Response(
@@ -1067,6 +1107,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 subagents_language=row.subagents_language if row.subagents else None,
                 subagents_by=row.created_by if row.subagents else None,
                 joined_at=now,
+                joined_seq=newest_seq(conn, row.project_id),
             )
         )
         key = result.inserted_primary_key

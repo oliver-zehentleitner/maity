@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -371,8 +372,8 @@ def test_a_partial_clone_listing_refuses_the_start(
 def test_the_sandbox_tools_are_found_as_the_agents_user(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
 ) -> None:
-    """Claude Code's sandbox only on Linux (bubblewrap and socat); elsewhere, macOS among
-    them, it is off whatever the agents' PATH holds."""
+    """Claude Code's sandbox needs bubblewrap and socat on Linux, Seatbelt's sandbox-exec on
+    macOS, each on the agents' PATH; elsewhere it is off whatever that PATH holds."""
     import sys
 
     agent_bin = tmp_path / "agent-home" / ".local" / "bin"
@@ -389,7 +390,12 @@ def test_the_sandbox_tools_are_found_as_the_agents_user(
     codex = config.Harness("codex", ("supervised",), "supervised", binary="codex")
     assert capabilities.sandbox_available(codex, path, as_user)  # `codex sandbox -- true`
     assert "command -v" in fake_sudo.read_text()
-    monkeypatch.setattr(sys, "platform", "darwin")  # macOS: off, bwrap and socat or not
+    monkeypatch.setattr(sys, "platform", "darwin")  # macOS: Seatbelt, not bwrap and socat
+    assert not capabilities.sandbox_available(claude, path, as_user)
+    (agent_bin / "sandbox-exec").write_text("#!/bin/sh\nexit 0\n")
+    (agent_bin / "sandbox-exec").chmod(0o755)
+    assert capabilities.sandbox_available(claude, path, as_user)
+    monkeypatch.setattr(sys, "platform", "win32")  # no OS sandbox for Claude Code
     assert not capabilities.sandbox_available(claude, path, as_user)
 
 
@@ -458,3 +464,17 @@ def test_the_agents_user_records_it_through_sudo(
         str(ctx.clone.resolve()): {KEY: True}
     }
     assert not (Path.home() / ".claude.json").exists()  # never the runner's own
+
+
+def test_the_inode_of_a_path_reads_the_same_through_sudo(tmp_path: Path, fake_sudo: Path) -> None:
+    """The runner records `.git`'s inode at a start (adapters.launch); the agents' side may be
+    closed to the runner, so it is read there with `ls -di`, a link not followed."""
+    real = tmp_path / "dot-git"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    for path in (real, link):
+        assert AsUser("maity-agent").inode(path) == AsUser().inode(path) == os.lstat(path).st_ino
+    assert "ls -di --" in fake_sudo.read_text()
+    with pytest.raises(OSError, match="inode"):
+        AsUser("maity-agent").inode(tmp_path / "missing")

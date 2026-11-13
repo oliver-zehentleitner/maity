@@ -96,6 +96,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "pinned_conversations",
         "contacts",
         "contact_of",
+        "chat_access",
         "restricted_texts",
         "cross_chats",
     }

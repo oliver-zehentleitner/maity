@@ -34,7 +34,7 @@ from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
-from maity_hub.notifications import items, listing, preferences, records
+from maity_hub.notifications import items, listing, preferences, presence, records
 from maity_hub.notifications.items import Item
 
 log = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ NEVER_MAILED = ("registration_pending", "mail_disabled")
 SIGN_IN_ALERT = records.SIGN_IN
 # A takeover under way: a security mail of its own at once, whatever the mode, never held
 # by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
-AT_ONCE = ("second_factor_changed", "second_factor_failed")
+AT_ONCE = ("second_factor_changed", "second_factor_failed", "password_reset")
 
 
 _SCHEME_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+.-")
@@ -127,20 +127,26 @@ def run(
             ).scalars()
         )
     budget = int(resolved.value("max_per_hour"))
+    grace = timedelta(minutes=int(resolved.value("online_grace_minutes")))
     queued = 0
     for human_id in humans:
         if stop is not None and stop.is_set():
             break
         try:
             with engine.begin() as conn:
-                queued += for_human(conn, human_id, env.signing_key, public_url, budget)
+                queued += for_human(conn, human_id, env.signing_key, public_url, budget, grace)
         except Exception:  # one human's failure must not stop the others
             log.exception("notification mail for %s failed", human_id)
     return queued
 
 
 def for_human(
-    conn: Connection, human_id: str, signing_key: bytes, public_url: str, budget: int = 500
+    conn: Connection,
+    human_id: str,
+    signing_key: bytes,
+    public_url: str,
+    budget: int = 500,
+    grace: timedelta = timedelta(minutes=5),
 ) -> int:
     """One human's pass. It holds the human's settings row (`FOR UPDATE`) to its end, so
     a second process passing over the same human waits, then finds what the first one
@@ -188,7 +194,10 @@ def for_human(
     # Security mails of their own; quiet hours do not hold them (§2.6.5, §18.4).
     for item in pending:
         if item.record_type in AT_ONCE:
-            _two_factor_mail(conn, row, item, prefs, public_url, local)
+            told = (
+                _password_reset_mail if item.record_type == "password_reset" else _two_factor_mail
+            )
+            told(conn, row, item, prefs, public_url, local)
         elif item.record_type == SIGN_IN_ALERT and modes.get("security") == "immediate":
             _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
         else:
@@ -205,20 +214,37 @@ def for_human(
     if _quiet(prefs.get("quiet_hours"), local):
         _set_state(conn, human_id, stamp=moved, waiting=_waiting(mailable, modes))
         return queued
+    # Held while present (§18.5): the immediate items wait while the human is in the web app
+    # and for the grace after; the mail of a suspension (`urgent`) never does. A held item
+    # stays in `mailable`, so `waiting` keeps the passes coming until the hold ends.
+    present = bool(prefs.get("hold_while_online", True)) and presence.held(
+        conn, human_id, now, grace
+    )
+
+    def held(item: Item) -> bool:
+        return present and not item.urgent and _mode(item, modes) == "immediate"
+
     # What falls due in this pass goes out as one mail, so a pass sends at most one per
     # human and the instance's budget is checked right before that one send.
     due: list[Item] = []
     clocks: dict[str, datetime | None] = {}
     if state.held_since is not None:
-        due = [i for i in mailable if _mode(i, modes) != "off"]
+        due = [i for i in mailable if _mode(i, modes) != "off" and not held(i)]
         clocks = {"hourly_at": now, "daily_at": now, "weekly_at": now}
     else:
-        immediate = [i for i in mailable if _mode(i, modes) == "immediate"]
+        immediate = [i for i in mailable if _mode(i, modes) == "immediate" and not held(i)]
         capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
+        hour = now.replace(minute=0, second=0, microsecond=0)
         if immediate and not capped and min(i.at for i in immediate) <= now - WINDOW:
             due += immediate
             immediate = []
-        hour = now.replace(minute=0, second=0, microsecond=0)
+        elif capped:
+            # A capped item from an hour that ended while the human was present missed that
+            # hour's mail: it goes with the first pass after the grace, as the hour's mail
+            # would have, not at a later hour's end (§18.5, "Held while present").
+            late = [i for i in immediate if i.at < hour]
+            due += late
+            immediate = [i for i in immediate if i.at >= hour]
         if state.hourly_at is None:
             clocks["hourly_at"] = hour
         elif state.hourly_at < hour:
@@ -530,6 +556,39 @@ def _two_factor_mail(
         human_id=row.human_id,
         to=row.address,
         subject=f"[Maity] {item.title}",
+        body=body,
+    )
+
+
+def _password_reset_mail(
+    conn: Connection,
+    row: Any,
+    item: Item,
+    prefs: dict[str, Any],
+    public_url: str,
+    local: datetime,
+) -> None:
+    """A completed reset (§2.10): when and from where, that every session has ended, and what
+    to do if it was not the human. At once whatever the mode, so no unsubscribe link."""
+    words = catalog.section("mail", prefs["language"])
+    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    data = record.data or {}
+    unknown = catalog.section("notify", prefs["language"])
+    body = words["password_reset_body"].format(
+        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
+        browser=data.get("browser") or unknown["a_browser"],
+        os=data.get("os") or unknown["unknown_os"],
+        ip=data.get("ip") or "?",
+        agents=f"{public_url}/agents",
+    )
+    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
+    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    outbox.enqueue(
+        conn,
+        kind="security",
+        human_id=row.human_id,
+        to=row.address,
+        subject=f"[Maity] {words['password_reset_subject']}",
         body=body,
     )
 

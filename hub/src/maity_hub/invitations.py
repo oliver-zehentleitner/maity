@@ -29,7 +29,7 @@ from sqlalchemy import Connection, Engine, insert, select, update
 from maity_hub import clock, maintenance, proposals, worker_runs
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, rate_limited
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.models import HANDLE_PATTERN
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
@@ -313,6 +313,7 @@ def admit(
             areas=[],
             capabilities=[],
             joined_at=now,
+            joined_seq=newest_seq(conn, row.project_id),
             last_seen_at=now,
             changed_via=via,
         )

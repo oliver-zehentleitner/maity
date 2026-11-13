@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, public_pages
+from maity_hub import clock, public_pages, render
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -84,7 +84,12 @@ def test_the_board_shows_id_title_status_and_label_and_never_a_body(world: World
     text = view(world.anyone, "board") or ""
     assert "Shipped" in text and "Next up" in text and "Maybe" in text and done in text
     assert "secret body" not in text and "bug" in text
-    after = text.split("<h1>")[1]  # each id links its card's page, nothing else links
+    # Each id links its card's page, and nothing else in the page links but the Report link (§16.9).
+    after = (
+        text.split("<h1>")[1]
+        .split("</main>")[0]
+        .replace(render.report_link(f"{BASE}/board").replace('" rel', '&amp;lang=en" rel'), "")
+    )
     assert after.count("<a ") == 3 and f'href="{BASE}/tasks/{done}"' in after
     assert text.index("proposed") < text.index("open") < text.index("done")
 

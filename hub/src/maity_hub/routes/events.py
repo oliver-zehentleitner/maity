@@ -19,6 +19,8 @@ from maity_hub import (
     CLI_VERSION,
     attachment_store,
     attachments,
+    chat_gate,
+    chat_request,
     clock,
     events,
     group_chats,
@@ -165,7 +167,13 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 is not None
             )
             if after_param == "latest":
-                after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
+                after = events.highest_readable(
+                    conn,
+                    mine.project.id,
+                    mine.row,
+                    mine.principal_id,
+                    carried=reader.bridge is not None,
+                )
             else:
                 after = after_param
                 if reader.bridge is None:  # a bridge's read for an agent moves no cursor (§2.3)
@@ -210,7 +218,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 )
             else:
                 rows, examined, _ = events.read(
-                    conn, mine.project.id, row, mine.principal_id, since, limit
+                    conn, mine.project.id, row, mine.principal_id, since, limit, carried=carried
                 )
             # A human's side is the conversation endpoint (§9); a bridge reading for an agent
             # delivers nothing to it (§2.3).
@@ -347,7 +355,14 @@ def read_event(slug: str, seq: str, request: Request, caller: AnyCaller) -> JSON
         mine = membership(conn, caller, slug)  # not a member here: `not_found`, as for any seq
         mine.require("project:read")
         rows, _, _ = events.read(
-            conn, mine.project.id, mine.row, mine.principal_id, number - 1, 1, until=number
+            conn,
+            mine.project.id,
+            mine.row,
+            mine.principal_id,
+            number - 1,
+            1,
+            until=number,
+            carried=getattr(caller, "bridge", None) is not None,  # `Maity-For` (§2.3)
         )
         if not rows:
             raise not_found()
@@ -424,7 +439,13 @@ def head_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
     `GET /bootstrap` (§5.4)."""
     mine = membership(conn, caller, slug)
     mine.require("project:read")
-    after = events.highest_readable(conn, mine.project.id, mine.row, mine.principal_id)
+    after = events.highest_readable(
+        conn,
+        mine.project.id,
+        mine.row,
+        mine.principal_id,
+        carried=getattr(caller, "bridge", None) is not None,  # `Maity-For` (§2.3)
+    )
     not_listening.called(conn, caller.session_id)
     return answer_body([], after, superseded=False)
 
@@ -476,6 +497,7 @@ def post_message(
         raise invalid({"task_id": "required_for_update"}, "an update is news on a card")
     me = mine.principal_id
     group: Any = None
+    sides: list[str] = []  # a chat's sides as it is written (§9.6)
     review: dict[str, Any] | None = None
     if body.type == "review_result":
         review, problems = reviews.check(body.review)
@@ -501,6 +523,7 @@ def post_message(
         to = group.id
         current = group_chats.stays(conn, group.id)
         audience = group_chats.audience(current)
+        sides = chat_gate.sides_of(conn, current)
     elif body.type == "chat":
         assert body.conversation_id is not None
         if caller.bridge is not None:
@@ -522,6 +545,7 @@ def post_message(
         if agent.isolated_since is not None:  # nothing reaches an isolated agent (§6.2)
             raise invalid({"to": "isolated"}, "the agent is isolated")
         audience = [f"member:{p}" for p in parties]
+        sides = [human.human_id]  # the agent's owner: one side
         if body.to_instance is not None:
             # The human's message wakes exactly one instance of the agent, resolved as an
             # address in a message's `to` is; the whole team still reads it (§9.1, §8.2).
@@ -579,7 +603,7 @@ def post_message(
     if group is not None:
         # Against the chat's participants only; anyone else's handle stays text, and
         # each participant mentioned but the writer counts one ping (§8.6).
-        inside = {group_chats.principal(s) for s in current}
+        inside = {group_chats.principal(s) for s in current if not s.waiting}  # §9.6
         mentioned = mentions.resolve(conn, mine.project.id, body.body, "body", among=inside)
         mentions.charge(conn, mine.id, len([m for m in mentions.members(mentioned) if m != me]))
         # An instance mention wakes the instance it comes down to, a successor when the one
@@ -624,6 +648,10 @@ def post_message(
         audience = list(dict.fromkeys([*audience, *pinged]))
     if review is not None:
         audience = _deliver_review(conn, mine, body.task_id, review, audience)
+    if body.type == "chat":  # where a chat text may cross the owner boundary (§9.6)
+        chat_gate.boundary(conn, mine.project.id, me, body.body, sides)
+    # A free work message from another side reaches an agent only on its owner's yes (§9.6).
+    audience, held = chat_gate.hold(conn, mine.project.id, mine, body.type, audience)
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -633,6 +661,7 @@ def post_message(
         "task_id": body.task_id,
         "mentions": mentioned,
         "attachments": [attachments.meta(r) for r in named],
+        "held": held,
     }
     if group is not None:  # where an agent that lost the chat answers (§9.4)
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
@@ -651,6 +680,10 @@ def post_message(
         conversation_id=body.conversation_id,
     )
     attachments.attach(conn, named, seq)
+    if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
+        author = (me, "agent" if mine.row.agent_id else "human")
+        side = chat_gate.owners_of(conn, [me]).get(me, me) if mine.row.agent_id else me
+        chat_request.note_held(conn, mine.project.id, seq, body.type, author, side, held)
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
     return load_event(conn, str(seq), mine)
@@ -709,6 +742,8 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
     events.lock_project(conn, mine.project.id)
     group = group_chats.find(conn, mine.project.id, conversation_id)
     found = group_chats.access(conn, conversation_id, mine) if group is not None else None
+    if found is None and group is not None and chat_gate.waiting(conn, group.id, mine.id):
+        raise chat_gate.refuse_waiting()  # it does not post before its owner's yes (§9.6)
     if found is None:
         raise invalid({"conversation_id": "not_a_conversation"})
     if found == "observer":

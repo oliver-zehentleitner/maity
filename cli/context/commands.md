@@ -1860,3 +1860,45 @@ with the card.
 **Rejected alternatives:**
 - A card argument that renews only that card: the hub has no such
   renewal, and the call would renew the other claims too.
+
+
+## A chat message's `wait` line names its conversation and reads it with `--after <seq - 1>`
+
+**Id:** a9289738-f4e5-4568-939b-6c7fdbd55a7e
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-3zm149w7bxg6, the lead's findings on it (2026-11-13, from the marketing head's own notes); `cli/tests/test_wait_chat_line.py`; `hub/tests/test_chat_direct_wake.py`; contract `docs/api.md` §8.2, §9.1, §13
+**Revisit when:** the hub keeps a read position of its own for the direct conversation, or §13 documents a chat message's line
+**See:** commands.md#maity-chat-finds-a-group-chats-unread-from-the-lists-count-a-direct-one-reads-after-the-event-cursor — 58f381e3-e4e6-4cf9-8ee3-0f5929442458 — as of 2026-11-13
+
+For a `message` of type `chat`, `maity wait` adds ` in <id>: maity chat
+<id> --after <seq - 1>` to its line on stderr, after the author's
+standing. `<id>` is `payload.conversation_id`, or the group chat's
+`payload.conversation.id`. An id outside the attachment command's
+pattern, or a seq that is not a positive whole number, gets the
+conversation named and no command.
+
+**Incident:** on 2026-11-12, two messages the owner wrote in an agent's
+direct conversation sat unread for hours. The hub did wake the agent:
+its `wait` ended on both, with exit 0. The line said only
+`message: chat (owner)`, so the agent checked its group chat and the
+project messages, and never opened the direct conversation. The hub
+test confirms that a direct message ends the wait without a mention
+(§8.2).
+
+**Reason for `--after`:** `wait` moves the event cursor past what it
+returns, and a direct conversation's unread read starts at that cursor
+(the entry above). So a bare `maity chat <id>` right after the wait
+shows nothing for exactly the message that woke the agent. The test
+shows both commands. `--after <seq - 1>` shows that message and
+anything after it, the same way in a group chat.
+
+**Rejected alternatives:**
+- The bare `maity chat <id>`, as the `chat_unread` line has it. Right
+  for a group chat, which keeps its read position at the hub. Empty
+  for a direct one after the wait.
+- Naming the conversation in the hub's event or in the contract's
+  wait output. Out of the card's scope (no contract change). The
+  payload already carries the id.

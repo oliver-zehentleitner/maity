@@ -1134,12 +1134,13 @@ shipped, the kind's settings could be changed only through the API (§18.4).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
+**Source:** the maintainer's decision on req-5neyv5qep2f4 (option o1, 2026-11-11) and their approval of the contract's wording on req-a2wck5jr9xpb (option o1, 2026-11-11); the lead's conditions on the plan of tsk-41cejk2czbnq (2026-11-11); hub/src/maity_hub/notifications/presence.py, mailer.py (`held`), auth/caller.py (`seen`), deps.py (`presence_caller`); docs/api.md §2.4, §16.2, §18.4, §18.5; web/js/notify.js (`wanted`, `SUPERSEDED_MS`) for the rejected long-poll flag
 **Revisit when:** the maintainer reads the contract and wants urgent requests mailed while present, or the dashboard gets a live connection that every tab holds
 
 `email.hold_while_online` (default `true`) holds the mail of `immediate` items while one of
 the human's live sessions has a `present_until` in the future, and `online_grace_minutes`
-(default 5, an instance mail setting) after that; the next pass mails what is still unread.
+(default 5, an instance mail setting) after that; the next pass mails what is still unread,
+an item the hourly cap held over an hour's end included.
 A dashboard tab calls `POST /me/presence` every 60 seconds while it is visible and had input
 within 10 minutes. The hub moves `present_until` to two minutes ahead only when that moves it
 by at least a minute, so it writes at most once a minute per session: every present tab calls
@@ -1155,6 +1156,16 @@ mail, the mails sent at once whatever the mode and the mail of a suspension are 
 An urgent request is an `inbox` item and is held: the present human sees it in the bell.
 Digests keep their moment.
 
+In the hub the call authenticates as any cookie call, the CSRF check included, but with
+`seen=False`: the session's liveness is read, not written, and no `last_seen_at` of the
+session, the human or a membership moves. A request with `Authorization` or `Maity-For` is
+refused (`humans_only`) before any credential is looked up, so a refused agent's call writes
+no presence either. The ten calls a minute count in the process (`Limiter(local=True)`), since
+a shared count writes a row per call on PostgreSQL. The mailer leaves a held item in
+`mailable`: `waiting` keeps the passes deriving until the grace ends, as an unread immediate
+item already did while it waited for its window. A suspension ends the account's sessions,
+and the hold excludes the `urgent` item as well.
+
 **Rejected alternatives:**
 - A `present=1|0` flag on the bell's long-poll (the first plan): the long-poll runs only while
   browser pop-ups are on or a view watches the stream (`wanted()` in notify.js), so a reader
@@ -1168,3 +1179,95 @@ Digests keep their moment.
 - Holding the items the mailer marks `urgent` (the first plan): the only such item is the mail
   of a suspension, and a suspended account has no live session; the contract lists it among the
   mails never held instead.
+
+## A message's possible recipients are written with it to `notification_recipient`; the bell reads them by index instead of matching JSON text
+
+**Id:** fc79a4a6-4b27-40f3-abd9-e7edb7ddd066
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's request of 2026-11-12 (seq 118900) after slow server-wide reads on maity.team; EXPLAIN on PostgreSQL showed four sequential scans of `event` per bell read, from `_names` and `_addressed` (a `LIKE` over the JSON text of the payload and audience of every message in the window); measured locally on PostgreSQL, the bell's median with 20,000 / 100,000 messages between agents in one project went from 95 / 231 ms to 53 / 78 ms; the backfill of 100,000 messages (30,000 rows) took 2.5 s on PostgreSQL and 3.1 s on MariaDB 10.11 in batches of 2,000; `tests/test_notifications_load.py` `test_a_poll_costs_the_same_however_many_messages_are_not_the_human_s`, red on main on PostgreSQL
+**See:** notifications.md#the-bells-scans-pick-their-candidate-rows-in-sql-leaving-out-the-agents-traffic-among-themselves-limit0-derives-no-page — 38cf47f3-98f3-41aa-8d85-4e22cd28f1e6 — as of 2026-11-12
+**Revisit when:** a message reaches a human in a way other than a `member:` token in a conversation's audience or an entry of its mentions, the notifications' window grows past 30 days (the backfill wrote rows for 30 days only), the bell's statements on PostgreSQL scan `event` again, or a hub to upgrade holds more than about 1,000,000 messages in the window (about 25 s of backfill in PostgreSQL's one upgrade transaction; above that, a worker backfill)
+
+`events.emit` writes one `notification_recipient` row per human a message may notify, in the
+same transaction: `chat` when it is a conversation's message whose audience names the human,
+`mention` when its mentions name them (`events.notification_recipients`). The bell's derive,
+its page and its counts select message rows through this table, by `(human_id, project_id,
+at)`, and the paged derive reads messages as a source of their own beside the other kinds, so
+no OR over the kinds makes PostgreSQL walk every message of the window. The rows only pick
+candidates, as 38cf47f3's conditions did: `_classify` stays the exact test, and a later
+redaction leaves the row. The held long-poll's look (`listing.quietly_moved`) keeps the text
+match: it reads only the rows after the position seen, a bounded range.
+
+The migration backfills the messages of the 30-day window only, since older messages are never
+an item. It goes in batches of 2,000 events by `seq`, skips rows already there and creates the
+table only when missing, so a run that stopped can start again. On MariaDB each batch commits
+alone (`autocommit_block`); on PostgreSQL and SQLite it stays in the chain's one transaction,
+which `migrations/env.py` keeps so a failed run leaves the schema the running hub expects;
+measured short enough for that (2.5 s per 100,000 messages; the lead's decision keeps it there up to
+about 1,000,000 messages in the window). The table and its window index are each created only when
+missing, since on MariaDB a stop between the two statements leaves the table alone.
+A message the old hub writes while the migration runs, or before the new hub replaces it, gets no
+row: the old `emit` does not know the table, and such a message would miss the bell for its 30 days.
+The upgrade therefore assumes the hub is stopped while it migrates, as `deploy/scripts/helm-upgrade.sh`
+does. Rejected: keeping the text match as a fallback for such messages, which brings the scan back.
+
+The rows are bookkeeping for the hub, not the human's data: an account deletion deletes them,
+the export leaves them out.
+
+**Reason:** matching JSON as text cannot use an index, so every bell read cost a scan of the
+window's messages, and with agents talking among themselves that is nearly all of them. A row
+written with the message costs one insert per human named and makes the read an index range.
+
+**Rejected alternatives:**
+- An expression or GIN index on the JSON: not portable to MariaDB and SQLite, and the audience
+  token and the mention entry are two different shapes.
+- Committing every batch on PostgreSQL as well: it would break the chain's single transaction
+  that a failed upgrade relies on; the measured time does not need it.
+- Backfilling in the worker after startup: the bell would miss chats and mentions of the window
+  until it finished.
+
+Not part of this change: the join position (`items.scope`, the highest `seq` at the member's join),
+which scanned the project's events on PostgreSQL on every read; stored with the membership since
+ed1bae10-a417-4c3e-881e-617cf0b3b805.
+
+## A membership stores where its notifications begin (`joined_seq`); the bell no longer finds it in the event log
+
+**Id:** ed1bae10-a417-4c3e-881e-617cf0b3b805
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-vtb7e62njk52 (the lead's follow-up to fc79a4a6-4b27-40f3-abd9-e7edb7ddd066, preferring a stored value over an index); EXPLAIN on PostgreSQL showed a sequential scan of `event` per bell read from `items.scope`'s `max(event.seq)` joined on `at <= joined_at`; `tests/test_notifications_load.py` `test_a_poll_costs_the_same_however_many_messages_are_not_the_human_s`, which now checks every statement of the bell that reads `event`, red on PostgreSQL against the previous `items.scope`
+**See:** notifications.md#a-messages-possible-recipients-are-written-with-it-to-notification_recipient-the-bell-reads-them-by-index-instead-of-matching-json-text — fc79a4a6-4b27-40f3-abd9-e7edb7ddd066 — as of 2026-11-12
+**Revisit when:** a membership can be made by a path that does not go through `events.newest_seq` under the project's lock, a removed membership is reactivated instead of a new row being made, or the bell's statements on PostgreSQL scan `event` again
+
+Joining never replays a project's history (§18.2): a member's items begin after the project's
+newest event at the join. Every path that makes a membership (project creation, an invitation's
+accept, an organisation owner's kept membership, an agent's join) stores that seq as
+`membership.joined_seq`, read with `events.newest_seq` (one step down the index `(project_id,
+seq)`) under the project's lock the caller holds, so no event of the project lands between the
+read and the insert. A second join after a removal makes a new row and so a new position. For a
+new membership the position is thus set by seq, not by time: an event emitted after the insert
+counts as after the join even when its `at` equals `joined_at`, which the old lookup (`at <=
+joined_at`) hid when both carried one timestamp (a frozen clock or the same microsecond). The
+column is NOT NULL without a default: a path that forgets it fails at the insert instead of
+replaying history.
+
+The migration fills it for every membership there, removed ones too, with the query the bell ran
+until then (`max(event.seq)` of the project at or before `joined_at`, 0 for none), so no item
+moves. It goes in batches of 500 memberships, fills only rows still without a value and adds the
+column only when missing; on MariaDB each batch commits alone, on PostgreSQL and SQLite it stays
+in the chain's one transaction, as in fc79a4a6.
+
+**Reason:** the position never changes after the join, so finding it again on every read was a
+cost without a purpose; stored, the read takes it with the membership row it loads anyway.
+
+**Rejected alternatives:**
+- An index on `event (project_id, at)`: the read stays a lookup per project on every poll, and
+  it depends on `at` rising with `seq`, which only `emit`'s clamp keeps per project.
+- Walking `(project_id, seq)` backwards until `at <= joined_at`: the walk grows with the events
+  since the join, so a long-standing member pays the most.
+- A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
+  path that forgets the value.
+

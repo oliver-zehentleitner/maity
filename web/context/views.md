@@ -1411,6 +1411,8 @@ Organisation stand side by side is the Agents page's own, so that is
 where the tab goes. One list across projects needs one read per project
 because the contract has no cross-project read (context/routing.md).
 
+Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at the same paths.
+
 **Rejected alternatives:**
 - A tab in the project's top row after Agents. That row has no
   Organisation for it to stand before, and a second agents tab there
@@ -1429,6 +1431,10 @@ because the contract has no cross-project read (context/routing.md).
 **Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
 **Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
+
+Moved 2026-11-12 (79438329): the form is no longer in the list. It opens from **Join an agent** →
+**Start an agent on a runner** at the head of the project's Agents and Team pages. What follows
+about runners, tools and refusals is unchanged.
 
 Where they run, on the project's Agents, has **Start an agent on a runner**
 for a human with members:admin. It offers the runners attached here
@@ -1681,7 +1687,8 @@ User (`/invite`), for humans only; Runner and Project were added later
 human adds members. The one chosen (`?project=`, as Members' Invite user
 links it) shows the invitation form and its list. The other projects
 show their lists without a form. Members has two blue buttons at the top,
-Invite user and Join agent; its own invitation form is gone. The project
+Invite user and Join agent; its own invitation form is gone (since 2026-11-12 in the Team page's
+shared head, Join as the Join an agent menu: 79438329). The project
 view `runners` keeps its route and its Settings tab mark, but has no tab:
 the project's Settings links it. `/invite` reads the projects one after
 the other and draws again when another project is chosen. A counter
@@ -5164,6 +5171,10 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **Revisit when:** a member's limit needs its own wording on the button, or profiles and joins merge into one form
 **See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-01
 
+On a project's Agents and Team, superseded by 79438329 (2026-11-12): Add reads **New agent
+profile**, and **Join an agent** is a menu (any agent, or start on a runner) on both project pages,
+with Team's no longer leading to Agents. On `/agents` the two buttons stay, Add with the new words.
+
 Both pages have **+ Add an agent** and **Join an agent** at their head, and
 a click opens the matching form, one at a time. Add makes a new profile. Join
 is the join panel, for this project on a project's Agents, with a project to
@@ -5573,8 +5584,9 @@ sign-out, an address of the app opened without a session and without a stored pu
 the sign-in drawn when a session ends. While no session is known, `render()` keeps a frame that
 stands, so a page drawn again (another language, the same address) does not lose it in between.
 Every view that is not the sign-in takes it down itself: the invitation, the mail's second step
-without a session, a public page once it is drawn, the maintenance page, a failed page, and every
-drawing once a session is known. The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
+without a session, the maintenance page, a failed page, and every drawing once a session is known.
+A visitor's public page and "not found" stand in the frame too (see
+6d168e98-d442-4a3a-bd1c-57158eeeb273). The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
 #1287, after the review found the frame at those addresses). It was chosen over drawing the
 frame at `/login` and `/register` alone; why it lost is inferred, not stated: that choice would show
 the same form in two designs depending on the address.
@@ -5645,6 +5657,39 @@ pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second 
 keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
 one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
 notes on #1287, round 3 (card tsk-gsk31zvpfv02).
+
+## A visitor's public page stands in the landing's frame, the app's bar only where the frame cannot be read
+
+**Id:** 6d168e98-d442-4a3a-bd1c-57158eeeb273
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (PR 3 of 4: "the dashboard's visitor views with the same header and footer instead of the small bar"); the designer's approved mockups and README ("one website frame for every signed-out page", maintainer's approval in group chat seq 118113, 2026-11-12); `web/js/visitor.js`, 2026-11-13
+**See:** views.md#the-frames-stylesheets-are-switched-on-only-where-the-sign-in-or-registration-stands-signed-out-its-header-and-footer-beside-the-apps — e9ddc07e-71c0-47c7-bd12-6a7e4d2c35f0 — as of 2026-11-13
+
+Signed out, a public page the dashboard draws (`js/visitor.js`: a person, an agent, an
+organisation, a project and its views, a card) draws its content, then enters the frame with
+`M.siteChrome.enter(path, null, { next: path })`, as "not found" does. The landing page's header
+and footer stand around it, the app's bar is hidden, and the frame's footer takes the product
+line's place. The header's **Sign in** carries `?next=` to the page, the model's own query kept,
+as the bar's sign-in link did. The content is wrapped as the hub's stored pages are
+(`section.stored-page > .wrap`), so it takes their look in the landing's tokens from
+`public-pages.css`. The app's bar with its sign-in link is still drawn first and shows only where
+`GET /site/chrome` fails. Signed in, a non-member's view is unchanged: that is the signed-in
+frame, a later card.
+
+**Reason:** a visitor moves between the hub's pages (`/explore`, a stored page with `?as=public`,
+the sign-in) and the dashboard's at the same addresses. With the small bar they lost the
+landing's navigation and had no footer at all, so one site looked like two. The frame was already
+built for the sign-in, so the visitor's page reuses it rather than a third design.
+
+**Rejected alternatives:**
+- The app's small bar (brand, Sign in, theme), as before: no navigation and no footer, the reason
+  for the card.
+- The frame with the dashboard's own content styles: the content would keep the app's look
+  between the landing's header and footer, unlike the stored pages it stands beside.
+- A Sign in without `?next=`: the visitor would land on their own start after signing in, not on
+  the page they were reading.
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
@@ -5924,7 +5969,8 @@ inferred, the card did not discuss them.
 
 **Id:** 63c48583-5f47-4beb-93be-d4426d45f57b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
 **Evidence:** confirmed
 **Source:** the card tsk-y8gkq1kvt63c (item 4 of the plan on tsk-fxjtwmkc4md5); lotse's choice of option 2 (message seq 94765, 2026-11-08) after the full e2e found the early /me failing by design; web/js/app.js `render` (`early`); the boot case in web/tools/smoke.js
 **Revisit when:** the hub answers /auth/session and /me in one read, or a session that owes the second factor may read /me
@@ -5948,6 +5994,50 @@ answers reported; allowing those would have meant a harness exception that could
 failing /me. Without the cookie gate it was worse: a visitor's 401 drew "your session has ended",
 and an enrolment 403 redrew the setup in an endless loop. Asking /me with a fetch of its own,
 outside `M.api`: a second client with its own error handling.
+
+## The boot reads one GET /bootstrap and answers its own reads from the parts; an older hub's 404 leaves them to their routes
+
+**Id:** 884b01fe-ffc5-4d39-843e-aa0d9c84ffde
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-j591fzgnmspf (the web part of tsk-x4z69ff785y6, the owner's decision of 2026-11-11); the route `GET /bootstrap`, docs/api.md §5.4, on main since #1656; context/performance.md b77c193d, which named this entry's Revisit when as come; web/js/api.js `prime`, web/js/app.js `render`; the boot cases in web/tools/smoke.js and e2e `bootstrap_boot`
+**Revisit when:** the route is measured against the waves (b77c193d), a boot read is added that the bundle does not carry, or every hub the dashboard talks to answers `/bootstrap` (then the fallback can go)
+**See:** views.md#the-boot-reads-the-window-and-the-session-together-me-still-after-the-session — 63c48583-5f47-4beb-93be-d4426d45f57b — as of 2026-11-11
+
+The hub now answers the window, the session and `/me` in one read, and on a project view also the
+project, its members and the event head (63c48583's trigger). A cold drawing (no kept session, not
+the invitation or registration page) first asks `GET /bootstrap`, with `?project=<owner>/<slug>` on
+a project view. `M.api.prime` keeps its parts as one-shot answers for exactly the boot's own reads.
+Those reads stay where they were, in the same order (the window, the session, `/me`, then
+`loadContext`). Each takes its answer from its part, through `requestOnce`'s usual handling:
+the session's language and CSRF token, a 401 that ends the session, the 503 window (its
+`retry_after` taken from `details.until`, since a part has no headers), and `/me`'s time zone.
+An error part becomes the ApiError the single call would have thrown. The parts end once the boot
+has read its context (`unprime`), and at the latest when the drawing returns, whichever way it
+ends (a failure page, the second factor's step, the setup, a window's full page, a visitor's page, a
+pending account): `render` is a small wrapper that calls the drawing and unprimes in a `finally`.
+They serve no read once a newer drawing has started (the `live` check `prime` is given), are
+replaced by a newer drawing's, and last 15 seconds at most. So a poll never gets an old one, and a
+part nobody asked for (the window read a minute ago, a visitor's page) is dropped. The wrapper,
+not a `try/finally` inside the drawing, because that would re-indent the whole drawing, which
+other pull requests touch (review of #1672). An answer
+without parts (an older hub's 404, a limit, a refusal, no answer) keeps nothing, and every read
+goes to its own route as before. `/bootstrap` is a public path: it needs no session.
+
+**Reason:** the order of handling is what 63c48583 kept, because each answer decides whether the
+next matters. Answering the same calls from the bundle keeps that order and all the handling that
+hangs on those calls, while the round trips become one. The fallback keeps a newer dashboard
+working against a hub from before #1656.
+
+**Rejected alternatives:**
+- A boot path of its own that reads the bundle and sets the session, language, window and
+  context itself: a second client beside `M.api`, with the error handling 63c48583 already
+  rejected for a separate `/me` fetch.
+- Keeping the parts until they are asked, without an end: a later poll of `/me` or of the members
+  would get the boot's answer instead of a fresh one.
+- Asking `/bootstrap` on a switch inside the project too: such a switch reuses the kept session,
+  `/me` and project, and reads only the head; the bundle would read more than it saves.
 
 ## A handle field's hint is a sentence of fixed words, with no handle or address filled in
 
@@ -6208,3 +6298,394 @@ newest are the ones looked for.
   not only from the drawing, and changes what the board offers.
 - The first 50 in the column's order: that order is by rank and creation,
   so it would show old closed cards and hide the ones just closed.
+
+## Report is one small button where a reader sees the thing, one inline form for all, and the account's Reports tab is where its outcome shows
+
+**Id:** 99ce8e16-8bec-4c41-981c-b03c8a976404
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-7ze5w6ymf7bw (the hub side, `POST /reports` taking what a stranger sees, is #1658); the coordinator's answers of 2026-11-11 (two pull requests, the link on the hub-rendered pages in its own contract and hub change; a project reported both from its overview and from its public view); docs/api.md §16.8; web/js/report.js
+**Revisit when:** §16.8 adds a target (an organisation, a cross-project chat message), the reporter gets a notification of a resolution, or the hub-rendered public pages carry their own link (the second pull request, which then also uses `?report`)
+
+A **Report** button stands where a reader sees what it reports, next to that view's own actions: on a
+member's page (a person or an agent, by the member id, not on one's own), on a person's view at
+`/<handle>` (by the current handle), in the card panel's head,
+at the end of a project's Overview, on a message someone else wrote in Chat and in Messages, and under
+the title of a public view (§16.9) of a project, person, agent or card. Each sends the target the way
+that reader can name it (§16.8, "The id a stranger sends"): inside a project the member's read
+gives ids; a public view names by the current public name. One form serves all of them
+(`M.report.control`): a reason from §16.8's six, an optional text checked against 2 KiB in UTF-8
+bytes as the hub counts it, one `POST /reports`. The form opens inline under the button, which hides
+while it is open. Sent, a line says so and links **Your account → Reports** (`/account/reports`,
+`GET /me/reports`), the only place the reporter learns what became of it, as §16.8 sends them no
+notification. Signed out, a public view's button is a link to the sign-in whose way back carries
+`?report`, and `?report` opens the form at once: the same handoff the hub-rendered pages will use.
+The public view had nothing to press before; Report is its one control, and smoke's
+"nothing to press" checks leave it out by its class alone.
+
+**Reason:** a report is about one thing, and the reader is looking at it; a button there needs no
+choosing of a target and sends exactly the name that reader may use. One form keeps the reasons, the
+limit and the refusals in one place. The outcome has a home of its own because the hub tells the
+reporter nothing.
+
+**Rejected alternatives:**
+- A **Report** entry in the member page's Actions menu: that menu's entries lead to where something
+  is done, they do nothing themselves (#643); a report is done here.
+- A dialog over the page: the inline form does the same at phone width, as the other forms in
+  these views do, and keeps what it reports in sight.
+- A page of its own taking the target in its query (`/report?type=…&id=…`): a new address that
+  repeats the target in a link anyone can change, while the button already has it.
+- Report on one's own page or message: §16.8 allows it, but there is nothing to tell the admins about
+  oneself that one could not change oneself. Only oneself is left out: one's own agents keep the
+  button, on their member page and their public page, as §16.8 allows (review of #1681).
+
+A member who comes back from a public page's Report (`?report`) gets their own view of the project,
+which is no public page: the project's page and its public views lead to the Overview, whose form
+opens, and a card's page is the board with the card's panel, which opens its own (review of #1681).
+
+## A human leaves a project from Settings → Mine, confirmed in a dialog that lists their agents
+
+**Id:** 8526141d-87da-4d63-81c6-a3c7db25715d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-z1khn7tkpyqk, step 3 of 3; docs/api.md §6.2 "Leaving a project"; the project view's policy (docs/api.md §6.1, tools/hub-shapes.json)
+**Revisit when:** the project view stops carrying `policy` for a member, or an agent should leave on its own
+**See:** https://github.com/oliver-zehentleitner/maity — 04bb56da-91d5-424f-ab26-5db6c816d82d — as of 2026-11-12
+
+Every human member, a guest included, leaves from **Settings → Mine**, the
+tab they already have. The confirmation is a dialog on the page. It says
+what ends (access and credentials, claimed cards, held requests, every
+group chat of the project) and what stays (cards assigned and not claimed;
+cards, notes and messages they wrote). It lists the agents they own and
+says, for each, isolated or stays. Cancel is focused, and Escape cancels;
+the focus returns to the button. The call is `DELETE` of their own member
+id with one `Idempotency-Key` for that attempt, and no step-up. On success
+the project's tab and its start-tab entry are dropped and the page goes to
+`/all` with "You left <project>." Where the view says the caller is the
+namespace owner (`project.owner` is them), the button is disabled and the
+reason is shown. The last owner, and an organisation's owner, are said in
+words from the hub's answer.
+
+The project view includes `policy` for every member with `project:read`,
+and `agent_owners` and `outside_roles` with it. A stored `members` or
+`anyone` is applied per agent: under `members` every owned agent is
+isolated; under `anyone` one within `outside_roles` (trust `member` or
+`guest`, and a role whose base does the work) stays, and one beyond them
+is isolated. An isolation already in place stays isolated. An unset
+`agent_owners` reads `members` only when the view says the page cannot be
+served (`public_page` off, or `archived`). A missing `public_page`, or
+`on` while a moderation hold or the namespace owner's suspension is not
+on the view, is not guessed: the dialog states the rule and names no agent.
+
+The admin's self-remove in the member list stays as it is, `window.confirm`
+and all. That row is an admin's. Mine is where a member without that
+right, a guest included, leaves.
+
+**Reason:** leaving is every human's, and Mine is the human's own place
+in the project. The confirmation has to name each agent, which a browser
+`confirm` cannot lay out, and it has to take focus and give it back. The
+policy is on the project view, so the dialog can say which agent is
+isolated without another read, except where the view does not carry the
+effective value: naming an agent then would be a guess.
+
+**Rejected alternatives:**
+- Extending the member list's self-remove to every human: that control is
+  the admin's removal and stays so; a guest has no admin row to put it on.
+- `window.confirm`, as that removal uses: it cannot list the agents, and
+  it is not the dialog the page can label and return focus from.
+- Guessing per agent when `agent_owners` is unset and the page might still
+  be served: the view does not say whether a hold or a suspension is in
+  force, and a wrong "stays" would tell someone their agent keeps working.
+
+## One page head for Agents and Team: "Managed agents" at `placements`, the start on a runner in a Join an agent menu
+
+**Id:** 79438329-b7bb-435a-b384-3f597a2d7d04
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer through the lead on card tsk-vkyp71qp95n9 (2026-11-12: the card body, the notes on the Team page and the tab name); the lead's go on the plan note of the same day
+**See:** views.md#add-and-join-are-two-buttons-the-same-on-a-projects-agents-and-on-agents-each-opening-its-form — 1ac94340-cc4e-4d87-9ec0-c26fbdf57e96 — as of 2026-11-12
+**Revisit when:** a third page needs the head, or a way into a project other than these two needs a place in the menu
+
+The project's Agents and Team pages share one head (`web/js/page-head.js`). It holds the heading, the page's
+buttons at the right end and the tab row under them, each the page's full width. Agents has
+**New agent profile** and **Join an agent**. Team has **Invite user** and the same **Join an agent**.
+**Join an agent** is a menu of two ways in: **Add any agent** (the join panel) and **Start an agent
+on a runner** (the form that was at the foot of the list). The list tab is named **Managed agents**
+on the project page and on `/agents`. The paths stay `placements` and `/agents/placements`. The
+list now only shows what runs.
+
+**Reason:** the maintainer wanted the two pages laid out alike and both ways of bringing an agent
+in under one button. A start belongs with joining, not with the list of what already runs. A
+head above the tabs puts the menu on every tab, and the Team page no longer jumps to
+`/agents/join`. The path keeps the contract's noun (context/routing.md, b32bb82c).
+
+**Rejected alternatives:**
+- "Runners" as the tab name: it is already the project's view of the machines (`runners`). The
+  lead took it back the same day.
+- Keeping the start form in the list: it would be reachable from one tab only, and the list
+  would mix what runs with how to start one.
+- Renaming the path to say the tab's words: an address read from the API, a log or the CLI would
+  name another thing than the contract's `placements` (context/routing.md, b32bb82c).
+
+## The reset page is drawn before the session is read, and never says why a link is dead
+
+**Id:** 281af47c-7469-4e8a-bf62-879aaf06beeb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.10 (the page, the token in the fragment, `code_invalid` for every dead link and every wrong code, a reset ending every session and signing nobody in); the card tsk-yksxdpd2pk0m; the dashboard's implementation, 2026-11-12
+**Revisit when:** a reset starts to sign the human in, the hub starts to tell a wrong code from a dead link, or the dashboard gains a page that must see the session before it draws
+
+`/sign-in/reset` is drawn in `js/app.js` before `GET /auth/session`,
+signed in or not, in the frame of the pages without a session. It takes
+the token from the fragment (from `?token=` in fixture mode, where the
+fragment holds the route) and drops it from the address before the first
+call. A link the hub refuses at the check is one sentence and the way to a
+new link. At the end a refused code keeps the form and clears the code
+where a code was asked; without one, the link is dead.
+
+**Reason:** a reset ends every session of the human and signs nobody in,
+so a session in this browser changes nothing about the page; reading it
+first would put a session owing the second factor, or a failed read,
+between the human and a page that does not need it. The hub answers
+`code_invalid` for an expired, used or voided link and for a wrong code
+alike (§2.10); the page cannot know which, and must not guess one.
+
+**Rejected alternatives:**
+- Drawing the page after the session read, as every dashboard route is:
+  a signed-in browser would show the dashboard or the second-factor step
+  instead of the link's page.
+- Saying "expired" or "used" for a dead link: the hub does not tell them
+  apart, and a guess would be wrong half the time.
+
+## The banner toward an authenticator app: Later kept per session in the browser, its reads kept a minute at most and the banner on screen drawn again
+
+**Id:** 7edef2ad-504b-4a50-983c-daa9eb37f88c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.10 ("Toward an authenticator app": every page, Later until the next sign-in, enrolling ends it); the card tsk-yksxdpd2pk0m; the dashboard's implementation, 2026-11-12
+**Revisit when:** the hub keeps "Later" itself, or `GET /me` or `/bootstrap` starts to carry the second factor's `via`
+
+"Later" stores the current session's id in the browser's storage; the
+banner stays away while the session is that one, so the next sign-in, a
+new session, shows it again. Where the browser keeps nothing it holds for
+the page load. What the banner stands on (`GET /auth/second-factor`,
+`/auth/methods`, `/me/notification-settings`) is kept for a minute at most,
+and read again sooner after a write of this tab to the mail settings, the
+second factor or the instance's sign-in settings, and on every Security
+page. The banner on screen is drawn again from fresh reads once they are a
+minute old (a check every five seconds, no call, none in a hidden tab) and
+when the tab is shown again, so it does not stand on a page left open. A
+redraw that says the same for the same session leaves the standing banner
+in place; a changed one moves the focus to the same control in the new.
+
+**Reason:** the contract ties "Later" to the sign-in and gives the hub no
+field for it, and a session's id is exactly what changes at a sign-in.
+The banner is on every page, and three reads on every page switch would
+be three calls on every click for something that changes rarely. It does
+change outside this tab, though (an app enrolled in another tab or on
+another device, an admin's switch), and the sharp sentence is a security
+claim: kept for the tab's lifetime it stood next to the enrolled app on
+Security (review of #1716). A minute bounds how long it can be wrong,
+also on a page nobody leaves: dropping the kept reads alone only helped
+the next page, and an idle tab kept the claim on screen (second review of
+#1716). Security, where the human checks the factor, never shows a kept
+one. A hidden tab reads nothing on the minute, as on the dashboard's other
+intervals (refresh.md, 6cb02c3d-063d-473b-b86b-8f8324c11f14): it shows
+nothing, and shown again it reads at once. Replacing an unchanged banner
+took the keyboard focus off its link (third review of #1716).
+
+**Rejected alternatives:**
+- `sessionStorage`: it ends with the tab, not with the sign-in; a new tab
+  of the same session would show the banner again.
+- Reading the three on every page: the cost above, for nothing new.
+- Re-reading after any write: the inbox and the board write all the time,
+  and none of their writes moves the banner.
+- Keeping the reads for the tab's lifetime, cleared only by this tab's own
+  writes (the first version): a change made elsewhere left a false claim
+  until a reload.
+- A `storage` event between tabs: it covers another tab of this browser,
+  not another device or an admin, which the minute covers too.
+- Dropping the kept reads at the minute and on the tab's return without
+  drawing the banner again (the second version): only the next page saw
+  the change, and a page left open kept the claim.
+- Replacing the banner at every refresh (the third version): the same
+  sentence drawn anew, and the focus on its link lost to the page.
+
+## The request to chat with one's agents: boxes from its full read, the allows waiting for a ticked agent, a rule sent only when written
+
+**Id:** 1eb6c907-2d70-4661-bd42-4451bc02a14d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13
+**Revisit when:** the request view carries what an answer ticked, the reach on the other side (`their_agents`) is wanted in the inbox, or the hub accepts an allow with no agent as a no
+
+The inbox draws the request's boxes from `chat_access_request`, which the
+read in full of every open personal request (`GET /requests/{id}`, already
+made for a preference proposal) brings along; a list never carries it, so
+no read is added. A box per agent on it, all ticked, says why the agent is
+there (it waits in a chat, a message is held for it); the box for that
+side's human is not ticked and always shown, its hint saying, where the
+human sits in one of the chats, that unticked the agents go on waiting
+there. The two rules (`allowed`, `denied`) are optional fields of at most
+1000 characters. An allow reply sends `chat_access` with the ticked agents,
+the human's box and each rule that holds text after trimming; No and Block
+send none, since the hub refuses `chat_access` beside them. With no agent
+ticked the allow buttons are disabled and point to the line that says a tick
+is needed; No and Block stay. The reach on the other side is not offered:
+the hub's default (that side's agents in the chats and the authors of the
+held messages) goes, and a narrower one is set through the API.
+
+**Reason:** an allow with no agent writes no entry, and the hub files a
+new request at once: the owner's click would seem to do nothing. The
+human's box covers the human's own free work messages too, not only the
+chats, so it is shown even where the human is in no chat. An empty rule
+sent as `""` would be stored as a rule saying nothing.
+
+**Alternatives considered:**
+- Sending an allow with no agent and letting the hub ask again: rejected
+  for the click that seems lost.
+- Showing the human's box only where `their_human_in_chat` is true:
+  rejected, the tick also admits the human's held free work messages.
+- A field for the reach (`their_agents`): left out of this part; the
+  default covers what the request names, and the lists page is where an
+  entry is narrowed.
+## Who may chat with one's agents is a tab of /agents; whom an entry names is chosen among the members of one's projects
+
+**Id:** 5be40abe-674f-412a-b4a4-7cfec2ff960d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.6 ("The lists": `/me/chat-access`, the entry shapes, only the human reads and writes them), §6.27 (`GET /people/{handle}` answers no id), §16.11 (the `/agents` tabs are view names); the card tsk-5c6hw63ncq3m, its PR 3 (the web: "the lists page"); the dashboard's implementation, 2026-11-13
+**Revisit when:** the hub offers a way from a handle to an id for any person or agent, an entry should name someone in no shared project, or the lists grow past what one page shows
+
+The entries are about one's agents, so they live with them: the
+`/agents` page's fourth tab, **Chat access** (`/agents/chat-access`),
+beside Managed agents and Maintenance notices. It lists the allow entries
+(whom, for which of one's agents, how long or "ended", the two rules) and
+the deny entries (whom, for which agents, since when), each removed after
+a confirmation; an allow is edited in place, sending only the fields that
+changed (a time chosen starts from the edit, "as it is" keeps `until`, a
+cleared rule is `null`); a reach the entry lists by id is kept unless
+changed to all or none. A form for each kind adds one: one's agents (all, or
+those ticked), then whom: for an allow a person's side or a project, for a
+deny also one person alone or one agent. A person or another owner's agent
+is chosen from the members of one's projects (`M.membersOnce`), a project
+from one's projects.
+
+What the hub would refuse and the page can see is said by the form before
+anything is sent: no agent ticked, a side's allow that names none of its
+agents and not its human (`names_no_one`). A refusal it cannot foresee is
+said in the form that was sent, in the page's own words where it has them
+(`too_many_entries`, `not_yours`, `self`, `not_found`); the hub's
+`invalid` alone reads as a generic sentence in any language but English.
+An edit compares one's agents as a set, so an entry the hub lists in
+another order sends nothing; Cancel, or a save with nothing changed, gives
+the focus back to Edit.
+
+**Reason:** the entries need ids (`owner_id`, `human_id`, `agent_id`),
+and the one read from a handle, `GET /people/{handle}`, answers none and
+refuses agents; the member lists carry both, and an agent that is in a chat
+with one's agents, or messages them, is in one of one's projects. A deny
+entry names an agent by id only, so the same lists give its handle.
+
+**Alternatives considered:**
+- A typed handle resolved by `GET /people/{handle}`: rejected, it has no
+  id to send and no agents.
+- A typed id: rejected, the dashboard shows handles, not ids, almost
+  everywhere.
+- A page of its own in the account: rejected, the entries are per agent and
+  the agents' tabs are where an owner looks for them.
+
+## A waiting agent is said in a group chat's people line; one's own lead to the inbox, not to the request
+
+**Id:** 57ad0b3e-1846-4063-9315-0d4ecdfbb200
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.6 ("Waiting": the participant item's `waiting_for`, `participants_changed`; "The request": one request per owner and side, filed by the hub); the card tsk-5c6hw63ncq3m, its PR 3 (the web: "waiting" in the chat's participant list); the dashboard's implementation, 2026-11-13
+**Revisit when:** the chat view or the participant item names the request a waiting agent's owner answers, or the people line is shown on a phone again
+
+In a group chat's **In it:** line an agent with a non-empty `waiting_for`
+reads "(agent, waiting for its owner's yes to …)", the humans of the sides
+it waits for named as members; an admitted agent reads "(agent)" as before.
+Under the line, a hint names the reader's own waiting agents and links to
+the inbox (`/all`), where the request to chat with them is answered. It is
+drawn with the head, so a `conversation_updated` that changes
+`waiting_for` redraws it as any change of the participants does.
+
+**Reason:** the owner reads along in the chat while the agent waits and is
+the one who decides, so the chat is where they see it; the other
+participants see why the agent says nothing. The chat view does not name
+the request, and one request holds every chat of a side, so the link leads
+to the inbox, not to one request. The hint stands outside the people line,
+which a phone hides, so the owner sees it there too.
+
+**Alternatives considered:**
+- A link to the request itself: rejected, its id is not in the chat's view.
+- The waiting mark in the Manage list only: rejected, only managers open it,
+  and the owner of the waiting agent may not be one.
+
+## A settings or manage panel's forms share one column, --form-column (42rem), its buttons at the left
+
+**Id:** 7c1cf0ae-ac5b-4f72-8d3e-acd05e1771b4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-0t3vdzjvm2vq (one width for forms and help texts in settings and manage panels) and the project lead's answer on it: a `--form-column: 42rem` token, a `.form-column` class, lists and tables full width, buttons left inside the column, Remove included; the reviews of PR #1731 (lists inside wrappers, the forms' widths outside the panels, the panels left out); web/css/app.css, web/tools/e2e.py `form_column_layout`, 2026-11-13
+**Revisit when:** a panel needs two columns side by side, a form inside a column needs to be wider than 42rem, or the dashboard gets a layout grid of its own
+
+A panel that holds forms carries the class `.form-column`: Team →
+Manage, an agent's card (Agents → Manage and /agents), a project's
+Settings (Project and Mine, the settings panel a column of its own
+inside) and the account's tabs, Organisations and an organisation's page
+among them. Its parts stop at `--form-column` (42rem) and start at its left; lists,
+tables, tab rows and a part marked `.full-width` (an agent's
+credentials) keep the panel's whole width. A part that holds such a
+list, however deep (the account's sessions, its forge links and
+repositories, the settings' attach list), keeps the whole width too, and
+its own parts without one stop at the column again, level by level down
+to the list (`:has()`). A list counts only inside the column: a column
+may itself stand in a table or a list (Team's Manage row, an agent's
+card), and everything in it would otherwise read as inside a list. A `dl` of facts is text here, not a list: short
+pairs that read better in the column. Inside the column fields and
+help texts fill it, so a panel has one right edge, and a form's buttons
+(`.actions`, `.row`, Remove, and a grid form's own: `form`,
+`.field-stack`, `.image-row`) start at its left, next to what they send;
+a form's own button is not stretched across it. A form's own width (32, 36 or 48rem) still
+holds outside a column (the admin area, the inbox, the sign-in): inside
+one the form fills the column. The instance admin area is not in this
+decision's scope; its forms keep their widths. The rules that put
+buttons at the column's left and fill forms stand at the end of app.css, after the forms' own rules.
+The e2e step `form_column_layout` measures every column on those pages
+at 1280, 390 and 360 px (the notifications also in German): one edge,
+every list outside a form at the full width, the buttons at the left,
+and the forms' own widths outside a column.
+
+**Reason:** each form brought its own width (32, 42 or 48rem, some none
+at all), so help texts ran to the panel's edge while the fields beside
+them stopped at 26 or 32rem, and Remove sat at the far right, away from
+the form it belongs to. One token and one container class give every
+panel the same edge, and a new form inside it needs no width of its own.
+
+**Alternatives considered:**
+- A width per form, as before: rejected, the widths drifted apart, and
+  parts with no form (help paragraphs, sections) had none.
+- Buttons at the column's right edge: rejected, the project lead chose
+  the left, Remove included, so a button stands where the eye ends the form.
+- Only the column's direct parts exempt when they are lists: rejected in
+  review, the account wraps its lists in sections, which then shrank from
+  1168 to 672 px.
+- `.full-width` on each wrapper of a list: rejected, the lists sit two to
+  five levels deep and a new one would need the class again; `:has()`
+  finds them.
+- The token as every form's width everywhere: rejected in review, it
+  widened forms outside the panels in scope.
+- A `dl` of facts at the full width like a list: rejected, its pairs are
+  short, and in a padded box (the settings' webhook) the column's parts
+  beside it would end the box's padding past the column's edge.

@@ -202,6 +202,7 @@ def insert_membership(project_id: str, human_id: str, joined: object, active: ob
     return insert(t.membership).values(
         project_id=project_id, human_id=human_id, trust="owner", role="coder",
         role_base="coder", areas=["/"], capabilities=[], joined_at=joined, active=active,
+        joined_seq=0,  # at head (since 20261112190000), before the downgrade
     )  # fmt: skip
 
 
@@ -1490,3 +1491,257 @@ def test_the_invite_by_handle_downgrade_revokes_what_an_older_hub_would_show_as_
     assert rows["inv-open"] is not None
     assert str(rows["inv-declined"])[:16] == declined_at.strftime("%Y-%m-%d %H:%M")
     assert rows["inv-used"] is None and rows["inv-link"] is None
+
+
+def test_notif_recipients_backfills_the_window_in_batches_and_runs_again(engine: Engine) -> None:
+    """20261112170000_notif_recipients: each message of the notifications' 30 days gets a row
+    per human its audience (a chat) or its mentions name, over more than one batch; an older
+    message, an agent and an id that is no human get none. A MariaDB run that stopped part way
+    left the table and some rows; the next run keeps them and writes the rest."""
+    from datetime import timedelta
+
+    from sqlalchemy import MetaData, insert, inspect, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261112170000_notif_recipients"
+    migrate(engine, _before(engine, revision))
+    project_id = factory.project(engine, "recipients")
+    a, b = factory.human(engine, "rec-a"), factory.human(engine, "rec-b")
+    now = clock.now()
+
+    def message(at: Any, audience: list[str], mentions: list[str], chat: bool) -> dict[str, Any]:
+        return {
+            "project_id": project_id, "kind": "message", "at": at, "audience": audience,
+            "conversation_id": "agt-chat" if chat else None, "redacted": False,
+            "payload": {"text": "x", "mentions": [{"member_id": m} for m in mentions]},
+        }  # fmt: skip
+
+    many = [message(now, [f"member:{a}"], [b], chat=False) for _ in range(2001)]  # > BATCH
+    special = [
+        message(now, [f"member:{a}", "member:agt-x"], [], chat=True),  # a's chat
+        message(now, [f"member:{b}"], [], chat=False),  # an audience outside a chat
+        message(now - timedelta(days=40), [f"member:{a}"], [a], chat=True),  # too old
+        message(now, ["role:coder"], ["hum-gone", "agt-x"], chat=False),  # no human
+        message(now, [f"member:{a}"], [a], chat=True),  # both
+    ]
+    with engine.begin() as conn:
+        conn.execute(insert(t.event), many + special)
+        seqs = list(conn.execute(select(t.event.c.seq).order_by(t.event.c.seq)).scalars())
+    first = seqs[: len(many)]
+    chat, outside, old, nobody, both = seqs[len(many) :]
+    migrate(engine, revision)
+
+    def rows() -> set[tuple[str, int, bool, bool]]:
+        with engine.connect() as conn:
+            r = t.notification_recipient
+            query = select(r.c.human_id, r.c.seq, r.c.chat, r.c.mention)
+            return {(row[0], row[1], row[2], row[3]) for row in conn.execute(query)}
+
+    expected = {(b, seq, False, True) for seq in first} | {
+        (a, chat, True, False),
+        (a, both, True, True),
+    }
+    assert rows() == expected
+    assert not {old, outside, nobody} & {seq for _, seq, _, _ in rows()}
+    downgrade(engine, _before(engine, revision))
+    # What a MariaDB run that stopped after some batches leaves, where each DDL statement
+    # commits alone: the table without its window index (hcrb on #1703), the first rows.
+    with engine.begin() as conn:
+        tables = MetaData()
+        tables.reflect(conn, only=["human", "event", "project"])
+        bare = t.notification_recipient.to_metadata(tables)
+        bare.indexes.clear()
+        bare.create(conn)
+        conn.execute(
+            insert(t.notification_recipient),
+            [
+                {"human_id": b, "seq": seq, "project_id": project_id, "at": now, "chat": False,
+                 "mention": True}
+                for seq in first[:10]
+            ],
+        )  # fmt: skip
+    migrate(engine, revision)
+    assert rows() == expected
+    indexes = {i["name"] for i in inspect(engine).get_indexes("notification_recipient")}
+    assert "ix_notification_recipient_window" in indexes
+
+
+def test_join_seq_fills_every_membership_in_batches_and_runs_again(engine: Engine) -> None:
+    """20261112190000_join_seq: each membership, removed ones too, gets the highest seq of its
+    project's events at or before its `joined_at` (0 for none), the value the bell looked up
+    on every read before, over more than one batch. A MariaDB run that stopped part way left
+    the column and some values; the next run keeps them and fills the rest. The downgrade
+    drops the column and keeps the rows."""
+    from datetime import timedelta
+
+    from sqlalchemy import func, insert, inspect, select, text
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261112190000_join_seq"
+    migrate(engine, _before(engine, revision))
+    busy, empty = factory.project(engine, "join-seq"), factory.project(engine, "join-seq-2")
+    t0 = clock.now()
+    many = 501  # > BATCH
+    humans = [f"hum-joinseq{n:05d}" for n in range(many + 3)]
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.human),
+            [
+                {"id": h, "handle": h, "display_name": h, "password_hash": "x", "created_at": t0}
+                for h in humans
+            ],
+        )
+        conn.execute(
+            insert(t.event),
+            [
+                {"project_id": busy, "kind": "message", "at": t0 + timedelta(hours=k),
+                 "audience": ["role:coder"], "payload": {"body": str(k)}, "redacted": False}
+                for k in range(4)
+            ],
+        )  # fmt: skip
+
+        def joined(project_id: str, human_id: str, at: Any, active: Any = True) -> dict[str, Any]:
+            return {
+                "project_id": project_id, "human_id": human_id, "trust": "member",
+                "role": "coder", "role_base": "coder", "areas": ["/"], "capabilities": [],
+                "joined_at": at, "active": active,
+            }  # fmt: skip
+
+        conn.execute(
+            insert(t.membership),
+            [joined(busy, h, t0 + timedelta(hours=1)) for h in humans[:many]]
+            + [
+                joined(busy, humans[many], t0 - timedelta(hours=1)),  # before any event
+                joined(busy, humans[many + 1], t0 + timedelta(hours=9), None),  # removed
+                joined(empty, humans[many + 2], t0 + timedelta(hours=9)),  # no events
+            ],
+        )
+        # What the bell computed on each read until this revision.
+        expected = dict(
+            conn.execute(
+                select(t.membership.c.id, func.coalesce(func.max(t.event.c.seq), 0))
+                .select_from(t.membership)
+                .outerjoin(
+                    t.event,
+                    (t.event.c.project_id == t.membership.c.project_id)
+                    & (t.event.c.at <= t.membership.c.joined_at),
+                )
+                .group_by(t.membership.c.id)
+            ).all()
+        )
+    assert len(set(expected.values())) == 3  # 0, the second event, the last event
+
+    def stored() -> dict[int, int]:
+        with engine.connect() as conn:
+            rows = select(t.membership.c.id, t.membership.c.joined_seq)
+            return {row[0]: row[1] for row in conn.execute(rows)}
+
+    migrate(engine, revision)
+    assert stored() == expected
+    [column] = [c for c in inspect(engine).get_columns("membership") if c["name"] == "joined_seq"]
+    assert column["nullable"] is False
+    downgrade(engine, _before(engine, revision))
+    assert "joined_seq" not in {c["name"] for c in inspect(engine).get_columns("membership")}
+    with engine.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(t.membership)).scalar() == len(
+            expected
+        )
+    # What a MariaDB run that stopped after a batch leaves: the column, still nullable, and
+    # the values of the first rows.
+    first = sorted(expected)[:10]
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE membership ADD COLUMN joined_seq BIGINT"))
+        for membership_id in first:
+            conn.execute(
+                t.membership.update()
+                .where(t.membership.c.id == membership_id)
+                .values(joined_seq=expected[membership_id])
+            )
+    migrate(engine, revision)
+    assert stored() == expected
+
+
+def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Engine) -> None:
+    """§9.6, "this section ships": after the upgrade every agent in an open group chat with
+    someone of another side waits for that side, whatever entries exist; a human, an agent of
+    the chat's only side and a closed chat's stays are left alone. The downgrade drops the
+    columns and nothing else: the stays, chats and entries are kept, and upgrading again
+    makes the same agents wait."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func, insert, select, text
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    now = datetime(2026, 11, 12, tzinfo=UTC)
+    a, b = factory.human(engine, "a"), factory.human(engine, "b")
+    project_id = factory.project(engine, "p", owner_id=a)
+    human_a = factory.membership(engine, project_id, "owner", human_id=a)
+    factory.membership(engine, project_id, "admin", human_id=b)
+    agent_a = factory.agent(engine, project_id, a, with_session=False)
+    agent_b = factory.agent(engine, project_id, b, with_session=False)
+    rooms = {  # chat: (closed, members)
+        "cnv-mixed": (False, [human_a, agent_a.membership_id, agent_b.membership_id]),
+        "cnv-alone": (False, [human_a, agent_a.membership_id]),
+        "cnv-closed": (True, [human_a, agent_b.membership_id]),
+    }
+    with engine.begin() as conn:
+        for chat, (closed, members) in rooms.items():
+            conn.execute(
+                insert(t.conversation).values(
+                    id=chat, project_id=project_id, created_by=human_a, created_at=now,
+                    closed_at=now if closed else None,
+                )
+            )  # fmt: skip
+            for membership_id in members:
+                conn.execute(
+                    insert(t.conversation_participant).values(
+                        conversation_id=chat, membership_id=membership_id, joined_at=now,
+                        window_after=0, here=True,
+                    )
+                )  # fmt: skip
+
+    def counts() -> tuple[int, int]:
+        with engine.connect() as conn:
+            return (
+                conn.execute(select(func.count()).select_from(t.conversation_participant))
+                .scalar_one(),
+                conn.execute(select(func.count()).select_from(t.conversation)).scalar_one(),
+            )  # fmt: skip
+
+    before = counts()
+    downgrade(engine, _before(engine, "20261113010000_firewall_waiting"))
+    assert counts() == before == (7, 3)
+    migrate(engine)
+    assert counts() == before
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT p.conversation_id, m.agent_id, m.human_id, p.waiting_for, p.waiting"
+                " FROM conversation_participant p JOIN membership m ON m.id = p.membership_id"
+            )
+        ).all()
+    found = {(r[0], r[1] or r[2]): (r[3], bool(r[4])) for r in rows}
+    if engine.dialect.name in ("mysql", "mariadb", "sqlite"):
+        import json
+
+        found = {
+            k: (json.loads(w) if isinstance(w, str) else w, flag) for k, (w, flag) in found.items()
+        }
+    assert found == {
+        ("cnv-mixed", a): (None, False),
+        ("cnv-mixed", agent_a.agent_id): ([b], True),
+        ("cnv-mixed", agent_b.agent_id): ([a], True),
+        ("cnv-alone", a): (None, False),
+        ("cnv-alone", agent_a.agent_id): (None, False),
+        ("cnv-closed", a): (None, False),
+        ("cnv-closed", agent_b.agent_id): (None, False),
+    }

@@ -576,6 +576,42 @@ def test_check_requires_the_sandbox_when_configured(
     assert any("no OS sandbox" in line and line.startswith("error") for line in lines(capsys))
 
 
+@pytest.mark.parametrize(
+    ("platform", "tools", "said", "code"),
+    [
+        ("linux", ("bwrap", "socat"), "ok     harness claude-code: OS sandbox (bwrap, socat)", 0),
+        ("darwin", ("sandbox-exec",), "ok     harness claude-code: OS sandbox (sandbox-exec)", 0),
+        ("darwin", ("bwrap", "socat"), "error  harness claude-code: no OS sandbox "
+         "(sandbox-exec missing)", 1),
+        ("freebsd14", ("bwrap", "socat", "sandbox-exec"), "error  harness claude-code: no OS "
+         "sandbox on freebsd14; agents run unsandboxed", 1),
+    ],
+)  # fmt: skip
+def test_check_names_claude_codes_sandbox_for_the_platform(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    tools: tuple[str, ...],
+    said: str,
+    code: int,
+) -> None:
+    """Seatbelt on macOS, bubblewrap and socat on Linux; anywhere else `check` says that the
+    agents run unsandboxed, and `require_sandbox` makes that an error."""
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", "2.1.318")
+    for tool in tools:
+        fake_tool(bin_dir, tool)
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
+    monkeypatch.setattr(sys, "platform", platform)
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    found = [line for line in lines(capsys) if "sandbox" in line and "checked" not in line]
+    assert found == [said], found
+
+
 def test_check_refuses_a_loose_state_dir(
     paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -640,3 +676,43 @@ def test_the_configured_projects_are_full_names(projects: str, said: str) -> Non
     with pytest.raises(config.ConfigError) as info:
         parse(text.format(url="https://hub.example", state_dir="/srv/state"))
     assert any(said in problem for problem in info.value.problems)
+
+
+# --- pull requests through `maity gh` (cli/context/runner.md 9f43804d) ---------------------
+
+
+def test_a_gh_rule_in_a_grant_is_set_aside_and_the_rest_kept() -> None:
+    """No placed session runs gh, so a gh entry is not applied. It is kept as refused, for
+    `maity runner check` to name, and is never a reason to refuse the configuration."""
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["make test", "gh pr create *", "/usr/bin/gh pr view"]\n'
+        "pull_requests = true\n"
+    )
+    found = parse(minimal(grant=grant)).repositories["github.com/oliver-zehentleitner/maity"]
+    assert found.allow == ("make test",)
+    assert found.refused == ("gh pr create *", "/usr/bin/gh pr view")
+    assert found.pull_requests is True
+
+
+def test_pull_requests_default_to_off_and_take_only_a_boolean() -> None:
+    plain = '\n[repositories."github.com/oliver-zehentleitner/maity"]\nallow = ["make test"]\n'
+    found = parse(minimal(grant=plain)).repositories["github.com/oliver-zehentleitner/maity"]
+    assert found.pull_requests is False and found.refused == ()
+    wrong = '\n[repositories."github.com/oliver-zehentleitner/maity"]\npull_requests = "yes"\n'
+    assert any("pull_requests" in p for p in problems(minimal(grant=wrong)))
+
+
+def test_runner_check_names_a_refused_gh_rule_and_an_api_host_as_warnings() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["gh pr create *"]\nnetwork = ["api.github.com"]\npull_requests = true\n'
+    )
+    report = commands.Report()
+    commands._check_repositories(report, parse(minimal(grant=grant)))
+    assert not report.failed
+    texts = [text for level, text in report.lines if level == "warn"]
+    assert len(texts) == 2
+    assert "'gh pr create *' is not applied" in texts[0] and "pull_requests = true" in texts[0]
+    assert "maity gh pr create" in texts[0]
+    assert "api.github.com" in texts[1]

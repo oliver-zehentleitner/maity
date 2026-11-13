@@ -480,7 +480,8 @@
        },
        "enabled": "boolean"
       }
-     }
+     },
+     "why_merge_children": "boolean"
     }
    },
    "setup": {
@@ -1726,6 +1727,15 @@
    "covering": {
     "array": null
    },
+   "credentials": {
+    "object": {
+     "active": "number",
+     "last_used_at": "string",
+     "last_used_via": "string",
+     "never_resumed": "number",
+     "revoked_recent": "number"
+    }
+   },
    "cross_owner": "boolean",
    "display_name": "string",
    "expert_for": "null",
@@ -1742,6 +1752,7 @@
       "address": "string",
       "claims": "number",
       "created_at": "string",
+      "credential_id": "string",
       "dormant": "null",
       "harness": "null",
       "id": "string",
@@ -1756,7 +1767,10 @@
       "presence": "string",
       "replaces": "null",
       "revoked_at": "null",
-      "session": "null"
+      "session": "null",
+      "shared_environment": {
+       "array": null
+      }
      }
     }
    },
@@ -1769,9 +1783,38 @@
    "kind": "string",
    "last_seen_at": "string",
    "line_consent": "boolean",
+   "manages": {
+    "object": {
+     "direct": {
+      "object": {
+       "dormant": "number",
+       "instances": "number",
+       "members": "number",
+       "online": "number"
+      }
+     },
+     "total": {
+      "object": {
+       "dormant": "number",
+       "instances": "number",
+       "members": "number",
+       "online": "number"
+      }
+     }
+    }
+   },
    "model": "null",
    "name": "string",
+   "owner": {
+    "object": {
+     "avatar_url": "null",
+     "display_name": "string",
+     "handle": "string",
+     "id": "string"
+    }
+   },
    "owner_id": "string",
+   "owner_preferences": "boolean",
    "paused": "null",
    "placement": "null",
    "presence": "string",
@@ -1779,6 +1822,9 @@
    "role": "string",
    "role_base": "string",
    "session": "null",
+   "shared_environment": {
+    "array": null
+   },
    "subagents": "boolean",
    "subagents_by": {
     "object": {

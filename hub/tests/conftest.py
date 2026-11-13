@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import sys
 import zlib
 from collections.abc import Callable, Iterator
 from dataclasses import replace
@@ -24,6 +25,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
 from maity_hub.db import current_revision, downgrade, head_revision, make_engine, migrate
+from maity_hub.ratelimit import Limiter
 
 
 def _shard() -> tuple[int, int] | None:
@@ -377,6 +379,23 @@ def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ktw, "_refresh_later", lambda *args: None)
 
 
+def process_limiters() -> Iterator[Limiter]:
+    """Every limiter a module of the hub holds, as a module attribute or one attribute further
+    down (`routes.email_sign_in.LIMITS`, a `RequestLimits` of three): found rather than listed,
+    so a new limit is reset between tests without a line of its own (tsk-knmx8yw3s1xa, where
+    the sign-in link's pair limit leaked and a fourth link of the suite sent no mail)."""
+    for name, module in list(sys.modules.items()):
+        if module is None or not (name == "maity_hub" or name.startswith("maity_hub.")):
+            continue
+        for value in list(vars(module).values()):
+            if isinstance(value, Limiter):
+                yield value
+            elif not isinstance(value, type) and type(value).__module__.startswith("maity_hub."):
+                for inner in list(getattr(value, "__dict__", {}).values()):
+                    if isinstance(inner, Limiter):
+                        yield inner
+
+
 @pytest.fixture(autouse=True)
 def _fresh_process_state() -> Iterator[None]:
     """In-process state (limits, nonces, clock, the forge's repository visibility)
@@ -388,16 +407,14 @@ def _fresh_process_state() -> Iterator[None]:
         images,
         ktw,
         listening,
-        mentions,
         not_listening,
         public_pages,
         shared_budget,
         shared_counts,
     )
-    from maity_hub.auth import caller, password_limits
+    from maity_hub.auth import caller
     from maity_hub.auth.credentials import NonceWindow
-    from maity_hub.board import notes
-    from maity_hub.routes import auth, badges, device_codes, joins, mail_settings, me, runners
+    from maity_hub.routes import badges, device_codes
 
     # The counts in the database belong to the previous test's app and engine; the tables
     # are emptied between tests anyway, and the next app configures its own.
@@ -409,26 +426,12 @@ def _fresh_process_state() -> Iterator[None]:
     # that built an app with its own limit leaves none behind.
     badges.BY_ADDRESS.configure(*Settings.badge_limit)
     public_pages.BY_ADDRESS.configure(*Settings.public_page_limit)
-    badges.BY_ADDRESS.reset()
-    public_pages.BY_ADDRESS.reset()  # one source address makes all the visitors of the suite
-    badges.NOT_SERVED.reset()
-    auth.LOGIN_BY_ADDRESS.reset()
-    joins.EXCHANGE_BY_ADDRESS.reset()
-    runners.PAIR_BY_ADDRESS.reset()
-    for limiter in password_limits.ALL:
-        limiter.reset()
-    mentions.PINGS.reset()
-    mail_settings.test_limiter.reset()
-    for limiter in (
-        device_codes.CODES_BY_HUMAN,
-        device_codes.REDEEM_BY_ADDRESS,
-        device_codes.WRONG_CODES,
-    ):
+    # Every limiter counts in this process here (the shared counts are off, above): one source
+    # address and a few fixed addresses make all the visitors of the suite.
+    for limiter in process_limiters():
         limiter.reset()
     device_codes._holding.clear()
     device_codes._breaker["until"] = 0.0
-    notes.POSTED.reset()
-    me.EXPORTS.reset()
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a
     # slow test would write to its database unasked.
     availability.INTERVAL = 24 * 3600.0
@@ -438,8 +441,6 @@ def _fresh_process_state() -> Iterator[None]:
     jour_fixe_worker.INTERVAL = 24 * 3600.0
     from maity_hub.auth import second_factor
 
-    second_factor.WRONG_BY_HUMAN.reset()
-    second_factor.ENROLMENTS_BY_HUMAN.reset()
     second_factor._wrong_in_session.clear()
     caller.NONCES = NonceWindow()
     forge._visible.clear()
@@ -457,6 +458,7 @@ def _fresh_process_state() -> Iterator[None]:
     from maity_hub import maintenance
 
     maintenance.forget()  # one test's window must not refuse the next test's requests
+    maintenance.forget_frame()
     # The window cache's clock stands still: a counting test must not see the window read
     # again because its runner is slow (tsk-aaprca1rs4ny); a test that wants expiry moves it.
     maintenance.monotonic = lambda: 0.0

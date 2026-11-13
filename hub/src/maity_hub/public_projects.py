@@ -318,8 +318,9 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     entries = public_snapshot.ticker(conn, project)
     up = public_snapshot.online(conn, project.id)
     snapshot_html = public_snapshot.html(entries, up)
+    report = render.report_link(f"/{full}")
     content = (
-        f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
+        f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>{report}'
         f'<p class="tag">{escape(project.state)}</p>{about}{repository}{links_html}'
         f"{team_html}{snapshot_html}{statistics_html}"
     )
@@ -438,6 +439,24 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     page: served, named and shown alike), its agents' pages, and the person pages that list it
     or its agents: its human members' and the owners' of its agent members, who need not be
     members themselves (§16.9)."""
+    from maity_hub import public_cards
+
+    return _dependents(conn, project_id, public_cards.of_project(conn, project_id))
+
+
+def member_dependents(
+    conn: Connection, project_id: str, principal_id: str
+) -> list[tuple[str, str]]:
+    """`dependents` for a change of one member: the same pages, but of the card pages only those
+    that name the member, as its claim holder, a note's author or its latest editor. No other
+    card page shows a member, so none other changes; a project's card pages are too many to
+    remove and render again for every member change (hub/context/public-pages.md fe966f9c)."""
+    from maity_hub import public_cards
+
+    return _dependents(conn, project_id, public_cards.naming(conn, project_id, principal_id))
+
+
+def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tuple[str, str]]:
     from maity_hub import public_agents, public_cards
 
     m = t.membership.c
@@ -452,16 +471,34 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     ).scalar()
     return [
         (VIEWS, project_id),
-        *[(public_cards.KIND, card) for card in public_cards.of_project(conn, project_id)],
+        *[(public_cards.KIND, card) for card in cards],
         *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],
     ]
 
 
-def explore_html(conn: Connection, hub: Settings) -> str:
-    """The page of `/explore`: every project that has a page now, by name. It shows only what
-    those pages already show, and is rendered per request, behind the public cache."""
+def monogram(full: str, name: str) -> str:
+    """The letter on a project's card on `/explore`: the first letter of its name in upper
+    case, else the first character of its slug. Projects have no picture, so the tile shows
+    this letter in the accent colour (the approved mockup, README point 8)."""
+    return next((char for char in name if char.isalpha()), full.rsplit("/", 1)[-1][:1]).upper()
+
+
+def explore_html(
+    conn: Connection,
+    hub: Settings,
+    *,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    lang: str | None,
+    accept_language: str | None,
+) -> str:
+    """The page of `/explore`: every project that has a page now, by name, as cards in the
+    frame of §16.7.5 (`setting`, `legal`, `stats` and `accept_language` are the frame's). It
+    shows only what those pages already show, and is rendered per request, behind the public
+    cache."""
     shown = sorted(
         (
             (namespace.full_name(conn, project), project.name)
@@ -474,16 +511,41 @@ def explore_html(conn: Connection, hub: Settings) -> str:
         ),
         key=lambda item: (item[1].casefold(), item[0]),
     )
-    items = "".join(
-        f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a> ({escape(full)})</li>'
-        for full, name in shown
-    )
-    listed = f"<ul>{items}</ul>" if items else "<p>No project has a public page yet.</p>"
-    return render.page_document(
-        lang="en",
-        title="Public projects on Maity",
+
+    def page(lang: str, words: dict[str, str]) -> tuple[str, str]:
+        # As the approved mockup draws it (tsk-tp97v64vpy5z): the landing's dark hero, then the
+        # projects as cards. No count is shown, so no figure can be 0.
+        cards = "".join(
+            f'<li><a class="xcard" href="/{escape(full, quote=True)}">'
+            f'<span class="pmark" aria-hidden="true">{escape(monogram(full, name))}</span>'
+            f"<b>{escape(name)}</b><small>{escape(full)}</small>"
+            f'<span class="go">{escape(words["open"])} <span aria-hidden="true">→</span></span>'
+            "</a></li>"
+            for full, name in shown
+        )
+        listed = (
+            f'<ul class="xgrid">{cards}</ul>'
+            if cards
+            else f'<p class="empty-note">{escape(words["none"])}</p>'
+        )
+        content = (
+            '<section class="hero dz xhero"><div class="wrap">'
+            f'<p class="eyebrow">{escape(words["kicker"])}</p>'
+            f'<h1>{escape(words["heading"])}</h1><p class="sub">{escape(words["sub"])}</p>'
+            "</div></section>"
+            f'<section class="sec"><div class="wrap">{listed}</div></section>'
+        )
+        return words["title"], content
+
+    return render.framed_document(
+        section="explore",
+        page=page,
         canonical=f"{hub.public_url.rstrip('/')}/explore",
-        content=f"<h1>Public projects</h1>{listed}",
+        setting=setting,
+        legal=legal,
+        stats=stats,
+        lang=lang,
+        accept_language=accept_language,
     )
 
 

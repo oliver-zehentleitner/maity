@@ -283,8 +283,19 @@ window.Maity = window.Maity || {};
       const showQuiet = () => { quietFrom.disabled = !quiet.checked; quietTo.disabled = !quiet.checked; };
       quiet.addEventListener("change", showQuiet);
       showQuiet();
+      // §18.4, §18.5: the mail of what goes out At once waits while this human is in the dashboard.
+      const hold = h("input", { type: "checkbox", id: "mail-hold-while-online" });
+      hold.checked = email.hold_while_online !== false;
       const signIn = h("input", { type: "checkbox", id: "mail-sign-in-link" });
       signIn.checked = email.sign_in_link !== false;
+      // §2.10: a reset of a forgotten password by mail, its own key, since it is the stronger way
+      // in. Its warning follows the human's factor: with TOTP a reset also asks for its code.
+      const reset = h("input", { type: "checkbox", id: "mail-password-reset", "aria-describedby": "mail-password-reset-hint" });
+      reset.checked = email.password_reset !== false;
+      const resetHint = h("p", { class: "hint", id: "mail-password-reset-hint" }, M.t("mail.password_reset.hint.mailbox"));
+      M.api.get("/auth/second-factor").then((sf) => {
+        if (sf && sf.enrolled) resetHint.textContent = M.t("mail.password_reset.hint.totp");
+      }, () => { /* the stricter sentence stays */ });
       const errors = {
         daily_at: h("p", { class: "field-error", id: "mail-daily-at-error", role: "alert" }),
         quiet_hours: h("p", { class: "field-error", id: "mail-quiet-error", role: "alert" }),
@@ -317,7 +328,9 @@ window.Maity = window.Maity || {};
           if (weeklyOn.value !== email.weekly_on) patch.weekly_on = weeklyOn.value;
           const hours = quiet.checked ? { from: quietFrom.value, to: quietTo.value } : null;
           if (JSON.stringify(hours) !== JSON.stringify(email.quiet_hours || null)) patch.quiet_hours = hours;
+          if (hold.checked !== (email.hold_while_online !== false)) patch.hold_while_online = hold.checked;
           if (signIn.checked !== (email.sign_in_link !== false)) patch.sign_in_link = signIn.checked;
+          if (reset.checked !== (email.password_reset !== false)) patch.password_reset = reset.checked;
           if (!Object.keys(patch).length) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("notify.unchanged"))); return; }
           button.disabled = true;
           status.busy(M.t("notify.saving"));
@@ -352,8 +365,12 @@ window.Maity = window.Maity || {};
         h("label", { class: "check", for: "mail-quiet" }, quiet, " " + M.t("mail.quiet.on")),
         h("label", { for: "mail-quiet-from" }, M.t("mail.quiet.from")), quietFrom,
         h("label", { for: "mail-quiet-to" }, M.t("mail.quiet.to")), quietTo, errors.quiet_hours),
+      h("label", { class: "check", for: "mail-hold-while-online" }, hold, " " + M.t("mail.hold_while_online")),
+      h("p", { class: "hint" }, M.t("mail.hold_while_online.hint")),
       h("label", { class: "check", for: "mail-sign-in-link" }, signIn, " " + M.t("mail.sign_in_link")),
       h("p", { class: "hint" }, M.t("mail.sign_in_link.hint")),
+      h("label", { class: "check", for: "mail-password-reset" }, reset, " " + M.t("mail.password_reset")),
+      resetHint,
       button);
       const byKind = (k) => form.querySelector("#mail-mode-" + k + "-error");
       append(clear(box),
@@ -555,6 +572,193 @@ window.Maity = window.Maity || {};
     return { el: box, heading };
   };
 
+  // One key for an attempt to leave (§1.5): a retry of the same dialog sends it again.
+  function freshKey() {
+    const crypto = window.crypto;
+    if (crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    const hex = [];
+    for (let i = 0; i < 32; i++) hex.push(Math.floor(Math.random() * 16).toString(16));
+    hex[12] = "4";
+    hex[16] = ((parseInt(hex[16], 16) & 3) | 8).toString(16);
+    const join = (from, to) => hex.slice(from, to).join("");
+    return join(0, 8) + "-" + join(8, 12) + "-" + join(12, 16) + "-" + join(16, 20) + "-" + join(20, 32);
+  }
+
+  // What an agent of an owner from outside may hold (§6.2): trust member or guest, a role
+  // on outside_roles, on a base that does the work. A built-in role's base is itself.
+  const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team", "expert"];
+  function roleBase(ctx, agent) {
+    if (agent.role_base) return agent.role_base;
+    if (M.trust.ROLES.includes(agent.role)) return agent.role;
+    const custom = (ctx.project && ctx.project.roles) || [];
+    for (let i = 0; i < custom.length; i++) if (custom[i].name === agent.role) return custom[i].base || null;
+    return null;
+  }
+  // The rule the confirmation can apply, or null when it cannot be read. The project view
+  // carries policy for every member (project:read; tools/hub-shapes.json). A stored
+  // `members` or `anyone` is that rule. Unset reads `members` only when the view itself
+  // says the page cannot be served: `public_page` off, or `archived`. A missing
+  // `public_page`, or `on` while a moderation hold or the namespace owner's suspension
+  // is not on the view, is not guessed: the confirmation states the rule and names no agent.
+  function leaveRule(ctx) {
+    const pol = ctx.project && ctx.project.policy;
+    if (!pol || !Object.hasOwn(pol, "agent_owners")) return null;
+    if (pol.agent_owners === "members") return { mode: "members" };
+    if (pol.agent_owners === "anyone") return Array.isArray(pol.outside_roles) ? { mode: "anyone", roles: pol.outside_roles } : null;
+    if (pol.agent_owners === null) {
+      const p = ctx.project || {};
+      if (p.public_page === "off" || p.state === "archived") return { mode: "members" };
+    }
+    return null;
+  }
+  // "isolated" or "stays", or null when this one agent cannot be told. An isolation
+  // already in place stays (§6.2): it is not lifted because the owner leaves.
+  function agentFate(ctx, agent, rule) {
+    if (rule.mode === "members" || agent.isolated) return "isolated";
+    const base = roleBase(ctx, agent);
+    if (!base) return null;
+    const stays = (agent.trust === "member" || agent.trust === "guest")
+      && rule.roles.includes(agent.role) && OUTSIDE_BASES.includes(base);
+    return stays ? "stays" : "isolated";
+  }
+  function ownedAgents(ctx) {
+    const list = [];
+    (ctx.members || []).forEach((m) => {
+      if (m.kind === "agent" && m.owner_id === ctx.me.id && !m.removed_at) list.push(m);
+    });
+    return list;
+  }
+
+  // The confirmation (§6.2 "Leaving a project"): what ends, and each agent one owns.
+  // Cancel is focused, so it is the default; Escape cancels. Focus returns to the button.
+  function openLeaveDialog(ctx, root, opener, projectName) {
+    if (root.querySelector(".leave-backdrop")) return;
+    const key = freshKey();
+    const status = M.statusLine();
+    const agents = ownedAgents(ctx);
+    const rule = leaveRule(ctx);
+    let fates = rule ? agents.map((m) => agentFate(ctx, m, rule)) : null;
+    if (fates && fates.some((f) => !f)) fates = null;
+    const list = fates && agents.length ? h("ul", { class: "leave-agents" }, agents.map((m, i) => h("li", {
+      class: "leave-agent", "data-fate": fates[i],
+    }, fates[i] === "stays"
+      ? M.t("mine.leave.stays", { name: m.display_name })
+      : M.t("mine.leave.isolated", { name: m.display_name })))) : null;
+    const cancel = h("button", { type: "button", class: "leave-cancel" }, M.t("mine.leave.cancel"));
+    const confirm = h("button", { type: "button", class: "danger leave-confirm" }, M.t("mine.leave.confirm", { project: projectName }));
+    let busy = false;
+    const dialog = h("section", {
+      class: "leave-dialog", role: "dialog", "aria-modal": "true",
+      "aria-labelledby": "leave-dialog-title", "aria-describedby": "leave-consequences",
+    },
+    h("h3", { id: "leave-dialog-title", tabindex: "-1" }, M.t("mine.leave.dialog", { project: projectName })),
+    h("div", { id: "leave-consequences" },
+      h("p", null, M.t("mine.leave.consequences", { project: projectName })),
+      list ? [h("p", null, M.t("mine.leave.agents")), list] : (agents.length ? h("p", { class: "leave-rule" }, M.t("mine.leave.rule")) : null)),
+    h("div", { class: "actions" }, cancel, confirm),
+    status.el);
+    const backdrop = h("div", { class: "leave-backdrop" }, dialog);
+    function close() {
+      backdrop.remove();
+      if (opener && opener.focus) opener.focus();
+    }
+    function onKey(e) {
+      // Both buttons are disabled while the call runs, so Tab would leave this
+      // dialog. The status line holds the focus until the call ends; Escape
+      // still does nothing while it is pending.
+      if (busy) {
+        if (e.key === "Tab") {
+          if (e.preventDefault) e.preventDefault();
+          status.el.focus();
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        if (e.preventDefault) e.preventDefault();
+        close();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = [];
+      dialog.querySelectorAll("button").forEach((b) => { if (!b.disabled) items.push(b); });
+      if (items.length < 2) return;
+      const at = items.indexOf(e.target);
+      const next = items[(at + (e.shiftKey ? items.length - 1 : 1)) % items.length];
+      if (e.preventDefault) e.preventDefault();
+      if (next) next.focus();
+    }
+    dialog.addEventListener("keydown", onKey);
+    cancel.addEventListener("keydown", onKey);
+    confirm.addEventListener("keydown", onKey);
+    // The shim does not bubble, and this line is focused while the call runs.
+    status.el.addEventListener("keydown", onKey);
+    cancel.addEventListener("click", () => { if (!busy) close(); });
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop && !busy) close(); });
+    confirm.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
+      cancel.disabled = true;
+      confirm.disabled = true;
+      status.el.setAttribute("tabindex", "-1");
+      status.busy(M.t("mine.leave.working"));
+      status.el.focus();
+      try {
+        await M.api.del(ctx.base + "/members/" + encodeURIComponent(ctx.me.id), undefined, { "idempotency-key": key });
+      } catch (err) {
+        busy = false;
+        cancel.disabled = false;
+        confirm.disabled = false;
+        const fields = err.details && err.details.fields;
+        if (err.code === "invalid" && fields && fields.member === "last_owner") {
+          status.el.textContent = M.t("mine.leave.last_owner");
+          status.el.className = "send-status failed";
+        } else if (err.code === "namespace_owner") {
+          status.el.textContent = M.t("mine.leave.namespace");
+          status.el.className = "send-status failed";
+        } else {
+          status.fail(M.t("mine.leave.not_left"), err);
+        }
+        confirm.focus();
+        return;
+      }
+      const mine = (ctx.projects || []).find((p) => p.full_name === ctx.slug);
+      const projectId = mine && mine.id;
+      if (projectId && M.tabs && M.tabs.managed(ctx)) {
+        M.tabs.setOpen(ctx, projectId, false);
+        // `null` means every membership (tabs.inStart). Writing a list here
+        // would drop that default. Only an explicit list that names this
+        // project is updated, and then without it.
+        if (Array.isArray(ctx.me.start_tabs) && ctx.me.start_tabs.includes(projectId)) {
+          try { await M.tabs.startWith(ctx, projectId, false); } catch (ignored) { /* the membership has ended; /all still says so */ }
+        }
+      }
+      if (M.noteOnce) M.noteOnce(M.t("mine.leave.left", { project: projectName }));
+      M.route.go("/all");
+    });
+    append(root, backdrop);
+    window.setTimeout(() => cancel.focus(), 0);
+  }
+
+  // Settings → Mine, at the end (§6.2 "Leaving a project"): every human member, any
+  // trust. The namespace owner, where the view says so (project.owner is them), is
+  // told before the call. An agent never reaches this tab.
+  function leaveProject(ctx, root) {
+    const projectName = (ctx.project && ctx.project.name) || ctx.slug;
+    const owner = ctx.project && ctx.project.owner;
+    const blocked = !!(owner && owner.id === ctx.me.id);
+    const open = h("button", {
+      type: "button", class: "leave-open",
+      "aria-describedby": blocked ? "leave-blocked" : null,
+    }, M.t("mine.leave.open"));
+    if (blocked) open.disabled = true;
+    else open.addEventListener("click", () => openLeaveDialog(ctx, root, open, projectName));
+    append(root, h("section", { class: "leave-project", "aria-labelledby": "leave-heading" },
+      h("h3", { id: "leave-heading" }, M.t("mine.leave.title")),
+      h("p", { class: "hint" }, M.t("mine.leave.hint")),
+      open,
+      blocked ? h("p", { class: "hint", id: "leave-blocked" }, M.t("mine.leave.blocked")) : null));
+  }
+
   // A project's Settings, the Mine tab (/<owner>/<slug>/settings/mine,
   // docs/api.md §6.2, §16.11): one's own settings for this project, each
   // either one's personal default (null) or a value for here, with the
@@ -623,6 +827,7 @@ window.Maity = window.Maity || {};
       h("label", { class: "visually-hidden", for: "my-nl-minutes" }, M.t("mine.minutes_label")), minutes, error,
       h("p", { class: "hint" }, M.t("mine.hint_minutes"))),
     now, button, status.el), startTab(ctx));
+    leaveProject(ctx, root);
   };
 
   // Whether this project opens as a tab in a browser that has no tabs of

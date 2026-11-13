@@ -27,7 +27,9 @@ from typing import IO, Any, NoReturn, TypeGuard
 from maity import (
     __version__,
     citecheck,
+    clonecheck,
     environment,
+    ghpr,
     gitfacts,
     hub,
     onboarding,
@@ -172,6 +174,13 @@ def _renamed(path: str, renamed: dict[str, str]) -> str:
     return path
 
 
+SANDBOXED_CALL = (
+    "this session cannot read the clone's credential: a runner placed it, and its sandbox "
+    "hides the credential from every command but a `maity` call of its own; run maity alone, "
+    "not in a pipe, chained with `;`, `&&` or `||`, with a trailing `&` or inside `$(...)`"
+)
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
@@ -185,6 +194,10 @@ class Session:
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
         if not state.has_credential(self.dir):
+            if os.environ.get(clonecheck.PLACEMENT_ENV):
+                # Under the runner the clone has joined; Claude Code's sandbox hides its
+                # credential, and only a `maity` call of its own runs outside the sandbox.
+                raise state.StateError(SANDBOXED_CALL)
             raise state.StateError(
                 "this clone has not joined a project; run `maity join <url> --code <code>`"
             )
@@ -676,7 +689,28 @@ def _event_line(event: dict[str, Any]) -> str:
         return line + f": {_harness_model(before)} -> {_harness_model(after)}"
     if title:
         line += f": {onboarding.inline(title)[:120]}"
-    return line + _attachments_suffix(event) + onboarding.standing(event)
+    return line + _attachments_suffix(event) + onboarding.standing(event) + _chat_suffix(event)
+
+
+def _chat_suffix(event: dict[str, Any]) -> str:
+    """` in <conversation>: maity chat <id> --after <seq - 1>` for a chat message, so the
+    agent opens the chat the message is in, its direct one or a group chat, and not another
+    (tsk-3zm149w7bxg6). `--after`, not the bare command: `wait` moves the event cursor past
+    the message, and a direct conversation's unread read starts there, so it would show
+    nothing (cli/context/commands.md). An id or seq the CLI would not put in a command is
+    named without one; empty for any other event."""
+    if event.get("kind") != "message" or onboarding.get(event, "payload", "type") != "chat":
+        return ""
+    chat = onboarding.get(event, "payload", "conversation_id")
+    if not isinstance(chat, str) or not chat:
+        group = onboarding.get(event, "payload", "conversation")
+        chat = group.get("id") if isinstance(group, dict) else None
+    if not isinstance(chat, str) or not chat:
+        return ""
+    seq = event.get("seq")
+    if not FETCHABLE_ID.fullmatch(chat) or not _positive_int(seq):
+        return f" in {onboarding.inline(chat)[:120]}"
+    return f" in {chat}: maity chat {chat} --after {seq - 1}"
 
 
 ATTACHMENT_NAME_MAX = 60  # characters of one name in the event line
@@ -1212,6 +1246,14 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
                     f"{unchecked}; this checkout has {shown}; {switch}"
                 )
     return None
+
+
+def cmd_gh(args: argparse.Namespace) -> int:
+    """`maity gh pr create|view` (ghpr): gh's own exit code, a refusal before it runs."""
+    try:
+        return ghpr.run(args)
+    except ghpr.Refused as exc:
+        raise LocalRefusal(str(exc)) from None
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -4382,6 +4424,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(handler=cmd_wait)
 
+    ghpr.parser(sub).set_defaults(handler=cmd_gh)
+
     p = add(
         "report",
         "report finished work with facts read from git and gh",
@@ -4572,7 +4616,10 @@ def build_parser() -> argparse.ArgumentParser:
         "claim",
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
-        "agent makes; nothing is released automatically. In a project in plan or review, "
+        "agent makes except the events long-poll, the wait for events inside `maity wait`. The "
+        "unread-chats check `maity wait` makes on a timeout is an ordinary call and does renew "
+        "it. Nothing is released automatically, an expired lease included: the card stays yours "
+        "until you give it back or someone takes it over. In a project in plan or review, "
         "--reason is required.",
     )
     p.add_argument("card", type=_id, help="the card id, e.g. tsk-0004")
@@ -5660,7 +5707,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return EXIT_USAGE
     if args.command == "runner" and sys.platform == "win32":
         _err(
-            "the runner does not run on Windows: it needs tmux, systemd and OS users. "
+            "the runner does not run on Windows: it needs tmux and POSIX OS users. "
             "Run it inside WSL; every other maity command works here"
         )
         return EXIT_REFUSED

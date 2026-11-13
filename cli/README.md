@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a8 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a10 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -370,6 +370,14 @@ the report is refused with exit 4, naming `git push -u <remote> <branch>`.
 The default branch is `refs/remotes/<remote>/HEAD`, else what the remote's
 `HEAD` names. Any other upstream, a stacked branch tracking the one below
 it included, is left as it is.
+
+A branch without an upstream, pushed without `-u`, is compared with the
+branch of its own name on the remote a plain `git push` chooses:
+`branch.<branch>.pushRemote`, else `remote.pushDefault`, else `origin`,
+when that remote is configured and has no `pushurl`, no `push` refspec
+and no `pushInsteadOf` applies (any of them could send the push elsewhere;
+then the branch reads as having no upstream). A runner's sandboxed agent cannot store an
+upstream (its `.git/config` is read-only) and reports this way.
 
 Before it asks git about the upstream, it refuses with exit 1 an upstream
 whose remote, configured URL or merge ref starts with `-` or names a remote
@@ -938,6 +946,52 @@ and `maity` as any part of an argument (between `/`, `:`, `=` and the
 other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
 case or with a Windows extension. `maity` is the runner's own rule.
 
+For agents that open their pull requests themselves, set `pull_requests`:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+pull_requests = true
+```
+
+The agents then run `maity gh pr create --title <title> --body-file <file>`
+(or `--body <text>`, with `--base`, `--head`, `--draft`) and
+`maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]`.
+Without `--json`, `pr view` prints the number, title, state, branches,
+author, link and description as text (and the comments with
+`--comments`); with `--json` it prints gh's JSON as gh gives it.
+These run outside the sandbox, with the gh the runner found on its `PATH`
+and the login of the agents' user under `HOME`, always on the repository
+of the placement's clone (`--repo` comes from the runner, never from the
+command line). gh runs in an empty directory of its own and gets only
+`HOME`, the locale, the temporary directory, proxy and certificate
+variables, so gh's login must be the agents' user's own, stored where gh
+finds it under `HOME` (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and
+`XDG_CONFIG_HOME` do not reach it); maity names the branch. An option not
+listed, a URL, or a body file reached through a link, a FIFO, a file with
+other hard links, outside the clone or under its `.git` is refused, and
+the refusal lists what is allowed. A `.git` renamed or replaced since the
+session started is refused too: maity reads the record only from the
+`.git` the runner recorded at the start, so a placement started by an
+older runner needs a restart after the update. On Windows maity takes no body file
+(`--body` only), since it cannot open one there without following
+links. Under the harness's sandbox no placed session can run gh itself,
+and the runner adds no `api.github.com` to the sandbox (`maity runner
+check` warns when a grant with `pull_requests` lists it). A gh entry in
+`allow` is not applied: `maity runner check` warns about it and the
+runner still starts. A Codex placement is refused for a repository whose
+grant has `allow` or `pull_requests`.
+
+Open gaps:
+
+- `git push` in the sandbox reads the same login, so code an allowed
+  command runs can push to other repositories the account reaches
+  (tsk-anek9pkb5r82).
+- Without the harness's sandbox (opencode, Claude Code off Linux or
+  without bwrap and socat) the deny rules are no boundary: repository
+  code can run gh or rewrite the runner's record of the repository.
+- On an ssh target, gh must be at the path the runner found on its own
+  host, or `maity gh` refuses.
+
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,
 repositories, capacity), holds the runner's one event long-poll and
@@ -980,6 +1034,22 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   generation moves.
 - **Stops.** A stop waits `stop_grace_seconds` (capped by
   `stop_grace_max`), then sends SIGTERM, and ends the session 10 s later.
+- **An interactive agent that stopped listening.** Once a minute the
+  runner looks at each interactive session: does any process run below
+  the harness (a `maity wait`, or a tool however quiet; not the sandbox's
+  own `socat` bridges), and did the pane change (a hash, never its text)?
+  With neither for `hang_after_minutes` and no client attached, it types
+  one line into the pane telling the agent to go back to its wait loop,
+  and sends it. Any answer counts as a change. If the pane is still as it
+  was before Enter `reply_within_minutes` later, or after three answered
+  nudges with no `maity wait` in between, it ends the session, reports
+  `exited`/`hung`/`idle`, and starts it again; Claude Code resumes its
+  last conversation (`--continue`). `crash_cap` such ends in a row,
+  with no `maity wait` seen in between, hold the placement as
+  `failed`/`hung`. The minutes are
+  30 and 10 until the hub sends the owner's health settings. Attaching
+  to the session pauses the check, so the runner never types while you
+  are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
   known placement is adopted, not restarted. A session whose placement
   is gone ends after `stop_grace_max`.
@@ -1024,7 +1094,8 @@ project's own harness configuration is never loaded:
   loads the clone's project hooks and MCP configuration (a Claude Code
   configuration directory per placement would avoid that). This is a
   known limit: do not start your own `claude` in a runner workspace. Where
-  bubblewrap and socat are on the agents' `PATH`, its OS sandbox is
+  its OS sandbox's tools are on the agents' `PATH` (bubblewrap and socat
+  on Linux, Seatbelt's `sandbox-exec` on macOS), the sandbox is
   switched on strictly. It refuses to start without the
   sandbox, allows no unsandboxed retry, and the command allowlist still
   applies inside it. Network goes only to the hub, the forge and the
@@ -1126,7 +1197,10 @@ Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
 `~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
 configuration, and the runner's own configuration and state. Any other
-secret there, such as an `.env` file of your own, stays readable. In the
+secret there, such as an `.env` file of your own, stays readable. On
+macOS the list does not cover the Keychain, where Claude Code and, by
+default, `gh` keep their logins: a sandboxed command may reach it
+(`docs/runners.md`, macOS). In the
 `single` layout the agents' home is the operator's. The forge login
 (`gh`, a credential helper) stays readable on purpose, because pushing
 needs it.

@@ -9,7 +9,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, product_line
+from maity_hub import clock, render
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -279,9 +279,9 @@ def test_the_page_is_html_for_a_browser_with_no_form(
     created = flow.join(owner, "maity")
     response = make_client().get(f"/join/{_token(created)}", headers={"Accept": "text/html"})
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    # The hub's policy, and inline style only for the product line's block (§16.13).
-    assert response.headers["Content-Security-Policy"] == product_line.CSP
-    assert product_line.CSP.startswith("default-src 'self'; ")
+    # On the public host the page stands in the frame of §16.7.5, with its policy (§3.2).
+    assert response.headers["Content-Security-Policy"] == render.DOOR_CSP
+    assert response.headers["Referrer-Policy"] == "no-referrer"
     page = response.text.lower()
     assert "<form" not in page and "<script" not in page and "<input" not in page
     assert '<a href="/">' in page

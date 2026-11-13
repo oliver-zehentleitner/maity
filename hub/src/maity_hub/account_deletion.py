@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
+    chat_access,
     clock,
     contacts,
     invitations,
@@ -546,6 +547,11 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
             wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
+    # Open reset links and the day's wrong codes at resets (§2.10).
+    conn.execute(delete(t.password_reset).where(t.password_reset.c.human_id == human_id))
+    conn.execute(
+        delete(t.password_reset_wrong).where(t.password_reset_wrong.c.human_id == human_id)
+    )
     conn.execute(
         update(t.device_code)
         .where(
@@ -562,6 +568,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.campaign_origin).where(t.campaign_origin.c.human_id == human_id))
     conn.execute(delete(t.conversation_pin).where(t.conversation_pin.c.human_id == human_id))
     contacts.forget(conn, human_id)  # both ways (§6.29)
+    chat_access.forget_human(conn, human_id)  # the lists, and every entry naming them (§9.6)
     conn.execute(
         delete(t.conversation_meat_proxy).where(t.conversation_meat_proxy.c.human_id == human_id)
     )
@@ -607,6 +614,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
         t.notification_mail_state,
         t.notification_read,
         t.notification_position,
+        t.notification_recipient,  # which messages may notify them (§18.1)
         t.account_record,  # sign-ins with their addresses and browsers, address changes
         t.not_listening_seen,  # what the human answered `seen` to in the digest (§5.3)
     ):

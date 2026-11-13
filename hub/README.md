@@ -16,7 +16,8 @@ forge probe. Runners (`docs/api.md` §15): pairing, the runner as a
 signed-only caller confined to `/runner/*`, the owner's runner calls,
 attaching runners to projects, the runner's hello, event stream and
 capabilities, and placements (desired and reported state, agents'
-proposals with consent, the closing rules) are in; the join pickup and
+proposals with consent, the closing rules, a clone's retention time after
+a stop with the runner's workspace reports and a removal by hand) are in; the join pickup and
 supervised sessions follow. Mentions (`docs/api.md` §8.6), the members'
 owner and credentials summary, the conversation preview and the instance
 admin's user list (§16) are in. The change ticker (`docs/api.md` §17):
@@ -254,10 +255,11 @@ All settings come from the environment.
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
 | `MAITY_SMTP_USERNAME`, `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | unset | `AUTH`, sent only over TLS. The password (or the file a Secret is mounted at, one trailing newline dropped) is never stored, logged or returned. |
 | `MAITY_SMTP_FROM`, `MAITY_SMTP_REPLY_TO` | unset | The sender, `maity@example.org` or `Maity <maity@example.org>`, and an optional reply address; one address each, never a list. |
-| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30` | The hourly budgets: notification, security, sign-in and registration mail, each counted on its own. |
+| `MAITY_MAIL_MAX_PER_HOUR`, `MAITY_MAIL_SECURITY_MAX_PER_HOUR`, `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR`, `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR`, `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `500`, `100`, `60`, `30`, `30` | The hourly budgets: notification, security, sign-in, password reset and registration mail, each counted on its own. |
+| `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `5` | 0–60. How long after a person stopped being present in the web app their held notification mail still waits; while they are present, the mail of an immediate item waits (docs/api.md §18.5). |
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
-| `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
+| `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK`, `MAITY_SIGN_IN_PASSWORD_RESET` | unset | `1` or `0`: switch a sign-in method, or the reset of a forgotten password by mail, on or off for good (`docs/api.md` §2.6.6, §2.10); unset leaves it to the instance admin (default on). The password cannot be switched off. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; the dashboard the package carries (`maity_hub/web`) when installed | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
 Moving a volume's files into the bucket: `maity-hub attachments copy-to-s3` copies every file under `MAITY_ATTACHMENT_DIR` into the bucket of the `s3` settings, under the same key, and skips an object the bucket already holds with the same SHA-256; an object the hub wrote with other bytes is reported, not overwritten (exit 1), and a file whose attachment is deleted or has no row is not copied. With `--apply` it then removes from the bucket what was deleted since an earlier run (a deleted attachment's object at once, an object no row names once it is 30 minutes old), and leaves alone the objects of a project the database does not know. Without `--apply` it only counts, the removals too, and it never changes the files. There is no copy back: after the switch, new uploads are only in the bucket. Run it with `MAITY_ATTACHMENT_STORE=s3` before switching the store, and once more after (`deploy/helm/maity-hub/README.md`, *Moving attachments to S3*). With the bucket's versioning on, a deletion is final only once a lifecycle rule expires the noncurrent versions.

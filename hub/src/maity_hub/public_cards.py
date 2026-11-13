@@ -18,7 +18,7 @@ from collections.abc import Collection
 from html import escape
 from typing import Any
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, or_, select
 
 from maity_hub import clock, moderation, namespace, public_pages, render
 from maity_hub import tables as t
@@ -119,7 +119,7 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
     content = (
         f'<p class="eyebrow"><a href="/{escape(full, quote=True)}/board">'
         f"{escape(project.name)}: Board</a></p>"
-        f"<h1>{escape(card.title)}</h1>"
+        f"<h1>{escape(card.title)}</h1>{render.report_link(f'/{full}/tasks/{card.id}')}"
         f'<p><span class="tag">{escape(card.id)}</span> '
         + " ".join(f'<span class="tag">{tag}</span>' for tag in tags)
         + "</p>"
@@ -189,6 +189,38 @@ def of_project(conn: Connection, project_id: str) -> list[str]:
             select(t.card.c.id).where(t.card.c.project_id == project_id).order_by(t.card.c.id)
         ).scalars()
     )
+
+
+def naming(conn: Connection, project_id: str, principal_id: str) -> list[str]:
+    """The cards of one project whose page names a member (`render_card`): as its claim holder,
+    a note's author or a note's latest editor, under any membership the principal held there."""
+    c, n, m = t.card.c, t.card_note.c, t.membership.c
+    held = select(m.id).where(
+        m.project_id == project_id, or_(m.agent_id == principal_id, m.human_id == principal_id)
+    )
+    ids = set(conn.execute(held).scalars())
+    if not ids:
+        return []
+    found = set(
+        conn.execute(
+            select(c.id).where(c.project_id == project_id, c.claim_holder.in_(ids))
+        ).scalars()
+    )
+    found |= set(
+        conn.execute(
+            select(n.card_id)
+            .join(t.card, c.id == n.card_id)
+            .where(c.project_id == project_id, n.author.in_(ids))
+        ).scalars()
+    )
+    # The editor is in JSON: the few edited notes of the project are matched here.
+    edited = conn.execute(
+        select(n.card_id, n.edited)
+        .join(t.card, c.id == n.card_id)
+        .where(c.project_id == project_id, n.edited.is_not(None))
+    )
+    found |= {row.card_id for row in edited if row.edited["by"] in ids}
+    return sorted(found)
 
 
 def targets(conn: Connection, among: Collection[str] | None = None) -> list[str]:

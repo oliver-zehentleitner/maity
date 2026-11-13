@@ -54,6 +54,13 @@ def delete(who: Any, path: str) -> Any:
     return who.client.request("DELETE", f"/api/v1{path}", headers=who.auth | who.key())
 
 
+def admit(theirs_owner: Any, agent_id: str, side: str) -> None:
+    """The agent's owner allows `side`, its human included, so the agent takes part (§9.6)."""
+    entry = {"agents": [agent_id], "owner_id": side, "their_human": True}
+    done = theirs_owner.post("/me/chat-access/allow", entry)
+    assert done.status_code == 201, done.text
+
+
 def reason(response: Any) -> Any:
     return response.json()["error"]["details"].get("reason")
 
@@ -375,6 +382,7 @@ def test_a_closed_room_is_redacted_by_its_former_humans_or_blind_by_an_admin(
     other = other_human(make_client, migrated, "other-owner", role="admin")
     their_agent = flow.agent(make_client, other)
     mine = flow.agent(make_client, owner)
+    admit(other, their_agent.id, owner.id)
     chat = create(owner, their_agent.id, mine.id).json()
     first = say(their_agent, chat["id"], "secret one").json()["seq"]
     second = say(mine, chat["id"], "secret two").json()["seq"]
@@ -478,6 +486,7 @@ def test_a_demotion_that_commits_first_ends_the_blind_redaction(
     blind redaction of a closed chat it cannot read is then `not_found`."""
     other = other_human(make_client, migrated, "other-owner", role="admin")
     their_agent = flow.agent(make_client, other)
+    admit(other, their_agent.id, owner.id)
     chat = create(owner, their_agent.id).json()
     seq = say(their_agent, chat["id"], "secret").json()["seq"]
     delete(owner, f"{BASE}/{chat['id']}/participants/{owner.id}")  # closes it
