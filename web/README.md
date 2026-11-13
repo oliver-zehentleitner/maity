@@ -1220,8 +1220,10 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   browser keeps nothing). The three reads are kept for a minute at most and
   made again sooner after a write of this tab to the mail settings, the
   second factor or the instance's sign-in settings, on every Security page,
-  and when the tab is shown again, so an app enrolled here, in another tab
-  or on another device ends it at the next page, on Security at once.
+  and when the tab is shown again. So an app enrolled here, or in another
+  tab before this one is shown again, ends it at the next page; one
+  enrolled on another device, or a switch an admin turns, within a minute;
+  on Security at once.
 - Times are compared as instants on the hub's clock (`Maity-Server-Time`).
   A check each minute draws the section again when this session crosses
   an hour or a day of age, which changes what it may do.
