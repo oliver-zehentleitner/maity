@@ -587,7 +587,8 @@ an addressed message from another side reaches an agent only on its
 owner's yes. What stays open is the card's own flow: an `update`
 reaches the card's watchers whoever writes, and a `review_result` the
 card's author (its holder) and the two leads `review_delivery` adds
-(§8.4); without a card a review result has no author, only those
+(§8.4); without a resolved card (neither `task_id` nor an exact
+`#<n>` subject resolves one) a review result has no author, only those
 leads. `to`, `all`, a role or trust token and a mention reach anyone
 else through the gate.
 

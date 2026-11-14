@@ -309,10 +309,13 @@ def emit(
     subject: tuple[str, str] | None = None,
     conversation_id: str | None = None,
     restricted_list: Sequence[int] | None = None,
+    card_watchers: Sequence[int] | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`. A
     `restricted_changed` names its private list (`restricted_list`, §6.4): stored apart from
-    the event, never served, read again against the set at every read."""
+    the event, never served, read again against the set at every read. `card_watchers` is the
+    watcher list (§6.4) the caller already read with `card_watches.at_write` for this event's
+    card, so that what it decided from that list and the list stored here are one read."""
     project = lock_project(conn, project_id)
     if kind == "member_updated":
         # Everyone reads it; these tokens are who it wakes (§8.2).
@@ -327,7 +330,11 @@ def emit(
         from maity_hub import card_watches
 
         audience = [*audience, f"{WATCHERS}{watched_card}"]
-        watchers = card_watches.at_write(conn, watched_card)
+        watchers = (
+            list(card_watchers)
+            if card_watchers is not None
+            else card_watches.at_write(conn, watched_card)
+        )
     elif kind in _READ_AS_THEIR_EVENT and any(
         isinstance(token, str) and token.startswith(WATCHERS) for token in audience
     ):

@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import chat_gate, events
+from maity_hub import card_watches, chat_gate, events
 from maity_hub import tables as t
 from maity_hub.routes.events import MESSAGE_TYPES
 from tests import factory, flow
@@ -231,7 +231,8 @@ def test_a_redacted_held_message_and_its_notices_stay_held(
 
 
 # Every message type that takes a `to`, each with what it needs besides: a card for an update,
-# a review object for a review result (without a card: no author, so every target is gated).
+# a review object for a review result (without a resolved card: no author, so every target is
+# gated).
 HEAD = "7039a4b6fd8b988d71a63338711da188fcd95fba"
 REVIEW = {
     "subject": "#7",
@@ -405,3 +406,59 @@ def test_a_review_result_reaches_the_author_and_the_leads_ungated(
     # Without the card, nobody is its author: the same result to that agent is held.
     loose = held_for(writer, "review_result", theirs.id, task_id)
     assert loose["payload"]["held"] == [theirs.id]
+
+
+@pytest.mark.parametrize("change", ["unwatch", "watch"])
+def test_the_gate_and_the_watcher_list_read_the_watchers_once(
+    change: str,
+    owner: flow.Human,
+    sides: dict[str, Any],
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The watchers an update passes the gate for are the watchers its event lists (§6.4,
+    §9.6): one read. A watch or unwatch committed between two reads would leave an agent
+    exempt but unlisted, or listed but held; here every read after the first sees that change,
+    which stands for such a commit on any database."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    task_id = card(owner)
+    with migrated.connect() as conn:
+        agent_row = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == theirs.id)
+        ).scalar_one()
+    if change == "unwatch":
+        watched = theirs.client.put(f"/api/v1{PROJECT}/tasks/{task_id}/watch", headers=theirs.auth)
+        assert watched.status_code in (200, 201, 204), watched.text
+    real = card_watches.at_write
+    calls: list[str] = []
+
+    def at_write(conn: Any, card_id: str) -> list[int]:
+        found = real(conn, card_id)
+        if card_id == task_id:
+            calls.append(card_id)
+            if len(calls) > 1:  # the watch changed after the first read
+                found = sorted(
+                    set(found) - {agent_row} if change == "unwatch" else set(found) | {agent_row}
+                )
+        return found
+
+    monkeypatch.setattr(card_watches, "at_write", at_write)
+    for to in (None, theirs.id):
+        calls.clear()
+        news = held_for(writer, "update", to, task_id)
+        assert calls == [task_id], to  # one read for the gate and the event's list
+        with migrated.connect() as conn:
+            listed = (
+                agent_row
+                in conn.execute(
+                    select(t.event_watcher.c.membership_id).where(
+                        t.event_watcher.c.seq == news["seq"]
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        assert listed == (change == "unwatch"), to  # as the one read saw it
+        assert (news["seq"] in seqs(theirs)) == listed, to
+        if to is not None:  # addressed: held exactly when not a watcher
+            assert (theirs.id in news["payload"]["held"]) == (not listed), to

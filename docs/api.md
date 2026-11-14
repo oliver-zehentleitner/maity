@@ -14373,8 +14373,9 @@ messages (the maintainer's rules of 2026-10-29 and his answers of
   held otherwise, unless that agent is in the card's own flow: one of
   the card's watchers for an `update` (§6.4), the card's author or one
   of the two leads the hub adds for a `review_result` (§8.4). A
-  `review_result` that names no card (§8.4, "A review result reaches
-  the author and both leads") has no author, so only those leads pass.
+  `review_result` without a resolved card, one that neither `task_id`
+  nor an exact `#<n>` subject resolves (§8.4, "A review result reaches
+  the author and both leads"), has no author, so only those leads pass.
   Every message type that takes a `to` is gated so; `chat` has the
   gate below.
 - **Chat is protected.** By default only the agent's owner and the

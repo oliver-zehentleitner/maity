@@ -651,10 +651,15 @@ def post_message(
     # watchers, a review result's author and two leads (§8.4). `to` and a mention reach anyone
     # else only through the gate below.
     passes: list[str] = []
+    # An update's watchers are read once: the gate leaves these agents be, and `events.emit`
+    # stores this same list as the event's private watcher list (§6.4), so a watch or unwatch
+    # committed meanwhile cannot leave an agent exempt but unlisted, or listed but held.
+    watching: list[int] | None = None
     if review is not None:
         audience, passes = _deliver_review(conn, mine, body.task_id, review, audience)
     elif body.type == "update" and body.task_id is not None:
-        passes = _watching_agents(conn, body.task_id)
+        watching = card_watches.at_write(conn, body.task_id)
+        passes = _watching_agents(conn, watching)
     if body.type == "chat":  # where a chat text may cross the owner boundary (§9.6)
         chat_gate.boundary(conn, mine.project.id, me, body.body, sides)
     # A work message from another side reaches an agent only on its owner's yes (§9.6).
@@ -685,6 +690,7 @@ def post_message(
         actor=caller.actor(mine.id),
         subject=("task", body.task_id) if body.task_id else None,
         conversation_id=body.conversation_id,
+        card_watchers=watching,
     )
     attachments.attach(conn, named, seq)
     if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
@@ -696,10 +702,10 @@ def post_message(
     return load_event(conn, str(seq), mine)
 
 
-def _watching_agents(conn: Connection, task_id: str) -> list[str]:
-    """The agents an update on the card reaches as its watchers (§6.4), as `events.emit`
-    adds them: they read it whoever writes, so the gate leaves them be (§9.6)."""
-    watching = card_watches.at_write(conn, task_id)
+def _watching_agents(conn: Connection, watching: list[int]) -> list[str]:
+    """The agents among an update's watchers (§6.4, `card_watches.at_write`), the list
+    `events.emit` stores for it: they read it whoever writes, so the gate leaves them be
+    (§9.6)."""
     if not watching:
         return []
     m = t.membership.c
@@ -719,7 +725,8 @@ def _deliver_review(
     audience: list[str],
 ) -> tuple[list[str], list[str]]:
     """A review result's author and both leads (§8.4), and those members: the card's own flow,
-    which the §9.6 gate leaves open; without a card only the leads. The author's instance takes
+    which the §9.6 gate leaves open; without a resolved card (neither `task_id` nor the
+    exact-PR subject names one, §8.4) only the leads. The author's instance takes
     the place of the author's `member:` token that `to` or a mention put in the audience, and is
     added unless the audience holds that same instance token. A member token (a lead, or an
     author whose card was claimed for the team) is added unless `to` or a mention reaches the
