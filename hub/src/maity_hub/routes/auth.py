@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from maity_hub import account_deletion, avatars, clock, paths
 from maity_hub import tables as t
 from maity_hub.auth import (
+    anonymous,
     email_links,
     mail_factor,
     password_limits,
@@ -27,7 +28,6 @@ from maity_hub.auth.caller import (
     SESSION_ABSOLUTE,
     SESSION_COOKIE,
     Caller,
-    require_secure_transport,
     session_expires_at,
     session_id_hash,
 )
@@ -102,12 +102,8 @@ def member_of(conn: Connection, human_id: str) -> dict[str, Any]:
 
 @router.post("/login")
 async def login(body: Login, request: Request) -> JSONResponse:
-    if request.headers.get("authorization"):
-        raise forbidden(message="this endpoint is for humans")
+    anonymous.entry(request)
     origin = origin_of(request)
-    require_secure_transport(origin, settings_of(request).allow_plain_http)
-    if request.headers.get("sec-fetch-site") == "cross-site":
-        raise ApiError(403, "csrf_mismatch", "cross-site login")
     wait = LOGIN_BY_ADDRESS.hit(origin.address)
     if wait:
         raise rate_limited(wait)
