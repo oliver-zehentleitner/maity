@@ -96,9 +96,20 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   fields in a response are to be ignored by clients: fields are added
   without notice.
 - Every response carries `Cache-Control: no-store`,
-  `X-Content-Type-Options: nosniff` and, on documents the hub renders
-  (the dashboard, the HTML join page), `Content-Security-Policy:
-  default-src 'self'`; a page the hub renders whole with the product
+  `X-Content-Type-Options: nosniff` and, when it went out over TLS
+  (§2.5), `Strict-Transport-Security: max-age=<MAITY_HSTS_MAX_AGE>`
+  (`31536000` by default, without `includeSubDomains`; `0` sends none,
+  and a plain-HTTP answer never carries it). Every HTML document carries
+  `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin` and
+  `Permissions-Policy: camera=(), microphone=(), geolocation=(),
+  payment=(), usb=()`, unless its route sets one of them itself. A
+  document without a policy of its own (the app shell at every path,
+  §16.11) gets
+  `Content-Security-Policy: default-src 'self'; frame-ancestors 'none';
+  base-uri 'self'; form-action 'self'; object-src 'none'` (`base-uri
+  'self'` for the shell's own `<base href="/assets/">`) and, unless its
+  route chose one, `Referrer-Policy: same-origin`. The HTML join page's
+  policy is `default-src 'self'`; a page the hub renders whole with the product
   line in its head (§16.13: the join page and the `503` page) adds
   `style-src 'sha256-…'`, the hash of that line's one `<style>` block
   and of no other. The dashboard draws the line with its own stylesheet
@@ -1512,6 +1523,12 @@ credential) over plain HTTP from a non-loopback address are
 `insecure_transport`, like a bearer credential. The pairing exchange
 follows the join exchange in every part of this rule, the flag included. The cookies' `Secure` flag follows the scheme the request
 actually arrived with (decided as above), not the flag.
+
+An answer that went out over TLS, decided the same way, carries
+`Strict-Transport-Security` (§1.1), so the k3s and Helm paths get it
+from the hub whatever proxy terminates TLS; `MAITY_HSTS_MAX_AGE` sets
+its `max-age` in seconds (0 to 63072000, default 31536000, `0` sends
+none). A plain-HTTP answer never carries it.
 
 `MAITY_ALLOW_PLAIN_HTTP=1` lets bearer credentials and cookies travel over
 plain HTTP from any address, for a hub that is reachable only on a
@@ -5948,7 +5965,7 @@ stay; `state_changed` is not emitted for the mapping.
 |---|---|---|
 | `preset` | `hierarchical`, `solo`, `pool`, `decentral`, `hybrid` | fills the fields below; `pool`, `decentral`, `hybrid` are named shells with the `hierarchical` filling until an experiment defines them |
 | `claim_policy` | `self-claim`, `assign-only` | may a member claim an open card itself |
-| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
+| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, never a release card (§6.7), and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
@@ -7892,7 +7909,11 @@ the card's `approvals` stay. Every replacement clears `approvals`
   merge is not (the holder can merge on the forge themself), so there
   `auto` acts as `notify`. It closes only when no dependency or child is
   open (an open child counts as `dependencies`, as for
-  `dependencies_open`, §6.4) and no objection hold is on it (§6.19).
+  `dependencies_open`, §6.4), no objection hold is on it (§6.19) and the
+  card is not a release. A release card is never closed by a merge, ready
+  or not: it closes through its readiness gate (§6.7), which the releaser
+  passes with `PATCH {status: "done"}` after the checklist, so
+  `task_merged` only tells the done authority.
   The move is a change the hub makes on its own (§6.15): no history
   entry; its record is `task_merged` with `closed: true` and the
   `task_updated` event with `fields: ["status"]` that every status
@@ -7911,7 +7932,7 @@ the card's `approvals` stay. Every replacement clears `approvals`
   like the case below and told when the answer returns it to `review`.
   When a condition fails the card stays where it is and `task_merged`
   says `closed: false` with `blocked_by` (`dependencies`,
-  `objection`). A merge first observed while the card is neither
+  `objection`, `release`). A merge first observed while the card is neither
   (`in_progress` after a rework, or `blocked` from there, or `blocked`
   from `review` under `reviewer_and_tester`) is remembered with the
   report it was observed on; when the card returns to `review` the hub
@@ -8015,7 +8036,10 @@ The `release` object on the card:
   `group_incomplete` (`tasks`), `checklist_open` (`item`). When `ready`
   flips to true the hub emits `release_ready` to everyone.
 - `done` on a release additionally requires `ready`
-  (`release_not_ready`), computed on the card as it will be stored: a
+  (`release_not_ready`), computed on the card as it will be stored; a
+  merge of its reported pull request never closes it, also under
+  `merged_closes: auto` (§6.6): the releaser closes it after the
+  checklist. A
   `PATCH` that changes `release` and `status` together is judged on the
   new data. A closed release is a record of what shipped: `release.*`
   and `depends_on` on it are `invalid_transition`, and when it closes its
@@ -16287,7 +16311,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. |
-| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file into `./maity-files/` under the current directory (created with mode 0700 if missing; never into the current directory itself, so a sender cannot drop a `conftest.py` or a `Makefile` into a working tree) under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. |
+| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file into `./maity-files/` under the current directory (created with mode 0700 if missing; never into the current directory itself, so a sender cannot drop a `conftest.py` or a `Makefile` into a working tree) under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. In a runner's placement (`MAITY_PLACEMENT`) the file goes only into the runner's clone, outside its `.git`: a path outside the clone or under `.git`, a symlink anywhere on the way, and an existing file, `--force` included, are refused (exit 1); every name is opened through the directory before it, and where the system cannot do that (Windows) only `-o -` is taken. |
 | `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{owner}/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle (`<handle>#<instance>` for an agent's, from `from_instance`), `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. `--cursor` only works with the same `--type`, `--after` and `--before` it was handed out with (§8.8). |
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read — in a group chat; in a direct conversation the command itself marks nothing read, and the messages count as read once `maity wait` or `maity resume` passes them; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
@@ -21502,8 +21526,10 @@ The join host is unchanged (§1.1): it serves no app shell.
 **The app shell.** Every other `GET` on the public host answers the
 dashboard's `index.html`, the app shell: `200`, `text/html`,
 `Cache-Control: no-cache` (it is small and must follow a deploy at
-once), `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
-default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
+once), `X-Content-Type-Options: nosniff`, the default policy and the
+HTML headers of §1.1 (`frame-ancestors 'none'` and `X-Frame-Options:
+DENY` among them; `Referrer-Policy: same-origin`, `no-referrer` under
+`/invite/`), `X-Robots-Tag: noindex`, and no cookie set.
 The shell names its files by absolute paths under `/assets/`, so they
 load at any depth of the address; how the dashboard's `file://` fixture
 mode, a development tool, finds them (a `<base>`, a development server)
@@ -22465,7 +22491,8 @@ GET /projects/{owner}/{slug}/ticker?type=merge,deploy&area=hub/&for=me&limit=50
 Scope `project:read`. The items the caller may read (§17.5), newest
 first, paged (§1.4); with `after=<seq>` instead of a cursor, oldest
 first, as on the events endpoint (§8.3), without `wait`. Filters: `type`
-(comma list; `contract` as in §17.8), `area` (items whose `paths` or
+(comma list of the item types of §17.1, `jour_fixe` and `rename`
+included, and `contract` as in §17.8; any other value is `invalid`), `area` (items whose `paths` or
 `areas` fall under it), `for` = `me` (items whose `reasons` hold an entry
 for the caller, muted ones included, §17.8) or `all` (default), `since`
 (RFC 3339 with an offset; without one `invalid`). Paging as for every
