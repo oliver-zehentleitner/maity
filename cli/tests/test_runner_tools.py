@@ -64,7 +64,7 @@ def test_the_configuration_names_install_and_update(fake: FakeInstaller) -> None
 
 
 def test_a_harness_without_an_installer_cannot_be_managed() -> None:
-    found = problems(BASE + "\n[harness.claude-code]\ninstall = true\n")
+    found = problems(BASE + "\n[harness.opencode]\ninstall = true\n")
     assert any("no installer for this harness" in p for p in found), found
 
 
