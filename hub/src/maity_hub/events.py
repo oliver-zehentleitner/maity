@@ -772,8 +772,9 @@ def windows_of(membership: Any) -> list[dict[str, int]]:
 
 
 def in_window(row: Any, membership: Any) -> bool:
-    """The event lies in one of the reader's hidden windows (§6.2)."""
-    return seq_in_window(row.seq, membership)
+    """The event lies in one of the reader's hidden windows (§6.2). `row.seq` is read only
+    for a reader with windows: `readable_by` asks this of every event."""
+    return bool(windows_of(membership)) and seq_in_window(row.seq, membership)
 
 
 def seq_in_window(seq: int, membership: Any) -> bool:

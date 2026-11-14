@@ -141,11 +141,11 @@ def full(
     reader's isolation windows (§6.2), which drop the statement, the posts and the report
     that came about in one of them."""
     readers = set(readers)
-    statement, posts, report = round_row.statement, round_row.posts or [], round_row.report
+    statement, posts, report = round_row.statement, round_row.posts, round_row.report
     if hidden is not None:
         if statement is not None and hidden.seq(statement.get("message_seq")):
             statement = None
-        posts = [p for p in posts if not hidden.seq(p.get("message_seq"))]
+        posts = [p for p in posts or [] if not hidden.seq(p.get("message_seq"))]
         if hidden.at(round_row.reported_at):
             report = None
     return {
