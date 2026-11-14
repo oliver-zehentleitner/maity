@@ -136,6 +136,13 @@ def release_owner(conn: Connection, project: Any, human_id: str) -> None:
         .where(t.membership.c.id == found.id)
         .values(trust=found.org_keep_trust, org_keep=None, org_keep_trust=None)
     )
+    if found.org_keep_trust == restricted.GUEST:
+        # Back to guest, which holds and takes no cards (§2.3): as a `PATCH` to guest does.
+        from maity_hub import isolation, takeovers
+
+        released = isolation.release_claims(conn, found.id)
+        takeovers.membership_removed(conn, found.id, HUB)
+        isolation.tell_released(conn, released, HUB, project)
     _announce(conn, project, found.id, human_id)
 
 
