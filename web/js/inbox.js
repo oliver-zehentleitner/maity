@@ -293,6 +293,64 @@ window.Maity = window.Maity || {};
           : req.status === "open" ? h("p", { class: "hint" }, M.t("inbox.action.hint")) : null);
   }
 
+  // The request to chat with one's agents (§9.6): its allow replies, which take the ticks
+  // and the rules along as `chat_access`; `no` and `block` take none (the hub refuses them).
+  const CHAT_ALLOW = new Set(["allow_hour", "allow_day", "allow_week", "allow_always"]);
+  const RULE_MAX = 1000;
+
+  // The ticks of an open request to chat with one's agents (§9.6), from
+  // GET /requests/{id}: one box per waiting or held agent, all ticked, one for
+  // that side's human, not ticked, and the two rules for the entries an allow writes.
+  // null for any other request, and for one with no agent left (closed meanwhile).
+  function chatAccessPicker(req) {
+    const car = req.chat_access_request;
+    if (!car || req.status !== "open" || !(car.agents || []).length) return null;
+    const base = "chat-access-" + req.id;
+    const agents = car.agents.map((a) => {
+      const box = h("input", { type: "checkbox", id: base + "-agent-" + a.id, value: a.id });
+      box.checked = true;
+      // waiting: in a chat with that side; held: a message from that side waits for it.
+      const why = [a.waiting ? M.t("inbox.chat_access.waiting") : null, a.held ? M.t("inbox.chat_access.held") : null].filter(Boolean).join(", ");
+      return { a, box, el: h("label", { class: "check", for: box.id }, box, " @" + a.handle, why ? h("span", { class: "muted" }, " · " + why) : null) };
+    });
+    const side = car.side || {};
+    const human = h("input", { type: "checkbox", id: base + "-human", "aria-describedby": base + "-human-hint" });
+    const rule = (key, label, placeholder) => {
+      const id = base + "-" + key;
+      const el = h("textarea", { id, rows: "2", maxlength: String(RULE_MAX), placeholder });
+      return { el, nodes: [h("label", { for: id }, label), el] };
+    };
+    const allowed = rule("allowed", M.t("inbox.chat_access.allowed"), M.t("inbox.chat_access.allowed_placeholder"));
+    const denied = rule("denied", M.t("inbox.chat_access.denied"), M.t("inbox.chat_access.denied_placeholder"));
+    const noneId = base + "-none";
+    const none = h("p", { class: "muted", id: noneId, hidden: true }, M.t("inbox.chat_access.none"));
+    const listeners = [];
+    const ticked = () => agents.filter((x) => x.box.checked).map((x) => x.a.id);
+    const changed = () => { none.hidden = ticked().length > 0; listeners.forEach((f) => f()); };
+    agents.forEach((x) => x.box.addEventListener("change", changed));
+    const el = h("fieldset", { class: "chat-access field-stack" },
+      h("legend", null, M.t("inbox.chat_access.legend")),
+      agents.map((x) => x.el),
+      h("label", { class: "check", for: human.id }, human, " " + M.t("inbox.chat_access.human", { handle: side.handle || side.id || "" })),
+      h("p", { class: "hint", id: base + "-human-hint" },
+        car.their_human_in_chat ? M.t("inbox.chat_access.human_in_chat", { handle: side.handle || side.id || "" }) : M.t("inbox.chat_access.human_hint")),
+      allowed.nodes, denied.nodes, none);
+    return {
+      el,
+      noneId,
+      any: () => ticked().length > 0,
+      onChange: (f) => listeners.push(f),
+      // As the hub reads it: the ticked agents, the human's box, a rule only when written.
+      payload: () => {
+        const out = { agents: ticked(), their_human: human.checked };
+        const a = allowed.el.value.trim(), d = denied.el.value.trim();
+        if (a) out.allowed = a;
+        if (d) out.denied = d;
+        return out;
+      },
+    };
+  }
+
   function entryBody(ctx, req, names, onAnswer, onLater) {
     const body = h("div", { class: "entry-body" });
     const at = textAt(ctx, req);
@@ -385,11 +443,13 @@ window.Maity = window.Maity || {};
     const stepSlot = h("div", { class: "step-up-slot", hidden: true });
     // What stays disabled once a refused answer gives the controls back (Talk, Send without words).
     let settle = null;
+    // A request to chat with one's agents (§9.6): its boxes and rules, sent with an allow reply.
+    const chatPick = chatAccessPicker(req);
     const send = (payload, verb) => {
-      body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = true; });
+      body.querySelectorAll("button, textarea, input").forEach((el) => { el.disabled = true; });
       status.busy(M.t("inbox.sending"));
       onAnswer(req, payload, verb, stepSlot).catch((err) => {
-        body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = false; });
+        body.querySelectorAll("button, textarea, input").forEach((el) => { el.disabled = false; });
         if (settle) settle();
         if (err.code === "cancelled") status.done();
         else status.fail(M.t("inbox.not_sent"), err);
@@ -464,8 +524,30 @@ window.Maity = window.Maity || {};
     const talk = h("button", { type: "button", class: "reply talk", "aria-describedby": talkWhy ? hintId : null,
       onclick: () => { if (talkable) send(withText({ talk: true })); } }, M.t("inbox.talk"));
     talk.disabled = !talkable;
-    settle = () => { empty(); talk.disabled = !talkable; };
+    // An allow with no agent ticked would admit nobody, and the hub would ask again at once:
+    // its buttons wait for a tick and point to the line that says so.
+    const allowButtons = [];
+    const allowState = () => {
+      if (!chatPick) return;
+      const any = chatPick.any();
+      allowButtons.forEach((b) => {
+        b.disabled = !any;
+        if (any) b.removeAttribute("aria-describedby"); else b.setAttribute("aria-describedby", chatPick.noneId);
+      });
+    };
+    if (chatPick) chatPick.onChange(allowState);
+    settle = () => { empty(); talk.disabled = !talkable; allowState(); };
+    const replyButton = (r) => {
+      const allow = !!chatPick && CHAT_ALLOW.has(r.id);
+      // "option": the asking agent's words, of any length; a rounded box that grows with them
+      // (css/app.css), not the pill of Later and Talk.
+      const b = h("button", { type: "button", class: [replyClass(req, r), "option"].join(" "),
+        onclick: () => send(withText(allow ? { reply_id: r.id, chat_access: chatPick.payload() } : { reply_id: r.id })) }, r.label);
+      if (allow) allowButtons.push(b);
+      return b;
+    };
     append(body,
+      chatPick ? chatPick.el : null,
       noField ? null : h("div", { class: "free-text" },
         h("label", { for: textId }, replies.length ? M.t("inbox.note_label") : M.t("inbox.free_text_label", { keys: M.dom.SEND_KEYS })),
         text,
@@ -501,11 +583,11 @@ window.Maity = window.Maity || {};
         }, M.t("inbox.withdraw")) : null,
         // The primary reply last, the others in the hub's order before it.
         [...replies.filter((r) => replyClass(req, r) !== "reply primary"),
-          ...replies.filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
-          h("button", { type: "button", class: replyClass(req, r), onclick: () => send(withText({ reply_id: r.id })) }, r.label)),
+          ...replies.filter((r) => replyClass(req, r) === "reply primary")].map(replyButton),
         sendText),
       why.length ? h("p", { class: "muted reply-hint", id: hintId }, why.join(" ")) : null,
       stepSlot, status.el);
+    allowState();
 
     // Ownership is known inside a project only; across projects the link to
     // the project's inbox leads there.
@@ -518,11 +600,13 @@ window.Maity = window.Maity || {};
   }
 
   // A personal request as GET /requests/{id} has it: a proposal with its
-  // texts (§19.4), or the error that kept it from being read.
+  // texts (§19.4), a request to chat with one's agents with what its boxes
+  // are drawn from (§9.6), or the error that kept it from being read.
   function readInFull(r) {
     return M.api.get("/requests/" + encodeURIComponent(r.id)).then((full) => {
       delete r.unreadable;
       if (full.memory_proposal) r.memory_proposal = full.memory_proposal;
+      if (full.chat_access_request) r.chat_access_request = full.chat_access_request;
     }, (err) => { r.unreadable = err; });
   }
 

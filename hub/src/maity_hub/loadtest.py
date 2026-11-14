@@ -143,6 +143,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
+                joined_seq=0,
             )
         )
         agents = []
@@ -168,6 +169,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                     areas=["/"],
                     capabilities=[],
                     joined_at=now,
+                    joined_seq=0,
                 )
             )
             key = result.inserted_primary_key

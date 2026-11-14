@@ -1,4 +1,28 @@
 {
+  "explore.heading": {
+    "en": "1a72c10edf3e3765",
+    "text": "4bc745b89a35568d"
+  },
+  "explore.kicker": {
+    "en": "e3abd89f854ecdf2",
+    "text": "ac2c5dc8d94785a5"
+  },
+  "explore.none": {
+    "en": "b030b5edca8f86f8",
+    "text": "5aad8190c46a7c43"
+  },
+  "explore.open": {
+    "en": "eca2e87363143ae9",
+    "text": "f143ebfbf2442445"
+  },
+  "explore.sub": {
+    "en": "19981b2e2ab90512",
+    "text": "6b184bd065c71f73"
+  },
+  "explore.title": {
+    "en": "bd0224ac466d10fc",
+    "text": "48ea591275e93310"
+  },
   "factor.advice_password": {
     "en": "d3f377764b058242",
     "text": "576dc072fc5e429c"
@@ -158,6 +182,14 @@
   "mail.only": {
     "en": "fb2c1b804e84d045",
     "text": "a9eed41480286246"
+  },
+  "mail.password_reset_body": {
+    "en": "5004d5be0f096351",
+    "text": "e5ab1a0aacb55ab9"
+  },
+  "mail.password_reset_subject": {
+    "en": "309d22a5ded75bbf",
+    "text": "104d224120cd6e9c"
   },
   "mail.settings": {
     "en": "00f94cee302bab0b",
@@ -343,6 +375,10 @@
     "en": "ad5753822b4df1d6",
     "text": "83511e3519c3565c"
   },
+  "notify.password_reset": {
+    "en": "ee4080c05d6b2f77",
+    "text": "79a1f28fbd8b287f"
+  },
   "notify.reported": {
     "en": "d9954ef211d54ced",
     "text": "d4f094c41fd93671"
@@ -375,6 +411,10 @@
     "en": "bc7de30f70be93d7",
     "text": "5bae850e5018bc68"
   },
+  "notify.tf_failed_reset": {
+    "en": "d0522e314340645f",
+    "text": "51c99882fbc4d800"
+  },
   "notify.tf_instance_off": {
     "en": "a6da094fa8eb3d8c",
     "text": "cc82253563e23f1f"
@@ -402,6 +442,18 @@
   "notify.withdrew": {
     "en": "5479a39e9f32ab9d",
     "text": "d18cd3800212a34f"
+  },
+  "password_reset.mail": {
+    "en": "f093462bbd3fa2bf",
+    "text": "f58484435db2afb8"
+  },
+  "password_reset.mail_mailbox": {
+    "en": "abe4cadc2025a6b1",
+    "text": "6b715baaa78061b4"
+  },
+  "password_reset.subject": {
+    "en": "8bddd8c317ff5d6a",
+    "text": "3a59ac778a2b2a7c"
   },
   "product.bug": {
     "en": "191903c61492ea38",
@@ -459,6 +511,10 @@
     "en": "89c71e1f5a396594",
     "text": "2752510f14742dc5"
   },
+  "register_page.experiment": {
+    "en": "ef237730002e679e",
+    "text": "9351e3bd9c9ae0ee"
+  },
   "register_page.handle": {
     "en": "41483b645efc0c65",
     "text": "651c3623da936744"
@@ -470,18 +526,6 @@
   "register_page.later": {
     "en": "240294e5364ce34d",
     "text": "c9ff5898a58adb54"
-  },
-  "register_page.legal_imprint": {
-    "en": "1d0610cdac8612da",
-    "text": "55c8b781e930a1c4"
-  },
-  "register_page.legal_privacy": {
-    "en": "5da7aab1c428b242",
-    "text": "c9866b0979937bac"
-  },
-  "register_page.legal_terms": {
-    "en": "b6afdb846801fc10",
-    "text": "31d928b137153780"
   },
   "register_page.password": {
     "en": "8adcb6a3d0c1f216",

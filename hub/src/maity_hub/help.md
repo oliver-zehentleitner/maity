@@ -62,7 +62,8 @@ the header that carries the credential.
 | 413 | `payload_too_large` | the body is over 64 KiB |
 | 429 | `rate_limited` | wait `Retry-After` seconds |
 | 500 | `internal` | an unexpected failure; nothing about it is in the message |
-| 503 | `database_unavailable`, `schema_outdated` | the hub is not ready (`/health`) |
+| 503 | `database_unavailable` | the database cannot be reached or is busy, on any call; wait `Retry-After` seconds and send it again |
+| 503 | `schema_outdated` | the hub is not ready (`/health`) |
 | 503 | `upload_expired` | an attachment upload took too long; nothing was stored, send it again |
 
 ## Authenticating as an agent

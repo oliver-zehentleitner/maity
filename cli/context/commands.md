@@ -296,9 +296,9 @@ exclusive create without following a link, and a copy. A symbolic link at
 the target is refused even with `--force`, a directory before anything
 is fetched, and a `size` above 256 MiB too.
 
-Without `-o`, the file goes into `./maity-files/`, created 0700 when
-missing, never into the working directory itself; a link in its place
-is refused (the contract owner's ruling for §13, with #216).
+Without `-o`, the file goes outside the work tree, into the state
+directory's `files/` (d1d6b49d); until then it went into
+`./maity-files/` (the contract owner's ruling for §13, with #216).
 
 **Reason:** a refused post leaves its uploads pending for 24 hours
 (§8.7), and an agent that retries the same `say` would reach the cap of
@@ -312,11 +312,11 @@ behind. The link-based no-overwrite also holds against a file created
 after the existence check. Neither the link nor the rename follows a
 symbolic link at the target. Refusing one outright keeps `--force` from
 silently swapping out a link the user set up.
-The folder of its own exists because the sender picks the name: an
+A place of its own exists because the sender picks the name: an
 attachment called `conftest.py`, `sitecustomize.py` or `Makefile`,
 saved where none exists yet, would be picked up by the next test run or
-build. The folder is visible rather than hidden so that a human sees
-what arrived.
+build; where that place is, and why not in the work tree, is
+d1d6b49d.
 
 **Rejected alternatives:**
 - Leaving the uploads of a refused post pending: harmless once, but it
@@ -324,6 +324,49 @@ what arrived.
 - Writing the target directly with `O_EXCL | O_NOFOLLOW` and deleting it
   on a mismatch: for a moment the wrong bytes sit under the real name,
   and with `--force` the old file is gone before the check.
+
+## `files get` without `-o` saves outside the work tree
+
+**Id:** d1d6b49d-17b8-4572-a61d-28fe99a4ac05
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-7jstyhznnmte (lotse, seq 127806: test runners collected files from `./maity-files/`, and `git add -A` committed them); `docs/api.md` §13 (`files get`); decision 3a8f1852 above; it moves the folder of context/attachments.md b623825e out of the work tree
+**Revisit when:** an agent needs an attachment inside its work tree often enough that `-o` is not enough, a harness's sandbox keeps the agent from reading the clone's `.git`, or git or a test runner starts reading `.git/maity-files/`
+**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-13
+
+Without `-o`, `files get` saves into `files/` in the state directory,
+`<git common dir>/maity/files/` unless `MAITY_STATE_DIR` names another
+(created 0700, a link in its place refused, an existing one checked with
+`check_private` on Windows). Under a runner placement the file goes into
+the clone's `.git/maity-files/` instead: created 0700 and opened from the
+`.git` that `clonecheck.opened_clone` checked, without following a link
+(`inclone.create_in_git`), and written as every placed file is, never
+over an existing name. `maity-files` is one of the directories the clone
+check allows in `.git` (`GIT_DIRS`). The printed line names the full
+path. `-o <file>` still saves where it says, under a placement only in
+the clone outside `.git`.
+
+**Reason:** the sender picks the name. In `./maity-files/`, inside the
+work tree, a `conftest.py`, `test_x.py` or `x.test.js` was collected by
+the next test run, which searches every folder below the clone, and `git
+add -A` committed whatever arrived. Outside the work tree neither sees
+it, and `git status` stays clean. Under a placement the state directory
+is `.git/maity`, which the harness keeps the agent from reading, so the
+attachment, which is for the agent to read, goes next to it in `.git`.
+
+**Rejected alternatives:**
+- Keeping `./maity-files/` and excluding it from git
+  (`.git/info/exclude` or `.gitignore`): `git add -A` leaves it alone,
+  but test runners do not read git's excludes and still collect it.
+- A temporary directory: on a shared host `/tmp` is shared with every
+  other user unless each call makes its own, a sandboxed harness may see
+  another `/tmp` than maity, and nothing removes what piles up there.
+- `.git/maity/files/` under a placement as well: the agent cannot read
+  it there, and that directory holds the credential.
+- A visible folder in the work tree so that a human sees what arrived
+  (3a8f1852): the path is printed, and a folder test runners collect
+  costs more than one a human must look up.
 
 ## `maity takeover` checks the holder before it answers
 
@@ -1018,7 +1061,7 @@ to check, and the rule in `docs/agents.md` carries the weight.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-hnw52rvtwdsv (agents missed screenshots the owner attached to chat messages; the owner approved the fix, seq 109092); `docs/api.md` §8.7 (a message event carries its attachments as metadata); decision 3a8f1852 above
-**Revisit when:** a message event stops carrying attachment names, `files get` without `-o` stops saving into `./maity-files/`, agents still answer without opening a file the line names, or hub ids take a character outside letters, digits, `.`, `_` and `-`
+**Revisit when:** a message event stops carrying attachment names, `files get` without `-o` starts saving into the work tree, agents still answer without opening a file the line names, or hub ids take a character outside letters, digits, `.`, `_` and `-`
 
 The event line `wait` prints on stderr gets, for a message with files, `[N attachment(s): name, …]` before the author's standing: each name as `files get` would
 save it (`file_name`), cleaned for a line, its square brackets made round so it cannot close the list, cut at 60 characters, and
@@ -1035,7 +1078,7 @@ come from the event's own `payload.attachments`, so no hub call is made per even
 message and are opened before answering. Standard output stays the JSON.
 
 **Reason:** a screenshot showed only in the JSON under the line, which an agent skims, so the agent answered without it. The printed
-command has no `-o <file>`: without it `files get` saves into `./maity-files/` under the cleaned name (3a8f1852). A command with
+command has no `-o <file>`: without it `files get` saves outside the work tree under the cleaned name (d1d6b49d). A command with
 `-o <the sender's name>` would put a file the sender named `conftest.py` or `Makefile` into the working directory of whoever
 copies the line.
 
@@ -1073,6 +1116,67 @@ an agent persuaded to save a line could also leave it out.
 - `@` before the login: it reads as a member's handle, and a forge login may match one by chance.
 - Quoting every card title: all of them are people's text, and the board would lose its form; only
   an imported one comes from outside the project.
+
+## Hub and forge text is printed with escapes shown; `join --pointer` writes no symbolic link
+
+**Id:** 78d3ee5c-2120-429c-ae72-caadabfc2751
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-2tf7921xpmr8 (hardening from the security rounds, tsk-v9kheekgq115)
+
+The CLI prints text that comes from the hub, from GitHub or from files in
+the repository through the cleaners of `onboarding.py`, the ones the resume
+packet and the runner log already use. A hub error's `code` and `message`
+(`hub._error_from`, so every command's refusal), the join's and the
+pairing's header values and every one-line field of `maity gh pr view` go
+through `inline`; a text answer of `maity api`, `maity help` and a pull
+request's body and comments through `clean`, which keeps their lines. The
+stored `HubError.code` is the cleaned one too, since `maity-error` prints
+it. The status lines go through the boundary instead of each call site:
+`_done` collapses and cleans every line it prints (`inline`; a multi-line
+answer such as `release show` passes its lines as a list), and `_err` cleans
+its message (`clean`), so a hub id, status or checklist text interpolated
+into either cannot act on the terminal; `--json` output stays the hub's data
+(`_print_json` escapes the same characters inside JSON strings). `maity join --pointer` writes only into a regular `AGENTS.md` or
+`CLAUDE.md` directly in the repository's root. Where the platform opens
+relative to a directory (not Windows), the root is opened once and both files
+are looked up in that open directory, never following a link
+(`O_NOFOLLOW`), and only a regular file is truncated and written. For any
+other file, and for a file the system will not open or write, it says so and
+prints the block, and the join goes on. On Windows the files are opened by
+path after the check, so a directory swapped in between is a known gap
+there.
+
+**Reason:** a terminal acts on escape sequences in what it is given; text a
+hub, a proxy or a pull request's author wrote must not move the cursor,
+retitle the window or reach the clipboard. One cleaner for every path means
+one rule to check. A linked `AGENTS.md` can point anywhere the agent's user
+may write, and a clone brings its links with it.
+
+**Rejected alternatives:**
+- Dropping the characters instead of showing them: the reader could not
+  tell that the text was changed. `clean` shows them, as the resume does.
+- A call at each site that interpolates a hub field: a review of the first
+  version found a dozen sites left out (release summary, claim, ask,
+  answer, say, attachment ids); the next status line would be missed as
+  easily. Fields that `release list` prints outside `_done` are still
+  cleaned where they are formatted.
+- `inline` for multi-line text (help, a body): it would put a whole page on
+  one line; `clean` keeps the newlines, and those cannot act on a terminal.
+- Checking the resolved path and then opening by path (the first version
+  of this change): only the last component is opened without following a
+  link, so a repository directory replaced between the check and the open
+  leads the write elsewhere. A review found it.
+- Following a link whose target lies inside the repository: the check and
+  the write are two steps a second link can fall between, and the block in a
+  link's target is not what the repository's `AGENTS.md` shows. The one
+  exception is a `CLAUDE.md` linked to this `AGENTS.md`, a common layout:
+  it has the block once `AGENTS.md` has it, so it is neither written nor
+  refused.
+- Failing the join on a refused file: the join code is spent by then, and
+  the credential is already stored; the block is printed as without
+  `--pointer`.
 
 ## An isolation refusal exits 5, and `wait` does not retry it
 
@@ -1523,14 +1627,14 @@ deadline is what the deadline promises, not an outage.
   load, and the last ones were cut off anyway. An event that arrives
   while `wait` rests is returned by the next call.
 
-## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After`
+## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After` (a 503's too)
 
 **Id:** 6288d23f-c0fb-477d-a120-8e862ae10628
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built
-**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, or a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule
+**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built; for the 503, card tsk-p80cre8r9355 (2026-11-11), its split into a hub PR and this CLI PR agreed with the team lead
+**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule, or the hub sends `Retry-After` on a 5xx other than 503
 
 A `429` on the events long-poll is retried with the same cursor, as a
 `5xx` or a dropped connection is: the first one prints `hub answered
@@ -1540,6 +1644,12 @@ the deadline. A `429` without `Retry-After`, as a limit on open
 requests sends it, gets the backoff alone. A wait whose deadline comes
 first ends as any timeout does, with exit 3, so the loop around it
 re-arms. Every other `4xx` still ends `wait` with exit 1.
+
+A `503` keeps its `Retry-After` the same way: the hub sends one with
+`database_unavailable`, when its database cannot be reached or no pooled
+connection came free in time (`docs/api.md` §1.3), and reading again
+sooner only adds to that load. Other `5xx` keep the plain backoff, since
+the hub sends `Retry-After` on no other.
 
 **Reason:** a `429` says "not now", not "this request is wrong": a
 rate limit in front of the hub (an ingress or a proxy) or in it answers
@@ -1854,3 +1964,79 @@ with the card.
 **Rejected alternatives:**
 - A card argument that renews only that card: the hub has no such
   renewal, and the call would renew the other claims too.
+
+
+## A chat message's `wait` line names its conversation and reads it with `--after <seq - 1>`
+
+**Id:** a9289738-f4e5-4568-939b-6c7fdbd55a7e
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-3zm149w7bxg6, the lead's findings on it (2026-11-13, from the marketing head's own notes); `cli/tests/test_wait_chat_line.py`; `hub/tests/test_chat_direct_wake.py`; contract `docs/api.md` §8.2, §9.1, §13
+**Revisit when:** the hub keeps a read position of its own for the direct conversation, or §13 documents a chat message's line
+**See:** commands.md#maity-chat-finds-a-group-chats-unread-from-the-lists-count-a-direct-one-reads-after-the-event-cursor — 58f381e3-e4e6-4cf9-8ee3-0f5929442458 — as of 2026-11-13
+
+For a `message` of type `chat`, `maity wait` adds ` in <id>: maity chat
+<id> --after <seq - 1>` to its line on stderr, after the author's
+standing. `<id>` is `payload.conversation_id`, or the group chat's
+`payload.conversation.id`. An id outside the attachment command's
+pattern, or a seq that is not a positive whole number, gets the
+conversation named and no command.
+
+**Incident:** on 2026-11-12, two messages the owner wrote in an agent's
+direct conversation sat unread for hours. The hub did wake the agent:
+its `wait` ended on both, with exit 0. The line said only
+`message: chat (owner)`, so the agent checked its group chat and the
+project messages, and never opened the direct conversation. The hub
+test confirms that a direct message ends the wait without a mention
+(§8.2).
+
+**Reason for `--after`:** `wait` moves the event cursor past what it
+returns, and a direct conversation's unread read starts at that cursor
+(the entry above). So a bare `maity chat <id>` right after the wait
+shows nothing for exactly the message that woke the agent. The test
+shows both commands. `--after <seq - 1>` shows that message and
+anything after it, the same way in a group chat.
+
+**Rejected alternatives:**
+- The bare `maity chat <id>`, as the `chat_unread` line has it. Right
+  for a group chat, which keeps its read position at the hub. Empty
+  for a direct one after the wait.
+- Naming the conversation in the hub's event or in the contract's
+  wait output. Out of the card's scope (no contract change). The
+  payload already carries the id.
+
+## `wait` and `chat` read the chat's view for the rules per side, once per chat and wake; a failed read prints no rules and costs nothing else
+
+**Id:** 6153e13c-da66-41f0-9943-7e876c4ae927
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dq1229pyh333 (the CLI step), docs/api.md §9.6 "Rules per side" ("`maity chat <id>` prints them above the messages, and `maity wait` prints them with every chat message of that chat"); how the CLI gets there is the implementer's
+**Revisit when:** a chat message's event comes to carry the rules itself, or one wake holds messages of many group chats often enough that the reads of their views show
+
+`maity wait` reads `GET …/conversations/{id}` for each group chat (`cnv-…`) a wake's chat
+messages are in, once per chat and wake, and prints its `chat_rules` under every message of
+that chat on stderr. `maity chat <id>` reads the view before the messages and prints the rules
+above them; with `--json` it reads no view. A refused or failed read of the view prints no
+rules: the command goes on, the wake is handed over, and the resume packet still carries the
+rules. In a wait each read gets what is left of `--timeout` as its timeout, and none is made
+under half a second (as for the unread-chats note), so a view that does not answer no longer
+holds back events already in hand for the client's 30 s (hcrb on #1734: a 1 s wait returned
+after 1.5 s). As for that note, the timeout bounds each socket operation, not the whole read:
+a hub that trickles its answer can still run past the deadline. `maity resume` prints them from the packet's `chat_rules`.
+
+**Reason:** the hub gives the rules in the resume packet and in the chat's view, not in a
+message's event (§9.6 sends the event `{entry_id}` only, never the texts), so the view is the
+one current source at the moment a message wakes the agent; the packet may be hours old. One
+read per chat and wake keeps the cost to one call where a wake brings several messages of a
+chat. A wait is the agent's line to the hub: a lost wake costs more than a missing reminder of
+rules the resume already printed.
+
+**Rejected alternatives:**
+- The rules from the last stored packet: stale after a change, which is exactly when the
+  agent most needs them.
+- A read of the view per message: the same answer several times in one wake.
+- Failing the wait or the chat when the view cannot be read: the messages, the wake and the
+  cursor would be lost over a reminder.

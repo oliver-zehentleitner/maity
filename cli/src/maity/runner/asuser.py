@@ -173,6 +173,18 @@ class AsUser:
             entries.append((where, kind, int(size)))
         return entries
 
+    def inode(self, path: Path) -> int:
+        """The inode of `path` itself on the agents' side, a link not followed: `ls -di`,
+        which BSD, macOS and GNU all print the same way (POSIX follows no link named as an
+        operand without -H or -L)."""
+        if self.direct:
+            return os.lstat(path).st_ino
+        done = self.run(["ls", "-di", "--", str(path)])
+        number = done.stdout.split(maxsplit=1)[0] if done.stdout.strip() else ""
+        if done.returncode != 0 or not number.isdigit():
+            raise OSError(f"cannot read the inode of {path} on the agents' side")
+        return int(number)
+
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the
         runner."""
@@ -223,6 +235,7 @@ class Ssh(AsUser):
     known_hosts: Path = Path()
     identity: str = "agent"  # "agent": the operator's SSH_AUTH_SOCK; otherwise a key file
     control_dir: Path = Path()
+    maity_path: str = "maity"  # the host's `maity`, absolute once connected (targets.pin_maity)
 
     @property
     def direct(self) -> bool:
@@ -234,12 +247,12 @@ class Ssh(AsUser):
 
     @property
     def maity(self) -> list[str]:
-        return ["maity"]  # the host's own install, on its PATH
+        return [self.maity_path]  # the host's own install
 
     def runner_module(self, name: str) -> list[str]:
         """The host's interpreter is not this one: its `maity`, through an internal
         subcommand (`maity runner loop`, `maity runner stub`)."""
-        return ["maity", "runner", name]
+        return [self.maity_path, "runner", name]
 
     def ssh(self) -> list[str]:
         command = [

@@ -583,6 +583,22 @@ def test_a_stalled_holder_is_listed_with_its_cards_and_reason(
     assert advice == not_listening_digest.HOLDER_ADVICE
 
 
+def test_a_holder_stalls_a_minute_after_the_threshold_of_its_stored_last_seen(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The stored `last_seen_at` may be up to a minute older than the latest call (§2.4): the
+    threshold (60 minutes by default) is counted from a minute after it, never early."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _holding(owner, agent)
+    _silent(migrated, agent, timedelta(minutes=60, seconds=59))
+    not_listening_digest.run(migrated)
+    assert _digests(owner) == []  # a call skipped within the minute may be 59 minutes old
+    _silent(migrated, agent, timedelta(minutes=61, seconds=1))
+    not_listening_digest.run(migrated)
+    assert len(_digests(owner)) == 1
+
+
 @pytest.mark.parametrize("status", ["done", "cancelled"])
 def test_a_closed_card_makes_no_holder(
     inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, status: str

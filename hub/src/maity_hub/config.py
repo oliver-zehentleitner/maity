@@ -119,10 +119,12 @@ class Settings:
     # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
     # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
-    # MAITY_SIGN_IN_DEVICE_CODE, MAITY_SIGN_IN_EMAIL_LINK: the sign-in methods when the
-    # environment switches them (§2.6.6); None leaves them to the instance admin.
+    # MAITY_SIGN_IN_DEVICE_CODE, MAITY_SIGN_IN_EMAIL_LINK, MAITY_SIGN_IN_PASSWORD_RESET: the
+    # sign-in methods and the reset by mail when the environment switches them (§2.6.6,
+    # §2.10); None leaves them to the instance admin.
     sign_in_device_code: bool | None = None
     sign_in_email_link: bool | None = None
+    sign_in_password_reset: bool | None = None
     # MAITY_ON_RUNNER_REVOKE: what revoking a runner does to its agents where a project
     # says `inherit` (§15.3, §16): keep, stop, or stop_floor (stop, and a project's keep
     # is refused).
@@ -170,6 +172,9 @@ class Settings:
     # (§16.9) and of the badges (§6.20), as (count, seconds).
     public_page_limit: tuple[int, int] = (60, 60)
     badge_limit: tuple[int, int] = (60, 60)
+    # MAITY_HSTS_MAX_AGE: the `Strict-Transport-Security` max-age, in seconds, sent on every
+    # answer that went out over TLS (§1.1, §2.5); 0 sends none.
+    hsts_max_age: int = 31536000
 
     @property
     def join_host(self) -> str | None:
@@ -247,6 +252,7 @@ class Settings:
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
+            sign_in_password_reset=parse_switch(env, "MAITY_SIGN_IN_PASSWORD_RESET"),
             on_runner_revoke=parse_choice(
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),
@@ -285,6 +291,7 @@ class Settings:
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
+            hsts_max_age=parse_whole(env, "MAITY_HSTS_MAX_AGE", 31536000, 0, 63072000),
         )
 
 

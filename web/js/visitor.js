@@ -104,7 +104,12 @@ window.Maity = window.Maity || {};
       ];
     },
     board(d, base) {
-      return h("div", { class: "columns" }, d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
+      // The columns scroll sideways on a phone. A card's link scrolls them by keyboard; a board with
+      // no card has none, so there the columns are a named region that takes the focus (WCAG 2.1.1),
+      // and a board with cards gets no extra stop before them (#1720's review).
+      const empty = !d.columns.some((col) => col.cards.length);
+      const region = empty ? { role: "region", tabindex: "0", "aria-label": M.t("nav.board") } : {};
+      return h("div", Object.assign({ class: "columns" }, region), d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
         h("h2", null, (COLUMNS[col.status] || col.status) + " (" + col.cards.length + ")"),
         col.cards.map((c) => h("article", { class: "card", "data-card": c.id, "aria-label": c.title },
           h("header", null, h("a", { class: "card-id", href: base + "/tasks/" + c.id }, c.id), c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null),
@@ -171,6 +176,11 @@ window.Maity = window.Maity || {};
         h("h2", null, M.t("visitor.statistics")), statistics(d.statistics),
       ];
     },
+    // A person's agents (§16.9, "A person's agents"): drawn as the signed-in person view draws
+    // the same list (js/person.js), a sentence where none is listed.
+    person_agents(d) {
+      return [h("h2", null, M.t("person.tab.agents")), M.person.agentList(d.agents)];
+    },
     organisation_page(d) {
       return d.projects.length ? [h("h2", null, M.t("visitor.projects")), projectList(d.projects)] : null;
     },
@@ -182,7 +192,7 @@ window.Maity = window.Maity || {};
   // Whether the address can name a stored page at all: the hub is not asked for the rest.
   function canBePublic(where, path) {
     const parts = path.split("/").filter(Boolean);
-    if (where.scope === "person") return parts.length === 1;
+    if (where.scope === "person") return parts.length === 1 || (parts.length === 2 && where.tab === "agents");
     if (where.scope !== "project") return false;
     if (parts[1] === "agents") return parts.length === 3;
     if (parts[2] === "tasks") return parts.length === 4;
@@ -244,18 +254,47 @@ window.Maity = window.Maity || {};
       const signIn = h("a", { class: "visitor-sign-in", href: M.withNext("/login", path) }, M.t("visitor.sign_in"));
       append(clear(header), h("div", { class: "bar" }, brand, signIn, tools));
     }
-    const title = answer.kind === "card" ? d.title : d.name || base.slice(1);
-    append(clear(main), h("section", { class: "view-visitor", "data-kind": answer.kind },
+    // A person's two pages carry the tabs Profile and Agents (§16.9), as the person view does.
+    const personTab = { person: "profile", person_agents: "agents" }[answer.kind] || null;
+    const title = answer.kind === "card" ? d.title
+      : answer.kind === "person_agents" ? M.t("person.title.agents", { name: (d.owner && d.owner.name) || base.split("/")[1] })
+        : d.name || base.slice(1);
+    // Report what this page shows (§16.8, tsk-7ze5w6ymf7bw), named as the page names it: a person by
+    // the handle, an agent by its global name `<owner>/<handle>`, a project by its full name, a card by
+    // its id with the project. Signed out, a link to the sign-in that comes back with the form open.
+    const report = M.report ? reportOf(answer, base) : null;
+    const reporting = report ? M.report.control(report.target, report.what, { signedOut: signedIn ? null : path }) : null;
+    const content = [
       h("h1", null, title),
+      reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
         href: base + v.path,
         class: "view-tab",
         // A card's page belongs to the Board, the tab it is reached from.
         "aria-current": base + v.path === answer.path || (answer.kind === "card" && v.path === "/board") ? "page" : null,
       }, v.label))) : null,
-      draw[answer.kind] ? draw[answer.kind](d, base) : null));
+      personTab ? M.person.tabs(answer.path.split("/").filter(Boolean)[0], personTab) : null,
+      draw[answer.kind] ? draw[answer.kind](d, base) : null];
+    // Signed out the page stands in the landing's frame (§16.7.5), as the hub's stored pages do:
+    // its header and footer around it, the content in the stored pages' look (public-pages.css,
+    // .stored-page). The app's bar above stays only for where the frame cannot be read.
+    append(clear(main), signedIn
+      ? h("section", { class: "view-visitor", "data-kind": answer.kind }, content)
+      : h("section", { class: "view-visitor stored-page", "data-kind": answer.kind }, h("div", { class: "wrap" }, content)));
     document.title = title;
+    if (!signedIn) M.siteChrome.enter(path, null, { next: path });
+    if (reporting && reporting.open && M.report.asked()) reporting.open();
     return true;
+  }
+
+  // What a page reports, and the word for its button; null where it names no one target.
+  function reportOf(answer, base) {
+    const parts = answer.path.split("/").filter(Boolean);
+    if (answer.kind === "person") return { target: { type: "profile", id: parts[0] }, what: "person" };
+    if (answer.kind === "agent") return { target: { type: "profile", id: parts[0] + "/" + parts[2] }, what: "agent" };
+    if (answer.kind === "card") return { target: { type: "card", id: parts[3], project: base.slice(1) }, what: "card" };
+    if (PROJECT_KINDS.includes(answer.kind)) return { target: { type: "project", id: base.slice(1) }, what: "project" };
+    return null;
   }
 
   M.visitor = { page };

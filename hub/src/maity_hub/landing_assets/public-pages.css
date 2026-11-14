@@ -93,3 +93,83 @@
 /* Narrow and no pitch (the default delivery, second factor, mail sent, closed): no empty dark band.
    A panel holding any of the pitch's parts (subline, points, note) stays. */
 @media (max-width:959.98px){.door-panel:not(:has(.subline)):not(:has(li)):not(:has(.note)){display:none}}
+/* ---- the hub's own public pages in this frame: /explore (§16.9) ------------------------ */
+/* From the approved mockup's pp.css (tsk-tp97v64vpy5z): the landing's dark hero (.hero.dz from
+   landing.css), shorter, then sections in the landing's tokens. */
+.xhero .wrap{display:block;padding-top:64px;padding-bottom:64px}
+.xhero h1{margin:6px 0 0;font-size:3.6rem;overflow-wrap:anywhere}
+.xhero .sub{margin:16px 0 0}
+.sec{padding:52px 0}
+/* a project's tile: no picture, so its letter in the accent colour */
+.pmark{display:inline-flex;align-items:center;justify-content:center;flex:none;width:64px;height:64px;border-radius:16px;
+  font:700 30px/1 var(--font-display);color:var(--accent-text);background:var(--accent)}
+.xgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;list-style:none;margin:0;padding:0}
+.xgrid>li{display:flex;min-width:0}
+.xcard{display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;padding:22px;border-radius:18px;background:var(--surface);
+  border:1px solid var(--border);color:var(--text);text-decoration:none;box-shadow:0 1px 2px var(--shadow);transition:border-color .15s}
+.xcard:hover{border-color:var(--accent)}
+.xcard .pmark{margin-bottom:12px}
+.xcard b{font:700 1.5rem/1.2 var(--font-display);letter-spacing:-.02em;overflow-wrap:anywhere}
+.xcard small{font:400 13px var(--font-mono);color:var(--muted);overflow-wrap:anywhere}
+.xcard .go{margin-top:14px;font-weight:600;color:var(--accent);font-size:14.5px}
+.empty-note{color:var(--muted);text-align:center;padding:40px 0}
+@media (max-width:760px){
+  .xhero .wrap{padding-top:36px;padding-bottom:36px}.xhero h1{font-size:2.5rem}
+  .sec{padding:34px 0}
+  .pmark{width:48px;height:48px;border-radius:12px;font-size:24px}
+  .xgrid{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){.xcard{transition:none}}
+/* A stored public page (person, agent, organisation, project and its views, card) in the frame,
+   put around it when it is served: its content as stored, in the landing's tokens. */
+.stored-page{padding:48px 0 72px}
+.stored-page .wrap{max-width:960px}
+.stored-page h1{font:700 clamp(2.2rem,4.4vw,3.2rem)/1.1 var(--font-display);letter-spacing:-.02em;margin:10px 0 14px;overflow-wrap:anywhere}
+.stored-page h2{font:700 1.6rem/1.2 var(--font-display);margin:40px 0 14px}
+.stored-page h3{font-size:1.1rem;margin:20px 0 8px}
+.stored-page .eyebrow a{color:inherit;text-decoration:none}
+.stored-page .sub{font-size:1.1rem;color:var(--muted);max-width:42rem}
+.stored-page nav{display:flex;flex-wrap:wrap;gap:4px;margin:18px 0 8px;border-bottom:1px solid var(--border)}
+.stored-page nav a{padding:10px 12px 8px;font-weight:600;font-size:15px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent}
+.stored-page nav a[aria-current]{color:var(--text);border-color:var(--accent)}
+.stored-page .tag{height:22px;padding:5px 9px 0;border-radius:999px;background:var(--chip);color:var(--chip-text);font-size:11px;letter-spacing:.04em;vertical-align:middle}
+.stored-page ul,.stored-page ol{padding-left:1.2rem}
+.stored-page li{margin:6px 0}
+.stored-page .facts{display:flex;flex-wrap:wrap;gap:6px 24px;list-style:none;padding:0;color:var(--muted)}
+.stored-page .pic{display:inline-block;vertical-align:middle;border-radius:14px;margin:4px 12px 4px 0;object-fit:cover}
+.stored-page .pic.none{background:var(--surface2);border:1px solid var(--border)}
+.stored-page .pic.none.size-64{width:64px;height:64px}
+.stored-page .pic.none.size-128{width:128px;height:128px}
+.stored-page table{border-collapse:collapse;width:100%}
+.stored-page th,.stored-page td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+.stored-page blockquote{margin:16px 0;padding-left:16px;border-left:3px solid var(--border);color:var(--muted)}
+.stored-page details{border-top:1px solid var(--border);padding:12px 0}
+.stored-page summary{cursor:pointer;font-weight:600}
+.stored-page .report-link{margin:0 0 8px;font-size:13px}.stored-page .report-link a{color:var(--muted)}
+@media (max-width:760px){.stored-page{padding:28px 0 48px}.stored-page table{table-layout:fixed;font-size:13px}.stored-page th,.stored-page td{padding:6px 4px;overflow-wrap:anywhere;hyphens:auto}.stored-page nav{overflow-x:auto;flex-wrap:nowrap}.stored-page nav a{white-space:nowrap}}
+/* The dashboard's own drawing of a public page for a visitor (js/visitor.js) in the same look: the
+   board's columns keep their headings and cards small, as on the board itself. */
+.stored-page .columns h2{font:700 1.05rem/1.3 var(--font-display);margin:0 0 10px}
+.stored-page .columns h3{font-size:1rem;margin:8px 0 4px}
+/* The registration form a mail link opens (§2.7.1) in the door: its checkbox, a field's error,
+   its notes. */
+.door-form .check label{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin-top:16px}
+.door-form .check input{width:auto;height:auto;margin:.25em 0 0;flex:none}
+.door-form .error{color:var(--bad,#b42318);font-size:.875rem;margin:4px 0 0}
+.door-form input[aria-invalid=true]{border-color:var(--bad,#b42318)}
+/* Dark: the light red is 2.8:1 on the dark page; this one is 7:1. By the system without a script (the hub's own pages), or by the dashboard's choice. */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .door-form :is(.error,input[aria-invalid=true]){--bad:#ff7b72}}
+:root[data-theme="dark"] .door-form :is(.error,input[aria-invalid=true]){--bad:#ff7b72}
+.door-form .note{color:var(--muted);font-size:.9rem;margin:12px 0 0}
+/* The experiment notice above the registration's button (docs/api.md §5.1). */
+.door-form .experiment-notice{margin:16px 0 0;padding:12px 14px;border-radius:12px;background:var(--flag-bg,#fff6dd);color:var(--text);font-size:.92rem}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .door-form .experiment-notice{--flag-bg:#2d2610}}
+:root[data-theme="dark"] .door-form .experiment-notice{--flag-bg:#2d2610}
+.join-page h2{font:700 1.4rem/1.25 var(--font-display);margin:36px 0 10px}
+.join-page pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:14px 16px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);font:14px/1.5 var(--font-mono)}
+.join-page code{font-family:var(--font-mono);font-size:.92em;overflow-wrap:anywhere}
+.join-page pre code{overflow-wrap:anywhere}
+.join-page table{border-collapse:collapse;width:100%}
+.join-page th,.join-page td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}
+.join-page blockquote{margin:16px 0;padding-left:16px;border-left:3px solid var(--border);color:var(--muted)}
+.join-page .note{margin-top:40px;color:var(--muted)}

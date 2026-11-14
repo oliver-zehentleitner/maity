@@ -401,6 +401,31 @@ nudge toward TOTP over a gate.
   admin's second-factor reset or the operator, since their own removal is refused under `off`
   (review of the contract PR).
 
+## The reset's request limits are buckets of their own, and an empty code is no guess
+
+**Id:** 0e98bef7-6601-4f00-b10c-6c1a4c19222e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.4 ("as `POST /auth/email-link`"), §2.10; tsk-tadt2vw7589n; `hub/src/maity_hub/auth/password_resets.py` `RequestLimits`, `hub/src/maity_hub/routes/password_reset.py` `_code_right`
+**See:** auth.md#a-forgotten-password-is-reset-by-mail-also-where-the-mail-is-the-second-factor — 2caa97c3-3a24-401b-a29f-02579a503559 — as of 2026-11-12
+
+`POST /auth/password-reset` has the numbers of the sign-in link's request (10 per hour per
+source address, 3 per 15 minutes and 10 per day per address and source), counted in limiters
+of its own. At `complete`, an enrolled human's call without a TOTP or recovery code is refused
+like a wrong code, but neither compared nor counted.
+
+**Reason:** the reset has its own mail budget so that anonymous reset requests stop nothing but
+reset mails (2caa97c3); one set of request buckets shared with the sign-in link would undo that
+one step earlier, since reset requests from an address would then refuse its sign-in links. A
+call without a code is no guess at the factor: counting it would let a client that has not yet
+asked for the code, or a mailbox reader who never tries one, spend the human's five wrong codes
+of the day and raise the alarm for nothing.
+
+**Rejected alternatives:**
+- The sign-in link's own limiters, shared: one kind of request would refuse the other.
+- An empty code counted as a wrong one: alarms that say nothing about the factor.
+
 ## A human's cookie call renews the leases of the memberships that hold an open claim, and reads no others
 
 **Id:** 659d15cb-6c9b-4e06-8fec-164368951df4
@@ -666,3 +691,75 @@ before.
 - A partial index on open sessions (PostgreSQL): the dialect split above.
 - A plain index now, without numbers: a migration and a write cost on every session row, for a
   cost not shown.
+
+## Presence and a session's address are written at most once a minute, not on every call
+
+**Id:** dea949c1-d5ec-4781-b618-884abfd151d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions on req-79cbqd7dcpps (seq 109161, 2026-11-11) and on req-xkwfa78akg93 (2026-11-11, "never early"), docs/api.md §2.4, §2.6.5 and §5.3, `seen.SEEN_EVERY`, `seen.latest_call`
+**Revisit when:** presence (§5.3) reads against a window shorter than 120 s, a reader needs a `last_seen_at` or session `ip` fresher than a minute, or a new reader turns `last_seen_at` into a state without `seen.latest_call`
+
+Every authenticated call used to write `last_seen_at` on the session and on the member or human,
+and a human session's `ip`: two or three UPDATEs, with their row locks, on every request. The hub
+now writes them only when the stored `last_seen_at` is at least `SEEN_EVERY` (60 s) old; the
+condition sits in the UPDATE's WHERE, so two calls racing in the same minute write once. An agent's
+claim leases still renew on every call, since a lease is not presence. A human cookie call that
+wrote nothing still checks that the session is open and alive, so a session ended within the
+minute is refused. A completed sign-in writes the human's `last_seen_at` as a call does.
+
+The latest call then lies anywhere from the stored time to a minute after it, so no reading of the
+stored time is exact. Every reader that turns it into a state reads it from `seen.latest_call`, a
+minute after it: membership presence (`views`), the landing's people online, a session's idle
+end (`session_alive`, the cookie update, the address sweep) and the digest's stalled holder.
+`online`, `away`, the stalled holder's threshold and the idle end come up to a minute late after
+the last call, never early (§2.4, §5.3). The jour fixe's minutes online and its instance choice
+read an instance's latest call from its credential's `last_used_at` instead, which every call
+writes, as the instances' presence always has.
+
+**Reason:** the writes were most of the per-request database work on the auth path. With them
+gone, a reader must err one way: a caller shown away, expired or stalled while it still calls, or
+a state that holds up to a minute longer after the last call. The maintainer chose the second, so
+that a member that calls is never shown away.
+
+**Rejected alternatives:**
+- Writing on every call: the per-request UPDATEs and row locks above.
+- Reading the stored time as the latest call: a member that called 62 s ago showed `away` (a
+  write at T, a call at T + 59 that wrote nothing, a read at T + 121), and a session in use could
+  expire up to a minute early.
+- Other options of the first request: unknown.
+
+## The credential filter has no boundary in front, and reads a JSON body's decoded strings too
+
+**Id:** d539d36c-45e7-4178-8428-835e67549e0f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-bg5f4cv0894w (credential filter hardening), 2026-11-13
+**Revisit when:** a body arrives in an encoding other than JSON that can escape characters, or the filter's matches start revoking credentials nobody leaked
+
+`credentials.PATTERN` (§2.2) matches `mty1.<id>.<secret>` whatever
+character stands right before it, and `find_all` scans a JSON body twice:
+the raw bytes, and every key and string value it decodes to. The CLI's
+check before sending (`sign.CREDENTIAL_IN_TEXT_RE`, `hub._guard_payload`)
+does the same, so it refuses what the hub would refuse.
+
+**Reason:** with a word boundary in front, a credential right after a
+letter, a digit or `_` did not match, and in a JSON body that includes
+every escape that ends in a letter: the `n` of `\n`, the `t` of `\t`.
+Dropping the boundary costs nothing in safety: a match is refused, and
+only a credential whose secret verifies is revoked, so a false match
+only refuses a request. Escapes such as `\u006d` change the bytes of
+the credential itself, which no pattern over the raw bytes can see.
+Reading the decoded strings catches them. The body is decoded as the
+app's JSON parser decodes it (`json.detect_encoding`: a UTF-8 byte
+order mark, UTF-16 and UTF-32), since a body the app reads as JSON
+but the scan does not would carry an escaped credential past it.
+
+**Rejected alternatives:**
+- Keeping the boundary and scanning only the decoded strings: a
+  credential right after a letter in plain text, or in a body that is
+  no JSON, would still pass.
+- Scanning only the decoded strings: the raw scan is what covers a
+  body that is not JSON, or JSON that does not decode, and the query.

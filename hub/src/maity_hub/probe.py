@@ -858,6 +858,10 @@ def announce_merges(
         with engine.connect() as conn:
             if ticker.existing(conn, project_id, f"merge:{pr['number']}") is not None:
                 continue
+        # §17.4: a missed merge more than an hour before delivery is discarded, and
+        # the forge is not read for it. The round still ends in scan_done below.
+        if ticker.missed_merge_too_old(pr["merged_at"], clock.now()):
+            continue
         files, truncated = fg.pull_files(repository, pr["number"])
         contract: dict[str, set[str] | None] = {}
         for f in files:
@@ -893,6 +897,10 @@ def announce_merges(
                 # Switched off and on, or another repository or branch, while the forge
                 # was asked: this round's reads answer for nothing any more.
                 return written
+            # The file reads may have taken the merge past the hour (§17.4). Exactly
+            # one hour old is still delivered; the cursor moves either way.
+            if ticker.missed_merge_too_old(merge.merged_at, clock.now()):
+                continue
             by = delivery if named_pr is not None and pr["number"] == named_pr else None
             if ticker.write_merge(conn, current, merge, by):
                 written += 1

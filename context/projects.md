@@ -306,7 +306,9 @@ there for.
   for no gain; the public page is about the agents.
 - Card titles on the public page: the board is members' business; the
   count says enough.
-- Measuring tokens or cost: the hub counts no tokens (`scope.md`).
+- Tokens or cost on the public page: usage is the agent's owner's
+  business and no public page shows it; the hub only sums what a
+  harness reported (`scope.md`, `docs/api.md` §15.15).
 
 ## Keep the Why is guaranteed by the hub: a commitment at resume, a reminder, the owner's notification, and a why on every code report
 
@@ -880,3 +882,49 @@ checklist they reach every reviewer through the rules they already read.
   (`{}` → `false` → `[]` went from version 1 to 4; reviewer finding at #1279).
 - The hub enforcing either rule: it sees neither the subagent nor the
   checklist being worked through.
+
+## The Why view shows the whole Keep the Why family as one state, behind a project setting that is on by default
+
+**Id:** 0bf261f7-a7b7-460d-b0d2-06bff858051c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's answer to req-y1zb7awnyjmd, 2026-11-12, as card tsk-13scv14k4yg4 quotes it ("a switch in the project settings, default on"); the library check in note nte-1xahaw51wtjw on that card; contract `docs/api.md` §6.1 "Merging the Why children", §11.5 "The family in one view"
+**Revisit when:** the vendored Keep the Why library gets a family layer the host can hand member states to without merging, or children in other repositories are followed
+
+The project's Why view shows only the root export, so the entries of
+`hub/`, `cli/` and `web/` are missing from its graph, lists and
+counts, although the hub already reads the whole family (§11.3) and
+serves each member's export (§11.5). Decided: a project setting,
+`settings.why_merge_children`, on by default for new and existing
+projects, is to have the dashboard read every member's export and show
+them as one state. The hub keeps the setting (the card's hub PR); the
+dashboard's merged view is not built yet (its web PR follows). A member that fails is to be named with its reason
+and left out. With the setting off, the view stays the root's alone.
+The hub's reads do not change with it.
+
+**Reason:** the owner wants the family seen as one, and the vendored
+library already supports it: `mergeStates` in `ktw-core.js` turns
+member states into one state that its pages, timeline and graph read,
+prefixing a member's files and ids, and its graph links entries across
+members by `uuid`. The host gives every member, the root included, a
+key that holds no `/` (`@` and its percent-encoded `path`), so the
+prefixed ids and files of two members can never be the same. So the merge stays in the dashboard, where the library runs,
+and the hub keeps serving one export per call. A switch keeps the old
+view for a project whose members are unrelated enough that one graph
+says less than the root's.
+
+**Rejected alternatives:**
+- The hub merging the exports into one answer: §11.5 serves the
+  members' files as published, and a merge there would be a second
+  copy of the library's rules in Python, kept in step by hand.
+- The graph's family layer alone (the `f:`/`ft:`/`fe:` nodes that
+  `ktw-graph.js` draws as another unit, built by the host): the
+  members' entries would show in the graph as foreign nodes, while the
+  lists and counts stayed the root's, and the card asks for all three.
+- Prefixing by the member's `name`, as the library does by default:
+  two members may have the same name; their `path` (§11.3) is unique.
+- Prefixing by the member's `path` and leaving the root unprefixed, as
+  the contract first said: a root topic `hub/stack.md` and member
+  `hub`'s `stack.md` get the same id, and the graph keys its nodes by
+  it, so one overwrites the other (reviewer finding at #1698).

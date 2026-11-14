@@ -124,15 +124,18 @@ class ListedAgent(NamedTuple):
     picture: str | None = None  # its public address (§6.10); every agent has a picture
 
 
+# The sides a picture is drawn at; each has its class in render.STYLE and public-pages.css.
+PICTURE_SIDES = (64, 128)
+
+
 def picture_html(url: str | None, side: int) -> str:
     """A picture on a public page (§16.9): an `<img>` from its public address at `side`
     pixels, with an empty `alt` since the name follows; without one a neutral placeholder of
-    the same size, drawn with inline style and no image."""
+    the same size, drawn by a size class and no image: an inline style is refused where the page
+    stands inside the app shell, whose policy allows no inline style (tsk-8fk897a9tan8)."""
     if url is None:
-        return (
-            f'<span class="pic none" style="width:{side}px;height:{side}px" '
-            'aria-hidden="true"></span>'
-        )
+        assert side in PICTURE_SIDES, side
+        return f'<span class="pic none size-{side}" aria-hidden="true"></span>'
     src = escape(f"{url}?s={side}", quote=True)
     return f'<img class="pic" src="{src}" alt="" width="{side}" height="{side}">'
 
@@ -374,8 +377,9 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
     shown = _shown(conn, human, named)
     listed = _listed_html(human, named, agents, shown)
     heading = f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
-    content = f'{heading}{_tabs(human, "profile")}{shown_picture}{bio}{links}{listed}'
     path = f"/{human.handle}"
+    tabs = _tabs(human, "profile")
+    content = f"{heading}{render.report_link(path)}{tabs}{shown_picture}{bio}{links}{listed}"
     body = render.page_document(
         lang="en",
         title=f"{human.display_name} ({human.handle})",

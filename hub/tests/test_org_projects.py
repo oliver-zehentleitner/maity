@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
+from maity_hub.events import newest_seq
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_orgs import delete_org, make_org, team
@@ -129,6 +130,7 @@ def test_an_owner_made_later_joins_every_project_archived_ones_included(
                 areas=["/"],
                 capabilities=[],
                 joined_at=joined,
+                joined_seq=newest_seq(conn, pid),
                 last_seen_at=joined,
             )
         )
@@ -230,3 +232,37 @@ def test_the_event_of_a_seat_that_ends_does_not_say_org_owner(
     ]
     assert ended and ended[-1]["payload"].get("removed_at")
     assert ended[-1]["payload"]["org_owner"] is False
+
+
+def _onboarding(engine: Engine) -> dict[str, Any]:
+    with engine.connect() as conn:
+        settings = conn.execute(select(t.project.c.settings)).scalar_one()
+    found: dict[str, Any] = settings["onboarding"]
+    return found
+
+
+@pytest.mark.parametrize("change", ["removed", "demoted", "org_deleted", "moved_out"])
+def test_the_hub_ending_a_seat_onboarding_names_returns_it_to_the_coordinator(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human, change: str
+) -> None:
+    # §6.1, §6.26: an owner of the organisation whose seat the hub made is the project's
+    # `check_in_with`; the hub ends the seat (no person is the actor), and the setting goes back
+    # to `coordinator` as on any removal, written by the hub, without failing the change.
+    _, people = team(make_client, migrated, owner)
+    assert create(owner).status_code in (200, 201)
+    second = people["owner2"]
+    named = owner.patch(f"{ORG}/shop", {"settings": {"onboarding": {"check_in_with": second.id}}})
+    assert named.status_code == 200, named.text
+    if change == "removed":
+        done = owner.delete(f"/orgs/oz-team/members/{second.id}")
+    elif change == "demoted":
+        done = owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "admin"})
+    elif change == "org_deleted":
+        archive(migrated)
+        done = delete_org(owner, "oz-team", "oz-team")
+    else:
+        done = owner.post(f"{ORG}/shop/transfer", {"to": owner.id})
+    assert done.status_code in (200, 204), done.text
+    onboarding = _onboarding(migrated)
+    assert onboarding["check_in_with"] == "coordinator"
+    assert onboarding["by"] == {"id": "hub", "handle": "hub", "kind": "hub"}

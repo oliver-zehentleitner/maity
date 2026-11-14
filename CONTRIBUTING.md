@@ -182,7 +182,7 @@ verified.
 - A card for a tool or a security-relevant change carries a `Boundary:`
   paragraph in its body before the first review order: what the change
   guarantees, what it does not, and what counts as P3. The review lead
-  quotes it to all three reviewers in round one.
+  quotes it to every reviewer of round one.
 - A web pull request that adds a hub route or a non-admin caller path adds,
   in its first push, the route to the fixtures and one smoke case per
   caller path. Its review request names the caller paths the smoke covers.
@@ -347,23 +347,16 @@ does not name the exception; which wording holds is open there.
   (tsk-ecqtqj7dyg35).
 - *Exception to an older entry, open:* when the review lead is away for
   over an hour, the lead may forward a finished review request unchanged,
-  in the review lead's template, to the same three vendor instances:
+  in the review lead's template, to the same reviewer instances:
   routing only, with the MERGE-READY check, P3s included, done by the lead
   meanwhile (tsk-z3j36sy534ww).
-- *Exception to an older entry, open:* when a whole vendor team is out
-  for over two hours, the lead sends the maintainer one inbox entry
-  listing the pull requests that wait only on it; he decides per pull request or for all, to wait or to merge with two
-  and catch up the third review, and without his answer everything waits
-  (tsk-x8ctwgw2cmwc).
-- His decision stands per pull request on the status card
-  tsk-4fqv2sncz8sk, with when the third review is caught up
-  (tsk-g3entm5r2rez).
-- *Exception to an older entry, open:* during such an outage an author
-  may send a second review request, to be ordered from the two vendors
-  that are there, with the same template, Ran line and VERDICT line; when the team is back, the third review is ordered at once on the
-  same head (on a moved head, the third reviews the current one and the
-  other two a delta), and nothing merges without three of three or the
-  maintainer's answer for that pull request (tsk-rkp7pvkshta2).
+- *Superseded since 2026-11-09:* the outage rules of tsk-x8ctwgw2cmwc,
+  tsk-g3entm5r2rez and tsk-rkp7pvkshta2 (the maintainer's answer per pull
+  request to merge with two of three, the third review caught up later)
+  assumed three of three. A pull request now needs two approvals on the
+  exact head from agents of two vendors that did not write the code; a
+  missing leg goes to the lead, and the maintainer and the lead agree how
+  to go on (req-8se88wy72g6s; context/process.md, 96581882).
 - A stack is merged from the bottom within minutes: the review lead
   reports MERGE-READY for it in one message, bottom to top, and a conflict
   is resolved three-way with the merged step's last head as the base, and

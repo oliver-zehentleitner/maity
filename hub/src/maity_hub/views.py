@@ -29,6 +29,7 @@ from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
 from maity_hub.languages import known as known_language
+from maity_hub.seen import latest_call
 
 ONLINE = timedelta(seconds=120)
 AWAY = timedelta(hours=2)
@@ -248,6 +249,12 @@ def absence(project: Any) -> dict[str, Any] | None:
 NO_IMAGE = {"available": False, "source": None}
 
 
+def why_merge_children(project: Any) -> bool:
+    """Whether the project's Why view shows its Keep the Why family in one view (§6.1, §11.5):
+    `true` unless the project stored `false`, so every existing project reads as on."""
+    return (project.settings or {}).get("why_merge_children") is not False
+
+
 def project_language(project: Any) -> str:
     """The working language of a new or existing project (§6.1)."""
     language = (project.settings or {}).get("language")
@@ -303,6 +310,7 @@ def project_view(
             **(project.settings or {}),
             "language": project_language(project),
             "onboarding": onboarding.settings(project),
+            "why_merge_children": why_merge_children(project),
         },
         "rules_version": project.rules_version,
         "created_at": ts(project.created_at),
@@ -376,7 +384,9 @@ def presence(row: Any, session: Any, listening: bool) -> str:
     seen: datetime | None = row.last_seen_at
     if seen is None:
         return "offline"
-    age = clock.now() - seen
+    # From the latest call the stored time may stand for (§2.4, `seen`): a member that calls
+    # is never shown away.
+    age = clock.now() - latest_call(seen)
     if age <= ONLINE:
         return "online"
     if age <= AWAY:

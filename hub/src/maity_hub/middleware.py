@@ -3,7 +3,8 @@
 - the client address and scheme, from forwarded headers of trusted proxies only;
 - the body cap (64 KiB) and the credential filter over body and query string;
 - the headers every response carries: `Maity-Server-Time`, `Cache-Control:
-  no-store`, `X-Content-Type-Options: nosniff`, and a CSP on HTML.
+  no-store`, `X-Content-Type-Options: nosniff`, HSTS over TLS, and on HTML a CSP and the
+  framing, opener, referrer and permissions headers.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from urllib.parse import unquote_to_bytes
 
 from sqlalchemy import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import Response
@@ -42,7 +44,7 @@ from maity_hub.auth import caller, credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import ApiError, error_response, rate_limited
+from maity_hub.errors import ApiError, database_unavailable, error_response, rate_limited
 
 log = logging.getLogger(__name__)
 # The hub's own request log; the server's access log is off (§1.1).
@@ -71,7 +73,23 @@ _LANDING_PREVIEWS = (
     "/api/v1/admin/settings/legal/preview",
     f"{_AUTH_PAGES}/check",
 )
-CSP = "default-src 'self'"
+# The policy of every HTML document that brings none of its own: the app shell at every path
+# (§1.1, §16.11). `base-uri` is `'self'`, not `'none'`: the shell's own `<base href="/assets/">`
+# (shell.BASE) must keep working.
+CSP = (
+    "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+    "object-src 'none'"
+)
+# What every HTML document carries unless its route set the header itself (§1.1): no page of the
+# hub is ever framed, opens a window that keeps a handle on it, or needs these devices.
+HTML_HEADERS = (
+    (b"x-frame-options", b"DENY"),
+    (b"cross-origin-opener-policy", b"same-origin"),
+    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+)
+# With the default policy goes the dashboard's referrer rule; a page with a policy of its own
+# chooses its own (the landing and legal pages, the pages with a token in their path).
+DEFAULT_REFERRER = (b"referrer-policy", b"same-origin")
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS); and a reader's
 # own answer that names it so, as `GET /people/{handle}` (§6.27).
@@ -103,12 +121,16 @@ SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # one asked for under another answers `no-cache` (in ROUTE_CACHE), so a stale link repairs itself.
 LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
+# The dashboard's files (§16.11) the same way: one asked for under its version may be cached for
+# good, any other answers `no-cache` (shell.AssetFiles decides, hub/context/serving.md).
+DASHBOARD_FILES = re.compile(r"/assets/(?:brand|css|js|vendor)/.+")
 
 
-# Not refused during a maintenance window (§16.12): health, the window's own routes, and the
-# sign-in a signed-out admin needs to end it early. Registration is refused like the rest.
+# Not refused during a maintenance window (§16.12): health, the window's own routes, the
+# sign-in a signed-out admin needs to end it early, and `GET /bootstrap`, whose project parts
+# carry the refusal themselves (§5.4). Registration is refused like the rest.
 MAINTENANCE_OPEN = re.compile(
-    r"/api/v1/(health|maintenance|admin/maintenance(/end|/changes)?"
+    r"/api/v1/(health|maintenance|bootstrap|admin/maintenance(/end|/changes)?"
     r"|auth/(login|logout|session|methods|pages/sign_in|email-link|email-code|second-factor/(verify|email)))"
     r"|/mail/sign-in/[^/]+"
 )
@@ -148,13 +170,20 @@ class HubMiddleware:
                 public = PUBLIC_AVATARS_CACHE
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
-            elif LANDING_FILES.fullmatch(path):
+            elif LANDING_FILES.fullmatch(path) or DASHBOARD_FILES.fullmatch(path):
                 public = LANDING_FILES_CACHE
             elif self.settings.public_pages and not paths.is_hub_path(path):
                 # A public page may be cached; only the stored page's answer asks for it, the
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
-        send = _noting_refusal(_with_headers(send, public=public), scope["state"])
+        # HSTS only on an answer that went out over TLS (§2.5): a plain-HTTP hub at home never
+        # tells a browser to insist on a TLS it does not have.
+        hsts = (
+            f"max-age={self.settings.hsts_max_age}".encode()
+            if origin.tls and self.settings.hsts_max_age
+            else None
+        )
+        send = _noting_refusal(_with_headers(send, public=public, hsts=hsts), scope["state"])
 
         if await self._maintenance_refused(scope, receive, send, path):
             return
@@ -179,6 +208,11 @@ class HubMiddleware:
                 status = await forge_webhook.handle(
                     scope, receive, send, self.engine, self.settings.secret_key
                 )
+            except PoolTimeout:
+                # A used-up pool is load: the retryable 503 of any other call (§1.3).
+                log.error("database unavailable: no pooled connection was free in time")
+                status = 503
+                await database_unavailable()(scope, receive, send)
             except Exception:
                 # In the envelope like any other route (§1.3); the body is not logged.
                 log.exception("unhandled error on %s %s", scope.get("method"), _logged_path(scope))
@@ -305,6 +339,10 @@ class HubMiddleware:
             )
         except (OperationalError, InterfaceError):
             return None
+        except PoolTimeout:
+            # Not handed on to the route: it would wait the pool's timeout a second time.
+            log.error("database unavailable: no pooled connection was free in time")
+            return database_unavailable()
         return None
 
     async def _maintenance_refused(
@@ -323,6 +361,12 @@ class HubMiddleware:
             found = await run_in_threadpool(maintenance.window_now, self.engine)
         except (OperationalError, InterfaceError):
             return False  # the database's own answer follows on the route
+        except PoolTimeout:
+            # Answered here: the route would wait the pool's timeout a second time (§1.3).
+            log.error("database unavailable: no pooled connection was free in time")
+            await database_unavailable()(scope, receive, send)
+            _access(scope, 503)
+            return True
         if found is None or found["state"] != "running":
             return False
         headers = {"Retry-After": str(maintenance.retry_after(found))}
@@ -336,7 +380,16 @@ class HubMiddleware:
 
             response = Response(status_code=503, headers=headers)
         else:
-            response = maintenance.refusal_page(found)
+            # The frame as last read, never read in this request: the 503 must not wait for the
+            # database (§16.12). The small page while none is kept, and on the join host, which
+            # serves none of the frame's stylesheets (§1.1).
+            frame = (
+                None
+                if scope["state"].get("on_join_host")
+                else maintenance.cached_frame(self.engine)
+            )
+            accept = Request(scope).headers.get("accept-language")
+            response = maintenance.refusal_page(found, frame, accept)
         await response(scope, receive, send)
         _access(scope, 503)
         return True
@@ -346,7 +399,7 @@ class HubMiddleware:
     ) -> None:
         # Refused all the same when the database is down; a verified leak is
         # revoked on its next sighting.
-        with contextlib.suppress(OperationalError, InterfaceError):
+        with contextlib.suppress(OperationalError, InterfaceError, PoolTimeout):
             await run_in_threadpool(self._revoke, found)
         response = error_response(
             400,
@@ -552,8 +605,9 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
     _access(scope, 400)
 
 
-def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
-    """`public` is the one caching a successful answer of this path may choose."""
+def _with_headers(send: Send, *, public: bytes | None = None, hsts: bytes | None = None) -> Send:
+    """`public` is the one caching a successful answer of this path may choose; `hsts` the
+    `Strict-Transport-Security` value of a request that arrived over TLS (§2.5), or None."""
 
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
@@ -574,14 +628,26 @@ def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
                 (b"cache-control", cache),
                 (b"x-content-type-options", b"nosniff"),
             ]
-            if content_type.startswith(b"text/html") and not any(
-                k.lower() == b"content-security-policy" for k, _ in headers
-            ):  # the landing and legal pages bring a stricter one of their own (§16.7)
-                headers.append((b"content-security-policy", CSP.encode()))
+            if hsts is not None:
+                headers.append((b"strict-transport-security", hsts))
+            if content_type.startswith(b"text/html"):
+                named = {k.lower() for k, _ in headers}
+                extra = [h for h in HTML_HEADERS if h[0] not in named]
+                if b"content-security-policy" not in named:
+                    # the landing and legal pages bring a stricter one of their own (§16.7)
+                    extra.append((b"content-security-policy", CSP.encode()))
+                    if b"referrer-policy" not in named:
+                        extra.append(DEFAULT_REFERRER)
+                headers += extra
             message["headers"] = headers
         await send(message)
 
     return wrapped
 
 
-_SET = {b"maity-server-time", b"cache-control", b"x-content-type-options"}
+_SET = {
+    b"maity-server-time",
+    b"cache-control",
+    b"x-content-type-options",
+    b"strict-transport-security",
+}

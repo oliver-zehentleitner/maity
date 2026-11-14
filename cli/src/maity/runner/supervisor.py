@@ -34,7 +34,7 @@ from .. import __version__, clonecheck, hub, onboarding, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
-from .tmux import Session, Tmux, TmuxError, session_name
+from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
 
 TICK = 5.0
 PICKUP_RETRY = 15.0
@@ -121,6 +121,18 @@ APPROVED_FILE = "approved.json"
 LOGS = "logs"
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
+# The idle check of an interactive session (§15.14): a pane is read at most once per IDLE_EVERY;
+# the minutes come from the placement's `health.settings`, these are the contract's defaults.
+IDLE_EVERY = 60.0
+HANG_AFTER_MINUTES = 30
+REPLY_WITHIN_MINUTES = 10
+TYPED_TRIES, TYPED_PAUSE = 10, 0.2  # up to 2 s for the nudge's line to show in the pane
+NUDGE_CAP = 3  # nudges answered in a row without a `maity wait`: the next quiet spell ends it
+NUDGE_LINE = (
+    "maity runner: you have not been listening for a while: no `maity wait` ran and nothing "
+    "changed on this screen. Run `maity resume` if you lost track, then go back to your wait "
+    "loop."
+)
 LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
 LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
 PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
@@ -199,6 +211,23 @@ class Record:
     joined_generation: int | None = None  # the generation this runner last joined for
     target: str | None = None  # where it runs; kept, so a `target: null` placement stays put
     limits_unknown: int = 0  # provider limits in a row without a reset time (§15.7 backoff)
+    # The idle check of an interactive session (§15.14): when it was last read, a hash of
+    # its pane then, since when it is quiet, when it was nudged, when it was ended for it.
+    idle_checked_at: float | None = None
+    pane: str | None = None
+    quiet_since: float | None = None
+    nudged_at: float | None = None
+    hung_at: float | None = None
+    hung_exits: list[float] = field(default_factory=list)  # for the crash cap (§15.14)
+    resume: bool = False  # the next start resumes the harness's session (after `hung`)
+    nudges: int = 0  # nudges answered since a `maity wait` was last seen
+    unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
+    left_typed: bool = False  # a dropped nudge's line may still sit in the input: not again
+
+    def calm(self) -> None:
+        """Forget the idle check: a new start, or an agent that is listening again."""
+        self.idle_checked_at = self.pane = self.quiet_since = self.nudged_at = None
+        self.nudges, self.unsent, self.left_typed = 0, False, False
 
     def key(self) -> list[Any]:
         return [self.state, self.reason, self.detail, self.generation, self.restarts]
@@ -225,6 +254,13 @@ def changed(pid: str, rec: Record) -> str:
     return f"{pid}: {' '.join(words)} (generation {rec.generation}{restarts})"
 
 
+def _minutes(value: Any, default: int) -> float:
+    """A `health.settings` value in seconds: an integer from 1 to 1440 (§15.14), else the
+    default."""
+    good = isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 1440
+    return float(value if good else default) * 60
+
+
 @dataclass
 class Supervisor:
     cfg: config.Config
@@ -234,6 +270,7 @@ class Supervisor:
     probes: dict[str, capabilities.Probe]
     now: Callable[[], float] = time.time
     rand: Callable[[], float] = random.random
+    pause: Callable[[float], None] = time.sleep
     desired: list[dict[str, Any]] = field(default_factory=list)
     synced: bool = False  # the hub's placements have been read at least once
     records: dict[str, Record] = field(default_factory=dict)
@@ -457,6 +494,7 @@ class Supervisor:
         rec.target = target.name
         if rec.generation != generation:
             rec.generation, rec.restarts, rec.crashes, rec.retry_at = generation, 0, [], None
+            rec.hung_exits, rec.resume = [], False
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
             rec.exit_code = None
@@ -491,6 +529,8 @@ class Supervisor:
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
+            elif rec.state == "running" and p.get("mode") == "interactive":
+                self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
             self._exited(rec, mine, now, backend, target)
@@ -511,6 +551,7 @@ class Supervisor:
         self, rec: Record, session: Session, p: dict[str, Any], now: float, backend: Tmux
     ) -> None:
         if rec.state != "stopping":
+            rec.hung_at = None
             grace = min(int(p.get("stop_grace_seconds") or 0), self.cfg.limits.stop_grace_max)
             rec.enter(now, "stopping", deadline_at=now + grace, kill_at=None)
         elif rec.kill_at is None and now >= (rec.deadline_at or now):
@@ -526,8 +567,12 @@ class Supervisor:
         backend.kill(session.name)
         code = session.exit_status
         if rec.state == "stopping":
+            rec.hung_at = None
             rec.enter(now, "stopped", "stopped_by_hub", exit_code=code, deadline_at=None,
                       kill_at=None)  # fmt: skip
+            return
+        if rec.hung_at is not None:  # the runner ended it for not listening
+            self._hung_exit(rec, now, code)
             return
         # An adopted session's start is unknown: its exit is not counted as a quick one.
         started = (
@@ -556,6 +601,135 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _idle(
+        self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
+    ) -> None:
+        """The runner's own check of an interactive session (§15.14). The agent stopped
+        listening when the harness has no process below it but its own helpers (no `maity
+        wait`, no tool it runs, however quiet) and its pane is unchanged, for
+        `hang_after_minutes`. Nobody attached: one line typed into the pane and sent. A pane
+        still as it was before Enter `reply_within_minutes` later (the harness did not even
+        take the line), or a quiet spell after `NUDGE_CAP` answered nudges with no wait in
+        between: the session is ended and started again, resuming it, reported `exited`,
+        `hung`, `idle`. Before a nudge's Enter, a person attached, any other process below
+        the harness, a changed pane, or anything the runner cannot read starts the count
+        again; after it, a change or a process is the answer, and a person attached or an
+        unreadable look leaves the nudge waiting while the reply time runs on."""
+        if rec.hung_at is not None:  # ended for it: kill-session if TERM was not enough
+            if now - rec.hung_at >= KILL_AFTER:
+                backend.kill(session.name)
+                self._hung_exit(rec, now, None)
+            return
+        if rec.idle_checked_at is not None and now - rec.idle_checked_at < IDLE_EVERY:
+            return
+        rec.idle_checked_at = now
+        below = backend.activity(session)
+        if below == WAITING:  # it listens again: the idle ends and nudges in a row start over
+            rec.hung_exits, rec.nudges = [], 0
+        attached = backend.attached(session.name)
+        digest = backend.pane_digest(session.name)
+        if below != IDLE or attached is not False or digest is None:
+            if rec.nudged_at is not None and not rec.unsent:
+                if below == WORKING:  # the harness started something on the nudge: an answer
+                    rec.nudges += 1
+                elif below != WAITING:  # a look it cannot use: the nudge still waits for one
+                    return
+            # A line typed but never sent is dropped; it may still sit in the input, unless a
+            # person is at the pane: what is there then is theirs, the next nudge types afresh.
+            rec.left_typed = (rec.left_typed or rec.unsent) and attached is False
+            rec.pane, rec.quiet_since, rec.nudged_at, rec.unsent = digest, None, None, False
+            return
+        if rec.unsent and rec.nudged_at is not None:  # the line did not show in time
+            if digest == rec.pane:  # still not: its Enter waits until it shows
+                reply = _minutes(
+                    ((p.get("health") or {}).get("settings") or {}).get("reply_within_minutes"),
+                    REPLY_WITHIN_MINUTES,
+                )
+                if now - rec.nudged_at >= reply:
+                    self.log(f"{session.name}: the nudge's line did not show in "
+                             f"{reply / 60:.0f} min; ending it to resume its session")  # fmt: skip
+                    backend.terminate(session)
+                    rec.hung_at = now
+                return
+            try:  # it shows now: measured before its Enter
+                backend.submit(session.name)
+            except TmuxError as exc:
+                self.log(f"{session.name}: cannot send the nudge: {exc}")
+                return
+            rec.pane, rec.nudged_at, rec.unsent = digest, now, False
+            return
+        if rec.quiet_since is None or digest != rec.pane:
+            if rec.nudged_at is not None:  # a change after its Enter: the nudge was answered
+                rec.nudges += 1
+            rec.pane, rec.quiet_since, rec.nudged_at = digest, now, None
+            return
+        settings = (p.get("health") or {}).get("settings") or {}
+        hang = _minutes(settings.get("hang_after_minutes"), HANG_AFTER_MINUTES)
+        reply = _minutes(settings.get("reply_within_minutes"), REPLY_WITHIN_MINUTES)
+        if rec.nudged_at is None:
+            if now - rec.quiet_since < hang:
+                return
+            if rec.nudges >= NUDGE_CAP:
+                self.log(f"{session.name}: answered {rec.nudges} nudges without going back to "
+                         "its wait; ending it to resume its session")  # fmt: skip
+                backend.terminate(session)
+                rec.hung_at = now
+                return
+            try:  # the baseline is the pane with the line typed, before Enter: any answer counts
+                if rec.left_typed:  # the dropped line is still there: send it, never a second
+                    shown: str | None = digest
+                else:
+                    backend.type_text(session.name, NUDGE_LINE)
+                    shown = self._typed(backend, session.name, digest)
+                if shown is not None:
+                    backend.submit(session.name)
+            except TmuxError as exc:
+                self.log(f"{session.name}: cannot nudge: {exc}")
+                return
+            rec.nudged_at, rec.left_typed = now, False
+            rec.pane, rec.unsent = (digest, True) if shown is None else (shown, False)
+            self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
+                     "nudged in its pane")  # fmt: skip
+            return
+        if now - rec.nudged_at < reply:
+            return
+        self.log(f"{session.name}: still not listening {reply / 60:.0f} min after the nudge; "
+                 "ending it to resume its session")  # fmt: skip
+        backend.terminate(session)
+        rec.hung_at = now
+
+    def _typed(self, backend: Tmux, name: str, before: str) -> str | None:
+        """The pane once the nudge's line shows, before Enter: what "unchanged" is measured
+        against from then on, so whatever the harness does with the line, an answer
+        included, is a change. A line that does not show within the window (a stalled
+        screen, a slow read) gives None: its Enter waits for the next look, which measures
+        the pane first, so neither its late echo nor an answer becomes the baseline."""
+        for _ in range(TYPED_TRIES):
+            digest = backend.pane_digest(name)
+            if digest != before:
+                return digest
+            self.pause(TYPED_PAUSE)
+        return None
+
+    def _hung_exit(self, rec: Record, now: float, code: int | None) -> None:
+        """The end of a session the idle check ended: `exited`, `hung`, `idle` (§15.7),
+        restarted after the first backoff step and resumed. These ends are counted on their
+        own and in a row: a hung session never ends quickly, so no `crash_window` would hold
+        `crash_cap` of them (one takes 40 minutes by default). `crash_cap` idle ends with no
+        `maity wait` seen in between hold the placement as `failed`, `hung`, `idle`; a wait
+        seen below the harness starts the row over."""
+        policy = self.cfg.limits.restart
+        rec.hung_exits = [*rec.hung_exits, now]
+        rec.hung_at = None
+        rec.calm()
+        rec.resume = True
+        if len(rec.hung_exits) >= policy.crash_cap:
+            rec.enter(now, "failed", "hung", detail="idle", exit_code=code, retry_at=None)
+            self.log(f"{rec.target or 'local'}: held after {len(rec.hung_exits)} idle ends")
+        else:
+            rec.enter(now, "exited", "hung", detail="idle", exit_code=code,
+                      retry_at=now + restart.delay(policy, 0, self.rand))  # fmt: skip
 
     def _rate_limited(self, rec: Record, now: float, target: Target) -> None:
         """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
@@ -628,10 +802,20 @@ class Supervisor:
             return ("harness_missing", found.reason)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
-        if harness.id == "codex" and grant.allow:
-            return ("harness_refused", None)  # Codex cannot honour a command allowlist
-        if harness.require_sandbox and not target.sandbox.get(harness.id, False):
-            return ("harness_refused", None)  # the operator asked for no run without it
+        if harness.id == "codex" and (grant.allow or grant.pull_requests):
+            # Codex cannot honour a command allowlist, and its `maity` runs inside its
+            # sandbox, where `maity gh` reaches neither gh's login nor the forge's API.
+            return ("harness_refused", None)
+        on = target.sandbox.get(harness.id, False)
+        if capabilities.sandbox_refused(harness, on, harness.id in target.held):
+            return ("harness_refused", None)  # no run without it, or held back by its version
+        if on and harness.id == "claude-code":
+            # The sandboxed session relies on the runner's hook; settings that switch hooks
+            # off would start it without one. Read at every start: they change without us.
+            why = capabilities.claude_hooks_off(target.as_user)
+            if why is not None:
+                self.log(capabilities.claude_hooks_line(why))
+                return ("harness_refused", None)
         return None
 
     def _wait(self, rec: Record, why: str, name: str) -> int:
@@ -678,6 +862,7 @@ class Supervisor:
         if join and self.client is None:
             return 0
         retrying = rec.state in ("exited", "rate_limited")
+        rec.calm()
         rec.enter(now, "starting", retry_at=None, started_at=now)
         if retrying:
             rec.restarts += 1
@@ -735,7 +920,7 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            launch = adapters.launch(self._context(p, harness, place, target))
+            launch = adapters.launch(self._context(p, harness, place, target, rec.resume))
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
@@ -769,6 +954,7 @@ class Supervisor:
         hint = target.attach_hint(name)
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
+            rec.resume = False
         self.log(f"{name}: started generation {p['generation']}")
         found = target.probes.get(harness.id)
         warning = capabilities.unchecked(harness.id, found.version if found else None)
@@ -833,6 +1019,7 @@ class Supervisor:
         harness: config.Harness,
         place: workspace.Workspace,
         target: Target | None = None,
+        resume: bool = False,
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
@@ -862,6 +1049,8 @@ class Supervisor:
             workspaces=target.workspaces.resolve() if target.as_user.here else target.workspaces,
             as_user=target.as_user,
             agent_path=target.agent_path,
+            resume=resume,
+            git=self.cfg.git,
         )
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:

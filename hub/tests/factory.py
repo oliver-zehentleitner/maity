@@ -14,6 +14,7 @@ from maity_hub import avatars, clock, handle_register, namespace
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.passwords import hash_password
+from maity_hub.events import newest_seq
 from maity_hub.ids import new_id
 
 PASSWORD = "correct horse battery staple"
@@ -235,7 +236,7 @@ def trust_and_role(role: str, trust: str | None = None) -> tuple[str, str]:
 
 
 def membership(
-    engine: Engine, project_id: str, role: str = "owner", trust: str | None = None, **principal: str
+    engine: Engine, project_id: str, role: str = "owner", trust: str | None = None, **principal: Any
 ) -> int:
     values: dict[str, Any] = {"role": role}  # before 0067, the single role (§2.3)
     columns = {c["name"] for c in inspect(engine).get_columns("membership")}
@@ -244,6 +245,8 @@ def membership(
     if "role_base" in columns:  # since 0112: a built-in role is its own base
         values["role_base"] = values["role"]
     with engine.begin() as conn:
+        if "joined_seq" in columns:  # since 20261112190000: the project's newest seq then
+            values["joined_seq"] = newest_seq(conn, project_id)
         result = conn.execute(
             insert(t.membership).values(
                 project_id=project_id,

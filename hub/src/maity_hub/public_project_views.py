@@ -445,7 +445,8 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     for view, heading, inner, data in views:
         content = (
             f'<p class="eyebrow"><a href="/{escape(full, quote=True)}">{escape(full)}</a></p>'
-            f"<h1>{escape(project.name)}: {heading}</h1>{inner}"
+            f"<h1>{escape(project.name)}: {heading}</h1>"
+            f"{render.report_link(f'/{full}/{view}')}{inner}"
         )
         path = f"/{full}/{view}"
         digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())

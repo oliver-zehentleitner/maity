@@ -99,16 +99,26 @@ window.Maity = window.Maity || {};
     return a;
   }
 
+  // The model's address with ?next=, its own query (the language) kept.
+  function withNext(href, next) {
+    const cut = href.indexOf("#");
+    const before = cut < 0 ? href : href.slice(0, cut);
+    return before + (before.includes("?") ? "&" : "?") + "next=" + encodeURIComponent(next) + (cut < 0 ? "" : href.slice(cut));
+  }
+
   // The landing page's header: the mark, the sections, sign in and the call to action. The page
   // being drawn marks its own link as the current one.
-  function siteHeader(model, current) {
+  function siteHeader(model, current, next) {
     const top = model.header || {};
+    // A page a visitor reads (js/visitor.js): Sign in comes back to it, as the app's bar's link did.
+    const signIn = top.sign_in && next && typeof top.sign_in.href === "string" && top.sign_in.href.split(/[?#]/)[0] === "/login"
+      ? Object.assign({}, top.sign_in, { href: withNext(top.sign_in.href, next) }) : top.sign_in;
     const mine = (item) => (current && item && typeof item.href === "string" && item.href.split("?")[0] === current ? { "aria-current": "page" } : null);
     return h("header", { class: "site-header dz", id: "site-header" }, h("div", { class: "wrap" },
       home(),
       h("nav", { class: "site-nav" }, (top.nav || []).map((item) => link(item))),
       themeButton(),
-      top.sign_in ? link(top.sign_in, Object.assign({ class: "signin" }, mine(top.sign_in))) : null,
+      signIn ? link(signIn, Object.assign({ class: "signin" }, mine(top.sign_in))) : null,
       top.cta ? link(top.cta, Object.assign({ class: "btn btn-primary" }, mine(top.cta))) : null));
   }
 
@@ -156,8 +166,9 @@ window.Maity = window.Maity || {};
   // Called by the page that stands in the frame, once its own content is drawn. `current` is its
   // path (/login, /register), so the header's link to it is marked. Resolves true once the frame
   // stands, false where the read failed or another drawing came first; `drawn` runs then, with
-  // the model, before anything else of the page changes.
-  async function enter(current, drawn) {
+  // the model, before anything else of the page changes. options.next: the address Sign in
+  // comes back to (a visitor's page).
+  async function enter(current, drawn, options) {
     const mine = ++round;
     // Every read holds the line back until it decides, also one a page starts itself without
     // render() (the login's language picker), after an earlier read failed and let it go.
@@ -183,7 +194,7 @@ window.Maity = window.Maity || {};
     drop();
     const app = bar;
     const main = document.getElementById("main");
-    header = siteHeader(model, current);
+    header = siteHeader(model, current, options && options.next);
     footer = siteFooter(model);
     // The words of the model are in its language, the page's may be another (§16.7.5).
     if (model.language && model.language !== M.i18n.language) {

@@ -55,7 +55,9 @@ def _member(make_client: ClientFactory, engine: Engine, handle: str) -> flow.Hum
     human = flow.human(make_client, engine, handle)
     with engine.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
-    factory.membership(engine, project_id, "member", human_id=human.id)
+    # As every route that adds a human's membership does (projects, invitations): the member's
+    # calls within the minute after its sign-in write no presence (§2.4).
+    factory.membership(engine, project_id, "member", human_id=human.id, last_seen_at=clock.now())
     return human
 
 
@@ -638,6 +640,12 @@ def test_an_outside_moderators_owner_does_not_read_the_round(
     assert pending.status_code == 202, pending.text
     [request_id] = pending.json()["requests"]
     assert consent(other, request_id, "go").status_code == 200
+    # Its owner lets it meet the circle's side, so it does not wait in the thread (§9.6).
+    allowed = other.post(
+        "/me/chat-access/allow",
+        {"agents": [outside.id], "owner_id": friend.id, "their_human": True},
+    )
+    assert allowed.status_code == 201, allowed.text
     started = friend.post(f"{BASE}/jour-fixe/series/{sid}/rounds", {"reason": "look back"})
     assert started.status_code == 201, started.text
     round_id, thread = started.json()["id"], started.json()["conversation_id"]

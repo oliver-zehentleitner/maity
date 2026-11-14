@@ -14,6 +14,7 @@ from sqlalchemy import Engine
 
 from maity_hub.auth import passwords
 from maity_hub.ratelimit import Limiter
+from tests.conftest import process_limiters
 
 
 def test_the_limit_and_the_retry_after() -> None:
@@ -243,3 +244,15 @@ def test_an_exact_limit_gives_back_exactly_what_was_taken(shared: None) -> None:
     limiter.release("ada", two, 1)  # one of the two placed together
     assert limiter.take("ada", 2) == 0
     assert limiter.hit("ada") > 0
+
+
+def test_the_suite_finds_the_limiters_one_attribute_down() -> None:
+    """The conftest resets every limiter it finds between tests (tsk-knmx8yw3s1xa): the sign-in
+    link's and the password reset's limits sit in a `RequestLimits` of three, and are found too."""
+    from maity_hub.routes import email_sign_in, mail_settings, password_reset
+
+    found = {id(limiter) for limiter in process_limiters()}
+    for limits in (email_sign_in.LIMITS, password_reset.LIMITS):
+        for limiter in (limits.by_source, limits.pair_quarter, limits.pair_day):
+            assert id(limiter) in found, limiter.name
+    assert id(mail_settings.test_limiter) in found

@@ -780,6 +780,8 @@ window.Maity = window.Maity || {};
         h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, M.icons.close(16))),
       h("p", { class: "join-project" }, M.t("join.project", { name: project.name || ctx.slug || full, full })),
       h("p", { class: "muted" }, M.t("join.intro")),
+      // Until the person confirmed it, once (docs/api.md §5.1, "Experiment notice"); it holds nothing back.
+      M.experimentNotice ? M.experimentNotice.forConnecting(ctx) : null,
     ];
   }
 

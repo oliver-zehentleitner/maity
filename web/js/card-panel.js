@@ -160,11 +160,14 @@ window.Maity = window.Maity || {};
     let notesRead = 0;
     const notesList = h("div", { class: "card-note-items" });
     append(notesBox, notesList);
+    // Report this card to the instance's admins (§16.8, tsk-7ze5w6ymf7bw): its id with the project.
+    const reporting = M.report && ctx.me && ctx.me.kind === "human" && ctx.slug ? M.report.control({ type: "card", id: c.id, project: ctx.slug }, "card") : null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
-        h("span", { class: "card-panel-actions" }, watchButton,
+        h("span", { class: "card-panel-actions" }, watchButton, reporting ? reporting.button : null,
           h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close")))),
       watchStatus.el,
+      reporting ? reporting.slot : null,
       heading,
       cardSlot,
       h("h3", null, M.t("cardpanel.description")),
@@ -177,6 +180,8 @@ window.Maity = window.Maity || {};
       updatesBox,
       h("h3", null, M.t("cardpanel.history")), historyBox);
     box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) close(); });
+    // A card's public page's Report comes back here with `?report` for a member (§16.9): open it.
+    if (reporting && M.report.asked()) reporting.open();
 
     // Who may do what to a note (§6.16): its author edits it, a human holding
     // events:admin (owner, admin) edits any note and removes it. A removed note

@@ -5,7 +5,10 @@ only if that commits. The worker sends what is due with the settings in effect a
 moment and counts each outcome in `mail_delivery` by its budget kind. Security mail over
 `security_max_per_hour` waits for the next hour, in order, never dropped; `enabled:
 false` holds every mail. A failure of the instance's own setting (connection, TLS,
-`AUTH`) is retried with backoff for up to 24 hours, whoever the mail was for.
+`AUTH`) is retried with backoff for up to 24 hours, whoever the mail was for. One row
+never stops the outbox: a row whose message cannot be built, or whose handling fails in
+any other way than the database, is `failed`, logged without its content, and the pass
+goes on with the next row.
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, Engine, String, cast, delete, insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from maity_hub import clock, worker_runs
 from maity_hub import tables as t
@@ -32,11 +35,12 @@ BUDGETS = {
     "notification": "max_per_hour",
     "security": "security_max_per_hour",
     "sign_in": "sign_in_max_per_hour",
+    "password_reset": "password_reset_max_per_hour",
     "registration": "registration_max_per_hour",
 }
 # Answers to an anonymous request: over their budget they are dropped, never held; a late
 # link is useless (§16.2).
-DROPPED_OVER_BUDGET = ("sign_in", "registration")
+DROPPED_OVER_BUDGET = ("sign_in", "password_reset", "registration")
 # A failure here is the instance's setting, not the recipient's address (§18.7).
 SETTING_STAGES = ("resolve", "connect", "tls", "auth", "timeout")
 
@@ -106,29 +110,67 @@ def send_due(
         resolved = _resolved(engine, env, secret_key)
         if resolved is None:
             break
-        with engine.begin() as conn:
-            if not _claim(conn, row.id):
-                continue  # another process took it
-            if _disabled_address(conn, row):
-                _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
-                continue
-            # A retry was admitted when it first went out; a claim that lapsed is
-            # admitted again, which errs on the side of the budget.
-            attempts = conn.execute(
-                select(t.mail_outbox.c.attempts).where(t.mail_outbox.c.id == row.id)
-            ).scalar_one()
-            if attempts == 0 and not _admit(conn, row.kind, int(resolved.value(BUDGETS[row.kind]))):
-                if row.kind in DROPPED_OVER_BUDGET:
-                    _finish(conn, row.id, "dropped")
-                    _count(conn, row.kind, "dropped")
-                else:
-                    # Over the budget: security mail waits for the next hour (§16.2).
-                    _release(conn, row.id, clock.now() + timedelta(minutes=5))
-                continue
-        outcome = smtp.send(resolved, _message(resolved, row))
-        with engine.begin() as conn:
-            sent += _settle(conn, row, outcome)
+        try:
+            sent += _deliver(engine, resolved, row)
+        except SQLAlchemyError:
+            raise  # the database, not this row: the pass ends and the worker tries again
+        except Exception as error:  # one row never stops the outbox
+            _failed(engine, row, "sent", error)
     return sent
+
+
+def _deliver(engine: Engine, resolved: settings.Resolved, row: Any) -> int:
+    """Claim, build, admit and send one row; 1 when it left the hub.
+
+    The message is built before the row is admitted: a row that cannot be built is
+    `failed` in the claim's own transaction and takes no place in its kind's budget, so
+    it neither comes back on the next pass nor holds back the mail behind it."""
+    with engine.begin() as conn:
+        if not _claim(conn, row.id):
+            return 0  # another process took it
+        if _disabled_address(conn, row):
+            _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
+            return 0
+        try:
+            mail = _built(resolved, row)
+        except Exception as error:
+            _unsendable(conn, row, "built", error)
+            return 0
+        # A retry was admitted when it first went out; a claim that lapsed is
+        # admitted again, which errs on the side of the budget.
+        attempts = conn.execute(
+            select(t.mail_outbox.c.attempts).where(t.mail_outbox.c.id == row.id)
+        ).scalar_one()
+        if attempts == 0 and not _admit(conn, row.kind, int(resolved.value(BUDGETS[row.kind]))):
+            if row.kind in DROPPED_OVER_BUDGET:
+                _finish(conn, row.id, "dropped")
+                _count(conn, row.kind, "dropped")
+            else:
+                # Over the budget: security mail waits for the next hour (§16.2).
+                _release(conn, row.id, clock.now() + timedelta(minutes=5))
+            return 0
+    outcome = smtp.send(resolved, mail)
+    with engine.begin() as conn:
+        return _settle(conn, row, outcome)
+
+
+def _unsendable(conn: Connection, row: Any, stage: str, error: Exception) -> None:
+    """The row leaves the queue as `failed`, emptied as every finished row is. The log
+    names the row, its kind and the error's class, never the mail's text or headers."""
+    log.error(
+        "mail: outbox row %s (%s) could not be %s (%s); marked failed",
+        row.id,
+        row.kind,
+        stage,
+        type(error).__name__,
+    )
+    _finish(conn, row.id, "failed")
+    _count(conn, row.kind, "failed")
+
+
+def _failed(engine: Engine, row: Any, stage: str, error: Exception) -> None:
+    with engine.begin() as conn:
+        _unsendable(conn, row, stage, error)
 
 
 def _resolved(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> Any:
@@ -233,6 +275,14 @@ def _finish(conn: Connection, row_id: int, status: str) -> None:
         .where(t.mail_outbox.c.id == row_id)
         .values(status=status, body="", headers={})
     )
+
+
+def _built(resolved: settings.Resolved, row: Any) -> Any:
+    """The row's message, already turned into bytes once, so that whatever cannot be
+    serialised fails here and not halfway through the conversation with the server."""
+    mail = _message(resolved, row)
+    mail.as_bytes()
+    return mail
 
 
 def _message(resolved: settings.Resolved, row: Any) -> Any:

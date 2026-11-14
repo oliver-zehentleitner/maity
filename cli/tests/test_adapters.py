@@ -3,18 +3,23 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shlex
 import shutil
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from maity import __version__
+from maity import __version__, clonecheck
 from maity.runner import adapters, config, loop, supervisor
-from maity.runner.asuser import AsUser
+from maity.runner.asuser import AsUser, Ssh
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
+# Under the sandbox: the git commands that fail, and `maity` alone.
+SANDBOXED = adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
 
 
 def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -> adapters.Context:
@@ -34,7 +39,8 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     launch = adapters.launch(ctx)
     argv = launch.argv
-    assert argv[0] == "/usr/bin/claude" and argv[-1] == adapters.START_PROMPT
+    assert argv[0] == "/usr/bin/claude"
+    assert argv[-1] == adapters.START_PROMPT  # no sandbox: nothing about git or `maity` alone
     assert argv[argv.index("--setting-sources") + 1] == "user"
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -43,11 +49,21 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     mcp = [a for a in argv if a.startswith("--mcp-config")]
     assert len(mcp) == 1 and mcp[0].startswith("--mcp-config=")
     assert json.loads(Path(mcp[0].split("=", 1)[1]).read_text()) == {"mcpServers": {}}
+    # No MAITY_SUPERVISOR: nothing wakes an interactive session, so the hub must not tell it
+    # to stop waiting (the first runner test of 0.1.0a8: the agents went away after each turn).
     assert launch.env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
-        "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
+        clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
+        clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
         **adapters.SESSION_GIT_CONFIG,
+        **adapters.git_identity(ctx),  # `[git]`, here its default (test_session_identity.py)
     }  # fmt: skip
+
+
+def test_claude_code_interactive_resumes_its_conversation_after_hung(tmp_path: Path) -> None:
+    launch = adapters.launch(context(tmp_path, resume=True))
+    assert launch.argv[-2:] == ["--continue", adapters.RESUME_PROMPT]
+    assert adapters.START_PROMPT not in launch.argv
 
 
 def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_prompt(
@@ -141,7 +157,7 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
-    assert "sandbox" not in settings
+    assert "sandbox" not in settings and "hooks" not in settings  # no exclusion, no hook
     strict = adapters.claude_settings(
         context(tmp_path / "s", sandbox=True, hosts=("maity.team", "github.com"))
     )["sandbox"]
@@ -169,15 +185,194 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     }
 
 
+def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
+    settings = adapters.claude_settings(context(tmp_path, sandbox=True))
+    assert settings["disableAllHooks"] is False
+    (entry,) = settings["hooks"]["PreToolUse"]
+    assert "matcher" not in entry  # every tool, not only Bash
+    (hook,) = entry["hooks"]
+    assert hook["type"] == "command" and hook["onFailure"] == "block"
+    # The runner's own interpreter and module, isolated from the session's environment.
+    module = [sys.executable, "-I", "-m", "maity.runner.plaincall"]
+    # A hook that cannot start or fails refuses the call on any version, not only with onFailure.
+    assert shlex.split(hook["command"]) == [*module, "||", "exit", "2"]
+    assert "args" not in hook  # shell form: also runs on a version without exec form
+    remote = Ssh(name="b", address="b.lan", login="m", known_hosts=tmp_path / "k")
+    remote_hook = adapters.claude_settings(context(tmp_path / "r", sandbox=True, as_user=remote))
+    command = remote_hook["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert command == "maity runner plaincall || exit 2"  # the host's maity, as for the loop
+
+
+@pytest.mark.parametrize(
+    ("harness_id", "version", "ok"),
+    [("claude-code", "2.1.294", False), ("claude-code", "2.1.295", True),
+     ("claude-code", "2.2.0", True), ("claude-code", "3.0.0-beta", True),
+     ("claude-code", "2.1.295-rc.1", False), ("claude-code", "2.1.295-dev", False),
+     ("claude-code", "2.1.295+build", True), ("claude-code", "2.1.296-rc.1", True),
+     ("claude-code", "2.1.295-rc.1+build.7", False), ("claude-code", "2.1.295.1", False),
+     ("claude-code", "2.1.295--rc", False), ("claude-code", "2.1.295-x-y", False),
+     ("claude-code", "02.1.295", False), ("claude-code", "2.1.0295", False),
+     ("claude-code", "2.1.296-01", False), ("claude-code", "2.1.296-rc..1", False),
+     ("claude-code", "2.1.295+", False), ("claude-code", "2.1.295+b..1", False),
+     ("claude-code", "2.1.296-0.rc-1+b-2", True),
+     ("claude-code", None, False), ("claude-code", "2.1", False), ("claude-code", "x", False),
+     ("codex", None, True)],
+)  # fmt: skip
+def test_claude_codes_sandbox_needs_the_hook_failure_policy(
+    harness_id: str, version: str | None, ok: bool
+) -> None:
+    from maity.runner import capabilities
+
+    assert capabilities.sandbox_version_ok(harness_id, version) is ok
+
+
+def test_the_hook_refuses_when_it_cannot_start(tmp_path: Path) -> None:
+    """The shell form's `|| exit 2`: a missing module or interpreter is exit 2, a refusal."""
+    hook = adapters.claude_settings(context(tmp_path, sandbox=True))["hooks"]["PreToolUse"]
+    command = hook[0]["hooks"][0]["command"].replace("maity.runner.plaincall", "maity.nowhere")
+    done = subprocess.run(["sh", "-c", command], input="{}", capture_output=True, text=True,
+                          check=False, timeout=60)  # fmt: skip
+    assert done.returncode == 2
+
+
+def test_the_plain_call_hook_is_a_runner_command(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    from maity import cli
+
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "maity a | x"}})
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(payload.encode())))
+    assert cli.main(["runner", "plaincall"]) == 2
+    assert "one plain call" in capsys.readouterr().err
+
+
 def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     ctx = context(tmp_path, placement={**PLACEMENT, "mode": "supervised", "model": None})
     launch = adapters.launch(ctx)
     assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
     assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT]
+    assert spec["env"]["MAITY_SUPERVISOR"] == f"maity-runner/{__version__}"
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert spec["restart"]["crash_cap"] == 5
+
+
+def test_the_sandboxed_session_prompt_and_git_settings(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True, placement={**PLACEMENT, "mode": "supervised"})
+    launch = adapters.launch(ctx)
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    assert spec["first"][-1] == adapters.SUPERVISED_PROMPT + SANDBOXED
+    assert spec["env"]["GIT_CONFIG_COUNT"] == "5"
+    keys = {spec["env"][f"GIT_CONFIG_KEY_{i}"]: spec["env"][f"GIT_CONFIG_VALUE_{i}"]
+            for i in range(5)}  # fmt: skip
+    assert keys == {"core.fsmonitor": "false", "diff.ignoreSubmodules": "all",
+                    "branch.autoSetupMerge": "false", "push.default": "current",
+                    "fetch.recurseSubmodules": "false"}  # fmt: skip
+    codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", sandbox=True)
+    assert adapters.launch(codex).argv[-1] == adapters.START_PROMPT + adapters.GIT_PROMPT
+
+
+def test_without_a_sandbox_the_clone_git_configuration_stands(tmp_path: Path) -> None:
+    """Without a sandbox `.git/config` is writable, and the session leaves the repository's
+    own tracking, push and submodule settings alone (review of #1663)."""
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    for key, value in (("branch.autoSetupMerge", "true"), ("push.default", "simple"),
+                       ("fetch.recurseSubmodules", "on-demand")):  # fmt: skip
+        subprocess.run(["git", "-C", str(clone), "config", key, value], check=True)
+    env = {**os.environ, **adapters.launch(context(tmp_path, clone=clone)).env}
+    for key, value in (("branch.autoSetupMerge", "true"), ("push.default", "simple"),
+                       ("fetch.recurseSubmodules", "on-demand")):  # fmt: skip
+        got = subprocess.run(["git", "-C", str(clone), "config", "--get", key], env=env,
+                             capture_output=True, text=True, check=True)  # fmt: skip
+        assert got.stdout.strip() == value
+
+
+def test_the_session_git_needs_no_configuration_write(tmp_path: Path) -> None:
+    """The sandbox keeps `.git/config` unwritable (config.lock is held), so tracking a remote
+    branch on `switch -c` failed and an upstream could not be stored (the first runner test of
+    0.1.0a8). With the session's settings a branch is cut, committed and pushed without one."""
+    remote, clone = tmp_path / "remote.git", tmp_path / "clone"
+    sandboxed = context(tmp_path, sandbox=True)
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@b", "GIT_COMMITTER_NAME": "a",
+           "GIT_COMMITTER_EMAIL": "a@b"}  # fmt: skip
+
+    def git(*args: str, cwd: Path = clone, session: bool = True) -> None:
+        extra = adapters.git_config(sandboxed) if session else {}
+        subprocess.run(["git", *args], cwd=cwd, env={**env, **extra}, check=True,
+                       capture_output=True)  # fmt: skip
+
+    git("init", "-q", "--bare", str(remote), cwd=tmp_path, session=False)
+    git("clone", "-q", str(remote), str(clone), cwd=tmp_path, session=False)
+    git("commit", "-q", "--allow-empty", "-m", "one", session=False)
+    git("push", "-q", "origin", "HEAD:refs/heads/main", session=False)
+    git("fetch", "-q", "origin", session=False)
+    before = (clone / ".git" / "config").read_text()
+    (clone / ".git" / "config.lock").write_text("")
+    if os.name != "nt":  # the sandbox's unreadable placeholder; fetch must not read it
+        (clone / ".gitmodules").write_text("")
+        (clone / ".gitmodules").chmod(0)
+    done = subprocess.run(["git", "fetch", "origin"], cwd=clone,
+                          env={**env, **adapters.git_config(sandboxed)},
+                          capture_output=True, text=True, check=True)  # fmt: skip
+    assert ".gitmodules" not in done.stderr
+    git("switch", "-q", "-c", "work", "origin/main")
+    git("commit", "-q", "--allow-empty", "-m", "two")
+    git("push", "-q")
+    assert (clone / ".git" / "config").read_text() == before
+    assert (remote / "refs" / "heads" / "work").is_file()
+
+
+def test_the_sandbox_placeholders_are_hidden_and_other_lines_kept(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text("# git's own comment\n*.tmp\n")
+    (ctx.clone / ".claude" / "agents").mkdir(parents=True)  # empty: Claude Code makes these
+    adapters.launch(ctx)
+    adapters.launch(ctx)  # a second start replaces the block, it does not add another
+    lines = exclude.read_text().splitlines()
+    assert lines[:2] == ["# git's own comment", "*.tmp"]
+    assert lines.count(adapters.EXCLUDE_BEGIN) == 1
+    assert lines[3:-1] == [f"/{name}" for name in adapters.CLAUDE_PLACEHOLDERS]
+
+
+def test_real_content_at_a_placeholder_path_stays_visible(tmp_path: Path) -> None:
+    """Untracked files of the agent's own at those paths are not placeholders, and hiding
+    them would hide real work (review of #1663). A block from an earlier start is rebuilt, so
+    content that appeared since shows again."""
+    ctx = context(tmp_path, sandbox=True)
+    clone = ctx.clone
+    subprocess.run(["git", "init", "-q", str(clone)], check=True, capture_output=True)
+    adapters.launch(ctx)  # nothing there yet: every path is hidden
+    assert "/.gitmodules" in (clone / ".git" / "info" / "exclude").read_text()
+    (clone / ".gitmodules").write_text("[submodule]\n")
+    (clone / ".mcp.json").write_text("{}\n")
+    (clone / ".claude" / "skills").mkdir(parents=True)
+    (clone / ".claude" / "skills" / "real.md").write_text("a skill\n")
+    adapters.launch(ctx)
+    lines = (clone / ".git" / "info" / "exclude").read_text().splitlines()
+    assert {"/.gitmodules", "/.mcp.json", "/.claude/skills"}.isdisjoint(lines)
+    assert "/.bashrc" in lines
+    status = subprocess.run(["git", "-C", str(clone), "status", "--porcelain",
+                             "--untracked-files=all"], capture_output=True, text=True,
+                            check=True).stdout  # fmt: skip
+    assert {"?? .gitmodules", "?? .mcp.json", "?? .claude/skills/real.md"} <= set(
+        status.splitlines()
+    )
+
+
+def test_without_a_sandbox_the_exclude_file_is_left_alone(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text("*.tmp\n")
+    adapters.launch(ctx)
+    assert exclude.read_text() == "*.tmp\n"
 
 
 def test_extra_environment_reaches_the_session(tmp_path: Path) -> None:
@@ -342,6 +537,18 @@ def test_an_interactive_placement_keeps_the_question_tool(tmp_path: Path) -> Non
     assert "tools" not in codex
 
 
+@pytest.mark.parametrize("mode", ["interactive", "supervised"])
+@pytest.mark.parametrize("sandbox", [False, True])
+def test_claude_code_writes_no_attribution_lines(tmp_path: Path, mode: str, sandbox: bool) -> None:
+    """Every placement: no commit trailer, no pull request line, no session link. Empty
+    strings, not `false`, which a binary older than 2.1.281 rejects with the whole file."""
+    ctx = context(tmp_path, placement={**PLACEMENT, "mode": mode}, sandbox=sandbox)
+    adapters.launch(ctx)  # a supervised one names the file in the loop's spec, not in argv
+    written = json.loads((ctx.agent_dir / "claude-settings.json").read_text())
+    assert written["attribution"] == {"commit": "", "pr": "", "sessionUrl": False}
+    assert "includeCoAuthoredBy" not in written  # deprecated; ignored once this is set
+
+
 def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     (home / "codex").mkdir(parents=True)
@@ -351,6 +558,9 @@ def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
                   placement={**PLACEMENT, "mode": "supervised", "model": "gpt-5.5"})  # fmt: skip
     launch = adapters.launch(ctx)
     codex_home = Path(launch.env["CODEX_HOME"])
+    # Codex runs maity inside its sandbox, which cannot write the runner's directory: git's own
+    # repository stays in `.git/maity`, named so, never by leaving the variable out.
+    assert launch.env[clonecheck.GIT_PRIVATE_ENV] == clonecheck.IN_CLONE
     assert codex_home.parent == ctx.agent_dir
     assert (codex_home / "auth.json").resolve() == (home / "codex" / "auth.json").resolve()
     assert (ctx.clone / ".git" / "maity").is_dir()
@@ -371,7 +581,13 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
-    assert list(rules["bash"])[-1] in adapters.GIT_DENIED  # denies last: the last match wins
+    denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED)
+    maity = [f"maity *{char}*" for char in adapters.MAITY_NOT_PLAIN]
+    # Denies last: the last match wins. `maity` only as one plain call, as for Claude Code.
+    assert list(rules["bash"])[-len(maity) - len(denied) :] == [*denied, *maity]
+    assert all(rules["bash"][rule] == "deny" for rule in maity)
+    assert {"maity *>*", "maity *|*", "maity *;*", "maity *&*", "maity *$*", "maity *<*",
+            "maity *`*", "maity *\n*"} == set(maity)  # fmt: skip
     assert rules["read"] == {"*": "allow", f"{ctx.clone}/.git/maity/*": "deny"}
     assert rules["edit"] == {"*": "allow", f"{ctx.clone}/.git/*": "deny"}
     assert rules["webfetch"] == "deny" and rules["external_directory"] == "deny"
@@ -485,10 +701,200 @@ def test_a_dangling_login_link_is_replaced(tmp_path: Path, monkeypatch: pytest.M
 
 @pytest.mark.parametrize("harness_id", ["claude-code", "codex", "stub"])
 def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) -> None:
-    """maity refuses its git in a marked clone whose session variables are gone."""
+    """maity refuses its git in a marked clone whose session variables are gone. The git
+    maity starts is recorded in the runner's directory for the agent, which the sandbox
+    hides, never in the clone (only Codex, whose maity runs in its sandbox, keeps it there)."""
     ctx = context(tmp_path, harness_id)
     (ctx.clone / ".git").mkdir(parents=True)
-    adapters.launch(ctx)
+    launch = adapters.launch(ctx)
     assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"
-    recorded = (ctx.clone / ".git" / "maity" / "git").read_text().strip()
+    if harness_id == "codex":
+        where = ctx.clone / ".git" / "maity"
+    else:
+        where = Path(launch.env[clonecheck.GIT_PRIVATE_ENV])
+        assert where == ctx.agent_dir / "git"
+        assert not (ctx.clone / ".git" / "maity" / "git").exists()
+        assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
+    recorded = (where / "git").read_text().strip()
     assert recorded == shutil.which("git") and os.path.isabs(recorded)
+
+
+REPOSITORY = "https://github.com/oliver-zehentleitner/maity.git"
+PULLS = config.RepositoryGrant(allow=("make test",), pull_requests=True)
+
+
+def fake_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text("#!/bin/sh\nexit 0\n")
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return str(gh)
+
+
+def test_no_placed_session_runs_gh_even_with_pull_requests(tmp_path: Path) -> None:
+    """The settings test for 9f43804d: gh is denied in every session, a grant with pull
+    requests adds no gh rule and no forge API host to the sandbox, so a sandboxed
+    `gh pr create` is denied and only `maity gh` remains."""
+    ctx = context(tmp_path, sandbox=True, grant=PULLS, hosts=("github.com", "maity.team"),
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    settings = adapters.claude_settings(ctx)
+    assert adapters.GH_DENIED == ("gh", "gh *")
+    assert {"Bash(gh)", "Bash(gh *)"} <= set(settings["permissions"]["deny"])
+    assert not any("gh" in rule.split("(", 1)[1].split()[0] for rule in
+                   settings["permissions"]["allow"] if rule.startswith("Bash("))  # fmt: skip
+    assert "api.github.com" not in settings["sandbox"]["network"]["allowedDomains"]
+    o_ctx = context(tmp_path / "o", "opencode", grant=PULLS)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    assert all(bash[rule] == "deny" for rule in adapters.GH_DENIED)
+    assert list(bash)[-1] in (*adapters.GIT_DENIED, *adapters.GH_DENIED,
+                              *(f"maity *{c}*" for c in adapters.MAITY_NOT_PLAIN))  # fmt: skip
+
+
+def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gh = fake_gh(tmp_path, monkeypatch)
+    ctx = context(tmp_path, sandbox=True, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    (ctx.clone / ".git").mkdir(parents=True)
+    launch = adapters.launch(ctx)
+    record = (ctx.agent_dir / "git" / "pull_requests").read_text()
+    assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
+    assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
+    assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
+
+
+def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An earlier launch's record is overwritten: a grant taken back is taken back."""
+    fake_gh(tmp_path, monkeypatch)
+    ctx = context(tmp_path, sandbox=True,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    (ctx.clone / ".git" / "maity").mkdir(parents=True)
+    (ctx.agent_dir / "git").mkdir(parents=True)
+    (ctx.agent_dir / "git" / "pull_requests").write_text("github.com/o/other\n/bin/gh\n")
+    launch = adapters.launch(ctx)
+    assert (ctx.agent_dir / "git" / "pull_requests").read_text() == ""
+    assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED
+
+
+def test_pull_requests_without_gh_on_the_path_record_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    ctx = context(tmp_path, grant=PULLS,
+                  placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
+    assert adapters.pull_requests_record(ctx) == ""
+
+
+def test_an_unclosed_block_drops_only_its_marker_and_a_foreign_encoding_is_left(
+    tmp_path: Path,
+) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    exclude = ctx.clone / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True)
+    exclude.write_text(f"a\n{adapters.EXCLUDE_BEGIN}\nb\n")
+    adapters.launch(ctx)
+    lines = exclude.read_text().splitlines()
+    assert lines[:2] == ["a", "b"] and lines.count(adapters.EXCLUDE_BEGIN) == 1
+    exclude.write_bytes(b"caf\xe9\n")  # not UTF-8: rewriting could change it
+    adapters.launch(ctx)
+    assert exclude.read_bytes() == b"caf\xe9\n"
+
+
+def test_codex_under_its_sandbox_gets_the_git_line_and_not_the_maity_line(tmp_path: Path) -> None:
+    ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex", sandbox=True)
+    prompt = adapters.launch(ctx).argv[-1]
+    assert adapters.GIT_PROMPT in prompt and adapters.CLAUDE_MAITY_PROMPT not in prompt
+    bare = context(tmp_path / "b", harness_id="codex", binary="/usr/bin/codex")
+    assert adapters.launch(bare).argv[-1] == adapters.START_PROMPT
+
+
+# --- settings that switch the runner's hook off (capabilities.claude_hooks_off) --------------
+
+
+def _managed(capabilities: Any) -> Path:
+    path: Path = capabilities.CLAUDE_MANAGED["linux"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+@pytest.mark.parametrize(
+    ("text", "off"),
+    [('{"disableAllHooks": true}', "sets disableAllHooks"),
+     ('{"allowManagedHooksOnly": true}', "sets allowManagedHooksOnly"),
+     ('{"allowManagedHooksOnly": "yes"}', "sets allowManagedHooksOnly"),
+     ('{"disableAllHooks": false, "allowManagedHooksOnly": false}', None),
+     ('{"permissions": {}}', None), ("{not json", "cannot be read as JSON"),
+     ("[]", "is not a JSON object")],
+)  # fmt: skip
+def test_managed_settings_that_switch_hooks_off_are_named(text: str, off: str | None) -> None:
+    from maity.runner import capabilities
+
+    _managed(capabilities).write_text(text)
+    why = capabilities.claude_hooks_off(AsUser(), "linux")
+    assert (why is None) if off is None else (why is not None and off in why)
+
+
+def test_no_managed_settings_switch_no_hook_off() -> None:
+    from maity.runner import capabilities
+
+    assert capabilities.claude_hooks_off(AsUser(), "linux") is None
+    assert capabilities.claude_hooks_off(AsUser(), "win32") is None  # no managed path known
+
+
+def test_a_managed_drop_in_counts_like_the_file() -> None:
+    from maity.runner import capabilities
+
+    drop_ins = _managed(capabilities).parent / "managed-settings.d"
+    drop_ins.mkdir()
+    (drop_ins / "10-team.json").write_text('{"permissions": {}}')
+    assert capabilities.claude_hooks_off(AsUser(), "linux") is None
+    (drop_ins / "20-hooks.json").write_text('{"disableAllHooks": true}')
+    why = capabilities.claude_hooks_off(AsUser(), "linux")
+    assert why is not None and "20-hooks.json sets disableAllHooks" in why
+
+
+def test_the_agents_user_settings_count_only_for_managed_hooks_only() -> None:
+    """The runner's settings file sets `disableAllHooks` back to false over the user's;
+    `allowManagedHooksOnly` it cannot."""
+    from maity.runner import capabilities
+
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text('{"disableAllHooks": true}')
+    assert capabilities.claude_hooks_off(AsUser(), "linux") is None
+    user.write_text('{"allowManagedHooksOnly": true}')
+    why = capabilities.claude_hooks_off(AsUser(), "linux")
+    assert why is not None and str(user) in why
+
+
+@pytest.mark.parametrize(
+    ("require", "on", "held", "refused"),
+    [(None, True, False, False), (None, False, True, True), (None, False, False, False),
+     (True, False, False, True), (True, True, False, False), (False, False, True, False)],
+)  # fmt: skip
+def test_the_sandbox_refusal(require: bool | None, on: bool, held: bool, refused: bool) -> None:
+    """Unset: refused when only the version keeps the sandbox off; `false` is the opt-out."""
+    from maity.runner import capabilities
+
+    harness = config.Harness("claude-code", ("supervised",), "supervised", require_sandbox=require)
+    assert capabilities.sandbox_refused(harness, on, held) is refused
+
+
+@pytest.mark.parametrize(
+    ("printed", "version"),
+    [("2.1.295 (Claude Code)", "2.1.295"), ("v2.1.296", "2.1.296"),
+     ("codex-cli 0.40.0", "0.40.0"), ("2.1.295--rc (Claude Code)", "2.1.295--rc"),
+     ("2.1.295+ (Claude Code)", None), ("2.1.295-_dev", None), ("x2.1.295", None),
+     ("2.1.295.", None)],
+)  # fmt: skip
+def test_a_version_is_a_token_of_its_own(printed: str, version: str | None) -> None:
+    from maity.runner import capabilities
+
+    found = capabilities.VERSION.search(printed)
+    assert (found.group(0) if found else None) == version

@@ -15,7 +15,7 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
@@ -37,6 +37,13 @@ log = logging.getLogger(__name__)
 
 # `img-src 'self'` for the pictures of a person's and an agent's page (§6.10, §16.9).
 CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
+# A stored page in its frame (§16.7.5): the landing page's stylesheets and fonts from this host
+# as well; still no script. The stored pages carry no inline style (the shell's policy refuses it,
+# tsk-8fk897a9tan8); 'unsafe-inline' stays for the maintenance banner put around them.
+FRAMED_CSP = (
+    "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
 CACHE = "public, max-age=60"
 READ_CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
@@ -110,7 +117,8 @@ def answer(
     """The stored page of the request's path for a visitor, or None for the shell. A visitor
     is a request without a live session, or one made with `?as=public` (§16.9). Without that
     query the page comes inside the app shell (`inside_shell`), so the dashboard takes over at
-    the same address; `?as=public` is the bare page and its own security policy."""
+    the same address; `?as=public` is the page on its own in the frame of §16.7.5 under
+    `FRAMED_CSP`, and bare under `CSP` only for a stored document of another shape."""
     if not settings_of(request).public_pages:
         return None
     path = request.url.path
@@ -136,7 +144,11 @@ def answer(
 
     window = maintenance.window_now(engine_of(request))
     if window is not None and window["state"] == "running":
-        return maintenance.refusal_page(window)  # type: ignore[no-any-return]
+        return maintenance.refusal_page(  # type: ignore[no-any-return]
+            window,
+            maintenance.cached_frame(engine_of(request)),
+            request.headers.get("accept-language"),
+        )
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
@@ -153,23 +165,57 @@ def answer(
         if request.method == "HEAD":
             return Response(media_type="text/html", headers=wrapped)
         return Response(shelled, media_type="text/html", headers=wrapped)
-    # The banner of an upcoming window is part of the answer, and so of its tag: a cache
-    # holding the page from before (or after) the window gets it again, not a 304.
-    tag = maintenance.etag(page.etag, window)
-    headers = {
-        "Cache-Control": CACHE,
-        "ETag": tag,
-        "Vary": "Cookie",
-        "Content-Security-Policy": CSP,
-        "X-Content-Type-Options": "nosniff",
-        **_robots(page),
-    }
+    framed = _in_frame(request, page.body)
+    if framed is not None:
+        # The frame is put around the stored page now (§16.7.5): the landing page's setting,
+        # the legal pages, the counters, the visitor's language and the stylesheets' digests
+        # all change the answer, so its tag is that of the bytes served, banner included.
+        served = maintenance.with_banner(framed, window)
+        tag = etag_of(served)
+        headers = {
+            "Cache-Control": CACHE,
+            "ETag": tag,
+            "Vary": "Cookie, Accept-Language",
+            "Content-Security-Policy": FRAMED_CSP,
+            "X-Content-Type-Options": "nosniff",
+            **_robots(page),
+        }
+    else:
+        # The banner of an upcoming window is part of the answer, and so of its tag: a cache
+        # holding the page from before (or after) the window gets it again, not a 304.
+        served = maintenance.with_banner(page.body, window)
+        tag = maintenance.etag(page.etag, window)
+        headers = {
+            "Cache-Control": CACHE,
+            "ETag": tag,
+            "Vary": "Cookie",
+            "Content-Security-Policy": CSP,
+            "X-Content-Type-Options": "nosniff",
+            **_robots(page),
+        }
     candidates = request.headers.get("if-none-match", "").split(",")
     if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
         return Response(status_code=304, headers=headers)
     if request.method == "HEAD":
         return Response(media_type="text/html", headers=headers)
-    return HTMLResponse(maintenance.with_banner(page.body, window), headers=headers)
+    return HTMLResponse(served, headers=headers)
+
+
+def _in_frame(request: Request, body: str) -> str | None:
+    """The stored page in the frame of the pages without a session (§16.7.5), from the frame's
+    inputs as they are now; None for a stored page of another shape, served bare."""
+    from maity_hub import landing, landing_stats, legal, render
+
+    with engine_of(request).begin() as conn:
+        setting = landing.stored(conn)
+        return render.stored_in_frame(
+            body,
+            setting=setting,
+            legal=legal.public(legal.stored(conn)),
+            stats=landing_stats.for_frame(conn, setting),
+            lang=request.query_params.get("lang"),
+            accept_language=request.headers.get("accept-language"),
+        )
 
 
 def read(request: Request, path: str) -> Response:
@@ -339,7 +385,13 @@ def refresh(
 
 
 def touch(
-    conn: Connection, kind: str, target_id: str, *, removal: bool = True, dependents: bool = True
+    conn: Connection,
+    kind: str,
+    target_id: str,
+    *,
+    removal: bool = True,
+    dependents: bool = True,
+    others: Callable[[], Sequence[tuple[str, str]]] | None = None,
 ) -> None:
     """An input of the target's pages changed, in the transaction that changed it. A change
     that takes anything off a page (`removal`, the default) renders it again at once under
@@ -347,7 +399,9 @@ def touch(
     a count waits for the next run (§16.9). Nothing happens while the instance serves no
     pages. `dependents=False` renders the target's own pages only, for a change that no other
     page shows: a project's dependents are every card page of the project, too many to render
-    while the caller holds the project row (hub/context/public-pages.md 721bcdfa)."""
+    while the caller holds the project row (hub/context/public-pages.md 721bcdfa). `others`, when
+    given, lists the dependents in place of the kind's own, read only when pages are rendered:
+    those a change of one member reaches (`public_projects.member_dependents`, fe966f9c)."""
     from maity_hub import events
 
     hub = _hub
@@ -355,14 +409,14 @@ def touch(
         return
     if not (removal or hub.public_pages_render == "on_change"):
         return
+    of_kind = KINDS[kind].dependents if dependents else None
+    pages = list(others()) if others else of_kind(conn, target_id) if of_kind else []
     if not events.in_transaction(conn):  # a caller with a plain `engine.begin()`
         refresh(conn, hub, kind, target_id)
-        others = KINDS[kind].dependents if dependents else None
-        for other, other_id in others(conn, target_id) if others else []:
+        for other, other_id in pages:
             refresh(conn, hub, other, other_id)
         return
-    others = KINDS[kind].dependents if dependents else None
-    targets = [(kind, target_id), *(others(conn, target_id) if others else [])]
+    targets = [(kind, target_id), *pages]
     if removal:
         # Off in the writer's transaction, so nothing removed is served for a moment; the
         # render follows the commit. Under the target's lock, so a render of it that is still

@@ -49,6 +49,12 @@ window.Maity = window.Maity || {};
     "bridge:role": () => M.t("bridges.refused.proxy"),
     "bridge:already": () => M.t("bridges.refused.already"),
     "purpose:invalid": () => M.t("bridges.refused.purpose"),
+    // §6.2 "An expert's fields".
+    "expert_for:expert_only": () => M.t("members.expert.refused.expert_only"),
+    "expert_sources:expert_only": () => M.t("members.expert.refused.expert_only"),
+    "expert_for:string_too_long": () => M.t("members.expert.refused.for_too_long"),
+    "expert_sources:too_long": () => M.t("members.expert.refused.sources_too_long"),
+    "expert_sources:invalid_path": () => M.t("members.expert.refused.invalid_path"),
   };
   const CYCLE = () => M.t("members.refused.reports_to_cycle");
   const BAD_AREA = () => M.t("members.refused.areas_invalid_path");
@@ -56,6 +62,16 @@ window.Maity = window.Maity || {};
   const AREA = /^[A-Za-z0-9._/-]{1,255}$/;
   const areaOk = (a) => AREA.test(a) && !a.startsWith("..") && !("/" + a + "/").includes("/../");
   const CAPABILITIES = [["tag", () => M.t("members.capability.tag")]];
+  // An expert's fields (§6.2 "An expert's fields"): the hub's limits.
+  const EXPERT_FOR_MAX = 120;
+  const EXPERT_SOURCES_MAX = 20;
+
+  // What an expert answers about, under its role wherever the role is shown (§2.3 "The expert").
+  function expertLine(m) {
+    if (!m || m.role !== "expert" || !m.expert_for) return null;
+    return h("span", { class: "muted member-expert-for" }, M.t("members.expert.for", { topic: m.expert_for }));
+  }
+  M.expertLine = expertLine;
 
   // An agent whose owner holds no active membership here (§6.2). A reader who is
   // shown no owner_id gets no mark rather than a wrong one.
@@ -90,6 +106,10 @@ window.Maity = window.Maity || {};
     }
     if (err.code === "forbidden" && err.details && err.details.reason === "join_rule") {
       return { message: M.t("members.owner_role.refused_join_rule") };
+    }
+    // §2.3 "The expert": the role expert waits until the member holds no card and none is on its way.
+    if (err.code === "conflict" && err.details && err.details.reason === "holds_cards") {
+      return { message: M.t("members.refused.holds_cards") };
     }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
@@ -212,7 +232,8 @@ window.Maity = window.Maity || {};
     function credentialsPart(m) {
       const P = M.agentParts;
       if (!P) return null;
-      const slot = h("div", { class: "member-credentials" });
+      // A list: it keeps the panel's full width beside the form column (web/context/views.md).
+      const slot = h("div", { class: "member-credentials full-width" });
       // A revocation reads this row's list again, in place: the row stays
       // open and the focus goes to the list's heading.
       const revoked = () => {
@@ -385,6 +406,52 @@ window.Maity = window.Maity || {};
             : i.id === lead ? h("span", { class: "muted" }, M.t("instance.rest.lead"))
               : keyed("dormant:" + m.id + ":" + i.id, h("button", { type: "button", onclick: () => act(M.t("instance.rest.busy"), M.t("instance.rest.done", { address: address(i) }),
                 () => M.api.patch(memberPath, { dormant: true, instance: i.id }), "dormant:" + m.id + ":" + i.id) }, M.t("instance.rest", { address: address(i) })))))));
+    }
+
+    // An expert's fields (§6.2 "An expert's fields"): what it answers about and the paths it
+    // learned, set by its owner or an admin, alone in their own PATCH, at once and with no
+    // consent; only while the role is expert.
+    function expertPart(m, memberPath) {
+      if (m.kind !== "agent" || m.role !== "expert" || m.removed_at || ctx.me.kind !== "human" || !(ownAgent(m) || ctx.canAdmin)) return null;
+      const id = (what) => "member-expert-" + what + "-" + m.id;
+      const draft = edits.get(m.id) || {};
+      const keep = (k, v) => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { [k]: v })); };
+      const topic = keyed("expert-for:" + m.id, h("input", { id: id("for"), maxlength: String(EXPERT_FOR_MAX), autocomplete: "off", placeholder: M.t("members.expert.for.placeholder") }));
+      topic.value = draft.expertFor !== undefined ? draft.expertFor : m.expert_for || "";
+      const sources = keyed("expert-sources:" + m.id, h("input", { id: id("sources"), autocomplete: "off", spellcheck: "false", placeholder: M.t("members.expert.sources.placeholder") }));
+      sources.value = draft.expertSources !== undefined ? draft.expertSources : (m.expert_sources || []).join(", ");
+      topic.addEventListener("input", () => keep("expertFor", topic.value));
+      sources.addEventListener("input", () => keep("expertSources", sources.value));
+      const error = h("p", { class: "field-error", id: id("sources") + "-error", role: "alert" });
+      sources.setAttribute("aria-describedby", id("sources") + "-hint " + id("sources") + "-error");
+      topic.setAttribute("aria-describedby", id("for") + "-hint");
+      const fail = (text) => { error.textContent = text; sources.setAttribute("aria-invalid", "true"); status.fail(M.t("members.edit.not_saved"), { message: text }); sources.focus(); };
+      return h("form", {
+        class: "member-expert field-stack",
+        onsubmit: (e) => {
+          e.preventDefault();
+          error.textContent = "";
+          sources.removeAttribute("aria-invalid");
+          const body = {};
+          // The hub folds whitespace into one line; compared the same way.
+          const text = topic.value.split(/\s+/).filter(Boolean).join(" ");
+          if (text !== (m.expert_for || "")) body.expert_for = text || null;
+          const list = [...new Set(sources.value.split(",").map((a) => a.trim()).filter(Boolean))];
+          if (list.some((a) => !areaOk(a))) { fail(M.t("members.expert.refused.invalid_path")); return; }
+          if (list.length > EXPERT_SOURCES_MAX) { fail(M.t("members.expert.refused.sources_too_long")); return; }
+          if (list.join("\n") !== (m.expert_sources || []).join("\n")) body.expert_sources = list;
+          if (!Object.keys(body).length) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("members.unchanged"))); return; }
+          act(M.t("members.expert.saving"), M.t("members.expert.saved", { name: m.display_name }),
+            () => M.api.patch(memberPath, body), "expert-for:" + m.id,
+            () => { const d = edits.get(m.id); if (d) { delete d.expertFor; delete d.expertSources; } });
+        },
+      }, h("h4", null, M.t("members.expert.title")),
+      h("label", { for: id("for") }, M.t("members.expert.for.label")), topic,
+      h("p", { class: "hint", id: id("for") + "-hint" }, M.t("members.expert.for.hint")),
+      h("label", { for: id("sources") }, M.t("members.expert.sources.label")), sources,
+      h("p", { class: "hint", id: id("sources") + "-hint" }, M.t("members.expert.sources.hint")),
+      error,
+      h("div", { class: "actions" }, h("button", { type: "submit" }, M.t("members.expert.save"))));
     }
 
     // Lifting (§6.2): the events of the isolation stay readable unless the
@@ -657,7 +724,7 @@ window.Maity = window.Maity || {};
         : h("span", { class: "ok" }, done));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, rolePart, bridgesPart };
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, rolePart, expertPart, bridgesPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -667,9 +734,19 @@ window.Maity = window.Maity || {};
   // the list with that member's Manage row open, for an admin.
   // The Team page's tabs (context/members.md f0ca2279): Members, this
   // list, and Organisation (js/org.js), each at its own project view.
-  M.teamTabs = (ctx, chosen) => h("nav", { class: "view-tabs team-tabs", "aria-label": M.t("team.tabs.label") },
-    [["team", M.t("team.tab.members")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
-      h("a", { href: ctx.link(k), class: "view-tab", "aria-current": k === chosen ? "page" : null }, label)));
+  M.teamTabs = (ctx, chosen) => M.tabBar("team-tabs", M.t("team.tabs.label"),
+    [["team", ctx.link("team"), M.t("team.tab.members")], ["organisation", ctx.link("organisation"), M.t("team.tab.organisation")]], chosen);
+
+  // The Team page's head (js/page-head.js, tsk-vkyp71qp95n9), as the Agents page's: the heading,
+  // Invite user and Join an agent at the right end, the tabs under them. Join an agent is the same
+  // menu as there, its panels opening here. A guest brings no agent (§3.1). Returns the nodes.
+  M.teamHead = (ctx, chosen) => {
+    const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
+      ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
+    const { memberAdds, mayAdd } = M.bringing(ctx);
+    const menu = ctx.me.kind === "human" && mayAdd ? M.joinMenu(ctx, { member: memberAdds }) : null;
+    return [M.pageHead({ title: M.t("members.title"), actions: [inviteUser, menu ? menu.el : null], tabs: M.teamTabs(ctx, chosen) }), menu ? menu.slot : null];
+  };
 
   M.views.members = async function (ctx, root, args) {
     if (args && args[0] && M.memberPage) { await M.memberPage.page(ctx, root, args[0], args[1], args[2]); return; }
@@ -725,8 +802,8 @@ window.Maity = window.Maity || {};
       // sets (§2.3, §6.18, §19.4): whom it reports to, its rulebook, its
       // preferences switch.
       if (!ctx.canAdmin) {
-        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
-          P.reportsToPart(m, memberPath), P.rolePart(m, memberPath),
+        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell", class: "form-column" },
+          P.reportsToPart(m, memberPath), P.rolePart(m, memberPath), P.expertPart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
           P.teamForm(m, memberPath), P.dormantPart(m, memberPath), P.bridgesPart(m, memberPath)));
       }
@@ -734,11 +811,13 @@ window.Maity = window.Maity || {};
       if (m.kind === "agent") {
         // The briefing (§6.2), edited here; an admin is sent every member's.
         if (M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
+        // An expert's fields go alone in their own PATCH (§6.2), so in their own form.
+        parts.push(P.expertPart(m, memberPath));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
         parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.dormantPart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
-      return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
+      return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell", class: "form-column" }, parts));
     }
 
     // Would m reporting to boss close a circle? Follow boss's chain upwards.
@@ -974,16 +1053,19 @@ window.Maity = window.Maity || {};
       // Organisation tree's only (the maintainer, 2026-11-01). Only my agents keeps one's own agents.
       const humans = mineOnly ? [] : items.filter((m) => m.kind === "human");
       const agents = items.filter((m) => m.kind === "agent" && (!mineOnly || ownAgent(m)));
-      const role = { title: M.t("members.col.role"), cell: (m) => M.trust.words(m) };
+      const role = { title: M.t("members.col.role"), cell: (m) => [M.trust.words(m), expertLine(m) ? [h("br"), expertLine(m)] : null] };
       const presence = { title: M.t("members.col.presence"), presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin, ctx) };
       const joined = { title: M.t("members.col.joined"), cell: (m) => formatTime(m.joined_at) };
       const owner = { title: M.t("members.col.owner"), cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
       const paused = { title: M.t("members.col.paused"), cell: (m) => pausedText(m) || "—" };
       const ktw = { title: M.t("members.col.ktw"), cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
+      const fresh = h("div");
+      append(fresh, mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
         h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
           : [h("h3", { id: "members-agent" }, M.t("members.agents", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
+      M.dom.keepImages(box, fresh);
+      append(clear(box), Array.from(fresh.childNodes));
     }
 
     // The Chat button may start a group chat with anyone (§9.2).
@@ -991,12 +1073,7 @@ window.Maity = window.Maity || {};
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
     // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations page with this project
     // chosen, an agent on this project's Agents with the join panel open (2026-11-01). A guest brings no agent (§3.1).
-    const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
-      ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
-    const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
-      ? h("a", { class: "button primary members-join-agent", href: "/" + M.api.projectPath(ctx.slug) + "/agents/join" }, M.t("members.join_agent")) : null;
-    append(root, M.teamTabs(ctx, "team"), h("h2", null, M.t("members.heading")),
-      inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
+    append(root, M.teamHead(ctx, "team"),
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),
         ctx.canAdmin ? [" ", M.t("members.hint.admin")] : null,
       // A guest brings no agent (§3.1): no way there said to them.

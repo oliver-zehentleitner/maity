@@ -641,7 +641,8 @@ placed in it, so a crawler and a reader without scripts still read the page and 
 The row, its removal and the sitemap stay as they were; a page is still a row, and the decision between page and
 shell still falls in the shell's route. A failed read of `data` leaves the page's text standing instead of the login.
 The marker on the shell counts for the first drawing only; a later visit to the login inside the same load is the
-login, not this page.
+login, not this page. Superseded for `?as=public` by c0868c32 (2026-11-12): it answers the page in the frame of the
+pages without a session, no longer bare. The answer inside the shell is unchanged.
 
 **Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
 the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
@@ -813,8 +814,48 @@ fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the 
 the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
 change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
 `changed` fields still renders the project page with its dependents, since a member's name stands on the card
-pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+pages they hold; narrowed since to the card pages that name the member (fe966f9c-3557-4473-a0d6-14aa4d714a43).
+Rejected: naming the fields a page shows instead (an allowlist), because a field added later
 would silently leave a stale name on a public page; a field missing from the list only costs a render.
+
+## A member change takes off and renders only the card pages that name that member
+
+**Id:** fe966f9c-3557-4473-a0d6-14aa4d714a43
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-m65g76c979jk: on maity.team on 2026-11-12, `DELETE /agents/{id}?cascade=true` took 56.86 s in the maintainer's browser, its `Server-Timing` 31,871 statements and 44.7 s in the database (relayed by the lead in seq 118556); measured locally with public pages on, every card of the project added 17 statements to the delete (5 cards 412, 20 cards 667), and none with this change (330 for both); the lead's go for a set-based fix with the same result (seq 118556); `public_cards.render_card` names only the claim holder, the notes' authors and their latest editors
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-12
+**See:** public-pages.md#a-page-that-shows-people-is-rendered-again-with-them-through-dependents-and-the-member-events — dd4a04fc-9382-4966-b77e-0d9aba7c9fcb — as of 2026-11-12
+**Revisit when:** a card page shows a member in another way than as holder, note author or note editor (an assignee, a mention, a reviewer)
+
+A `member_joined` or shown `member_updated` of a public project still touches the project's page with its
+dependents, but the dependents are `public_projects.member_dependents`: the views, the organisation, the
+agent and person pages as before, and of the card pages only those that name the member under any membership
+the principal held in the project (`public_cards.naming`: claim holder, note author, latest note editor; the
+editor is in JSON, so the project's few edited notes are matched in Python, as for a person's cards).
+`events.emit` hands that list to `public_pages.touch` as `others`, read only when pages are rendered at all.
+A removal and an isolation give the member's cards back (`isolation.release_claims`) before their event, so
+the holder is no longer there to be found: a card that left `in_progress` is rendered by its own status event,
+and one that kept its status (`review`, `blocked`, `open`) is touched by `isolation.tell_released` after the
+member's event, under the project lock that event took (a review found the gap on #1700; a test holds both).
+Every page that named the member is still taken off in the writer's transaction and rendered after its commit;
+every other card page is left as it is, since it shows nothing of the member. A test holds the statement
+count of a profile's deletion independent of the project's cards.
+
+**Reason:** a project's dependents include every card page, so each member change in a public project locked,
+deleted and re-rendered every card page of the project in the request: with about 1,850 card pages the
+deletion of one agent profile sent 31,871 statements, and the same held for every removal, join and shown
+change of a member. 721bcdfa had already taken card events off this path; its last paragraph kept the member
+events on it because a member's name stands on the card pages they hold, which is true only of those pages.
+
+**Rejected alternatives:**
+- Removing all dependents in one statement and rendering them in the background: a removal would no longer
+  be back when the answer arrives (deafb243), and most of those pages never changed.
+- Leaving the card pages to the snapshot worker for member changes: a removed name would stay on a card page
+  until the run, which §16.9 does not allow for a removal.
+- Narrowing by the `changed` fields of the event: 721bcdfa rejected an allowlist of shown fields, and the cost
+  is in the number of pages, not in which field changed.
 
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
@@ -851,3 +892,95 @@ page's number still counts you, without your name (card tsk-en9mm6x2v3s0).
 - Leaving the person out of the instance-wide counts as well: no project is named there, so nothing points at
   anyone, and the landing page would need a filter of its own.
 - A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.
+
+## The hub's own signed-out pages take their frame from one function, and `/explore` is in the frame's language
+
+**Id:** cb025c0e-ce40-4638-bd81-e8034e3e66e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (step 2 of tsk-zp0vqj9wm37x), the lead's build order of 2026-11-12 ("one shared signed-out frame … from the shared parts in render.py, not copied per page") and the lead's go on the plan for its first pull request; the started branch agent-d/kg22-explore-layout, taken over; contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-12
+
+`render.public_frame(model, lang)` builds the header, the footer, the stylesheet links and the inline fallback of
+a page the hub renders itself, from the model of `chrome`. The legal pages, the mail link pages and `/explore` use
+it; `render.framed_document` puts a page's content in it. The following pull requests put the stored public pages
+on the same frame. `/explore` takes its words from the catalogue's `explore` section in the model's language,
+and English where the catalogue has no words in that language; the frame then says its own `lang`.
+
+**Reason:** the frame's rules already live once in `chrome` (scope.md, 41837936). The parts each page added
+around it (the header's links, the button, the two stylesheets and their fallback, and on the mail link pages the
+mark without its `style` attributes) were copied into each page, and a page the next card adds would have copied
+them again. The legal pages now drop the mark's `style` attributes as well; `public-pages.css` colours it, so they
+look the same. A page whose
+words come from the catalogue can follow the reader's language like the frame around it, so the two say the same
+language.
+
+**Rejected alternatives:**
+- One copy of the header and footer code per page (the state before for the legal and mail link pages): the copies
+  drift. A change to the mark or to the stylesheets would have to be made in every page.
+- `/explore` in English, with the frame forced to English to match (the first cut on the started branch): a
+  German reader then left a German landing page for an English frame. With the words in the catalogue there was
+  no reason left to keep it.
+
+## A stored public page gets its frame when it is served, not when it is rendered
+
+**Id:** c0868c32-a98a-46d9-ab65-f6ad9583848a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z (PR 2 of 4), the lead's go of 2026-11-12 on the serve-time frame and its three
+conditions (the stored page stays untrusted data inside the frame, the cache tag covers the frame, the contract says
+the frame is applied when the page is served); contract `docs/api.md` §16.7.5, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — cb025c0e-ce40-4638-bd81-e8034e3e66e7 — as of 2026-11-12
+
+`public_pages.answer` puts `render.public_frame` around a stored page when it answers `?as=public`
+(`render.stored_in_frame`). The row of `public_page` keeps the page as `page_document` wrote it. The frame takes
+the title, the description, the canonical link and the content out of it by the pattern the app shell already uses
+(`render.STORED_PAGE`), and inserts the content unparsed. The answer's `ETag` is the digest of the bytes served,
+not the stored row's tag. The policy adds `'self'` for the frame's stylesheets and fonts. A row of another shape
+is served bare, as before.
+
+**Reason:** the frame changes with the landing page, the legal pages, the counters, the reader's language and a
+deploy of the stylesheets. None of these is an input of a stored page. Applied when served, the frame has one
+source, and no page is rendered again for it.
+
+**Rejected alternatives:**
+- The frame in the stored page, at render time: every change to the landing page, the legal pages or the counters
+  would have to render every stored page again. The frame's language would also be fixed when the page is rendered,
+  not chosen by the reader.
+- The stored row's tag (with the banner) as the `ETag`: a changed frame would answer `304` to a cache holding
+  the old one.
+
+## A stored page carries no inline style: the per-day bars are an SVG sized by attributes, the placeholder a class
+
+**Id:** a08a0c0d-ded2-483c-b509-19bfe49c3705
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8fk897a9tan8; the lead's instructions of 2026-11-13: an SVG or classes, a hub test against
+`style=`, the end-to-end run listening on every stored page, the policy not loosened; found by the Report run of
+tsk-w0g9d128wgma; contract `docs/api.md` §16.9 ("The picture"), §16.11
+**See:** public-pages.md — c0868c32-a98a-46d9-ab65-f6ad9583848a — as of 2026-11-13
+
+A stored page's body is served three ways: bare, in the frame (`?as=public`), and for a visitor without the query
+inside the app shell (`shell.page_in_shell`), until the dashboard draws the page. The first two answer under the
+pages' own policy, which allows inline style. The shell answers under the dashboard's `default-src 'self'`, which
+refuses it. So the "Cards done per day" bars (`public_projects._per_day_html`, a `<span style>` per day) and the
+placeholder of a person without a picture (`public_people.picture_html`) were not drawn there. The bars are now
+one `<svg>` whose `<rect>`s take their height, place and colour from attributes, each day's text in its `<title>`.
+The placeholder is `pic none size-<side>`, with the sizes in `render.STYLE` and `public-pages.css`
+(`public_people.PICTURE_SIDES`). `test_no_stored_page_carries_an_inline_style` reads every row of `public_page`.
+The end-to-end round `stored_pages_policy_round` opens every page the sitemap lists, plus a person's agents
+pages, at both addresses, and fails on any refusal.
+
+**Reason:** the shell's policy is the dashboard's and protects it. A page that renders the same everywhere without
+an exception in that policy is the fix that cannot come back by a new inline style; the test guards the store, the
+run guards what a browser refuses.
+
+**Rejected alternatives:**
+- `'unsafe-inline'` or the styles' hashes in the shell's policy: it would loosen the dashboard's own policy for
+  markup it does not need, and a hash breaks with every bar height (the lead: do not loosen the policy).
+- A class per bar height (`h-1` to `h-41`): 41 rules in two stylesheets for what an SVG attribute says directly.
+- Leaving the shell's copy unstyled because the dashboard redraws the page: the copy is what a reader without
+  script, or before the script, and a crawler sees.

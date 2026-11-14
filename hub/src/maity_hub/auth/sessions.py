@@ -8,7 +8,6 @@ confirms it (§2.6.5, §18.3).
 
 from __future__ import annotations
 
-import hashlib
 import re
 import secrets
 from collections.abc import Iterable
@@ -27,8 +26,10 @@ from maity_hub.auth.caller import (
     session_expires_at,
     session_id_hash,
 )
+from maity_hub.codes import digest
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.notifications import records
+from maity_hub.seen import SEEN_EVERY
 from maity_hub.views import ts
 
 # Ended sessions stay in the list for this long (`?ended=true`).
@@ -207,14 +208,9 @@ def end_where(conn: Connection, which: Any, by: str) -> None:
         .where(t.human_session.c.id_hash.in_(hashes))
         .values(ended_at=clock.now(), ended_by=by, ip=None, source=None)
     )
-    conn.execute(
-        update(t.device_code)
-        .where(
-            t.device_code.c.session_hash.in_(hashes),
-            t.device_code.c.status.in_(("waiting", "redeemed", "approved")),
-        )
-        .values(status="denied")
-    )
+    from maity_hub.auth import device_codes  # it imports this module
+
+    device_codes.void_open(conn, t.device_code.c.session_hash.in_(hashes))
     for row in ending:
         if row.sign_in_complete:  # a session that never counted as a sign-in has no end
             records.session_ended(conn, row.human_id, row.public_id, by)
@@ -229,7 +225,7 @@ def forget_expired_addresses(conn: Connection) -> None:
         .where(
             t.human_session.c.ended_at.is_(None),
             (t.human_session.c.expires_at <= now)
-            | (t.human_session.c.last_seen_at <= now - SESSION_IDLE),
+            | (t.human_session.c.last_seen_at <= now - SESSION_IDLE - SEEN_EVERY),
             (t.human_session.c.ip.is_not(None)) | (t.human_session.c.source.is_not(None)),
         )
         .values(ip=None, source=None)
@@ -316,7 +312,17 @@ def _signed_in(conn: Connection, human_id: str, public_id: str, now: datetime) -
     row = conn.execute(
         select(t.human_session).where(t.human_session.c.public_id == public_id)
     ).one()
-    conn.execute(update(t.human).where(t.human.c.id == human_id).values(last_login_at=now))
+    conn.execute(
+        update(t.human).where(t.human.c.id == human_id).values(last_login_at=now, last_seen_at=now)
+    )
+    # A sign-in is a call (§2.4): the session's `last_seen_at` starts now, and a call within the
+    # next 60 s writes no presence (`seen.SEEN_EVERY`), so the human and their memberships
+    # are seen here.
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.human_id == human_id, t.membership.c.removed_at.is_(None))
+        .values(last_seen_at=now)
+    )
     known_sources.remember(conn, human_id, row.source)  # a known source from now on (§2.1)
     # Every new session tells its human, whichever the method (§2.6.5).
     data: dict[str, Any] = {
@@ -396,7 +402,7 @@ def _device_values(cookie: str | None) -> list[str]:
 
 def knows_device(conn: Connection, human_id: str, cookie: str | None) -> bool:
     """Whether this browser's device cookie holds a value of this human."""
-    hashes = [hashlib.sha256(v.encode()).hexdigest() for v in _device_values(cookie)]
+    hashes = [digest(v) for v in _device_values(cookie)]
     if not hashes:
         return False
     found = conn.execute(
@@ -415,7 +421,7 @@ def remember_device(conn: Connection, human_id: str, cookie: str | None) -> str 
     value = secrets.token_urlsafe(32)
     conn.execute(
         insert(t.human_device).values(
-            value_hash=hashlib.sha256(value.encode()).hexdigest(),
+            value_hash=digest(value),
             human_id=human_id,
             created_at=clock.now(),
         )

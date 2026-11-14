@@ -254,7 +254,8 @@ window.Maity = window.Maity || {};
   // project), here (what belongs to this project's membership, or none)}.
   function profileCard(ctx, a, o) {
     const marked = o.wanted === a.id;
-    return h("li", { class: "agent-card" + (marked ? " wanted" : ""), "data-agent": a.id },
+    // The card is its forms' reading column (web/context/views.md): its lists keep its width.
+    return h("li", { class: "agent-card form-column" + (marked ? " wanted" : ""), "data-agent": a.id },
       h("div", { class: "agent-card-head" }, M.avatar(a, 48),
         h("h3", { class: "agent-card-title", tabindex: marked ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle)))),
       (a.memberships || []).length
@@ -357,9 +358,62 @@ window.Maity = window.Maity || {};
   // and Join an agent at the head, as on a project's Agents, then one's own
   // agents as a list like Members, each with Manage, which opens under its
   // row what the profile card holds and the instances of each membership.
+  // The page's tabs (§16.11, tsk-3s3eb6bsp15n): the list at /agents, where one's agents run at
+  // /agents/placements, and which of them the hub tells about a maintenance window at
+  // /agents/maintenance, and who may chat with them at /agents/chat-access (§9.6). The words are
+  // view names; the hub never issues any of them as an id (an agent's id starts with agt-).
+  const pageTabs = (chosen) => M.tabBar("agents-tabs", M.t("agents.title"),
+    [["list", "/agents", M.t("agents.tab.list")], ["placements", "/agents/placements", M.t("placements.title")],
+      M.broadcasts ? ["maintenance", "/agents/maintenance", M.t("broadcasts.title")] : null,
+      M.chatAccess ? ["chat-access", "/agents/chat-access", M.t("chat_access.title")] : null], chosen);
+  const ownProfiles = async (ctx) => (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
+
+  // Where they run across projects: one section per project the human reads where one of their
+  // agents is a member, each listing their own agents' placements there (GET …/placements per
+  // project, read when the tab opens, §15.6). Starting an agent stays on the project's tab.
+  async function placementsTab(ctx, root) {
+    const status = M.statusLine();
+    const list = h("div", { class: "placements-projects" });
+    append(root, pageTabs("placements"), h("h2", { id: "agents-heading", tabindex: "-1" }, M.t("placements.title")),
+      h("p", { class: "hint" }, M.t("placements.own.hint")), status.el, list);
+    if (!M.placements) return;
+    let profiles;
+    try { profiles = await ownProfiles(ctx); } catch (err) { status.fail(M.t("agents.reread_failed"), err); return; }
+    const where = new Set(profiles.flatMap((a) => (a.memberships || []).map((m) => m.project)));
+    const projects = ctx.projects.filter((p) => where.has(p.full_name));
+    if (!projects.length) { append(list, h("p", { class: "muted" }, M.t("placements.own.none"))); return; }
+    const chatLink = (slug, id) => "/chats/" + M.api.projectPath(slug) + (id ? "/" + encodeURIComponent(id) : "");
+    const sections = await Promise.all(projects.map(async (p, i) => {
+      const title = [p.name || p.full_name, h("span", { class: "muted" }, " " + p.full_name)];
+      try {
+        const pctx = await M.projectContext(ctx, p.full_name, chatLink);
+        return await M.placements.section(pctx, M.agentParts ? ownCredentials(pctx) : null, { own: true, title, id: String(i) });
+      } catch (err) {
+        return h("section", { class: "placements" }, h("h3", null, title), M.errorBox(err));
+      }
+    }));
+    append(list, sections.filter(Boolean));
+  }
+
   M.views.agentsPage = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
       append(root, h("h2", null, M.t("agents.title")), h("p", null, M.t("agents.humans_only")));
+      return;
+    }
+    if (args && args[0] === "placements" && !args[1]) { await placementsTab(ctx, root); return; }
+    if (args && args[0] === "maintenance" && !args[1] && M.broadcasts) {
+      append(root, pageTabs("maintenance"));
+      let profiles = [];
+      try { profiles = await ownProfiles(ctx); } catch (err) { append(root, M.errorBox(err)); return; }
+      append(root, M.broadcasts.part(ctx, profiles, "h2"));
+      return;
+    }
+    // Who may chat with one's agents (§9.6, js/chat-access.js): the allow and deny entries.
+    if (args && args[0] === "chat-access" && !args[1] && M.chatAccess) {
+      append(root, pageTabs("chat-access"));
+      let profiles = [];
+      try { profiles = await ownProfiles(ctx); } catch (err) { append(root, M.errorBox(err)); return; }
+      append(root, M.chatAccess.part(ctx, profiles));
       return;
     }
     const wanted = args && args[0] ? args[0] : null;
@@ -378,7 +432,17 @@ window.Maity = window.Maity || {};
       read = { profiles, views };
       render(words);
     };
-    const redraw = (answer, said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
+    // A deletion is done when DELETE answers: its words and the list without the profile
+    // show at once, from what was read last, and the lists are read again behind them; a
+    // failed read shows under the words (tsk-m65g76c979jk).
+    const redraw = (answer, said) => {
+      if (answer && answer.deleted_at && read) {
+        read = { profiles: read.profiles.filter((a) => a.id !== answer.id), views: read.views };
+        opened.delete(answer.id);
+        render(said);
+      }
+      return draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
+    };
     redrawing = redraw;
     function render(words) {
       const { profiles, views } = read;
@@ -430,16 +494,17 @@ window.Maity = window.Maity || {};
           (a.memberships || []).filter((m) => views[m.project + " " + a.id]).map((m) => instancesPart(ctx, m.project, views[m.project + " " + a.id], pctxs, recount)))));
         return isOpen ? [head, detail()] : [head];
       });
-      append(clear(body),
-        profiles.length
-          ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": "agents-list-heading" },
-            h("h3", { id: "agents-list-heading" }, M.t("agents.list.title", { count: profiles.length })),
-            h("table", { class: "members agents-list" },
-              h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("agents.list.name")), h("th", { scope: "col" }, M.t("agents.list.projects")),
-                h("th", { scope: "col" }, M.t("agents.list.instances")), h("th", { scope: "col" }, M.t("agents.list.presence")),
-                h("th", { scope: "col" }, M.t("agents.list.actions")))),
-              h("tbody", null, rows.flat())))
-          : h("p", { class: "muted" }, M.t("agents.none")));
+      const listed = profiles.length
+        ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": "agents-list-heading" },
+          h("h3", { id: "agents-list-heading" }, M.t("agents.list.title", { count: profiles.length })),
+          h("table", { class: "members agents-list" },
+            h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("agents.list.name")), h("th", { scope: "col" }, M.t("agents.list.projects")),
+              h("th", { scope: "col" }, M.t("agents.list.instances")), h("th", { scope: "col" }, M.t("agents.list.presence")),
+              h("th", { scope: "col" }, M.t("agents.list.actions")))),
+            h("tbody", null, rows.flat())))
+        : h("p", { class: "muted" }, M.t("agents.none"));
+      M.dom.keepImages(body, listed);
+      append(clear(body), listed);
     }
     let titled = false;
     // A profile just made opens its row: its card is where it is named and placed.
@@ -448,11 +513,9 @@ window.Maity = window.Maity || {};
       opening: () => { if (join) join.close(); },
     });
     const join = M.join ? joinPart(ctx, () => { if (redrawing) redrawing(); }, () => add.close(false), wanted) : null;
-    append(root, h("div", { class: "toolbar agents-head" }, heading, h("div", { class: "agents-head-actions" }, add.button, join ? join.button : null)),
+    append(root, pageTabs("list"), h("div", { class: "toolbar agents-head" }, heading, h("div", { class: "agents-head-actions" }, add.button, join ? join.button : null)),
       h("p", { class: "hint" }, M.t("agents.intro")), add.slot, join ? join.box : null, note, body);
     await draw();
-    // Which of them the hub tells about a maintenance window (§16.12).
-    if (M.broadcasts) append(root, M.broadcasts.part(ctx, read.profiles));
     // /agents/<id> (a link to one profile): its card's title focused, once.
     const title = wanted && !titled ? Array.from(body.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0] : null;
     if (title) { titled = true; title.focus(); }
@@ -464,21 +527,69 @@ window.Maity = window.Maity || {};
   // the team's rulebook, the instances and their credentials, whether it gets
   // the owner's preferences, and with members:admin its pause and removal.
   // Add an agent is a new profile, Join an agent the join panel (js/join.js),
-  // as on /agents; the open joins stand under the cards, where the agents run (js/placements.js) after them.
+  // as on /agents; the open joins stand under the cards. Where they run is the next tab.
   // args: ["join"] (the panel open, ?agent=<id> choosing the profile), [<id>]
   // (that card marked), [<id>, "rulebook"] (at its rulebook, a join's quota refusal).
-  // The Agents page's tabs, as the Team page's (js/members.js): the list, and one's own fleet as a
+  // The Agents page's tabs, as the Team page's (js/members.js): the list, where the project's
+  // agents run (its own view at `placements`, §16.11, tsk-3s3eb6bsp15n), and one's own fleet as a
   // tree (js/org.js, tsk-q989pagmk2x9), each at its own path.
-  const agentsTabs = (ctx, chosen) => h("nav", { class: "view-tabs agents-tabs", "aria-label": M.t("agents.tabs.label") },
-    [[null, M.t("agents.tab.list")], ["organisation", M.t("team.tab.organisation")]].map(([k, label]) =>
-      h("a", { href: k ? ctx.link("agents", k) : ctx.link("agents"), class: "view-tab", "aria-current": (k || "list") === chosen ? "page" : null }, label)));
+  // Since tsk-vkyp71qp95n9 they stand under the page's head (js/page-head.js), and the second is
+  // Managed agents, the agents a runner started.
+  const agentsTabs = (ctx, chosen) => M.tabBar("agents-tabs", M.t("agents.tabs.label"),
+    [["list", ctx.link("agents"), M.t("agents.tab.list")], ["placements", ctx.link("placements"), M.t("placements.title")],
+      M.org ? ["organisation", ctx.link("agents", "organisation"), M.t("team.tab.organisation")] : null], chosen);
+
+  const bringing = (ctx) => M.bringing(ctx);
+
+  // The head of the Agents page's other tabs (Managed agents, Organisation): the same buttons as
+  // on the first, each opening its form or panel here; a profile made here opens the first tab's
+  // join panel with it chosen, where its seat is drawn.
+  function tabHead(ctx, chosen, title, started) {
+    const { memberAdds, mayAdd } = bringing(ctx);
+    const add = addPart({
+      made: (made) => M.route.go(ctx.link("agents", "join") + "?agent=" + encodeURIComponent(made.id)),
+      opening: () => { if (menu) menu.closeAll(false); },
+    });
+    const menu = mayAdd ? M.joinMenu(ctx, { member: memberAdds, closeAny: () => add.close(false), started }) : null;
+    return [M.pageHead({ title, actions: [add.button, menu ? menu.el : null], tabs: agentsTabs(ctx, chosen) }),
+      add.slot, menu ? menu.slot : null];
+  }
+
+  // The credentials of one's own agents in a project, read for the ids asked for only (for a
+  // restart's new join, js/placements.js): one list per placed agent, never per agent of the
+  // project (tsk-d61rvjm6gteh: that was the Agents page's slowest part).
+  const ownCredentials = (ctx) => {
+    const own = new Map(ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id && !m.removed_at).map((m) => [m.id, m]));
+    return (ids) => Promise.all(ids.filter((id) => own.has(id)).map((id) => M.agentParts.loadCredentials(ctx, own.get(id))
+      .then((got) => [id, (got.list && got.list.items) || []]))).then((pairs) => Object.fromEntries(pairs));
+  };
+
+  // Where they run (/<owner>/<slug>/placements, §16.11): every member who reads the project sees
+  // the list; what each may do on a row is §15.6's (js/placements.js). The Agents page's tab.
+  M.views.projectPlacements = async function (ctx, root) {
+    const slot = h("div", { class: "placements-slot" });
+    const human = ctx.me.kind === "human";
+    // A human sees the page's head with its tabs; the list's own heading then is an h3 under it.
+    let listed = null;
+    append(root, human ? tabHead(ctx, "placements", M.t("agents.project.title"), () => (listed ? M.placements.reread(listed) : null)) : null, slot);
+    if (!M.placements) return;
+    // Not awaited: the view returns at once, so the project's feed starts and an event that comes
+    // while the placements or their credentials are read reaches the section (review of #1533).
+    // Without the head the section is the page: its heading is the page's h2 (review of #1667, axe heading-order).
+    M.placements.section(ctx, M.agentParts && human ? ownCredentials(ctx) : null, { level: human ? "h3" : "h2" })
+      .then((placed) => { if (placed) { listed = placed; append(slot, placed); } }, () => {});
+  };
 
   // One's own agents here as a tree under oneself, drawn again when a member changes.
   function fleetView(ctx, root) {
     const status = M.statusLine();
     const box = h("div", { class: "org-box fleet-box" });
-    const draw = () => append(clear(box), M.org.drawFleet(ctx));
-    append(root, agentsTabs(ctx, "organisation"), h("h2", null, M.t("agents.fleet.title")),
+    const draw = () => {
+      const fresh = M.org.drawFleet(ctx);
+      M.dom.keepImages(box, fresh);
+      append(clear(box), fresh);
+    };
+    append(root, tabHead(ctx, "organisation", M.t("agents.project.title")), h("h3", null, M.t("agents.fleet.title")),
       h("p", { class: "muted" }, M.t("agents.fleet.intro")), status.el, box);
     draw();
     ctx.onEvents((events) => {
@@ -551,6 +662,8 @@ window.Maity = window.Maity || {};
         P.reportsToPart(m, memberPath),
         // Its role, as its owner sets it within a member join's roles (§3.1).
         P.rolePart(m, memberPath),
+        // What it answers about and the paths it learned, while it is an expert (§6.2).
+        P.expertPart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
         // Its owner puts an instance to rest or wakes it (§6.17).
@@ -587,7 +700,7 @@ window.Maity = window.Maity || {};
           h("ul", { class: "agent-cards" }, profileCard(ctx, a, { wanted, views, changed, here: here(m) }))))] : [head];
       });
       // Profiles not read are no "none": the failure is said where the cards go.
-      append(clear(cards), unread
+      const listed = unread
         ? h("p", { class: "send-status failed" }, M.t("agents.project.read_failed", { reason: unread.message }))
         : list.length
           ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": "project-agents-heading" },
@@ -596,7 +709,9 @@ window.Maity = window.Maity || {};
                 h("th", { scope: "col" }, M.t("agents.list.presence")), h("th", { scope: "col" }, M.t("agents.list.instances")),
                 h("th", { scope: "col" }, M.t("agents.list.actions")))),
               h("tbody", null, rows.flat())))
-          : h("p", { class: "muted" }, J || mayAdd ? M.t("agents.project.none_add") : M.t("agents.project.none")));
+          : h("p", { class: "muted" }, J || mayAdd ? M.t("agents.project.none_add") : M.t("agents.project.none"));
+      M.dom.keepImages(cards, listed);
+      append(clear(cards), listed);
       drawJoins();
     }
 
@@ -604,16 +719,16 @@ window.Maity = window.Maity || {};
     // opens the panel at the head; the open joins stand as seats under the
     // cards, the others folded at the end. The panel, its form and a line
     // shown once live outside the redrawn cards, so a redraw loses neither.
-    const addButton = h("button", { type: "button", class: "primary join-open" }, M.t("agents.join.open"));
+    // Join an agent is a menu (js/page-head.js, tsk-vkyp71qp95n9): any agent opens this page's
+    // panel, wired to its seats, its count and the limit; a runner opens the start form.
+    let anyClosed = null;
     const seatsBox = h("div", { class: "profiles join-seats" });
     const earlierBox = h("div", { class: "earlier-box" });
     let J = null;
     // Bringing one's own agent (§3.1, tsk-zd2ch05rk7s1): a human member
     // without members:admin adds agents of their own while the project
     // allows it, up to member_agents_max.
-    const policy = ctx.project.policy || {};
-    const memberAdds = !ctx.canAdmin && !M.trust.guest(ctx) && policy.member_agents !== "off";
-    const mayAdd = (ctx.canAdmin || memberAdds) && !!M.join;
+    const { memberAdds, mayAdd, policy } = bringing(ctx);
     const maxOwn = policy.member_agents_max === undefined ? 3 : policy.member_agents_max;
     // What §3.1 counts: one's distinct agents with an active membership or
     // an open join; an instance of one already counted adds nothing.
@@ -636,8 +751,7 @@ window.Maity = window.Maity || {};
         const limit = [M.t("agents.limit", { n, count: maxOwn })];
         if (full) limit.push(own.length ? M.t("agents.limit.instances_only") : M.t("agents.limit.no_more"));
         limitNote.textContent = limit.join(" · ");
-        addButton.disabled = full && !own.length;
-        addButton.setAttribute("aria-describedby", "member-agents-limit");
+        anyClosed = full && !own.length ? limitNote.textContent : null;
       }
     }
     function drawJoins() {
@@ -650,26 +764,31 @@ window.Maity = window.Maity || {};
     }
 
     const panelSlot = h("div", { class: "join-panel-slot" });
-    addButton.hidden = true;
+    const menu = mayAdd ? M.joinMenu(ctx, {
+      member: memberAdds,
+      any: (opener) => { if (J) J.open(opener, wanted); },
+      anyDisabled: () => anyClosed,
+      closeAny: () => { if (J) J.close(false); addProfile.close(false); },
+    }) : null;
+    if (menu) menu.el.hidden = true;
     // A profile made here is in no project yet: the join panel opens with it chosen.
     const addProfile = addPart({
       made: async (made, said) => {
         if (!J) return changed(made, said);
         await changed(made, M.t("agents.new.done_here", { handle: made.handle }));
         try { await J.reprofile(); } catch (err) { status.fail(M.t("agents.project.reread_failed"), err); return undefined; }
-        J.open(addButton, made.id);
+        J.open(menu.button, made.id);
         return undefined;
       },
-      opening: () => { if (J) J.close(false); },
+      opening: () => { if (J) J.close(false); if (menu) menu.closeAll(false); },
     });
-    const placementsSlot = h("div", { class: "placements-slot" });
-    append(root, M.org ? agentsTabs(ctx, "list") : null, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, M.t("agents.project.title")), memberAdds ? limitNote : null,
-      h("div", { class: "agents-head-actions" }, addProfile.button, mayAdd ? addButton : null)),
+    append(root, M.pageHead({ title: M.t("agents.project.title"), titleId: "project-agents-heading", note: memberAdds ? limitNote : null,
+      actions: [addProfile.button, menu ? menu.el : null], tabs: agentsTabs(ctx, "list") }),
       h("p", { class: "hint agents-project-hint" }, (() => {
         const values = { name: ctx.project.name || ctx.slug, link: h("a", { href: "/agents" }, M.t("agents.title")) };
         return ctx.canAdmin ? M.tn("agents.project.hint_admin", values) : M.tn("agents.project.hint", values);
       })()),
-      countLine, status.el, addProfile.slot, panelSlot, note, cards, seatsBox, placementsSlot, earlierBox);
+      countLine, status.el, addProfile.slot, menu ? menu.slot : null, panelSlot, note, cards, seatsBox, earlierBox);
     try {
       await readProfiles();
     } catch (err) {
@@ -682,18 +801,16 @@ window.Maity = window.Maity || {};
         full: () => memberAdds && ownCount() >= maxOwn,
         changed: drawJoins,
         opened: (yes) => {
-          addButton.hidden = yes;
-          if (yes) addProfile.close(false); else addButton.focus();
+          if (yes) { addProfile.close(false); menu.closeAll(false); } else menu.button.focus();
         },
       }).then((mounted) => {
         J = mounted;
-        addButton.hidden = false;
-        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton, wanted); });
+        menu.el.hidden = false;
         append(panelSlot, J.panel, J.listStatus.el);
         drawJoins();
         // Asked for, or no agent of one's own here yet: the panel is the way
         // in, open at once. ?agent=<id> (Your agents' Add to a project): that profile chosen.
-        if (joinAsked || !ownMembers().length) J.open(addButton, joinAsked ? M.route.current().query.get("agent") : null);
+        if (joinAsked || !ownMembers().length) J.open(menu.button, joinAsked ? M.route.current().query.get("agent") : null);
       }, (err) => append(panelSlot, h("p", { class: "send-status failed" }, M.t("agents.project.joins_failed", { reason: err.message }))));
       // An agent running its line takes its seat: the list is read again,
       // unless the panel is open; then only the seats move.
@@ -702,17 +819,6 @@ window.Maity = window.Maity || {};
         if (J.busy()) J.reread();
         else reload().then(() => redraw(), () => {});
       });
-    }
-    // Where the agents run (js/placements.js); the credentials (for a restart's new join) are
-    // read for one's own agents only, and of those only for the ones placed here, once the
-    // placements are known (tsk-d61rvjm6gteh: one list per agent of the project at once was the
-    // page's slowest part).
-    if (M.placements && M.agentParts) {
-      const own = new Map(items.filter((m) => P.ownAgent(m) && !m.removed_at).map((m) => [m.id, m]));
-      const credentialsOf = (ids) => Promise.all(ids.filter((id) => own.has(id)).map((id) => M.agentParts.loadCredentials(ctx, own.get(id))
-        .then((got) => [id, (got.list && got.list.items) || []]))).then((pairs) => Object.fromEntries(pairs));
-      M.placements.section(ctx, credentialsOf)
-        .then((placed) => { if (placed) append(placementsSlot, placed); }, () => {});
     }
     // A card asked for by the URL: its title, or its rulebook, takes the
     // focus; a profile of the caller's that is not here is said.

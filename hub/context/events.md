@@ -588,17 +588,105 @@ index added (a partial index on open cards is not portable to MariaDB).
 **Type:** constraint
 **Status:** active
 **Evidence:** inferred
-**Source:** the reviews of #1490 (tsk-xemkg9x1kwt8), 2026-11-08; the team lead's boundary decision for the redaction race and its later go for the one-statement check, the same day; `hub/src/maity_hub/chat_unread.py`; contract `docs/api.md` §9.2 "The unread nudge"
-**Revisit when:** agents act on a nudge's `unread` or `oldest_seq` rather than reading the chat, the hub runs the minute worker on several replicas at once, a chat sees `SCAN_BUDGET` or more new human messages a minute, or another route by which a redaction stays counted turns up
+**Source:** the reviews of #1490 (tsk-xemkg9x1kwt8), 2026-11-08; the team lead's boundary decision for the redaction race and its later go for the one-statement check, the same day; the team lead's card tsk-tgh0st6p2zag (bounded database work and catch-up, the P3s left by #1490) and its go, the same day; `hub/src/maity_hub/chat_unread.py`; contract `docs/api.md` §9.2 "The unread nudge"
+**Revisit when:** agents act on a nudge's `unread` or `oldest_seq` rather than reading the chat, the hub runs the minute worker on several replicas at once, a path redacts a project event without writing `event_redacted` in the same transaction, or another route by which a redaction stays counted turns up
 **See:** https://github.com/oliver-zehentleitner/maity — f257b1f9-2af2-4d86-a7be-7277ae27b5e7 — as of 2026-11-08
 
 The minute pass keeps, per agent stay in an open group chat, how far that stay's unread
 messages have been read and the counted ones' number, first and last (`_Scan`), in this
 process's memory and nowhere else. Each call reads only rows after the last one read, at most
-`SCAN_BUDGET` (2000) per stay, in batches of `SCAN_BATCH` (500), selecting only seq, time and the
-mentions projected from the payload. The nudge goes out only once a read reached its bound, so
-its counts cover every message up to it. A moved read mark or a changed count of redacted
-messages in the range starts the read over; entries of stays that ended are dropped each pass.
+`SCAN_BUDGET` (2000) event rows of the chat per stay, in batches of `SCAN_BATCH` (500),
+selecting only seq, time, kind, the redacted flag, the author's human id and the mentions
+projected from the payload. The nudge goes out only once a read reached its bound, so
+its counts cover every message up to it. A moved read mark, or a redaction of a message in the
+range already read (found through its `event_redacted`, below), starts the read over; entries of
+stays that ended are dropped each pass.
+
+**Updated 2026-11-08 (tsk-tgh0st6p2zag):** the two limits below that were left as P3s are
+closed, and the paragraph after this one describes the state before. The database work of a
+pass is now bounded per stay and call by the budget, not by the unread history: at most
+`SCAN_BUDGET` of the chat's event rows of any kind, at most `SCAN_BUDGET` of the project's
+`event_redacted` rows, at most `SCAN_BUDGET` events about the chat for the open cycle (both of
+the last as corrected by the R1 note below), and one-row index reads (the read mark, the
+chat's newest seq, the project's newest redaction); the aggregates `_counts` and `_oldest_human` are gone, and the delay is checked on
+the oldest counted message the read found. A redaction is found through the `event_redacted`
+event every redaction path writes in the same transaction: a read keeps a cursor on the
+project's redaction events, and one that names a message of this chat inside the range already
+read starts it over. A read's bound grows only once a call has reached it, and the call under
+the project lock only confirms the range the pass found due, so a read covers a fixed range and
+finishes at any arrival rate; the messages that came meanwhile are the next bound. Both are
+tested, the first by counting the event rows a pass touches on PostgreSQL (`EXPLAIN ANALYZE`):
+as many at 400 unread messages as at 10, where the aggregates touched 20 and 800. Who gets a
+nudge, when, and its payload are unchanged, as is the boundary on concurrent redactions.
+
+**Updated 2026-11-08 (review of #1512, R1):** two gaps in the update above are closed. The
+read's limit counted human messages after filtering, so a range of agents' or redacted messages
+was scanned in full for nothing, and the open-cycle check read every `chat_unread` above the
+mark and filtered the recipient in Python. Now the limit counts every event row of the chat's
+range, whatever it is, and the caller decides what counts; the open-cycle check reads on from a
+cursor per stay (`_Cycle`) over the events whose subject is the chat, at most `SCAN_BUDGET` a
+call, so another agent's nudges are read once. And a full batch of redactions used to stop the
+message read before it moved; a stream of later redactions before each pass kept the read from
+ever finishing. The redaction look now has a bound of its own that grows only once the look has
+reached it, the read's bound grows only in a call whose look began and ended caught up, and the
+nudge waits only for the look to catch up, so neither starves the other. The price: when the
+project writes `SCAN_BUDGET` or more redactions between two calls, the look catches up over
+several calls, and a redaction committed meanwhile may stay counted, the concurrent case this
+entry already leaves open; the call under the lock after such a call confirms without looking
+further (`lagging`), or it would fall behind again. Tested on PostgreSQL: with a budget of 5,
+the first pass over 50 and over 400 events touches as many event rows for mentions, agents'
+messages, redacted messages and another agent's nudges (the PR head before: 6/9, 52/405,
+53/403, 103/803); later redactions at 2 and 3 a pass no longer keep the nudge back.
+
+**Updated 2026-11-08 (review of #1512, delta 1):** the open-cycle check counted a full batch
+as open, so two title changes a pass (`conversation_updated` shares the chat as subject), or
+other agents' nudges, held it open forever and no nudge came. It now has the same bound as the
+other reads: the chat's newest subject event when the check had caught up, growing only once
+the check reached it, with the cycle counted open while it is behind, and the `lagging` rule
+for the call under the lock. A nudge this process wrote lies below the next bound it takes;
+that held for one process only, as the next note says. And the contract's exactness sentence
+promised more than the code: after a call whose redaction look began behind, a redaction
+committed before the pass may stay counted. The sentence in `docs/api.md` §9.2 is narrowed to
+that, in the same separate commit as the budget sentence, so both go to the maintainer
+together; removing the exception instead would bring back the starvation under a stream of
+redactions.
+
+**Updated 2026-11-09 (review of #1512, delta 2):** the caches are per process, and the worker
+lease keeps a second worker out for cost, not for correctness (`hub/src/maity_hub/worker_runs.py`),
+so a second worker's nudge can lie above this process's bound. After a lagging check the call
+under the lock took no new bound and wrote a second nudge for the same messages (reproduced
+with two processes on PostgreSQL). The call under the lock now also reads the events above the
+bound, at most `SCAN_BUDGET` (as first written: the project's nudges, corrected in the next note),
+and counts the cycle open on a nudge for this agent and chat; tested with a real second process.
+And the exactness sentence said "between two of the hub's passes" where the code
+counts the redactions between two of the read's calls, which can be several passes apart
+while the open-cycle check is behind; it now says the hub's reads of the chat.
+
+**Updated 2026-11-09 (review of #1512, delta 3):** the re-check read the project's nudges above
+this chat's bound and counted a full batch as open; once other chats of the project had written
+`SCAN_BUDGET` nudges above it, this chat never got one again. It now reads this chat's subject
+events above the bound, newest first, at most `SCAN_BUDGET` by the subject index, and a full
+batch without a nudge for this agent does not hold the nudge back. A second process's nudge is
+committed just before this call takes the lock, so it is among the newest; a second nudge for the
+same messages would need `SCAN_BUDGET` events about the chat between the two, which is left
+open. Holding back on a full batch was rejected: a stream of title changes would then starve the
+nudge, the case the delta-1 note closed.
+
+**Updated 2026-11-09 (review of #1512, delta 4):** that residual was real: with the production
+budget, 2000 title events between another worker's nudge and this lock pushed it out of the
+window and a second nudge counted the same messages (reproduced with two processes). The open
+cycle is now stored, the one exception to "nothing stored" above: per stay,
+`conversation_participant.unread_nudged_through` holds the `newest_seq` of its last nudge,
+written in the same transaction as the nudge under the project lock, and read with the stay by
+`_candidates`, again under the lock before a nudge is written. The cycle is open while the read
+mark is below it: exact across processes, one row the pass reads anyway, no read of the event
+log. The cursor, its bound, the `lagging` rule and the re-check of the delta-1 to delta-3 notes
+are gone with it, and their starvation cases with them. The migration
+(`20261112150000_nudged_through`) fills the column from the nudges already written. The
+EXPLAIN test now runs `ANALYZE` after cloning its backlog: without fresh statistics the planner
+walked the index (project_id, seq) back over other chats' events instead of the chat's index.
+The bound therefore assumes statistics as autovacuum keeps them on a live database; right after
+a bulk insert, before it runs, a pass can read more rows than the budget.
 
 What is guaranteed: no message body is read; the message rows read are bounded (`SCAN_BUDGET`
 per stay and call), while the one-row aggregates go over the stay's unread range in the database
@@ -627,10 +715,27 @@ race would have held the PR back for a count the agent does not rely on.
 - Excluding the mentions in SQL, with JSON queries per dialect, so one aggregate gives the exact
   counts: a SQLite and a PostgreSQL branch for the first read only.
 - A row limit with counts exact up to the bound: the contract would have to weaken its counts.
-- Storing the scan in a table: a migration for state that one fresh read rebuilds.
+- Storing the scan in a table: a migration for state that one fresh read rebuilds. (The open
+  read cycle is stored since the delta-4 note: unlike the scan, no bounded read rebuilds it
+  exactly across worker processes.)
+- Finding the open cycle in the event log with a bounded read (deltas 1 to 3 of #1512): a cursor
+  over the chat's subject events could be starved by title changes, a window over the newest
+  could miss a second worker's nudge behind enough of them, and a project-wide read could be
+  filled by other chats; the recipient sits in the audience JSON, which no index reaches.
 - Taking the extension's count in a second statement after the check: a redaction committing
   between the two was adopted into the new count while its message stayed counted (review of
   #1490, delta 3).
+- Keeping the one-statement aggregates for the redaction check and the delay (tsk-tgh0st6p2zag):
+  exact, but their cost grows with the unread history on every pass; the redaction events give
+  the same check over redactions only.
+- Moving the bound to the newest message on every call (tsk-tgh0st6p2zag): with the budget or
+  more new messages a pass, the read never finished and the nudge never came.
+- Filtering the recipient of the open cycle in SQL (review of #1512): the audience is a JSON
+  list, so a per-dialect predicate, and without an index on it still a filter over the other
+  agents' nudges each minute; the cursor reads each of them once.
+- Reading every redaction before any message progress, in a loop within the call: exact, but
+  unbounded under a stream of redactions; the bounded look with its own bound trades exactness in
+  that case, which the entry already leaves open, for a read that always finishes.
 
 ## A held wait's later pass looks at the project's head before it reads; the runner's stream does not
 
@@ -709,3 +814,48 @@ into `False`, and that route's `Outsider` branch cannot apply, as an outsider ne
   and a link opened is not a wait for events.
 - A shortcut for a `seq` beyond the head or `0`: it would answer a missing event with
   fewer reads than a hidden one for no gain, and the contract leaves time open anyway (§8.9).
+
+## `chat_rules_changed` comes from each entry's reach read before and after the write; the reading before takes the owner's row only
+
+**Id:** 088c296c-003d-46d1-8b06-f7760e2b4b03
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dq1229pyh333 (the hub step), building docs/api.md §9.6 "Rules per side" and the `chat_rules_changed` row of §8.2; how the hub gets there is the implementer's
+**Revisit when:** a chat write (a join, a leave, a new participant) is to announce the rules too, or the owner's entry writes come to take the projects before the other human's `account_lock`
+
+Every write of an owner's entries runs inside `chat_rules.announcing`: the `/me/chat-access`
+writes, the inbox answer (`chat_request.settle`) and the lapse of an `until`
+(`chat_gate.lapse`). It reads, for each allow entry with a text, which agent it admits to
+which chat (`_reach`), before the write and again after the `recheck`. For each entry, a
+change of its texts goes to every `(agent, project)` of both readings, and with the texts
+unchanged to each `(agent, project)` of a chat in only one of them: the readings are
+compared per chat, so an entry that comes to admit the agent to a second chat of a project
+is a change there too. An entry whose `until` passed and that the worker has not lapsed yet
+(`lapsed_at` empty) is judged just before its `until`, in every reading: `_allows` already
+sees it passed, while the stays still hold the admission, and an owner's write between the
+`until` and the lapse would otherwise read it as admitting nothing both before and after.
+The reading before takes the owner's human row only (`chat_access._lock`), not the
+projects.
+
+An entry with neither text gives no item and no event: it sets no rule, and an item would
+only print an empty heading in the agent's packet.
+
+**Reason:** what an entry admits depends on the stays and on the owner's other entries
+(`waiting_for`), so only the two readings show what a write changed for each agent; a
+change of the texts reaches every agent the entry covers before or after it. Taking the
+projects before the write would turn an order round that a write already has: the owner's
+row, the other human's `account_lock` (shared, `chat_access._human`), then the projects
+in `recheck`. Without them a chat write may come in between; what it changes shows as a
+difference too, and the agent gets an event that is still true (its entry came to admit it
+or stopped), never one less for the entry's own change.
+
+**Rejected alternatives:**
+- An event only on the texts' change: an agent a narrowing, a removal or an `until` takes
+  out of an entry's reach would keep reading rules that no longer apply until its next
+  resume; §9.6 names those cases.
+- Locking every project of the owner's chats before the reading: the deadlock order above.
+- An item for every admitting entry, texts or not: the literal reading of "one item per
+  entry"; it fills the packet with entries that say nothing, and §5.2 calls the field "the
+  rules its owner set". The contract now says so (an open point of the PR for the
+  maintainer).

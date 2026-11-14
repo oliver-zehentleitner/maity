@@ -78,7 +78,7 @@ from maity_hub.db import (
     make_health_engine,
     make_shared_engine,
 )
-from maity_hub.errors import error_response
+from maity_hub.errors import database_unavailable, error_response
 from maity_hub.events import transaction
 from maity_hub.forge_webhook import check_secrets
 from maity_hub.mail import outbox
@@ -94,6 +94,7 @@ from maity_hub.routes import (
     board,
     bridges,
     briefing_view,
+    chat_access,
     contract_text,
     conversations,
     cross_chats,
@@ -115,6 +116,7 @@ from maity_hub.routes import (
     notifications,
     overview,
     pages,
+    password_reset,
     placements,
     preferences,
     project_images,
@@ -136,6 +138,7 @@ from maity_hub.routes import (
 )
 from maity_hub.routes import auth as auth_routes
 from maity_hub.routes import auth_pages as auth_pages_routes
+from maity_hub.routes import bootstrap as bootstrap_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
@@ -154,7 +157,7 @@ from maity_hub.routes import restricted as restricted_routes
 from maity_hub.routes import second_factor as second_factor_routes
 from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
-from maity_hub.shell import AssetFiles, ShellRoute
+from maity_hub.shell import AssetFiles, ShellRoute, asset_versions
 
 log = logging.getLogger(__name__)
 
@@ -262,6 +265,10 @@ def start_once(engine: Engine, settings: Settings) -> None:
             from maity_hub.auth import email_links
 
             email_links.void_open(conn)
+        if not sign_in.password_reset_enabled(conn, settings):
+            from maity_hub.auth import password_resets
+
+            password_resets.void_open(conn)
         # A second factor the environment switched off is told, once (§2.8.5).
         source = sign_in.resolve(conn, settings)["second_factor"][1]
         sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
@@ -476,6 +483,7 @@ def create_app(
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(maintenance_routes.router, prefix=prefix)
+    app.include_router(bootstrap_routes.router, prefix=prefix)
     app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
@@ -511,6 +519,7 @@ def create_app(
     app.include_router(events_routes.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(cross_chats.router, prefix=prefix)
+    app.include_router(chat_access.router, prefix=prefix)  # §9.6, the lists
     app.include_router(attachment_routes.router, prefix=prefix)
     app.include_router(project_messages.router, prefix=prefix)
     app.include_router(probe_routes.router, prefix=prefix)
@@ -525,6 +534,7 @@ def create_app(
     app.include_router(joins.page_router)  # /join/{token}, before the app shell
     app.include_router(runners.page_router)  # /r/{token}, likewise
     app.include_router(email_sign_in.router, prefix=prefix)
+    app.include_router(password_reset.router, prefix=prefix)
     app.include_router(email_sign_in.page_router)
     app.include_router(mail_links.page_router)  # /mail/*, likewise
     app.include_router(register_page.page_router)  # the registration's link page, likewise
@@ -604,7 +614,7 @@ def _api_router() -> APIRouter:
             current = current_revision(engine)
         except SQLAlchemyError:
             log.exception("health: database unreachable")
-            return error_response(503, "database_unavailable", "the database is unreachable")
+            return database_unavailable()
         head = request.app.state.schema_head
         if current != head:
             return error_response(
@@ -635,6 +645,8 @@ def _mount_web(app: FastAPI, settings: Settings) -> None:
         # Mounted last: the API routes above take precedence over files.
         app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
         app.router.routes.append(ShellRoute(web_dir, settings.public_url))
+        # Each file read and hashed once at start-up, not on the event loop of the first shell.
+        asset_versions(web_dir)
     elif settings.web_dir_required:
         check_web_dir(settings)
     elif web_dir is None:

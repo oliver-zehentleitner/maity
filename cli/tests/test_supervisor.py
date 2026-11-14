@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -10,7 +12,7 @@ from typing import Any, cast
 
 import pytest
 
-from maity import __version__, hub, proc, state
+from maity import __version__, clonecheck, hub, proc, state
 from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
@@ -64,9 +66,34 @@ class FakeTmux:
     started: list[tuple[str, list[str], dict[str, str]]] = field(default_factory=list)
     terminated: list[str] = field(default_factory=list)
     killed: list[str] = field(default_factory=list)
+    # The idle check: what `ps`, `display-message` and `capture-pane` would say.
+    below: str | None = tmux.IDLE
+    attach: bool | None = False
+    screen: str | None = "> "
+    typed: list[tuple[str, str]] = field(default_factory=list)
+    answer: str | None = None  # what the harness shows on Enter; None: it does not react
+    submitted: int = 0
 
     def sessions(self) -> dict[str, tmux.Session]:
         return dict(self.live)
+
+    def activity(self, session: tmux.Session) -> str | None:
+        return self.below
+
+    def attached(self, name: str) -> bool | None:
+        return self.attach
+
+    def pane_digest(self, name: str) -> str | None:
+        return self.screen
+
+    def type_text(self, name: str, text: str) -> None:
+        self.typed.append((name, text))
+        self.screen = f"{self.screen}{text}"  # the line shows in the pane
+
+    def submit(self, name: str) -> None:
+        self.submitted += 1
+        if self.answer is not None:
+            self.screen = f"{self.screen}{self.answer}"
 
     def start(self, name: str, cwd: Path, argv: Sequence[str], env: dict[str, str],
               placement: str, generation: int) -> None:  # fmt: skip
@@ -158,9 +185,16 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
+        clonecheck.GIT_INODE_ENV: str(os.lstat(clone / ".git").st_ino),
+        clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
+        "GIT_AUTHOR_NAME": "Maity agent", "GIT_AUTHOR_EMAIL": "maity-agent@invalid",
+        "GIT_COMMITTER_NAME": "Maity agent", "GIT_COMMITTER_EMAIL": "maity-agent@invalid",
     }  # fmt: skip
+    private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
+    assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
+    assert clone not in private.parents
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER
@@ -315,6 +349,98 @@ def test_placements_outside_the_configuration_fail(
     sup.tick()
     assert states(reports) == [("failed", *expected)]
     assert backend.started == []
+
+
+@pytest.mark.parametrize(
+    ("version", "refused"),
+    [("2.1.294", True), ("2.1.295", False), ("2.1.325", False), (None, True), ("dev", True),
+     ("2.1.295-rc.1", True), ("2.1.295-dev", True), ("2.1.295+build", False),
+     ("2.1.296-rc.1", False)],
+)  # fmt: skip
+def test_claude_codes_sandbox_starts_only_where_its_hooks_refuse_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str | None, refused: bool
+) -> None:
+    """The runner's hook relies on `onFailure: "block"` (Claude Code 2.1.295): an older or
+    unknown version gets no sandbox, and `require_sandbox` refuses the start."""
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path, max_agents=2)
+                    + "\n[harness.claude-code]\nrequire_sandbox = true\n")  # fmt: skip
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    monkeypatch.setattr(capabilities, "sandbox_available", lambda *a, **k: True)
+    probes = {
+        "stub": capabilities.Probe(None, None, None),
+        "codex": capabilities.Probe("/usr/bin/codex", "0.40.0", None),
+        "claude-code": capabilities.Probe("/usr/bin/claude", version, None),
+    }
+    sup = supervisor.Supervisor(
+        config.load(path), FakeTmux(), Reports(), [].append, probes, now=Clock(),  # type: ignore[arg-type]
+        rand=lambda: 0.5,
+    )  # fmt: skip
+    target = sup.targets["local"]
+    assert target.sandbox["claude-code"] is not refused
+    found = sup._refusal(placement(harness="claude-code"), target)
+    assert (found == ("harness_refused", None)) is refused
+
+
+def _claude_world(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str | None, extra: str, tools: bool
+) -> supervisor.Supervisor:
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path, max_agents=2)
+                    + f"\n[harness.claude-code]\n{extra}")  # fmt: skip
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    monkeypatch.setattr(capabilities, "sandbox_available", lambda *a, **k: tools)
+    probes = {
+        "stub": capabilities.Probe(None, None, None),
+        "codex": capabilities.Probe("/usr/bin/codex", "0.40.0", None),
+        "claude-code": capabilities.Probe("/usr/bin/claude", version, None),
+    }
+    return supervisor.Supervisor(
+        config.load(path), FakeTmux(), Reports(), [].append, probes, now=Clock(),  # type: ignore[arg-type]
+        rand=lambda: 0.5,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("version", "extra", "tools", "refused"),
+    [("2.1.294", "", True, True), (None, "", True, True), ("2.1.295+", "", True, True),
+     ("2.1.295", "", True, False), ("2.1.294", "", False, False),
+     ("2.1.294", "require_sandbox = false\n", True, False),
+     (None, "require_sandbox = false\n", True, False)],
+)  # fmt: skip
+def test_an_old_or_unknown_claude_code_is_refused_by_default_where_its_sandbox_could_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    version: str | None,
+    extra: str,
+    tools: bool,
+    refused: bool,
+) -> None:
+    """With bwrap and socat there, only the version would keep the sandbox off: without
+    `require_sandbox` that is a refusal, not an unsandboxed start; `require_sandbox = false`
+    is the opt-out, and a host without the tools runs unsandboxed as before."""
+    sup = _claude_world(tmp_path, monkeypatch, version, extra, tools)
+    target = sup.targets["local"]
+    assert ("claude-code" in target.held) is (tools and version != "2.1.295")
+    found = sup._refusal(placement(harness="claude-code"), target)
+    assert (found == ("harness_refused", None)) is refused
+
+
+@pytest.mark.parametrize("extra", ["", "require_sandbox = false\n"])
+def test_a_sandboxed_start_is_refused_while_settings_switch_hooks_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: str
+) -> None:
+    """Read at the start: the runner's hook would not run, so nothing starts without it."""
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", extra, True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    assert sup._refusal(placement(harness="claude-code"), target) is None
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True)
+    managed.write_text('{"allowManagedHooksOnly": true}')
+    assert sup._refusal(placement(harness="claude-code"), target) == ("harness_refused", None)
+    assert any("sets allowManagedHooksOnly" in line for line in logged)
 
 
 def test_a_missing_harness_binary(world: Any) -> None:
@@ -570,7 +696,7 @@ def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     for entry in ("config.worktree", "objects/info/alternates"):
         (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
         (place.path / ".git" / entry).write_text("")
-    for entry in ("remotes", "info/.claude-sandbox-noreplace",
+    for entry in ("glab-cli", "modules", "remotes", "worktrees", "info/.claude-sandbox-noreplace",
                   "objects/info/.claude-sandbox-noreplace",
                   "objects/info/commit-graphs/.claude-sandbox-noreplace"):  # fmt: skip
         (place.path / ".git" / entry).mkdir(parents=True)
@@ -1494,6 +1620,20 @@ def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> No
     assert states(reports) == [("failed", "harness_refused", None)]
 
 
+def test_codex_is_refused_where_the_repository_grants_pull_requests(world: Any) -> None:
+    """Codex's `maity` runs inside its sandbox, where `maity gh` reaches neither the login
+    nor the forge's API (cli/context/runner.md 9f43804d)."""
+    sup, backend, reports, _, _ = world
+    sup.cfg = replace(
+        sup.cfg,
+        repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
+            pull_requests=True)},
+    )  # fmt: skip
+    sup.update([placement(harness="codex")])
+    sup.tick()
+    assert states(reports) == [("failed", "harness_refused", None)]
+
+
 # --- the project namespace (§6.25, §15.5) ------------------------------------------------------
 
 
@@ -1529,3 +1669,544 @@ def test_a_configured_old_name_still_matches_through_the_aliases(world: Any) -> 
 )
 def test_a_placement_without_a_namespaced_project_is_dropped(change: dict[str, Any]) -> None:
     assert not supervisor.valid(placement(**change))
+
+
+# --- the idle check of an interactive session (§15.14, tsk-cbz655mvt4ss) ---------------------
+
+HEALTH = {"settings": {"hang_after_minutes": 30, "reply_within_minutes": 10}}
+SESSION = "maity_maity_agent-3"
+
+
+def interactive(world: Any, **overrides: Any) -> None:
+    """An interactive placement, started and `running`, its idle check at its first look."""
+    sup, _, reports, clock, _ = world
+    recorded(sup.cfg)
+    overrides.setdefault("health", HEALTH)
+    sup.update([placement(mode="interactive", **overrides)])
+    settle(sup)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, None)
+    sup.tick()  # the first look: quiet from here
+
+
+def minutes(world: Any, n: int) -> None:
+    """Let `n` minutes pass, one idle check a minute."""
+    sup, _, _, clock, _ = world
+    for _ in range(n):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+
+
+def test_an_agent_that_stopped_listening_is_nudged_then_resumed_as_hung(world: Any) -> None:
+    sup, backend, reports, clock, logs = world
+    interactive(world)
+    minutes(world, 29)
+    assert backend.typed == []  # quiet, but not for `hang_after_minutes` yet
+    minutes(world, 1)
+    assert backend.typed == [(SESSION, supervisor.NUDGE_LINE)]
+    assert any("nudged in its pane" in line for line in logs)
+    minutes(world, 9)
+    assert backend.terminated == []  # `reply_within_minutes` from the nudge
+    minutes(world, 1)
+    assert backend.terminated == [SESSION] and len(backend.typed) == 1
+    backend.exit(SESSION, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "idle")
+    assert sup.records["plc-0003"].resume
+    clock.now += 600
+    settle(sup)
+    assert len(backend.started) == 2 and reports.sent[-1][1]["restarts"] == 1
+    assert not sup.records["plc-0003"].resume  # consumed by the start that resumed it
+
+
+def test_a_session_that_outlives_the_term_is_killed_and_reported_hung(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    interactive(world)
+    minutes(world, 30 + 10)
+    assert backend.terminated == [SESSION]
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert SESSION in backend.killed
+    assert states(reports)[-1] == ("exited", "hung", "idle")
+
+
+def test_an_attached_client_blocks_the_typing(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    backend.attach = True  # a person may be at the pane
+    minutes(world, 60)
+    assert backend.typed == [] and backend.terminated == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"below": tmux.WAITING},  # a `maity wait` runs below the harness: listening
+        {"below": tmux.WORKING},  # a tool runs below it, however quiet (a long build)
+        {"below": None},  # `ps` could not say: nothing is done on a guess
+        {"attach": None},
+        {"screen": None},
+    ],
+    ids=["waiting", "working", "ps-unknown", "attach-unknown", "screen-unknown"],
+)
+def test_a_listening_or_unreadable_session_is_left_alone(
+    world: Any, change: dict[str, Any]
+) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    for key, value in change.items():
+        setattr(backend, key, value)
+    minutes(world, 60)
+    assert backend.typed == [] and backend.terminated == []
+
+
+def test_a_changing_pane_starts_the_count_again(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 25)
+    backend.screen = "> working"  # the agent is at work, no wait open
+    minutes(world, 25)
+    assert backend.typed == []
+    minutes(world, 6)
+    assert len(backend.typed) == 1
+
+
+def test_an_agent_that_answers_the_nudge_is_not_ended(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 31)
+    assert len(backend.typed) == 1
+    backend.below = tmux.WAITING  # it read the line and runs its wait loop again
+    minutes(world, 30)
+    assert backend.terminated == [] and len(backend.typed) == 1
+
+
+def test_the_owners_minutes_apply_and_bad_ones_fall_back(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    health = {"settings": {"hang_after_minutes": 5, "reply_within_minutes": True}}
+    interactive(world, health=health)
+    minutes(world, 4)
+    assert backend.typed == []
+    minutes(world, 1)
+    assert len(backend.typed) == 1  # 5 minutes, the owner's
+    minutes(world, 9)
+    assert backend.terminated == []  # `True` is no number of minutes: the default 10
+    minutes(world, 1)
+    assert backend.terminated == [SESSION]
+
+
+def test_a_supervised_placement_has_no_idle_check(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    recorded(sup.cfg)
+    sup.update([placement(health=HEALTH)])
+    settle(sup)
+    minutes(world, 60)
+    assert backend.typed == [] and backend.terminated == []
+
+
+def test_a_stop_during_the_idle_end_is_a_stop(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    interactive(world)
+    minutes(world, 30 + 10)
+    assert backend.terminated == [SESSION]
+    sup.update([placement(mode="interactive", health=HEALTH, desired="stopped")])
+    sup.tick()
+    backend.exit(SESSION, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("stopped", "stopped_by_hub", None)
+    assert not sup.records["plc-0003"].resume
+
+
+def test_ps_lines_find_a_wait_below_the_pane_only() -> None:
+    listing = (
+        "  100     1 /usr/bin/claude --settings x\n"
+        "  200   100 /bin/bash -c maity wait --batch --timeout 540\n"
+        "  300   200 /home/a/.venv/bin/python /home/a/.venv/bin/maity wait --batch\n"
+        "  400     1 /usr/bin/python -m maity wait\n"  # another session's
+        "  500   100 /usr/bin/grep maity-wait\n"
+    )
+    assert tmux.waits_below(listing, 100)
+    assert not tmux.waits_below(listing, 500)
+    assert tmux.below(listing, 100) == tmux.WAITING
+    assert tmux.below("  100     1 claude\n  600   100 /bin/sh -c sleep 900\n", 100) == tmux.WORKING
+    assert tmux.below("  100     1 claude\n  600     1 other\n", 100) == tmux.IDLE
+    sock = "UNIX-LISTEN:/tmp/claude-http-0123456789abcdef.sock,fork,reuseaddr TCP:localhost:3128"
+    bridge = f"  700   100 socat {sock}\n"
+    assert tmux.below(f"  100     1 claude\n{bridge}", 100) == tmux.IDLE  # the sandbox's own
+    assert tmux.below(f"  100     1 claude\n{bridge}  800   100 bwrap -- sh\n", 100) == tmux.WORKING
+    assert not tmux.is_helper("socat TCP-LISTEN:8080 TCP:x:1") and not tmux.is_helper("")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/app.sock,fork EXEC:./server")  # the agent's
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-project/app.sock,fork EXEC:cat")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-myapp.sock,fork EXEC:cat")
+    # a well-named listener that is no proxy bridge is a tool (v5vp's review)
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-app-prod.sock,fork EXEC:/bin/cat")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-http-0123abcd.sock,fork EXEC:/bin/cat")
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-http-0123abcd.sock,fork TCP:db:5432")
+    assert not tmux.is_helper(
+        "socat UNIX-LISTEN:/tmp/claude-app-0123abcd.sock,fork TCP:localhost:80"
+    )
+    assert not tmux.is_helper("socat UNIX-LISTEN:/tmp/claude-http-xyz.sock,fork TCP:localhost:80")
+    # the runtime's own argv: options follow the port on the target (fkyb's review)
+    real = (
+        "socat UNIX-LISTEN:/tmp/claude-{}-0123456789abcdef.sock,fork,reuseaddr"
+        " TCP:localhost:{},keepalive,keepidle=10,keepintvl=5,keepcnt=3"
+    )
+    assert tmux.is_helper(real.format("http", 3128)) and tmux.is_helper(real.format("socks", 1080))
+    assert (
+        tmux.below(f"  100     1 claude\n  700   100 {real.format('http', 3128)}\n", 100) == "idle"
+    )
+    assert tmux.is_helper(
+        "socat UNIX-LISTEN:/tmp/claude-socks-89abcdef01234567.sock,fork TCP:localhost:1080"
+    )
+    fork = f"  710   700 socat {sock}\n"
+    assert tmux.below(f"  100     1 claude\n{bridge}{fork}", 100) == tmux.IDLE  # its own fork
+    work = "  720   700 make -j2\n"
+    assert tmux.below(f"  100     1 claude\n{bridge}{work}", 100) == tmux.WORKING  # below it
+    assert tmux.waits_below(listing, 1) and not tmux.waits_below(listing, 999)
+    assert tmux.is_wait("/usr/bin/python3 -m maity wait")
+    assert not tmux.is_wait("maity waiting") and not tmux.is_wait("notmaity wait")
+    assert not tmux.is_wait("vim maity.wait") and not tmux.is_wait("maity resume")
+    assert tmux.is_wait("maity --for agent-b wait --batch")
+    assert tmux.is_wait("/v/bin/maity --for=agent-b wait")
+    assert not tmux.is_wait("maity --for wait") and not tmux.is_wait("maity --for agent-b say")
+
+
+def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    answers = {"display-message": "1\n", "capture-pane": "> hello\n",
+               "ps": "  7     1 sh\n  8     7 maity wait\n"}  # fmt: skip
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        word = next((w for w in answers if w in argv), None)
+        return subprocess.CompletedProcess(list(argv), 0, answers.get(word or "", ""), "")
+
+    backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path, run=run)
+    session = tmux.Session(SESSION, False, None, 7, "plc-0003", 1)
+    assert backend.attached(SESSION) is True
+    assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
+    assert backend.activity(session) == tmux.WAITING
+    assert backend.activity(replace(session, pid=None)) is None
+    backend.type_line(SESSION, "a line; with -t words")
+    assert calls[-2][-4:] == ["-t", SESSION, "-l", "a line; with -t words"]
+    assert calls[-1][-3:] == ["-t", SESSION, "Enter"]
+
+
+def settle_on(read: Any, want: str) -> Any:
+    """`read()` until it gives `want`, for at most 5 s: a real shell takes a moment."""
+    seen = read()
+    for _ in range(50):
+        if seen == want:
+            break
+        subprocess.run(["sleep", "0.1"], check=False)
+        seen = read()
+    return seen
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None or shutil.which("ps") is None,
+                    reason="needs tmux and ps")  # fmt: skip
+def test_real_tmux_idle_reads(tmp_path: Path) -> None:
+    # A long path, so `maity wait` sits past the 80 columns ps cuts at without a terminal.
+    fake = tmp_path / ("d" * 120) / "bin" / "maity"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("#!/bin/sh\nsleep 600\n")
+    fake.chmod(0o755)
+    socket = tmp_path / "t.sock"
+    backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
+                        tmp_path / "logs")  # fmt: skip
+    try:
+        backend.start(SESSION, tmp_path, ["sh"], {}, "plc-0003", 1)
+        session = backend.sessions()[SESSION]
+        assert backend.attached(SESSION) is False
+        assert backend.activity(session) == tmux.IDLE  # a shell at its prompt
+        before = backend.pane_digest(SESSION)
+        backend.type_line(SESSION, f"{fake} wait --batch")
+        seen = settle_on(lambda: backend.activity(session), tmux.WAITING)
+        assert seen == tmux.WAITING
+        assert backend.pane_digest(SESSION) != before
+        subprocess.run(["tmux", "-S", str(socket), "send-keys", "-t", SESSION, "C-c"], check=False)
+        backend.type_line(SESSION, "sleep 600")  # a quiet tool: no output, no wait
+        assert settle_on(lambda: backend.activity(session), tmux.WORKING) == tmux.WORKING
+    finally:
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
+
+
+def test_an_answer_right_after_the_nudge_starts_the_count_again(world: Any) -> None:
+    """The pane is measured again once the nudge's line shows, so the agent's answer before
+    the next look is a change, not the new baseline."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 30)
+    assert len(backend.typed) == 1
+    backend.screen = f"{backend.screen} ● on it"  # answered before the next look
+    minutes(world, 10)
+    assert backend.terminated == []  # the answer reset the count
+    minutes(world, 21)
+    assert len(backend.typed) == 2 and backend.terminated == []  # quiet again: a new nudge
+
+
+def test_a_line_that_shows_late_is_not_taken_for_an_answer(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stalled screen echoes the nudge only after the short window: Enter waits for the
+    next look, which measures the pane first; a session that then does not react is ended."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    assert len(backend.typed) == 1 and backend.submitted == 0  # Enter waits for the line
+    backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, a tick late
+    minutes(world, 1)
+    assert backend.submitted == 1
+    minutes(world, 10)
+    assert backend.terminated == [SESSION] and len(backend.typed) == 1
+
+
+def test_a_held_back_line_dropped_by_an_attach_does_not_count(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A person attaching before the held-back line's Enter drops it: no Enter is sent and
+    it does not count toward `NUDGE_CAP` (fkyb's review: "answered 3 nudges" after zero
+    Enters). What the input holds then is the person's: the next nudge types afresh and
+    never presses Enter on a draft they left without its own line (fkyb's review)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    assert len(backend.typed) == 1 and backend.submitted == 0
+    backend.attach = True
+    minutes(world, 1)
+    backend.attach = False
+    assert sup.records["plc-0003"].nudges == 0
+    minutes(world, 31)
+    assert len(backend.typed) == 2 and backend.terminated == []
+
+
+def test_a_line_still_not_shown_gets_no_enter(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A line that has not shown by the next look keeps its Enter back, so its own late
+    echo never counts as an answer; one that never shows within `reply_within_minutes`
+    means the harness took nothing: the session is ended (fkyb's nit)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    minutes(world, 5)
+    assert backend.submitted == 0 and backend.terminated == []
+    minutes(world, 6)
+    assert backend.submitted == 0 and backend.terminated == [SESSION]
+
+
+def test_a_stalled_line_that_shows_later_is_then_measured(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 33)
+    assert backend.submitted == 0
+    backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"  # the echo, three looks late
+    minutes(world, 1)
+    assert backend.submitted == 1 and sup.records["plc-0003"].nudges == 0  # not answered yet
+    minutes(world, 9)
+    assert backend.terminated == []  # `reply_within_minutes` runs from its Enter
+    minutes(world, 1)
+    assert backend.terminated == [SESSION]
+
+
+def test_a_dropped_line_is_sent_not_typed_twice(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A held-back line dropped by a look the runner cannot read, with nobody attached,
+    still sits in the input: the next nudge sends it instead of typing a second copy
+    behind it, and the one after that types again (v5vp's and fkyb's reviews)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    screen, backend.screen = backend.screen, None  # one unreadable look
+    minutes(world, 1)
+    backend.screen = screen
+    minutes(world, 31)
+    assert len(backend.typed) == 1 and backend.submitted == 1  # sent, not typed again
+    backend.screen = f"{backend.screen} ● on it"  # answered
+    minutes(world, 1)
+    minutes(world, 31)
+    assert len(backend.typed) == 2  # the next nudge types its line again
+
+
+@pytest.mark.parametrize("reset", [{"attach": True}, {"screen": None}])
+def test_a_reset_after_an_unanswered_nudge_does_not_count(
+    world: Any, reset: dict[str, Any]
+) -> None:
+    """A look the runner cannot use between a nudge's Enter and any reaction (a person
+    attached, an unreadable pane) is no answer, and the nudge still waits for one: a
+    harness that never reacts is ended `reply_within_minutes` after the Enter, never as
+    "answered" (v5vp's review)."""
+    sup, backend, _, _, logs = world
+    interactive(world)
+    minutes(world, 30)
+    assert backend.submitted == 1
+    saved = {key: getattr(backend, key) for key in reset}
+    for key, value in reset.items():
+        setattr(backend, key, value)
+    minutes(world, 1)
+    for key, value in saved.items():
+        setattr(backend, key, value)
+    minutes(world, 8)
+    assert backend.terminated == []
+    minutes(world, 1)
+    assert backend.terminated == [SESSION] and sup.records["plc-0003"].nudges == 0
+    assert any("still not listening" in line for line in logs)
+
+
+def test_work_started_after_a_nudge_is_an_answer(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 30)
+    backend.below = tmux.WORKING  # the agent ran a tool on the nudge
+    minutes(world, 1)
+    assert sup.records["plc-0003"].nudges == 1
+
+
+def test_an_answer_after_a_late_line_counts(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The late line's baseline is taken before its Enter, so the answer to it is a change
+    (fkyb's delta review: a genuine answer must never become the baseline)."""
+    sup, backend, _, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    monkeypatch.setattr(backend, "type_text", lambda name, line: backend.typed.append((name, line)))
+    minutes(world, 30)
+    backend.screen = f"{backend.screen}{supervisor.NUDGE_LINE}"
+    minutes(world, 11)
+    assert backend.submitted == 1 and backend.terminated == []
+
+
+def test_an_answer_shown_before_the_first_capture_after_enter_counts(world: Any) -> None:
+    """The baseline is the pane with the line typed, before Enter: an answer the harness
+    shows at once is a change, never part of the baseline (hcrb's delta review)."""
+    sup, backend, _, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    minutes(world, 30)
+    assert len(backend.typed) == 1
+    minutes(world, 10)
+    assert backend.terminated == [] and sup.records["plc-0003"].nudges == 1
+
+
+def test_answered_nudges_without_a_wait_end_it_at_the_cap(world: Any) -> None:
+    """An agent that answers every nudge but never goes back to its wait is not listening:
+    after `NUDGE_CAP` answered nudges, its next quiet spell ends it as `hung`/`idle`."""
+    sup, backend, reports, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    minutes(world, 30)
+    for n in range(2, supervisor.NUDGE_CAP + 1):
+        minutes(world, 31)
+        assert len(backend.typed) == n and backend.terminated == [], n
+    minutes(world, 31)
+    assert backend.terminated == [SESSION] and len(backend.typed) == supervisor.NUDGE_CAP
+    backend.exit(SESSION, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "idle")
+
+
+def test_a_wait_starts_the_answered_nudges_over(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    backend.answer = " ● on it"
+    interactive(world)
+    minutes(world, 30)
+    minutes(world, 31)
+    minutes(world, 1)  # the second answer is seen
+    assert sup.records["plc-0003"].nudges == 2
+    backend.below = tmux.WAITING  # it went back to its wait loop
+    minutes(world, 1)
+    assert sup.records["plc-0003"].nudges == 0
+
+
+def test_an_answer_after_the_first_look_starts_the_count_again(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    interactive(world)
+    minutes(world, 32)
+    backend.screen = f"{backend.screen} ● on it"
+    minutes(world, 10)
+    assert backend.terminated == [] and len(backend.typed) == 1
+
+
+def hung_round(world: Any) -> None:
+    """One idle end with the default times: the nudge after 30 quiet minutes, the end 10
+    later, the session's exit."""
+    sup, backend, _, _, _ = world
+    before = len(backend.terminated)
+    minutes(world, 40)
+    assert len(backend.terminated) == before + 1
+    backend.exit(SESSION, 143)
+    sup.tick()
+
+
+def resumed(world: Any) -> None:
+    sup, _, _, clock, _ = world
+    clock.now += 60
+    settle(sup)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    sup.tick()
+
+
+def test_idle_ends_in_a_row_reach_their_own_cap(world: Any) -> None:
+    """A hung session never ends quickly, and with the default times one idle end takes 40
+    minutes, so no `crash_window` holds five of them: idle ends are counted in a row, and
+    `crash_cap` of them hold the placement as `failed`, `hung`, `idle` (§15.7)."""
+    sup, backend, reports, clock, _ = world
+    interactive(world)
+    cap = sup.cfg.limits.restart.crash_cap
+    assert cap * 40 * 60 > sup.cfg.limits.restart.crash_window  # the case a window misses
+    for n in range(1, cap + 1):
+        hung_round(world)
+        if n < cap:
+            assert states(reports)[-1] == ("exited", "hung", "idle"), n
+            resumed(world)
+    assert states(reports)[-1] == ("failed", "hung", "idle")
+    clock.now += 3600
+    sup.tick()
+    assert len(backend.started) == cap  # held: no start after the cap
+
+
+def test_a_wait_between_idle_ends_starts_the_row_over(world: Any) -> None:
+    sup, backend, reports, _, _ = world
+    interactive(world)
+    cap = sup.cfg.limits.restart.crash_cap
+    for _ in range(cap - 1):
+        hung_round(world)
+        resumed(world)
+    backend.below = tmux.WAITING  # the resumed agent listened for a while
+    minutes(world, 5)
+    backend.below = tmux.IDLE
+    minutes(world, 1)  # quiet from this look on
+    for _ in range(cap - 1):
+        hung_round(world)
+        assert states(reports)[-1] == ("exited", "hung", "idle")
+        resumed(world)
+    assert len(sup.records["plc-0003"].hung_exits) == cap - 1
+
+
+def test_a_new_generation_does_not_resume_the_hung_session(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A generation move may change the harness, model or mode: a fresh session (§15.14)."""
+    sup, backend, _, _, _ = world
+    interactive(world)
+    hung_round(world)
+    assert sup.records["plc-0003"].resume
+    seen: list[bool] = []
+    context = sup._context
+
+    def spy(*args: Any) -> Any:
+        seen.append(args[-1])
+        return context(*args)
+
+    monkeypatch.setattr(sup, "_context", spy)
+    sup.update([placement(mode="interactive", health=HEALTH, generation=2)])
+    settle(sup)
+    assert len(backend.started) == 2 and seen == [False]
+    assert sup.records["plc-0003"].hung_exits == []

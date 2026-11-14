@@ -25,6 +25,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import (
     avatars,
+    chat_access,
     clock,
     contacts,
     cross_chats,
@@ -94,6 +95,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "jour_fixe_answers": _jour_fixe_answers(conn, my_ids, names, human_id),
         "pinned_conversations": _pinned_conversations(conn, human_id),
         **contacts.exported(conn, human_id),  # `contacts`, `contact_of` (§6.29)
+        "chat_access": chat_access.exported(conn, human_id),  # `{allow, deny}` (§9.6)
         "restricted_texts": _restricted_texts(conn, readers, names),
         "cross_chats": cross_chats.export_of(conn, human_id),
     }
@@ -237,6 +239,7 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
             if human.terms_version is not None
             else None
         ),
+        "experiment_notice_understood_at": ts(human.experiment_notice_understood_at),  # §5.1
         "limit": (
             {
                 "until": ts(human.limit_until),

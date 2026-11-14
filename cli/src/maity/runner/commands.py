@@ -24,6 +24,7 @@ from . import (
     limitread,
     loop,
     operate,
+    plaincall,
     serve,
     stub,
     supervisor,
@@ -116,10 +117,11 @@ def cmd_pair(args: argparse.Namespace) -> int:
         },
         name=STATE_FILE,
     )
-    attached = ", ".join(result.attached) or "none yet"
+    attached = ", ".join(onboarding.inline(name) for name in result.attached) or "none yet"
     print(
-        f"paired as runner {result.runner_id}; attached to: {attached}; credential "
-        f"{result.credential_id} stored in {stored} (mode 0600, not printed)",
+        f"paired as runner {onboarding.inline(result.runner_id)}; attached to: {attached}; "
+        f"credential {onboarding.inline(result.credential_id)} stored in {stored} "
+        "(mode 0600, not printed)",
         file=sys.stderr,
     )
     if created:
@@ -185,7 +187,7 @@ class Report:
 
     def print(self) -> None:
         for level, text in self.lines:
-            print(f"{level:5}  {text}")
+            print(f"{level:5}  {onboarding.clean(text)}")
 
 
 DEFAULTS = (
@@ -210,8 +212,17 @@ DEFAULTS = (
     ("backend.ssh.hosts[].isolation", "shared_user (own_user: not yet)"),
     ("harness.<id>.modes", '["supervised"]; default_mode: the first'),
     ("harness.<id>.binary", "the harness's usual command, resolved on agent_path"),
-    ("harness.<id>.require_sandbox", "false"),
+    (
+        "harness.<id>.require_sandbox",
+        "unset: claude-code with bwrap and socat refused below version 2.1.295 or unknown;"
+        " false: never refused for the sandbox",
+    ),
     ("harness.<id>.env_file", "unset"),
+    (
+        "git.name, git.email",
+        f"{config.DEFAULT_GIT_NAME} <{config.DEFAULT_GIT_EMAIL}> "
+        "(author and committer of every agent's commits)",
+    ),
 )
 
 EXPLAIN = (
@@ -245,6 +256,38 @@ def _check_config_file(report: Report, path: Path) -> None:
         report.warn(
             f"{path} is writable by group or others, who can change what this runner may do; "
             f"run `chmod go-w {path}`"
+        )
+
+
+def _check_repositories(report: Report, cfg: config.Config) -> None:
+    """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
+    `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). Said, never
+    an error, so a restart before the table is edited keeps every placement running."""
+    for name, grant in cfg.repositories.items():
+        if grant.refused:
+            listed = ", ".join(repr(rule) for rule in grant.refused)
+            report.warn(
+                f"repositories.{name}: allow {listed} is not applied: no session runs gh; "
+                "remove it and set pull_requests = true to let agents open pull requests "
+                "with `maity gh pr create`"
+            )
+        if grant.pull_requests and "api.github.com" in grant.network:
+            report.warn(
+                f"repositories.{name}: network api.github.com is not needed for pull requests "
+                "(`maity gh` runs outside the sandbox) and lets repository code reach the API"
+            )
+
+
+def _check_git(report: Report, cfg: config.Config) -> None:
+    """Every placed session commits as `[git]`; without it as the generic default, which no
+    forge links to anyone. Said as a warning: a runner that only runs the stub commits
+    nothing, and a default is a working configuration (cli/context/runner.md)."""
+    if cfg.git.configured:
+        report.ok(f"agents commit as {cfg.git.name} <{cfg.git.email}>")
+    elif any(harness.id != "stub" for harness in cfg.harnesses.values()):
+        report.warn(
+            f"agents commit as the default {cfg.git.name} <{cfg.git.email}>; set name and "
+            "email in [git] to the identity your agents should commit as"
         )
 
 
@@ -338,7 +381,7 @@ def _check_harness(
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness, as_user, agent_path)
+        _check_claude_code(report, harness, as_user, agent_path, found.version)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -349,15 +392,40 @@ def _check_harness(
 
 
 def _check_claude_code(
-    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = ""
+    report: Report,
+    harness: config.Harness,
+    as_user: AsUser = RUNNER,
+    agent_path: str = "",
+    version: str | None = None,
 ) -> None:
-    if sys.platform.startswith("linux"):
-        # On the agents' PATH, as their user finds it: that is where the sandbox starts.
-        missing = [t for t in ("bwrap", "socat") if not capabilities.which(t, agent_path, as_user)]
-        if missing:
-            line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
-            (report.error if harness.require_sandbox else report.warn)(line)
+    # On the agents' PATH, as their user finds it: that is where the sandbox starts.
+    tools = capabilities.claude_sandbox_tools()
+    missing = [t for t in tools or () if not capabilities.which(t, agent_path, as_user)]
+    line = None
+    held = tools is not None and not missing
+    if tools is None:
+        line = f"harness claude-code: no OS sandbox on {sys.platform}; agents run unsandboxed"
+    elif missing:
+        line = f"harness claude-code: no OS sandbox ({', '.join(missing)} missing)"
+    elif not capabilities.sandbox_version_ok(harness.id, version):
+        line = capabilities.sandbox_version_line(version)
+    if line is not None:
+        refused = capabilities.sandbox_refused(harness, False, held)
+        (report.error if refused else report.warn)(line)
+    else:
+        report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        _check_claude_hooks(report, as_user, "")
     _check_claude_settings(report, as_user, "")
+
+
+def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
+    """With the sandbox on, the runner's hook must run: settings that switch hooks off
+    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error."""
+    why = capabilities.claude_hooks_off(as_user)
+    if why is None:
+        report.ok(f"{where}harness claude-code: hooks are not switched off")
+    else:
+        report.error(f"{where}{capabilities.claude_hooks_line(why)}")
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
@@ -435,7 +503,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
-    probes, sandbox = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
+    probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]
         if harness.id == "stub":
@@ -448,8 +516,14 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             if warning is not None:
                 report.warn(f"{name}: {warning}")
             if harness.id == "claude-code" and not sandbox.get(harness.id):
-                line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
-                (report.error if harness.require_sandbox else report.warn)(line)
+                if capabilities.sandbox_version_ok(harness.id, probe.version):
+                    line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
+                else:
+                    line = f"{name}: {capabilities.sandbox_version_line(probe.version)}"
+                refused = capabilities.sandbox_refused(harness, False, harness.id in held)
+                (report.error if refused else report.warn)(line)
+            elif harness.id == "claude-code":
+                _check_claude_hooks(report, as_user, f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -504,6 +578,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         report.error(problem)
     _check_config_file(report, path)
     _check_state(report, cfg)
+    _check_repositories(report, cfg)
+    _check_git(report, cfg)
     if cfg.ssh is not None:
         _check_ssh(report, cfg, getattr(args, "target", None))
     elif getattr(args, "target", None):
@@ -671,6 +747,10 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("home")
     r.add_argument("clone")
     r.set_defaults(handler=lambda a: trust.main([a.home, a.clone]))
+    # Internal too: the hook a placed Claude Code session runs before each tool call
+    # (plaincall), reading its input on stdin.
+    r = rsub.add_parser("plaincall")
+    r.set_defaults(handler=lambda a: plaincall.main([]))
     r = rsub.add_parser("stub")
     r.add_argument("--exit-code", type=int, default=0)
     r.add_argument("--run-seconds", type=int, default=30)

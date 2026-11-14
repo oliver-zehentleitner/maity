@@ -136,10 +136,23 @@ route stays.
 trips on a project view and one elsewhere. One round trip from a development machine to the
 hub measured about 30 ms on a kept connection (2026-11-11, `GET /api/v1/maintenance`, ten
 runs, 29–45 ms), more on a slow or mobile connection, which is what the route is for. The
-server time of each call is not measured, so the time the route saves is expected, not
-measured, until the route exists and is measured against the waves. The saving holds only
+time the route saves is expected, not measured, until it is measured against the waves. Its
+server time was measured in-process against PostgreSQL when the hub route was written
+(2026-11-11, a project with 21 members, 60 runs, medians): 45 ms for the route, against
+41 ms for its slowest chain and 79 ms for the six single routes one after another. The
+saving holds only
 because the hub reads the parts concurrently, the head before the project and its members:
-read one after another, their server time would eat it. Once the hub answers the
+read one after another, their server time would eat it. That concurrency is measured on
+PostgreSQL here; on MariaDB (a server with a pool and no lock at a transaction's start) a
+reviewer's local run on MariaDB 11.4.4 (review 111841 of #1656, not CI) saw three part
+bodies at once and the request take its slowest chain's time (0.89 s against at least
+2.0 s serial). On SQLite every transaction takes the one write lock at its start
+(`db._sqlite_begin_immediate`), so the parts' reads run one after another there, and the
+bundle saves the round trips and the repeated authentication only; the lock stays, since
+it is what keeps SQLite's transactions from failing to upgrade to a write. The price of
+the concurrency is the pool: one request holds up to five of its connections at once,
+where a single call holds one (`project` and `members` start once `head` is read, while
+`maintenance`, `session` and `me` may still hold theirs). Once the hub answers the
 route, 63c48583's Revisit when ("the hub answers /auth/session and /me in one read") has
 come, and that entry is checked again with the web change. A part
 built by the single route's own code for the same caller has one place to get each field
@@ -156,3 +169,14 @@ window and the session even when the rest is refused.
 - One status for the whole answer, failing as soon as one part fails: a signed-out reader
   or a second-factor session would then lose the maintenance window and the session, which
   are the parts its page is drawn from.
+- The parts read one after another, in the order of the table: their server time would be
+  added back and eat the round trips the route saves (the owner's second answer,
+  req-h59ppnhbg0xz).
+- All parts in one concurrent wave, the head with the project and its members: a change
+  made between the members read and the head read would fall below the cursor and never
+  arrive as an event (reviews of #1640).
+- The hub calling its own single routes in-process, one request per part: each would pass
+  the middleware again, so the request would count against six route limits, authenticate
+  six times (six presence and lease writes instead of one call's), and its parts would carry
+  the single routes' headers, which §5.4 leaves out. The route calls the single routes' body
+  functions instead and decides their refusals per part.

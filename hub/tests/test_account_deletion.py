@@ -290,6 +290,32 @@ def test_an_owner_of_an_organisation_that_has_projects_may_delete_the_account(
         assert [r.human_id for r in conn.execute(select(t.org_member)).all()] == [other]
 
 
+def test_a_deleted_account_onboarding_names_goes_back_to_the_coordinator(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§2.9: the hub ends the account's seats, and a project whose onboarding named the account
+    as `check_in_with` returns to `coordinator`, written by the hub; the deletion goes through."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    org = pat.post("/orgs", {"handle": "pat-team", "display_name": "Pat Team"}).json()
+    other = factory.human(migrated, "other")
+    add_member(migrated, org["id"], other, "owner")
+    made = pat.post("/projects", {"slug": "shop", "name": "Shop", "owner": "pat-team"})
+    assert made.status_code in (200, 201), made.text
+    named = pat.patch(
+        "/projects/pat-team/shop", {"settings": {"onboarding": {"check_in_with": pat.id}}}
+    )
+    assert named.status_code == 200, named.text
+    assert ask_deletion(pat).status_code == 202
+    done = press(pat, token_of(migrated))
+    assert done.status_code == 200, done.text
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        onboarding = conn.execute(select(t.project.c.settings)).scalar_one()["onboarding"]
+    assert onboarding["check_in_with"] == "coordinator"
+    assert onboarding["by"] == {"id": "hub", "handle": "hub", "kind": "hub"}
+
+
 def test_the_transfers_the_account_started_into_an_organisation_are_withdrawn(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
@@ -1119,7 +1145,8 @@ def test_forge_links_and_sign_in_links_go_with_the_account(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
     """§2.9 "Ends access at once": the forge links with their pending state and token
-    (§11.4) and the pending sign-in links (§2.6.3), with the day's wrong-code count, go."""
+    (§11.4), the pending sign-in links (§2.6.3), with the day's wrong-code count, and the
+    open reset links (§2.10) with their wrong codes, go."""
     admin_first(migrated, moment)
     pat = person(make_client, migrated, moment)
     now = clock.now()
@@ -1134,6 +1161,13 @@ def test_forge_links_and_sign_in_links_go_with_the_account(
         conn.execute(
             insert(t.email_sign_in_day).values(human_id=pat.id, day="2026-10-29", wrong_codes=2)
         )
+        conn.execute(
+            insert(t.password_reset).values(
+                nonce_hash="e" * 64, human_id=pat.id, source="198.51.100.7", created_at=now,
+                expires_at=now + timedelta(minutes=30),
+            )
+        )  # fmt: skip
+        conn.execute(insert(t.password_reset_wrong).values(human_id=pat.id, at=now))
         conn.execute(
             insert(t.forge_link).values(
                 id="fgl-pat", human_id=pat.id, forge="github", installation_id=4711,
@@ -1159,6 +1193,8 @@ def test_forge_links_and_sign_in_links_go_with_the_account(
         for table in (
             t.email_sign_in,
             t.email_sign_in_day,
+            t.password_reset,
+            t.password_reset_wrong,
             t.forge_link,
             t.forge_link_state,
             t.forge_token,

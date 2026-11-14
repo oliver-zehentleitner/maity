@@ -37,7 +37,11 @@ from maity_hub import (
     handover,
     idempotency,
     instances,
+    invitations,
     join_line,
+    landing,
+    landing_stats,
+    legal,
     limits,
     line,
     mentions,
@@ -45,6 +49,7 @@ from maity_hub import (
     namespace,
     product_line,
     project_roles,
+    render,
     restricted,
     subagents,
     takeovers,
@@ -61,9 +66,9 @@ from maity_hub.config import Settings
 from maity_hub.db import retrying
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
@@ -85,7 +90,7 @@ _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 class JoinAgent(Strict):
     id: str | None = None
     handle: str | None = title(default=None, pattern=HANDLE_PATTERN)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
     git_identity: GitIdentity | None = None
 
 
@@ -546,6 +551,16 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
         raise not_found()
 
 
+def _recheck_creator(conn: Connection, row: Any) -> None:
+    """A join made with `members:admin` at the exchange, under the project lock (§3.3):
+    its creator still an active member who may give what it carries, as an invitation's
+    issuer (§3.4): `members:admin`, and trust `owner` for trust `admin` or the role
+    `proxy`. Areas and capabilities need no more than `members:admin`. Otherwise it
+    answers as a revoked join. A runner's pickup has its own check."""
+    if not invitations.issuer_holds(conn, row):
+        raise not_found()
+
+
 def live_profile(conn: Connection, agent_id: str) -> None:
     """Lock the agent's profile, and refuse a deleted one: a deleted profile never joins
     again (§6.3). Join creation, the exchange and the profile's deletion all take this
@@ -797,17 +812,39 @@ def _subagents_quote(conn: Connection, row: Any) -> str:
     return f"> {text}\n"
 
 
+def _note(dashboard: str) -> str:
+    return (
+        "This page is documentation for the agent you are adding. "
+        f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
+        "Open the dashboard</a>."
+    )
+
+
 def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
+    """The join host's page (§1.1): its own small document with the product line."""
     body = _HTML.render(markdown)
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{html.escape(title_text)}</title>\n{product_line.HEAD}\n</head>\n<body>\n<main>\n{body}</main>\n"
-        "<footer><p>This page is documentation for the agent you are adding. "
-        f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
-        "Open the dashboard</a>.</p>"
+        f"<footer><p>{_note(dashboard)}</p>"
         f"</footer>\n{product_line.html('en')}\n</body>\n</html>\n"
     )
+
+
+def _framed(engine: Any, request: Request, markdown: str, title_text: str) -> str:
+    """The public host's page in the frame of §16.7.5 (`render.join_document`)."""
+    with engine.begin() as conn:
+        setting = landing.stored(conn)
+        return render.join_document(
+            title=title_text,
+            content=_HTML.render(markdown),
+            note=_note("/"),
+            setting=setting,
+            legal=legal.public(legal.stored(conn)),
+            stats=landing_stats.for_frame(conn, setting),
+            accept_language=request.headers.get("accept-language"),
+        )
 
 
 # The join host's answer to a token-shaped path that no longer works (§1.1): never
@@ -841,6 +878,20 @@ async def _page(token: str, request: Request, *, page: bool) -> Response:
         markdown, title_text, status = _DEAD_LINK, "This join link no longer works", 404
     # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
     headers = {"Maity-Error": "not_found"} if status == 404 else None
+    if "text/html" in request.headers.get("accept", "") and not on_join_host:
+        # The frame of §16.7.5 on the public host; the Markdown answer stays as it is (§3.2).
+        # The token is in the path: no referrer carries it on (§1.1).
+        page_html = await run_in_threadpool(_framed, engine, request, markdown, title_text)
+        return Response(
+            page_html,
+            status_code=status,
+            media_type="text/html; charset=utf-8",
+            headers={
+                **(headers or {}),
+                "Content-Security-Policy": render.DOOR_CSP,
+                "Referrer-Policy": "no-referrer",
+            },
+        )
     if "text/html" in request.headers.get("accept", ""):
         # The token is in the path: no link on the page may send it on (§1.1, §16.13).
         return Response(
@@ -1032,6 +1083,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         raise not_found()  # the list changed since the join was handed out (§6.3)
     if row.member_rule:
         _recheck_member_rule(conn, row, project, _active_member(conn, row))
+    elif row.placement_id is None:
+        _recheck_creator(conn, row)
     agent_id = row.agent_id or _create_for_join(conn, row)
     member = conn.execute(
         select(t.membership).where(
@@ -1067,6 +1120,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
                 subagents_language=row.subagents_language if row.subagents else None,
                 subagents_by=row.created_by if row.subagents else None,
                 joined_at=now,
+                joined_seq=newest_seq(conn, row.project_id),
             )
         )
         key = result.inserted_primary_key

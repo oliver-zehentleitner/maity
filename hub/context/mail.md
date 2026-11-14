@@ -174,6 +174,44 @@ part of the outbox from its first version, not a later change on top.
 - Counting when a mail is sent: the place would be free again for a mail that fails for good;
   counting when it is admitted keeps a place used, the strict side of a budget against abuse.
 
+## One row never stops the outbox: a mail that cannot be built is failed before it is admitted, and rows left in `sending` need no migration
+
+**Id:** 34e5cd71-12cb-4484-b03c-2c4309665605
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dv8f620hjebf (outbox robustness and header cleaning), 2026-11-13; `mail/outbox.py` `_deliver`, `_unsendable`
+**Revisit when:** the outbox gets a schedule of its own for retries, or a row could fail to build only for a while (a setting that changes the message)
+**See:** mail.md#an-outbox-row-is-claimed-before-it-is-sent-the-claim-lapses-after-two-minutes — 92cf47a5-5206-4552-a493-2255cb3a1e48 — as of 2026-11-13
+
+Each row of a pass is claimed, built, admitted and sent inside its own handler. The message is
+built (and turned into bytes once) in the claim's transaction, before the budget is asked: a row
+that cannot be built is `failed` there, emptied as every finished row is, counted as `failed` in
+`mail_delivery` and logged by id, kind and the error's class, never its text or headers. Any
+other failure of a row that is not the database's (`SQLAlchemyError` ends the pass, as before)
+marks that row `failed` too, and the pass goes on with the next one. Header text is folded to
+one line (every Unicode Cc, Zl and Zp character, not only ASCII ones), so a name a human typed
+builds.
+
+Rows that an earlier version left in `sending` get no migration and no startup step: their claim
+lapses after two minutes like any claim, the next pass takes them again, and under this version
+they are built first, then sent or failed.
+
+**Reason:** a build failure does not go away by retrying, so a row that raised would come back on
+every pass, and a mail that never leaves should hold no place in its kind's budget. Building
+before admitting means such a row takes no place at all; failing it ends its loop. The lapse already is the path back for a row
+whose process did not finish, so a separate unstick step would repeat it.
+
+**Rejected alternatives:**
+- A migration that sets every `sending` row back to `waiting`: the lapse does the same within
+  two minutes, and a migration would also release a row a running old process is in the middle
+  of sending.
+- A startup step that does the same: the same overlap with a live process, every start.
+- Retrying a row that failed to build with backoff, as a server's failure is: the same data
+  builds the same way, so it would only delay the `failed`.
+- Admitting first and handing the place back when the build fails: two writes to the budget's
+  row for nothing; building first needs none.
+
 ## A registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction
 
 **Id:** a8f3a73c-7af9-4276-841e-3f84b056dedf
@@ -253,7 +291,8 @@ password sees an error that depends on an account (a taken handle).
 
 **Id:** f63430e9-d5ca-430e-afef-d44ec980bd35
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** e3267520-bfef-40e3-aa6f-17cecd17147c
 **Evidence:** inferred
 **Source:** the card tsk-7sw2a2bd5srp from the coordinator, 2026-10-31: the maintainer, testing the registration live, found the page bare HTML (no stylesheet) and asked for the legal pages' shell; docs/api.md §2.7.1 and §16.7.1. Why not the app and not the landing assets is this entry's reading
 **Revisit when:** the dashboard takes over the form, or the legal pages move to the landing page's stylesheet and fonts
@@ -308,3 +347,32 @@ the inviter passes the link on; the account mails follow the same rule so the tw
   delivers stale news once mail comes back.
 - Mail in the registration's language: the account registration does not keep it; keeping it would
   need a column and a migration for four mails the card asked to have in English.
+
+## The registration's link page stands in the frame of the pages without a session, like the sign-in link's page
+
+**Id:** e3267520-bfef-40e3-aa6f-17cecd17147c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-tp97v64vpy5z, PR 4, as lotse#wtwy split it (2026-11-13): the registration link page and the maintenance page go into the door frame; `routes/register_page.py`, `render.door_document`. The reasons are this entry's reading of the sign-in link page's entry (email-links.md, 89e8318d)
+**Revisit when:** the dashboard takes the form over, the page needs a script, or the dashboard's `/login` gets the product line back
+
+`GET /mail/register/{token}`, its refusals and its dead-link page are drawn by
+`render.door_document`, as the sign-in link's page is: the landing page's header and footer around
+the door of `public-pages.css`, the form in the form's column. The form keeps its fields, its
+errors under each field (`aria-invalid`, `aria-describedby`), its signed terms version and its
+statuses; the legal links that stood under it are the frame footer's Legal column now, so the page
+has no links of its own and no words for them (`register_page.legal_*` are gone). The answers carry
+`render.DOOR_CSP` and `Referrer-Policy: no-referrer`, with `Cache-Control: no-store` as before.
+`render.form_document` and its inline style are removed; nothing else used them.
+
+**Reason:** the page is the step after the mail on the way into the dashboard, and every other page
+a person reaches without a session (`/login`, `/register`, the sign-in link, §18.6) already stands in
+this frame. The old shell looked like the legal pages as they were before they took the landing
+stylesheets (landing.md, dde46a41), so it had become the one page unlike its neighbours.
+
+**Rejected alternatives:**
+- Keep the legal pages' old shell (mail.md, f63430e9): unlike every page around it.
+- The product line under the frame's footer: the framed pages end with the frame's footer
+  (email-links.md, 89e8318d).
+
