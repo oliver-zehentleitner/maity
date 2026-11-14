@@ -7726,19 +7726,24 @@ def project_tabs_step(run: Run, page: Page) -> None:
     no_problems(run, "tabs")
 
 
-# Where the card asked for each section (tsk-chtvqs62cd10), by its heading; a tab shows more.
+# Every section heading of each tab (tsk-chtvqs62cd10), as the e2e fixture's owner sees them: a
+# heading on another tab, or one not listed here, fails the step, so a moved section is caught.
 SETTINGS_SECTIONS = {
-    "General": ["Project state", "Project language", "Logo and banner", "Links", "README badge", "Repository"],
-    "Members and agents": ["Members' own agents", "Agents of owners who are not members", "Onboarding", "Agent signing"],
-    "Way of working": ["Who closes a card", "Keep the Why commitment", "Keep the Why personal settings"],
-    "Moderation": ["Remove a reported message"],
+    "General": ["Project language", "Project state", "Repository", "Links", "Project name", "Public page",
+                "README badge", "Change ticker", "Forge webhook", "Logo and banner"],
+    "Members and agents": ["Members' own agents", "Agents of owners who are not members", "Onboarding",
+                           "Restricted access", "Agent signing"],
+    "Way of working": ["Who closes a card", "Memory", "Keep the Why commitment", "Keep the Why personal settings",
+                       "Jour fixe series"],
+    "Moderation": ["Remove a reported message", "Files waiting to be sent"],
     "Mine": ["Your absence"],
 }
 
 
 def settings_tabs_step(run: Run, page: Page) -> None:
     """A project's Settings in sub-tabs (tsk-chtvqs62cd10): each tab opens by its address, marked as
-    the shown one, and keeps it over a reload and Back; every section heading is on exactly one tab."""
+    the shown one, and keeps it over a reload and Back; every section heading is on exactly one tab,
+    the one SETTINGS_SECTIONS lists it for."""
     run.step("settings tabs: each opens by its address, survives a reload and Back; a section on one tab only")
     base = f"{run.base}/owner/e2e-alpha/"
     nav = page.locator("main nav.settings-tabs")
@@ -7755,6 +7760,8 @@ def settings_tabs_step(run: Run, page: Page) -> None:
             seen.setdefault(title, []).append(tab)
         missing = [t for t in SETTINGS_SECTIONS[tab] if t not in titles]
         assert not missing, f"{tab}: {missing} not on the tab ({titles})"
+        unknown = [t for t in titles if t not in SETTINGS_SECTIONS[tab]]
+        assert not unknown, f"{tab}: {unknown} on the tab, not listed for it ({titles})"
         run.a11y(page, f"settings, {tab}")
     twice = {title: tabs for title, tabs in seen.items() if len(tabs) != 1}
     assert not twice, f"sections on more than one tab: {twice}"

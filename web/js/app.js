@@ -63,8 +63,8 @@ window.Maity = window.Maity || {};
     { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
-    // One view with two tabs (§16.11): the project's for its admins, one's
-    // own at settings/mine for every human member.
+    // One view in sub-tabs (§16.11, web/context/views.md): the project's for its admins,
+    // one's own at settings/mine for every human member.
     { route: "settings", get label() { return M.t("nav.settings"); }, when: (ctx) => ctx.canAdmin || ctx.me.kind === "human" },
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
@@ -1855,7 +1855,9 @@ window.Maity = window.Maity || {};
     const asked = (args || [])[0] || "general";
     const offeredTabs = SETTINGS_TABS.filter(([key]) => settingsTabOffered(ctx, key));
     const tabLink = (key) => (key === "general" ? projectLink(ctx.slug, "settings") : projectLink(ctx.slug, "settings", key));
-    if (!offeredTabs.length) return;
+    // None offered (an agent neither admin nor owner, at a typed address): Mine, which says it is
+    // for humans, as the one page did, never an empty page.
+    if (!offeredTabs.length) offeredTabs.push(SETTINGS_TABS.find(([key]) => key === "mine"));
     const chosen = offeredTabs.find(([key]) => key === asked);
     // settings/general is General's longer name; the address is settings.
     if (!chosen || (args || [])[0] === "general" || (args || []).length > 1) {
@@ -1874,7 +1876,8 @@ window.Maity = window.Maity || {};
       const absence = projectPanel(ctx, "mine");
       append(root, saved);
       if (human) await M.mySettings(ctx, root, absence);
-      else append(root, absence);
+      else if (absence) append(root, absence);
+      else await M.mySettings(ctx, root);
       // A member in the restricted-access set who may not change it reads it here: the set's
       // notice links to settings, which leads such a member to settings/mine (§6.1, §19).
       const restricted = ((ctx.project && ctx.project.settings) || {}).restricted_access;

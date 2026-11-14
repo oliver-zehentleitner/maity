@@ -275,7 +275,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Project settings are the project's Settings tab (the maintainer's request): the helper opens it,
   // drawn afresh, at one of its sub-tabs (General without one, tsk-chtvqs62cd10); a test moves on by
   // its next go().
-  const onSettings = () => /^#\/[^/]+\/[^/]+\/settings(\/(members|work|moderation))?$/.test(win.location.hash);
+  const onSettings = () => /^#\/[^/]+\/[^/]+\/settings(\/(members|work|moderation|mine))?$/.test(win.location.hash);
   const projectSettings = async (tab) => {
     const full = (/^#\/([^/]+\/[^/]+)/.exec(win.location.hash) || [])[1];
     await go("#/" + full + "/settings" + (tab ? "/" + tab : "")); for (let k = 0; k < 6; k++) await tick();
@@ -13685,6 +13685,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.get = msGet;
     expect(!/Mine=/.test(agentTabs) && /^General=#\/maintainer\/maity\/settings\*,/.test(agentTabs) && win.location.hash === "#/maintainer/maity/settings",
       "settings: an admin agent sees no Mine; its address leads to General " + agentTabs);
+    // An agent neither admin nor owner: no tab is offered, so a typed address leads to Mine with
+    // its humans-only sentence, as the one page did, never an empty page.
+    win.Maity.api.get = (p) => (p === "/me" ? msGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: "agent" }),
+      projects: x.projects.map((y) => (y.slug === "maity" ? Object.assign({}, y, { trust: "member", role: "coder" }) : y)) })) : msGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings/work"); for (let k = 0; k < 6; k++) await tick();
+    const plainAgent = [win.location.hash, msTabs(), text(main)];
+    win.Maity.api.get = msGet;
+    expect(plainAgent[0] === "#/maintainer/maity/settings/mine" && !plainAgent[1] && main.querySelector("h2")
+      && plainAgent[2].includes("These are settings of a human member.") && onSettings(),
+      "settings: an agent without project:admin at a settings address gets Mine and its humans-only sentence " + JSON.stringify(plainAgent));
     await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
   }
   // Leaving the project from Mine (§6.2): the namespace owner is stopped up front; a member and a

@@ -1489,7 +1489,8 @@ refuse are left out too, and with none left the section says why.
 
 **Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Evidence:** confirmed
 **Source:** the maintainer's feedback of 2026-10-25 ("project settings da oben ist komisch, das muss eher runter auf die projekt ebene, z.B. nach Runners und Why ein Settings wäre logischer", tsk-r7qja01wwzvv) and bug report (a save in Project settings landed on the inbox, tsk-t407bnycxera); the dashboard's implementation, 2026-10-25
 **Revisit when:** the settings grow enough to need sub-pages, or the designer renames the tab
@@ -4113,6 +4114,7 @@ rule, no route kept for an old address.
 **Source:** the maintainer's request on the card tsk-chtvqs62cd10, 2026-11-13 (sub-tabs instead of one long page, an address per tab, General the default, only the tabs with something for the reader, presentation only, the dashboard's existing tab pattern, and a proposed grouping open to review); where Keep the Why personal settings and the sections the card did not list went is the implementer's, 2026-11-13
 **Revisit when:** the review rules (tsk-kymz2pdrf85k), the rule settings (tsk-z5h7h1v7kmjd) or outsider removal (tsk-yr3ckca01b9q) land, a tab grows into a long page again, or the maintainer moves a section
 **See:** views.md#a-project-has-one-settings-view-project-for-its-admins-mine-at-settingsmine-for-every-human-member — f37bbdb4-2ad3-432e-babf-dd58f6e3ff79 — as of 2026-11-13
+**See:** views.md#project-settings-are-the-projects-last-tab-not-a-panel-from-the-gear-menu — ecbeaecb-2dcf-45ff-ae44-d8b2b455e218 — as of 2026-11-14
 
 The project's **Settings** view is a row of tabs, drawn by the same
 `M.tabBar` as the Team and Agents pages (links in a `nav`, the shown one
@@ -4140,6 +4142,13 @@ card, the memory provider, the Keep the Why commitment, Keep the Why
 personal settings, the jour fixe link); Moderation the reported-message
 removal and everyone's pending uploads; Mine one's own settings, leaving
 the project, and the owner's absence.
+
+Settings stays the project's last tab, never a panel from the gear menu,
+and a save stays on it (ecbeaecb, whose revisit condition, sub-pages,
+this meets). A reader offered no tab (an agent neither admin nor owner,
+at a typed address) gets Mine and its sentence that these are a human
+member's settings, as the one page led them to `settings/mine`, not an
+empty page.
 
 **Reason:** the one page had grown to some twenty sections, and an admin
 looking for one scrolled through all of them. An address per tab keeps a
