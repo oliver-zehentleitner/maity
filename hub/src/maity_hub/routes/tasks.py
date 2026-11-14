@@ -24,6 +24,7 @@ from maity_hub import (
     clock,
     contract_text,
     cover,
+    events,
     idempotency,
     instances,
     line,
@@ -703,12 +704,18 @@ def list_tasks(
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
         matched: dict[str, list[str]] = {}
+        # Notes written in the reader's hidden windows are not searched (§6.2, §6.4).
+        listable = (
+            events.outside_window_times(conn, mine.project.id, mine.row, t.card_note.c.created_at)
+            if q is not None
+            else None
+        )
 
         def matching(rows: Sequence[Any]) -> list[Any]:
             if q is None:
                 return list(rows)
             result = []
-            notes = card_search.note_bodies(conn, (row.id for row in rows))
+            notes = card_search.note_bodies(conn, (row.id for row in rows), listable)
             for row in rows:
                 hit = card_search.matches(row, q, notes[row.id])
                 if hit:

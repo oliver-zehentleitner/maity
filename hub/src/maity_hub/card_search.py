@@ -15,18 +15,22 @@ def fold(text: str) -> str:
     return unicodedata.normalize("NFKC", text).lower()
 
 
-def note_bodies(conn: Connection, card_ids: Iterable[str]) -> dict[str, list[str]]:
+def note_bodies(
+    conn: Connection, card_ids: Iterable[str], visible: Any = None
+) -> dict[str, list[str]]:
     """Per card the bodies of its notes in every state, a redacted one left out (§6.4);
-    one query for a batch of cards."""
+    one query for a batch of cards. `visible`: SQL on `card_note` for the notes the reader
+    may list, those outside its hidden windows (`events.outside_window_times`, §6.2)."""
     wanted = list(dict.fromkeys(card_ids))
     found: dict[str, list[str]] = {card_id: [] for card_id in wanted}
     if not wanted:
         return found
-    for card_id, body in conn.execute(
-        select(t.card_note.c.card_id, t.card_note.c.body).where(
-            t.card_note.c.card_id.in_(wanted), t.card_note.c.redacted.is_(False)
-        )
-    ):
+    query = select(t.card_note.c.card_id, t.card_note.c.body).where(
+        t.card_note.c.card_id.in_(wanted), t.card_note.c.redacted.is_(False)
+    )
+    if visible is not None:
+        query = query.where(visible)
+    for card_id, body in conn.execute(query):
         found[card_id].append(body or "")
     return found
 
