@@ -606,6 +606,10 @@ def apply_patch(
     # A guest raised may enter the restricted-access set, it and its listed agents (§6.1).
     raised = "trust" in changed and target.trust == restricted.GUEST
     in_set_before = restricted.resolve(conn, change.project) if raised else None
+    if {"trust", "role"} & changed.keys():
+        # A signature that stopped counting before this change goes first, so that a
+        # raise never brings it back (§6.4); the one this change ends goes below.
+        cards.drop_signatures(conn, change.project.id, member_id, change.actor)
     if changed:
         columns = {k: v for k, v in changed.items() if k != "briefing"}
         if "reports_to" in changed:

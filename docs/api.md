@@ -7109,12 +7109,15 @@ that replaces the card's report (§6.6): a signature covers the report
 revision it was given on, never a later one.
 A signature counts only while its signer is an active member of the
 project, not isolated (§6.2), whose trust and role still give the
-signature's scope (`tasks:review`, `tasks:test`). A trust or role change
-that takes that scope away, and the signer's removal or isolation, clear
-the signatures it gave on the project's cards in `review`
-(`task_updated` with `fields: ["approvals"]`, per card), so a later
-return does not bring them back; and a signature whose signer no longer
-stands is not counted when the next one is given.
+signature's scope (`tasks:review`, `tasks:test`). Every change that takes
+that scope away clears the signatures it gave on the project's cards in
+`review` (`task_updated` with `fields: ["approvals"]`, per card): a trust
+or role change, a new base of its project role (`PUT …/roles`, for every
+member of that role), the end of the trust an organisation's ownership
+raised (§6.26), and the signer's removal or isolation. A later return
+does not bring them back, and a trust or role change first clears what
+no longer counted before it; a signature whose signer no longer stands is
+not counted when the next one is given.
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
 `done`, by a report (§6.6: there the card goes to `review` instead);

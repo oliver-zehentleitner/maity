@@ -174,11 +174,13 @@ def standing(conn: Connection, project_id: str, approvals: Any) -> dict[str, Any
     return current
 
 
-def drop_signatures(conn: Connection, project_id: str, signer: str, actor: Any) -> None:
+def drop_signatures(conn: Connection, project_id: str, signer: str | None, actor: Any) -> None:
     """Clears the signatures `signer` gave on the project's cards in review that it no
-    longer stands for (§6.4), after its trust or role went down, its removal or its
-    isolation, so a later return does not bring them back. Each card emits
-    `task_updated` with `fields: ["approvals"]`."""
+    longer stands for (§6.4), after its trust, role or role base went down, its removal or
+    its isolation, so a later return does not bring them back; with `signer` None, every
+    signer's (a role's base changed for all its members). Every path that lowers a
+    member's standing calls it. Each card emits `task_updated` with
+    `fields: ["approvals"]`."""
     from maity_hub.events import emit
     from maity_hub.routes.tasks import audience
 
@@ -192,7 +194,9 @@ def drop_signatures(conn: Connection, project_id: str, signer: str, actor: Any) 
     state = None
     for card in rows:
         approvals = card.approvals or {}
-        if not any((approvals.get(s) or {}).get("by") == signer for s in SIGNATURES):
+        if signer is not None and not any(
+            (approvals.get(s) or {}).get("by") == signer for s in SIGNATURES
+        ):
             continue
         kept = standing(conn, project_id, approvals)
         if kept == approvals:

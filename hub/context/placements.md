@@ -564,7 +564,11 @@ creator and profile, as for an invitation: an active member with
 exchange answers `not_found` as every join that no longer works. A
 signature on a card follows the same idea (`cards.standing`): it counts
 while its signer may give it, and `cards.drop_signatures` clears it on
-a demotion, a removal or an isolation.
+every path that lowers a member's standing: a trust or role change, a
+project role's new base, the end of an organisation's raised trust, a
+removal or an isolation. A trust or role change also clears before it
+writes, so a raise never counts a signature some other path left
+behind.
 
 **Reason:** a grant should not outlive the authority that made it; the
 invitation already behaves this way, and one predicate keeps the two
@@ -576,4 +580,7 @@ every path that lowers a member's standing (patch, removal, isolation,
 suspension, organisation changes), and a path missed would leave the
 grant open, while a check at use covers them all. A placement that
 names an existing member is not re-checked: it creates nothing, and the
-member's own standing is the membership's.
+member's own standing is the membership's. For signatures, one shared setter
+for trust, role and role base: the writes differ too much (one member,
+every member of a role, the hub's own change) for one function to carry
+them, so each calls the same clearing step instead.
