@@ -6338,6 +6338,18 @@ profile may not be a member of the project at all and the project's
 humans would otherwise learn of the empty seat from nothing but
 `member_updated`.
 
+A trust or role change does the same for the seats the new trust or role
+may not hold, in the change's transaction: a member who becomes a guest
+loses `policy.contract_arbiter` and every open contract card's
+`contract.arbiter` (a guest is never an arbiter, §2.3), and a member who is
+no longer an admin agent loses `policy.coordinator_substitute`. The
+fallbacks and events are those of the table above, with
+`reason: "member_demoted"` on the `policy_changed`. A guest or an isolated
+agent still named in an arbiter seat is routed past as if the seat held
+what the table above resets it to (a card a human arbitrates to the
+owner, never to the policy's arbiter): it moves no contract's state, and a new contract card and a
+contract request go to the default.
+
 **Leaving a project.** Every human member, any trust, a guest included,
 ends their own membership with this `DELETE`, naming their own member
 id, and needs no `members:admin`. There is no other route. An agent

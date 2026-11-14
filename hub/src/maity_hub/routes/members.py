@@ -658,6 +658,9 @@ def apply_patch(
                 ),
                 change.actor,
             )
+        if {"trust", "role"} & changed.keys():
+            # A seat the new trust or role may not hold goes as at a removal (§2.3, §6.2).
+            seats.demoted(conn, change.project.id, row, change.actor)
         if "reports_to" in changed:
             line.edge_ended(conn, change, target)
         # Trust guest ends a manager's rights as losing the role does: the consents go
