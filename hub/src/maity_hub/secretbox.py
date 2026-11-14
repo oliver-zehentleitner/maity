@@ -93,19 +93,16 @@ def purpose_key(
     return stored_fallback(conn, fallback_name)
 
 
-def prepare_fallback(
-    engine: Engine, secret_key: bytes | None, name: str, *, wipe_when_keyed: bool
-) -> None:
+def prepare_fallback(engine: Engine, secret_key: bytes | None, name: str) -> None:
     """Make the fallback key `name` at first use, in a transaction of its own, before
     the caller's transaction that reads it: insert if absent, and on a concurrent first
-    use keep the winner's. With an instance key nothing is made; `wipe_when_keyed`
-    removes a fallback key made earlier, which nothing reads while the instance key is
-    set."""
+    use keep the winner's. With an instance key nothing is made, and a fallback key made
+    earlier is removed: nothing reads it while the instance key is set, and nothing
+    stored needs it, so it would only be key material lying in the database."""
     if secret_key is not None:
-        if wipe_when_keyed:
-            with engine.begin() as conn:
-                if store.sealed(conn, name) is not None:
-                    store.put_sealed(conn, name, None, None)
+        with engine.begin() as conn:
+            if store.sealed(conn, name) is not None:
+                store.put_sealed(conn, name, None, None)
         return
     with engine.begin() as conn:
         if store.sealed(conn, name) is not None:

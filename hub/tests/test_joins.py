@@ -7,7 +7,7 @@ import re
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock, events, render
 from maity_hub import tables as t
@@ -561,3 +561,85 @@ def test_a_new_instance_of_an_admin_agent_is_the_owners_to_give(
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"] == {"reason": "owner_only"}
     assert _access_lines(caplog)[-1].endswith(" error=forbidden reason=owner_only")
+
+
+# --- §3.3 the creator at the exchange ---------------------------------------------------
+
+
+def _creator(make_client: ClientFactory, migrated: Engine, handle: str, role: str) -> flow.Human:
+    from tests import factory
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    human = flow.human(make_client, migrated, handle)
+    factory.membership(migrated, project_id, role, human_id=human.id)
+    return human
+
+
+def _set_trust(migrated: Engine, human: flow.Human, trust: str, *, active: bool = True) -> None:
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == human.id)
+            .values(trust=trust, active=True if active else None)
+        )
+
+
+@pytest.mark.parametrize(
+    ("grant", "now"),
+    [
+        ({"trust": "admin", "role": "coder"}, "admin"),
+        ({"trust": "admin", "role": "proxy"}, "admin"),
+    ],
+    ids=["trust-admin", "role-proxy"],
+)
+def test_an_owner_grant_needs_the_creator_still_owner(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    grant: dict[str, str],
+    now: str,
+) -> None:
+    """Trust `admin` and the role `proxy` are an owner's to give (§2.3): a creator who is
+    no longer an owner at the exchange voids the join, answered as an unknown one."""
+    co_owner = _creator(make_client, migrated, "co-owner", "owner")
+    created = flow.join(co_owner, "maity", **grant)
+    _set_trust(migrated, co_owner, now)
+    refused = flow.exchange(make_client(), created)
+    assert (refused.status_code, refused.headers["Maity-Error"]) == (404, "not_found")
+    with migrated.connect() as conn:
+        joined = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == created["agent_id"])
+        ).first()
+    assert joined is None
+
+
+def test_an_owner_grant_stands_while_the_creator_is_owner(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    co_owner = _creator(make_client, migrated, "co-owner", "owner")
+    created = flow.join(co_owner, "maity", trust="admin", role="proxy")
+    assert flow.exchange(make_client(), created).status_code == 201
+
+
+@pytest.mark.parametrize(
+    ("trust", "active"), [("member", True), ("admin", False)], ids=["demoted", "left"]
+)
+def test_areas_and_capabilities_need_the_creator_still_admin(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, trust: str, active: bool
+) -> None:
+    """A join with areas and capabilities, made with `members:admin`: a creator demoted
+    below it, or gone from the project, voids it at the exchange."""
+    admin = _creator(make_client, migrated, "an-admin", "admin")
+    created = flow.join(admin, "maity", areas=["hub/"], capabilities=["tag"])
+    _set_trust(migrated, admin, trust, active=active)
+    refused = flow.exchange(make_client(), created)
+    assert (refused.status_code, refused.headers["Maity-Error"]) == (404, "not_found")
+
+
+def test_a_join_stands_while_the_creator_holds_members_admin(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = _creator(make_client, migrated, "an-admin", "admin")
+    created = flow.join(admin, "maity", areas=["hub/"], capabilities=["tag"])
+    assert flow.exchange(make_client(), created).status_code == 201
