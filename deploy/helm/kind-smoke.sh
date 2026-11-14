@@ -73,7 +73,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:17
+          image: postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
           env:
             - {name: POSTGRES_USER, value: maity}
             - {name: POSTGRES_DB, value: maity}

@@ -296,9 +296,9 @@ exclusive create without following a link, and a copy. A symbolic link at
 the target is refused even with `--force`, a directory before anything
 is fetched, and a `size` above 256 MiB too.
 
-Without `-o`, the file goes into `./maity-files/`, created 0700 when
-missing, never into the working directory itself; a link in its place
-is refused (the contract owner's ruling for §13, with #216).
+Without `-o`, the file goes outside the work tree, into the state
+directory's `files/` (d1d6b49d); until then it went into
+`./maity-files/` (the contract owner's ruling for §13, with #216).
 
 **Reason:** a refused post leaves its uploads pending for 24 hours
 (§8.7), and an agent that retries the same `say` would reach the cap of
@@ -312,11 +312,11 @@ behind. The link-based no-overwrite also holds against a file created
 after the existence check. Neither the link nor the rename follows a
 symbolic link at the target. Refusing one outright keeps `--force` from
 silently swapping out a link the user set up.
-The folder of its own exists because the sender picks the name: an
+A place of its own exists because the sender picks the name: an
 attachment called `conftest.py`, `sitecustomize.py` or `Makefile`,
 saved where none exists yet, would be picked up by the next test run or
-build. The folder is visible rather than hidden so that a human sees
-what arrived.
+build; where that place is, and why not in the work tree, is
+d1d6b49d.
 
 **Rejected alternatives:**
 - Leaving the uploads of a refused post pending: harmless once, but it
@@ -324,6 +324,49 @@ what arrived.
 - Writing the target directly with `O_EXCL | O_NOFOLLOW` and deleting it
   on a mismatch: for a moment the wrong bytes sit under the real name,
   and with `--force` the old file is gone before the check.
+
+## `files get` without `-o` saves outside the work tree
+
+**Id:** d1d6b49d-17b8-4572-a61d-28fe99a4ac05
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-7jstyhznnmte (lotse, seq 127806: test runners collected files from `./maity-files/`, and `git add -A` committed them); `docs/api.md` §13 (`files get`); decision 3a8f1852 above; it moves the folder of context/attachments.md b623825e out of the work tree
+**Revisit when:** an agent needs an attachment inside its work tree often enough that `-o` is not enough, a harness's sandbox keeps the agent from reading the clone's `.git`, or git or a test runner starts reading `.git/maity-files/`
+**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-13
+
+Without `-o`, `files get` saves into `files/` in the state directory,
+`<git common dir>/maity/files/` unless `MAITY_STATE_DIR` names another
+(created 0700, a link in its place refused, an existing one checked with
+`check_private` on Windows). Under a runner placement the file goes into
+the clone's `.git/maity-files/` instead: created 0700 and opened from the
+`.git` that `clonecheck.opened_clone` checked, without following a link
+(`inclone.create_in_git`), and written as every placed file is, never
+over an existing name. `maity-files` is one of the directories the clone
+check allows in `.git` (`GIT_DIRS`). The printed line names the full
+path. `-o <file>` still saves where it says, under a placement only in
+the clone outside `.git`.
+
+**Reason:** the sender picks the name. In `./maity-files/`, inside the
+work tree, a `conftest.py`, `test_x.py` or `x.test.js` was collected by
+the next test run, which searches every folder below the clone, and `git
+add -A` committed whatever arrived. Outside the work tree neither sees
+it, and `git status` stays clean. Under a placement the state directory
+is `.git/maity`, which the harness keeps the agent from reading, so the
+attachment, which is for the agent to read, goes next to it in `.git`.
+
+**Rejected alternatives:**
+- Keeping `./maity-files/` and excluding it from git
+  (`.git/info/exclude` or `.gitignore`): `git add -A` leaves it alone,
+  but test runners do not read git's excludes and still collect it.
+- A temporary directory: on a shared host `/tmp` is shared with every
+  other user unless each call makes its own, a sandboxed harness may see
+  another `/tmp` than maity, and nothing removes what piles up there.
+- `.git/maity/files/` under a placement as well: the agent cannot read
+  it there, and that directory holds the credential.
+- A visible folder in the work tree so that a human sees what arrived
+  (3a8f1852): the path is printed, and a folder test runners collect
+  costs more than one a human must look up.
 
 ## `maity takeover` checks the holder before it answers
 
@@ -1018,7 +1061,7 @@ to check, and the rule in `docs/agents.md` carries the weight.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-hnw52rvtwdsv (agents missed screenshots the owner attached to chat messages; the owner approved the fix, seq 109092); `docs/api.md` §8.7 (a message event carries its attachments as metadata); decision 3a8f1852 above
-**Revisit when:** a message event stops carrying attachment names, `files get` without `-o` stops saving into `./maity-files/`, agents still answer without opening a file the line names, or hub ids take a character outside letters, digits, `.`, `_` and `-`
+**Revisit when:** a message event stops carrying attachment names, `files get` without `-o` starts saving into the work tree, agents still answer without opening a file the line names, or hub ids take a character outside letters, digits, `.`, `_` and `-`
 
 The event line `wait` prints on stderr gets, for a message with files, `[N attachment(s): name, …]` before the author's standing: each name as `files get` would
 save it (`file_name`), cleaned for a line, its square brackets made round so it cannot close the list, cut at 60 characters, and
@@ -1035,7 +1078,7 @@ come from the event's own `payload.attachments`, so no hub call is made per even
 message and are opened before answering. Standard output stays the JSON.
 
 **Reason:** a screenshot showed only in the JSON under the line, which an agent skims, so the agent answered without it. The printed
-command has no `-o <file>`: without it `files get` saves into `./maity-files/` under the cleaned name (3a8f1852). A command with
+command has no `-o <file>`: without it `files get` saves outside the work tree under the cleaned name (d1d6b49d). A command with
 `-o <the sender's name>` would put a file the sender named `conftest.py` or `Makefile` into the working directory of whoever
 copies the line.
 
@@ -1073,6 +1116,67 @@ an agent persuaded to save a line could also leave it out.
 - `@` before the login: it reads as a member's handle, and a forge login may match one by chance.
 - Quoting every card title: all of them are people's text, and the board would lose its form; only
   an imported one comes from outside the project.
+
+## Hub and forge text is printed with escapes shown; `join --pointer` writes no symbolic link
+
+**Id:** 78d3ee5c-2120-429c-ae72-caadabfc2751
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-2tf7921xpmr8 (hardening from the security rounds, tsk-v9kheekgq115)
+
+The CLI prints text that comes from the hub, from GitHub or from files in
+the repository through the cleaners of `onboarding.py`, the ones the resume
+packet and the runner log already use. A hub error's `code` and `message`
+(`hub._error_from`, so every command's refusal), the join's and the
+pairing's header values and every one-line field of `maity gh pr view` go
+through `inline`; a text answer of `maity api`, `maity help` and a pull
+request's body and comments through `clean`, which keeps their lines. The
+stored `HubError.code` is the cleaned one too, since `maity-error` prints
+it. The status lines go through the boundary instead of each call site:
+`_done` collapses and cleans every line it prints (`inline`; a multi-line
+answer such as `release show` passes its lines as a list), and `_err` cleans
+its message (`clean`), so a hub id, status or checklist text interpolated
+into either cannot act on the terminal; `--json` output stays the hub's data
+(`_print_json` escapes the same characters inside JSON strings). `maity join --pointer` writes only into a regular `AGENTS.md` or
+`CLAUDE.md` directly in the repository's root. Where the platform opens
+relative to a directory (not Windows), the root is opened once and both files
+are looked up in that open directory, never following a link
+(`O_NOFOLLOW`), and only a regular file is truncated and written. For any
+other file, and for a file the system will not open or write, it says so and
+prints the block, and the join goes on. On Windows the files are opened by
+path after the check, so a directory swapped in between is a known gap
+there.
+
+**Reason:** a terminal acts on escape sequences in what it is given; text a
+hub, a proxy or a pull request's author wrote must not move the cursor,
+retitle the window or reach the clipboard. One cleaner for every path means
+one rule to check. A linked `AGENTS.md` can point anywhere the agent's user
+may write, and a clone brings its links with it.
+
+**Rejected alternatives:**
+- Dropping the characters instead of showing them: the reader could not
+  tell that the text was changed. `clean` shows them, as the resume does.
+- A call at each site that interpolates a hub field: a review of the first
+  version found a dozen sites left out (release summary, claim, ask,
+  answer, say, attachment ids); the next status line would be missed as
+  easily. Fields that `release list` prints outside `_done` are still
+  cleaned where they are formatted.
+- `inline` for multi-line text (help, a body): it would put a whole page on
+  one line; `clean` keeps the newlines, and those cannot act on a terminal.
+- Checking the resolved path and then opening by path (the first version
+  of this change): only the last component is opened without following a
+  link, so a repository directory replaced between the check and the open
+  leads the write elsewhere. A review found it.
+- Following a link whose target lies inside the repository: the check and
+  the write are two steps a second link can fall between, and the block in a
+  link's target is not what the repository's `AGENTS.md` shows. The one
+  exception is a `CLAUDE.md` linked to this `AGENTS.md`, a common layout:
+  it has the block once `AGENTS.md` has it, so it is neither written nor
+  refused.
+- Failing the join on a refused file: the join code is spent by then, and
+  the credential is already stored; the block is printed as without
+  `--pointer`.
 
 ## An isolation refusal exits 5, and `wait` does not retry it
 

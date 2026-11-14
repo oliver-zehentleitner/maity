@@ -26,9 +26,13 @@ from maity_hub.views import event_views
 
 log = logging.getLogger(__name__)
 
-TYPES = ("merge", "decision", "deploy", "release", "rename", "note")
+# The item types (§17.1); the listing filters by every one of them (§17.9).
+TYPES = ("merge", "decision", "deploy", "release", "jour_fixe", "rename", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
-FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "rename", "note")
+FILTER_TYPES = ("contract", *TYPES)
+# What follow and mute act on (§17.8): not `jour_fixe` and `rename`, whose audience is `all`
+# alone, so that a subscription to them would change nothing.
+SUBSCRIPTION_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
 TEXT_MAX = 280
 ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
 SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories
