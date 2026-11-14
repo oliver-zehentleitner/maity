@@ -1061,6 +1061,43 @@ def test_a_project_no_source_covers_is_asked_once_a_round(
     assert lines == [f"probe: project {other_project}: no source covers the repository (no_grant)"]
 
 
+def test_a_project_whose_stored_url_names_no_repository_ends_only_its_own_turn(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A URL stored before the write checked it (`https://github.com/acme/`) is refused at
+    the forge's door (§6.1); the round goes on with the other projects, as for one no
+    source covers, and does not end at that project."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    _reported_card(owner, make_client)
+    other = _other_project_report(owner, make_client, github)
+    assert probe.observe_report(migrated, READER, other) is True
+    with migrated.connect() as conn:
+        other_project = conn.execute(
+            select(t.card.c.project_id).where(t.card.c.id == other)
+        ).scalar_one()
+    releases: list[str] = []
+    links: list[str] = []
+
+    def short_url(_engine: Engine, fg: Any, project_id: str) -> None:
+        releases.append(project_id)
+        if project_id == other_project:  # the read the stored URL would make
+            fg._send(f"/repos/{forge.repository_of('https://github.com/acme/')}/releases")
+
+    monkeypatch.setattr(probe, "observe_release", short_url)
+    monkeypatch.setattr(probe, "observe_links", lambda _e, _f, p: links.append(p))
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    for _ in range(2):  # whichever project the round starts at
+        links.clear()
+        probe.sweep(migrated, READER)
+        assert other_project not in links and len(links) == 1, links
+    assert not any("/repos/acme//" in call for call in github.calls)
+
+
 def test_a_merge_round_goes_on_past_a_project_no_source_covers(
     monkeypatch: pytest.MonkeyPatch, owner: flow.Human, migrated: Engine, github: FakeGitHub
 ) -> None:

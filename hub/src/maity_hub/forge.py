@@ -73,6 +73,11 @@ class NotCoveredError(ForgeUnavailableError):
         self.reason = reason
 
 
+class InvalidRepositoryError(ForgeUnavailableError):
+    """The project's stored repository URL names no valid repository (§6.1): a fault of
+    that one project, not of the forge, so a round of the probe goes on with the others."""
+
+
 def kind_of(url: str | None) -> str | None:
     if not url:
         return None
@@ -100,9 +105,9 @@ def repository_checked(path: str, query: dict[str, Any] | None = None) -> None:
     `name` variables, name no valid repository (§6.1): a URL stored before the check names
     nothing else, and the forge is not asked."""
     if query is not None:
+        # Every GraphQL read of the hub names its repository in these two variables; one
+        # that names it another way is refused too, so it never skips the check.
         variables = query.get("variables") or {}
-        if "owner" not in variables and "name" not in variables:
-            return
         owner, name = variables.get("owner"), variables.get("name")
         named = f"{owner}/{name}" if isinstance(owner, str) and isinstance(name, str) else ""
     elif path.startswith("/repos/"):
@@ -111,7 +116,7 @@ def repository_checked(path: str, query: dict[str, Any] | None = None) -> None:
     else:
         return
     if not valid_repository(named):
-        raise ForgeUnavailableError("the project's repository URL names no valid repository")
+        raise InvalidRepositoryError("the project's repository URL names no valid repository")
 
 
 def repository_of(url: str) -> str:

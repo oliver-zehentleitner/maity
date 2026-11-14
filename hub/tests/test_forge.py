@@ -979,6 +979,14 @@ def test_a_graphql_read_on_a_grant_checks_the_repository_too(opener: FakeOpener,
     assert opener.requests == []
 
 
+def test_a_graphql_read_that_names_no_repository_is_refused(opener: FakeOpener) -> None:
+    # Every GraphQL read of the hub names its repository in `owner` and `name`; one without
+    # them is refused, never sent unchecked (§6.1).
+    with pytest.raises(forge.InvalidRepositoryError, match="names no valid repository"):
+        READER._send("/graphql", {"query": "{ viewer { login } }", "variables": {}})
+    assert opener.requests == []
+
+
 @pytest.mark.parametrize(
     ("url", "repository"),
     [("https://github.com/acme/", "acme/"), ("https://github.com/", "/"), ("github.com", "/")],
@@ -986,10 +994,11 @@ def test_a_graphql_read_on_a_grant_checks_the_repository_too(opener: FakeOpener,
 def test_a_stored_url_short_of_two_segments_is_no_repository(
     opener: FakeOpener, url: str, repository: str
 ) -> None:
-    # Fewer than two path segments give no `owner/name`, never an exception that ends the
-    # probe round: the read is refused as for any invalid repository (§6.1).
+    # Fewer than two path segments give no `owner/name`, never a ValueError: the read is
+    # refused as for any invalid repository (§6.1), with the error the probe keeps to that
+    # project (`test_probe`).
     assert forge.repository_of(url) == repository
-    with pytest.raises(forge.ForgeUnavailableError, match="names no valid repository"):
+    with pytest.raises(forge.InvalidRepositoryError, match="names no valid repository"):
         READER._send(f"/repos/{forge.repository_of(url)}/commits/x")
     assert opener.requests == []
 
