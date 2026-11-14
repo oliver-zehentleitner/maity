@@ -180,3 +180,47 @@ def test_a_merge_without_its_facts_names_none_and_parses_nothing(world: World) -
     )
     (entry,) = snapshot(world)["ticker"]
     assert entry["merge"] == {"pr": None, "title": None, "author": None, "areas": []}
+
+
+def test_a_project_that_leaves_the_public_set_takes_its_harness_off_the_other_pages(
+    world: World,
+) -> None:
+    """The harness an agent's entry names comes from its latest session in any public project;
+    a project leaving that set renders the other pages that copied it, at once (§16.9)."""
+    from datetime import timedelta
+
+    from sqlalchemy import insert
+
+    from maity_hub import clock, public_pages
+    from tests import factory
+
+    assert world.bot.resume(harness="x-harness").status_code == 200
+    second = world.owner.post("/projects", {"slug": "second", "name": "Second"})
+    assert second.status_code == 201, second.text
+    on = world.owner.patch("/projects/maintainer/second", {"public_page": "on"})
+    assert on.status_code == 200, on.text
+    with world.migrated.connect() as conn:
+        second_id = conn.execute(
+            select(t.project.c.id).where(t.project.c.slug == "second")
+        ).scalar_one()
+    in_second = factory.membership(world.migrated, second_id, "member", agent_id=world.bot.id)
+    with world.migrated.begin() as conn:
+        s = t.agent_session.c
+        latest = conn.execute(
+            select(t.agent_session).order_by(s.started_at.desc(), s.id.desc()).limit(1)
+        ).one()
+        row = dict(latest._mapping)
+        row |= {
+            "id": "ses-in-second",
+            "membership_id": in_second,
+            "harness": "y-harness",
+            "started_at": latest.started_at + timedelta(seconds=1),
+            "live": None,
+            "ended_at": clock.now(),
+        }
+        conn.execute(insert(t.agent_session).values(**row))
+        public_pages.touch(conn, "project", world.project_id, dependents=False)
+    assert snapshot(world)["agents"][0]["harness"] == "y-harness"  # the latest, from Second
+    off = world.owner.patch("/projects/maintainer/second", {"public_page": "off"})
+    assert off.status_code == 200, off.text
+    assert snapshot(world)["agents"][0]["harness"] == "x-harness"  # at once, no snapshot run

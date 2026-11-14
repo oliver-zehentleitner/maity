@@ -1041,7 +1041,10 @@ of the page that already publishes it, so the data makes nothing public that was
 answers `not_found` from a change on, so every stored `data` that names it is rendered again at once. A session
 start (`routes/me_session.py`) renders the agent's public project pages again only when it changes the harness
 their data shows (`removal=False`, `dependents=False`): agents resume often, and a render of every such page per
-resume costs the public routes their load.
+resume costs the public routes their load. Since the harness comes from all of the agent's public projects, a
+project's dependents also hold the other public project pages of its agents (`_shared_agent_pages`): one leaving
+the public set renders them at once, so none keeps a harness from a session it no longer counts (review P2,
+2026-11-14).
 
 **Rejected alternatives:**
 - `members` inside `statistics`: that object is §6.22's, reduced, and the count is not one of its counters.

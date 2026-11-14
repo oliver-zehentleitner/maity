@@ -542,7 +542,31 @@ def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tup
         *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],
+        *_shared_agent_pages(conn, project_id),
     ]
+
+
+def _shared_agent_pages(conn: Connection, project_id: str) -> list[tuple[str, str]]:
+    """The other public project pages with an agent of this project: each names the agent's
+    harness, read from its latest session in any of its public projects (§16.9), so a change
+    of this one (its page, its state, a member) may change what they show."""
+    m = t.membership.c
+    other = t.membership.alias("other")
+    ids = conn.execute(
+        select(other.c.project_id)
+        .select_from(other.join(t.project, t.project.c.id == other.c.project_id))
+        .where(
+            other.c.agent_id.in_(
+                select(m.agent_id).where(m.project_id == project_id, m.agent_id.is_not(None))
+            ),
+            other.c.project_id != project_id,
+            other.c.active.is_(True),
+            t.project.c.public_page == "on",
+        )
+        .distinct()
+        .order_by(other.c.project_id)
+    ).scalars()
+    return [(KIND, other_id) for other_id in ids]
 
 
 def monogram(full: str, name: str) -> str:
