@@ -9469,8 +9469,11 @@ true, "reason": "…", "by": "…", "at": "…"}`) and sets `redacted: true`;
 `id`, `at`, `actor` and `field` stay. The tombstone's `reason` follows
 §8.5, as for a note (§6.16): the human owners and admins and the
 redactor read it, every other reader, agents included, reads `reason:
-null` — in the history, in the `task_created` or `task_updated` event
-below, and in a link the hub answers from the entry. A secret usually sits in two
+null` — in the history, in the answer of this call, in the
+`task_created` or `task_updated` event below, and in a link the hub
+answers from the entry. A replay of this call or of a link's add or
+removal (§1.5) shows the reason as the caller's own read of the history
+does at the time of the replay. A secret usually sits in two
 entries — the one whose `after` added it and the one whose `before`
 removed it (or the `created` entry) — and each is redacted on its own.
 The same value also sits in the event log: `task_created` and
