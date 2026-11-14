@@ -11,16 +11,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import os
 import re
 from typing import Any
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import Engine, delete, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import instance_settings as store
+from maity_hub import secretbox
 from maity_hub import tables as t
 
 MAX_ADDRESS = 254
@@ -57,7 +55,7 @@ def normalized(value: str) -> str:
 
 # The key per-address lock rows are stored under when no instance key is set: a random
 # pepper the hub makes at first use, in a transaction of its own (`prepare`), as the
-# notification positions' key is made; not sealed, there is no key to seal it with.
+# notification positions' key is made (`secretbox.prepare_fallback`).
 LOCK_PEPPER = "address.lock_pepper"
 LOCK_PURPOSE = "address.lock"
 
@@ -65,32 +63,13 @@ store.register_secret(LOCK_PEPPER)
 
 
 def prepare(engine: Engine, secret_key: bytes | None) -> None:
-    """Make the stored pepper at first use, before the caller's transaction that locks:
-    insert if absent, and on a concurrent first use keep the winner's."""
-    if secret_key is not None:
-        with engine.begin() as conn:  # no longer used once an instance key is set
-            if store.sealed(conn, LOCK_PEPPER) is not None:
-                store.put_sealed(conn, LOCK_PEPPER, None, None)
-        return
-    with engine.begin() as conn:
-        if store.sealed(conn, LOCK_PEPPER) is not None:
-            return
-    try:
-        with engine.begin() as conn:
-            store.add_sealed(conn, LOCK_PEPPER, os.urandom(32))
-    except IntegrityError:
-        pass  # another request or replica made it first; its pepper stands
+    """Make the stored pepper at first use, before the caller's transaction that locks;
+    once an instance key is set it is no longer used and is removed."""
+    secretbox.prepare_fallback(engine, secret_key, LOCK_PEPPER, wipe_when_keyed=True)
 
 
 def _hmac_key(conn: Any, secret_key: bytes | None) -> bytes | None:
-    if secret_key is not None:
-        info = LOCK_PURPOSE.encode()
-        derived: bytes = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(
-            secret_key
-        )
-        return derived
-    stored = store.sealed(conn, LOCK_PEPPER)
-    return stored if stored is not None and len(stored) == 32 else None
+    return secretbox.purpose_key(conn, secret_key, LOCK_PURPOSE, LOCK_PEPPER)
 
 
 def lock_key(conn: Any, secret_key: bytes | None, value: str) -> str:

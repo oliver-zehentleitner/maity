@@ -176,6 +176,9 @@ class Settings:
     # (§16.9) and of the badges (§6.20), as (count, seconds).
     public_page_limit: tuple[int, int] = (60, 60)
     badge_limit: tuple[int, int] = (60, 60)
+    # MAITY_HSTS_MAX_AGE: the `Strict-Transport-Security` max-age, in seconds, sent on every
+    # answer that went out over TLS (§1.1, §2.5); 0 sends none.
+    hsts_max_age: int = 31536000
 
     @property
     def join_host(self) -> str | None:
@@ -295,6 +298,7 @@ class Settings:
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
+            hsts_max_age=parse_whole(env, "MAITY_HSTS_MAX_AGE", 31536000, 0, 63072000),
         )
 
 
