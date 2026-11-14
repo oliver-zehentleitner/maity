@@ -656,13 +656,18 @@ def _classify(
         )
     if row.kind == "mentioned" and readable and f"member:{principal}" in (row.audience or []):
         task = payload.get("task") or {}
+        copied = task.get("title")
+        if isinstance(copied, dict):  # redacted since (§20.8): the card's own title now
+            from maity_hub.jourfixe.redaction import REDACTED_TITLE
+
+            copied = REDACTED_TITLE
         return Item(
             kind="mention",
             title=_cut(
                 where.say(
                     "mentioned",
                     who=look.name(row.actor_membership),
-                    chat=f"{task.get('id')} {task.get('title')}",
+                    chat=f"{task.get('id')} {copied}",
                 )
             ),
             target={"type": "task", "id": str(task.get("id"))},

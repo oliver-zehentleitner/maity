@@ -13,6 +13,9 @@ import asyncio
 import random
 import threading
 from dataclasses import dataclass, field
+from typing import Any
+
+import sqlalchemy.event
 
 from maity_hub import events, listening
 
@@ -106,6 +109,26 @@ class Registry:
                 if membership_id in (w.membership_id, w.bridge_membership_id)
             ]
         self._end(waiting)
+
+    def end_keys(self, keys: set[str]) -> None:
+        """End every open wait of these credentials or dashboard sessions (`session:<hash>`),
+        a bridge's waits for a served agent under its credential included: the credential or
+        the session is gone, revoked, replaced or ended (§8.3)."""
+        with self._lock:
+            waiting = [w for w in self._by_key.values() if w.key.split("|", 1)[0] in keys]
+        self._end(waiting)
+
+    def end_keys_after(self, conn: Any, keys: set[str]) -> None:
+        """`end_keys` once the caller's transaction commits: through `events.on_commit`, and
+        on a plain `engine.begin()` (a sign-out, a password change) at the connection's
+        commit. The wait's next pass reads the credential or session too (`routes/events`),
+        on any replica."""
+        from maity_hub.events import on_commit
+
+        try:
+            on_commit(conn, lambda: self.end_keys(keys))
+        except RuntimeError:
+            sqlalchemy.event.listen(conn, "commit", lambda _conn: self.end_keys(keys), once=True)
 
     def end_bridge(self, bridge_id: str) -> None:
         """End every wait a bridge holds through a connection that ended (§2.3)."""

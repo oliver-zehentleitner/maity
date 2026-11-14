@@ -119,6 +119,12 @@ def revoke(
         ).one()
         environment.refresh(conn, member.project_id, member.id)
     _lead_revoked(conn, credential_id, announce=not member_goes)
+    if won == 1:
+        # Its open wait ends at once in this process; another replica's ends at its next
+        # pass, which reads `revoked_at` (`routes/events`).
+        from maity_hub import longpoll
+
+        longpoll.registry.end_keys_after(conn, {credential_id})
     if won == 1 and not holder_moves:  # a holder that stops (§6.5)
         from maity_hub import holder_stalled
 
@@ -180,10 +186,6 @@ def _revoke_leaked_runners(
         ):
             continue
         revoke_runner_credential(conn, row.id, REASON, by=None)
-        runner_id = conn.execute(
-            select(t.runner_credential.c.runner_id).where(t.runner_credential.c.id == row.id)
-        ).scalar_one()
-        placements.runner_credential_gone(conn, runner_id, None)
         revoked.append(row.id)
     return revoked
 
@@ -194,12 +196,18 @@ def revoke_runner_credential(
     reason: str | None,
     by: str | None,
     applied: list[dict[str, Any]] | None = None,
+    *,
+    replaced: bool = False,
 ) -> bool:
     """Revoke a runner credential and end its live session; False when it was revoked
-    already. Every project the runner is attached to learns it from its own
-    `runner_credential_revoked` (§15.10), with the rule `runner_revoke.apply` applied
-    there (`keep` where nothing was applied: a leak's revocation keeps, §15.3) and the
-    placements it stopped, which the runner is also told on its next call."""
+    already. What the runner's placements lose with it follows in the same transaction,
+    so no caller has to remember it (`placements.runner_credential_gone`): its unused
+    pickups end, and what was closing closes now unless `replaced`, a re-pair whose new
+    credential takes over the same placements (§15.3). Every project the runner is
+    attached to learns it from its own `runner_credential_revoked` (§15.10), with the
+    rule `runner_revoke.apply` applied there (`keep` where nothing was applied: a leak's
+    revocation keeps, §15.3) and the placements it stopped, which the runner is also
+    told on its next call."""
     now = clock.now()
     by_project = {a["project_id"]: a for a in applied or []}
     revoked = conn.execute(
@@ -241,4 +249,5 @@ def revoke_runner_credential(
             actor=human_actor(conn, project_id, by),
             subject=("runner", runner_id),
         )
+    placements.runner_credential_gone(conn, runner_id, by, replaced=replaced)
     return True
