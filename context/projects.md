@@ -686,11 +686,13 @@ project works, live in two places: the human's account holds the
 personal default, and the human's membership holds an override per
 project, `null` meaning "use my default". They are the member's own and
 apart from the project's settings, which the owner and admins keep. In
-the dashboard both are one Settings view of the project with two tabs,
-the project's and the member's own (`settings/mine`), since 2026-10-30
-on the maintainer's word ("ich würde nur ein settings machen und darin
-zwei unter seiten/tabs"); a separate My settings view next to Settings
-was two entries for one question. The
+the dashboard both are one Settings view of the project, the project's
+part and the member's own (`settings/mine`), since 2026-10-30 on the
+maintainer's word ("ich würde nur ein settings machen und darin zwei
+unter seiten/tabs"); a separate My settings view next to Settings was
+two entries for one question. Since 2026-11-13 the project's part is
+itself split into sub-tabs beside Mine (web/context/views.md, the
+entry bc864bf2-d64b-4947-b3d6-3d3a2e500eea). The
 first is the threshold after which the human hears of their agents that
 are not listening; the firewall for one's own agents (card
 tsk-5c6hw63ncq3m) follows the same shape.
