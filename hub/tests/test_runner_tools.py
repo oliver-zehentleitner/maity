@@ -3,10 +3,12 @@ reading and settling the requests (`GET /runner`, `PATCH /runner`)."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Engine, update
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -190,4 +192,56 @@ def test_the_runner_reads_its_requests_and_a_human_cannot(
     client = make_client()
     hello(client, runner, capabilities=with_tools(tool()))
     assert requests_of(client, runner) == []
-    assert owner.get("/runner").status_code in (401, 403, 404)
+    assert owner.get("/runner").status_code == 403
+
+
+def test_two_requests_in_one_clock_reading_are_distinct(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """A report naming the first never settles the second, even when the hub's clock gave
+    both the same reading (§15.16); nor does a request after the first one was settled."""
+    runner = paired(make_client, owner)
+    client = make_client()
+    hello(client, runner, capabilities=with_tools(tool()))
+    frozen = datetime(2026, 11, 14, 9, 0, 0, 123456, tzinfo=UTC)
+    clock.set_source(lambda: frozen)
+    try:
+        update_now(owner, runner, "claude-code")
+        [first] = requests_of(client, runner)
+        update_now(owner, runner, "claude-code")
+        [second] = requests_of(client, runner)
+        assert first["requested_at"] == "2026-11-14T09:00:00.123Z"
+        assert second["requested_at"] == "2026-11-14T09:00:00.124Z"
+        # The runner decided on the first before it read the second: the second stands.
+        advertise(client, runner, with_tools(tool(update_requested_at=first["requested_at"])))
+        assert requests_of(client, runner) == [second]
+        # Settled: a new request in the same reading is still not the settled one.
+        advertise(client, runner, with_tools(tool(update_requested_at=second["requested_at"])))
+        assert requests_of(client, runner) == []
+        update_now(owner, runner, "claude-code")
+        [third] = requests_of(client, runner)
+        assert third["requested_at"] == "2026-11-14T09:00:00.125Z"
+    finally:
+        clock.reset()
+
+
+def test_a_request_for_a_tool_no_longer_updated_is_dropped(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """`update: "never"`, the tool gone, or no `tools` at all: it would never be carried
+    out, so the owner does not see it standing (§15.16)."""
+    runner = paired(make_client, owner)
+    client = make_client()
+    both = with_tools(tool(), tool("codex"))
+    for later in (
+        with_tools(tool(update="never"), tool("codex")),
+        with_tools(tool("codex")),
+        CAPABILITIES,
+    ):
+        advertise(client, runner, both)
+        update_now(owner, runner, "claude-code")
+        update_now(owner, runner, "codex")
+        assert {r["tool"] for r in requests_of(client, runner)} == {"claude-code", "codex"}
+        advertise(client, runner, later)
+        left = {r["tool"] for r in requests_of(client, runner)}
+        assert left == (set() if later is CAPABILITIES else {"codex"})

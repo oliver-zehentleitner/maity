@@ -179,6 +179,7 @@ PENDING = {
     "/public/pages/{}",
     "/requests",
     "/requests/{}",
+    "/runner",  # the runner's credential only, like its siblings; the owner fixture gets 403
     "/runner/events",
     "/runner/placements",
     "/runners",

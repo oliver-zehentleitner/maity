@@ -10,7 +10,7 @@ the credential is the response body and nothing else.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -616,6 +616,26 @@ def update_runner(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+def _request_time(stored: list[Any], tools: list[Any], tool_id: str) -> str:
+    """A request's identity (§15.16): the hub's time in milliseconds, made strictly later
+    than the tool's standing request and than the last one the runner reported carrying
+    out, so two requests are never the same string, even within one clock reading."""
+    moment = clock.now().astimezone(UTC)
+    moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    seen = [r.get("requested_at") for r in stored if r.get("tool") == tool_id]
+    seen += [tool.get("update_requested_at") for tool in tools if tool.get("id") == tool_id]
+    for text in seen:
+        try:
+            before = datetime.fromisoformat(str(text))
+        except ValueError:
+            continue
+        if before.tzinfo is not None and moment <= before:
+            moment = before.astimezone(UTC).replace(
+                microsecond=before.microsecond // 1000 * 1000
+            ) + timedelta(milliseconds=1)
+    return clock.rfc3339(moment, millis=True)
+
+
 @router.post("/runners/{runner_id}/updates")
 def update_now(
     runner_id: str, body: UpdateNow, request: Request, caller: HumanCaller
@@ -636,8 +656,10 @@ def update_now(
                 "the runner does not update this tool",
                 {"reason": "updates_off"},
             )
-        requests = [r for r in row.update_requests or [] if r["tool"] != body.tool]
-        requests.append({"tool": body.tool, "requested_at": clock.rfc3339(clock.now())})
+        stored = row.update_requests or []
+        at = _request_time(stored, tools, body.tool)
+        requests = [r for r in stored if r["tool"] != body.tool]
+        requests.append({"tool": body.tool, "requested_at": at})
         conn.execute(
             update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=requests)
         )

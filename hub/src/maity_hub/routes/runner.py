@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import time
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -157,7 +157,8 @@ class Capabilities(Strict):
     repositories: list[Name] = Field(max_length=200)
     require_local_approval: bool
     # Absent from a runner that does not manage its tools (§15.16).
-    tools: list[Tool] | None = Field(default=None, max_length=21)
+    # One entry per tool id at most (duplicates are refused below).
+    tools: list[Tool] | None = Field(default=None, max_length=len(get_args(ToolId)))
     # Set by the hub (§15.8); a value the runner sends is replaced.
     reported_at: datetime | None = None
 
@@ -200,7 +201,8 @@ def _stored(capabilities: Capabilities) -> dict[str, Any]:
 
 def _settle_requests(conn: Connection, runner_id: str, capabilities: Capabilities) -> None:
     """Drop each `Update now` request the report says was carried out: the tool names that
-    request's `requested_at`, exactly as stored, and is no longer installing or updating.
+    request's `requested_at`, exactly as stored, and is no longer installing or updating;
+    and each request for a tool the report no longer lists as updated.
     A report decided before the runner read a newer request names the older one and leaves
     the newer standing (§15.16). Called under the runner's row lock."""
     stored = conn.execute(
@@ -213,7 +215,12 @@ def _settle_requests(conn: Connection, runner_id: str, capabilities: Capabilitie
         for tool in capabilities.tools or []
         if tool.update_requested_at is not None and tool.state not in BUSY
     }
-    left = [r for r in stored if (r["tool"], r["requested_at"]) not in done]
+    # A tool the runner no longer updates (`update: "never"`, gone, or no `tools` at all)
+    # will never carry its request out: dropped, so the owner sees none standing.
+    updated = {tool.id for tool in capabilities.tools or [] if tool.update != "never"}
+    left = [
+        r for r in stored if (r["tool"], r["requested_at"]) not in done and r["tool"] in updated
+    ]
     if len(left) != len(stored):
         conn.execute(
             update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=left or None)
