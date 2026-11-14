@@ -15,7 +15,7 @@ from maity_hub import clock, invitation_mail, orgs, registration_accounts
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
 from maity_hub.mail import headers, outbox, smtp
-from maity_hub.models import one_line
+from maity_hub.plain_text import plain
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script
@@ -258,10 +258,10 @@ def test_a_lapsed_unbuildable_row_is_not_admitted_again(migrated: Engine) -> Non
 # --- names ----------------------------------------------------------------------------
 
 
-def test_one_line_refuses_every_character_of_cc_zl_zp() -> None:
+def test_a_name_refuses_every_character_of_cc_zl_zp() -> None:
     for ch in _every_refused_character():
-        assert not one_line(f"a{ch}b"), hex(ord(ch))
-    assert one_line("Zoë ‍👩‍💻 名前")
+        assert not plain(f"a{ch}b"), hex(ord(ch))
+    assert plain("Zoë 👩 名前 ❤️")
 
 
 @pytest.mark.parametrize("bad", ["\x85", " ", " ", "\x9f", "\n", "\x07"])
@@ -276,7 +276,7 @@ def test_a_project_name_refuses_control_and_line_break_characters(
     patched = owner.patch("/projects/maintainer/maity", {"name": f"Maity{bad}x"})
     assert patched.status_code == 400, patched.text
     assert patched.json()["error"]["details"]["fields"] == {"name": "control_character"}
-    fine = owner.patch("/projects/maintainer/maity", {"name": "Maity ‍👩‍💻"})
+    fine = owner.patch("/projects/maintainer/maity", {"name": "Maity 👩 ❤️"})
     assert fine.status_code == 200, fine.text
 
 
@@ -336,4 +336,4 @@ def test_human_and_organisation_display_names_refuse_c1_and_unicode_line_breaks(
             assert registration_accounts.check_names(conn, "free-name", f"Ann{bad}x") == {
                 "display_name": "invalid"
             }
-    assert orgs.display_name_ok("Team ‍👩‍💻")
+    assert orgs.display_name_ok("Team 👩 ❤️")

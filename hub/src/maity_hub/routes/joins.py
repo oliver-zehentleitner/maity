@@ -69,6 +69,7 @@ from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
+from maity_hub.plain_text import plain_line
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
@@ -675,8 +676,9 @@ _MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~])")
 
 
 def _md(text: str) -> str:
-    """Text a human typed (a project name), safe inside the Markdown template."""
-    return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
+    """Text a human typed (a project name), safe inside the Markdown template: on its line,
+    whatever a value stored before the plain-text rule holds (§1.7.1), and escaped."""
+    return _MARKDOWN_SPECIAL.sub(r"\\\1", plain_line(text))
 
 
 # Put first on the page when the project's policy has `signing: required` (§3.2, step 7).
@@ -771,7 +773,7 @@ def render_page(
         ),
     }
     text = _TEMPLATE_PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), _template())
-    return text, f"Join {project.name} on Maity"
+    return text, f"Join {plain_line(project.name)} on Maity"
 
 
 _HTML = MarkdownIt("commonmark", {"html": False}).enable("table")

@@ -6676,3 +6676,29 @@ panel the same edge, and a new form inside it needs no width of its own.
 - A `dl` of facts at the full width like a list: rejected, its pairs are
   short, and in a padded box (the settings' webhook) the column's parts
   beside it would end the box's padding past the column's edge.
+
+## The invitation page names the inviter by display name and handle, every typed name in its own `<bdi>`
+
+**Id:** 35cd35c9-317b-48d5-a750-6d1009fd451d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-zadkerpebgd5 (one plain-text rule for names, notes, URLs and subjects), 2026-11-14; `js/invite.js`
+**Revisit when:** another signed-out page shows a name someone typed next to text of its own, or the hub's plain-text rule (docs/api.md §1.7.1) starts to allow a bidi or format character
+**See:** https://github.com/oliver-zehentleitner/maity — 893c6bee-9785-4e29-ae44-c8e6c71947df — as of 2026-11-14
+
+The invitation page (`/invite/<token>`) says who invites as "display name (@handle)", from the
+hub's `invited_by.handle`, in the lead sentence, under the note and in the no-registration hint.
+The project's name and the inviter's display name each sit in a `<bdi>`, and the note's paragraph
+has `dir="auto"`.
+
+**Reason:** the page is read by someone who has no account yet and nothing else to check the
+inviter against; a display name is free text anyone may choose, a handle is unique. A `<bdi>`
+isolates a right-to-left run or a direction mark in a name from the sentence around it, so the
+sentence reads as it is translated, also for a value stored before the hub refused such marks.
+
+**Rejected alternatives:**
+- The display name alone, trusting the hub's rule: the rule says nothing about two people who
+  pick the same visible name, and stored values predate it.
+- `unicode-bidi: isolate` in the stylesheet on a span: the same effect, but only where the
+  stylesheet loads; `<bdi>` carries it in the markup.

@@ -65,16 +65,22 @@ window.Maity = window.Maity || {};
       return;
     }
     const role = M.trust.words(inv);
+    // Names a person typed sit in <bdi>, so a right-to-left run or a stray mark in one never
+    // turns the sentence around it; the inviter by handle too, which a display name cannot
+    // imitate (docs/api.md §1.7.1, §3.4).
+    const projectName = () => h("bdi", { class: "invite-name" }, inv.project.name);
+    const inviter = () => h("span", { class: "invite-by" }, h("bdi", null, inv.invited_by.display_name),
+      inv.invited_by.handle ? " (@" + inv.invited_by.handle + ")" : null);
     const here = "/invite/" + encodeURIComponent(token);
     document.title = M.t("invite.join_title", { project: inv.project.name }) + " · Maity";
     append(box,
       h("div", { class: "invite-project" },
         ownLogo(inv.project.logo_url) ? h("img", { class: "invite-logo", src: ownLogo(inv.project.logo_url), alt: "", width: "48", height: "48" })
           : M.projectMark ? M.projectMark(inv.project.full_name || inv.project.name, inv.project.name, null, "invite-logo") : null,
-        h("h2", null, M.tn("invite.join_heading", { project: h("span", { class: "invite-name" }, inv.project.name) }))),
-      h("p", { class: "invite-lead" }, M.tn("invite.lead", { who: inv.invited_by.display_name, project: inv.project.name, role: h("strong", null, role) })),
-      inv.note ? [h("blockquote", { class: "invite-note" }, h("p", null, inv.note)),
-        h("p", { class: "muted invite-note-by" }, "— " + inv.invited_by.display_name)] : null,
+        h("h2", null, M.tn("invite.join_heading", { project: projectName() }))),
+      h("p", { class: "invite-lead" }, M.tn("invite.lead", { who: inviter(), project: projectName(), role: h("strong", null, role) })),
+      inv.note ? [h("blockquote", { class: "invite-note" }, h("p", { dir: "auto" }, inv.note)),
+        h("p", { class: "muted invite-note-by" }, "— ", inviter())] : null,
       h("p", { class: "muted" }, inv.address_bound ? M.t("invite.valid_until.bound", { when: formatTime(inv.expires_at) }) : M.t("invite.valid_until", { when: formatTime(inv.expires_at) })));
     const ways = h("div", { class: "invite-ways" });
     append(box, ways);
@@ -85,7 +91,7 @@ window.Maity = window.Maity || {};
         h("a", { class: "button primary door-action", href: M.withNext("/login", here) }, M.t("invite.sign_in_to_accept")),
         inv.registration === "sign_in_or_register"
           ? h("p", { class: "door-alt" }, M.tn("invite.register", { create: h("a", { href: M.withNext("/register", here) }, M.t("invite.register.link")) }))
-          : h("p", { class: "muted" }, M.t("invite.no_registration", { who: inv.invited_by.display_name })));
+          : h("p", { class: "muted" }, M.tn("invite.no_registration", { who: inviter() })));
       return;
     }
     // An account that waits for approval accepts nothing yet (§2.7.5, §3.4).

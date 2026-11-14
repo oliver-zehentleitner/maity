@@ -19,6 +19,7 @@ from sqlalchemy import Connection, or_, select, update
 from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project
+from maity_hub.plain_text import plain_line
 
 KEEP_THE_WHY = "Load the keep-the-why skill and read context/index.md before working."
 RELEASED = (
@@ -267,7 +268,12 @@ def generate(
     section ends with what a bridge does (§2.3, "The guide"). Its duty line follows
     `hints.duty` (§5.2, §6.9): the supervised one, else the one for a session that waits for
     itself."""
-    lines = [f"# Rules for {project.name}", "", f"Rules version {project.rules_version}.", ""]
+    lines = [
+        f"# Rules for {plain_line(project.name)}",
+        "",
+        f"Rules version {project.rules_version}.",
+        "",
+    ]
     lines += ["## State", "", _STATE.get(project.state, f"State: {project.state}.")]
     if project.state_note:
         lines += ["", f"Note: {project.state_note}"]

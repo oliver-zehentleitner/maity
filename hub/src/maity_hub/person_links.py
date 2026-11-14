@@ -18,6 +18,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
 from maity_hub.errors import invalid
+from maity_hub.plain_text import plain
 
 VISIBILITY = ("private", "friends", "colleagues", "friends_and_colleagues", "everyone")
 NETWORKS = ("github", "gitlab", "x", "mastodon", "bluesky", "linkedin", "discord")
@@ -71,7 +72,7 @@ def website_problem(value: str, max_length: int = WEBSITE_MAX) -> str | None:
     links (§6.11) take the same rule with their own length (`project_links`)."""
     if len(value) > max_length:
         return "too_long"
-    if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value):
+    if any(c.isspace() for c in value) or not plain(value):  # §1.7.1, as a link's URL
         return "format"
     try:
         parts = urlsplit(value)

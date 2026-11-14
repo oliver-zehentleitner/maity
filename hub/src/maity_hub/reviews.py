@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from maity_hub.plain_text import plain
+
 SUBJECT_MAX = 120
 PATH_MAX = 300
 QUOTE_MAX = 300
@@ -68,6 +70,9 @@ def check(value: Any) -> tuple[dict[str, Any] | None, dict[str, str]]:
         if name not in ("subject", "head", "verdict", "cites"):
             found.setdefault(f"review.{name}", "format")
     subject = _text(value.get("subject"), SUBJECT_MAX, "review.subject", found)
+    if subject is not None and not plain(subject):  # one line of plain text (§1.7.1)
+        found.setdefault("review.subject", "format")
+        subject = None
     head = value.get("head")
     if head is None:
         found.setdefault("review.head", "required")

@@ -1178,7 +1178,8 @@ window.MAITY_FIXTURES = {
         "address_bound": true,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": null,
         "project": {
@@ -1194,7 +1195,8 @@ window.MAITY_FIXTURES = {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": null,
         "project": {
@@ -1210,7 +1212,8 @@ window.MAITY_FIXTURES = {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": null,
         "project": {
@@ -1226,7 +1229,8 @@ window.MAITY_FIXTURES = {
         "address_bound": true,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": null,
         "project": {
@@ -1242,7 +1246,8 @@ window.MAITY_FIXTURES = {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": null,
         "project": {
@@ -1258,7 +1263,8 @@ window.MAITY_FIXTURES = {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": "You review the web side; D will brief you.",
         "project": {
@@ -1275,7 +1281,8 @@ window.MAITY_FIXTURES = {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": null,
         "project": {
@@ -1291,7 +1298,8 @@ window.MAITY_FIXTURES = {
         "address_bound": false,
         "expires_at": "2030-01-01T12:00:00Z",
         "invited_by": {
-          "display_name": "Maintainer"
+          "display_name": "Maintainer",
+          "handle": "maintainer"
         },
         "note": null,
         "project": {

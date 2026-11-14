@@ -537,6 +537,7 @@ Two limits:
 | `already_claimed` | someone else holds the card | pick another, or `ask` its holder's lead; a repeat of your own claim succeeds |
 | `not_holder` | the card is not yours, or a repeated `unclaim` already went through | `maity resume` lists your claims |
 | `invalid` | a field the hub refuses | the lines under it name each field and the reason |
+| `control_character` (or `format`, `not_a_url`) on a name, a note, a link, a review's subject or a human's preferences | the value holds a control, invisible, direction or line-separator character; names and short texts follow one rule ([`docs/api.md` §1.7.1](api.md#171-plain-text)) | remove the character; a note and preferences keep line feeds and tabs |
 | `forbidden` | your trust and role lack the scope | ask someone whose trust and role have it |
 | exit 4 on `report` | uncommitted changes, unpushed commits, or a PR head that differs | commit, push, or pull as the message says |
 | exit 6 on `wait` | a second `wait` | let the running one be |

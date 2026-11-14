@@ -267,13 +267,19 @@ def test_the_page_says_who_invites_to_what(owner: flow.Human, make_client: Clien
         },
         "trust": "member",
         "role": "reviewer",
-        "invited_by": {"display_name": shown.json()["invited_by"]["display_name"]},
+        "invited_by": {
+            "display_name": shown.json()["invited_by"]["display_name"],
+            "handle": "maintainer",
+        },
         "note": "Welcome.",
         "expires_at": made["expires_at"],
         "address_bound": False,
         "registration": "sign_in_only",  # a fresh instance is closed and has no mail
     }
-    assert "handle" not in str(shown.json()) and token_of(made) not in shown.text
+    # The inviter's handle is the only one the page carries (§3.4).
+    rest = {key: value for key, value in shown.json().items() if key != "invited_by"}
+    assert "handle" not in str(rest)
+    assert token_of(made) not in shown.text
 
 
 def test_the_page_is_one_not_found_for_every_dead_token(

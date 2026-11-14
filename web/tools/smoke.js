@@ -10059,7 +10059,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "invite: the logo at this hub's own absolute address is drawn; another host or a crafted path leaves the mark, the page whole: " + ivLogos.join());
   const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
   const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
-  expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
+  expect(ivPage() && text(ivPage()).includes("Maintainer (@maintainer) invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
     && ivSignIn && ivSignIn.getAttribute("href") === "#/login?next=%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
     && ivRegister && ivRegister.getAttribute("href") === "#/register?next=%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
     && header.querySelector(".theme-menu") && plainTitle() === "Join Maity · Maity",
@@ -10067,7 +10067,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The door (the designer's pass part 2): one centred card; the role in bold, the note a quote with who wrote it,
   // the logo or its monogram, the action full width.
   expect(ivPage().classList.contains("door") && text(ivPage().querySelector(".invite-lead strong")) === "member · coder"
-    && text(ivPage().querySelector(".invite-note-by")) === "— Maintainer" && ivPage().querySelector(".invite-project .invite-logo")
+    && text(ivPage().querySelector(".invite-note-by")) === "— Maintainer (@maintainer)" && ivPage().querySelector(".invite-project .invite-logo")
     && ivSignIn.classList.contains("door-action") && thCss.includes(".door { max-width: 28rem; margin: 10vh auto;"),
     "invite: one centred card, the role in bold, the note a quote signed, the logo, the action full width");
   await go("#/invite/only-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();

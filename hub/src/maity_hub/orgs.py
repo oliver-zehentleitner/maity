@@ -21,7 +21,8 @@ from maity_hub import avatars, clock, handle_register, handles, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, one_line
+from maity_hub.models import HANDLE_PATTERN
+from maity_hub.plain_text import plain_name
 from maity_hub.views import ts
 
 ROLES = ("owner", "admin", "member")
@@ -294,8 +295,8 @@ def lock_all_of(conn: Connection, human_id: str) -> None:
 
 
 def display_name_ok(display_name: str) -> bool:
-    """1–64 characters and no control or line-break character, as §2.7.4."""
-    return 1 <= len(display_name) <= DISPLAY_NAME_MAX and one_line(display_name)
+    """1–64 characters and plain text (§1.7.1), as §2.7.4."""
+    return 1 <= len(display_name) <= DISPLAY_NAME_MAX and plain_name(display_name)
 
 
 def create(

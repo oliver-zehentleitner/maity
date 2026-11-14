@@ -39,6 +39,7 @@ from maity_hub.ids import new_id
 from maity_hub.mail import address
 from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
+from maity_hub.plain_text import plain
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.routes.joins import EXCHANGE_BY_ADDRESS
 
@@ -65,11 +66,10 @@ def _check(body: InvitationIn) -> None:
         errors["address"] = "invalid"
     if not invitations.TTL_MIN <= body.ttl_seconds <= invitations.TTL_MAX:
         errors["ttl_seconds"] = "out_of_range"
-    if body.note is not None and (
-        len(body.note.encode()) > invitations.NOTE_MAX
-        or any(ord(c) < 32 and c not in "\n\t" or ord(c) == 127 for c in body.note)
-    ):
+    if body.note is not None and len(body.note.encode()) > invitations.NOTE_MAX:
         errors["note"] = "invalid"
+    elif body.note is not None and not plain(body.note, keep="\n\t"):
+        errors["note"] = "control_character"  # several lines, plain text (§1.7.1)
     if errors:
         raise invalid(errors)
 
@@ -313,8 +313,10 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
             row = _open(conn, token)
             project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
             inviter = conn.execute(
-                select(t.human.c.display_name).where(t.human.c.id == row.created_by)
-            ).scalar()
+                select(t.human.c.display_name, t.human.c.handle).where(
+                    t.human.c.id == row.created_by
+                )
+            ).first()
             env = hub.registration or registration.RegistrationEnvironment()
             resolved = registration.resolve(
                 conn, env, registration.mail_ready(conn, hub), hub.public_url
@@ -328,7 +330,11 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
                 },
                 "trust": row.trust,
                 "role": row.role,
-                "invited_by": {"display_name": inviter},
+                # The handle beside the display name: a name alone can imitate someone (§3.4).
+                "invited_by": {
+                    "display_name": inviter.display_name if inviter is not None else None,
+                    "handle": inviter.handle if inviter is not None else None,
+                },
                 "note": row.note,
                 "expires_at": clock.rfc3339(row.expires_at),
                 "address_bound": row.address is not None,
