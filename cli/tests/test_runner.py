@@ -538,7 +538,10 @@ def test_check_warns_about_inherited_claude_settings(
     (home / ".claude" / "settings.json").write_text(
         '{"permissions": {"allow": ["Bash(rm:*)"]}, "hooks": {"Stop": []}}'
     )
-    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    paired.write_text(
+        paired.read_text()
+        + '\n[harness.claude-code]\n\n[git]\nname = "Your Team"\nemail = "team@example.org"\n'
+    )
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
     warnings = [line for line in lines(capsys) if line.startswith("warn")]
@@ -574,6 +577,27 @@ def test_check_requires_the_sandbox_when_configured(
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
     assert any("no OS sandbox" in line and line.startswith("error") for line in lines(capsys))
+
+
+@pytest.mark.parametrize(
+    ("version", "code"),
+    [("2.1.294", 1), ("2.1.295", 0), ("2.1.325", 0), ("dev build", 1)],
+)
+def test_check_refuses_a_required_sandbox_on_a_claude_code_older_than_its_hook_policy(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, code: int
+) -> None:
+    """The runner's hook refuses a call when it fails only from 2.1.295 (`onFailure`); an
+    older or unknown version gets no sandbox, so `require_sandbox` refuses it."""
+    if not sys.platform.startswith("linux"):
+        pytest.skip("the sandbox prerequisites are checked on Linux")
+    for tool in ("tmux", "maity", "bwrap", "socat"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", f"{version} (Claude Code)")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    said = [line for line in lines(capsys) if "is older than 2.1.295 or unknown" in line]
+    assert [line.split()[0] for line in said] == (["error"] if code else [])
 
 
 @pytest.mark.parametrize(
@@ -716,3 +740,92 @@ def test_runner_check_names_a_refused_gh_rule_and_an_api_host_as_warnings() -> N
     assert "'gh pr create *' is not applied" in texts[0] and "pull_requests = true" in texts[0]
     assert "maity gh pr create" in texts[0]
     assert "api.github.com" in texts[1]
+
+
+# --- the agents' git identity (cli/context/runner.md, tsk-z27pwcfr03wm) --------------------
+
+
+def test_the_git_table_names_the_agents_identity_and_has_a_generic_default() -> None:
+    cfg = parse(minimal())
+    assert (cfg.git.name, cfg.git.email, cfg.git.configured) == (
+        "Maity agent", "maity-agent@invalid", False,
+    )  # fmt: skip
+    team = parse(minimal(git='\n[git]\nname = "Your Team"\nemail = "team@example.org"\n'))
+    assert (team.git.name, team.git.email, team.git.configured) == (
+        "Your Team", "team@example.org", True,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("table", "said"),
+    [
+        ('name = "Your Team"\n', "git.email: required"),
+        ('name = "A <b>"\nemail = "team@example.org"\n', "git.name: a name of 1 to 200"),
+        ('name = " Team"\nemail = "team@example.org"\n', "git.name: a name of 1 to 200"),
+        ('name = "Team"\nemail = "team example.org"\n', "git.email: an address like"),
+        ('name = "Team"\nemail = "a@b"\nsigning_key = "x"\n', "git.signing_key: unknown key"),
+    ],
+)
+def test_the_git_table_refuses_what_git_would_change_or_not_take(table: str, said: str) -> None:
+    found = problems(minimal(git=f"\n[git]\n{table}"))
+    assert any(p.startswith(said) for p in found), found
+
+
+def test_runner_check_warns_while_agents_commit_as_the_default() -> None:
+    harness = "\n[harness.claude-code]\n"
+    report = commands.Report()
+    commands._check_git(report, parse(minimal(h=harness)))
+    assert not report.failed
+    assert [level for level, _ in report.lines] == ["warn"]
+    assert "Maity agent <maity-agent@invalid>" in report.lines[0][1]
+    assert "[git]" in report.lines[0][1]
+    named = commands.Report()
+    git = '\n[git]\nname = "Your Team"\nemail = "team@example.org"\n'
+    commands._check_git(named, parse(minimal(h=harness, git=git)))
+    assert named.lines == [("ok", "agents commit as Your Team <team@example.org>")]
+    stub_only = commands.Report()  # the stub commits nothing: no default in use
+    commands._check_git(stub_only, parse(minimal()))
+    assert stub_only.lines == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("email", "team\\u0000@example.org"),  # NUL: no process could get it in its environment
+        ("email", "team\\u001b@example.org"),  # ESC
+        ("email", "team\\u007f@example.org"),  # DEL
+        ("email", "team\\u0085@example.org"),  # NEL, a C1 control
+        ("email", "team\\u200b@example.org"),  # a format character, invisible in a commit
+        ("name", "Your\\u0080Team"),  # a C1 control
+        ("name", "Your\\u0000Team"),
+        ("name", "Your\\u001bTeam"),
+        ("name", "Your\\u2028Team"),  # a line separator
+    ],
+)
+def test_the_git_table_refuses_what_is_not_printable(field: str, value: str) -> None:
+    """Review of #1735: a control character passed the first validator, and a NUL then failed
+    only when a session was started. Everything `str.isprintable()` refuses is refused when
+    the configuration is read (the values are TOML escapes, decoded by tomllib)."""
+    other = {"name": '"Your Team"', "email": '"team@example.org"'}
+    other[field] = f'"{value}"'
+    found = problems(minimal(git=f"\n[git]\nname = {other['name']}\nemail = {other['email']}\n"))
+    assert any(p.startswith(f"git.{field}: ") and "printable" in p for p in found), found
+
+
+def test_printable_letters_beyond_ascii_are_kept() -> None:
+    cfg = parse(minimal(git='\n[git]\nname = "Zoë Équipe"\nemail = "équipe@example.org"\n'))
+    assert (cfg.git.name, cfg.git.email) == ("Zoë Équipe", "équipe@example.org")
+
+
+def test_a_nul_in_the_git_email_fails_when_the_file_is_loaded(tmp_path: Path) -> None:
+    """Not when a session starts: `load` refuses the file and names the field."""
+    path = tmp_path / "runner.toml"
+    path.write_text(
+        minimal(h="\n[harness.claude-code]\n")
+        + '\n[git]\nname = "Your Team"\nemail = "team\\u0000@example.org"\n',
+        encoding="utf-8",
+    )
+    assert "\\u0000" in path.read_text(encoding="utf-8")  # the escape, decoded only by tomllib
+    with pytest.raises(config.ConfigError) as info:
+        config.load(path)
+    assert any(p.startswith("git.email: ") for p in info.value.problems), info.value.problems

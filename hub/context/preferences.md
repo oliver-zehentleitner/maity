@@ -139,3 +139,38 @@ set as given" means for the one that is not given.
   mode on would find it off after an upgrade; "on" meant both sides.
 - A note with no separator between sentences, or with the old semicolon wording: the sentences are
   the person's own words and each ends in its own full stop, so a space is all that joins them.
+
+## The experiment notice is confirmed once per person, holds nothing back, and is not a second consent at signup
+
+**Id:** e5b364ab-ba52-4e0f-b0b9-627b7e978b0b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's request on the card (2026-11-12) and the lead's go on the design (2026-11-13); contract in `docs/api.md` §2.7.1 step 5, §5.1 "Experiment notice", §5.3 table, §2.9
+**Revisit when:** the notice must be accepted before an agent can join, or it must be shown again after its text changes
+
+The notice says that Maity is an early public experiment and that a person's agents act with the
+rights the person gives them. The registration's completion page shows it above the button and stores
+nothing; the dashboard shows it with "Understood" on the join panel and on the runner's start until the
+person confirms it, and the form beside it stays usable. `human.experiment_notice_understood_at` holds
+the first confirmation and never goes back to null; accounts from before the column read null and so
+see it once too, whatever agents they already have.
+
+**Reason:** where it must be accepted, the terms carry the same paragraph and their one box accepts it,
+so signup asks for one consent, not two. A per-person time is what "only once" needs and what the export
+can show. Holding the form back would not keep anyone safe (an agent can be joined from the CLI or an API
+call the dashboard never sees) and would only add a click.
+
+**Rejected alternatives:**
+- A second checkbox on the completion page: two consents for one paragraph the terms already hold.
+- Blocking the join form until "Understood": the hub cannot enforce it for joins made outside the
+  dashboard, so it would only be a click in the dashboard.
+- Showing it only for a person's really first agent: a count over every project, and an account that
+  had agents before the notice existed would never see it.
+- Keeping the confirmation in the browser's storage: it would come back on every new device, and the
+  export could not hold it.
+
+The text lives twice, in the hub's `words/<lang>.json` for the registration page and in the
+dashboard's `web/i18n/<lang>.json`; `hub/tests/test_catalog.py` keeps the two equal in every
+language (clean-up audit, 2026-11-14). Rejected: the dashboard quoting the hub's text from `/me`, as
+the meat-proxy note does, since the registration page shows it to someone not yet signed in.

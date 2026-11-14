@@ -4615,6 +4615,18 @@
     "en": "76c012bc07d476ba",
     "text": "04d83d4bf864cdfe"
   },
+  "experiment.not_saved": {
+    "en": "831641bc8e3a7e90",
+    "text": "d872461cca3d4f4e"
+  },
+  "experiment.notice": {
+    "en": "ef237730002e679e",
+    "text": "d728362015f391a9"
+  },
+  "experiment.understood": {
+    "en": "baef2b7fd9c56095",
+    "text": "77fc13ee464f7954"
+  },
   "factor_banner.label": {
     "en": "ca4ae1ba2d424523",
     "text": "1ece2e7329f2c592"
@@ -11390,6 +11402,14 @@
   "name_rules.handle": {
     "en": "91068c8308ff7d7d",
     "text": "5f8b054602954fa9"
+  },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "992f902c6f06eafd"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "3bab74e6d2d341e9"
   },
   "name_rules.slug": {
     "en": "0851da38257f9de3",

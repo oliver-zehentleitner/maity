@@ -45,16 +45,23 @@ def step_of(timestamp: float) -> int:
     return int(timestamp // PERIOD)
 
 
-def normalised(code: str) -> str | None:
-    """Spaces are ignored; anything but six digits is no code."""
-    text = "".join(code.split())
+def normalise_six(code: str) -> str | None:
+    """The six digits of a code as every six-digit code is read (TOTP, the mail link's and
+    the mail factor's codes, docs/api.md §2.8.1, §2.8.6): spaces ignored, anything but six
+    ASCII digits is no code."""
+    text = code.replace(" ", "")
     return text if len(text) == DIGITS and text.isascii() and text.isdigit() else None
+
+
+def new_six() -> str:
+    """A fresh six-digit code from the secure random source, leading zeros kept."""
+    return f"{secrets.randbelow(10**DIGITS):0{DIGITS}d}"
 
 
 def matching_step(secret: bytes, code: str, timestamp: float, after: int | None) -> int | None:
     """The step `code` belongs to within the window, newer than `after` (the last step
     used), or None. Compared in constant time per candidate."""
-    text = normalised(code)
+    text = normalise_six(code)
     if text is None:
         return None
     now = step_of(timestamp)

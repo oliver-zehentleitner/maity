@@ -315,6 +315,21 @@ def test_the_checklist_is_edited_with_patch(owner: flow.Human, migrated: Engine)
     assert missing.status_code == 404
 
 
+def test_a_tick_tells_task_updated_with_fields_and_no_history(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """§8.2: `task_updated` carries `fields`, their values and `history`; a tick writes no
+    history entry (§6.7, §6.15), so `history` is empty."""
+    card = release(owner)
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/checklist/chk-1"
+    assert owner.post(path, {"done": True}).status_code == 200
+    [told] = [e for e in _events(migrated, "task_updated") if e.payload.get("id") == card["id"]]
+    assert told.payload["fields"] == ["release"]
+    assert told.payload["history"] == []
+    assert told.payload["release"]["checklist"][0]["done"] is True
+    assert "project_state" in told.payload
+
+
 def test_only_a_releaser_or_the_holder_ticks(owner: flow.Human, make_client: ClientFactory) -> None:
     agent = flow.agent(make_client, owner)
     card = release(owner)

@@ -90,7 +90,7 @@ jobs:
                 join:hub/*|join:cli/*|join:docs/join-page.md) hit=true ;;
                 web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*|web:hub/src/maity_hub/landing_assets/*|web:docs/api.md) hit=true ;;
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
-                cli:cli/*) hit=true ;;
+                cli:cli/*|cli:docs/runners.md) hit=true ;;
                 helm:deploy/*) hit=true ;;
                 contract:docs/api.md|contract:hub/*) hit=true ;;
                 vendor:web/vendor/*|vendor:web/tools/vendor_ktw.py) hit=true ;;

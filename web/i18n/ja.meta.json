@@ -4315,6 +4315,18 @@
     "en": "76c012bc07d476ba",
     "text": "58b0f1d63d1f3ec0"
   },
+  "experiment.not_saved": {
+    "en": "831641bc8e3a7e90",
+    "text": "2c945226d10ab7c1"
+  },
+  "experiment.notice": {
+    "en": "ef237730002e679e",
+    "text": "2e59c0ba7c37590b"
+  },
+  "experiment.understood": {
+    "en": "baef2b7fd9c56095",
+    "text": "e28ebeb245af924d"
+  },
   "factor_banner.label": {
     "en": "ca4ae1ba2d424523",
     "text": "f3de3bec3c84506e"
@@ -10898,6 +10910,14 @@
   "name_rules.handle": {
     "en": "91068c8308ff7d7d",
     "text": "5a93e952eeff7705"
+  },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "d037594ec052efe7"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "69de48eddd28560a"
   },
   "name_rules.slug": {
     "en": "0851da38257f9de3",

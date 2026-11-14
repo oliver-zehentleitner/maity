@@ -1,6 +1,8 @@
 # PostgreSQL 17 for the hub, one replica, on k3s's local-path storage (the
 # instance's own disk). The password comes from the Secret maity-postgres,
 # created by hand (docs/install/README.md); nothing here holds a secret.
+# The image is pinned by digest (tag@digest): the digest decides what runs, the tag says which version it is.
+# The backup Job (backup.yaml) uses the same image; change all of them together.
 apiVersion: v1
 kind: Service
 metadata: {name: maity-postgres, namespace: maity, labels: {app: maity-postgres}}
@@ -23,7 +25,7 @@ spec:
       securityContext: {fsGroup: 999, runAsUser: 999, runAsGroup: 999, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: postgres
-          image: postgres:17.10
+          image: postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
           env:
             - {name: POSTGRES_USER, value: maity}
             - {name: POSTGRES_DB, value: maity}
