@@ -10903,6 +10903,14 @@
     "en": "91068c8308ff7d7d",
     "text": "302d640f4664a0bd"
   },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "d4daf950865b1ea9"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "d2aaaead9b5fc517"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "03f300ff0af6a687"

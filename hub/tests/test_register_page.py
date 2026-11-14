@@ -12,10 +12,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import catalog, clock, render
+from maity_hub import catalog, clock, models, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.notifications import tokens
+from maity_hub.routes import register_page
 from tests import factory
 from tests.conftest import ClientFactory
 from tests.test_registration import MAIL, PASSWORD, SIGNING
@@ -210,7 +211,8 @@ def test_a_wrong_password_is_the_pages_error_and_the_fifth_voids(
 @pytest.mark.parametrize(
     ("given", "message"),
     [
-        ({"handle": "Ada Lovelace"}, "2 to 31"),
+        ({"handle": "Ada Lovelace"}, "lowercase only"),  # the word the field shows while typed
+        ({"handle": "ada lovelace"}, "2 to 31"),
         ({"handle": "x"}, "2 to 31"),
         ({"handle": "maintainer"}, "taken"),
         ({"display_name": ""}, "1 to 64"),
@@ -563,7 +565,9 @@ def test_a_fields_error_stands_under_it_and_is_tied_to_it(
     assert refused.status_code == 400
     assert (
         '<input id="handle" name="handle" type="text" value="x" required autocomplete="username"'
-        ' autocapitalize="none" aria-invalid="true" aria-describedby="handle-error">'
+        ' autocapitalize="none" spellcheck="false" maxlength="31"'
+        f' pattern="{register_page.HANDLE_PATTERN}" placeholder=" " aria-invalid="true"'
+        ' aria-describedby="handle-error handle-rule">'
     ) in refused.text
     assert '<p class="error" id="handle-error" role="alert">A handle has' in refused.text
     assert 'aria-invalid="true" aria-describedby="password-error"' not in refused.text
@@ -608,3 +612,92 @@ def test_the_experiment_notice_is_in_the_pages_language(
     client, link = start(make_client, migrated, hub(), language="de-AT,de;q=0.9")
     page = client.get(link)
     assert html.escape(catalog.section("register_page", "de")["experiment"]) in page.text
+
+
+def again_cookie(response: Any) -> str | None:
+    """The `Set-Cookie` of "Register again" (tsk-pxc5cx4hgb0y), when the answer sets one."""
+    found = [
+        c for c in response.headers.get_list("set-cookie") if c.startswith("maity_register_again=")
+    ]
+    return found[0] if found else None
+
+
+def test_the_handle_field_carries_the_hubs_rule_and_says_it_before_sending(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The page has no script: the field's `pattern` is the hub's handle syntax, the rule stands
+    beside it, and the word for an upper-case letter is there for the stylesheet to show."""
+    words = catalog.section("register_page", "en")
+    assert re.fullmatch(
+        register_page.HANDLE_PATTERN.replace("\\-", "-"),
+        "ada-1",
+    )
+    assert "^" + register_page.HANDLE_PATTERN.replace("\\-", "-") + "$" == models.HANDLE_PATTERN
+    client, link = start(make_client, migrated, hub())
+    page = client.get(link)
+    assert f'pattern="{register_page.HANDLE_PATTERN}"' in page.text
+    assert 'aria-describedby="handle-rule"' in page.text
+    assert f'<p class="hint" id="handle-rule">{html.escape(words["handle_rule"])}</p>' in page.text
+    check = (
+        f'<p class="hint handle-check" id="handle-check">{html.escape(words["handle_lower"])}</p>'
+    )
+    assert check in page.text and page.text.index("handle-rule") < page.text.index(check)
+    # Nothing offers to start again before the page refused anything, and no address is handed on.
+    assert words["again"] not in page.text and again_cookie(page) is None
+    css = client.get("/assets/landing/public-pages.css").text
+    assert "#handle:not(:placeholder-shown):invalid~.handle-check{display:block}" in css
+
+
+def test_a_wrong_password_offers_to_register_again_with_the_address_in_a_cookie(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    words = catalog.section("register_page", "en")
+    client, link = start(make_client, migrated, hub(), address="Ada+x@x.org")
+    page = client.get(link)
+    wrong = answer(client, link, page, password="not the one chosen at all")
+    assert wrong.status_code == 400
+    assert html.escape(words["again_password"]) in wrong.text
+    assert f'<a href="/register?lang=en">{words["again"]}</a>' in wrong.text
+    # The address never stands in the link (the frame adds the page's language to it): it goes in
+    # a cookie only /register is sent, which the sign-up page's script reads and removes
+    # (web/js/register.js).
+    cookie = again_cookie(wrong)
+    assert cookie is not None
+    assert cookie.startswith("maity_register_again=Ada%2Bx%40x.org;")
+    assert "Path=/register" in cookie and "Max-Age=600" in cookie
+    assert "HttpOnly" not in cookie and "samesite=strict" in cookie.lower()
+    # Every wrong password says it, the fifth too, which voids the link: from then on the dead
+    # page offers the same way, without an address, since it never says whose link it was.
+    for _ in range(4):
+        last = answer(client, link, page, password="not the one chosen at all")
+    assert pending(migrated).voided_at is not None
+    assert html.escape(words["again_password"]) in last.text and again_cookie(last) is not None
+    dead = client.get(link)
+    assert dead.status_code == 404
+    assert html.escape(words["again_dead"]) in dead.text
+    assert f'class="btn btn-secondary" href="/register?lang=en">{words["again"]}</a>' in dead.text
+    assert again_cookie(dead) is None and "x.org" not in dead.text
+
+
+def test_an_expired_or_unknown_link_offers_to_register_again(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    words = catalog.section("register_page", "en")
+    client, link = start(make_client, migrated, hub())
+    with migrated.begin() as conn:
+        conn.execute(t.pending_registration.update().values(expires_at=clock.now()))
+    for dead in (client.get(link), client.get("/mail/register/garbage")):
+        assert dead.status_code == 404
+        assert html.escape(words["again_dead"]) in dead.text
+        assert f'href="/register?lang=en">{words["again"]}</a>' in dead.text
+        assert again_cookie(dead) is None
+
+
+def test_register_again_carries_the_registrations_next() -> None:
+    words = catalog.section("register_page", "en")
+    assert 'href="/register?next=/invite/abc%3Fx%3D1"' in register_page._again(
+        words, "why", "/invite/abc?x=1"
+    )
+    # Only a path of this hub; anything else leads to the plain page.
+    for other in ("//evil.example/x", "https://evil.example", None, "", "/"):
+        assert 'href="/register"' in register_page._again(words, "why", other)
