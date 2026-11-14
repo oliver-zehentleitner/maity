@@ -192,7 +192,7 @@ class HubMiddleware:
         if table:
             # The operator's limit on single routes (MAITY_ROUTE_LIMITS, §1.7), before any
             # other work: no body is read, no caller looked up.
-            wait = route_limits.wait(scope, table, origin.address)
+            wait = route_limits.wait(scope, table, origin.limit_key)
             if wait:
                 refused = rate_limited(wait)
                 await error_response(

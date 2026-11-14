@@ -45,6 +45,75 @@ def test_stale_keys_are_forgotten(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(limiter) == 1
 
 
+def test_a_hit_forgets_idle_keys_without_scanning_the_live_ones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [1000.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limiter = Limiter(10, 60, name="test")
+    looked: list[int] = []
+    prune = limiter._prune
+
+    def counted(at: float) -> int:
+        looked.append(prune(at))
+        return looked[-1]
+
+    monkeypatch.setattr(limiter, "_prune", counted)
+    for i in range(5000):
+        limiter.hit(f"old-{i}")
+    now[0] += 30
+    for i in range(5000):
+        limiter.hit(f"new-{i}")
+    assert len(limiter) == 10_000  # all inside the window
+    # Each hit looked at one key, the front one, which was still live: no pass over all.
+    assert max(looked) == 1
+    looked.clear()
+    now[0] += 31  # the old keys are idle now, the new ones are not
+    limiter.hit("fresh")
+    assert looked == [5001]  # the 5000 idle keys and the first live one
+    assert len(limiter) == 5001
+    looked.clear()
+    for i in range(100):
+        limiter.hit(f"another-{i}")
+    assert max(looked) == 1
+    # A key hit again moves behind the others: it is not forgotten with its first window.
+    now[0] += 29
+    limiter.hit("new-0")
+    now[0] += 2
+    limiter.hit("fresh-2")
+    assert "new-0" in limiter._hits and "new-1" not in limiter._hits
+
+
+def test_release_and_reset_keep_working_with_the_ordered_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limiter = Limiter(1, 10, name="test")
+    wait, mark = limiter.place("a")
+    assert wait == 0
+    limiter.hit("b")
+    limiter.release("a", mark)  # "a" holds no attempt now, ahead of "b"
+    assert limiter.hit("a") == 0  # its place is free again
+    now[0] = 11.0
+    limiter.hit("c")
+    assert len(limiter) == 1  # "b" and "a" left the window
+    limiter.reset()
+    assert len(limiter) == 0 and limiter.hit("c") == 0
+
+
 def test_several_at_once_wait_for_room_for_all(monkeypatch: pytest.MonkeyPatch) -> None:
     now = [0.0]
 

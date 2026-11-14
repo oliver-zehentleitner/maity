@@ -944,7 +944,7 @@ async def exchange(token: str, body: Exchange, request: Request) -> Response:
     require_secure_transport(origin, settings.allow_plain_http)
     if request.headers.get("authorization"):
         raise forbidden(message="the exchange takes no credential")
-    wait = EXCHANGE_BY_ADDRESS.hit(origin.address)
+    wait = EXCHANGE_BY_ADDRESS.hit(origin.limit_key)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)

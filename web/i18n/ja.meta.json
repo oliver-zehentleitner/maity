@@ -8947,6 +8947,10 @@
     "en": "ce94bc42c2f35c49",
     "text": "28755b9ae9aa64d4"
   },
+  "mail.field.invitation_max_per_hour": {
+    "en": "7ffc81960324c689",
+    "text": "0912a68fbddf0e2f"
+  },
   "mail.field.max_per_hour": {
     "en": "68ba54d57ddc42f2",
     "text": "75c5efac71862281"
@@ -8958,6 +8962,10 @@
   "mail.field.reply_to": {
     "en": "21ddd237dd770f94",
     "text": "1e0f3a804e414122"
+  },
+  "mail.field.second_factor_max_per_hour": {
+    "en": "fab856110f4750bb",
+    "text": "ca9639139ea4f065"
   },
   "mail.field.security_max_per_hour": {
     "en": "ef0519e539df1c43",
@@ -8974,6 +8982,10 @@
   "mail.field.username": {
     "en": "f241302d339e4d2b",
     "text": "07098edb91f97e5d"
+  },
+  "mail.field.verification_max_per_hour": {
+    "en": "fdedf191d9c4159a",
+    "text": "b12374af6b621099"
   },
   "mail.hold_while_online": {
     "en": "8d0b00032d7d5518",

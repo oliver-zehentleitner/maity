@@ -45,15 +45,19 @@ from maity_hub.admin import is_instance_admin
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller
 from maity_hub.config import Settings
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.events import Actor, lock_project
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import tokens
+from maity_hub.ratelimit import Limiter
 
 PURPOSE = "account_deletion"
 VALID_FOR = timedelta(hours=24)
+# Requests that mail the confirmation, per human (§2.8.6): each one is security mail, so a
+# human cannot fill the security budget by asking again and again.
+PER_HUMAN = Limiter(3, 3600, name="account_deletion.PER_HUMAN")
 DELETED_NAME = "Deleted account"
 # Not a scrypt hash: `passwords.verify_password` answers False for it, whatever is given. Distinct
 # from the load test's seed marker (`loadtest.NO_PASSWORD`), which `purge` deletes by.
@@ -186,6 +190,11 @@ def request(conn: Connection, hub: Settings, caller: Caller, confirm: str) -> di
     address = _verified_address(conn, human.id)
     if address is None:
         raise ApiError(409, "address_unverified", "the account has no verified address")
+    # Counted only once everything else let the request through: only a request that mails
+    # spends one.
+    wait = PER_HUMAN.hit(human.id)
+    if wait:
+        raise rate_limited(wait)
     withdraw(conn, human.id, "replaced")
     now = clock.now()
     nonce = secrets.token_urlsafe(24)

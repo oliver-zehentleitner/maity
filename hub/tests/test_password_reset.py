@@ -227,6 +227,35 @@ def test_the_source_limit_answers_429_and_the_pair_limit_stays_silent(
     assert ask(client, "more@example.com").status_code == 429
 
 
+def test_many_sources_get_an_address_few_mails_and_every_answer_alike(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    client, _ = setup(make_client, migrated)
+    hub = client.app.state.settings
+    answers = []
+    for n in range(12):
+        source = make_client(peer=f"198.51.100.{n + 1}", mail=hub.mail, secret_key=hub.secret_key)
+        answered = ask(source)
+        answers.append((answered.status_code, answered.json()))
+    assert answers == [(202, {"expires_in": 1800})] * 12
+    assert len(resets(migrated)) == 5  # the address's hour, whichever sources asked
+
+
+def test_one_ipv6_64_is_one_source(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    client, _ = setup(make_client, migrated)
+    hub = client.app.state.settings
+
+    def from_(peer: str, n: int) -> int:
+        source = make_client(peer=peer, mail=hub.mail, secret_key=hub.secret_key)
+        return int(ask(source, f"someone{n}@example.com").status_code)
+
+    assert [from_(f"2001:db8:1:2::{n + 1:x}", n) for n in range(10)] == [202] * 10
+    assert from_("2001:db8:1:2:ffff::1", 10) == 429  # the same /64: its hour is spent
+    assert from_("2001:db8:1:3::1", 11) == 202  # the next /64 is another source
+
+
 def test_the_rules_every_method_keeps(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:

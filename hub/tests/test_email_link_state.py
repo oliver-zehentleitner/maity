@@ -226,6 +226,43 @@ def test_only_source_request_limit_is_observable() -> None:
     assert limits.take("another@example.org", "192.0.2.2") == (0, True)
 
 
+def test_an_address_gets_few_mails_however_many_sources_ask() -> None:
+    limits = links.RequestLimits()
+    sent = [
+        limits.take("Human@Example.org", f"192.0.2.{n}")[1]
+        for n in range(1, 1 + 3 * links.RECIPIENT_PER_HOUR)
+    ]
+    # Every request is answered alike (no wait); only the first few are delivered.
+    assert sent == [True] * links.RECIPIENT_PER_HOUR + [False] * (2 * links.RECIPIENT_PER_HOUR)
+    assert limits.take("other@example.org", "192.0.2.1") == (0, True)
+
+
+def test_a_request_the_pair_limit_refused_spends_nothing_of_the_address() -> None:
+    limits = links.RequestLimits()
+    for _ in range(10):  # one source: three get through its pair limit, the rest not
+        limits.take("human@example.org", "192.0.2.1")
+    delivered = [limits.take("human@example.org", f"198.51.100.{n}")[1] for n in range(1, 4)]
+    assert delivered == [True, True, False]  # 3 + 2 = the hour's five
+
+
+def test_the_address_limit_has_a_day_as_well(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limits = links.RequestLimits()
+    delivered = 0
+    for hour in range(6):
+        now[0] = hour * 3601.0
+        for n in range(10):
+            delivered += limits.take("human@example.org", f"203.0.113.{hour * 10 + n}")[1]
+    assert delivered == links.RECIPIENT_PER_DAY
+
+
 def test_instance_void_ends_every_open_link_and_code(conn: Connection) -> None:
     first = issue(conn)
     second = issue(conn, "second-browser", "192.0.2.2")

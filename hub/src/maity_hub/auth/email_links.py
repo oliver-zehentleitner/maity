@@ -226,14 +226,35 @@ def mail_body(
     )
 
 
+# Mails one address is sent in answer to anonymous requests, from all sources together
+# (§2.6.4): per hour and per day, each path in buckets of its own.
+RECIPIENT_PER_HOUR = 5
+RECIPIENT_PER_DAY = 20
+
+
+def recipient_over(hour: Limiter, day: Limiter, normalised: str) -> bool:
+    """Count one mail to the address against its hour and its day; True when either is
+    spent, and then nothing is sent. Keyed on the digest of the address alone, whatever the
+    source."""
+    key = digest(f"recipient\0{normalised}")
+    return bool(hour.hit(key) or day.hit(key))
+
+
 class RequestLimits:
-    """Only the source limit is observable; pair limits silently suppress delivery.
-    Keys contain hashes, and existing and unknown addresses take the same path."""
+    """Only the source limit is observable; the pair limits and the recipient's silently
+    suppress delivery. Keys contain hashes, and existing and unknown addresses take the same
+    path. `source` is the caller's `Origin.limit_key`."""
 
     def __init__(self) -> None:
         self.by_source = Limiter(10, 3600, name="auth.email_links.by_source")
         self.pair_quarter = Limiter(3, 900, name="auth.email_links.pair_quarter")
         self.pair_day = Limiter(10, 86400, name="auth.email_links.pair_day")
+        self.recipient_hour = Limiter(
+            RECIPIENT_PER_HOUR, 3600, name="auth.email_links.recipient_hour"
+        )
+        self.recipient_day = Limiter(
+            RECIPIENT_PER_DAY, 86400, name="auth.email_links.recipient_day"
+        )
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
         wait = self.by_source.hit(source)
@@ -243,4 +264,8 @@ class RequestLimits:
         key = digest(f"{source}\0{normalised}")
         quarter = self.pair_quarter.hit(key)
         day = self.pair_day.hit(key)
-        return 0, not (quarter or day)
+        if quarter or day:
+            return 0, False
+        # Counted only for a mail the pair limits let through: one source alone cannot spend
+        # the address's own budget.
+        return 0, not recipient_over(self.recipient_hour, self.recipient_day, normalised)

@@ -63,6 +63,7 @@ def _fresh() -> Iterator[None]:
         routes.BY_SOURCE,
         routes.BY_PAIR_SHORT,
         routes.BY_PAIR_DAY,
+        routes.BY_ADDRESS_HOUR,
         routes.BY_ADDRESS_DAY,
     ):
         limiter.reset()
@@ -424,9 +425,26 @@ def test_a_new_request_voids_the_same_sources_earlier_one_and_five_is_the_cap(
         other = make_client(
             peer=f"198.51.100.{n + 1}", mail=settings.mail, registration=settings.registration
         )
+        routes.BY_ADDRESS_HOUR.reset()  # each in an hour of its own: the address's hour aside
         assert register(other).status_code == 202
     live = [r for r in pending(migrated) if r.voided_at is None]
     assert len(live) == registration.PENDING_PER_ADDRESS
+
+
+def test_many_sources_get_an_address_few_mails_and_every_answer_alike(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = open_hub(make_client, migrated)
+    settings = client.app.state.settings
+    answers = []
+    for n in range(12):
+        other = make_client(
+            peer=f"198.51.100.{n + 1}", mail=settings.mail, registration=settings.registration
+        )
+        answered = register(other)
+        answers.append((answered.status_code, answered.json()))
+    assert answers == [(202, {"expires_in": 86400})] * 12
+    assert len(SENT) == 5  # the address's hour, whichever sources asked
 
 
 def test_the_per_source_limit_answers_429_and_the_pair_limit_stays_silent(

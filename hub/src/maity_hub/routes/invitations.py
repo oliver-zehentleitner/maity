@@ -309,7 +309,7 @@ def _logo_url(conn: Connection, request: Request, project: Any) -> str | None:
 @router.get("/invitations/{token}")
 async def invitation_page(token: str, request: Request) -> JSONResponse:
     """What the dashboard's `/invite/<token>` shows (§3.4), the same for every reader."""
-    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
+    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)
@@ -360,7 +360,7 @@ def _registration(conn: Connection, row: Any, project: Any, resolved: Any) -> st
 async def accept_invitation(token: str, request: Request, caller: HumanCaller) -> JSONResponse:
     """§3.4: one transaction, under the project's lock. A refusal that changes the
     invitation (used up, voided) is committed before it is answered."""
-    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
+    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)

@@ -421,7 +421,7 @@ the hub records it on the session.
 | `POST /me/presence` | 10 per minute per session, then `rate_limited` with `Retry-After`; `present_until` written at most once a minute per session (§18.4) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
 | Admin test sends | 5 per hour per instance admin (§16.3) |
-| Address verification mails | 3 per hour and 10 per day per human (§18.4) |
+| Address verification mails | 3 per hour and 10 per day per human, beyond it `rate_limited` and the address unchanged; 3 per hour and 10 per day per recipient address from all accounts together, beyond it the address is pending but no mail is sent (§18.4) |
 | Instances per membership | `agent.max_instances`, 1–16 (§6.18) |
 | Soul | 8 KiB (§19.1) |
 | Briefing texts | a guide 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the project's and the membership's briefing 16 KiB each (§6.28) |
@@ -436,7 +436,7 @@ the hub records it on the session.
 | Preferences proposals | one open per proposing membership and human; 5 per proposing membership and human in 24 hours (§19.4) |
 | Preferences inside the resume packet | 8 texts in all, `preferences.items` and `membership.owner_preferences` together; the agent's own owner first, then by `handle` and member id; the rest cut with `truncated: true` (§19.4) |
 | Registration allowlist | 200 domains and 2000 addresses, each at most 254 characters (§16.4) |
-| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); 20 per day per address; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
+| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); 5 per hour and 20 per day per address; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
 | Pending registrations | 5 per address, each 24 hours; 5 wrong passwords at completion (§2.7.1) |
 | New accounts | `max_new_accounts_per_hour`, default 20 (§16.4) |
 | Registration mails | `registration_max_per_hour`, default 30 (§16.2) |
@@ -1529,7 +1529,10 @@ changes nothing). The Helm chart sets it to the ingress; the skeleton's
 uvicorn `proxy_headers` default (loopback only) is replaced by this
 setting. The bearer-over-TLS rule (§2.2), the join rate limit per source
 address (§3.1) and the login limit (§2.1) all read the address and scheme
-decided this way.
+decided this way. Every limit counted per source address counts an IPv6
+client by its /64 network (an IPv4-mapped IPv6 address as its IPv4
+address); what the hub records or shows of a caller keeps the whole
+address.
 
 Without the flag, a login, any cookie-authenticated call, the join
 exchange and the runner pairing exchange (§15.2; both responses are a
@@ -1803,11 +1806,11 @@ rules of §18.5 for headers and content, minus the unsubscribe parts: a
 sign-in mail is a reply to a request, not a notification, so it ignores
 the human's notification modes, quiet hours and the per-human hourly
 cap. Because anyone can ask for one without signing in, sign-in mails
-have **limits of their own**: per source address (§2.6.4) and an
+have **limits of their own**: per source address, per address (§2.6.4) and an
 instance-wide cap, `sign_in_max_per_hour` (#160 §16.2, default 60);
 over either, the request answers `202` as always and nothing is sent.
-Sign-in mails never count against the budget for security mails or the
-one for notifications, so no number of anonymous requests can delay an
+Sign-in mails never count against the budget for security mails, the
+mail factor's (§2.8.8) or the one for notifications, so no number of anonymous requests can delay an
 alert, a verification or the old-address notice — those are queued,
 never dropped (#160 §16.2). Subject `[Maity] Sign-in
 link`. Body:
@@ -1873,14 +1876,14 @@ HMAC with the signing key, never in clear.
 |---|---|
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
 | `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 60 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
-| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
-| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
+| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 5 per hour and 20 per day per address from all sources together, existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security, mail-factor and notification mail |
+| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`, in buckets of its own: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 5 per hour and 20 per day per address from all sources together, existing or not; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
 | `POST /auth/password-reset/check`, `…/complete` | 10 per minute per source address, shared with the login limit of §2.1; a wrong TOTP or recovery code counts as §2.8.6 counts |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
 
 Over a limit: `rate_limited` with `Retry-After` (§1.3). For
-`POST /auth/email-link` and `POST /auth/password-reset` the per-address limit and the instance cap are
+`POST /auth/email-link` and `POST /auth/password-reset` the per-address limits and the instance cap are
 applied as `202` with nothing sent, like an unknown address — a `429`
 there would tell an address that is being used from one that is not;
 only the per-source-address limit answers `429`. A caller who spends
@@ -1889,12 +1892,15 @@ for `POST /auth/password-reset` reset mails, for the rest of the hour,
 nothing else, and the device code and the password
 are unaffected.
 
-**No lock-out through the limits.** The per-address limit counts per
+**No lock-out through the limits.** The pair limit counts per
 (address, source address), so requests from elsewhere do not spend the
-budget of the human's own network: someone who knows the address can
-fill the mailbox with sign-in mails (at most 10 per day per source
-address they control) but cannot spend the human's per-address budget
-nor void the human's link (§2.6.3). Whoever controls enough source
+budget of the human's own network, nor void the human's link (§2.6.3).
+Above it, an address is sent at most 5 mails per hour and 20 per day
+in answer to these requests, whichever sources they come from; a request
+counts there only once its pair limit let it through. Someone who knows
+the address can spend that budget and delay the human's next sign-in
+mail to the next hour, at most to the next day, but cannot fill the
+mailbox. Whoever controls enough source
 addresses can spend the instance cap and stop sign-in mails for
 everyone until the hour ends — the same accepted kind of denial as the
 device-code breaker above, limited to the mail link. Reset mails (§2.10)
@@ -2453,7 +2459,7 @@ contract. `GET /me` carries `member.terms` (§5.1) for a human.
 |---|---|
 | `POST /auth/register` per source address | 10 per hour; `rate_limited` (`429`) — the one limit that answers `429`, since it speaks only about the caller |
 | per (address, source address) | 3 per 15 minutes, 10 per day, existing account or not; over it `202` and nothing is sent |
-| per address, all sources | 20 per day; over it `202` and nothing is sent, so the instance cannot be used to fill a stranger's mailbox |
+| per address, all sources | 5 per hour and 20 per day; over it `202` and nothing is sent, so the instance cannot be used to fill a stranger's mailbox |
 | instance breaker | more than `MAITY_REGISTRATION_BREAKER` requests (default 120) per minute across the instance, every request counted: every `POST /auth/register` is `rate_limited` for a minute |
 | registration mails | `registration_max_per_hour` (§16.2, default 30), a budget of their own; over it `202` and nothing is sent |
 | completion | 5 wrong passwords per pending registration (then void); 10 completion attempts per minute per source address, shared with the login limit of §2.1 |
@@ -2464,8 +2470,8 @@ The breaker is the same accepted denial as the device-code breaker
 a minute at a time, and that is preferred to a per-source limit alone,
 which a distributed flood would pass. It never touches sign-in, mail
 of any other kind, or existing accounts. Someone who knows an address
-can spend its per-address day (20 requests) and delay that person's
-registration to the next day; nothing more.
+can spend its per-address hour (5 requests) or day (20) and delay that
+person's registration to the next hour or day; nothing more.
 
 #### 2.7.4 Handle and display name
 
@@ -2884,6 +2890,7 @@ environment winning as there:
 | Codes at a password reset (§2.10) | 5 wrong per human in the 24 hours before each one, across all reset links; the fifth and every further one in that window voids every open reset link of the human and writes `second_factor_failed` (`method: password_reset`), the count never restarts and a right code is never refused for it; every one also counts in the per-human limit above |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
+| `POST /me/deletion` (§2.9) | 3 per hour per human, counted only for a request that passed every other check and mails the confirmation; the confirmation is security mail, so repeated requests cannot fill its budget |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
 
 The per-human limit is a known denial of service: whoever holds the
@@ -2983,7 +2990,11 @@ from that session sends a new mail and voids the earlier link and
 code. The token is 32 random bytes in base64url; the hub stores token
 and code as HMAC-SHA-256 under `MAITY_MAIL_SIGNING_KEY`, never in a log
 or an event. The mail is no §18.6 page: §18.6's pages take no cookie,
-and this link needs the session's.
+and this link needs the session's. The mail factor's mails, the
+confirmation code of "Turning it on" included, count against a budget
+of their own, `second_factor_max_per_hour` (§16.2, default 60), which
+no other kind of mail spends; over it a mail is not sent (a late code
+is useless).
 
 **Only in the signing-in browser.** `POST /auth/second-factor/verify`
 `{email_token}` succeeds only on the second-factor session the token
@@ -3078,7 +3089,7 @@ without an operator's help.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /me/export` | human only (agents `forbidden`, `humans_only`); a sensitive call (§2.8.4) | one JSON document, `Content-Disposition: attachment; filename="maity-export-<handle>-<date>.json"`; at most once per 10 minutes per account (`rate_limited`) |
-| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 org_last_owner` (`details.orgs`, §6.26) while they are the last owner of an organisation; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3 |
+| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 org_last_owner` (`details.orgs`, §6.26) while they are the last owner of an organisation; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3; `rate_limited` past 3 requests an hour (§2.8.6) |
 | `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `200 {"deletion": null}` |
 | `GET /me` | human | carries `deletion: {requested_at, expires_at}` while one is pending, else `null` |
 
@@ -3260,10 +3271,9 @@ parts. Like the sign-in mail it answers a request, so no mode, digest,
 quiet hours or hourly cap of notifications applies. It has a budget of
 its own, `password_reset_max_per_hour` (§16.2, default 30): over it the
 request answers `202` as always and nothing is sent. It never counts
-against the sign-in budget, from which the mail factor's mails are sent
-(§2.8.8), nor against the security or the notification budget, so
-anonymous reset requests can stop reset mails for the rest of the hour
-and nothing else. Subject `[Maity] Reset your password`. Body:
+against the sign-in budget, the mail factor's (§2.8.8), the security
+or the notification budget, so anonymous reset requests can stop reset
+mails for the rest of the hour and nothing else. Subject `[Maity] Reset your password`. Body:
 
 - the link `<MAITY_PUBLIC_URL>/sign-in/reset#<token>`, valid
   **30 minutes**. The token stands in the fragment, which no browser
@@ -4044,7 +4054,7 @@ person, one project and one trust and role, it is used once, and it expires.
   `invitation_address_mismatch`), and the hub mails the link when mail
   is enabled (§16.2; a notification mail of §18.5 with the inviter's
   display name, the project's name, the trust and role and the `note`, under the
-  recipient's security-mail budget); without mail, or without an
+  invitation budget, `invitation_max_per_hour`); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
 - `handle` is optional and excludes `address` (both: `invalid`,
@@ -19305,27 +19315,36 @@ with the forgotten password (§2.10) the reset mails. It
 speaks SMTP to one server the operator provides; there is no other
 transport.
 
-**Five budgets.** Each kind of mail is counted on its own, and none
+**Eight budgets.** Each kind of mail is counted on its own, and none
 can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
   and is merged into each human's next mail (§18.5).
-- `security_max_per_hour` — verification mails, `immediate` `security`
-  notifications and the old-address notice: mail that a human's own
-  account activity triggers. Over it, a mail is **queued** for the next
+- `security_max_per_hour` — `immediate` `security` notifications and
+  the old-address notice: mail that a human's own account activity
+  triggers. Over it, a mail is **queued** for the next
   hour, in order, and `security_queued` counts it; a security mail is
   never dropped for budget reasons.
-- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3) and
-  the mail factor's links and codes (§2.8.8), a kind of mail an
-  unauthenticated caller can trigger. It has, in
-  addition, the per-source-address limits of #169 §2.6.4. Over it, a
+- `verification_max_per_hour` — address verification mails (§18.4),
+  which any account can ask for, with the limits of §18.4. Over it, a
+  verification mail is queued for the next hour as security mail is,
+  and `verification_queued` counts it.
+- `invitation_max_per_hour` — the mails of address-bound invitations
+  (§3.4), which the members:admin of any project can send to any
+  address. Over it, an invitation mail is queued for the next hour as
+  security mail is, and `invitation_queued` counts it.
+- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3), a
+  kind of mail an unauthenticated caller can trigger. It has, in
+  addition, the limits of #169 §2.6.4. Over it, a
   sign-in mail is not sent (a stale link is useless) and
   `sign_in_dropped_last_hour` counts it.
+- `second_factor_max_per_hour` — the mail factor's links and codes
+  (§2.8.8), sent only after a first factor or from a signed-in session.
+  Over it, such a mail is not sent (a late code is useless) and
+  `second_factor_dropped_last_hour` counts it.
 - `password_reset_max_per_hour` — the mails of `POST /auth/password-reset`
-  (§2.10), with the per-source-address limits of §2.6.4. Over it, a reset
-  mail is not sent and `password_reset_dropped_last_hour` counts it. Its
-  own budget keeps anonymous reset requests away from the mail factor's
-  mails, which `sign_in_max_per_hour` sends.
+  (§2.10), with the limits of §2.6.4. Over it, a reset
+  mail is not sent and `password_reset_dropped_last_hour` counts it.
 - `registration_max_per_hour` — the mails of `POST /auth/register`
   (§2.7.1), another kind an unauthenticated caller can trigger, with
   the limits of §2.7.3. Over it, nothing is sent and
@@ -19382,8 +19401,11 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification, sign-in nor reset mail counts here. Over it, security mail is queued for the next hour, never dropped |
-| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3) and the mail factor's (§2.8.8), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (`immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification, verification, invitation, sign-in, mail-factor nor reset mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_VERIFICATION_MAX_PER_HOUR` | `verification_max_per_hour` | address verification mails (§18.4), all humans together; default 60. Over it, a verification mail is queued for the next hour |
+| `MAITY_MAIL_INVITATION_MAX_PER_HOUR` | `invitation_max_per_hour` | the mails of address-bound invitations (§3.4), all projects together; default 60. Over it, an invitation mail is queued for the next hour |
+| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR` | `second_factor_max_per_hour` | the mail factor's links and codes (§2.8.8), all humans together; default 60. Over it, such a mail is not sent |
 | `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR` | `password_reset_max_per_hour` | password reset mails (§2.10), all humans together; default 30. Over it, a reset mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `online_grace_minutes` | 0–60, default 5: how long after a human stopped being present in the web app their held notification mail still waits (§18.5, "Held while present") |
@@ -19424,7 +19446,10 @@ Scope `instance:admin`, human only (§16.1):
   "reply_to": { "value": null, "source": "default" },
   "max_per_hour": { "value": 500, "source": "default" },
   "security_max_per_hour": { "value": 100, "source": "default" },
+  "verification_max_per_hour": { "value": 60, "source": "default" },
+  "invitation_max_per_hour": { "value": 60, "source": "default" },
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
+  "second_factor_max_per_hour": { "value": 60, "source": "default" },
   "password_reset_max_per_hour": { "value": 30, "source": "default" },
   "registration_max_per_hour": { "value": 30, "source": "default" },
   "online_grace_minutes": { "value": 5, "source": "default" },
@@ -19435,8 +19460,14 @@ Scope `instance:admin`, human only (§16.1):
   "sent_last_hour": 12,
   "security_sent_last_hour": 1,
   "security_queued": 0,
+  "verification_sent_last_hour": 0,
+  "verification_queued": 0,
+  "invitation_sent_last_hour": 0,
+  "invitation_queued": 0,
   "sign_in_sent_last_hour": 0,
   "sign_in_dropped_last_hour": 0,
+  "second_factor_sent_last_hour": 0,
+  "second_factor_dropped_last_hour": 0,
   "password_reset_sent_last_hour": 0,
   "password_reset_dropped_last_hour": 0,
   "registration_sent_last_hour": 0,
@@ -19464,8 +19495,8 @@ PATCH /admin/settings/mail
 
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
-`max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
-`password_reset_max_per_hour`, `registration_max_per_hour`, `online_grace_minutes`; `null` returns a field to its default (for `password`:
+`max_per_hour`, `security_max_per_hour`, `verification_max_per_hour`, `invitation_max_per_hour`, `sign_in_max_per_hour`,
+`second_factor_max_per_hour`, `password_reset_max_per_hour`, `registration_max_per_hour`, `online_grace_minutes`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -23261,7 +23292,11 @@ device; the browser's own permission is per browser and is not stored.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
-  keeps receiving until the new one is verified. The verification mail
+  keeps receiving until the new one is verified. A human asks for at
+  most 3 verification mails an hour and 10 a day (`rate_limited` with
+  `Retry-After` beyond it, nothing changed), and one recipient address
+  gets at most 3 an hour and 10 a day from all accounts together;
+  beyond that the address is pending as usual but no mail goes out. The verification mail
   carries the address, the instance's public URL, the link and "If you
   did not ask for this, ignore this mail" — never the human's handle,
   display name or projects, since it goes to an address nobody has

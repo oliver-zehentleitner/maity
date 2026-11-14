@@ -92,6 +92,7 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         MAITY_MAIL_MAX_PER_HOUR="10",
         MAITY_MAIL_SECURITY_MAX_PER_HOUR="20",
         MAITY_MAIL_SIGN_IN_MAX_PER_HOUR="30",
+        MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR="40",
         MAITY_SECRET_KEY=KEY,
         MAITY_MAIL_SIGNING_KEY=SIGNING,
         KUBERNETES_SERVICE_HOST="10.0.0.1",
@@ -109,6 +110,7 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         20,
         30,
     )
+    assert mail.second_factor_max_per_hour == 40
     assert mail.in_kubernetes and hub.secret_key == b"k" * 32
     assert PASSWORD not in repr(hub) and KEY not in repr(hub) and "kkkk" not in repr(hub)
 
@@ -133,6 +135,7 @@ def test_the_environment_sets_every_value(tmp_path: Path) -> None:
         {"MAITY_SMTP_ALLOW_PLAINTEXT": "maybe"},
         {"MAITY_SMTP_CA_FILE": "/nonexistent/ca.pem"},
         {"MAITY_MAIL_MAX_PER_HOUR": "-1"},
+        {"MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR": "0"},
         {"MAITY_SMTP_PASSWORD": "pässword"},
         {"MAITY_SMTP_USERNAME": "mäity"},
     ],
@@ -167,6 +170,8 @@ def test_the_defaults_and_who_may_read_them(make_client: ClientFactory, migrated
     assert got["max_per_hour"] == {"value": 500, "source": "default"}
     assert got["security_max_per_hour"]["value"] == 100
     assert got["sign_in_max_per_hour"]["value"] == 60
+    assert got["second_factor_max_per_hour"] == {"value": 60, "source": "default"}
+    assert got["second_factor_sent_last_hour"] == got["second_factor_dropped_last_hour"] == 0
     assert got["warnings"] == [] and got["last_test"] is None
     assert got["sent_last_hour"] == got["failed_last_hour"] == got["security_queued"] == 0
 
@@ -197,6 +202,7 @@ def test_the_admin_sets_values_and_the_environment_wins(
             "from": {"address": "maity@example.org", "name": "Maity"},
             "reply_to": "ops@example.org",
             "max_per_hour": 50,
+            "second_factor_max_per_hour": 15,
             "enabled": False,
         },
     )
@@ -204,6 +210,7 @@ def test_the_admin_sets_values_and_the_environment_wins(
     got = changed.json()
     assert got["host"] == {"value": "smtp.example.org", "source": "env"}
     assert got["port"] == {"value": 2525, "source": "admin"}
+    assert got["second_factor_max_per_hour"] == {"value": 15, "source": "admin"}
     assert got["from"]["value"] == {"address": "maity@example.org", "name": "Maity"}
     assert (got["enabled"], got["complete"], got["missing"]) == (False, True, [])
     assert owner.get(PATH).json() == got
@@ -236,6 +243,7 @@ def test_the_admin_sets_values_and_the_environment_wins(
         ({"from": {"address": "maity@example.org", "extra": 1}}, {"from": "invalid"}),
         ({"reply_to": "a@b.co,c@d.co"}, {"reply_to": "invalid"}),
         ({"max_per_hour": 0}, {"max_per_hour": "invalid"}),
+        ({"second_factor_max_per_hour": 0}, {"second_factor_max_per_hour": "invalid"}),
         ({"enabled": "yes"}, {"enabled": "invalid"}),
         ({"tls": "none", "host": "smtp.example.org"}, {"tls": "loopback_host_only"}),
         ({"username": "mäity"}, {"username": "invalid"}),

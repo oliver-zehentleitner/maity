@@ -171,7 +171,7 @@ def send(
     )
     outbox.enqueue(
         conn,
-        kind="sign_in",  # a late code is useless: over its budget it is dropped, not held
+        kind="second_factor",  # a late code is useless: over its budget it is dropped, not held
         to=address.address,
         human_id=row.human_id,
         subject=catalog.section("factor", language)["subject"],
@@ -249,7 +249,7 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
     words = catalog.section("factor", preferences.text_language(conn, row.human_id))
     outbox.enqueue(
         conn,
-        kind="sign_in",
+        kind="second_factor",
         to=address.address,
         human_id=row.human_id,
         subject=words["confirm_subject"],

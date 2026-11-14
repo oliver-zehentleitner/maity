@@ -74,7 +74,7 @@ def request_reset(
     with engine.begin() as conn:
         _enabled(conn, hub)
     origin = origin_of(request)
-    wait, allowed = LIMITS.take(body.address, origin.address)
+    wait, allowed = LIMITS.take(body.address, origin.limit_key)
     if wait:
         raise rate_limited(wait)
     if allowed:
@@ -216,7 +216,7 @@ def _factor(conn: Connection, hub: Settings, human_id: str) -> str | None:
 
 
 def _page_limit(request: Request) -> None:
-    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).address)  # shared with the login
+    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).limit_key)  # shared with the login
     if wait:
         raise rate_limited(wait)
 
