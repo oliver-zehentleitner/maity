@@ -176,3 +176,25 @@ it. A bridge carries no presence when it is isolated, paused, suspended with its
 or when every one of its instances is paused. A request filed through the bridge names no asking
 instance: `_asking_instance` only takes a session of the asker's own membership, so the answer
 wakes `member:` of the served agent.
+
+## A carried write checks its connection in `write_guard`, not in each route
+
+**Id:** d341f696-e783-463f-bdeb-776f91895406
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kpaye5hmyz39; the review of #1795 found an upload through an ended connection committed, since the first check sat only in `events.emit`
+**Revisit when:** a carried write must run without the project's lock, or `write_guard` stops seeing every transaction of a request
+
+`bridges.carry` reads the connection live before the route runs, but an owner may end it
+before the route writes. `deps` binds the carried connection (`write_guard.bind_bridge`), and
+the transaction's first locking statement takes the organisation's lock where the project has
+one, then the project's, and refuses with `not_your_bridge` when the connection's `live` is no
+longer true. An ending holds the project's lock too, so a carried write commits before it or
+waits and is refused, whether the write emits an event or not. `events.emit` keeps its own
+check, which costs one read under a lock it already holds.
+
+Rejected: the check in `events.emit` alone, which misses writes without an event (an upload);
+the check in `idempotency.run`, which several project writes do not use (a pin, a watch, the
+jour fixe); a shared lock on the bridge row at the transaction's start, which would wait in the
+opposite order to an ending that holds the project's lock and then updates that row.

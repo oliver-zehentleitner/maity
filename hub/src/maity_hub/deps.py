@@ -134,6 +134,9 @@ async def authenticated(
     request.state.caller = caller
     if caller.kind == "human" and caller.human_id is not None:
         write_guard.bind(caller.human_id)  # its writes commit only while it exists (§2.9)
+    if caller.bridge is not None and caller.project_id is not None:
+        # A bridge's writes for an agent commit only while the connection lives (§2.3).
+        write_guard.bind_bridge(caller.project_id, caller.bridge.bridge_id)
     return caller
 
 

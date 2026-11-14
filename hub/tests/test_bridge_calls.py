@@ -323,6 +323,70 @@ def test_a_write_through_a_connection_ended_meanwhile_is_refused(
     assert not any("through an ended bridge" in str(body) for body in bodies)
 
 
+@pytest.mark.parametrize("write", ["upload", "message"])
+def test_a_carried_write_after_its_connection_ended_is_refused_with_or_without_an_event(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    write: str,
+) -> None:
+    """§2.3: every write carried through a connection checks it again under the project's
+    lock, also one that emits no event (an upload). The connection ends after the call was
+    carried and before the route runs, committed, as an owner's `DELETE` would."""
+    from maity_hub import bridges, events, write_guard
+
+    store = tmp_path / "blobs"
+    store.mkdir()
+    served, bridge, connection = _pair(migrated, owner)
+    project_id = _project(migrated)
+    bind = write_guard.bind_bridge
+
+    def bind_then_end(project: str, bridge_id: str) -> None:
+        bind(project, bridge_id)
+        with events.transaction(migrated) as conn:
+            events.lock_project(conn, project_id)
+            row = conn.execute(select(t.bridge).where(t.bridge.c.id == bridge_id)).one()
+            bridges.end(conn, row, None)
+
+    calls = Calls(make_client(attachment_dir=store), bridge)
+    monkeypatch.setattr(write_guard, "bind_bridge", bind_then_end)
+    if write == "upload":
+        answer = calls.client.post(
+            f"{API}{PROJECT}/attachments?name=a.txt",
+            content=b"abc",
+            headers={"Content-Type": "text/plain", **calls.headers(served.agent_id)},
+        )
+    else:
+        answer = _say(calls, served.agent_id, "through an ended bridge")
+    assert answer.status_code == 403, answer.text
+    assert _reason(answer) == "not_your_bridge"
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.attachment)).all() == []
+        bodies = conn.execute(select(t.event.c.payload)).scalars().all()
+        assert not any("through an ended bridge" in str(body) for body in bodies)
+        assert (
+            conn.execute(select(t.bridge.c.live).where(t.bridge.c.id == connection)).scalar()
+            is None
+        )
+
+
+def test_a_carried_upload_through_a_live_connection_is_written(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, tmp_path: Any
+) -> None:
+    store = tmp_path / "blobs"
+    store.mkdir()
+    served, bridge, _connection = _pair(migrated, owner)
+    calls = Calls(make_client(attachment_dir=store), bridge)
+    answer = calls.client.post(
+        f"{API}{PROJECT}/attachments?name=a.txt",
+        content=b"abc",
+        headers={"Content-Type": "text/plain", **calls.headers(served.agent_id)},
+    )
+    assert answer.status_code == 201, answer.text
+
+
 def test_a_bridge_calls_under_no_governance_scope(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
