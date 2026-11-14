@@ -58,7 +58,8 @@ answer is `not_found`, as the caller's GET would be. For a project's
 resources, `in_project` checks the active membership with `project:read`,
 plus the rule the resource's own GET adds (the invitation and join lists,
 a credential's managers, a request's readers, a group chat's messages, an
-attachment's readers, the webhook's admins, an agent's own placements). Outside projects, the check
+attachment's readers, the webhook's admins, an agent's own placements,
+the readers of a jour fixe round or series). Outside projects, the check
 is the GET's rule as well: an agent's owner, the runner and the people who
 see it, a cross-owner chat's readers. A human's own records (`/me`, their
 preferences and chat-access lists, their reports) need no further look,

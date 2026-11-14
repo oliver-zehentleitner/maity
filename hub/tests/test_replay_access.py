@@ -7,16 +7,18 @@ current state. Every registered resource type says how its replay re-checks (`re
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, insert, select
 
-from maity_hub import idempotency
+from maity_hub import clock, idempotency, listening
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_jour_fixe import listen
 
 PROJECT = "/projects/maintainer/maity"
 TASKS = f"{PROJECT}/tasks"
@@ -109,6 +111,11 @@ CASES: dict[str, Case] = {
         f"{CHATS}/{w.group_chat()}/participants/{w.bea.id}",
         None,
     ),
+    "jour_fixe_series": lambda w: (
+        "POST",
+        f"{PROJECT}/jour-fixe/series",
+        {"topic": "Bea's series", "circle": "all", "reason": "t"},
+    ),
 }
 
 
@@ -184,6 +191,146 @@ def test_a_takeovers_replay_checks_the_project(
     world.remove_bea()
     with migrated.connect() as conn:
         assert not check(conn, "tko-replay-1", bea)
+
+
+# --- a jour fixe round of an owner's series stays with its circle (§20.7) ---------------------
+
+
+@pytest.fixture
+def _no_listeners() -> Iterator[None]:
+    yield
+    listening.reset()
+
+
+class OwnersCircle:
+    """`friend`'s own series, moderated by its agent `lead`; `carl` is a member outside the
+    circle whose agent `outsider` holds the series' moderator right too, and starts a round
+    that `lead` moderates. `worker`, friend's other agent, answers it by name."""
+
+    def __init__(self, make_client: ClientFactory, engine: Engine) -> None:
+        self.engine = engine
+        self.owner = flow.human(make_client, engine)
+        self.project_id: str = flow.project(self.owner)["id"]
+        self.friend = self._member(make_client, "friend")
+        self.carl = self._member(make_client, "carl")
+        self.lead = flow.agent(make_client, self.friend)
+        self.worker = flow.agent(make_client, self.friend)
+        self.outsider = flow.agent(make_client, self.carl)
+        listen(self.lead)
+        listen(self.worker)
+        made = self.friend.post(
+            f"{PROJECT}/jour-fixe/series",
+            {
+                "topic": "My agents",
+                "circle": "owner",
+                "circle_owner": self.friend.id,
+                "reason": "t",
+            },
+        )
+        assert made.status_code == 201, made.text
+        self.series: str = made.json()["id"]
+        assert self._grant(self.lead.id).status_code == 201
+        pending = self._grant(self.outsider.id)
+        assert pending.status_code == 202, pending.text
+        [request_id] = pending.json()["requests"]
+        consent = self.carl.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
+        if consent.status_code == 404:
+            consent = self.carl.post(f"{PROJECT}/requests/{request_id}/answer", {"reply_id": "go"})
+        assert consent.status_code == 200, consent.text
+        self._online(self.lead.id)  # the most minutes online: `lead` moderates (§20.2)
+        self.start = (
+            "POST",
+            f"{PROJECT}/jour-fixe/series/{self.series}/rounds",
+            {"reason": "look back"},
+        )
+        started = self.send_as_outsider(self.start, "replay-circle-start")
+        assert started.status_code == 201, started.text
+        assert started.json()["moderator"]["member_id"] == self.lead.id
+        self.round: str = started.json()["id"]
+        answered = self.worker.post(
+            f"{PROJECT}/jour-fixe/rounds/{self.round}/answers", {"went_well": "a"}
+        )
+        assert answered.status_code == 201, answered.text
+        self.answer: str = answered.json()["id"]
+
+    def _member(self, make_client: ClientFactory, handle: str) -> flow.Human:
+        human = flow.human(make_client, self.engine, handle)
+        factory.membership(
+            self.engine, self.project_id, "member", human_id=human.id, last_seen_at=clock.now()
+        )
+        return human
+
+    def _grant(self, member_id: str) -> Any:
+        return self.friend.post(
+            f"{PROJECT}/jour-fixe/series/{self.series}/moderators",
+            {"member_id": member_id, "reason": "t"},
+        )
+
+    def _online(self, agent_id: str) -> None:
+        with self.engine.begin() as conn:
+            membership_id = conn.execute(
+                select(t.membership.c.id).where(t.membership.c.agent_id == agent_id)
+            ).scalar_one()
+            now = clock.now().replace(second=0, microsecond=0)
+            for minute in range(1, 6):
+                conn.execute(
+                    insert(t.presence_minute).values(
+                        membership_id=membership_id, minute=now - timedelta(minutes=minute)
+                    )
+                )
+
+    def send_as_outsider(self, call: tuple[str, str, Any], key: str) -> Any:
+        method, path, body = call
+        return self.outsider.client.request(
+            method,
+            f"/api/v1{path}",
+            json=body,
+            headers=self.outsider.auth | {"Idempotency-Key": key},
+        )
+
+
+def test_a_member_outside_the_circle_gets_not_found_on_a_rounds_replay(
+    make_client: ClientFactory, migrated: Engine, _no_listeners: None
+) -> None:
+    """The outsider started the round but does not read it: its `GET` is `not_found`, and so
+    is the replay of its start, which would answer with the round as it is now."""
+    world = OwnersCircle(make_client, migrated)
+    assert world.outsider.get(f"{PROJECT}/jour-fixe/rounds/{world.round}").status_code == 404
+    again = world.send_as_outsider(world.start, "replay-circle-start")
+    assert again.status_code == 404, again.text
+    assert again.json()["error"]["code"] == "not_found"
+    assert "Idempotent-Replayed" not in again.headers
+    assert "My agents" not in again.text
+
+
+# Each jour fixe type: the id its stored key names, in `friend`'s round or series. `carl`, a
+# member outside the circle who does not see the series, may not see it on a replay; `friend`
+# may (§20.1, §20.7).
+CIRCLE_CASES: dict[str, Callable[[OwnersCircle], str]] = {
+    "jour_fixe_round": lambda w: w.round,
+    "jour_fixe_report": lambda w: w.round,
+    "jour_fixe_answer": lambda w: w.answer,
+    "jour_fixe_post": lambda w: f"{w.round}/p1",
+    "jour_fixe_series": lambda w: w.series,
+    "jour_fixe_grant": lambda w: w.series,
+}
+
+
+def test_every_jour_fixe_type_has_a_circle_case(make_client: ClientFactory) -> None:
+    make_client()
+    assert set(CIRCLE_CASES) == {n for n in idempotency.LOADERS if n.startswith("jour_fixe_")}
+
+
+@pytest.mark.parametrize("kind", sorted(CIRCLE_CASES))
+def test_a_jour_fixe_replay_stays_with_the_circle(
+    kind: str, make_client: ClientFactory, migrated: Engine, _no_listeners: None
+) -> None:
+    world = OwnersCircle(make_client, migrated)
+    check = idempotency.LOADERS[kind].may_see
+    ref = CIRCLE_CASES[kind](world)
+    with migrated.connect() as conn:
+        assert check(conn, ref, _caller(migrated, world.friend.id))
+        assert not check(conn, ref, _caller(migrated, world.carl.id))
 
 
 def _caller(engine: Engine, human_id: str) -> Any:
