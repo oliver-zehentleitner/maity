@@ -18,7 +18,8 @@ from itertools import islice
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, String, and_, cast, func, or_, select
+from sqlalchemy import Connection, String, and_, cast, func, insert, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from maity_hub import chat_meat_proxy, events, group_chats
 from maity_hub import tables as t
@@ -143,6 +144,33 @@ def _marks(conn: Connection, mines: dict[str, Any], chats: Iterable[Key]) -> dic
     ):
         found[reader[reader_id], chat] = int(last or 0)
     return found
+
+
+def move_read_mark(conn: Connection, reader: int, conversation_id: str, seq: int) -> None:
+    """Move a reader's read mark in a conversation up to `seq`, never back; made where
+    absent. Reading the chat and marking its bell item read both move it here."""
+    mark = (
+        t.conversation_read.c.reader == reader,
+        t.conversation_read.c.conversation_id == conversation_id,
+    )
+    forward = (
+        update(t.conversation_read)
+        .where(*mark, t.conversation_read.c.last_seq < seq)
+        .values(last_seq=seq)
+    )
+    if conn.execute(forward).rowcount:
+        return
+    if conn.execute(select(t.conversation_read.c.last_seq).where(*mark)).first() is not None:
+        return  # already at or past `seq`
+    try:
+        with conn.begin_nested():
+            conn.execute(
+                insert(t.conversation_read).values(
+                    reader=reader, conversation_id=conversation_id, last_seq=seq
+                )
+            )
+    except IntegrityError:  # another tab made it first: move theirs forward, never back
+        conn.execute(forward)
 
 
 def memberships(conn: Connection, human_id: str) -> list[Membership]:

@@ -54,7 +54,7 @@ def counts(conn: Connection, where: Scope, found: list[Item]) -> dict[str, Any]:
             by_project[item.project_id][item.kind] += 1
     total = dict.fromkeys((*COUNTED, "security"), 0)
     shown: dict[str, Any] = {}
-    slugs = _slugs(conn, by_project)
+    slugs = namespace.full_names(conn, by_project)  # keyed on full names (§6.25, §18)
     for project_id, entry in by_project.items():
         for kind in COUNTED:
             total[kind] += entry[kind]
@@ -85,11 +85,6 @@ def _open_personal(conn: Connection, human_id: str) -> list[Any]:
             .group_by(c.project_id)
         ).all()
     )
-
-
-def _slugs(conn: Connection, by_project: dict[str, Any]) -> dict[str, str]:
-    """project id → full name: `by_project` is keyed on full names (§6.25, §18)."""
-    return namespace.full_names(conn, by_project)
 
 
 # --- positions -----------------------------------------------------------------------
@@ -205,8 +200,8 @@ def quietly_moved(
     no item of the human's (tsk-a5pxwgkgr73e).
 
     The look is a superset of the derive's own rows in the range: a request's event unless its
-    request is personal or another member's alone (`_may_concern`), a message only where its
-    text may mention the human (`_names`) or its audience names them in a chat (`_addressed`),
+    request is personal or another member's alone (`may_concern_member`), a message only where its
+    text may mention the human (`names`) or its audience names them in a chat (`addressed`),
     every other kind that makes items. Any row of a kind outside those and `QUIET_KINDS` makes
     the move not quiet: a change of a relation the derive reads with its state of now (a
     cover, a claim, a role) can make an item of an older row, in its own project or in another
@@ -431,20 +426,4 @@ def _move_chat_mark(conn: Connection, where: Scope, item: Item) -> None:
     mine = where.membership(item.project_id or "")
     if mine is None or item.seq is None or item.target is None:
         return
-    conversation = item.target["id"]
-    # Made if absent, then only ever moved forward: two marks at once never collide on
-    # the key and never move it back.
-    conn.execute(
-        ignoring_duplicates(conn, t.conversation_read).values(
-            reader=mine.id, conversation_id=conversation, last_seq=item.seq
-        )
-    )
-    conn.execute(
-        update(t.conversation_read)
-        .where(
-            t.conversation_read.c.reader == mine.id,
-            t.conversation_read.c.conversation_id == conversation,
-            t.conversation_read.c.last_seq < item.seq,
-        )
-        .values(last_seq=item.seq)
-    )
+    conversation_list.move_read_mark(conn, mine.id, item.target["id"], item.seq)

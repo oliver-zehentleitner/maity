@@ -36,11 +36,6 @@ FORGE_ADDED = ("linked", "token_set")
 INBOX = ("registration_pending", "mail_disabled", "agents_not_listening")
 # Records that are `inbox` items read by a read mark, as any notice (§18.1).
 NOTICES = ("moderation_applied", "restricted_changed")
-PERSONAL = (
-    "personal_request_created",
-    "personal_request_answered",
-    "personal_request_withdrawn",
-)
 
 
 def lock_human(conn: Connection, human_id: str) -> None:

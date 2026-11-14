@@ -11,8 +11,7 @@ from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, func, insert, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Connection, func, select, update
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
@@ -758,39 +757,15 @@ def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str)
 
 def remember_read(conn: Connection, reader: int, conversation_id: str, seq: int) -> None:
     """Move the reader's read mark in a conversation up to `seq`, never down."""
+    from maity_hub.conversation_list import move_read_mark
+
     if conn.dialect.name == "postgresql":  # a human reader's held bells look again
         human_id = conn.execute(
             select(t.membership.c.human_id).where(t.membership.c.id == reader)
         ).scalar()
         if human_id is not None:
             wakeups.ring(conn, "bell", human_id)
-    updated = conn.execute(
-        update(t.conversation_read)
-        .where(
-            t.conversation_read.c.reader == reader,
-            t.conversation_read.c.conversation_id == conversation_id,
-            t.conversation_read.c.last_seq < seq,
-        )
-        .values(last_seq=seq)
-    ).rowcount
-    if updated:
-        return
-    exists = conn.execute(
-        select(t.conversation_read.c.last_seq).where(
-            t.conversation_read.c.reader == reader,
-            t.conversation_read.c.conversation_id == conversation_id,
-        )
-    ).first()
-    if exists is None:
-        try:
-            with conn.begin_nested():
-                conn.execute(
-                    insert(t.conversation_read).values(
-                        reader=reader, conversation_id=conversation_id, last_seq=seq
-                    )
-                )
-        except IntegrityError:  # another tab read first; the larger seq wins next time
-            pass
+    move_read_mark(conn, reader, conversation_id, seq)
 
 
 def _roles(conn: Connection, project_id: str, principals: list[str]) -> dict[str, set[str]]:

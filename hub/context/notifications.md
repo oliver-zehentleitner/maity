@@ -160,7 +160,7 @@ log showed pool timeouts at a low request rate, with no lock wait found on these
 **Source:** card tsk-a5pxwgkgr73e: the operators' hub timing on rev 30 (2026-11-10: a held bell call about 480 statements and 2.8 s of database time, 38 % of the hub's database time); `tests/test_bell_quiet_heads.py`, red on main (5 derivations where one is due)
 **See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-11-10
 **See:** events.md#a-held-waits-later-pass-looks-at-the-projects-head-before-it-reads-the-runners-stream-does-not — 2263cf0a-7f4d-44e8-9264-352005a8390f — as of 2026-11-10
-**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
+**Revisit when:** `items.derive_page` reads rows its superset filters (`may_concern_member`, `names`, `addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
 
 The stamp's project heads count every event kind that can make an item, and `message` is one
 of them. So every message agents send each other moved the stamp of every human in the
@@ -563,7 +563,7 @@ Now:
   (`count_items`) and the pinned alerts are derived as before.
 - `_chats` reads only messages of a conversation whose audience text holds the human's
   `member:` token.
-- Request events are read only where the request may concern the member (`_may_concern`):
+- Request events are read only where the request may concern the member (`may_concern_member`):
   - addressed to a role or the owner, or to the member;
   - held by the member or the admin pool;
   - covered by someone;
