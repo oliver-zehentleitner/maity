@@ -544,7 +544,7 @@ window.Maity = window.Maity || {};
 
   // The repository (§6.1, project:admin, humans only): where the probe, the
   // Keep the Why dashboard and the runners' clones look. https only here;
-  // the hub checks the forge host. Changing or removing it asks first.
+  // the hub checks the rest of the shape. Changing or removing it asks first.
   function repositoryForm(ctx) {
     const current = ctx.project.repository && ctx.project.repository.url;
     const status = statusLine();
@@ -562,7 +562,8 @@ window.Maity = window.Maity || {};
         input.removeAttribute("aria-invalid");
         const url = input.value.trim().replace(/\/+$/, "");
         if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.repo.unchanged"))); return; }
-        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(forgeRule()); return; }
+        // The shape alone, a GitLab group path included; the hub checks the rest (§6.1).
+        if (url && !/^https:\/\/[^\s/]+(?:\/[^\s/]+){2,22}$/i.test(url)) { fail(forgeRule()); return; }
         if (current && !window.confirm(url
           ? M.t("settings.repo.confirm_change", { url })
           : M.t("settings.repo.confirm_remove"))) return;
@@ -573,7 +574,7 @@ window.Maity = window.Maity || {};
         } catch (err) {
           const fields = err.code === "invalid" && err.details && err.details.fields;
           const why = fields && (fields["repository.url"] || fields.repository);
-          if (why) { status.done(); fail(why === "not_a_configured_forge" ? forgeRule() : String(why)); }
+          if (why) { status.done(); fail(why === "not_a_repository_url" ? forgeRule() : String(why)); }
           else status.fail(M.t("settings.repo.not_saved"), err);
         }
       },

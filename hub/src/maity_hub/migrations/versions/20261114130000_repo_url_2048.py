@@ -8,9 +8,9 @@ form, which is a different value, so the owner's confirmation is cleared.
 The downgrade refuses while any stored URL is longer than the old column:
 shortening one would name a different repository.
 
-Revision ID: 20261111120000_repo_url_2048
-Revises: 20261111010000_expert_fields
-Create Date: 2026-11-11
+Revision ID: 20261114130000_repo_url_2048
+Revises: 20261113200000_sf_day_revoked_by
+Create Date: 2026-11-14
 """
 
 from collections.abc import Sequence
@@ -18,8 +18,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261111120000_repo_url_2048"
-down_revision: str | None = "20261111010000_expert_fields"
+revision: str = "20261114130000_repo_url_2048"
+down_revision: str | None = "20261113200000_sf_day_revoked_by"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

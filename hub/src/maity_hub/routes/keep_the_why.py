@@ -93,7 +93,7 @@ def _views_read(
     read = ktw_reads.export if which == "state" else ktw_reads.bodies
     try:
         if not fg.configured_for(project.repository_url):
-            raise forge.NotCoveredError(fg.refused or "no_grant")
+            raise forge.NotCoveredError(forge.unread_reason(fg, project.repository_url))
         spent = fg.retry_at()  # read once: on PostgreSQL each read is a query
         if spent is not None:
             raise forge.ForgeUnavailableError(

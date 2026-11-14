@@ -685,7 +685,9 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
     if not links.is_own_repository(ref, project.repository_url):
         raise invalid({"issue_url": "foreign_repository"})  # the hub reads only its own
     if not fg.configured_for(project.repository_url):
-        raise probe_not_configured((fg.refused or "no_grant") if admin else None)
+        raise probe_not_configured(
+            forge.unread_reason(fg, project.repository_url) if admin else None
+        )
     at = clock.rfc3339(clock.now())
     try:
         assert ref.number is not None  # an issue's URL names its number

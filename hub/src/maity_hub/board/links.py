@@ -152,8 +152,8 @@ def check_label(label: str | None) -> str | None:
 
 def is_own_repository(ref: ForgeRef, repository_url: str | None) -> bool:
     """Only the project's repository is ever read (§6.13)."""
-    if repository_url is None:
-        return False
+    if repository_url is None or forge.kind_of(repository_url) != ref.forge:
+        return False  # the same owner/name on another host is another repository
     return forge.repository_of(repository_url).lower() == ref.repository.lower()
 
 

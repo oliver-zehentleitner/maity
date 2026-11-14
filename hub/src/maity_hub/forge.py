@@ -187,8 +187,21 @@ class NotCoveredError(ForgeUnavailableError):
         self.reason = reason
 
 
+def unread_reason(reader: Forge, url: str | None) -> str:
+    """Why `reader` does not read the repository at `url` (§11.4 `details.reason`): off
+    github.com always `forge_not_github` (§11), whatever reader asks, else the grant's own
+    refusal or `no_grant`."""
+    if url is not None and kind_of(url) != "github":
+        return "forge_not_github"
+    return reader.refused or "no_grant"
+
+
 def repository_of(url: str) -> str:
-    """`owner/name` of a repository URL on a configured forge."""
+    """`owner/name` of a repository URL on github.com. Any other host has no name the hub
+    reads by: whatever reaches here with one is refused as not covered, so no read and no
+    token go out for it by a path that missed its own check (§11)."""
+    if kind_of(url) != "github":
+        raise NotCoveredError("forge_not_github")
     path = url.split("://", 1)[-1].split("/", 1)[1]
     owner, name = path.strip("/").split("/")[:2]
     return f"{owner}/{name.removesuffix('.git')}"

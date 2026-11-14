@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import Engine, String, inspect
 
 from maity_hub import forge, images, outbound, probe
+from maity_hub.board import links
 from tests import flow
 from tests.conftest import ClientFactory
 
@@ -306,8 +307,8 @@ def test_the_downgrade_refuses_a_url_the_old_column_cannot_hold(
     assert response.status_code == 201, response.text
     assert len(response.json()["repository"]["url"]) == 300
     with pytest.raises(RuntimeError, match="longer than 255"):
-        downgrade(migrated, "20261109200000_invite_by_handle")
-    assert current_revision(migrated) == "20261111120000_repo_url_2048"
+        downgrade(migrated, "20261113200000_sf_day_revoked_by")
+    assert current_revision(migrated) == "20261114130000_repo_url_2048"
 
 
 def test_the_column_holds_2048_characters(migrated: Engine) -> None:
@@ -344,3 +345,29 @@ def test_a_refused_url_names_not_a_repository_url(owner: flow.Human) -> None:
     assert response.json()["error"]["details"]["fields"] == {
         "repository.url": "not_a_repository_url"
     }
+
+
+def test_a_name_off_github_is_never_one_the_hub_reads_by() -> None:
+    """The last guard: a path that missed its own check still sends nothing (§11). The same
+    owner/name on another host is not the project's repository for a GitHub link (§6.13)."""
+    with pytest.raises(forge.NotCoveredError) as caught:
+        forge.repository_of("https://gitlab.com/acme/api")
+    assert caught.value.reason == "forge_not_github"
+    assert forge.repository_of("https://github.com/acme/api") == "acme/api"
+    ref = links.ForgeRef(
+        forge="github",
+        repository="acme/api",
+        number=1,
+        kind="pr",
+        url="https://github.com/acme/api/pull/1",
+    )
+    assert links.is_own_repository(ref, "https://gitlab.com/acme/api") is False
+    assert links.is_own_repository(ref, "https://github.com/acme/api") is True
+
+
+def test_the_reason_off_github_does_not_depend_on_the_reader() -> None:
+    """A reader without grants (no ForgeAccess) says `forge_not_github` too, not `no_grant`."""
+    reader = forge.Forge(TOKEN)
+    assert forge.unread_reason(reader, "https://gitlab.corp.example/Acme/api") == "forge_not_github"
+    assert forge.unread_reason(forge.Forge(None), "https://github.com/acme/api") == "no_grant"
+    assert forge.unread_reason(reader, None) == "no_grant"
