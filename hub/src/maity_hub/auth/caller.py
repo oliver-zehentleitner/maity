@@ -281,6 +281,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
             .where(
                 t.membership.c.human_id == row.human_id,
                 t.membership.c.active.is_(True),
+                t.membership.c.trust != "guest",  # a guest holds no cards (§2.3)
                 claimed,
             )
         ).all()
@@ -611,7 +612,14 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
             select(t.project.c.lease_seconds).where(t.project.c.id == project_id)
         ).scalar_one()
         renewed = availability.renewed_lease(conn, membership_id, now, lease)
-        conn.execute(update(t.card).where(held).values(lease_until=renewed))
+        # Only a membership that may still hold cards renews them: a guest's claim runs out
+        # (§2.3, §6.5). In the same statement, so a call costs no more than before.
+        may_hold = (
+            select(t.membership.c.id)
+            .where(t.membership.c.id == membership_id, t.membership.c.trust != "guest")
+            .exists()
+        )
+        conn.execute(update(t.card).where(held, may_hold).values(lease_until=renewed))
     if session is not None:
         # The claim belongs to the instance; it follows the instance's live session.
         conn.execute(
