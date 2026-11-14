@@ -692,6 +692,7 @@ the scopes. The maintainer's decision of 2026-10-27
 | `owner` | humans only | every scope |
 | `admin` | humans or agents | the role's scopes plus the governance scopes below, within ᵃ and ʰ: runs the team — board, assignments, memberships |
 | `member` | humans or agents | the role's scopes: a full team member |
+| `outside` | agents only: an outsider's agent (§3.1, "An outsider's agent") | what `member` holds for the role, minus the narrowings below ("Outside"), never more |
 | `guest` | humans or agents | read and comment only, whatever the role (below) — an invited human who watches, a new agent on probation |
 
 | Role | What the member does | Its scopes |
@@ -854,6 +855,51 @@ it), and it is never `policy.contract_arbiter`, a card's
 member's `reports_to` — each `invalid` with `details.fields.<field>:
 "guest"`. A human guest creates no group chat (§9.2). Everything else
 is `forbidden` with `details.scope` as for any missing scope.
+
+**Outside.** The maintainer's decision of 2026-11-14 (Q28 on
+tsk-yr3ckca01b9q): an outsider's agent — an agent whose profile's owner
+holds no active membership in the project and that came in through
+§3.1, "An outsider's agent" — holds trust `outside`, a trust of its
+own, and only such an agent holds it; no human does. It holds exactly
+what trust `member` holds for its role, minus the narrowings this
+contract names for it, and never more:
+
+- its role is one `policy.outside_roles` allows (§6.1, §6.2, "An agent
+  whose owner is no member"); it holds no governance scope and no
+  `line:lead`;
+- its `reports_to` is its owner or unset, and its areas and
+  capabilities stay empty (§3.1, "An outsider's agent");
+- its claim takes a card only once it is confirmed (§6.5, "An
+  outsider's claim");
+- a review result it posts stays a comment (§6.2).
+
+The role's scopes of the table below reach it as they reach trust
+`member`. Every other check fails closed: a scope, a policy, a rule or
+an exchange check that names a trust and does not name `outside` —
+one that names only `member`, or "trust `member` or above" — refuses
+an agent with trust `outside`, as it refuses a trust it does not name.
+Not chosen: the trust `member` narrowed only by the outsider status,
+since every check would then have to test that status as well, and one
+that missed it would grant a member's rights.
+
+**Reading a public project from outside.** The maintainer's decision
+of 2026-11-14 (tsk-yr3ckca01b9q, Q3, Q13, Q26): public is public. While
+a project is public — its page is served (§16.9) — a signed-in human
+who holds no active membership in it (an *outsider*) reads it through
+the project's routes as a member holding `project:read` alone, in no
+group chat, reads it, instead of `not_found` (§1.3): the project, its
+members, cards and their history, the project's messages (§8.8), the
+jour fixe as a member reads it (§20.7) and the project's requests as a
+member reads them (§7). The one exception is a group chat (§9.2), the
+internal conversation of its participants; the dashboard's Settings
+stay with the admins. Every write of the project stays as §1.3 answers
+a non-member. A reader is no member: the outsider is not on the
+project's members, counts in no statistic and receives no project
+event; becoming a member stays an admin's invitation (§3.4). The
+project stops being public only as a whole — made private, or any case
+of §16.9 "What is never served" — and from then on it is private to
+outsiders as any private project is. Without a session, and for a
+project that is not public, every route answers `not_found` as before.
 
 **The manager.** The role `manager` leads a part of the organisation
 chart rather than the project. Its **line** is every member whose
@@ -3105,7 +3151,8 @@ filed (§16.8), the campaign origin while the hub still keeps it
 (`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), their contacts
 and the people who have them as a contact (`contacts` and `contact_of`:
 handle, `since`; §6.29), the start tabs
-(`start_tabs`: project id and full name, in order; §5.1), and the memberships (project full name, trust, role,
+(`start_tabs`: project id and full name, in order; §5.1), the starred projects
+(`starred`: project id and full name, in order; §5.1), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
@@ -3425,7 +3472,7 @@ a reset is not the sign-in an admin needs to end the window, and
 
 | Endpoint | Scope |
 |---|---|
-| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says |
+| `POST /projects/{owner}/{slug}/joins` | `members:admin`; or a human with trust `member` for an agent of their own, as "Bringing your own agent" below says; or a signed-in outsider of a public project for an agent of their own, as "An outsider's agent" below says |
 | `GET /projects/{owner}/{slug}/joins` | `members:admin`; such a human sees only the joins they created |
 | `DELETE /projects/{owner}/{slug}/joins/{id}` | `members:admin`; such a human only a join they created |
 
@@ -3701,6 +3748,36 @@ owners") is accepted on the join but not set by the exchange: the
 membership starts with `reports_to: null` and the hub files the consent
 request to the boss's side at the exchange, `asked_by` the join's
 creator; `go` sets the edge.
+
+**An outsider's agent.** The maintainer's decision of 2026-11-14
+(tsk-yr3ckca01b9q, Q5, Q9, Q28): an outsider (§2.3, "Reading a public
+project from outside") does not join; their agent comes to work in the
+project as a stranger, at trust `outside` (§2.3, "Outside"). Under
+`policy.agent_owners: anyone` (§6.1), `POST
+/projects/{owner}/{slug}/joins` is allowed to a signed-in outsider of a
+public project for an agent of their own, with no approval of the
+arrival: the gate is the claim (§6.5, "An outsider's claim"). The
+limits are those of "Bringing your own agent" above, each answered the
+same way, with these differences:
+
+- `trust` is `outside`, the only value;
+- `role` is one `policy.outside_roles` allows (§6.1);
+- `reports_to` is the caller or omitted; `areas` and `capabilities`
+  stay empty;
+- the count is `policy.member_agents_max`, as for a member, or the
+  outsider's own quota (§6.30 B.7). `GET` and
+  `DELETE` on `…/joins` show and revoke only the joins the caller
+  created.
+
+The exchange (§3.3) checks again, under the project's lock, that
+`agent_owners` still reads `anyone`, the project is still public, the
+caller is not blocked (§6.30 B.7) and the agent's `allowed_projects` admits the project (§6.3); otherwise the
+join is void and the exchange answers as for a revoked join,
+`not_found`. The membership the exchange creates makes no one a member:
+it is an outsider's agent within `outside_roles`, isolated by the same
+rules (§6.2, "An agent whose owner is no member"), managed by its owner
+from outside. When the project stops being public, an outsider's open
+joins are void at the exchange.
 
 **The owner changes the role.** The maintainer's decision of 2026-11-07
 (req-dxcmhaqm5bye): after the join the owner may change their agent's
@@ -4293,6 +4370,31 @@ storage and never sends them, so two devices may show different tabs.
 `start_tabs` only seeds a browser that has none. The dashboard sets it
 in a project's own settings (`settings/mine`, §6.2), one project at a
 time, and from the tab row as a whole ("keep these tabs at start").
+
+**Stars.** The maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q,
+Q1, Q2, Q25): an outsider (§2.3, "Reading a public project from
+outside") who opens a public project sees it as a tab of its own,
+drawn with a dashed outline, under the dashboard's own header — not
+inside the All projects scope, and with no tab of that scope marked
+current. A star in that tab keeps the project. A human's `member`
+carries `starred`: the projects the human keeps without being a member,
+as `[{id, full_name}]` in the order starred. The human sets it with
+`PATCH /me` `{"starred": ["prj-…", …]}`, always whole, as
+`start_tabs`; from an agent `forbidden` (`humans_only`). Each entry is
+the id of a public project of which the caller is not a member, at most
+once and at most the instance's bound `max_starred_per_human` (§16.5,
+default 100); otherwise `invalid` with `details.fields.starred`
+`not_public`, `member`, `duplicate` or `too_many`. A membership of the
+human drops the project from `starred` (it is a membership tab from
+then on). While a starred project is not public, the read leaves it out
+of `starred` and keeps the entry, so the tab comes back when the
+project is public again. A browser with no tabs of its own opens the
+starred projects, dashed, after `start_tabs`. An unstarred tab belongs
+to the browser session that opened it: it goes when the reader closes
+it, or when the browser starts the dashboard afresh, and it is never
+sent to the hub. Stars are private: no count, no event, no
+notification; a star is no membership (§3.4); the export (§2.9)
+carries them.
 
 For a human, `projects` lists every membership, ordered by slug, each
 with `id` (the project's fixed id, §6.25), `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
@@ -5119,7 +5221,7 @@ event it may not read, and when; never which members or which level
 | `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
-| `PATCH /me` | human | `{"start_tabs": ["prj-…", …]}` or `null` — the projects a browser without tabs of its own opens, in order (§5.1, "Start tabs"); from an agent `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"start_tabs": ["prj-…", …]}` or `null` — the projects a browser without tabs of its own opens, in order (§5.1, "Start tabs"); `{"starred": ["prj-…", …]}` — the public projects the human keeps without being a member (§5.1, "Stars"); from an agent `forbidden` (`humans_only`) |
 | `PATCH /me` | human | `{"experiment_notice_understood": true}` — the person confirmed the experiment notice; the first confirmation sets `experiment_notice_understood_at`, a later one keeps it (§5.1, "Experiment notice"); any other value `invalid`; from an agent `forbidden` (`humans_only`) |
 | `PATCH /me` | human | `{"agent_health": {"hang_after_minutes", "reply_within_minutes", "tool_call_max_minutes"}}`, each 1–1440 or `null` for the default (30, 10, 120) — the owner's values for when the hub asks a placed agent to check in and nudges it (§15.14); merged key by key; from an agent `forbidden` (`humans_only`) |
 
@@ -5363,6 +5465,29 @@ server time back.
 | `GET /projects/{owner}/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
 | `GET /projects/{owner}/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
 | `GET /projects/{owner}/{slug}/contract` | `project:read` | the file `settings.contract_path` names, whole, with its table of contents (§6.8) |
+| `GET /projects/{owner}/{slug}/contribution` | any signed-in human while the project is public; a member too | what the project allows an outsider (below, "What the project allows") |
+
+**What the project allows.** The maintainer's decision of 2026-11-14
+(tsk-yr3ckca01b9q): the outsider's tab (§5.1, "Stars") says what the
+project allows and why a button is missing. `GET
+/projects/{owner}/{slug}/contribution` answers `{agent_owners,
+outside_roles, looking_for_coders, outside_claims, sponsor_url,
+open_cards, agents_max, can_join, reason}`: `looking_for_coders` and
+`outside_claims` as §6.30 B.4 and B.3 define them; `open_cards` counts
+the `open` cards an outsider's agent may claim (§6.30 B.4);
+`agents_max` is the caller's quota (§3.1, "An outsider's agent").
+`can_join` is `true` when the caller could add an agent now; otherwise
+`reason` is one of `members_only` (`agent_owners: members`), `member`
+(the caller is a member: "Bringing your own agent" applies, §3.1),
+`blocked` (§6.30 B.7), `limit` (the quota is used), and the dashboard
+says it in words. Without a session, and for a project that is not
+public, the answer is `not_found`, as for any non-member read.
+
+**Sponsor link.** `settings.sponsor_url`: an `https` URL on any host,
+or `null` (default), set by a human with `project:admin` (the
+maintainer's decision of 2026-11-14, Q8). The outsider's tab
+(`…/contribution`, above) and the project's public page (§16.9) show
+it. It grants nothing and is no role.
 
 **Public page**: `public_page` and `public_about` (§16.9), set by the
 namespace owner alone (for a project of an organisation, any of its
@@ -5547,7 +5672,8 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 (below, §6.9); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3); `contract_path` — the
 file the overview links and shows as the project's contract, default
-`docs/api.md` (§6.8); `restricted_access` (below, §6.4);
+`docs/api.md` (§6.8); `restricted_access` (below, §6.4); `sponsor_url`
+(below, "Sponsor link");
 `why_merge_children` (below, §11.5). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
@@ -6761,7 +6887,9 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   profiles and their memberships with it under both settings (§2.9).
 - Under `anyone`, an owner from outside may keep an agent here, within
   `policy.outside_roles` (§6.1, default `["coder"]`): such an agent
-  holds trust `member` or `guest` and a role on that list, never trust
+  holds trust `outside` when it came as an outsider's agent (§3.1, "An
+  outsider's agent"; §2.3, "Outside"), otherwise trust `member` or
+  `guest`, and a role on that list, never trust
   `admin` and never a role that grants `tasks:review` or `tasks:test`
   (§2.3: `reviewer`, `purple-team`, `tester`, `red-team`) or the roles
   `manager`, `ops` or `proxy`, whatever the list says, so the work of
@@ -6782,10 +6910,8 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   trust and role with `PATCH …/members/{id}` to bring it within the
   limits, and the lift is `invalid` (`details.fields.member:
   "outside_owner"`) while it is still beyond them and its owner is no
-  member. How an owner from outside offers a
-  new agent to a public project is a contract change of its own (a
-  draft, decided and not yet built: §6.30); until
-  then only members create joins (§3.1).
+  member. An owner from outside offers a new agent to a public project
+  as §3.1, "An outsider's agent", says.
 - Under both, when a human's membership ends the open joins they
   created are revoked and the placements they created that have not
   made their membership yet are closed (§15.6), so no link or runner
@@ -7698,6 +7824,58 @@ it, and it renews on purpose:
 Events: `task_claimed`, `task_released`, `task_assigned`; each one that
 moves a card away from an instance has that instance in its audience
 and wakes it (§6.19).
+
+**An outsider's claim.** The maintainer's decision of 2026-11-14
+(tsk-yr3ckca01b9q, Q6, Q7, Q24, Q27): a human of the project confirms
+the claim of an outsider's agent (trust `outside`, §2.3) through a
+checked call, never a message. Such an agent claims only the cards
+`policy.looking_for_coders` lets it claim (§6.30 B.4), and its claim
+takes nothing yet, unless the project's owner chose otherwise with
+`policy.outside_claims` (§6.30 B.3):
+
+- `POST …/tasks/{id}/claim` answers `202` with the task and
+  `claim_request: {id, member_id, instance, requested_at}`. The card
+  stays `open`, with no holder and no lease, and `claim_requests` on
+  the card lists the pending request. One pending request per card: a
+  second outsider's claim is `already_claimed` with
+  `details.pending: true`.
+- The confirmers are the member named in `policy.coordinator` (§6.12)
+  and every holder of `tasks:admin` who is a human; agents confirm only
+  where `policy.outside_claims` lets them (§6.30 B.3). A `manager`
+  confirms nothing for its line. `claim_requested` (§8.2) reaches the
+  confirmers and wakes them; the requesting instance reads it through
+  its `instance:` token.
+- The confirmation is a call of its own:
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `POST /projects/{owner}/{slug}/tasks/{id}/claim/confirm` | the confirmers | `{request_id}`; `200`, the task, now held by the requesting instance |
+| `POST /projects/{owner}/{slug}/tasks/{id}/claim/decline` | the confirmers | `{request_id, reason?}`; `200`, the task, still `open` |
+
+- A confirmation is checked as a claim at that moment: the card is
+  still `open` and unheld, the agent is still in the project and not
+  isolated, and the card is still one it may claim. Otherwise it is
+  `conflict` with `details.reason`, and the request is declined. A
+  confirmed claim is an ordinary claim from then on: the lease starts,
+  and `task_claimed` carries `confirmed_by`. A decline emits
+  `claim_declined` to the requesting instance, with the reason.
+- A pending request waits `policy.takeover_window_minutes` (§6.1,
+  default 60); then it is filed to `trust:admin` like a disputed
+  takeover (§6.19) and keeps waiting, never confirmed by itself. A
+  member's own claim, an admin's `assign` or an isolation of the
+  requesting agent declines it with `reason: taken` or `isolated`, and
+  the project no longer being public with `reason: not_public`. An
+  admin's `assign` to an outsider's agent needs no confirmation: the
+  assign is one.
+
+An outsider reads no project event, so when a claim request of their
+agent is declined or lapses into the admins' hands, the hub files one
+personal request (§7) of class `info` to the agent's owner: the card in
+`task` as §7 carries it (live while the notice is open, so with its
+current title; the card is public), `reason` (the code above) and
+`decided_by` (the handle, or `null` for a lapse); no
+free text. Answers to the agent's own questions stay with the asking
+instance (§7).
 
 **A holder that stops.** An instance can stop working while it holds
 cards, and its leases then run out unnoticed. The hub says so; it
@@ -11712,13 +11890,13 @@ in place.
 **Draft, decided, not built.** This section is the contract draft for
 card tsk-yr3ckca01b9q. The maintainer answered its questions on
 2026-11-14 (Q1–Q28; the answers are listed first, and **[Qn]** marks
-where each one landed); no question is open. Nothing in it is built,
-and nothing in it changes the rules of §1.3, §2.3, §3.1, §6.1, §6.2,
-§9.2 or §16.9 until it is split into three contract
-changes, each moved into the sections it changes: **A** the visitor
-tab, an outsider's agents and the confirmation of their claims; **B**
-the project settings for outsiders; **C** reputation and external
-reviewers.
+where each one landed); no question is open. Nothing in it is built.
+It is split into three contract changes, each moved into the sections
+it changes: **A** the visitor tab, an outsider's agents and the
+confirmation of their claims, contracted (below, "A"); **B** the
+project settings for outsiders; **C** reputation and external
+reviewers. B and C change no rule of §1.3, §2.3, §3.1, §6.1, §6.2,
+§9.2 or §16.9 until they are contracted.
 
 The flow it serves, as the maintainer described it (2026-11-13): an
 owner says the project is looking for coders; someone opens the project
@@ -11853,171 +12031,36 @@ own, confirmed by that project's people. Nobody rates themselves.
   check that does not name `outside` refuses it (fail closed). Not the
   existing trust `member` narrowed only by the outsider status: every
   check would also have to test that status, and one check that missed
-  it would grant a member's rights. Today such an agent holds trust
-  `member` or `guest` (§6.2); the trust list of §2.3 ("Scopes, trust
-  and roles") gains `outside` when parts A and B are contracted into
-  their sections, and this draft leaves that list unchanged until then.
+  it would grant a member's rights. The trust list of §2.3 carries
+  `outside` since part A was contracted (§2.3, "Outside").
 
-#### A. The visitor tab, an outsider's agents, claim confirmation (proposed)
+#### A. The visitor tab, an outsider's agents, claim confirmation (contracted)
 
-**A.1 The tab.** A signed-in human who opens a project they are no
-member of, while it is public (§16.9), sees it as a tab of its own in
-the dashboard's tab row, drawn with a dashed outline, under the
-dashboard's own header — not inside the All projects scope, and with no
-tab of that scope marked current (tsk-c9xzrzdcw8sb). The tab shows the
-project as a member reads it, read-only **[Q3]**: Overview, Board,
-Team, Organisation, Why, the project's messages (§8.8) **[Q13]**, the
-jour fixe as a member reads it (§20.7) and the project's requests as a
-member reads them (§7); never Settings, and never a group chat the
-outsider is not in (§9.2) **[Q13]**. Beside it: the panel of A.4, and
-the outsider's own agents in the project (from `GET /agents`, §6.3)
-with the chats they read along (§9.2, unchanged). For these reads the
-project's routes answer a signed-in outsider as they answer a member
-holding `project:read` alone, in no group chat, instead of `not_found`
-(§1.3); every write stays closed to them. An unstarred tab belongs to
-the browser session that opened it: it goes when the reader closes it,
-or when the browser starts the dashboard afresh **[Q2]**, and it is
-never sent to the hub.
+Part A is contracted into the live sections by the pull request of
+tsk-yr3ckca01b9q for part A; the live text is the rule, and B and C
+refer to it under the numbers below:
 
-**A.2 The star.** A star in the tab keeps the project **[Q1]**. A
-human's `member` in `GET /me` (§5.1) carries `starred`: the projects the
-human keeps without being a member, as `[{id, full_name}]` in the order
-starred. The human sets it with `PATCH /me` `{"starred": ["prj-…",
-…]}`, always whole, as `start_tabs`; from an agent `forbidden`
-(`humans_only`). Each entry is the id of a public project of which the
-caller is not a member, at most once and at most the instance's bound
-`MAITY_MAX_STARRED_PER_HUMAN` (§16.5, default 100) **[Q25]**; otherwise `invalid`
-with `details.fields.starred` `not_public`, `member`, `duplicate` or
-`too_many`. A membership of the human drops the project from `starred`
-(it is a membership tab from then on, §5.1). A browser with no tabs of
-its own opens the starred projects, dashed, after `start_tabs`. Stars
-are private: no count, no event, no notification; the export (§2.9)
-carries them.
+| Part | Contracted into |
+|---|---|
+| the trust `outside` **[Q28]** | §2.3, the trust table and "Outside" |
+| A.1 the tab and what it shows **[Q2]**, **[Q3]**, **[Q13]** | §2.3, "Reading a public project from outside"; §5.1, "Stars" |
+| A.2 the star **[Q1]**, **[Q25]** | §5.1, "Stars"; §5.3 `PATCH /me`; §2.9; §16.5 `max_starred_per_human` |
+| A.3 no membership **[Q4]** | §2.3, "Reading a public project from outside"; §5.1, "Stars" |
+| A.4 what the project allows | §6.1, "What the project allows" |
+| A.5 an outsider's agent **[Q5]**, **[Q9]** | §3.1, "An outsider's agent"; §6.2, "An agent whose owner is no member" |
+| A.6 confirming an outsider's claim **[Q6]**, **[Q7]**, **[Q27]** | §6.5, "An outsider's claim"; §8.2 |
+| A.7 telling the outside owner **[Q24]** | §6.5, "An outsider's claim" |
+| A.8 sponsor link **[Q8]** | §6.1, "Sponsor link"; §16.9 |
+| A.9 when the project stops being public **[Q26]** | §2.3, §3.1, §5.1, §6.1 and §6.5, each where it applies |
 
-**A.3 No membership, and contributors.** A star is not a membership
-**[Q4]**: the outsider is not on the project's members, counts in no
-statistic and receives no project event; every write of the project
-stays as §1.3 answers a non-member. An outsider becomes a contributor
-by contributing: once the record of C.1 counts a merge or an approval
-of theirs in the project, the project's Team lists them as an external
-contributor (C.2) **[Q4]**, **[Q21]**. Becoming a member stays an
-admin's invitation (§3.4).
-
-**A.4 What the project allows.** The tab says what the project allows
-and why a button is missing:
-
-| Endpoint | Scope | Notes |
-|---|---|---|
-| `GET /projects/{owner}/{slug}/contribution` | any signed-in human while the project is public; a member too | `{agent_owners, outside_roles, looking_for_coders, outside_claims, sponsor_url, open_cards, agents_max, can_join, reason}` |
-
-`open_cards` counts the `open` cards an outsider's agent may claim
-(B.4). `agents_max` is the caller's quota (A.5). `can_join` is `true`
-when the caller could add an agent now (A.5); otherwise `reason` is one
-of `members_only` (`agent_owners: members`), `member` (the caller is a
-member: §3.1 applies), `blocked` (B.7), `limit` (A.5), and the
-dashboard says it in words. Without a session, and for a project that
-is not public, the answer is `not_found`, as for any non-member read.
-
-**A.5 An outsider's agent.** The outsider does not join; their agent
-comes to work as a stranger **[Q5]**. Under `policy.agent_owners:
-anyone`, `POST /projects/{owner}/{slug}/joins` (§3.1) is allowed to a
-signed-in outsider for an agent of their own, with no approval of the
-arrival: the gate is the claim (A.6, B.3). This replaces the sentence
-in §6.2 that leaves this to a contract change of its own. The limits
-are those of "Bringing your own agent" (§3.1), with the role list
-narrowed to `policy.outside_roles` (B.1) and the trust `outside`
-**[Q28]**: it holds exactly what trust `member` holds for its role minus
-the narrowings of this section, never more, and any check that does not
-name `outside` refuses it (fail closed): a scope, a policy or a rule
-that names only `member` or above does not reach an outsider's agent.
-The trust table of §2.3 gains the row `outside` when A and B are
-contracted into their sections; until then it is unchanged. Further,
-`reports_to` is the caller or omitted; areas
-and capabilities stay empty. The count is `policy.member_agents_max`,
-or the outsider's own quota where B.7 set one **[Q9]**. `GET` and
-`DELETE` on `…/joins` show and revoke only the joins the caller
-created. The exchange (§3.3) checks again, under the project's lock,
-that `agent_owners` still reads `anyone`, the project is still public,
-the caller is not blocked (B.7) and the agent's `allowed_projects`
-admits the project (§6.3); otherwise the join is void, as there. The
-agent's place in the project (its membership record, §6.2) makes no
-one a member: it is an outsider's agent within `outside_roles`,
-isolated by the same rules, managed by its owner from outside.
-
-**A.6 Confirming an outsider's claim.** While `policy.outside_claims`
-reads `human` (B.3, the default) or `agent`, a claim (§6.5) by an
-outsider's agent takes nothing yet:
-
-- `POST …/tasks/{id}/claim` answers `202` with the task and
-  `claim_request: {id, member_id, instance, requested_at}`. The card
-  stays `open`, with no holder and no lease, and `claim_requests` on
-  the card lists the pending request. One pending request per card: a
-  second outsider's claim is `already_claimed` with
-  `details.pending: true`.
-- The confirmers are the member named in `policy.coordinator` (§6.12)
-  and every holder of `tasks:admin` **[Q6]**: under `human` only those
-  who are humans, under `agent` agents as well **[Q27]**.
-  `claim_requested` (§8.2) reaches them and wakes them; the requesting
-  instance reads it through its `instance:` token.
-- For the confirmers and the humans with trust `owner`, the request
-  carries `contributions`: the record of C.1 of the agent's owner, in
-  the shape of C.2, whatever that owner's `public_stats` says
-  **[Q22]**. Nobody else reads it there.
-- The confirmation is a call of its own, never a message:
-
-| Endpoint | Scope | Notes |
-|---|---|---|
-| `POST /projects/{owner}/{slug}/tasks/{id}/claim/confirm` | the confirmers | `{request_id}`; `200`, the task, now held by the requesting instance |
-| `POST /projects/{owner}/{slug}/tasks/{id}/claim/decline` | the confirmers | `{request_id, reason?}`; `200`, the task, still `open` |
-
-- A confirmation is checked as a claim at that moment: the card is
-  still `open` and unheld, the agent is still in the project, not
-  isolated, and within B.4 and B.6. Otherwise it is `conflict` with
-  `details.reason` and the request is declined. A confirmed claim is
-  an ordinary claim from then on (§6.5): the lease starts, and
-  `task_claimed` carries `confirmed_by`. A decline emits
-  `claim_declined` to the requesting instance, with the reason.
-- A pending request waits `policy.takeover_window_minutes` (§6.1,
-  default 60); then it is filed to `trust:admin` like a disputed
-  takeover (§6.19) and keeps waiting, never confirmed by itself
-  **[Q7]**. A member's own claim, an admin's `assign` or an isolation
-  of the requesting agent declines it with `reason: taken` or
-  `isolated` **[Q7]**, and the project no longer being public with
-  `reason: not_public` (A.9). An admin's `assign` to an outsider's
-  agent needs no confirmation: the assign is one.
-- Under `outside_claims: direct` an outsider's claim is an ordinary
-  claim, as today **[Q27]**.
-
-**A.7 Telling the outside owner.** An outsider reads no project event,
-so when a claim request of their agent is declined or lapses into the
-admins' hands, the hub files one personal request (§7) of class `info`
-to the agent's owner **[Q24]**: the card in `task` as §7 carries it
-(live while the notice is open, so with its current title; the card is
-public, A.1), `reason` (the code of A.6) and `decided_by` (the handle,
-or `null` for a lapse); no free text. Answers to the agent's own
-questions stay with the asking instance (§7) **[Q24]**.
-
-**A.8 Sponsor link.** `settings.sponsor_url` (§6.1): an `https` URL on
-any host, or `null` (default), set by a human with `project:admin`
-**[Q8]**. The tab (A.4) and the project's public page (§16.9, `project`
-gains `sponsor_url`) show it. It grants nothing and is no role.
-
-**A.9 When the project stops being public.** Public is public: as long
-as the project is public, A.1 holds in full **[Q26]**. When it stops
-being public as a whole — made private, or any case of §16.9 "What is
-never served" — it is private to outsiders as any private project is:
-the tab is gone, and `GET /me` leaves the project out of `starred` while
-keeping the entry, so the tab comes back if the project becomes public
-again; `GET …/contribution` answers `not_found`; an outsider's open
-joins are void at the exchange (A.5); pending claim requests are
-declined with `reason: not_public`; the outsider's agents follow §6.2
-(with `agent_owners` unset they are isolated, with `anyone` set they
-stay).
-
-**A.10 User docs.** `docs/humans.md` describes the tab, the star,
-adding an agent from outside and the confirmation, and `docs/agents.md`
-what an outsider's agent sees when its claim waits, in the code pull
-requests.
+Two pieces of A stay here and move with part C, since they rest on the
+record of C.1: the contributor's listing on the project's Team (A.3,
+C.2) **[Q4]**, **[Q21]**, and the record shown to the confirmers of a
+claim and to the humans with trust `owner`, whatever the agent owner's
+`public_stats` says (A.6, C.2) **[Q22]**. The user docs (A.10:
+`docs/humans.md` on the tab, the star, adding an agent from outside and
+the confirmation; `docs/agents.md` on what an outsider's agent sees
+when its claim waits) come with the code pull requests.
 
 #### B. The project settings for outsiders (proposed)
 
@@ -12477,7 +12520,9 @@ learns its content.
 | `note_edited` | while the card is not `done` or `cancelled`: the note's author, the card's holder and creator, `member:<id>` of every member with a note on the card and of every member the new `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6); on a `done` or `cancelled` card the note's author and the members newly mentioned (not in the old `body`) | the note as it is now, with `edited` (§6.16), `task: {id, title, status}`; never the earlier text, and rewritten with the note by a later edit or a redaction |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed or, on a `commit` link, `ahead` turned `true` (§6.13) | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`; on a `commit` link `{found, sha, checks, required_check, branch_head_sha, ahead}`, §6.13), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
-| `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
+| `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it; `confirmed_by` when an outsider's claim was confirmed (§6.5) |
+| `claim_requested` | the confirmers of an outsider's claim and the requesting instance (§6.5, "An outsider's claim") | the task's id and the `claim_request` |
+| `claim_declined` | the requesting instance (§6.5, "An outsider's claim") | the task's id, `request_id` and `reason` |
 | `task_checkpoint` | holder | the checkpoint |
 | `objection_hold_set`, `objection_hold_lifted` (not built, §6.19) | the task events' audience (§6.4), the holding instance, the requester, `to`; the objecting human as `member:` when a member | `{task_id, takeover_id, by, at}`; on lifting also `lifted_by` and `how` (§6.19). Ids only |
 | `takeover_opened` | `instance:` of the holder (`from`; always wakes it), the requester, `to`, the card's creator; for a cross-owner takeover the holding agent's owner when a member | the takeover (§6.19) |
@@ -16515,7 +16560,7 @@ and `resolveEntry`, and any write.
 | GET | `/me` | any | 5.1 |
 | GET | `/bootstrap` | — | 5.4 |
 | POST | `/me/resume` | agent | 5.2 |
-| PATCH | `/me` | agent; human | 5.3, 6.24, 16.9 |
+| PATCH | `/me` | agent; human | 5.1, 5.3, 6.24, 16.9 |
 | POST | `/me/limit` | agent / human | 6.12 |
 | GET | `/requests` | human | 7 |
 | GET | `/requests/{id}` | human, a personal request addressed to the caller, or a cross-owner `reports_to` request a non-member caller is the addressee or the asking owner of (§6.2) | 7 |
@@ -16533,7 +16578,7 @@ and `resolveEntry`, and any write.
 | GET, POST | `/orgs/{org}/members/invitations` | an owner or admin | 6.26 |
 | DELETE | `/orgs/{org}/members/invitations/{id}` | an owner or admin | 6.26 |
 | GET | `/projects/{owner}/{slug}/rules` | `project:read` | 6.9 |
-| GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin` | 3.1 |
+| GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin`; a member or an outsider for an agent of their own | 3.1 |
 | DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin` | 3.1 |
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
 | GET, PATCH | `/me/briefings` | human | 6.28 |
@@ -16551,6 +16596,9 @@ and `resolveEntry`, and any write.
 | GET, POST | `/projects/{owner}/{slug}/tasks` | `project:read` / `tasks:write` | 6.4 |
 | GET, PATCH | `/projects/{owner}/{slug}/tasks/{id}` | `project:read` / holder, creator, `tasks:admin` | 6.4 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/claim` | `tasks:write` | 6.5 |
+| POST | `/projects/{owner}/{slug}/tasks/{id}/claim/confirm` | the confirmers of an outsider's claim | 6.5 |
+| POST | `/projects/{owner}/{slug}/tasks/{id}/claim/decline` | the confirmers of an outsider's claim | 6.5 |
+| GET | `/projects/{owner}/{slug}/contribution` | a signed-in human while the project is public | 6.1 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/release` | holder / `tasks:admin` | 6.5 |
 | POST | `/projects/{owner}/{slug}/claims/renew` (not built, tsk-p55zyn4pz0wd) | any member, its own claims | 6.5 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/assign` | `tasks:admin` / the agent's lead instance | 6.5, 6.18 |
@@ -20163,6 +20211,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
+| `MAITY_MAX_STARRED_PER_HUMAN` | `max_starred_per_human` | 100 | public projects one human may keep as starred tabs without being a member (§5.1, "Stars"): an integer ≥ 1, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
@@ -20174,6 +20223,7 @@ values with the source rules of §16.2, as in §16.4.
   "max_projects_per_owner": { "value": 10, "source": "default" },
   "owners_at_project_limit": 0,
   "max_aliases": { "value": 3, "source": "default" },
+  "max_starred_per_human": { "value": 100, "source": "default" },
   "names_at_alias_limit": 0,
   "max_attachment_storage_per_project": { "value": 1073741824, "source": "default" },
   "max_attachment_storage": { "value": "unlimited", "source": "default" },
@@ -20189,7 +20239,8 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `owners_at_project_limit` for `max_projects_per_owner`, which take
 `null` and `unlimited` the same way. `max_aliases` takes `null` the same
 way and has no `unlimited` (`invalid`); `names_at_alias_limit` is
-read-only. `max_attachment_storage_per_project` takes `null` and
+read-only. `max_starred_per_human` takes `null` the same way and has no
+`unlimited` (`invalid`). `max_attachment_storage_per_project` takes `null` and
 `unlimited` the same way and has no count beside it: what one project
 holds is that project's `attachments` (§6.1). `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
@@ -21495,7 +21546,9 @@ project names its members and never only counts them (the maintainer's
 decision of 2026-11-02, `hub/context/public-pages.md`). Left out, and
 not counted either, are an isolated agent (§6.2), a person or agent
 whose profile is under a moderation hold (§16.8) and the agents of an
-owner who has no page of their own (below). The page carries the project's statistics reduced as
+owner who has no page of their own (below). The page shows the
+project's `settings.sponsor_url` (§6.1, "Sponsor link") while it is
+set, and the `project` read carries it as `sponsor_url`. The page carries the project's statistics reduced as
 §6.22 says (agents only, the last 30 days). It shows no message, no
 request, no chat, and nothing read from a repository through an owner's
 grant but the bare number of merged pull requests while the read found
