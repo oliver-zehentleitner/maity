@@ -15,7 +15,7 @@
 #   pods to be gone, 180), NO_SIGNATURE_CHECK (1: deploy without checking the image's signature,
 #   e.g. for your own build; unset = checked), COSIGN (the cosign binary, cosign), KUBECONFIG as usual.
 #
-# Before anything is changed, the script renders the upgrade (`helm upgrade --dry-run` with the same
+# Before anything is changed, the script renders the upgrade (`helm upgrade --dry-run=client` with the same
 # arguments) and checks every image it would run: each must be pinned by digest (repository@sha256:…)
 # and carry the signature the install docs name (deploy/helm/maity-hub/README.md, step 2), checked with
 # `cosign verify` (v3 or later). A tag, an image key it cannot read, a failed check or a missing cosign
@@ -31,8 +31,11 @@
 # fails is the hub scaled back to the replicas it had. A hub found at 0 stays at 0 either way.
 # A dump is taken by default: an upgrade migrates, and there is no downgrade, so the way back is that
 # dump. Without the CronJob the script stops before anything changed and names NO_DUMP=1.
+# The rendering is `--dry-run=client`, and a --dry-run among the arguments is refused before anything
+# runs: a caller's value would win over the script's and make the rendering the real upgrade.
 # Exit status: Helm's own when the upgrade failed; otherwise 3 when scaling back failed, 4 when the
-# hub did not become ready, 1 for the steps before Helm, 0 only when everything worked.
+# hub did not become ready, 1 for the steps before Helm, 2 for a usage error (no arguments, or a
+# --dry-run among them), 0 only when everything worked.
 set -uo pipefail
 
 NAMESPACE=${NAMESPACE:-maity}
@@ -43,6 +46,17 @@ HELM_TIMEOUT=${HELM_TIMEOUT:-10m}
 STOP_TIMEOUT=${STOP_TIMEOUT:-180}
 SELECTOR="app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=hub"
 [ $# -gt 0 ] || { echo "usage: $0 -f values.yaml [helm upgrade arguments]" >&2; exit 2; }
+# The rendering below must stay a dry run: Helm takes the last --dry-run it is given, so a caller's
+# --dry-run=false after the script's own would turn the rendering into the real upgrade, before any
+# image is checked. Every --dry-run among the arguments is refused before anything runs (the script
+# does the real upgrade itself); `--dry-run <value>` is not one flag to Helm, but its `--dry-run` is.
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run|--dry-run=*)
+      echo "'$arg': this script renders the upgrade as a dry run itself and then runs it, so it takes no --dry-run; nothing was changed" >&2
+      exit 2;;
+  esac
+done
 
 replicas=$(kubectl -n "$NAMESPACE" get deploy "$DEPLOYMENT" -o jsonpath='{.spec.replicas}') || exit 1
 replicas=${replicas:-1}
@@ -82,7 +96,9 @@ else
   command -v "$COSIGN" >/dev/null ||
     { echo "cosign is not installed, so the image's signature cannot be checked (install cosign v3 or later, or set NO_SIGNATURE_CHECK=1 for an image you built yourself); nothing was changed" >&2; restored=1; exit 1; }
   # Every image the upgrade would run, from the same arguments, rendered without changing anything.
-  rendered_manifest=$(helm -n "$NAMESPACE" upgrade "$RELEASE" "$CHART" --dry-run "$@") ||
+  # --dry-run=client before and after the caller's arguments: the last one is the one Helm takes, and
+  # the first still holds if a caller's flag ends the list waiting for a value and takes the last as it.
+  rendered_manifest=$(helm -n "$NAMESPACE" upgrade "$RELEASE" "$CHART" --dry-run=client "$@" --dry-run=client) ||
     { echo "could not render the upgrade to find its image; nothing was changed" >&2; restored=1; exit 1; }
   # The forms an image can take in the rendered YAML: `image: <ref>` as a mapping key, also as the
   # first key of a list item (`- image: <ref>`, a sidecar or init container written that way), the

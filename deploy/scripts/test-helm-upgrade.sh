@@ -43,7 +43,7 @@ cat > "$work/bin/helm" <<'STUB'
 #!/bin/bash
 # The rendering before anything changes (--dry-run) is logged apart: "helm ran" means the upgrade itself.
 case " $* " in
-  *" --dry-run "*)
+  *" --dry-run "*|*" --dry-run=client "*)
     echo "helm-dry $*" >> "$STUB_STATE/log"
     [ "$FAIL" = render ] && exit 1
     # MANIFEST_FILE: a test's own rendering, printed as it is.
@@ -86,8 +86,10 @@ run() { # name, FAIL value, initial replicas, expected exit, expect helm (yes/no
   local t0=$SECONDS
   # CJ names the CronJob (dump unless set; CJ=default leaves DUMP_CRONJOB unset), NO_DUMP is passed as given.
   local cj=${CJ:-dump}; [ "$cj" = default ] && cj=""
+  # EXTRA: more caller arguments after -f values.yaml, split on spaces.
+  local extra=(); read -ra extra <<<"${EXTRA:-}"
   PATH="$work/bin:$PATH" FAIL=$fail STOP_TIMEOUT=4 DUMP_TIMEOUT=$dumptimeout DUMP_REQUIRES_ATTACHMENTS=${REQ_ATT:-0} DUMP_CRONJOB=$cj \
-    NO_DUMP=${NO_DUMP:-} "$here/helm-upgrade.sh" -f values.yaml >"$STUB_STATE/out" 2>&1
+    NO_DUMP=${NO_DUMP:-} "$here/helm-upgrade.sh" -f values.yaml "${extra[@]}" >"$STUB_STATE/out" 2>&1
   local got=$? ran=no took=$((SECONDS - t0)); grep -q '^helm ' "$STUB_STATE/log" && ran=yes
   local end; end=$(cat "$STUB_STATE/replicas")
   if [ -n "$maxsecs" ] && [ "$took" -gt "$maxsecs" ]; then
@@ -163,12 +165,25 @@ grep -q '^cosign ' "$work/opt_out_tag/log" && { echo "FAIL opt_out_tag: cosign r
 grep -q '^WARNING: NO_SIGNATURE_CHECK=1' "$work/opt_out_tag/out" || { echo "FAIL opt_out_tag: no WARNING for NO_SIGNATURE_CHECK=1"; failures=$((failures + 1)); }
 UNTOUCHED=1 NO_SIGNATURE_CHECK=0 run opt_out_zero_checks unsigned 1 1 no 1
 grep -q '^cosign verify ' "$work/opt_out_zero_checks/log" || { echo "FAIL opt_out_zero_checks: cosign did not run with NO_SIGNATURE_CHECK=0"; failures=$((failures + 1)); }
-# The rendering gets the caller's own arguments.
-if grep -qE '^helm-dry -n maity upgrade maity .* --dry-run -f values\.yaml$' "$work/all_good/log"; then
+# The rendering gets the caller's own arguments, between two --dry-run=client (Helm takes the last one).
+if grep -qE '^helm-dry -n maity upgrade maity [^ ]+ --dry-run=client -f values\.yaml --dry-run=client$' "$work/all_good/log"; then
   echo "ok   dry_run_has_caller_args"
 else
-  echo "FAIL dry_run_has_caller_args: no helm --dry-run with -f values.yaml in the log"; failures=$((failures + 1))
+  echo "FAIL dry_run_has_caller_args: no helm --dry-run=client -f values.yaml --dry-run=client in the log"; failures=$((failures + 1))
 fi
+# A --dry-run among the caller's arguments would win over the script's (the last one counts) and make the
+# rendering the real upgrade: every spelling is refused with exit 2 before kubectl, helm or cosign runs.
+dry_case() { # name, the caller's extra arguments
+  EXTRA=$2 run "dry_$1" none 1 2 no 1
+  [ -s "$work/dry_$1/log" ] && { echo "FAIL dry_$1: something ran before the refusal: $(head -1 "$work/dry_$1/log")"; failures=$((failures + 1)); }
+  grep -q 'takes no --dry-run' "$work/dry_$1/out" || { echo "FAIL dry_$1: no message naming --dry-run"; failures=$((failures + 1)); }
+}
+dry_case false "--install --dry-run=false"
+dry_case server "--dry-run=server"
+dry_case bare "--dry-run"
+dry_case spaced "--dry-run false"
+dry_case after_set "--set image.tag=x --dry-run=none"
+NO_SIGNATURE_CHECK=1 dry_case opt_out "--dry-run=false"
 # Two distinct images (the hook's and the Deployment's): each is checked, and the hook's failing stops it.
 hook_ref="ghcr.io/oliver-zehentleitner/maity-hub@sha256:$(printf 'b%.0s' {1..64})"
 HOOK_REF=$hook_ref run two_refs none 1 0 yes 1
@@ -208,6 +223,140 @@ done
 [ "$(grep -c '^cosign verify ' "$work/image_forms/log")" = 4 ] || { echo "FAIL image_forms: not exactly the four images were checked"; failures=$((failures + 1)); }
 grep -q '^signature checked: *$' "$work/image_forms/out" && { echo "FAIL image_forms: an empty image name was printed"; failures=$((failures + 1)); }
 UNTOUCHED=1 MANIFEST_FILE="$work/forms.yaml" UNSIGNED_REF=$side_ref run sidecar_unsigned none 1 1 no 1
+# Every runnable image in every workload kind, the key order mixed: the image first or after the name,
+# in containers, initContainers and ephemeralContainers, in hook Jobs and Pods (helm.sh/hook) too.
+wl() { printf 'ghcr.io/example/%s@sha256:%s' "$1" "$(printf '%064d' 0 | tr 0 "$2")"; }
+w_dep=$(wl dep-init 1); w_sts=$(wl sts-side 2); w_job=$(wl hook-job 3); w_jobi=$(wl hook-job-init 4)
+w_cron=$(wl cron 5); w_pod=$(wl hook-pod 6); w_eph=$(wl ephemeral 7); w_ds=$(wl ds-init 8)
+cat > "$work/workloads.yaml" <<WORKLOADS
+HOOKS:
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  annotations:
+    "helm.sh/hook": pre-upgrade
+spec:
+  template:
+    spec:
+      initContainers:
+      - image: $w_jobi
+        name: wait
+      containers:
+      - image: "$w_job"
+        name: migrate
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hook-test
+  annotations:
+    helm.sh/hook: test
+spec:
+  containers:
+    - name: test
+      image: $w_pod
+MANIFEST:
+---
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      initContainers:
+        - image: $w_dep
+          name: init
+      containers:
+        - name: hub
+          image: $DIGEST_REF
+---
+apiVersion: apps/v1
+kind: StatefulSet
+spec:
+  template:
+    spec:
+      containers:
+        - name: hub
+          image: $DIGEST_REF
+        - image: $w_sts
+          name: side
+---
+apiVersion: apps/v1
+kind: DaemonSet
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: init
+          image: '$w_ds'
+      containers:
+        - image: $DIGEST_REF
+          name: hub
+---
+apiVersion: batch/v1
+kind: CronJob
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - image: $w_cron
+            imagePullPolicy: IfNotPresent
+            name: dump
+---
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: hub
+      image: $DIGEST_REF
+  ephemeralContainers:
+    - image: $w_eph
+      name: debug
+WORKLOADS
+MANIFEST_FILE="$work/workloads.yaml" run workloads none 1 0 yes 1
+for r in "$DIGEST_REF" "$w_dep" "$w_sts" "$w_job" "$w_jobi" "$w_cron" "$w_pod" "$w_eph" "$w_ds"; do
+  grep -qF -- "cosign verify $r " "$work/workloads/log" || { echo "FAIL workloads: $r was not checked"; failures=$((failures + 1)); }
+done
+[ "$(grep -c '^cosign verify ' "$work/workloads/log")" = 9 ] || { echo "FAIL workloads: not exactly the nine images were checked"; failures=$((failures + 1)); }
+# Any one of them unsigned stops the upgrade before anything changes.
+for r in "$w_dep" "$w_sts" "$w_job" "$w_jobi" "$w_cron" "$w_pod" "$w_eph" "$w_ds"; do
+  n=${r#ghcr.io/example/}; n=${n%%@*}
+  UNTOUCHED=1 MANIFEST_FILE="$work/workloads.yaml" UNSIGNED_REF=$r run "workload_unsigned_$n" none 1 1 no 1
+done
+# A signed hub (name first) beside an init container and a sidecar by tag, image first; and the same two
+# with the name first. Both spellings stop at the tag before anything changes.
+untrusted=registry.example.org/untrusted:latest
+cat > "$work/tag-image-first.yaml" <<TAGS
+MANIFEST:
+    spec:
+      initContainers:
+        - image: $untrusted
+          name: init
+      containers:
+        - name: hub
+          image: $DIGEST_REF
+        - image: $untrusted
+          name: side
+TAGS
+cat > "$work/tag-name-first.yaml" <<TAGS
+MANIFEST:
+    spec:
+      initContainers:
+        - name: init
+          image: $untrusted
+      containers:
+        - name: hub
+          image: $DIGEST_REF
+        - name: side
+          image: $untrusted
+TAGS
+for order in image-first name-first; do
+  UNTOUCHED=1 MANIFEST_FILE="$work/tag-$order.yaml" run "tag_$order" none 1 1 no 1
+  grep -qF "$untrusted is not pinned by digest" "$work/tag_$order/out" || { echo "FAIL tag_$order: the tag was not named"; failures=$((failures + 1)); }
+done
 # A form the check does not read stops the script before anything changes (fail closed).
 form_case() { # name, the line(s) after "containers:"
   printf 'MANIFEST:\n    spec:\n      containers:\n%s\n' "$2" > "$work/form-$1.yaml"
@@ -227,6 +376,90 @@ form_case anchor "        - name: side
           image: &img $side_ref"
 form_case alias "        - name: side
           image: *img"
+# Real Helm parses the flags: the script's rendering against a loopback stand-in for the Kubernetes API
+# that answers reads and refuses every write. With the caller's --install it renders with no write and
+# reaches cosign; a caller's --dry-run=false is refused before Helm runs. The control shows that the same
+# Helm makes a write when --dry-run=false comes last, so "no write" above is not a quiet stand-in.
+# REAL_HELM names a Helm 3 binary; without one (or without python3) this part is skipped.
+real_helm=${REAL_HELM:-$(command -v helm || true)}
+if [ -z "$real_helm" ] || ! "$real_helm" version --short 2>/dev/null | grep -q '^v3\.' || ! command -v python3 >/dev/null; then
+  echo "skip real_helm: no Helm 3 binary (REAL_HELM or helm on PATH) or no python3; the stub cases above still run"
+else
+  cat > "$work/fakeapi.py" <<'FAKEAPI'
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+log = open(sys.argv[1], "a", buffering=1)
+V1 = [{"name": n, "namespaced": True, "kind": k, "verbs": ["get", "list", "create"]}
+      for n, k in (("pods", "Pod"), ("secrets", "Secret"), ("configmaps", "ConfigMap"))]
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+    def send(self, code, body):
+        b = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+    def do_GET(self):
+        log.write("GET " + self.path + "\n")
+        p = self.path.split("?")[0]
+        if p == "/version":
+            return self.send(200, {"major": "1", "minor": "31", "gitVersion": "v1.31.0"})
+        if p == "/api":
+            return self.send(200, {"kind": "APIVersions", "versions": ["v1"]})
+        if p == "/apis":
+            return self.send(200, {"kind": "APIGroupList", "groups": []})
+        if p == "/api/v1":
+            return self.send(200, {"kind": "APIResourceList", "groupVersion": "v1", "resources": V1})
+        if p.endswith("/secrets") or p.endswith("/configmaps"):
+            return self.send(200, {"kind": "List", "apiVersion": "v1", "metadata": {}, "items": []})
+        return self.send(404, {"kind": "Status", "status": "Failure", "reason": "NotFound", "code": 404})
+    def refuse(self):
+        log.write(self.command + " " + self.path + "\n")
+        self.send(403, {"kind": "Status", "status": "Failure", "reason": "Forbidden", "code": 403, "message": "writes refused"})
+    do_POST = do_PUT = do_PATCH = do_DELETE = refuse
+srv = HTTPServer(("127.0.0.1", 0), H)
+with open(sys.argv[2], "w") as f:
+    f.write(str(srv.server_port))
+srv.serve_forever()
+FAKEAPI
+  rh=$work/realhelm; mkdir -p "$rh/bin" "$rh/chart/templates" "$rh/home"
+  printf 'apiVersion: v2\nname: probe\nversion: 0.1.0\n' > "$rh/chart/Chart.yaml"
+  printf 'apiVersion: v1\nkind: Pod\nmetadata:\n  name: probe\nspec:\n  containers:\n    - name: hub\n      image: %s\n' "$DIGEST_REF" > "$rh/chart/templates/pod.yaml"
+  : > "$rh/requests"
+  python3 -I "$work/fakeapi.py" "$rh/requests" "$rh/port" & api_pid=$!
+  trap 'kill "$api_pid" 2>/dev/null; rm -rf "$work"' EXIT
+  for _ in $(seq 50); do [ -s "$rh/port" ] && break; sleep 0.1; done
+  printf 'apiVersion: v1\nkind: Config\nclusters: [{name: fake, cluster: {server: "http://127.0.0.1:%s"}}]\nusers: [{name: fake, user: {token: none}}]\ncontexts: [{name: fake, context: {cluster: fake, user: fake, namespace: maity}}]\ncurrent-context: fake\n' \
+    "$(cat "$rh/port")" > "$rh/kubeconfig"
+  # Real helm; kubectl, cosign and sleep stay the stubs.
+  ln -s "$real_helm" "$rh/bin/helm"; ln -s "$work/bin/kubectl" "$work/bin/cosign" "$work/bin/sleep" "$rh/bin/"
+  writes() { grep -cv '^GET ' "$rh/requests"; }
+  real_run() { # name, expected exit, then the caller's arguments after -f values.yaml
+    local name=$1 want=$2; shift 2
+    export STUB_STATE="$work/$name"; mkdir -p "$STUB_STATE"; echo 1 > "$STUB_STATE/replicas"; : > "$STUB_STATE/pods"; : > "$STUB_STATE/log"
+    : > "$rh/requests"; printf 'replicaCount: 1\n' > "$rh/values.yaml"
+    # cosign refuses (FAIL=unsigned): the run ends at the first signature check, after the rendering.
+    PATH="$rh/bin:$PATH" KUBECONFIG="$rh/kubeconfig" HELM_CACHE_HOME="$rh/home/cache" HELM_CONFIG_HOME="$rh/home/config" \
+      HELM_DATA_HOME="$rh/home/data" CHART="$rh/chart" FAIL=unsigned STOP_TIMEOUT=4 DUMP_CRONJOB=dump \
+      "$here/helm-upgrade.sh" -f "$rh/values.yaml" "$@" >"$STUB_STATE/out" 2>&1
+    local got=$? w; w=$(writes)
+    if [ "$got" = "$want" ] && [ "$w" = 0 ]; then echo "ok   $name (real helm: exit $got, no write to the API)"
+    else echo "FAIL $name: exit $got (want $want), $w write(s) to the API: $(grep -v '^GET ' "$rh/requests" | head -1)"; failures=$((failures + 1)); fi
+  }
+  real_run real_helm_renders 1 --install --disable-openapi-validation
+  grep -qF "cosign verify $DIGEST_REF " "$work/real_helm_renders/log" || { echo "FAIL real_helm_renders: the rendering did not reach the signature check"; failures=$((failures + 1)); }
+  real_run real_helm_dry_run_false 2 --install --disable-openapi-validation --dry-run=false
+  grep -q '^cosign ' "$work/real_helm_dry_run_false/log" && { echo "FAIL real_helm_dry_run_false: cosign ran"; failures=$((failures + 1)); }
+  # Control: Helm takes the last --dry-run, and the stand-in sees the write it makes.
+  : > "$rh/requests"
+  KUBECONFIG="$rh/kubeconfig" HELM_CACHE_HOME="$rh/home/cache" HELM_CONFIG_HOME="$rh/home/config" HELM_DATA_HOME="$rh/home/data" \
+    "$real_helm" -n maity upgrade maity "$rh/chart" --dry-run=client --install --disable-openapi-validation --dry-run=false >/dev/null 2>&1
+  if [ "$(writes)" -ge 1 ]; then echo "ok   real_helm_control (a later --dry-run=false wins and writes)"
+  else echo "FAIL real_helm_control: no write seen with --dry-run=false last, so the API stand-in proves nothing"; failures=$((failures + 1)); fi
+  kill "$api_pid" 2>/dev/null
+fi
 # The identity the script checks is the one the install docs name.
 identity=$(sed -n "s/^IDENTITY='\(.*\)'\$/\1/p" "$here/helm-upgrade.sh")
 issuer=$(sed -n "s/^ISSUER='\(.*\)'\$/\1/p" "$here/helm-upgrade.sh")

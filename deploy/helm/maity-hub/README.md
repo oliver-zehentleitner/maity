@@ -420,8 +420,9 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   anything; `NO_DUMP=1` skips the dump, for a cluster where you take it
   yourself. `deploy/k3s-single/backup.yaml` is such a CronJob.
   Before the dump and before it looks for the CronJob, it renders the upgrade
-  (`helm upgrade --dry-run` with the same arguments) and checks each image's
-  signature with `cosign verify` and the identity in step 2 of the install;
+  (`helm upgrade --dry-run=client` with the same arguments) and checks each
+  image's signature with `cosign verify` and the identity in step 2 of the
+  install; a `--dry-run` among its arguments is refused before anything runs;
   an image by tag, a failed check or a missing cosign stops it with nothing
   changed, unless `NO_SIGNATURE_CHECK=1` (your own build). `COSIGN=<path>`
   names the cosign binary when it is not `cosign` on the `PATH`. And

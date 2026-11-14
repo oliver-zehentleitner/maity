@@ -329,7 +329,7 @@ registry alone.
 **See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
 
 `deploy/scripts/helm-upgrade.sh` renders the upgrade first
-(`helm upgrade --dry-run` with the caller's own arguments), takes every
+(`helm upgrade --dry-run=client` with the caller's own arguments), takes every
 image it would run (an `image` key, also as a list item's first key or
 quoted, its value plain or quoted; an empty value is skipped), and requires
 each to be pinned by digest and to pass `cosign verify` with the issuer and
@@ -341,7 +341,15 @@ happens before the dump (and its CronJob lookup), the migrate Job and the
 scale-down, so a refusal changes nothing. A missing cosign is a refusal
 too. `NO_SIGNATURE_CHECK=1`
 is the only way past the check, for an image someone built themselves,
-and the script prints a warning when it is set.
+and the script prints a warning when it is set. The rendering stays a
+dry run: Helm takes the last `--dry-run` it is given, so a caller's
+`--dry-run=false` would make it the real upgrade before any image is
+checked. Every `--dry-run` among the caller's arguments is refused (exit 2)
+before anything runs, and the script puts its own `--dry-run=client` before
+and after the caller's arguments. The image reader covers containers,
+initContainers and ephemeralContainers in any key order, in hook workloads
+too; `test-helm-upgrade.sh` also runs real Helm 3 (when one is installed)
+against a loopback API stand-in that refuses writes.
 
 **Reason:** the README asked operators to verify before they pin a
 digest, but the script that deploys did not, so nothing held the
@@ -356,6 +364,9 @@ pull.
   without cosign would never check, and nobody would notice.
 - Taking the image from an extra argument or variable: it could differ
   from what the values make Helm deploy.
+- Only the script's own `--dry-run` last: a caller's flag that ends the
+  list waiting for a value would take it as its value. Only first: a
+  caller's later `--dry-run=false` wins. Hence both, and the refusal.
 - `helm template` for the rendering: it does not accept every
   `helm upgrade` flag (`--reuse-values`, `--install`), so it would fail
   or render something else for those calls.
