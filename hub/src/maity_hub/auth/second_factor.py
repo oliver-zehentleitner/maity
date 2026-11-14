@@ -519,7 +519,9 @@ def _count_day(
 
     The human's row is locked before the day's: the alert's record locks it too, and a
     password change locks it before it clears `alerted` (`password_resets.password_changed`),
-    so every path takes the human before the day row."""
+    so every path takes the human before the day row. The factor's row comes before both:
+    `check` holds it here, and a reset by mail locks it before the human's
+    (`routes/password_reset._live`)."""
     records.lock_human(conn, human_id)
     day = _today()
     row = _day(conn, human_id, day)
