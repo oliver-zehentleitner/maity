@@ -1855,8 +1855,9 @@ window.Maity = window.Maity || {};
     const asked = (args || [])[0] || "general";
     const offeredTabs = SETTINGS_TABS.filter(([key]) => settingsTabOffered(ctx, key));
     const tabLink = (key) => (key === "general" ? projectLink(ctx.slug, "settings") : projectLink(ctx.slug, "settings", key));
-    // None offered (an agent neither admin nor owner, at a typed address): Mine, which says it is
-    // for humans, as the one page did, never an empty page.
+    // A guard: NAV offers this view only to project:admin and humans, who always have a tab (an
+    // agent without the right gets page not found, as on the one page). Should none be offered,
+    // Mine with its humans-only sentence, never an empty page.
     if (!offeredTabs.length) offeredTabs.push(SETTINGS_TABS.find(([key]) => key === "mine"));
     const chosen = offeredTabs.find(([key]) => key === asked);
     // settings/general is General's longer name; the address is settings.

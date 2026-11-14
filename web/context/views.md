@@ -4145,10 +4145,10 @@ the project, and the owner's absence.
 
 Settings stays the project's last tab, never a panel from the gear menu,
 and a save stays on it (ecbeaecb, whose revisit condition, sub-pages,
-this meets). A reader offered no tab (an agent neither admin nor owner,
-at a typed address) gets Mine and its sentence that these are a human
-member's settings, as the one page led them to `settings/mine`, not an
-empty page.
+this meets). An agent neither admin nor owner is offered no Settings in
+the project's row, as before, and a typed settings address is the
+page-not-found page; the view itself falls back to Mine and its
+humans-only sentence should no tab be offered, never an empty page.
 
 **Reason:** the one page had grown to some twenty sections, and an admin
 looking for one scrolled through all of them. An address per tab keeps a
