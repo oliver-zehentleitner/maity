@@ -205,9 +205,12 @@ def _no_listeners() -> Iterator[None]:
 class OwnersCircle:
     """`friend`'s own series, moderated by its agent `lead`; `carl` is a member outside the
     circle whose agent `outsider` holds the series' moderator right too, and starts a round
-    that `lead` moderates. `worker`, friend's other agent, answers it by name."""
+    that `lead` moderates. `worker`, friend's other agent, answers it by name. With
+    `outsider_moderates`, `outsider` is online the most and moderates the round instead."""
 
-    def __init__(self, make_client: ClientFactory, engine: Engine) -> None:
+    def __init__(
+        self, make_client: ClientFactory, engine: Engine, outsider_moderates: bool = False
+    ) -> None:
         self.engine = engine
         self.owner = flow.human(make_client, engine)
         self.project_id: str = flow.project(self.owner)["id"]
@@ -237,7 +240,10 @@ class OwnersCircle:
         if consent.status_code == 404:
             consent = self.carl.post(f"{PROJECT}/requests/{request_id}/answer", {"reply_id": "go"})
         assert consent.status_code == 200, consent.text
-        self._online(self.lead.id)  # the most minutes online: `lead` moderates (§20.2)
+        moderator = self.outsider if outsider_moderates else self.lead
+        if outsider_moderates:
+            listen(self.outsider)
+        self._online(moderator.id)  # the most minutes online: it moderates (§20.2)
         self.start = (
             "POST",
             f"{PROJECT}/jour-fixe/series/{self.series}/rounds",
@@ -245,7 +251,7 @@ class OwnersCircle:
         )
         started = self.send_as_outsider(self.start, "replay-circle-start")
         assert started.status_code == 201, started.text
-        assert started.json()["moderator"]["member_id"] == self.lead.id
+        assert started.json()["moderator"]["member_id"] == moderator.id
         self.round: str = started.json()["id"]
         answered = self.worker.post(
             f"{PROJECT}/jour-fixe/rounds/{self.round}/answers", {"went_well": "a"}
@@ -331,6 +337,63 @@ def test_a_jour_fixe_replay_stays_with_the_circle(
     with migrated.connect() as conn:
         assert check(conn, ref, _caller(migrated, world.friend.id))
         assert not check(conn, ref, _caller(migrated, world.carl.id))
+
+
+# --- a moderator whose right ended reads no more of the series or its round (§20.2) ---------
+
+
+def _end_outsiders_right(world: OwnersCircle) -> None:
+    ended = world.friend.delete(
+        f"{PROJECT}/jour-fixe/series/{world.series}/moderators/{world.outsider.id}"
+    )
+    assert ended.status_code == 200, ended.text
+
+
+def test_a_moderator_whose_right_ended_gets_not_found_on_its_rounds_replay(
+    make_client: ClientFactory, migrated: Engine, _no_listeners: None
+) -> None:
+    """`outsider` started and moderates the round; once its right ends, its `GET` is
+    `not_found`, and so is the replay of its start with the same key."""
+    world = OwnersCircle(make_client, migrated, outsider_moderates=True)
+    round_path = f"{PROJECT}/jour-fixe/rounds/{world.round}"
+    assert world.outsider.get(round_path).status_code == 200
+    _end_outsiders_right(world)
+    assert world.outsider.get(round_path).status_code == 404
+    again = world.send_as_outsider(world.start, "replay-circle-start")
+    assert again.status_code == 404, again.text
+    assert again.json()["error"]["code"] == "not_found"
+    assert "Idempotent-Replayed" not in again.headers
+    assert "My agents" not in again.text
+
+
+@pytest.mark.parametrize("kind", sorted(CIRCLE_CASES))
+def test_a_jour_fixe_replay_ends_with_the_moderators_right(
+    kind: str, make_client: ClientFactory, migrated: Engine, _no_listeners: None
+) -> None:
+    world = OwnersCircle(make_client, migrated, outsider_moderates=True)
+    check = idempotency.LOADERS[kind].may_see
+    ref = CIRCLE_CASES[kind](world)
+    with migrated.connect() as conn:
+        assert check(conn, ref, _agent_caller(conn, world))
+    _end_outsiders_right(world)
+    with migrated.connect() as conn:
+        assert not check(conn, ref, _agent_caller(conn, world))
+
+
+def _agent_caller(conn: Any, world: OwnersCircle) -> Any:
+    from maity_hub.auth.caller import Caller
+
+    membership_id = conn.execute(
+        select(t.membership.c.id).where(t.membership.c.agent_id == world.outsider.id)
+    ).scalar_one()
+    return Caller(
+        kind="agent",
+        via="bearer",
+        agent_id=world.outsider.id,
+        owner_id=world.carl.id,
+        membership_id=membership_id,
+        project_id=world.project_id,
+    )
 
 
 def _caller(engine: Engine, human_id: str) -> Any:
