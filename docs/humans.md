@@ -52,7 +52,7 @@ To accept a link, the person signs in, or creates an account first where this hu
 
 **Organisation** draws the team from who reports to whom and who owns which area.
 
-Trust says how far a member is trusted, and role says what it does. Together they decide what it may do, and the hub enforces that.
+Trust says how far a member is trusted, and role says what it does. Together they decide what it may do, and the hub enforces that. Lowering a member's trust takes away what the new trust may not hold: a member made a guest is no longer the arbiter of the contract or of any open contract card, and an agent that is no longer an admin stops standing in for the coordinator. Each seat goes to the default it gets when a member is removed.
 
 An **expert** answers the others' questions about its sources (the contract, the recorded reasons, the documentation) and names the source with each answer. It takes no cards, writes no code and does not review. A merge that changes one of its sources wakes it, so it reads the change. An agent becomes an expert only once it holds no cards and has none on the way to it: none assigned to it, no open takeover to it, no cards a cover would give back to it, and it is not the substitute of a running cover.
 

@@ -1,4 +1,5 @@
-"""Removing a member resets every seat that names it (docs/api.md §6.2).
+"""Removing a member resets every seat that names it (docs/api.md §6.2), and a trust or
+role change resets the seats the new trust or role may not hold.
 
 A seat names one member to act for the project or a card, or to stand in for one. The
 removal's transaction sets each seat the removed member held to its fallback — never to
@@ -11,28 +12,63 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, select, update
+from sqlalchemy import Connection, or_, select, update
 
 from maity_hub import availability, cards, clock, policy, rules
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit
+from maity_hub.scopes import in_admin_team
 
 REASON = "member_removed"
+DEMOTED = "member_demoted"
 
 
 def reset(conn: Connection, project_id: str, removed: Any, actor: Actor | None) -> None:
     """Reset the seats `removed` (its membership row, already inactive) held."""
+    _reset(conn, project_id, removed, actor, REASON, arbiter=True, coordinator=True)
     principal = removed.agent_id or removed.human_id
+    deciders = _deciders(conn, project_id)
+    availability.drop_substitute(conn, project_id, principal, deciders, actor)
+
+
+def demoted(conn: Connection, project_id: str, member: Any, actor: Actor | None) -> None:
+    """After a trust or role change of `member` (its row as it is now): a guest holds no
+    arbiter seat, and only an admin agent stands in for the coordinator (§2.3, §6.1). A
+    seat it may no longer hold goes to the fallback a removal gives it (§6.2)."""
+    _reset(
+        conn,
+        project_id,
+        member,
+        actor,
+        DEMOTED,
+        arbiter=member.trust == "guest",
+        coordinator=False,
+        substitute=not (member.agent_id is not None and in_admin_team(member.trust, member.role)),
+    )
+
+
+def _reset(
+    conn: Connection,
+    project_id: str,
+    member: Any,
+    actor: Actor | None,
+    reason: str,
+    *,
+    arbiter: bool,
+    coordinator: bool,
+    substitute: bool = True,
+) -> None:
+    principal = member.agent_id or member.human_id
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
     deciders = _deciders(conn, project_id)
     new = policy.of(project)
-    if project.contract_arbiter == principal:
-        new["contract_arbiter"] = _arbiter_fallback(conn, project_id, removed)
-    if project.coordinator == principal:
+    if arbiter and project.contract_arbiter == principal:
+        new["contract_arbiter"] = _arbiter_fallback(conn, project_id, member)
+    if coordinator and project.coordinator == principal:
         new["coordinator"] = "trust:admin"  # its default (§6.1)
-    if project.coordinator_substitute == principal:
+    if substitute and project.coordinator_substitute == principal:
         new["coordinator_substitute"] = None
-    # One `policy_changed` carries every policy field the removal reset (§6.2).
+    # One `policy_changed` carries every policy field the change reset (§6.2).
     if new != policy.of(project):
         conn.execute(
             update(t.project).where(t.project.c.id == project_id).values(**policy.columns(new))
@@ -42,33 +78,34 @@ def reset(conn: Connection, project_id: str, removed: Any, actor: Actor | None) 
             project,
             "policy_changed",
             ["all", *deciders],
-            {"old": policy.of(project), "new": new, "reason": REASON},
+            {"old": policy.of(project), "new": new, "reason": reason},
             actor=actor,
         )
-    _reset_card_arbiters(conn, project, principal, removed, new, deciders, actor)
-    availability.drop_substitute(conn, project_id, principal, deciders, actor)
+    if arbiter:
+        _reset_card_arbiters(conn, project, principal, member, new, deciders, actor)
 
 
 def routed_arbiter(conn: Connection, project: Any, seat: str | None = None) -> str:
     """The contract arbiter as routing reads it, the policy's or the one a card names
-    (`seat`): an isolated agent is routed past as if the seat held its default after a
-    removal (§6.2, "Isolation")."""
+    (`seat`): an isolated agent, or a member with trust `guest`, is routed past as if the
+    seat held its default after a removal (§2.3, §6.2 "Isolation")."""
     seat = project.contract_arbiter if seat is None else seat
     if seat == "trust:admin":
         return seat
-    isolated = conn.execute(
+    m = t.membership.c
+    held = conn.execute(
         select(t.membership).where(
-            t.membership.c.project_id == project.id,
-            t.membership.c.agent_id == seat,
-            t.membership.c.active.is_(True),
-            t.membership.c.isolated_since.isnot(None),
+            m.project_id == project.id,
+            or_(m.agent_id == seat, m.human_id == seat),
+            m.active.is_(True),
+            or_(m.isolated_since.isnot(None), m.trust == "guest"),
         )
     ).first()
-    if isolated is None:
+    if held is None:
         return seat
     if seat != project.contract_arbiter:  # a card's arbiter falls back to the policy's first
         return routed_arbiter(conn, project)
-    return _arbiter_fallback(conn, project.id, isolated)
+    return _arbiter_fallback(conn, project.id, held)
 
 
 def _deciders(conn: Connection, project_id: str) -> list[str]:

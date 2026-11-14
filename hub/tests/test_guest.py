@@ -137,3 +137,106 @@ def test_a_newcomer_never_checks_in_with_a_guest(
         )
     found = checks_in_with()
     assert found is None or found["member_id"] != coder.id
+
+
+# --- a demotion to guest withdraws the arbiter seats (§2.3, §6.2) -----------------------
+
+
+def _demote(owner: flow.Human, member_id: str, trust: str = "guest") -> None:
+    response = owner.patch(f"{PROJECT}/members/{member_id}", {"trust": trust})
+    assert response.status_code == 200, response.text
+
+
+def _set_arbiter(owner: flow.Human, member_id: str) -> None:
+    response = owner.patch(PROJECT, {"policy": {"contract_arbiter": member_id}, "reason": "test"})
+    assert response.status_code == 200, response.text
+
+
+def _policy(migrated: Engine) -> Any:
+    with migrated.connect() as conn:
+        return conn.execute(select(t.project)).one()
+
+
+def test_a_demoted_arbiter_loses_the_policy_seat_and_the_cards(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    arbiter = flow.agent(make_client, owner, role="reviewer")
+    _set_arbiter(owner, arbiter.id)
+    made = owner.post(
+        f"{PROJECT}/tasks",
+        {"title": "A contract", "kind": "contract", "contract": {"arbiter": arbiter.id}},
+    )
+    assert made.status_code == 201, made.text
+    card = made.json()["id"]
+    _demote(owner, arbiter.id)
+    # no admin agent in the project: the seat goes to the owner (§6.2)
+    assert _policy(migrated).contract_arbiter == owner.id
+    with migrated.connect() as conn:
+        held = conn.execute(select(t.card.c.contract).where(t.card.c.id == card)).scalar_one()
+        changed = conn.execute(
+            select(t.event).where(t.event.c.kind == "policy_changed").order_by(t.event.c.seq.desc())
+        ).first()
+    assert held["arbiter"] == owner.id
+    assert changed is not None and changed.payload["reason"] == "member_demoted"
+    refused = arbiter.patch(f"{PROJECT}/tasks/{card}", {"contract": {"state": "final"}})
+    assert refused.status_code == 403, refused.text
+
+
+def test_a_human_arbiter_demoted_hands_the_seat_to_the_owner(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    human = flow.human(make_client, migrated, "a-reviewer")
+    factory.membership(migrated, _policy(migrated).id, "member", human_id=human.id)
+    _set_arbiter(owner, human.id)
+    _demote(owner, human.id)
+    assert _policy(migrated).contract_arbiter == owner.id
+
+
+def test_a_guest_left_in_an_arbiter_seat_is_routed_past(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A seat a guest holds from before (data written before the reset existed): no state
+    move, a new contract card and a contract request get the default, not `400 guest`."""
+    from sqlalchemy import update
+
+    arbiter = flow.agent(make_client, owner, role="reviewer")
+    made = owner.post(
+        f"{PROJECT}/tasks",
+        {"title": "A contract", "kind": "contract", "contract": {"arbiter": arbiter.id}},
+    )
+    card = made.json()["id"]
+    _set_arbiter(owner, arbiter.id)
+    with migrated.begin() as conn:  # demoted behind the reset's back
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == arbiter.id).values(trust="guest")
+        )
+    refused = arbiter.patch(f"{PROJECT}/tasks/{card}", {"contract": {"state": "final"}})
+    assert refused.status_code == 403, refused.text
+    other = flow.agent(make_client, owner)
+    fresh = other.post(f"{PROJECT}/tasks", {"title": "Another", "kind": "contract"})
+    assert fresh.status_code == 201, fresh.text
+    assert fresh.json()["contract"]["arbiter"] == owner.id  # the seat's default
+    asked = other.post(f"{PROJECT}/requests", {"class": "contract", "title": "Which?"})
+    assert asked.status_code == 201, asked.text
+    assert asked.json()["to"] == owner.id
+
+
+def test_a_demotion_to_member_keeps_the_arbiter_seat(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    arbiter = flow.agent(make_client, owner, role="admin")
+    _set_arbiter(owner, arbiter.id)
+    _demote(owner, arbiter.id, "member")
+    assert _policy(migrated).contract_arbiter == arbiter.id
+
+
+def test_an_agent_no_longer_admin_stops_standing_in_for_the_coordinator(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    stand_in = flow.agent(make_client, owner, role="admin")
+    set_it = owner.patch(
+        PROJECT, {"policy": {"coordinator_substitute": stand_in.id}, "reason": "test"}
+    )
+    assert set_it.status_code == 200, set_it.text
+    _demote(owner, stand_in.id, "member")
+    assert _policy(migrated).coordinator_substitute is None
