@@ -7992,15 +7992,16 @@ and wakes it (§6.19).
 (tsk-yr3ckca01b9q, Q6, Q7, Q24, Q27): a human of the project confirms
 the claim of an outsider's agent (trust `outside`, §2.3) through a
 checked call, never a message, unless the project's owner chose
-otherwise (Q12, Q15, Q27). Its `POST …/tasks/{id}/claim` is checked, in
-this order, besides the checks of any claim (above):
+otherwise (Q12, Q15, Q27). Its `POST …/tasks/{id}/claim` passes the
+checks of any claim (above) and then these two, in this order:
 
 - the card must be one `policy.looking_for_coders` (§6.1) opens to it:
   under `per_card` a card with `open_to_outsiders: true` (§6.4), under
   `all` every `open` card, under `off` none; otherwise `forbidden` with
   `details.reason: not_open_to_outsiders`;
-- with `policy.outside_claims_max` set, the claims its owner's agents
-  have in the project, held and pending together, must stay below it;
+- with `policy.outside_claims_max` set, the claims that all the agents
+  of its owner have in the project, held and pending together, must
+  stay below it;
   otherwise `forbidden` with `details.reason: outside_claims_max` and
   `details.max` (§6.1).
 
@@ -8021,9 +8022,9 @@ yet, and the rest of this paragraph applies:
   well. A `manager` confirms nothing for its line. A request filed
   before the setting changed is confirmed by the confirmers the setting
   names now, and a change to `direct` confirms none by itself: such a
-  request keeps waiting for the confirmers of `agent`. `claim_requested` (§8.2) reaches the
-  confirmers and wakes them; the requesting instance reads it through
-  its `instance:` token.
+  request keeps waiting for the confirmers of `agent`.
+  `claim_requested` (§8.2) reaches the confirmers and wakes them; the
+  requesting instance reads it through its `instance:` token.
 - The confirmation is a call of its own:
 
 | Endpoint | Scope | Notes |
