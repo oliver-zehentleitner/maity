@@ -16659,7 +16659,19 @@ owner choose):
   (`revoked_reason: runner_revoked`, `revoked_by` the human), so an
   agent can park its work first; with `agents: "stop"` they are revoked
   at once, and so are those an earlier `stop` of this runner left to
-  their grace (never another agent's). Each revocation emits `credential_revoked` (§15.10, `reason:
+  their grace (never another agent's).
+- **Everything on the machine.** `agents: "stop"` also revokes at once
+  the credential that any other placement of this runner names, active
+  or closed for whatever reason (a `DELETE`, a detach, a member's
+  removal), in every project, attached or not, as long as the runner
+  has not reported its clone removed (`workspace_outcome.state:
+  removed`, §15.5): a retained or kept clone still holds the agent's
+  credential file, and a runner without its credential can never
+  report it removed. A policy `stop` does not reach those. The stop
+  reads the placements under each project's lock (the projects in the
+  order of their ids), as a pickup's exchange does (§15.9): an
+  exchange that came first is revoked with them, one that comes later
+  answers `not_found`. Each revocation emits `credential_revoked` (§15.10, `reason:
   runner_revoked`, to the agent and the owners), once, however many
   calls find it due. After that the agent has lost the hub: every call
   answers `credential_revoked`. The hub cannot end its process or its access to
@@ -16973,7 +16985,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | consent request withdrawn | `withdrawn` | at once, for the same reason |
 | the membership is removed | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
 | the agent is isolated (§6.2) | `membership_isolated` | at once, as for a removal. Lifting the isolation does not reopen it; a new placement does |
-| the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds` (§15.3) |
+| the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds`, at once under the owner's `agents: "stop"` (§15.3) |
 | a replacement finished its handover (§15.14) | `replaced` | uniform, as above: the old placement gets `desired: stopped` |
 | a replacement failed: its new placement reported `failed`, or a `full` transcript did not arrive in time (§15.14) | `replace_failed` | uniform, as above, for the new placement; the old one runs on. The new instance's credential, if its pickup was redeemed, is revoked when the placement closes; the same holds for a `DELETE` of the new placement before the handover (`removed`) |
 | the runner is removed | `runner_removed` | at once. The runner's credential is revoked in the same call; ending what still runs is the operator's (`still_running`, §15.3) and the runner's `orphaned` handling |
@@ -17073,6 +17085,9 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
   runner was revoked or removed (`runner_revoked`, `runner_removed`)
   has no runner left to ask the hub; its clones are the operator's
   (`maity runner stop-all`, `maity runner gc --revoked`).
+  An owner's `agents: "stop"` revokes the credential of every clone of
+  the runner not reported removed, whatever closed its placement
+  (§15.3), so none of them still reaches the hub.
 - **Outside the clone.** What a harness keeps under the agents' home —
   package caches, `~/.claude`, `~/.codex` — is shared by every agent of
   the target and stays. `maity runner check` warns when the file

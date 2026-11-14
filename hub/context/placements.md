@@ -134,6 +134,40 @@ tell the owner the truth at any time.
   The agent could not park its work: its next call, the checkpoint
   included, would already be refused.
 
+## An owner's stop locks the runner's projects before it reads their placements
+
+**Id:** 0474abb0-ecd1-459f-a1d2-80fa9aaea5e5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of the owner's stop over retained clones (`docs/api.md` §15.3), 2026-11-13
+**See:** placements.md#a-runners-stop-revokes-its-agents-credentials-when-they-are-next-used — 61d651db-f260-4baf-9af2-498d711d0492 — as of 2026-11-13
+**Revisit when:** a pickup's exchange stops taking its project's lock first, or another caller of `apply` holds project locks before it
+
+`runner_revoke.apply` takes `events.lock_project` on every project it acts
+in, in the order of their ids, after the caller's lock on the runner's row
+and before it reads any placement. Under the owner's `agents: "stop"` those
+are the attached projects plus every project where a placement of the
+runner is active or still has its clone on the machine; the stop then
+revokes each credential such a placement names.
+
+**Reason:** a pickup's exchange takes its project's lock first and checks
+its placement and the runner under it. With the stop's reads under the same
+lock, an exchange either committed its credential before the stop reads the
+placement, or waits and then finds the placement closed or the runner's
+credential gone. The order runner row, then projects by id, is the one
+attaching and removing already take. The account's deletion locks its
+namespace's projects before its runners, so it takes the projects the removal
+of its runners will lock (`runner_revoke.projects_to_lock`) in the same
+id-ordered pass as its namespace's: two deletions with clones in each other's
+namespace then wait for one another instead of deadlocking, and `apply` only
+takes locks the deletion already holds.
+
+**Rejected alternative:** reading the placements first and re-reading each
+`credential_id` after locking. It needs a second read per placement, and
+the set of placements read before the lock could still miss one the
+exchange was changing; locking first leaves one read that is right.
+
 ## `runner_revoke.due` reads two kinds of credential row, so its `getattr` stays
 
 **Id:** 8fc1bde8-a4d6-48ce-8da5-5339f81f6e5c
