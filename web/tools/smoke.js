@@ -6185,6 +6185,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const idFull = idBox(IDS.link("see guest/shop/tsk-0123456789ab, maintainer/maity/req-abcdefghjkmn and https://x.org/guest/shop/tsk-0123456789ab", idAt));
   expect(idHrefs(idFull) === "guest/shop/tsk-0123456789ab=#/guest/shop/tasks/tsk-0123456789ab maintainer/maity/req-abcdefghjkmn=#/maintainer/maity/inbox/req-abcdefghjkmn",
     "ids: a card or request with a project's full name before it links into that project, as written; inside a URL nothing links " + idHrefs(idFull));
+  // A full reference wraps in the project's name or before the id, never inside the id (tsk-e9d52pfhvk3v).
+  const idFullA = idFull.querySelectorAll("a.id-ref")[1];
+  expect(idFullA.getAttribute("class") === "id-ref full" && text(idFullA.querySelector(".ref-prefix")) === "maintainer/maity/"
+    && idFullA.querySelector("wbr") && text(idFullA.querySelector(".ref-id")) === "req-abcdefghjkmn"
+    && idAll.querySelectorAll("a.id-ref").every((a) => a.getAttribute("class") === "id-ref" && !a.querySelector(".ref-prefix"))
+    && thCss.includes(".id-ref.full { white-space: normal; }") && thCss.includes(".id-ref .ref-id { white-space: nowrap; }"),
+    "ids: a full reference may break in its project's name or before the id, a bare id stays one unit");
+  const idPlainFull = IDS.plain("guest/shop/tsk-0123456789ab");
+  expect(idPlainFull.tagName === "SPAN" && idPlainFull.getAttribute("class") === "id-ref full" && text(idPlainFull) === "guest/shop/tsk-0123456789ab"
+    && text(idPlainFull.querySelector(".ref-id")) === "tsk-0123456789ab" && IDS.plain("tsk-0123456789ab").getAttribute("class") === "id-ref",
+    "ids: a reference drawn inside a link (the inbox's Card row) has the same markup, not a link of its own");
   // A first word the hub or the dashboard keeps (api, join, impressum, admin) names no project: the id is text, never a
   // broken link that would stop the view (review of #701).
   const idReserved = "api/v1/tsk-0123456789ab, join/x/req-abcdefghjkmn, impressum/ab/tsk-0123456789ab, admin/users/tsk-0123456789ab";
