@@ -109,6 +109,9 @@ class Settings:
     # PostgreSQL connection of the hub (30 and 60; 0 turns one off, hub/context/persistence.md).
     db_statement_timeout: float = 30.0
     db_idle_in_transaction_timeout: float = 60.0
+    # MAITY_DB_ALLOW_PRIVILEGED: `maity-hub serve` on PostgreSQL refuses a role that is a superuser
+    # or owns the schema or one of its tables, unless this is set (hub/context/deploy-access.md).
+    db_allow_privileged: bool = False
     # MAITY_DIRECT_DATABASE_URL: PostgreSQL past a pooler, for the one connection per process
     # that listens for other replicas' wake-ups (hub/context/replicas.md 387c2409); unset, the
     # listener uses `database_url`.
@@ -247,6 +250,9 @@ class Settings:
             ),
             db_idle_in_transaction_timeout=parse_number(
                 env, "MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", 60.0, minimum=0, maximum=3600
+            ),
+            db_allow_privileged=parse_flag(
+                env.get("MAITY_DB_ALLOW_PRIVILEGED", ""), "MAITY_DB_ALLOW_PRIVILEGED"
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             mail=parse_mail(env),

@@ -70,6 +70,10 @@ spec:
               env:
                 - name: PGPASSWORD
                   valueFrom: {secretKeyRef: {name: maity-postgres, key: password}}
+                # The schema owner's URL (docs/install/README.md, "Database roles"): with it the dump runs as maity_owner, which
+                # owns everything it reads; an installation without the Secret dumps as the superuser, as before.
+                - name: DUMP_URL
+                  valueFrom: {secretKeyRef: {name: maity-hub-db-migrate, key: database-url, optional: true}}
               command: ["/bin/sh", "-ec"]
               args:
                 - |
@@ -84,10 +88,50 @@ spec:
                   trap 'rm -f "$f.part"' EXIT
                   # A few tries: a dump pod that starts before its network is ready got "Connection refused" while the database was fine.
                   # pg_dump writes to the pipe, so nothing unencrypted reaches the disk; its failure leaves a mark (sh has no pipefail).
+                  # The owner's URL carries its password: pg_dump gets the URL without it and the password in PGPASSWORD, since a
+                  # command's arguments can be read by every user on the node (/proc/<pid>/cmdline) and its environment cannot.
+                  if [ -n "${DUMP_URL:-}" ]; then
+                    case "$DUMP_URL" in
+                      postgres*://*) rest=${DUMP_URL#*://} ;;
+                      *) echo "backup failed: database-url in maity-hub-db-migrate is not a postgresql:// URL" >&2; exit 1 ;;
+                    esac
+                    # Fails closed: a user or password holding `/`, `?`, `#` or `@` (unencoded) or `%` (encoded) cannot be split
+                    # with certainty, so the Job stops rather than hand pg_dump a URL that may still hold the password.
+                    bad="backup failed: the user or password in maity-hub-db-migrate's database-url holds %, /, ?, # or @, which this Job does not take: give maity_owner a password of letters and digits (docs/install/README.md, step 4)"
+                    auth=
+                    case "$rest" in
+                      *@*)
+                        auth=${rest%%@*}; rest=${rest#*@}
+                        case "$auth" in *[/?#%]*) echo "$bad" >&2; exit 1 ;; esac
+                        case "${rest%%[/?#]*}" in *@*) echo "$bad" >&2; exit 1 ;; esac
+                        ;;
+                    esac
+                    # libpq also takes a password or a password file from the query; those would reach the arguments too.
+                    case "$rest" in
+                      *\?*)
+                        set -f; ifs=$IFS; IFS='&'
+                        for kv in ${rest#*\?}; do
+                          key=$(printf '%s' "${kv%%=*}" | tr '[:upper:]' '[:lower:]')
+                          case "$key" in
+                            *%*|password|passfile) echo "backup failed: the query of maity-hub-db-migrate's database-url holds a password, a password file or an encoded option name: put the password in the URL's user part (docs/install/README.md, step 4)" >&2; exit 1 ;;
+                          esac
+                        done
+                        IFS=$ifs; set +f
+                        ;;
+                    esac
+                    case "$auth" in
+                      *:*) PGPASSWORD=${auth#*:}; export PGPASSWORD; auth=${auth%%:*}
+                           # the last check: whatever went wrong above, the password never reaches the arguments
+                           if [ -n "$PGPASSWORD" ]; then case "$rest" in *"$PGPASSWORD"*) echo "$bad" >&2; exit 1 ;; esac; fi ;;
+                    esac
+                    set -- -d "postgresql://${auth:+$auth@}$rest"
+                  else
+                    set -- -h maity-postgres -U maity maity
+                  fi
                   n=0
                   while :; do
                     rm -f "$g/failed"
-                    { pg_dump -h maity-postgres -U maity -Fc maity || touch "$g/failed"; } | LC_ALL=C dd bs=64k 2>"$g/count" \
+                    { pg_dump -Fc "$@" || touch "$g/failed"; } | LC_ALL=C dd bs=64k 2>"$g/count" \
                       | gpg --batch --quiet --homedir "$g" --no-autostart --trust-model always --recipient-file "$k" --compress-algo none --yes --encrypt --output "$f.part"
                     [ -e "$g/failed" ] || break
                     n=$((n + 1))

@@ -78,6 +78,12 @@ database:
   # database's CA for sslmode=verify-full.
   existingSecret: ""
   key: database-url
+  # The migrate Job's own MAITY_DATABASE_URL, from this Secret's `key`: the role that owns
+  # the schema, while the hub's Secret above names a role that only reads and writes rows
+  # (docs/install/README.md, "Database roles"). Empty: the Job uses the hub's Secret.
+  migrate:
+    existingSecret: ""
+    key: database-url
   # MAITY_DB_POOL_SIZE and MAITY_DB_MAX_OVERFLOW: each pod's connections to the database,
   # shared by its workers. Unset: the hub's 16 and 16. poolSize is at least 2,
   # and at least 2 × config.workers (each process's sync and async engine).
@@ -269,6 +275,32 @@ networkPolicy:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: ingress-nginx
+  # A second policy for the hub's outbound connections: DNS, the database, HTTPS (the
+  # forge, Keep the Why reads, an S3 store, images) and SMTP, nothing else. Off by
+  # default, since the right peers depend on the cluster: turn it on with them set.
+  egress:
+    enabled: false
+    # Where DNS is answered (UDP and TCP 53). The default is CoreDNS / kube-dns.
+    dns:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: kube-system
+        podSelector:
+          matchLabels:
+            k8s-app: kube-dns
+    database:
+      # NetworkPolicy peers of the database (a podSelector in the cluster, an ipBlock
+      # outside it). Empty: any address, on `port` only.
+      to: []
+      port: 5432
+    # Outbound TCP 443 to any address.
+    https: true
+    # Outbound SMTP. Empty: mail.port when mail.host is set, else 587 and 465 (the
+    # server may then be set in the admin settings).
+    smtpPorts: []
+    # More egress rules, as NetworkPolicy `egress` entries (a plain-http S3 store in the
+    # cluster, a proxy).
+    extra: []
 
 resources:
   requests:

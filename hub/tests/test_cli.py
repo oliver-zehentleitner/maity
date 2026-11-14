@@ -350,6 +350,7 @@ def test_serve_runs_on_an_engine_built_from_the_settings(
     monkeypatch.setenv("MAITY_DB_STATEMENT_TIMEOUT", "11")
     monkeypatch.setenv("MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", "22")
     monkeypatch.setattr(cli, "require_current_schema", lambda engine: None)
+    monkeypatch.setattr(cli, "require_unprivileged_role", lambda engine, settings: None)
     monkeypatch.setattr(cli, "warn_on_connection_budget", lambda engine, settings: None)
     served: list[Any] = []
     monkeypatch.setattr(

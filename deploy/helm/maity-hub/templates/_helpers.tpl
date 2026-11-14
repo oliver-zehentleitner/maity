@@ -125,6 +125,31 @@ the chart.
     secretKeyRef:
       name: {{ required "database.existingSecret is required: a Secret holding MAITY_DATABASE_URL" .Values.database.existingSecret }}
       key: {{ .Values.database.key }}
+{{- include "maity-hub.sharedEnv" . }}
+{{- end -}}
+
+{{/*
+The migrate Job's database URL: database.migrate's Secret when one is named (the role that owns the schema,
+docs/install/README.md "Database roles"), else the hub's own.
+*/}}
+{{- define "maity-hub.migrateEnv" -}}
+- name: MAITY_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      {{- if .Values.database.migrate.existingSecret }}
+      name: {{ .Values.database.migrate.existingSecret }}
+      key: {{ .Values.database.migrate.key }}
+      {{- else }}
+      name: {{ required "database.existingSecret is required: a Secret holding MAITY_DATABASE_URL" .Values.database.existingSecret }}
+      key: {{ .Values.database.key }}
+      {{- end }}
+{{- include "maity-hub.sharedEnv" . }}
+{{- end -}}
+
+{{/*
+Everything in the environment but the database URL; it begins with a newline, so it follows a list entry.
+*/}}
+{{- define "maity-hub.sharedEnv" -}}
 {{- with .Values.forge.github.existingSecret }}
 - name: MAITY_FORGE_GITHUB_TOKEN
   valueFrom:

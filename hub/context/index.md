@@ -35,6 +35,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 ## C
 
 ## D
+- [deploy-access.md](deploy-access.md) — the shipped PostgreSQL setups use an owner role for the migrations and a row-only role for the hub, the superuser kept for admin work and restores, the k3s dump as the owner when its Secret exists, one SQL file for new and existing installs; `maity-hub serve` refuses a superuser or owner role on PostgreSQL unless `MAITY_DB_ALLOW_PRIVILEGED` is set; PostgreSQL's pod opens no connection, the hub's pods only DNS, the database, HTTPS and SMTP, opt-in in the chart and on in the k3s values
 
 ## E
 - [email-links.md](email-links.md) — a link and its browser-bound code spend one grant; guesses and the daily human budget share the human row lock; the complete mail first-factor path replaces the unavailable-method guard and preserves the second factor; the sign-in link page and its dead-link page stand in the frame of the pages without a session, with no product line; the pages of §18.6 share that frame and policy through one helper

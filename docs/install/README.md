@@ -238,9 +238,14 @@ helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespa
 kubectl create namespace maity
 (umask 077; openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40 > pg-password)
 kubectl -n maity create secret generic maity-postgres --from-file=password=./pg-password
-(umask 077; { printf 'postgresql://maity:'; cat pg-password; printf '@maity-postgres:5432/maity'; } > database-url)
+rm pg-password
+# The two roles' passwords (Database roles, below): the migrate Job's and the hub's URLs
+for r in owner app; do (umask 077; openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40 > "$r-password"); done
+(umask 077; { printf 'postgresql://maity_owner:'; cat owner-password; printf '@maity-postgres:5432/maity'; } > database-url)
+kubectl -n maity create secret generic maity-hub-db-migrate --from-file=database-url=./database-url
+(umask 077; { printf 'postgresql://maity_app:'; cat app-password; printf '@maity-postgres:5432/maity'; } > database-url)
 kubectl -n maity create secret generic maity-hub-db --from-file=database-url=./database-url
-rm pg-password database-url
+rm database-url   # keep owner-password and app-password until step 5
 (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > secret-key)
 kubectl -n maity create secret generic maity-secret-key --from-file=secret-key=./secret-key
 (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > mail-signing-key)
@@ -276,6 +281,16 @@ kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-n
   -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml \
   -f deploy/k3s-single/uploads.yaml
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
+```
+
+Then the hub's two database roles, once PostgreSQL is ready. The passwords
+go to `psql` on standard input:
+
+```sh
+kubectl -n maity wait --for=condition=ready pod/maity-postgres-0 --timeout=180s
+{ printf "%s '%s'\n" '\set owner_password' "$(cat owner-password)" '\set app_password' "$(cat app-password)"
+  cat deploy/postgres-roles.sql; } | kubectl -n maity exec -i maity-postgres-0 -- psql -X -v ON_ERROR_STOP=1 -U maity -d maity
+rm owner-password app-password
 ```
 
 Adding the join host to a running installation: extend the Certificate and
@@ -346,7 +361,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      at the first failure and keeps the decrypted file for a second try; it also stops before anything is restored while
      the hub's Deployment wants a replica, one of its pods is still there, or either could not be read (each `kubectl` is
      an assignment of its own, since `sh -e` does not stop on a command substitution that fails inside a test).
-     `pg_restore` here must be 17 or later:
+     After the restore it runs `deploy/postgres-roles.sql` again ([Database roles](#database-roles)), so run it from the
+     checkout's root. `pg_restore` here must be 17 or later:
      ```sh
      sh -eu -c '
        ctx=$1
@@ -358,6 +374,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
        gpg -d "$2" > maity.dump
        pg_restore -f /dev/null maity.dump
        k exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
+       # the two roles again: a dump from before them restores its objects to the superuser ("Database roles")
+       k exec -i maity-postgres-0 -- psql -X -q -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql
        rm maity.dump
      ' restore <kube context> maity-<UTC time>.dump.gpg
      ```
@@ -494,8 +512,16 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - the hub and its migrate Job (label `app.kubernetes.io/name: maity-hub`)
 - the backup Job (label `app: maity-pg-dump`)
 
-Any other pod in the cluster gets no answer on 5432. k3s enforces
+Any other pod in the cluster gets no answer on 5432, and PostgreSQL itself
+may open no connection at all (its egress policy has no rule). k3s enforces
 NetworkPolicy out of the box.
+
+**So is the hub's outbound traffic.** `hub-values.yaml` turns on the chart's
+egress policy (`networkPolicy.egress`): the hub's pods may reach DNS
+(CoreDNS in `kube-system`), PostgreSQL on 5432, any address on 443 (the
+forge, Keep the Why reads, an S3 store) and the SMTP port of `mail`, nothing
+else. A plain-HTTP service in the cluster (a MinIO beside the hub) needs a
+rule in `networkPolicy.egress.extra`.
 
 ## The first account, project and agent
 
@@ -549,6 +575,98 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
    choose the mode in the dashboard. `GET /api/v1/admin/settings/registration`
    shows `effective_mode` and, under `missing`, what still holds it closed.
 
+## Database roles
+
+On PostgreSQL the hub uses two roles of its own besides the superuser, so
+that the running hub cannot change the schema and the migrations do not run
+with every right on the server:
+
+| Role | Who logs in with it | What it may do |
+|---|---|---|
+| `maity` (the superuser) | you, for admin work and restores | everything |
+| `maity_owner` | `maity-hub migrate` (Compose's `migrate` service, the chart's migrate Job via `database.migrate.existingSecret`), and the k3s backup Job once the Secret `maity-hub-db-migrate` exists | owns the database and every object of the hub in it; no superuser, cannot create databases or roles |
+| `maity_app` | the running hub | reads and writes rows (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, sequences), nothing else |
+
+[`deploy/postgres-roles.sql`](../../deploy/postgres-roles.sql) sets them up
+in the hub's database, run by the superuser with `psql`. It takes the two
+passwords as psql variables on standard input, can run again (it then sets
+the passwords given), and grants `maity_app` the rows of every table the
+migrations create later too. It only grants: a right given to `maity_app`
+by hand (`TRUNCATE`, say) stays after it runs again. Each URL names its role:
+`postgresql://maity_app:<password>@<host>/maity` for the hub,
+`postgresql://maity_owner:<password>@<host>/maity` for the migrations.
+
+- **New installs:** Compose runs the script on the volume's first start
+  (`deploy/postgres-init-roles.sh`); the k3s walkthrough runs it in step 5;
+  with your own PostgreSQL, run it as shown at the top of the file, then
+  give `maity-hub migrate` the owner's URL and `maity-hub serve` the app's
+  (Helm: `database.existingSecret` and `database.migrate.existingSecret`).
+- **A restore, and the roles.** Roles are not in a dump, and a dump from
+  before the two roles brings the hub's objects back owned by the superuser,
+  without `maity_app`'s rights: the hub then cannot read its tables. So run
+  the script again after every restore, without passwords (it keeps them):
+  `psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql`.
+  It hands everything back to `maity_owner` and grants `maity_app` its rows;
+  for a dump that already names `maity_owner` it changes nothing, and with
+  `after_restore` it does nothing where the roles were never set up. The k3s
+  restore block below does this itself. Into a new PostgreSQL: run the script
+  with the passwords first (the roles must exist for a dump that names
+  them), restore as the superuser, then run it again as above.
+  `deploy/scripts/test-postgres-roles.sh` runs these cases on a real
+  PostgreSQL (`hub/scripts/with_postgres.sh deploy/scripts/test-postgres-roles.sh`).
+- **MariaDB / MySQL and SQLite:** not covered; the hub uses the one URL.
+
+**The hub checks its role at the start.** On PostgreSQL, `maity-hub serve`
+refuses to start when its role is a superuser, owns the hub's schema or
+one of its tables, or may create objects in that schema, and names the
+reason. Each counts also through any role it is a member of, and the hub's
+schema is the one with the `alembic_version` table, wherever the
+`search_path` points. The roles script revokes
+that right from `PUBLIC`, which has it by default before PostgreSQL 15.
+`maity-hub migrate` does not check: it runs as the owner. An installation
+that has not moved to the two roles yet sets `MAITY_DB_ALLOW_PRIVILEGED=1`
+for the hub until it has (Helm: `extraEnv`; Compose: the `hub` service's
+`environment`), and gets a warning at each start instead; remove it after
+step 4 below.
+
+**Moving an existing installation to the two roles.** Until now the hub and
+its migrations used the superuser, which the hub now refuses at the start
+unless `MAITY_DB_ALLOW_PRIVILEGED=1` is set (above). The script hands every object of the
+hub to `maity_owner` and grants `maity_app` its rows; the hub keeps running
+until its URL changes. In this order:
+
+1. **Back up** ([Backups](#backups)).
+2. **The roles.** Make the two passwords as for a new install and run the
+   script against the running database:
+   - k3s: as in step 5 of the walkthrough (`kubectl -n maity exec -i
+     maity-postgres-0 -- psql …`).
+   - Compose: add the two passwords to `deploy/.env`, keeping
+     `MAITY_DB_PASSWORD`, then run the script in the `db` service:
+     ```sh
+     (umask 077; for v in MAITY_DB_OWNER_PASSWORD MAITY_DB_APP_PASSWORD; do
+        printf '%s=%s\n' "$v" "$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"; done >> deploy/.env)
+     docker compose -f deploy/docker-compose.yml up -d db
+     ( set -a; . deploy/.env; set +a
+       { printf "%s '%s'\n" '\set owner_password' "$MAITY_DB_OWNER_PASSWORD" '\set app_password' "$MAITY_DB_APP_PASSWORD"
+         cat deploy/postgres-roles.sql; } | docker compose -f deploy/docker-compose.yml exec -T db psql -X -v ON_ERROR_STOP=1 -U maity -d maity )
+     ```
+3. **The URLs.**
+   - k3s: create `maity-hub-db-migrate` with the owner's URL and replace
+     `maity-hub-db` with the app's, as in step 4
+     (`kubectl -n maity create secret generic maity-hub-db --from-file=database-url=./database-url --dry-run=client -o yaml | kubectl apply -f -`),
+     apply `postgres-netpol.yaml` again, then run
+     `deploy/scripts/helm-upgrade.sh -f deploy/k3s-single/hub-values.yaml`
+     with the new `hub-values.yaml` (`database.migrate`, `networkPolicy.egress`).
+     It stops and starts the hub, which then reads the new Secret.
+   - Compose: `docker compose -f deploy/docker-compose.yml up -d`, which
+     recreates `migrate` and `hub` with their new URLs.
+   - Your own setup: point `maity-hub migrate` at the owner's URL and the
+     hub at the app's, then restart the hub.
+4. **Check** that the hub now connects as `maity_app`:
+   `psql -U maity -d maity -Atc "select distinct usename from pg_stat_activity where datname = 'maity'"`
+   (in the postgres pod or the `db` service) lists `maity_app`, and `maity`
+   only for that `psql` itself.
+
 ## Backups
 
 The database is the whole hub. It also holds the verifiers of every agent
@@ -559,7 +677,7 @@ sessions it holds in the running hub, whether you restore it or not.
 | Engine | Backup | Restore |
 |---|---|---|
 | SQLite | The hub runs SQLite in WAL mode, so copying the `.db` file alone, while the hub runs, can lose recent writes. Use the backup API: `sqlite3 maity-hub.db ".backup 'maity-$(date +%F).db'"`, or `python3 -c "import sqlite3; sqlite3.connect('maity-hub.db').backup(sqlite3.connect('backup.db'))"`. Or stop the hub, then copy the `.db` with its `-wal` and `-shm` files. | stop the hub; put the backup in place as `maity-hub.db`; delete stale `-wal` and `-shm` files; start the same hub version |
-| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then `docker compose -f deploy/docker-compose.yml start hub` |
+| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`, the password in `PGPASSWORD` or `~/.pgpass` rather than in the URL, where other users of the machine can read it in the process list. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then the roles again with `docker compose -f deploy/docker-compose.yml exec -T db psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql` ([Database roles](#database-roles)), then `docker compose -f deploy/docker-compose.yml start hub` |
 | MariaDB / MySQL | `mariadb-dump --single-transaction --default-character-set=utf8mb4 <database> > maity.sql` | stop the hub; `mariadb <database> < maity.sql`; start the same hub version |
 
 Back up before every upgrade.

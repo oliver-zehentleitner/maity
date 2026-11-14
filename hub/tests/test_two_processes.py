@@ -82,6 +82,8 @@ def _start(database_url: str, tmp_path: Path, name: str, workers: int = 1) -> Hu
         "MAITY_WEB_DIR": "",
         "MAITY_REPLICAS": "2",
         "MAITY_WORKERS": str(workers),
+        # The suite's role is a superuser; the role check has its own tests (test_db_role.py).
+        "MAITY_DB_ALLOW_PRIVILEGED": "1",
     }
     with log.open("wb") as out:
         process = subprocess.Popen(

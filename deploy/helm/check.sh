@@ -63,6 +63,31 @@ out_np="$(render -f "$minimal" --set networkPolicy.enabled=false)"
 grep -q "kind: NetworkPolicy" <<<"$out_np" && bad "networkPolicy.enabled=false still renders one" \
     || ok "no NetworkPolicy when disabled"
 grep -q "kind: Ingress" <<<"$out" && bad "minimal: an Ingress without ingress.enabled" || ok "minimal: no Ingress"
+grep -q -- "- Egress" <<<"$out" && bad "minimal: an egress policy by default" || ok "minimal: no egress policy by default"
+eg="$(render -f "$minimal" --set networkPolicy.egress.enabled=true --show-only templates/networkpolicy.yaml)"
+expect "egress: DNS, the database on 5432, HTTPS, SMTP 587 and 465 without a mail host" "$eg" \
+    "name: t-maity-hub-egress" "- Egress" "protocol: UDP" "k8s-app: kube-dns" "port: 5432" "port: 443" "port: 587" "port: 465"
+eg="$(render -f "$minimal" --set networkPolicy.egress.enabled=true --set networkPolicy.egress.https=false \
+    --set mail.host=smtp.example.org --set mail.port=2525 --set networkPolicy.egress.database.port=6432 \
+    --set "networkPolicy.egress.database.to[0].podSelector.matchLabels.app=db" --show-only templates/networkpolicy.yaml)"
+expect "egress: the mail host's port, the database's port and peer" "$eg" "port: 2525" "port: 6432" "app: db"
+grep -q "port: 443\|port: 465" <<<"$eg" && bad "egress: HTTPS or 465 although off or a mail host is set" \
+    || ok "egress: no HTTPS when off, only the mail host's port"
+expect "egress: smtpPorts and extra rules as given" \
+    "$(render -f "$minimal" --set networkPolicy.egress.enabled=true --set "networkPolicy.egress.smtpPorts={25}" \
+        --set "networkPolicy.egress.extra[0].ports[0].port=9000" --show-only templates/networkpolicy.yaml)" "port: 25" "port: 9000"
+render -f "$minimal" --set networkPolicy.egress.enabled=true --set networkPolicy.egress.database.port=0 >/dev/null 2>&1 \
+    && bad "egress: database port 0 accepted" || ok "egress: database port 0 refused by the schema"
+mig="$(render -f "$minimal" --show-only templates/migrate-job.yaml)"
+expect "migrate: the hub's database Secret unless one of its own is named" "$mig" "name: maity-hub-database"
+mig="$(render -f "$minimal" --set database.migrate.existingSecret=maity-hub-db-migrate --set database.migrate.key=url \
+    --show-only templates/migrate-job.yaml)"
+expect "migrate: its own database Secret and key" "$mig" "name: maity-hub-db-migrate" "key: url"
+grep -q "name: maity-hub-database" <<<"$mig" && bad "migrate: the hub's Secret too" || ok "migrate: only its own Secret"
+grep -c "name: MAITY_DATABASE_URL" <<<"$mig" | grep -qx 1 && ok "migrate: one MAITY_DATABASE_URL" || bad "migrate: MAITY_DATABASE_URL not exactly once"
+dep="$(render -f "$minimal" --set database.migrate.existingSecret=maity-hub-db-migrate --show-only templates/deployment.yaml)"
+expect "migrate Secret: the hub keeps its own" "$dep" "name: maity-hub-database"
+grep -q "maity-hub-db-migrate" <<<"$dep" && bad "the hub got the migrate Secret" || ok "the hub never gets the migrate Secret"
 grep -q "MAITY_FORGE_GITHUB_TOKEN" <<<"$out" && bad "minimal: a token without a Secret" || ok "minimal: no forge token"
 grep -q "MAITY_FORGE_INSTANCE_NAMESPACES" <<<"$out" && bad "minimal: namespaces without a list" || ok "minimal: no instance namespaces"
 grep -q "MAITY_ATTACHMENT\|name: attachments" <<<"$out" && bad "minimal: attachment settings without a claim" || ok "minimal: no attachment settings"
