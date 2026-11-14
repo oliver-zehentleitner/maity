@@ -561,7 +561,7 @@ window.Maity = window.Maity || {};
         error.textContent = "";
         input.removeAttribute("aria-invalid");
         // One trailing slash comes off, as the hub takes it off (§6.1 step 2); a second stays,
-        // so the hub refuses it for its empty segment.
+        // so the shape check below refuses it, as the hub would for its empty segment.
         const url = input.value.trim().replace(/([^/])\/$/, "$1");
         if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.repo.unchanged"))); return; }
         // The shape alone, a GitLab group path included; the hub checks the rest (§6.1).

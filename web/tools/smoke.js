@@ -8187,6 +8187,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "repository: the header links a GitLab project's merge requests");
   expect((await win.Maity.api.patch("/projects/maintainer/maity", { repository: { url: "https://git.corp.example/team/tool" } })).repository.forge === "other",
     "repository: a host that names no known forge is other, still taken");
+  const repoRefused = async (url) => {
+    const e = await win.Maity.api.patch("/projects/maintainer/maity", { repository: { url } }).catch((x) => x);
+    return e.status === 400 && e.details.fields["repository.url"] === "not_a_repository_url";
+  };
+  expect(await repoRefused("https://gitlab.\u212Aorp.example/a/b") && await repoRefused("https://dev.localhost/a/b"),
+    "repository: a host with a non-ASCII letter (a Kelvin sign that lower-cases to k) or under .localhost is refused, as the hub refuses it");
+  const repoBefore = repoPatches.length;
+  await projectSettings();
+  repoIn().value = "https://github.com/acme/widget//"; await repoSave();
+  expect(repoPatches.length === repoBefore && text(byId("repo-url-error")).startsWith("Must be https://"),
+    "repository: only one trailing slash comes off at the field; with a second it is refused there, nothing sent");
   win.confirm = () => true;
   await repoRealPatch("/projects/maintainer/maity", { repository: { url: "https://github.com/oliver-zehentleitner/maity" } });
   win.Maity.api.patch = repoRealPatch;

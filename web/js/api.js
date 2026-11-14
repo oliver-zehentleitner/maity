@@ -1820,7 +1820,7 @@ window.Maity = window.Maity || {};
     const segments = path.split("/");
     if (segments[segments.length - 1].endsWith(".git")) segments[segments.length - 1] = segments[segments.length - 1].slice(0, -4);
     const labels = host.split(".");
-    if (!/^[\x00-\x7f]*$/.test(host) || host.length > 253 || labels.length < 2
+    if (host.length > 253 || labels.length < 2
       || !labels.every((l) => /^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,61}[a-z0-9])$/.test(l)) || /^[0-9]+$/.test(labels[labels.length - 1])) return null;
     if (segments.some((x) => !/^[A-Za-z0-9._-]{1,255}$/.test(x) || x === "." || x === ".." || /\.(git|atom)$/i.test(x))) return null;
     if (segments.length < 2 || segments.length > (host === "github.com" ? 2 : 22)) return null;
