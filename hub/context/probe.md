@@ -469,3 +469,48 @@ Known and left for later: `unknown` counts as not conflicting, so a conflicting
 pull request whose state GitHub recomputes (`conflicting`, `unknown`,
 `conflicting`) wakes the release holder twice. Carrying the last known conflict
 through `unknown` needs a stored value the observation does not have today.
+
+## A forge answer is read within a size cap and one deadline for the whole body
+
+**Id:** e8417295-6766-4952-ac7b-a103d8d7d4a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qtr9myhtysbs (hardening from the security rounds, tsk-v9kheekgq115), which asks for a byte cap and a total deadline "as `outbound._body` does"; the lead's security check of #1753's first version, which measured the trickle; the numbers are the coder's choice, not stated on the card
+**Revisit when:** a real answer (a check-runs page, a large repository's metadata) comes near 16 MiB, or reads that time out at 10 seconds show up in the probe's log
+
+Every request the hub makes to the forge's API, the probe's (`forge.Forge._send`)
+and the GitHub App's (`github_app._open`), runs inside `forge.bounded`: a timer
+shuts the sockets the request opened (`_Registering`) `READ_SECONDS` (10 s)
+after it starts, so the connection, the headers and the body all end there.
+The connection attempts themselves (`_connect`, in place of
+`socket.create_connection`) each get at most the time left, so several
+addresses together end at the deadline too; only the name's resolution
+(`getaddrinfo`), which comes before any socket, is outside it. A
+socket is held from the moment its TCP connection stands, and the TLS
+handshake runs only after the TLS socket is held too, since wrapping takes the
+descriptor from the TCP socket; holding and the deadline take one lock, so a
+socket that comes after the deadline is shut as it is held. The timer shuts a
+TLS socket through the plain socket's shutdown, which leaves the TLS object a
+read in the other thread is using in place. The
+body is read one recv at a time (`read1`), and a JSON answer past `ANSWER_CAP`
+(16 MiB) is refused as `ForgeUnavailableError`, and so is a body that ends
+before its declared length: a read with a byte count returns nothing there
+rather than raising, and a cut JSON prefix can still parse. A raw file read
+keeps its own cap (`raw_cap + 1`) under the same deadline.
+
+**Reason:** before, `TIMEOUT` bounded each socket operation only, so an
+answer that trickled a byte every few seconds kept the read, and the probe's
+worker, open for as long as it liked, and `response.read()` took the whole
+body into memory whatever its size. 16 MiB leaves room for a page of 100 check
+runs with the forge's longest summaries; 10 s is what §11.1 sets for every
+read the hub makes, "connect to last byte".
+
+**Rejected alternatives:** a deadline checked between chunks, with each
+recv's socket timeout cut to the time left (the PR's first version):
+`HTTPResponse.read(n)` loops over recvs until it has `n` bytes, and each recv
+that gets a byte before its timeout keeps it going, so a measured trickle of one
+byte every 0.5 s held a 2-second deadline for 15 s; it did not cover the headers
+either. Reusing `outbound._body` itself: it belongs to outbound's own
+connection (pinned address, its `Refused` errors, gzip), while the forge reads
+go through urllib's opener with the redirect guard.

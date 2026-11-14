@@ -12,6 +12,7 @@ which follows no redirect (§11.4).
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import threading
 import time
@@ -242,6 +243,7 @@ def _expiry(value: Any) -> float | None:
 
 def _call(path: str, authorization: str, post: bool = False) -> Any | None:
     """A read on the forge API with the given credential; None for a 404."""
+    forge.repository_checked(path)
     request = urllib.request.Request(
         f"https://{forge.API_HOST}{path}",
         data=b"" if post else None,
@@ -256,8 +258,8 @@ def _call(path: str, authorization: str, post: bool = False) -> Any | None:
 
 def _open(request: urllib.request.Request) -> Any | None:
     try:
-        with forge._opener.open(request, timeout=forge.TIMEOUT) as response:
-            return json.loads(response.read())
+        with forge.bounded(), forge._opener.open(request, timeout=forge.TIMEOUT) as response:
+            return forge.json_answer(response)
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None
@@ -268,7 +270,7 @@ def _open(request: urllib.request.Request) -> Any | None:
         raise forge.ForgeUnavailableError(
             f"the forge answered {error.code}", error.code, rate_limited=limited
         ) from None
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, http.client.HTTPException) as error:
         # Never the error text: it may quote the request, and the request carries a secret.
         raise forge.ForgeUnavailableError(
             f"the forge did not answer: {type(error).__name__}"

@@ -8,6 +8,8 @@ import hashlib
 import http.client
 import io
 import json
+import socket
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -781,3 +783,346 @@ def test_a_raw_read_under_a_grant_reads_another_repository_without_the_token(
         "application/vnd.github.raw",
     ]
     assert all(r.get_header("Authorization") is None for r in seen.requests)
+
+
+def test_an_answer_over_the_cap_is_refused_unread(
+    opener: FakeOpener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(forge, "ANSWER_CAP", 64)
+    opener.answers["/repos/a/b/commits/x"] = {"sha": "a" * 40}  # 51 bytes
+    assert READER._get("/repos/a/b/commits/x") == {"sha": "a" * 40}
+    opener.answers["/repos/a/b/commits/x"] = {"sha": "a" * 60}
+    with pytest.raises(forge.ForgeUnavailableError, match="over the size"):
+        READER._get("/repos/a/b/commits/x")
+
+
+class _PlainRegistering(forge._Registering, http.client.HTTPConnection):
+    """The forge's connection over plain HTTP, for a server on this machine."""
+
+
+class _PlainHandler(urllib.request.HTTPHandler):
+    def http_open(self, req: Any) -> Any:
+        return self.do_open(_PlainRegistering, req)
+
+
+HEADS = {
+    "headers": b"HTTP/1.1 200 OK\r\n",  # then the headers, a byte at a time
+    "length": b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n",
+    "chunked": b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
+    "raw": b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n",
+}
+DRIPS = {"headers": b"X", "length": b" ", "chunked": b"1\r\n \r\n", "raw": b"x"}
+
+
+@contextlib.contextmanager
+def _trickling(mode: str) -> Any:
+    """A server on this machine that answers with `HEADS[mode]` and then sends `DRIPS[mode]`
+    every 50 ms, never finishing: each recv of the client gets something long before any
+    per-recv timeout, so only a deadline on the whole request ends it."""
+    listener = socket.create_server(("127.0.0.1", 0))
+    stop = threading.Event()
+
+    def serve() -> None:
+        with contextlib.suppress(OSError):
+            conn, _ = listener.accept()
+            with conn:
+                conn.recv(65536)
+                conn.sendall(HEADS[mode])
+                while not stop.is_set():
+                    conn.sendall(DRIPS[mode])
+                    time.sleep(0.05)
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield listener.getsockname()[1]
+    finally:
+        stop.set()
+        listener.close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("mode", sorted(HEADS))
+def test_a_trickling_forge_is_cut_off_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    # The deadline covers the whole request: the headers, a body with a length, a chunked
+    # body and a file's raw bytes. 50 ms between bytes never trips the per-recv TIMEOUT.
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.5)
+    opener = urllib.request.build_opener(_PlainHandler)
+    with _trickling(mode) as port:
+        started = time.monotonic()
+        with (
+            pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"),
+            forge.bounded(),
+            opener.open(f"http://127.0.0.1:{port}/repos/a/b", timeout=forge.TIMEOUT) as response,
+        ):
+            if mode == "raw":
+                forge.read_bounded(response, 1_000_000)
+            else:
+                forge.json_answer(response)
+        assert time.monotonic() - started < 2.0
+
+
+def test_a_stalled_tls_handshake_is_cut_off_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The forge's own opener over TLS: the server takes the connection and never answers the
+    # handshake. The socket is held from the TCP connection on, so the deadline ends the
+    # handshake, not the per-recv TIMEOUT.
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.5)
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    held: list[socket.socket] = []
+    threading.Thread(target=lambda: held.append(listener.accept()[0]), daemon=True).start()
+    opener = urllib.request.build_opener(forge._SameHostOnly, forge._BoundedHTTPS)  # no stub
+    try:
+        started = time.monotonic()
+        with (
+            pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"),
+            forge.bounded(),
+        ):
+            opener.open(f"https://127.0.0.1:{port}/repos/a/b", timeout=5.0)
+        assert time.monotonic() - started < 2.0
+    finally:
+        listener.close()
+        for conn in held:
+            conn.close()
+
+
+def test_a_socket_held_after_the_deadline_is_shut_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A connection whose handshake ends after the deadline gives its socket to a read whose
+    # timer has already fired: the socket is shut as it is held, and the read after it ends
+    # at once instead of trickling on unbounded.
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.1)
+    ours, theirs = socket.socketpair()
+    try:
+        with (
+            pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"),
+            forge.bounded(),
+        ):
+            time.sleep(0.3)
+            forge._hold(ours)
+            ours.settimeout(5.0)
+            started = time.monotonic()
+            assert ours.recv(1) == b""
+            assert time.monotonic() - started < 1.0
+    finally:
+        ours.close()
+        theirs.close()
+
+
+class _SlowSocket:
+    """A socket whose connect waits out its own timeout and fails, as a black hole does."""
+
+    waits: list[float] = []
+
+    def __init__(self, *_args: Any) -> None:
+        self.wait: float | None = None
+
+    def settimeout(self, wait: float | None) -> None:
+        self.wait = wait
+
+    def connect(self, _peer: Any) -> None:
+        assert self.wait is not None
+        _SlowSocket.waits.append(self.wait)
+        time.sleep(self.wait)
+        raise TimeoutError("timed out")
+
+    def close(self) -> None:
+        pass
+
+
+def test_the_connection_attempts_end_at_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Three addresses that never answer, each attempt with the per-recv TIMEOUT of 10 s:
+    # without the deadline the connect alone would take 30 s. Each attempt gets the time left.
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.3)
+    peers = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (f"192.0.2.{n}", 443)) for n in (1, 2, 3)]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_a, **_k: peers)
+    monkeypatch.setattr(socket, "socket", _SlowSocket)
+    _SlowSocket.waits = []
+    started = time.monotonic()
+    with (
+        pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"),
+        forge.bounded(),
+    ):
+        forge._connect(("api.example", 443), forge.TIMEOUT)
+    assert time.monotonic() - started < 1.0
+    assert _SlowSocket.waits and all(w <= 0.3 for w in _SlowSocket.waits)
+
+
+@pytest.mark.parametrize(
+    "repository", ["acme/..", "acme/name%2Fother", "acme/n?x=1", "../evil", "acme/w.git"]
+)
+def test_a_stored_repository_path_is_checked_before_the_forge_is_asked(
+    opener: FakeOpener, repository: str
+) -> None:
+    # §6.1: a URL stored before the write checked it names no other path at the forge; the
+    # read is refused and nothing is sent.
+    with pytest.raises(forge.ForgeUnavailableError, match="names no valid repository"):
+        READER._send(f"/repos/{repository}/commits/x")
+    assert opener.requests == []
+
+
+@pytest.mark.parametrize("read", ["social_preview", "items"])
+def test_a_graphql_read_on_a_grant_checks_the_repository_too(opener: FakeOpener, read: str) -> None:
+    # A GraphQL read names its repository in the variables, not the path: a grant bound to
+    # a stored invalid `owner/name` asks the forge nothing either (§6.1).
+    granted = forge.Forge(TOKEN, granted="owner_token", repository="acme/..")
+    with pytest.raises(forge.ForgeUnavailableError, match="names no valid repository"):
+        if read == "social_preview":
+            granted.social_preview("acme/..")
+        else:
+            granted.items("acme/..", [1])
+    assert opener.requests == []
+
+
+def test_a_graphql_read_that_names_no_repository_is_refused(opener: FakeOpener) -> None:
+    # Every GraphQL read of the hub names its repository in `owner` and `name`; one without
+    # them is refused, never sent unchecked (§6.1).
+    with pytest.raises(forge.InvalidRepositoryError, match="names no valid repository"):
+        READER._send("/graphql", {"query": "{ viewer { login } }", "variables": {}})
+    assert opener.requests == []
+
+
+@pytest.mark.parametrize(
+    ("url", "repository"),
+    [("https://github.com/acme/", "acme/"), ("https://github.com/", "/"), ("github.com", "/")],
+)
+def test_a_stored_url_short_of_two_segments_is_no_repository(
+    opener: FakeOpener, url: str, repository: str
+) -> None:
+    # Fewer than two path segments give no `owner/name`, never a ValueError: the read is
+    # refused as for any invalid repository (§6.1), with the error the probe keeps to that
+    # project (`test_probe`).
+    assert forge.repository_of(url) == repository
+    with pytest.raises(forge.InvalidRepositoryError, match="names no valid repository"):
+        READER._send(f"/repos/{forge.repository_of(url)}/commits/x")
+    assert opener.requests == []
+
+
+def test_a_valid_repository_path_is_asked(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b.c_d-e/commits/x"] = {"sha": "a" * 40}
+    assert READER._send("/repos/a/b.c_d-e/commits/x") == {"sha": "a" * 40}
+
+
+@contextlib.contextmanager
+def _short(head: bytes, body: bytes) -> Any:
+    """A server that sends `head`, then `body`, and closes: less than it declared."""
+    listener = socket.create_server(("127.0.0.1", 0))
+
+    def serve() -> None:
+        with contextlib.suppress(OSError):
+            conn, _ = listener.accept()
+            with conn:
+                conn.recv(65536)
+                conn.sendall(head + body)
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield listener.getsockname()[1]
+    finally:
+        listener.close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.parametrize(
+    ("head", "body"),
+    [
+        (b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n", b'{"a": 1}'),
+        (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", b'8\r\n{"a": 1}\r\n'),
+    ],
+    ids=["length", "chunked"],
+)
+def test_an_answer_cut_short_is_no_answer(head: bytes, body: bytes) -> None:
+    # A body that ends before its declared length, or a chunked one without its last chunk,
+    # parses as JSON here: it must still not count as the forge's answer.
+    opener = urllib.request.build_opener(_PlainHandler)
+    with (
+        _short(head, body) as port,
+        pytest.raises(forge.ForgeUnavailableError, match="did not answer"),
+        forge.bounded(),
+        opener.open(f"http://127.0.0.1:{port}/repos/a/b", timeout=forge.TIMEOUT) as response,
+    ):
+        try:
+            forge.json_answer(response)
+        except http.client.HTTPException:  # as `Forge._send` and `github_app._open` map it
+            raise forge.ForgeUnavailableError("the forge did not answer") from None
+
+
+class _ToLocal:
+    """The forge's opener, sent to a server on this machine over plain HTTP: the request
+    keeps its path and headers, so `Forge._send` and `github_app._open` run as they are."""
+
+    def __init__(self, port: int) -> None:
+        self.port = port
+        self.opener = urllib.request.build_opener(forge._SameHostOnly, _PlainHandler)
+
+    def open(self, request: urllib.request.Request, timeout: float) -> Any:
+        path = request.full_url.removeprefix(f"https://{forge.API_HOST}")
+        local = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}", headers=dict(request.header_items())
+        )
+        return self.opener.open(local, timeout=timeout)
+
+
+@pytest.mark.parametrize("reader", ["send_json", "send_raw", "github_app"])
+@pytest.mark.parametrize("mode", ["headers", "length", "chunked"])
+def test_every_forge_reader_is_cut_off_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch, reader: str, mode: str
+) -> None:
+    # Each way the hub reads the forge, the probe's JSON and raw reads and the GitHub App's,
+    # ends at READ_SECONDS against a forge that sends a byte every 50 ms.
+    from maity_hub import github_app
+
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.5)
+    monkeypatch.setattr(forge, "_public", {(_digest(TOKEN), "a/b"): (time.monotonic(), None)})
+    with _trickling(mode) as port:
+        monkeypatch.setattr(forge, "_opener", _ToLocal(port))
+        started = time.monotonic()
+        with pytest.raises(forge.ForgeUnavailableError, match="did not answer"):
+            if reader == "send_json":
+                READER._send("/repos/a/b/commits/x")
+            elif reader == "send_raw":
+                READER._send("/repos/a/b/contents/x", raw_cap=1_000_000)
+            else:
+                github_app._call("/app/installations", "Bearer x")
+        assert time.monotonic() - started < 2.0
+
+
+def test_a_declared_length_over_the_cap_is_refused_before_the_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(forge, "ANSWER_CAP", 64)
+    opener = urllib.request.build_opener(_PlainHandler)
+    head = b"HTTP/1.1 200 OK\r\nContent-Length: 65\r\n\r\n"
+    with (
+        _short(head, b"") as port,
+        pytest.raises(forge.ForgeUnavailableError, match="over the size"),
+        forge.bounded(),
+        opener.open(f"http://127.0.0.1:{port}/repos/a/b", timeout=forge.TIMEOUT) as response,
+    ):
+        forge.json_answer(response)
+
+
+def test_the_forge_opener_registers_its_connections() -> None:
+    # `bounded` can only shut what `_opener` tells it of: its HTTPS connections register.
+    every: list[Any] = getattr(forge._opener, "handlers", [])
+    handlers = [h for h in every if isinstance(h, urllib.request.HTTPSHandler)]
+    assert [type(h) for h in handlers] == [forge._BoundedHTTPS]
+
+
+def test_the_app_reads_are_bounded_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maity_hub import github_app
+
+    monkeypatch.setattr(forge, "ANSWER_CAP", 64)
+    monkeypatch.setattr(
+        forge,
+        "_opener",
+        type("O", (), {"open": lambda _s, r, timeout: io.BytesIO(b'"' + b"x" * 100 + b'"')})(),
+    )
+    with pytest.raises(forge.ForgeUnavailableError, match="over the size"):
+        github_app._call("/app", "Bearer x")

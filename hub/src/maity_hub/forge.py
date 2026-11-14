@@ -18,11 +18,15 @@ import base64
 import hashlib
 import http.client
 import json
+import re
+import socket
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -32,6 +36,13 @@ from maity_hub import shared_budget
 HOSTS = {"github.com": "github"}  # host -> forge kind
 API_HOST = "api.github.com"
 TIMEOUT = 10.0
+# The bounds on a request to the forge, as `outbound` keeps them for the hooks: from the
+# connection to the body's last byte it ends at READ_SECONDS however slowly the bytes come
+# (`bounded`), and a JSON answer past ANSWER_CAP is refused unread. One page of 100 check
+# runs, each with the forge's longest summary, stays under it.
+READ_SECONDS = 10.0  # §11.1: "10 seconds per read, connect to last byte"
+ANSWER_CAP = 16 * 1024 * 1024
+CHUNK = 64 * 1024
 
 
 class ForgeUnavailableError(Exception):
@@ -62,6 +73,11 @@ class NotCoveredError(ForgeUnavailableError):
         self.reason = reason
 
 
+class InvalidRepositoryError(ForgeUnavailableError):
+    """The project's stored repository URL names no valid repository (§6.1): a fault of
+    that one project, not of the forge, so a round of the probe goes on with the others."""
+
+
 def kind_of(url: str | None) -> str | None:
     if not url:
         return None
@@ -69,11 +85,217 @@ def kind_of(url: str | None) -> str | None:
     return HOSTS.get(host)
 
 
+# One segment of a repository's `owner/name` (§6.1): letters, digits, `.`, `_` and `-`.
+SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,255}")
+
+
+def valid_repository(repository: str) -> bool:
+    """Whether `repository` is an `owner/name` of two segments of the contract's shape, never
+    `.` or `..`, and not ending in `.git` or `.atom` (§6.1). Checked when a URL is stored
+    and again before a stored one names the repository in a request (`repository_checked`)."""
+    segments = repository.split("/")
+    return len(segments) == 2 and all(
+        SEGMENT.fullmatch(s) and s not in (".", "..") and not s.lower().endswith((".git", ".atom"))
+        for s in segments
+    )
+
+
+def repository_checked(path: str, query: dict[str, Any] | None = None) -> None:
+    """Refuses a request whose `/repos/{owner}/{name}`, or a GraphQL read's `owner` and
+    `name` variables, name no valid repository (§6.1): a URL stored before the check names
+    nothing else, and the forge is not asked."""
+    if query is not None:
+        # Every GraphQL read of the hub names its repository in these two variables; one
+        # that names it another way is refused too, so it never skips the check.
+        variables = query.get("variables") or {}
+        owner, name = variables.get("owner"), variables.get("name")
+        named = f"{owner}/{name}" if isinstance(owner, str) and isinstance(name, str) else ""
+    elif path.startswith("/repos/"):
+        owner, _, rest = path.removeprefix("/repos/").partition("/")
+        named = f"{owner}/{rest.split('/', 1)[0]}"
+    else:
+        return
+    if not valid_repository(named):
+        raise InvalidRepositoryError("the project's repository URL names no valid repository")
+
+
 def repository_of(url: str) -> str:
-    """`owner/name` of a repository URL on a configured forge."""
-    path = url.split("://", 1)[-1].split("/", 1)[1]
-    owner, name = path.strip("/").split("/")[:2]
+    """`owner/name` of a repository URL on a configured forge. A stored URL with fewer
+    segments gives them empty (`acme/`): no valid repository, which a request refuses
+    (`repository_checked`) instead of the caller failing here."""
+    path = url.split("://", 1)[-1].partition("/")[2]
+    owner, _, rest = path.strip("/").partition("/")
+    name = rest.split("/", 1)[0]
     return f"{owner}/{name.removesuffix('.git')}"
+
+
+class _Deadline:
+    """The sockets one `bounded` read has opened, and whether its time is up. Holding a
+    socket and the deadline take one lock, so a socket comes either before the deadline,
+    which then shuts it, or after it, and is shut as it is held."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.socks: list[Any] = []
+        self.expired = False
+        self.ends = time.monotonic() + READ_SECONDS
+
+    def left(self) -> float:
+        return self.ends - time.monotonic()
+
+    def hold(self, sock: Any) -> None:
+        with self.lock:
+            self.socks.append(sock)
+            if self.expired:
+                _shut(sock)
+
+    def expire(self) -> None:
+        with self.lock:
+            self.expired = True
+            socks = list(self.socks)
+        for sock in socks:
+            _shut(sock)
+
+
+def _shut(sock: Any) -> None:
+    """Shuts the connection under `sock` for both directions. The plain socket's shutdown
+    also for a TLS socket: its own drops the TLS object a read in the other thread is
+    using, which then fails with an AttributeError instead of an OSError."""
+    with suppress(OSError):
+        socket.socket.shutdown(sock, socket.SHUT_RDWR)
+
+
+_held = threading.local()  # the `_Deadline` of the current thread's `bounded` read
+
+
+def _connect(address: tuple[str, int], timeout: Any = None, source: Any = None) -> Any:
+    """`socket.create_connection` within the running `bounded` read's time: each address
+    gets at most the time left, so the attempts together end at the deadline. The name's
+    resolution (`getaddrinfo`) comes before any socket and is not bounded by it."""
+    deadline = getattr(_held, "deadline", None)
+    host, port = address
+    error: OSError | None = None
+    for family, kind, proto, _, peer in socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM):
+        wait = timeout if isinstance(timeout, (int, float)) else None
+        if deadline is not None:
+            left = deadline.left()
+            if left <= 0:
+                raise TimeoutError("timed out")
+            wait = left if wait is None else min(wait, left)
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(wait)
+            if source:
+                sock.bind(source)
+            sock.connect(peer)
+        except OSError as failed:
+            sock.close()
+            error = failed
+            continue
+        sock.settimeout(timeout if isinstance(timeout, (int, float)) else None)
+        return _hold(sock)
+    raise error or OSError(f"no address for {host}")
+
+
+def _hold(sock: Any) -> Any:
+    """Gives `sock` to the running `bounded` read, so its deadline can shut it."""
+    deadline = getattr(_held, "deadline", None)
+    if deadline is not None:
+        deadline.hold(sock)
+    return sock
+
+
+class _Registering:
+    """A connection that tells the running `bounded` read its socket as soon as the TCP
+    connection stands, so the deadline can end a read blocked anywhere: in the TLS
+    handshake, the headers or the body."""
+
+    sock: Any
+    _create_connection: Any
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._create_connection = _connect
+
+
+class _RegisteringHTTPS(_Registering, http.client.HTTPSConnection):
+    """`HTTPSConnection.connect` with the handshake after the TLS socket is held: wrapping
+    takes the descriptor from the TCP socket, which a shutdown then no longer reaches.
+    """
+
+    _context: Any
+    _tunnel_host: Any
+
+    def connect(self) -> None:
+        http.client.HTTPConnection.connect(self)
+        self.sock = self._context.wrap_socket(
+            self.sock,
+            server_hostname=self._tunnel_host or self.host,
+            do_handshake_on_connect=False,
+        )
+        _hold(self.sock)
+        self.sock.do_handshake()
+
+
+class _BoundedHTTPS(urllib.request.HTTPSHandler):
+    def https_open(self, req: Any) -> Any:
+        return self.do_open(_RegisteringHTTPS, req, context=self._context)  # type: ignore[attr-defined]
+
+
+@contextmanager
+def bounded() -> Iterator[None]:
+    """One request to the forge, from the connection to the last byte of the body, within
+    READ_SECONDS. A timer shuts the sockets the request opened (`_Registering`) at the
+    deadline, which ends a recv however slowly the bytes come: a per-recv timeout cannot,
+    since a forge sending a byte before each one runs out never trips it. What the shut
+    socket raises, or a body it cut short, is `ForgeUnavailableError` (timeout)."""
+    deadline = _Deadline()
+    timer = threading.Timer(READ_SECONDS, deadline.expire)
+    timer.daemon = True
+    _held.deadline = deadline
+    timer.start()
+    try:
+        yield
+    except (OSError, ValueError, http.client.HTTPException, ForgeUnavailableError):
+        if (
+            deadline.expired or deadline.left() <= 0
+        ):  # whatever the read made of it, it was the deadline
+            raise ForgeUnavailableError("the forge did not answer: timeout") from None
+        raise
+    finally:
+        timer.cancel()
+        _held.deadline = None
+    if deadline.expired:  # the body ended where the timer cut it
+        raise ForgeUnavailableError("the forge did not answer: timeout")
+
+
+def read_bounded(response: Any, limit: int) -> bytes:
+    """At most `limit` bytes of the answer's body, one recv at a time (`read1`), so a body
+    past `limit` is never taken in whole; the time is `bounded`'s."""
+    read = getattr(response, "read1", None) or response.read
+    out = bytearray()
+    while len(out) < limit:
+        chunk = read(min(CHUNK, limit - len(out)))
+        if not chunk:
+            # A read with a byte count returns nothing at the end of the stream, also
+            # before the declared length: that is no answer, not a short one.
+            if getattr(response, "length", None):
+                raise ForgeUnavailableError("the forge did not answer: IncompleteRead")
+            break
+        out += chunk
+    return bytes(out)
+
+
+def json_answer(response: Any) -> Any:
+    """The answer's body as JSON, refused when it is over ANSWER_CAP: at once when its
+    declared length says so, else at the first byte past it (`read_bounded`)."""
+    declared = getattr(response, "length", None)
+    if isinstance(declared, int) and declared > ANSWER_CAP:
+        raise ForgeUnavailableError("the forge's answer is over the size the hub reads")
+    body = read_bounded(response, ANSWER_CAP + 1)
+    if len(body) > ANSWER_CAP:
+        raise ForgeUnavailableError("the forge's answer is over the size the hub reads")
+    return json.loads(body)
 
 
 class _SameHostOnly(urllib.request.HTTPRedirectHandler):
@@ -95,7 +317,7 @@ class _SameHostOnly(urllib.request.HTTPRedirectHandler):
         raise NotCoveredError("repository_moved")
 
 
-_opener = urllib.request.build_opener(_SameHostOnly)
+_opener = urllib.request.build_opener(_SameHostOnly, _BoundedHTTPS)
 
 
 def _quote(ref: str) -> str:
@@ -540,6 +762,7 @@ class Forge:
                 rate_limited=True,
                 retry_at=held,
             )
+        repository_checked(path, query)
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         accept = "application/vnd.github+json" if raw_cap is None else "application/vnd.github.raw"
@@ -552,12 +775,12 @@ class Forge:
         request.add_header("User-Agent", "maity-hub")
         noted = False  # whether the read's answer already took it out of flight
         try:
-            with _opener.open(request, timeout=TIMEOUT) as response:
+            with bounded(), _opener.open(request, timeout=TIMEOUT) as response:
                 _note(source, getattr(response, "headers", None), spent=False)
                 noted = True
                 if raw_cap is not None:
-                    return response.read(raw_cap + 1)
-                return json.loads(response.read())
+                    return read_bounded(response, raw_cap + 1)
+                return json_answer(response)
         except urllib.error.HTTPError as error:
             headers: Any = error.headers or {}
             if error.code == 404:

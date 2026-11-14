@@ -998,7 +998,9 @@ def _covered(
     names the project, as the reason alone can't be told apart when several have it."""
     try:
         work(*args)
-    except forge.NotCoveredError as error:
+    except (forge.NotCoveredError, forge.InvalidRepositoryError) as error:
+        # A URL that names no repository is that project's own fault, as a missing grant
+        # is: left out for the round, never the end of the round for every later project.
         log.warning("probe: project %s: %s", project_id, error)
         not_covered.add(project_id)
         return None
