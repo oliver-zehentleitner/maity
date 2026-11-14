@@ -108,6 +108,7 @@ CLAUDE_MANAGED = {
     "darwin": Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
 }
 HOOK_SWITCHES = ("disableAllHooks", "allowManagedHooksOnly")
+SETTINGS_MAX = 1024 * 1024  # a Claude Code settings file read for its hook switches
 _DROP_INS = 'for f in "$1"/*.json; do if [ -f "$f" ]; then printf "%s\\n" "$f"; fi; done'
 
 
@@ -132,26 +133,29 @@ def claude_hooks_off(as_user: AsUser = RUNNER, platform: str | None = None) -> s
     else:
         platform = "linux"
     managed = next((p for key, p in CLAUDE_MANAGED.items() if platform.startswith(key)), None)
-    files: list[tuple[Path, tuple[str, ...]]] = []
+    # Each file with its switches and the directory it is read from (limitread): the managed
+    # settings' own directory, the agents' user's home.
+    files: list[tuple[Path, tuple[str, ...], Path]] = []
     try:
         if managed is not None:
             if _present(as_user, managed):
-                files.append((managed, HOOK_SWITCHES))
+                files.append((managed, HOOK_SWITCHES, managed.parent))
             drop_ins = managed.parent / "managed-settings.d"
             if _present(as_user, drop_ins, "-d"):
                 done = as_user.run(["sh", "-c", _DROP_INS, "sh", str(drop_ins)])
                 if done.returncode != 0:
                     return f"{drop_ins} cannot be listed"
                 listed = sorted(done.stdout.splitlines())
-                files += [(Path(line), HOOK_SWITCHES) for line in listed]
-        user = as_user.home() / ".claude" / "settings.json"
+                files += [(Path(line), HOOK_SWITCHES, managed.parent) for line in listed]
+        home = as_user.home()
+        user = home / ".claude" / "settings.json"
         if _present(as_user, user):
-            files.append((user, ("allowManagedHooksOnly",)))
+            files.append((user, ("allowManagedHooksOnly",), home))
     except (OSError, KeyError) as exc:
         return f"the Claude Code settings cannot be checked ({ascii_text(str(exc), 120)})"
-    for path, switches in files:
+    for path, switches, under in files:
         try:
-            data = json.loads(as_user.read(path))
+            data = json.loads(as_user.read_whole(path, SETTINGS_MAX, under=under))
         except (OSError, KeyError, ValueError):
             return f"{path} cannot be read as JSON"
         if not isinstance(data, dict):

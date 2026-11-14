@@ -6,10 +6,11 @@ REREAD_INTERVAL regardless, it re-reads `/runner/placements`. An event is a wake
 a lost or duplicated one costs nothing. What happens to the placements is `reconcile`, the
 local backend's business (R3); this module only keeps the desired state current.
 
-A connection error, a 5xx, a 429 or a clock skew backs off with full jitter and starts again
-with `hello`. A revoked credential, a configuration error, a hub that refuses the runner
-and a second `serve` taking over the stream end the service with EXIT_CONFIG, which the
-systemd unit does not restart: retrying cannot fix any of them. Agents keep running in
+A connection error, a 5xx, a 429, a clock skew or local state that cannot be written (a full
+disk) backs off with full jitter and starts again with `hello`. A revoked credential, a
+configuration error, a hub that refuses the runner, a state directory that cannot be written
+at the start and a second `serve` taking over the stream end the service with EXIT_CONFIG,
+which the systemd unit does not restart: retrying cannot fix any of them. Agents keep running in
 every case; ending them is a placement's or the operator's decision, never the connection's.
 """
 
@@ -178,7 +179,14 @@ class Service:
             except Fatal as exc:
                 return self._fatal(str(exc))
             except OSError as exc:  # local files, never the network (that is HubError)
-                return self._fatal(f"local state cannot be written: {exc}")
+                # The state directory worked at the start (hold_lock): a full disk or a
+                # passing error, which a later try can get past. Ending with EXIT_CONFIG would
+                # leave the agents unsupervised until someone starts the service by hand.
+                attempt += 1
+                delay = backoff(attempt, None, self.rand)
+                self.connected = False
+                log(f"local state cannot be written: {exc}; trying again in {delay:.0f} s")
+                self.sleep(delay)
             except hub.HubError as exc:
                 until = hub.maintenance_until(exc)
                 if until is not None:
@@ -186,10 +194,7 @@ class Service:
                     # only have the unit restart it over and over for the whole window.
                     delay = hub.maintenance_sleep(exc, self.rand)
                     self.connected = False
-                    try:
-                        self.write_status(error=f"maintenance until {until} UTC", retry_in=delay)
-                    except OSError as local:
-                        return self._fatal(f"local state cannot be written: {local}")
+                    self._status_or_log(error=f"maintenance until {until} UTC", retry_in=delay)
                     log(f"maintenance until {until} UTC; trying again in {delay:.0f} s")
                     self.sleep(delay)
                     continue
@@ -200,10 +205,7 @@ class Service:
                 delay = backoff(attempt, exc, self.rand)
                 self.connected = False
                 text = onboarding.inline(str(exc))  # the hub's words: one line, no escapes
-                try:
-                    self.write_status(error=text, retry_in=delay)
-                except OSError as local:
-                    return self._fatal(f"local state cannot be written: {local}")
+                self._status_or_log(error=text, retry_in=delay)
                 log(f"{text}; trying again in {delay:.0f} s")
                 self.sleep(delay)
 
@@ -217,6 +219,14 @@ class Service:
         return EXIT_CONFIG
 
     # --- local state -----------------------------------------------------------------------
+
+    def _status_or_log(self, error: str, retry_in: float) -> None:
+        """`write_status` while backing off; a status that cannot be written is logged, and
+        the backoff goes on (a full disk ends no service)."""
+        try:
+            self.write_status(error=error, retry_in=retry_in)
+        except OSError as local:
+            log(f"local state cannot be written: {local}")
 
     def write_status(self, error: str | None = None, retry_in: float | None = None) -> None:
         """`<state_dir>/status.json`, read by `maity runner status` without the hub."""

@@ -167,6 +167,8 @@ CLAUDE_PLACEHOLDERS = (
 )  # fmt: skip
 EXCLUDE_BEGIN = "# maity-runner: the sandbox's placeholders (begin)"
 EXCLUDE_END = "# maity-runner: the sandbox's placeholders (end)"
+# A clone's `.git/info/exclude` larger than this is left as it is, without the block.
+EXCLUDE_MAX = 256 * 1024
 
 # Exit codes that are a harness's provider limit, per harness: only what a real run verified.
 LIMIT_EXITS: dict[str, tuple[int, ...]] = {}
@@ -414,8 +416,12 @@ def hide_placeholders(ctx: Context) -> None:
     lines: list[str] = []
     if ctx.as_user.exists(path, "-f"):
         try:
-            lines = ctx.as_user.read(path).decode("utf-8").splitlines()
-        except UnicodeDecodeError:  # rewriting it could change bytes that are not ours
+            lines = (
+                ctx.as_user.read_whole(path, EXCLUDE_MAX, under=ctx.clone)
+                .decode("utf-8")
+                .splitlines()
+            )
+        except (OSError, UnicodeDecodeError):  # rewriting it could change bytes not ours
             return
     kept, had_block = _without_block(lines)
     hidden = [name for name in CLAUDE_PLACEHOLDERS if _placeholder_only(ctx, ctx.clone / name)]

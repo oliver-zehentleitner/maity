@@ -438,17 +438,42 @@ def test_retry_after_is_capped(tmp_path: Path) -> None:
     assert clock.slept == [serve.RETRY_AFTER_CAP]
 
 
-def test_a_state_directory_that_cannot_be_written_ends_with_78(
+def test_a_status_that_cannot_be_written_backs_off_and_the_service_runs_on(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    script = Script(HELLO)
-    svc, _, _ = service(tmp_path, script)
+    """A full disk while serving: the status write fails, the service backs off and says
+    `hello` again instead of ending with EXIT_CONFIG, which the unit would not restart."""
+    script = Script(HELLO, HELLO, events())
+    svc, seen, clock = service(tmp_path, script)
     (tmp_path / "st").mkdir(mode=0o500)
+
+    def freed(seconds: float) -> None:  # the disk has room again after the first backoff
+        clock.sleep(seconds)
+        (tmp_path / "st").chmod(0o700)
+
+    svc.sleep = freed
     try:
-        assert run(svc) == serve.EXIT_CONFIG
+        assert run(svc) is None  # ended by the script running out, never with EXIT_CONFIG
     finally:
         (tmp_path / "st").chmod(0o700)
-    assert "cannot be written" in capsys.readouterr().err
+    assert clock.slept == [0.5 * 2.0]  # backoff(1): full jitter up to 2 s
+    assert [c for c, _ in script.calls].count("POST /runner/hello") == 2
+    assert (tmp_path / "st" / serve.STATUS_FILE).is_file()
+    err_text = capsys.readouterr().err
+    assert "local state cannot be written" in err_text and "trying again in 1 s" in err_text
+
+
+def test_a_state_directory_that_cannot_be_written_at_the_start_ends_with_78(
+    tmp_path: Path, home: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A unit pointed at a directory it cannot write ends at once, not every ten seconds."""
+    path = paired(tmp_path, fake)
+    (tmp_path / "st").chmod(0o500)
+    try:
+        assert cli.main(["runner", "serve", "--config", str(path)]) == serve.EXIT_CONFIG
+    finally:
+        (tmp_path / "st").chmod(0o700)
+    assert "cannot start" in capsys.readouterr().err
 
 
 def test_an_unreadable_runner_file_ends_with_78(
@@ -499,15 +524,18 @@ def test_the_unit_ships_with_the_package(capsys: pytest.CaptureFixture[str]) -> 
     assert "PrivateTmp" not in unit.replace("No PrivateTmp", "")
 
 
-def test_local_trouble_while_backing_off_ends_with_78(tmp_path: Path) -> None:
+def test_local_trouble_while_backing_off_is_logged_and_the_backoff_goes_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     script = Script(("POST /runner/hello", err(503)))
     svc, _, clock = service(tmp_path, script)
     (tmp_path / "st").mkdir(mode=0o500)
     try:
-        assert run(svc) == serve.EXIT_CONFIG
+        assert run(svc) is None  # the script ran out: never EXIT_CONFIG
     finally:
         (tmp_path / "st").chmod(0o700)
-    assert clock.slept == []
+    assert clock.slept == [1.0]
+    assert "local state cannot be written" in capsys.readouterr().err
 
 
 def test_hub_words_never_forge_a_log_line(

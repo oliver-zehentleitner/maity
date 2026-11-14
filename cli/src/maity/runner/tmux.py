@@ -10,7 +10,7 @@ reads sets `update-environment` empty (a client attaching later passes nothing o
 
 Every session carries `@maity_placement` and `@maity_generation`, so a runner restart
 rebuilds its picture from tmux, not from memory. Commands are argv lists built from validated
-tokens, never shell strings, except the `pipe-pane` command, whose one path is quoted.
+tokens, never shell strings, except the `pipe-pane` command (logcap), whose words are quoted.
 """
 
 from __future__ import annotations
@@ -182,6 +182,7 @@ class Tmux:
     logs: Path
     run: Runner = _run
     as_user: AsUser = AsUser()  # the agents' user: the server is theirs (§7.6)
+    log_keep: int = 10 * 1024 * 1024  # limits.log_keep_bytes: the most a pane log holds
 
     def _tmux(self, *args: str) -> list[str]:
         return ["tmux", "-S", str(self.socket), *args]
@@ -268,9 +269,9 @@ class Tmux:
         try:
             self._check(self._tmux("set-option", "-t", name, "@maity_placement", placement))
             self._check(self._tmux("set-option", "-t", name, "@maity_generation", str(generation)))
-            self._check(
-                self._tmux("pipe-pane", "-o", "-t", name, f"cat >> {shlex.quote(str(log))}")
-            )
+            # The pane's output goes through logcap, which holds the log to `log_keep`.
+            keep = [*self.as_user.runner_module("logcap"), str(log), str(self.log_keep)]
+            self._check(self._tmux("pipe-pane", "-o", "-t", name, shlex.join(keep)))
         except TmuxError:
             self.kill(name)  # an unlabelled session would run on, invisible to the runner
             raise

@@ -22,6 +22,7 @@ from . import (
     config,
     install,
     limitread,
+    logcap,
     loop,
     operate,
     plaincall,
@@ -37,6 +38,8 @@ STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
 REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
+# The agents' user's Claude Code settings, read by `check`: larger is not looked at.
+SETTINGS_MAX = 1024 * 1024
 
 
 class Refused(Exception):
@@ -195,7 +198,7 @@ DEFAULTS = (
     ("limits.stop_grace_max", "120 (seconds; caps a placement's stop_grace_seconds)"),
     ("limits.restart", "at most 5 exits in 1800 s; backoff from 10 s, factor 2, cap 300 s; "
                        "an exit within 60 s counts as a crash"),  # fmt: skip
-    ("limits.log_keep_bytes", "10 MiB per placement"),
+    ("limits.log_keep_bytes", "10 MiB per placement; a full log drops its older half"),
     ("limits.require_local_approval", "false"),
     ("backend.kind", "local"),
     ("backend.local.workspaces", config.DEFAULT_WORKSPACES),
@@ -431,7 +434,9 @@ def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
     """The agents' user's own Claude Code settings (here, through sudo, or on a host):
     agents start with --setting-sources user, so they inherit its rules and hooks."""
     try:
-        settings = _json_bytes(as_user.read(as_user.home() / ".claude" / "settings.json"))
+        home = as_user.home()
+        path = home / ".claude" / "settings.json"
+        settings = _json_bytes(as_user.read_whole(path, SETTINGS_MAX, under=home))
     except (OSError, KeyError):
         settings = None
     if settings is None:
@@ -737,10 +742,23 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r = rsub.add_parser("loop")
     r.add_argument("--spec", required=True)
     r.set_defaults(handler=lambda a: loop.main(["--spec", a.spec]))
-    # Internal too: the loop's limit file, read on the agents' side (limitread).
+    # Internal too: a file on the agents' side (the loop's limit file, a clone's, a log), read
+    # there without following a link or waiting on a FIFO (limitread).
     r = rsub.add_parser("limitread")
+    r.add_argument("--under", required=True)
+    r.add_argument("--bytes", type=int)
+    r.add_argument("--offset", type=int)
     r.add_argument("path")
-    r.set_defaults(handler=lambda a: limitread.main([a.path]))
+    r.set_defaults(handler=lambda a: limitread.main(
+        ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
+         *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
+    ))  # fmt: skip
+    # Internal too: what a pane's output goes through on an ssh host, holding its log to
+    # limits.log_keep_bytes (logcap).
+    r = rsub.add_parser("logcap")
+    r.add_argument("log")
+    r.add_argument("limit")
+    r.set_defaults(handler=lambda a: logcap.main([a.log, a.limit]))
     # Internal too: Claude Code's folder trust for a clone, recorded on the agents' side (trust).
     r = rsub.add_parser("trust")
     r.add_argument("home")

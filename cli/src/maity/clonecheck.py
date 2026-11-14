@@ -122,7 +122,7 @@ class Files(Protocol):
 
     def tree(self, path: Path) -> list[tuple[str, str, int]]: ...
 
-    def read(self, path: Path, offset: int = 0) -> bytes: ...
+    def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes: ...
 
 
 def bounded_tree(path: Path, limit: int) -> list[tuple[str, str, int]]:
@@ -160,10 +160,12 @@ class Local:
     def tree(self, path: Path) -> list[tuple[str, str, int]]:
         return bounded_tree(path, TREE_MAX)
 
-    def read(self, path: Path, offset: int = 0) -> bytes:
-        with path.open("rb") as fh:
-            fh.seek(offset)
-            return fh.read()
+    def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
+        """At most `limit` bytes of a regular file, reached from `under` without following a
+        link on the way (limitread)."""
+        from maity.runner import limitread  # the standard library only
+
+        return limitread.take(str(path), offset, limit, under=str(under))
 
 
 LOCAL = Local()
@@ -200,9 +202,14 @@ def _inspect(
         finding = _not_a_plain_git_dir(tree)
         if finding is not None:
             return finding, []
-        data = files.read(dot_git / "config")
+        # Read once more after the listing, which may be stale by now: a regular file only,
+        # reached from the clone without following a link (a `.git` swapped for one since the
+        # listing is refused), never waiting on a FIFO, never more than CONFIG_MAX.
+        data = files.read(dot_git / "config", limit=CONFIG_MAX + 1, under=path)
     except OSError:
         return Finding("its .git/config cannot be read"), []
+    if len(data) > CONFIG_MAX:
+        return Finding(f"its .git/config is larger than {CONFIG_MAX // 1024} KiB"), []
     entries = config_entries(data, git)
     if entries is None:
         return Finding("its .git/config cannot be parsed"), []

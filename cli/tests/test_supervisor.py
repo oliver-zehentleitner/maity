@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +14,7 @@ import pytest
 
 from maity import __version__, clonecheck, hub, proc, state
 from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
+from maity.runner.asuser import RUNNER
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
 CONFIG = """\
@@ -1043,7 +1044,9 @@ def test_hooks_and_fsmonitor_planted_in_a_clone_never_run(
     hook.chmod(0o755)
     with (place.path / ".git" / "config").open("a") as fh:
         fh.write(f"[core]\n\tfsmonitor = touch {marker}\n\tpager = touch {marker}\n")
-    workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0005")
+    with pytest.raises(workspace.Refused) as refused:  # read, never run, and then refused
+        workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0005")
+    assert refused.value.detail == "not_a_plain_clone"
     workspace.stale_index_lock(place.path)
     assert not marker.exists()
 
@@ -1052,6 +1055,123 @@ def test_hooks_and_fsmonitor_planted_in_a_clone_never_run(
 def test_workspace_paths_come_from_tokens_only(tmp_path: Path, project: str, clone: str) -> None:
     with pytest.raises(workspace.Refused):
         workspace.locate(tmp_path, project, clone)
+
+
+# --- what the supervisor reads from a clone --------------------------------------------------
+
+SPARSE = 100 * 1024**3  # 100 GiB, of which nothing is on the disk
+UNSAFE = ("fifo", "endless", "sparse")
+
+
+def plant(path: Path, kind: str) -> None:
+    """Put at `path` what an agent could leave as a file the runner reads: a FIFO nobody
+    writes, a link to an endless device, or a huge sparse file."""
+    path.unlink(missing_ok=True)
+    if kind == "fifo":
+        os.mkfifo(path)
+    elif kind == "endless":
+        path.symlink_to("/dev/zero")
+    else:
+        with path.open("wb") as fh:
+            fh.truncate(SPARSE)
+
+
+def within(seconds: float, call: Any, *args: Any) -> Any:
+    """`call(*args)` in a thread, failing the test when it has not returned in `seconds`:
+    a read that blocks or never ends shows as a failure, not as a hung run."""
+    import threading
+
+    found: list[Any] = []
+    failed: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            found.append(call(*args))
+        except BaseException as exc:  # noqa: BLE001 - raised again in the test's thread
+            failed.append(exc)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    assert not thread.is_alive(), f"{getattr(call, '__name__', call)} did not return"
+    if failed:
+        raise failed[0]
+    return found[0] if found else None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX: FIFOs and the runner")
+@pytest.mark.parametrize("kind", UNSAFE)
+def test_a_clones_git_config_is_read_safely_and_bounded(tmp_path: Path, kind: str) -> None:
+    """Read as a regular file only, never through a link, never waiting on a FIFO, never
+    more than clonecheck.CONFIG_MAX: whatever stands there, `origin` answers at once."""
+    (tmp_path / ".git").mkdir()
+    plant(tmp_path / ".git" / "config", kind)
+    assert within(10, workspace.origin, tmp_path) is None
+    with pytest.raises(OSError):
+        within(10, lambda: RUNNER.read_whole(tmp_path / ".git" / "config", 1024, under=tmp_path))
+
+    # What `gc` and maity under the runner read with: a plain file up to the limit only.
+    def local() -> bytes:
+        return clonecheck.LOCAL.read(tmp_path / ".git" / "config", limit=1024, under=tmp_path)
+
+    if kind == "sparse":
+        assert within(10, local) == b"\0" * 1024
+    else:
+        with pytest.raises(OSError):
+            within(10, local)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX: FIFOs and the runner")
+@pytest.mark.parametrize("kind", UNSAFE)
+def test_a_planted_git_config_never_holds_the_supervisor(world: Any, kind: str) -> None:
+    """The tick reads nothing in a clone under its lock; the start task reads the clone
+    after the clone checks and refuses it. The supervisor goes on serving every agent."""
+    sup, backend, _, _, logs = world
+    place = recorded(sup.cfg)
+    plant(place.path / ".git" / "config", kind)
+    sup.update([placement(), placement(4)])
+    within(10, sup.tick)
+    for task in list(sup.tasks.values()):
+        task.join(10)
+        assert not task.is_alive(), "the start task did not end"
+    within(10, sup.update, [placement()])  # the lock is free: the hub's changes get in
+    within(10, sup.tick)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == (
+        "failed", "workspace_in_use", "not_a_plain_clone"
+    )  # fmt: skip
+    assert backend.started == []
+
+
+def test_inspecting_an_existing_clone_happens_in_the_start_task(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under the supervisor's lock only the runner's record is read; the clone's `.git`
+    is read by the start task, after the clone checks, with the lock free."""
+    import threading
+
+    sup, backend, _, _, _ = world
+    recorded(sup.cfg)
+    seen: list[tuple[str, str]] = []
+    checks, reads = clonecheck.not_inspectable, workspace.origin
+
+    def checked(path: Path, files: Any = clonecheck.LOCAL) -> str | None:
+        seen.append(("check", threading.current_thread().name))
+        return checks(path, files)
+
+    def read(path: Path, as_user: Any = RUNNER) -> str | None:
+        seen.append(("origin", threading.current_thread().name))
+        return reads(path, as_user)
+
+    monkeypatch.setattr(clonecheck, "not_inspectable", checked)
+    monkeypatch.setattr(workspace, "origin", read)
+    sup.update([placement()])
+    sup.tick()
+    for task in list(sup.tasks.values()):
+        task.join(5)
+    # Read once each, by the start task, the clone check first; the tick read nothing.
+    assert seen == [("check", "maity-start-plc-0003"), ("origin", "maity-start-plc-0003")]
+    assert [name for name, _, _ in backend.started] == ["maity_maity_agent-3"]
 
 
 # --- tmux commands ---------------------------------------------------------------------------
@@ -1083,6 +1203,141 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     assert 'update-environment ""' in (tmp_path / "tmux.conf").read_text()
     log = tmp_path / "logs" / "plc-0003.log"
     assert oct(log.stat().st_mode & 0o777) == "0o600"
+    pipe = calls[3]  # the pane's output goes through logcap, held to limits.log_keep_bytes
+    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "maity_maity_agent-3"]
+    assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
+
+
+def test_a_pane_log_is_held_to_its_limit_with_the_newest_output(tmp_path: Path) -> None:
+    from maity.runner import logcap
+
+    log = tmp_path / "plc-0003.log"
+    log.write_bytes(b"o" * 900)  # from an earlier start of the placement
+    read, write = os.pipe()
+    chunks = [bytes([65 + n % 26]) * 300 for n in range(40)]
+    with os.fdopen(write, "wb") as fh:
+        for chunk in chunks:  # 12 000 bytes, a few at a time as a pane writes them
+            fh.write(chunk)
+            fh.flush()
+    assert logcap.run(str(log), 1000, read) == 0
+    os.close(read)
+    kept = log.read_bytes()
+    assert 0 < len(kept) <= 1000
+    assert kept.endswith(chunks[-1])  # the newest output stays
+    assert not (tmp_path / "plc-0003.log.cut").exists()
+
+
+def _pane(log: Path, limit: int) -> tuple[int, Callable[[], int]]:
+    """logcap writing `log` from a pipe in a thread: the pipe's write end, and a call that
+    closes it and returns logcap's exit code."""
+    import threading
+
+    from maity.runner import logcap
+
+    read, write = os.pipe()
+    done: list[int] = []
+    # A daemon: a failed test leaves it reading, and must not keep the test run from ending.
+    thread = threading.Thread(
+        target=lambda: done.append(logcap.run(str(log), limit, read)), daemon=True
+    )
+    thread.start()
+
+    def end() -> int:
+        os.close(write)
+        thread.join(10)
+        os.close(read)
+        assert done, "logcap did not end"
+        return done[0]
+
+    return write, end
+
+
+def _until(check: Callable[[], bool]) -> None:
+    """Wait for logcap to have taken what was written: a condition, not a duration."""
+    import time
+
+    deadline = time.monotonic() + 10
+    while not check():
+        assert time.monotonic() < deadline, "logcap did not take the write"
+        time.sleep(0.005)
+
+
+def test_a_pane_log_holds_its_limit_when_another_writer_appends(tmp_path: Path) -> None:
+    """The log is on the agents' side: bytes another writer appends count at logcap's next
+    write, from the file's real size, so the log stays within the limit."""
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    with log.open("ab") as other:  # another writer, between two of the pane's writes
+        other.write(b"x" * 100)
+    os.write(write, b"b" * 10)
+    assert end() == 0
+    kept = log.read_bytes()
+    assert len(kept) <= 100 and kept.endswith(b"b" * 10)
+
+
+def test_a_pane_log_appended_to_after_the_last_write_is_cut_when_the_pane_ends(
+    tmp_path: Path,
+) -> None:
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    with log.open("ab") as other:
+        other.write(b"x" * 200)
+    assert end() == 0
+    assert len(log.read_bytes()) <= 100
+
+
+def test_a_pane_log_put_back_by_another_file_is_the_one_written(tmp_path: Path) -> None:
+    """A log renamed away and replaced is opened anew: the pane's output goes to the file at
+    the log's path, held to the limit, never on into the file moved away."""
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    log.rename(tmp_path / "moved.log")
+    log.write_bytes(b"x" * 95)
+    os.write(write, b"b" * 10)
+    assert end() == 0
+    assert (tmp_path / "moved.log").read_bytes() == b"a" * 10
+    kept = log.read_bytes()
+    assert len(kept) <= 100 and kept.endswith(b"b" * 10)
+
+
+def test_a_full_disk_drops_log_output_and_the_pane_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import errno
+
+    from maity.runner import logcap
+
+    log = tmp_path / "plc-0003.log"
+    read, write = os.pipe()
+    os.write(write, b"lost")
+    real, calls = os.write, []
+
+    def full(fd: int, data: bytes) -> int:
+        calls.append(data)
+        if len(calls) == 1:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        return real(fd, data)
+
+    monkeypatch.setattr(os, "write", full)  # what logcap writes with
+    done: list[int] = []
+    import threading
+
+    reader = threading.Thread(target=lambda: done.append(logcap.run(str(log), 1000, read)))
+    reader.start()
+    while not calls:
+        reader.join(0.01)
+    real(write, b"kept")
+    os.close(write)
+    reader.join(10)
+    monkeypatch.undo()
+    os.close(read)
+    assert done == [0] and log.read_bytes() == b"kept"
 
 
 def test_tmux_without_a_server_has_no_sessions(tmp_path: Path) -> None:
