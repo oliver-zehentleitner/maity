@@ -27,6 +27,10 @@
 :is(.ph-live, .mcard) .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px var(--live-ring); }
 
 /* ---- the page hero: the landing's dark hero (.hero.dz), shorter ------------------------- */
+/* The dashboard's own tokens that the about text's Markdown uses (css/app.css: .md-code and
+   .md code take --surface-2, .md-copied --ok) and the dark zone does not set: their dark values
+   here, or a code block keeps the light app's ground under the dark zone's light text (~2.2:1). */
+.phero { --surface-2: var(--surface2); --ok: #7ee2a0; }
 .phero .wrap { grid-template-columns: minmax(0, 1.35fr) minmax(0, .65fr); padding-top: 56px; padding-bottom: 60px; align-items: end; }
 .ph-main { min-width: 0; }
 .ph-title { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }

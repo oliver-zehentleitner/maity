@@ -15226,7 +15226,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       // a tab's hero has only its crumb, tile and slug, and no band.
       const plain = viPages["/public/pages/stranger/tool"];
       viPages["/public/pages/stranger/tool"] = { path: "/stranger/tool", kind: "project", data: Object.assign({}, plain.data, {
-        name: "4tool", repository_url: "https://github.com/stranger/tool", links: ["https://github.com/stranger/tool/issues", "https://t.me/tool_chat/", "javascript:alert(1)"],
+        name: "4tool", about: "Run it:\n\n```sh\nmake smoke\n```", repository_url: "https://github.com/stranger/tool", links: ["https://github.com/stranger/tool/issues", "https://t.me/tool_chat/", "javascript:alert(1)"],
         online: { humans: 0, agents: 0, named: [], as_of: "2026-11-02T08:05:00Z" }, statistics: { totals: { cards_done: 0, reviews_given: null } } }) };
       await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
       const h2 = viView().querySelector("section.phero");
@@ -15238,13 +15238,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         && JSON.stringify(viView().querySelectorAll("section.band div.stat").map((s) => text(s.querySelector("span.label")))) === '["Members"]',
       "visitor: without a session, the repository's button names GitHub, the links are one row of short words, the tile's letter is the name's first letter "
         + JSON.stringify([repo && text(repo), row, text(h2.querySelector("span.pmark"))]));
+      // A code block in the about text stands in the always-dark hero: its ground is the dark zone's
+      // (the app's --surface-2 is mapped there), not the light app's (review of #1820, A507).
+      const ppCss = fs.readFileSync(path.join(WEB, "css/public-sections.css"), "utf8");
+      const appCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+      expect(h2.querySelector("div.sub pre.md-code") && /\.md-code \{[^}]*background: var\(--surface-2\)/.test(appCss)
+        && /\.phero \{[^}]*--surface-2: var\(--surface2\)[^}]*--ok: #7ee2a0/.test(ppCss),
+      "visitor: without a session, a code block in the about text stands in the hero on the dark zone's ground, the app's --surface-2 and --ok mapped there");
       viPages["/public/pages/stranger/tool"] = plain;
       await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
       const h3 = viView().querySelector("section.phero");
       expect(viView().getAttribute("data-kind") === "team" && h3 && text(h3.querySelector("h1")) === "tool" && text(h3.querySelector("p.crumb a")) === "tool"
         && text(h3.querySelector("span.pmark")) === "T" && !viView().querySelector("section.band") && !h3.querySelector("span.chip")
-        && viView().querySelector("nav.ptabs").querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").length === 1,
-      "visitor: without a session, a project's tab has the hero with its crumb linking the Overview, no band, the bar with its tab current");
+        && viView().querySelector("nav.ptabs").querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").length === 1
+        && h3.querySelector("div.cta a.btn.btn-primary") && text(h3.querySelector("div.cta a.btn.btn-primary")) === "Try it — create your account"
+        && h3.querySelector("p.report-row a.report-open") && !h3.querySelector("a.btn-secondary") && !h3.querySelector("p.plinks") && !h3.querySelector("div.ph-live"),
+      "visitor: without a session, a project's tab has the hero with its crumb linking the Overview, Try it and Report, no Overview parts, no band, the bar with its tab current");
       win.Maity.api.get = ppGet;
       await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
     }

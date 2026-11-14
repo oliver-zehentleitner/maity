@@ -5779,8 +5779,12 @@ across the page (`nav.ptabs`), and the view itself stands under it in the stored
 - "Try it" goes where the header's call to action goes (the frame model's `header.cta`, the
   landing hero's primary button), filled in once the frame is read: where the header has none,
   neither has the hero.
-- A tab's own answer has no state, about, links or figures, so its hero has only the crumb, the
-  tile (from the slug) and the slug; the Overview's parts are not read a second time for it.
+- A tab's own answer has no state, about, links or figures, so its hero has the crumb, the tile
+  (from the slug), the slug, "Try it" and Report; the Overview's parts are not read a second
+  time for it. "Try it" and Report stay on every view: the README (point 10) puts every tab under
+  the same project hero, and Report stands under the title of every public page (§16.8).
+- The about text's Markdown can use the dashboard's own tokens (`--surface-2` under a code
+  block, `--ok`), which the dark zone does not set; the hero maps them to dark values.
 
 The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
 are `web/css/public-sections.css`, one file for the project, person and agent pages.
