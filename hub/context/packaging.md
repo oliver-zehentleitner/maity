@@ -318,6 +318,69 @@ registry alone.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
 
+## The deploy script verifies the image signature before it deploys a digest
+
+**Id:** 4e8b2d71-a6c3-4f19-8d5e-71b0c9e3a6d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 3 (release chain hardening, 2026-11-13); `deploy/scripts/helm-upgrade.sh`, `deploy/scripts/test-helm-upgrade.sh`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** the chart or the cluster checks signatures itself (an admission policy), the signing identity changes, or deploys stop going through `helm-upgrade.sh`
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+
+`deploy/scripts/helm-upgrade.sh` renders the upgrade first
+(`helm upgrade --dry-run=client` with the caller's own arguments), takes every
+image it would run (an `image` key, also as a list item's first key or
+quoted, its value plain or quoted; an empty value is skipped), and requires
+each to be pinned by digest and to pass `cosign verify` with the issuer and
+identity regexp of the chart README's install step 2 (the stub test holds
+the script's issuer and identity equal to the README's). An image key in any
+other form (a flow mapping, a block scalar, an anchor or alias) stops the
+script: an image the check cannot read is not deployed. So does any
+mapping key, whatever it spells, that the reader cannot decode exactly: a
+quoted key that is not plain letters, digits and `._/-` (an escape such as
+`"\x69mage"` is the same key as `image` in YAML), a plain key with a
+backslash, a tag, anchor or alias (a merge key `<<: *x` too), an explicit
+`? ` key, or a quoted scalar or flow collection that does not end on its
+line. All of this
+happens before the dump (and its CronJob lookup), the migrate Job and the
+scale-down, so a refusal changes nothing. A missing cosign is a refusal
+too. `NO_SIGNATURE_CHECK=1`
+is the only way past the check, for an image someone built themselves,
+and the script prints a warning when it is set. The rendering stays a
+dry run: Helm takes the last `--dry-run` it is given, so a caller's
+`--dry-run=false` would make it the real upgrade before any image is
+checked. Every `--dry-run` among the caller's arguments is refused (exit 2)
+before anything runs, and the script puts its own `--dry-run=client` before
+and after the caller's arguments. The image reader covers containers,
+initContainers and ephemeralContainers in any key order, in hook workloads
+too; `test-helm-upgrade.sh` also runs real Helm 3 (when one is installed)
+against a loopback API stand-in that refuses writes.
+
+**Reason:** the README asked operators to verify before they pin a
+digest, but the script that deploys did not, so nothing held the
+deployed digest to the signature. Rendering with the same arguments
+finds the image exactly as Helm will, whether it comes from a values
+file, `--set` or `--reuse-values`. A tag is refused because the
+signature is for a digest and a tag can move between the check and the
+pull.
+
+**Rejected alternatives:**
+- Skipping the check silently when cosign is missing: a deploy host
+  without cosign would never check, and nobody would notice.
+- Taking the image from an extra argument or variable: it could differ
+  from what the values make Helm deploy.
+- Decoding YAML escapes in the awk reader, or a YAML parser (yq, PyYAML):
+  a decoder in awk is easy to get subtly wrong, and a parser is one more
+  tool on the deploy host. Refusing what the reader cannot decode is
+  exact, and the stock chart's rendering has no such key.
+- Only the script's own `--dry-run` last: a caller's flag that ends the
+  list waiting for a value would take it as its value. Only first: a
+  caller's later `--dry-run=false` wins. Hence both, and the refusal.
+- `helm template` for the rendering: it does not accept every
+  `helm upgrade` flag (`--reuse-values`, `--install`), so it would fail
+  or render something else for those calls.
+
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
 **Id:** 843b8d35-45c7-4b91-827f-7109f470ca54

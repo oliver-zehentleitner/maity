@@ -612,7 +612,10 @@ k3s steps above show one way). Open it again only when both parts are done.
      `migrate` service runs, and the new one starts after it.
    - Helm: `deploy/scripts/helm-upgrade.sh -f values.yaml` (step 2), or
      `helm upgrade … --timeout 10m` after a backup of your own. The hook Job
-     migrates first.
+     migrates first. The script checks the image's signature first, so the
+     host that deploys needs cosign v3 or later and the image pinned by digest
+     (`image.digest`); `NO_SIGNATURE_CHECK=1` is only for an image you built
+     yourself.
 
 There is **no downgrade**. `maity-hub` has no command that takes the
 schema back, and an older hub refuses a newer schema. To go back, restore

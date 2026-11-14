@@ -12,7 +12,15 @@
 #   CHART (the chart next to this script), HELM_TIMEOUT (10m), DUMP_CRONJOB (the CronJob to run as a
 #   dump first, maity-pg-dump), NO_DUMP (1: no dump first; only when you took one yourself), DUMP_TIMEOUT (seconds to wait for it, 300), DUMP_REQUIRES_ATTACHMENTS (1: the
 #   dump's mark must carry the attachment tar; set it when the release has attachments.existingClaim), STOP_TIMEOUT (seconds to wait for the hub's
-#   pods to be gone, 180), KUBECONFIG as usual.
+#   pods to be gone, 180), NO_SIGNATURE_CHECK (1: deploy without checking the image's signature,
+#   e.g. for your own build; unset = checked), COSIGN (the cosign binary, cosign), KUBECONFIG as usual.
+#
+# Before anything is changed, the script renders the upgrade (`helm upgrade --dry-run=client` with the same
+# arguments) and checks every image it would run: each must be pinned by digest (repository@sha256:…)
+# and carry the signature the install docs name (deploy/helm/maity-hub/README.md, step 2), checked with
+# `cosign verify` (v3 or later). A tag, an image key it cannot read, a failed check or a missing cosign
+# stops it before the CronJob probe and the dump; only NO_SIGNATURE_CHECK=1 skips the check, and the
+# script says so.
 #
 # helm upgrade only runs when the hub is verifiably stopped: a failed scale-down or pods still
 # there after STOP_TIMEOUT end the script before Helm. Once Helm succeeded the hub keeps the
@@ -23,8 +31,11 @@
 # fails is the hub scaled back to the replicas it had. A hub found at 0 stays at 0 either way.
 # A dump is taken by default: an upgrade migrates, and there is no downgrade, so the way back is that
 # dump. Without the CronJob the script stops before anything changed and names NO_DUMP=1.
+# The rendering is `--dry-run=client`, and a --dry-run among the arguments is refused before anything
+# runs: a caller's value would win over the script's and make the rendering the real upgrade.
 # Exit status: Helm's own when the upgrade failed; otherwise 3 when scaling back failed, 4 when the
-# hub did not become ready, 1 for the steps before Helm, 0 only when everything worked.
+# hub did not become ready, 1 for the steps before Helm, 2 for a usage error (no arguments, or a
+# --dry-run among them), 0 only when everything worked.
 set -uo pipefail
 
 NAMESPACE=${NAMESPACE:-maity}
@@ -35,6 +46,17 @@ HELM_TIMEOUT=${HELM_TIMEOUT:-10m}
 STOP_TIMEOUT=${STOP_TIMEOUT:-180}
 SELECTOR="app.kubernetes.io/instance=$RELEASE,app.kubernetes.io/component=hub"
 [ $# -gt 0 ] || { echo "usage: $0 -f values.yaml [helm upgrade arguments]" >&2; exit 2; }
+# The rendering below must stay a dry run: Helm takes the last --dry-run it is given, so a caller's
+# --dry-run=false after the script's own would turn the rendering into the real upgrade, before any
+# image is checked. Every --dry-run among the arguments is refused before anything runs (the script
+# does the real upgrade itself); `--dry-run <value>` is not one flag to Helm, but its `--dry-run` is.
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run|--dry-run=*)
+      echo "'$arg': this script renders the upgrade as a dry run itself and then runs it, so it takes no --dry-run; nothing was changed" >&2
+      exit 2;;
+  esac
+done
 
 replicas=$(kubectl -n "$NAMESPACE" get deploy "$DEPLOYMENT" -o jsonpath='{.spec.replicas}') || exit 1
 replicas=${replicas:-1}
@@ -62,6 +84,147 @@ case "${NO_DUMP:-0}" in
   0|1) ;;
   *) echo "NO_DUMP must be 1 (no dump first) or unset, not '${NO_DUMP}'; nothing was changed" >&2; restored=1; exit 1;;
 esac
+
+# The signing identity of published images: the same issuer and regexp as the README's `cosign verify`
+# (test-helm-upgrade.sh holds them equal).
+ISSUER='https://token.actions.githubusercontent.com'
+IDENTITY='^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+COSIGN=${COSIGN:-cosign}
+if [ "${NO_SIGNATURE_CHECK:-0}" = 1 ]; then
+  echo "WARNING: NO_SIGNATURE_CHECK=1: the image's signature is not checked" >&2
+else
+  command -v "$COSIGN" >/dev/null ||
+    { echo "cosign is not installed, so the image's signature cannot be checked (install cosign v3 or later, or set NO_SIGNATURE_CHECK=1 for an image you built yourself); nothing was changed" >&2; restored=1; exit 1; }
+  # Every image the upgrade would run, from the same arguments, rendered without changing anything.
+  # --dry-run=client before and after the caller's arguments: the last one is the one Helm takes, and
+  # the first still holds if a caller's flag ends the list waiting for a value and takes the last as it.
+  rendered_manifest=$(helm -n "$NAMESPACE" upgrade "$RELEASE" "$CHART" --dry-run=client "$@" --dry-run=client) ||
+    { echo "could not render the upgrade to find its image; nothing was changed" >&2; restored=1; exit 1; }
+  # The forms an image can take in the rendered YAML: `image: <ref>` as a mapping key, also as the
+  # first key of a list item (`- image: <ref>`, a sidecar or init container written that way), the
+  # key quoted ("image" or 'image'), in any letter case, the value plain, double- or single-quoted,
+  # with or without a trailing comment. An empty value (nothing, "", '', null, ~) names no image and
+  # is skipped, unless the lines after a bare `image:` continue it. Every other line with an image key
+  # (a flow mapping `{image: …}`, a block scalar, an anchor, an alias, a tag) is not taken, and stops
+  # the script: an image the check did not see must not be deployed.
+  # Every line outside a block scalar's text is also read for keys the reader cannot decode exactly,
+  # whatever key they spell, and any one stops the script: a quoted key that is not plain letters,
+  # digits and . _ / - (an escape such as "\x69mage", a doubled '' quote, a space), a plain key with
+  # a backslash, an explicit key (`? …`), a tag, an anchor or an alias, a quoted scalar or a flow
+  # collection that does not end on its line, or a collection used as a key.
+  found=$(printf '%s\n' "$rendered_manifest" | awk -v q="'" '
+    # The index of the quote closing the one at s[i], on this line; 0 when it does not close here.
+    function qend(s, i,   qc, c, n) {
+      qc = substr(s, i, 1); n = length(s)
+      for (i++; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (qc == "\"" && c == "\\") { i++; continue }
+        if (c == qc) {
+          if (qc == q && substr(s, i + 1, 1) == q) { i++; continue }
+          return i
+        }
+      }
+      return 0
+    }
+    # Reads one line as YAML keys and values: "bad" for a key or node it cannot decode exactly (a
+    # plain key with a backslash too: plain YAML has no escapes, but no plain key needs one),
+    # "block" when the line ends in a block scalar (| or >), "" otherwise.
+    function scan(s,   n, i, c, nx, d, e, k, st) {
+      n = length(s); i = 1; d = 0; st = 1
+      while (i <= n) {
+        c = substr(s, i, 1); nx = substr(s, i + 1, 1)
+        if (c == " " || c == "\t") { i++; continue }
+        if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t]/)) break
+        if (st) {
+          if (c == "-" && d == 0 && (nx == "" || nx ~ /[ \t]/)) { i++; continue }
+          if (c == "?" && (nx == "" || nx ~ /[ \t]/)) return "bad"
+          if (c ~ /[&*!]/) return "bad"
+          if (c == "|" || c == ">") return (d == 0) ? "block" : "bad"
+          if (c == "{" || c == "[") { d++; i++; continue }
+          if (d > 0 && (c == "}" || c == "]")) { d--; st = 0; i++; continue }
+          if (c == "\"" || c == q) {
+            e = qend(s, i); if (!e) return "bad"
+            k = substr(s, i + 1, e - i - 1); i = e + 1
+            while (i <= n && substr(s, i, 1) ~ /[ \t]/) i++
+            if (substr(s, i, 1) == ":") {
+              if (k !~ /^[A-Za-z0-9._\/-]+$/) return "bad"
+              i++; continue
+            }
+            st = 0; continue
+          }
+          # A plain scalar: a key when ": " (or ":" at the end, or before a flow indicator) follows.
+          st = 0; k = i
+          while (i <= n) {
+            c = substr(s, i, 1); nx = substr(s, i + 1, 1)
+            if (c == ":" && (nx == "" || nx ~ /[ \t]/ || (d > 0 && nx ~ /[],[{}]/))) {
+              if (index(substr(s, k, i - k), "\\")) return "bad"
+              st = 1; i++; break
+            }
+            if (c == "#" && substr(s, i - 1, 1) ~ /[ \t]/) { i = n + 1; break }
+            if (d > 0 && c ~ /[],[{}]/) break
+            i++
+          }
+          continue
+        }
+        if (d > 0 && c == ",") { st = 1; i++; continue }
+        if (d > 0 && (c == "}" || c == "]")) { d--; i++; continue }
+        return "bad"
+      }
+      return (d > 0) ? "bad" : ""
+    }
+    BEGIN {
+      img = "[Ii][Mm][Aa][Gg][Ee]"
+      key = "(" img "|\"" img "\"|" q img q ")"
+      lead = "^[[:space:]]*(-[[:space:]]+)*"
+      ref = "[A-Za-z0-9][-A-Za-z0-9._/:@+]*"
+      pend = ""; blk = -1
+    }
+    pend != "" {
+      if ($0 ~ /^[[:space:]]*$/) next
+      match($0, /^[[:space:]]*/)
+      if (RLENGTH > pendcol) { print "bad " pendnr ": " pend; pend = ""; next }
+      pend = ""
+    }
+    {
+      # The text of a block scalar (the lines indented deeper than the key that opened it) holds no keys.
+      inblk = 0
+      if (blk >= 0) {
+        match($0, /^[ \t]*/)
+        if ($0 ~ /^[ \t]*$/ || RLENGTH > blk) inblk = 1; else blk = -1
+      }
+      if (!inblk) {
+        r = scan($0)
+        if (r == "bad") { print "bad " NR ": " $0; next }
+        if (r == "block") { match($0, /^[ \t]*(-[ \t]+)*/); blk = RLENGTH }
+      }
+    }
+    $0 ~ ("(^|[[:space:]{,])" key "[[:space:]]*:") {
+      if (!match($0, lead key "[[:space:]]*:")) { print "bad " NR ": " $0; next }
+      v = substr($0, RLENGTH + 1)
+      sub(/^[[:space:]]+/, "", v); sub(/[[:space:]]+#.*$/, "", v); sub(/[[:space:]]+$/, "", v)
+      if (v == "") { match($0, lead); pend = $0; pendnr = NR; pendcol = RLENGTH; next }
+      if (v == "\"\"" || v == q q || v == "~" || v == "null" || v == "Null" || v == "NULL") next
+      if (v ~ ("^\"" ref "\"$") || v ~ ("^" q ref q "$")) v = substr(v, 2, length(v) - 2)
+      if (v ~ ("^" ref "$")) print "img " v
+      else print "bad " NR ": " $0
+    }')
+  untaken=$(printf '%s\n' "$found" | sed -n 's/^bad //p')
+  [ -z "$untaken" ] || { printf 'the rendered upgrade has an image key in a form the check does not read, so its image cannot be checked; nothing was changed:\n%s\n' "$untaken" >&2; restored=1; exit 1; }
+  images=$(printf '%s\n' "$found" | sed -n 's/^img //p' | sort -u)
+  [ -n "$images" ] || { echo "the rendered upgrade names no image; nothing was changed" >&2; restored=1; exit 1; }
+  while IFS= read -r image; do
+    [ -n "$image" ] || continue
+    case "$image" in
+      *@sha256:*) ;;
+      *) echo "$image is not pinned by digest: set image.digest (the signature is for a digest, a tag can be moved); nothing was changed" >&2
+         restored=1; exit 1;;
+    esac
+    "$COSIGN" verify "$image" --certificate-oidc-issuer "$ISSUER" --certificate-identity-regexp "$IDENTITY" </dev/null >/dev/null ||
+      { echo "$image has no valid signature from the release workflow, or cosign is older than v3 and does not find it (cosign v3 or later; see deploy/helm/maity-hub/README.md, step 2); nothing was changed" >&2; restored=1; exit 1; }
+    echo "signature checked: $image"
+  done <<<"$images"
+fi
+
 DUMP_CRONJOB=${DUMP_CRONJOB:-maity-pg-dump}
 if [ "${NO_DUMP:-0}" = 1 ]; then
   echo "NO_DUMP=1: no dump is taken before this upgrade"
