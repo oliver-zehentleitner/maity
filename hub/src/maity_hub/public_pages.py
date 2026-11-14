@@ -37,8 +37,9 @@ log = logging.getLogger(__name__)
 
 # `img-src 'self'` for the pictures of a person's and an agent's page (§6.10, §16.9).
 CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
-# A stored page in its frame (§16.7.5): the landing page's stylesheets, fonts and its one script
-# (landing.js, the theme switch; req-q34v0gr2rbw2) from this host as well. The stored pages carry
+# A stored page in its frame (§16.7.5), and `/explore` in the same frame: the landing page's
+# stylesheets, fonts and its one script (landing.js, the theme switch; req-q34v0gr2rbw2) from
+# this host as well. The stored pages carry
 # no inline style (the shell's policy refuses it, tsk-8fk897a9tan8); 'unsafe-inline' stays for the
 # maintenance banner put around them.
 FRAMED_CSP = (

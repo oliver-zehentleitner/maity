@@ -1047,12 +1047,14 @@ def framed_document(
     and footer around the page, in the design of `public-pages.css`. The page is in the frame's
     language where the catalog's `section` has words in it, else in English. The footer keeps
     the landing page's language switch, as the landing footer is drawn 1:1 on every signed-out
-    page: its links (`?lang=…`) reopen this page in that language. `page(lang, words)` gives the
-    title and the content (HTML of escaped text and elements) in that language."""
+    page: its links (`?lang=…`) reopen this page in that language. The header keeps the landing
+    page's light/dark switch with its script, as a stored page's frame does, so the page's
+    policy is `public_pages.FRAMED_CSP`. `page(lang, words)` gives the title and the content
+    (HTML of escaped text and elements) in that language."""
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
     chosen = model["language"] if catalog.speaks(section, model["language"]) else "en"
     title, content = page(chosen, catalog.section(section, chosen))
-    frame = public_frame(model, chosen)
+    frame = public_frame(model, chosen, theme=True)
     return _document(
         lang=chosen,
         title=title,
