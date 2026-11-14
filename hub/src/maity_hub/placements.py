@@ -894,10 +894,16 @@ def revoke_unused_joins(conn: Connection, *where: Any) -> None:
     )
 
 
-def runner_credential_gone(conn: Connection, runner_id: str, by: str | None) -> None:
-    """A runner without a live credential reports nothing: what was closing closes now.
-    Its unused pickups end with the credential that fetched them (§15.9)."""
+def runner_credential_gone(
+    conn: Connection, runner_id: str, by: str | None, *, replaced: bool = False
+) -> None:
+    """The runner's credential was revoked (`revoke_runner_credential` calls this). Its
+    unused pickups end with the credential that fetched them (§15.9). A runner without a
+    live credential reports nothing: what was closing closes now. A re-pair (`replaced`)
+    leaves it closing, as its new credential takes over the same placements (§15.3)."""
     revoke_unused_joins(conn, t.join_link.c.runner_id == runner_id)
+    if replaced:
+        return
     for placement in active_rows(
         conn, t.placement.c.runner_id == runner_id, t.placement.c.closing.isnot(None)
     ):
