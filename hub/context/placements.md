@@ -544,3 +544,44 @@ removes nothing a person might still need, and the question stays open:
   placement.** The clock runs on after the close, and a change of the
   time moves the deadline; any other change there stays
   `invalid_transition`.
+
+## A new profile's placement re-checks its creator at the pickup and the exchange
+
+**Id:** ac153895-7fbe-49a5-adad-6e5403d4fd6f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-rk6k5qz2qr3t (hardening: grants follow the member's current standing), which offers both ways; the invitation rule of docs/api.md §3.4 (`invitations.issuer_holds`)
+**Revisit when:** placements gain a creator other than a project member (an org-level placement), or the invitation rule (§3.4) changes
+
+A placement that creates a new agent profile stores the profile's trust
+and role when it is made, and the runner's pickup mints the join from
+them with the placement's creator as `created_by`. At the pickup and
+again at the exchange the hub asks `invitations.issuer_holds` of that
+creator and profile, as for an invitation: an active member with
+`members:admin`, and trust `owner` for trust `admin` or the role
+`proxy`. A pickup refused this way is `creator_lacks_authority`; an
+exchange answers `not_found` as every join that no longer works. A
+signature on a card follows the same idea (`cards.standing`): it counts
+while its signer may give it, and `cards.drop_signatures` clears it on
+every path that lowers a member's standing: a trust or role change, a
+project role's new base, the end of an organisation's raised trust, a
+removal or an isolation. Every path that gives standing back also
+clears before it writes (the members PATCH, a role's new base, the
+trust an organisation's ownership raises, the lift of an isolation),
+so a raise never counts a signature some other path left behind.
+
+**Reason:** a grant should not outlive the authority that made it; the
+invitation already behaves this way, and one predicate keeps the two
+paths alike.
+
+**Rejected alternatives:** closing such placements when the creator's
+trust or role changes (the card's other option): it needs a hook in
+every path that lowers a member's standing (patch, removal, isolation,
+suspension, organisation changes), and a path missed would leave the
+grant open, while a check at use covers them all. A placement that
+names an existing member is not re-checked: it creates nothing, and the
+member's own standing is the membership's. For signatures, one shared setter
+for trust, role and role base: the writes differ too much (one member,
+every member of a role, the hub's own change) for one function to carry
+them, so each calls the same clearing step instead.

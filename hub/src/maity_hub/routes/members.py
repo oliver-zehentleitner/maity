@@ -645,6 +645,10 @@ def apply_patch(
     # A guest raised may enter the restricted-access set, it and its listed agents (§6.1).
     raised = "trust" in changed and target.trust == restricted.GUEST
     in_set_before = restricted.resolve(conn, change.project) if raised else None
+    if {"trust", "role"} & changed.keys():
+        # A signature that stopped counting before this change goes first, so that a
+        # raise never brings it back (§6.4); the one this change ends goes below.
+        cards.drop_signatures(conn, change.project.id, member_id, change.actor)
     if changed:
         columns = {k: v for k, v in changed.items() if k != "briefing"}
         if "reports_to" in changed:
@@ -708,6 +712,11 @@ def apply_patch(
             # A proxy carries and is carried by no bridge; a role the limits across owners
             # exclude ends those connections (§2.3, "Ending on its own").
             bridges.after_role_change(conn, change.project, row, change.actor)
+        if {"trust", "role"} & changed.keys():
+            # A signature counts while its signer may give it (§6.4): gone with the scope.
+            cards.drop_signatures(
+                conn, change.project.id, row.agent_id or row.human_id, change.actor
+            )
     given, reason = pause
     if given:
         if target.agent_id is None:
@@ -1387,6 +1396,9 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         .values(active=None, removed_at=now, changed_via=change.via)
     )
     removed = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
+    cards.drop_signatures(
+        conn, change.project.id, removed.agent_id or removed.human_id, change.actor
+    )
     view = member_view(conn, removed)  # to everyone: never the briefing
     # Leaving: the actor is the member. A removal's actor is someone else, and that
     # event stays broadcast-only apart from the tokens every `member_updated` gains.

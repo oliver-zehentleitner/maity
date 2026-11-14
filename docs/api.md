@@ -7146,6 +7146,19 @@ both (`invalid`, `details.fields.approve: "same_member"`).
 `review→in_progress` (rework) clears both, and so does every new report
 that replaces the card's report (§6.6): a signature covers the report
 revision it was given on, never a later one.
+A signature counts only while its signer is an active member of the
+project, not isolated (§6.2), whose trust and role still give the
+signature's scope (`tasks:review`, `tasks:test`). Every change that takes
+that scope away clears the signatures it gave on the project's cards in
+`review` (`task_updated` with `fields: ["approvals"]`, per card): a trust
+or role change, a new base of its project role (`PUT …/roles`, for every
+member of that role), the end of the trust an organisation's ownership
+raised (§6.26), and the signer's removal or isolation. A later return
+does not bring them back: every change that gives standing back (a trust
+or role change, a project role's new base, a trust an organisation's
+ownership raises, the lift of an isolation) first clears what no longer
+counted before it; a signature whose signer no longer stands is
+not counted when the next one is given.
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
 `done`, by a report (§6.6: there the card goes to `review` instead);
@@ -17560,7 +17573,10 @@ POST /api/v1/runner/placements/plc-0003/join
   `pickup_not_allowed` with `details.why`: `not_running`,
   `stale_generation`, `credential_issued`, `handle_taken` when the
   placement's new profile names a handle its creator has meanwhile given
-  another agent, or `project_not_allowed` when the profile's
+  another agent, `creator_lacks_authority` when the placement's creator
+  may no longer give the new profile, as an invitation's issuer (§3.4):
+  no longer an active member with `members:admin`, or no longer trust
+  `owner` for a profile with trust `admin` or the role `proxy`, or `project_not_allowed` when the profile's
   `allowed_projects` no longer admits the project (§6.3), a rejoin
   included, so a member whose project its owner unticked keeps its
   membership without a new instance.
@@ -17569,7 +17585,8 @@ POST /api/v1/runner/placements/plc-0003/join
   the join's generation and on the same runner, and that runner not
   removed and with a live credential; a member's pickup or a rejoin also
   requires the membership still active, so a pickup never brings back a
-  member a human removed. Otherwise the exchange answers `not_found`
+  member a human removed, and a new profile's pickup its creator's
+  authority as at the pickup (`creator_lacks_authority` above). Otherwise the exchange answers `not_found`
   (§1.1). Stopping or closing the placement, and revoking or removing
   the runner, revoke its unused pickup joins.
 - **A lost response is recoverable.** A pickup while an earlier one of

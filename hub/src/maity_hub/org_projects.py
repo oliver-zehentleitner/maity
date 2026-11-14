@@ -105,6 +105,11 @@ def keep_owner(conn: Connection, project: Any, human_id: str, by: str | None = N
         return
     if found.trust == "owner":
         return  # their own ownership, or one the hub keeps already
+    from maity_hub import cards
+
+    # A signature that stopped counting before the raise goes first, so that the raise
+    # never brings it back (§6.4), as in the members PATCH.
+    cards.drop_signatures(conn, project.id, human_id, HUB)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == found.id)
@@ -136,6 +141,10 @@ def release_owner(conn: Connection, project: Any, human_id: str) -> None:
         .where(t.membership.c.id == found.id)
         .values(trust=found.org_keep_trust, org_keep=None, org_keep_trust=None)
     )
+    from maity_hub import cards
+
+    # A signature counts while its signer may give it (§6.4): gone with the raised trust.
+    cards.drop_signatures(conn, project.id, human_id, HUB)
     _announce(conn, project, found.id, human_id)
 
 

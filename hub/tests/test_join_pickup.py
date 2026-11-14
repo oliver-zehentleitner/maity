@@ -101,6 +101,34 @@ def test_a_new_profile_is_created_at_the_exchange(setup: Setup, make_client: Cli
     assert placement_row(setup, placement["id"]).membership_id is not None
 
 
+def _demote_owner(s: Setup) -> None:
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == s.owner.id).values(trust="admin")
+        )
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_a_new_profile_follows_its_creators_current_standing(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §3.4, §15.9: a new profile with trust admin, placed by an owner. Once that owner is
+    # only an admin, it is what the creator may no longer give: the runner's pickup is
+    # refused, and a code picked up before the change no longer exchanges.
+    placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"}, trust="admin")
+    if when == "pickup":
+        _demote_owner(setup)
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    _demote_owner(setup)
+    gone = exchange(make_client(), picked.json())
+    assert gone.status_code == 404, gone.text
+
+
 @pytest.mark.parametrize("late", ["invalid", "unique"])
 def test_a_handle_taken_during_the_exchange_is_not_found(
     setup: Setup, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch, late: str

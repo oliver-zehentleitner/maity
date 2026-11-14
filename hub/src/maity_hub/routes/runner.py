@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import time
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Request
@@ -28,6 +29,7 @@ from maity_hub import (
     handles,
     idempotency,
     instances,
+    invitations,
     longpoll,
     namespace,
     wakeups,
@@ -646,6 +648,16 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
         # the exchange would refuse it: no code that can never work
         raise _pickup_refused("handle_taken")
     profile = placement.new_profile or {}
+    creator = SimpleNamespace(
+        project_id=placement.project_id,
+        created_by=placement.created_by,
+        trust=profile.get("trust") or "member",
+        role=profile.get("role") or "coder",
+    )
+    if not invitations.issuer_holds(conn, creator):
+        # The profile is what its creator may give now, as an invitation's (§3.4): one
+        # whose creator lost that authority since the placement is never handed out.
+        raise _pickup_refused("creator_lacks_authority")
     return {
         "new_agent_handle": placement.new_handle,
         "new_agent_display_name": profile.get("display_name") or placement.new_handle,
