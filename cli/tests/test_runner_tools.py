@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 from test_runner import MINIMAL, parse, problems
 
-from maity.runner import tools
+from maity.runner import installers, tools
+
+# The real installers register on import (config imports them lazily); imported first, so a
+# test's fake replaces them and nothing here ever reaches a vendor.
+assert installers.INSTALLERS_REGISTERED
 
 BASE = MINIMAL.format(url="https://hub.example", state_dir="/srv/runner-state")
 
@@ -189,3 +193,13 @@ def test_an_installer_that_leaves_its_directory_is_refused(
     monkeypatch.setattr(fake, "version_of", lambda binary: "1.0.0")
     state = tools.take(tmp_path, "codex", fake, "t1")
     assert (state.version, state.state, state.reason) == (None, "failed", "installer_failed")
+
+
+def test_tools_are_managed_on_the_local_single_layout_only(fake: FakeInstaller) -> None:
+    """§15.16 "Where": an ssh target is only reported on; the agent_user layout's agents could
+    not reach the runner's private state_dir, so it is refused there for now."""
+    managed = '\n[harness.codex]\nupdate = "daily"\n'
+    shared = '\n[backend]\nkind = "local"\n[backend.local]\nlayout = "agent_user"\n'
+    found = problems(BASE + shared + 'agent_user = "maity-agents"\n' + managed)
+    assert any("not available in the agent_user layout" in p for p in found), found
+    assert parse(BASE + shared + 'agent_user = "maity-agents"\n' + "\n[harness.codex]\n")

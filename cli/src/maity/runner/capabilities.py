@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import proc
-from . import config
+from . import config, tools
 from .asuser import RUNNER, AsUser
 
 VERSION_TIMEOUT = 10.0
@@ -197,12 +197,23 @@ class Probe:
         return self.reason is None
 
 
-def probe(harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER) -> Probe:
+def probe(
+    harness: config.Harness,
+    agent_path: str,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
+) -> Probe:
     """Resolve the harness binary on `agent_path` and read its version, as the agents' user:
-    a binary that user cannot run is not available, whatever the runner can run."""
+    a binary that user cannot run is not available, whatever the runner can run. A tool the
+    runner manages (§15.16) is never looked up on the PATH: the version new sessions start
+    with, from `tools_dir`, or none."""
     if harness.id == "stub":
         return Probe(None, None, None)
-    found = which(harness.binary or "", agent_path, as_user)
+    if tools_dir is not None and (harness.install or harness.update != "never"):
+        managed = tools.binary(tools_dir, harness.id)
+        found = str(managed) if managed is not None else None
+    else:
+        found = which(harness.binary or "", agent_path, as_user)
     if found is None:
         return Probe(None, None, "binary_not_found")
     try:

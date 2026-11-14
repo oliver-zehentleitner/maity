@@ -219,6 +219,7 @@ class Record:
     nudged_at: float | None = None
     hung_at: float | None = None
     hung_exits: list[float] = field(default_factory=list)  # for the crash cap (§15.14)
+    binary: str | None = None  # the harness binary this session started with (§15.16)
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
@@ -920,7 +921,8 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            launch = adapters.launch(self._context(p, harness, place, target, rec.resume))
+            context = self._context(p, harness, place, target, rec.resume)
+            launch = adapters.launch(context)
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
@@ -955,6 +957,7 @@ class Supervisor:
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
             rec.resume = False
+            rec.binary = context.binary
         self.log(f"{name}: started generation {p['generation']}")
         found = target.probes.get(harness.id)
         warning = capabilities.unchecked(harness.id, found.version if found else None)
@@ -1119,6 +1122,23 @@ class Supervisor:
                 backend.terminate(session)
 
     # --- advertising -----------------------------------------------------------------------
+
+    def sessions_on(self, harness_id: str, binary: str | None) -> int:
+        """Running sessions of `harness_id` that started with another binary than `binary`
+        (`sessions_on_older`, §15.16); unknown binaries (started before this) count too."""
+        with self.lock:
+            harness_of = {p["id"]: p["harness"] for p in self.desired}
+            return sum(
+                1
+                for pid, rec in self.records.items()
+                if rec.state == "running"
+                and harness_of.get(pid) == harness_id
+                and rec.binary != binary
+            )
+
+    def advertise_now(self) -> None:
+        """`PATCH /runner` at once: the capabilities themselves changed (a tool, §15.16)."""
+        self._advertise(None, self.now(), force=True)
 
     def _advertise(self, running: dict[str, int] | None, now: float, force: bool = False) -> None:
         """`PATCH /runner` with the targets' `running` and reachability: at most every

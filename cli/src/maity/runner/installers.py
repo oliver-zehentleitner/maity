@@ -283,3 +283,4 @@ class Codex:
 
 
 tools.INSTALLERS.update({"claude-code": ClaudeCode, "codex": Codex})
+INSTALLERS_REGISTERED = True

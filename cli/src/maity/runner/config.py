@@ -23,6 +23,7 @@ from ..hub import HubError, hub_base
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
+DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -158,6 +159,9 @@ class Config:
     ssh: Ssh | None = None
     git: GitIdentity = GitIdentity()
     maity_update: str = "never"  # `[maity] update` (§15.16)
+    # The versions the runner installs (§15.16): beside, not inside, state_dir, which no
+    # sandboxed command may read, while a harness's sandbox runs the harness's own files.
+    tools_dir: Path = Path(DEFAULT_TOOLS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -503,6 +507,20 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
         maity_update = maity_in.get("update", str, "never", check=_one_of("daily", "never"))
         maity_in.done()
 
+    # §15.16 "Where": the runner manages tools on its local target only; on an ssh target it
+    # reports what it finds. Managed versions live in the runner user's own tools_dir, which
+    # the agents' own user in the agent_user layout cannot rely on (lotse 131453, not yet).
+    for name, harness in harnesses.items():
+        if not harness.install and harness.update == "never":
+            continue
+        if kind != "local":
+            problems.append(f"harness.{name}: install and update work on the local backend only")
+        elif local is not None and local.layout == "agent_user":
+            problems.append(
+                f"harness.{name}: install and update are not available in the agent_user "
+                "layout yet"
+            )
+
     root.done()
     if problems:
         raise ConfigError(problems)
@@ -603,6 +621,8 @@ def unsupported(cfg: Config) -> list[str]:
     for harness in cfg.harnesses.values():
         if harness.env_file is not None:
             found.append(f"harness.{harness.id}.env_file is not passed on yet (R5)")
+    if cfg.maity_update != "never":
+        found.append('maity.update is not carried out yet; remove it or set "never"')
     return found
 
 

@@ -1,10 +1,11 @@
 """The harness tools the runner manages, and `maity` itself (docs/api.md §15.16).
 
-Each managed tool lives under `<state_dir>/tools/<id>/`: one directory per installed version
-(`versions/<version>/`) and `state.json`, which names the version new sessions start with,
-the one kept for a rollback, and what the last check found. A session keeps the absolute
-binary path it started with, so switching the version in use never touches a running
-session. A tool the configuration does not manage is looked up on the agents' PATH as before.
+Each managed tool lives under `<tools_dir>/<id>/` (config.Config.tools_dir): one
+directory per installed version (`versions/<version>/`) and `state.json`, which names the
+version new sessions start with, the one kept for a rollback, and what the last check
+found. A session keeps the absolute binary path it started with, so switching the version
+in use never touches a running session. A tool the configuration does not manage is looked
+up on the agents' PATH as before.
 
 The installers themselves (which vendor package belongs to which tool) are fixed in code
 (`INSTALLERS`), never taken from the configuration or the hub.
@@ -84,12 +85,12 @@ class ToolState:
 BINARY_FILE = "binary.path"  # the binary's path inside its version directory
 
 
-def root(state_dir: Path, tool_id: str) -> Path:
-    return state_dir / "tools" / tool_id
+def root(tools_dir: Path, tool_id: str) -> Path:
+    return tools_dir / tool_id
 
 
-def load(state_dir: Path, tool_id: str) -> ToolState:
-    path = root(state_dir, tool_id) / "state.json"
+def load(tools_dir: Path, tool_id: str) -> ToolState:
+    path = root(tools_dir, tool_id) / "state.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -98,24 +99,24 @@ def load(state_dir: Path, tool_id: str) -> ToolState:
     return ToolState(**known)
 
 
-def save(state_dir: Path, tool_id: str, state: ToolState) -> None:
-    folder = root(state_dir, tool_id)
+def save(tools_dir: Path, tool_id: str, state: ToolState) -> None:
+    folder = root(tools_dir, tool_id)
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     tmp = folder / "state.json.tmp"
     tmp.write_text(json.dumps(asdict(state), indent=1) + "\n", encoding="utf-8")
     os.replace(tmp, folder / "state.json")
 
 
-def version_dir(state_dir: Path, tool_id: str, version: str) -> Path:
-    return root(state_dir, tool_id) / "versions" / version
+def version_dir(tools_dir: Path, tool_id: str, version: str) -> Path:
+    return root(tools_dir, tool_id) / "versions" / version
 
 
-def binary(state_dir: Path, tool_id: str) -> Path | None:
+def binary(tools_dir: Path, tool_id: str) -> Path | None:
     """The managed binary new sessions start with, or None when none is installed."""
-    state = load(state_dir, tool_id)
+    state = load(tools_dir, tool_id)
     if state.version is None:
         return None
-    folder = version_dir(state_dir, tool_id, state.version)
+    folder = version_dir(tools_dir, tool_id, state.version)
     try:
         relative = (folder / BINARY_FILE).read_text(encoding="utf-8").strip()
     except OSError:
@@ -124,10 +125,10 @@ def binary(state_dir: Path, tool_id: str) -> Path | None:
     return found if relative and ".." not in Path(relative).parts and found.is_file() else None
 
 
-def rollback(state_dir: Path, tool_id: str) -> ToolState:
+def rollback(tools_dir: Path, tool_id: str) -> ToolState:
     """Swap the version in use with the kept one (§15.16); a second rollback swaps back.
     The version it leaves is not taken again on its own; a newer one ends that."""
-    state = load(state_dir, tool_id)
+    state = load(tools_dir, tool_id)
     if state.previous_version is None or state.version is None:
         raise ValueError(f"{tool_id}: no kept version to go back to")
     left = state.version
@@ -139,15 +140,15 @@ def rollback(state_dir: Path, tool_id: str) -> ToolState:
         else "current"
     )
     state.reason = None
-    save(state_dir, tool_id, state)
+    save(tools_dir, tool_id, state)
     return state
 
 
 def report(
-    state_dir: Path, tool_id: str, *, install: bool, update: str, sessions_on_older: int
+    tools_dir: Path, tool_id: str, *, install: bool, update: str, sessions_on_older: int
 ) -> dict[str, Any]:
     """One entry of `capabilities.tools` (§15.16)."""
-    state = load(state_dir, tool_id)
+    state = load(tools_dir, tool_id)
     shown = state.state
     if state.version is None and shown == "current":
         shown = "missing"
@@ -168,7 +169,7 @@ def report(
 
 
 def take(
-    state_dir: Path,
+    tools_dir: Path,
     tool_id: str,
     installer: Installer,
     now: str,
@@ -178,22 +179,22 @@ def take(
     """Look for a newer version and install it beside the one in use (§15.16). Used for the
     first install, the daily check and `Update now` alike. Never removes the version in use;
     keeps one previous version and removes older ones."""
-    state = load(state_dir, tool_id)
+    state = load(tools_dir, tool_id)
     if requested_at is not None:
         state.update_requested_at = requested_at
     first = state.version is None
     state.state, state.reason = ("installing" if first else "updating"), None
-    save(state_dir, tool_id, state)
+    save(tools_dir, tool_id, state)
     try:
         latest = installer.latest()
     except InstallError as error:
-        return _failed(state_dir, tool_id, state, error.reason, now)
+        return _failed(tools_dir, tool_id, state, error.reason, now)
     state.latest, state.checked_at = latest, now
     if latest == state.version or latest in state.skipped or not newer(latest, state.version):
         state.state = "rolled_back" if latest in state.skipped and state.version else "current"
-        save(state_dir, tool_id, state)
+        save(tools_dir, tool_id, state)
         return state
-    target = version_dir(state_dir, tool_id, latest)
+    target = version_dir(tools_dir, tool_id, latest)
     staging = target.with_name(latest + ".partial")
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True, mode=0o700)
@@ -201,18 +202,18 @@ def take(
         found = installer.install(latest, staging)
     except InstallError as error:
         shutil.rmtree(staging, ignore_errors=True)
-        return _failed(state_dir, tool_id, state, error.reason, now)
+        return _failed(tools_dir, tool_id, state, error.reason, now)
     except OSError:
         shutil.rmtree(staging, ignore_errors=True)
-        return _failed(state_dir, tool_id, state, "no_space", now)
+        return _failed(tools_dir, tool_id, state, "no_space", now)
     answered = installer.version_of(found)
     if answered != latest:
         shutil.rmtree(staging, ignore_errors=True)
         state.skipped.append(latest)
-        return _failed(state_dir, tool_id, state, "version_failed", now)
+        return _failed(tools_dir, tool_id, state, "version_failed", now)
     if not found.is_relative_to(staging):  # an installer must stay in its directory
         shutil.rmtree(staging, ignore_errors=True)
-        return _failed(state_dir, tool_id, state, "installer_failed", now)
+        return _failed(tools_dir, tool_id, state, "installer_failed", now)
     (staging / BINARY_FILE).write_text(str(found.relative_to(staging)) + "\n", encoding="utf-8")
     shutil.rmtree(target, ignore_errors=True)
     staging.rename(target)
@@ -220,13 +221,13 @@ def take(
     state.previous_version, state.version = state.version, latest
     state.updated_at, state.state, state.reason = now, "current", None
     state.skipped = [v for v in state.skipped if newer(v, latest)]
-    save(state_dir, tool_id, state)
+    save(tools_dir, tool_id, state)
     if older is not None and older not in (state.version, state.previous_version):
-        shutil.rmtree(version_dir(state_dir, tool_id, older), ignore_errors=True)
+        shutil.rmtree(version_dir(tools_dir, tool_id, older), ignore_errors=True)
     return state
 
 
-def _failed(state_dir: Path, tool_id: str, state: ToolState, reason: str, now: str) -> ToolState:
+def _failed(tools_dir: Path, tool_id: str, state: ToolState, reason: str, now: str) -> ToolState:
     state.state, state.reason, state.checked_at = "failed", reason, now
-    save(state_dir, tool_id, state)
+    save(tools_dir, tool_id, state)
     return state
