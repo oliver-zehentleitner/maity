@@ -1211,7 +1211,6 @@ def test_a_pane_log_holds_its_limit_when_another_writer_appends(tmp_path: Path) 
     with log.open("ab") as other:  # another writer, between two of the pane's writes
         other.write(b"x" * 100)
     os.write(write, b"b" * 10)
-    _until(lambda: log.read_bytes().endswith(b"b" * 10))
     assert end() == 0
     kept = log.read_bytes()
     assert len(kept) <= 100 and kept.endswith(b"b" * 10)
@@ -1240,10 +1239,10 @@ def test_a_pane_log_put_back_by_another_file_is_the_one_written(tmp_path: Path) 
     log.rename(tmp_path / "moved.log")
     log.write_bytes(b"x" * 95)
     os.write(write, b"b" * 10)
-    _until(lambda: log.read_bytes().endswith(b"b" * 10))
     assert end() == 0
     assert (tmp_path / "moved.log").read_bytes() == b"a" * 10
-    assert len(log.read_bytes()) <= 100
+    kept = log.read_bytes()
+    assert len(kept) <= 100 and kept.endswith(b"b" * 10)
 
 
 def test_a_full_disk_drops_log_output_and_the_pane_goes_on(
