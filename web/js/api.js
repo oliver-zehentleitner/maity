@@ -3839,7 +3839,7 @@ window.Maity = window.Maity || {};
         if ("agent_owners" in body.policy && !["members", "anyone"].includes(body.policy.agent_owners)) {
           fail(400, "invalid", "unknown agent_owners value", path, { fields: { "policy.agent_owners": "unknown" } });
         }
-        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer"].includes(r))) {
+        if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "expert"].includes(r))) {
           fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
         }
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {

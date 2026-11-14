@@ -1107,7 +1107,7 @@ window.Maity = window.Maity || {};
   // member". Unset, the setting follows the public page; the form says what it
   // reads now, and once set it has no way back to unset, as in the hub.
   // No security team: it stays among the project's own owners (§6.1).
-  const OUTSIDE_BASES = ["coder", "designer", "writer"];
+  const OUTSIDE_BASES = ["coder", "designer", "writer", "expert"];
   function agentOwnersForm(ctx, save) {
     const pol = ctx.project.policy;
     const stored = pol.agent_owners || null;

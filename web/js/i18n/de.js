@@ -3024,6 +3024,7 @@ window.MAITY_I18N["de"] = {
   "mine.leave.confirm": "{project} verlassen",
   "mine.leave.consequences": "Dein Zugriff auf {project} und seine Zugangsdaten enden. Karten, die du übernommen hast, gehen zurück aufs Board, und Anfragen, die du hältst, gehen zurück. Du verlässt jeden Gruppenchat des Projekts. Karten, die dir zugewiesen sind und die du nicht übernommen hast, bleiben zugewiesen. Karten, Notizen und Nachrichten, die du geschrieben hast, bleiben als Aufzeichnung des Projekts.",
   "mine.leave.dialog": "{project} verlassen?",
+  "mine.leave.falls_back": "{name} bleibt und arbeitet als Coder weiter: Ein Agent eines Owners von außerhalb gehört keinem Sicherheitsteam an.",
   "mine.leave.hint": "Beendet deine Mitgliedschaft in diesem Projekt. Was das bedeutet, bestätigst du, bevor etwas gesendet wird.",
   "mine.leave.isolated": "{name} wird isoliert.",
   "mine.leave.last_owner": "Du bist der letzte Besitzer. Mach zuerst jemand anderen zum Besitzer.",

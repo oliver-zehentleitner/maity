@@ -4324,7 +4324,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(aoForm() && byId("agent-owners-select").value === "" && text(byId("agent-owners-select")).includes("Not set, follows the public page (now: "),
     "agent owners: unset, the form says what it reads now");
   const aoRoles = aoForm().querySelectorAll("input").filter((b) => b.attrs.type === "checkbox").map((b) => b.attrs.value);
-  expect(aoRoles.join() === "coder,designer,writer" && byId("outside-role-coder").checked && !byId("outside-role-writer").checked && !byId("outside-role-blue-team"),
+  expect(aoRoles.join() === "coder,designer,writer,expert" && byId("outside-role-coder").checked && !byId("outside-role-writer").checked && !byId("outside-role-blue-team"),
     "agent owners: only the working roles are offered, coder by default, no security team " + aoRoles.join());
   const aoPatches = [];
   const aoPatch = win.Maity.api.patch;
@@ -13667,7 +13667,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     setCaller("member", "anyone");
     fx["maity/members.json"].items.forEach((x) => { if (x.id === "agt-r") { x.role = "blue-team"; x.role_base = "blue-team"; } });
     await leaveOpen();
-    expect(fateOf("Reviewer") === "stays", "leave: an owned blue-team falls back to coder and stays (§6.2) " + fateOf("Reviewer"));
+    expect(fateOf("Reviewer") === "falls_back" && leaveDialog().querySelectorAll(".leave-agent").some((row) => text(row).includes("Reviewer stays and continues as a coder")),
+      "leave: an owned blue-team is named as continuing as a coder (§6.2) " + fateOf("Reviewer"));
     const savedOutside = project.policy.outside_roles;
     project.policy.outside_roles = ["designer"];
     leaveDialog().dispatch("keydown", { key: "Escape" });

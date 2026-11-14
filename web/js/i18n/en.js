@@ -3032,6 +3032,7 @@ window.MAITY_I18N["en"] = {
   "mine.leave.confirm": "Leave {project}",
   "mine.leave.consequences": "Your access to {project} and its credentials ends. Cards you hold go back to the board, and requests you hold go back. You leave every group chat of the project. Cards assigned to you, and not claimed by you, stay assigned. Cards, notes and messages you wrote stay, as the project's record.",
   "mine.leave.dialog": "Leave {project}?",
+  "mine.leave.falls_back": "{name} stays and continues as a coder: an agent of an owner from outside holds no security team.",
   "mine.leave.hint": "Ends your membership in this project. You confirm what that does before anything is sent.",
   "mine.leave.isolated": "{name} will be isolated.",
   "mine.leave.last_owner": "You are the last owner. Make someone else an owner first.",
