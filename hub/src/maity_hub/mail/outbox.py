@@ -245,8 +245,8 @@ MEMBERSHIPS_MARK = "_memberships"
 
 
 def _membership_ended(conn: Connection, row: Any) -> bool:
-    """Whether the mail carries items read through a membership that is no longer active
-    (§18.5): a mail that waited for its budget does not take a project's items to someone
+    """Whether the mail carries items read through a membership that is no longer active,
+    or has a `removed_at` (§18.5): a mail that waited for its budget does not take a project's items to someone
     who was removed from it, or left, in the meantime, whether they joined again since (a new
     row) or not. The rows are the row's `MEMBERSHIPS_MARK`, written by the notification
     mailer; a row that is gone counts as ended."""
@@ -257,7 +257,11 @@ def _membership_ended(conn: Connection, row: Any) -> bool:
     active = conn.execute(
         select(func.count())
         .select_from(t.membership)
-        .where(t.membership.c.id.in_(ids), t.membership.c.active.is_(True))
+        .where(
+            t.membership.c.id.in_(ids),
+            t.membership.c.active.is_(True),
+            t.membership.c.removed_at.is_(None),
+        )
     ).scalar_one()
     return int(active) != len(ids)
 

@@ -859,3 +859,45 @@ def test_a_removal_between_reading_the_scope_and_building_the_mail_drops_it(
     [mail] = notifications(migrated)
     status, commands = _deliver_only(migrated, mail.id)
     assert status == "dropped" and commands == []
+
+
+def test_removed_invited_and_accepted_again_the_old_mail_is_dropped(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """The history the review reproduced over HTTP: a member of olga's `lab` gets a mail
+    built, is removed, invited and accepted again (a new membership row, a new `joined_seq`),
+    and the mail built before the removal is dropped, not sent."""
+    anna = verified(make_client, migrated, "me@example.org")
+    olga = flow.human(make_client, migrated, "olga")
+    flow.project(olga, "lab")
+    lab = "/projects/olga/lab"
+
+    def joined() -> None:
+        made = olga.post(f"{lab}/invitations", {})
+        assert made.status_code == 201, made.text
+        token = made.json()["url"].rsplit("/", 1)[1]
+        assert anna.post(f"/invitations/{token}/accept").status_code == 201
+
+    joined()
+    agent = flow.agent(make_client, olga, "olga/lab")
+    with migrated.begin() as conn:  # the set-up's mails are out of the way
+        conn.execute(update(t.mail_outbox).values(status="sent"))
+    later = clock.now() + timedelta(seconds=30)
+    clock.set_source(lambda: later)
+    assert anna.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}}).status_code == 200
+    asked = agent.post(f"{lab}/requests", {"class": "decision", "title": "Which?", "to": anna.id})
+    assert asked.status_code == 201, asked.text
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert olga.delete(f"{lab}/members/{anna.id}").status_code in (200, 204)
+    joined()
+    with migrated.connect() as conn:
+        rows = conn.execute(
+            select(t.membership.c.id, t.membership.c.active).where(
+                t.membership.c.human_id == anna.id
+            )
+        ).all()
+    assert len(rows) == 2 and sum(1 for r in rows if r.active) == 1  # a new row
+    status, commands = _deliver_only(migrated, mail.id)
+    assert status == "dropped" and commands == []
