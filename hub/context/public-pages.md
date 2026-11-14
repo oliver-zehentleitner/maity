@@ -984,3 +984,31 @@ run guards what a browser refuses.
 - A class per bar height (`h-1` to `h-41`): 41 rules in two stylesheets for what an SVG attribute says directly.
 - Leaving the shell's copy unstyled because the dashboard redraws the page: the copy is what a reader without
   script, or before the script, and a crawler sees.
+
+## A stored page's frame has the landing page's theme switch and language row
+
+**Id:** 3ebf3861-2939-45c2-a459-1949ddcf1cef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8mkezms3h9xh; the maintainer's decision req-q34v0gr2rbw2 (2026-11-13): the stored pages' frame
+and the landing page's are to be identical, the language row and the theme switch both; contract `docs/api.md`
+§16.9
+**See:** public-pages.md — c0868c32-a98a-46d9-ab65-f6ad9583848a — as of 2026-11-13
+
+`render.stored_in_frame` builds the frame with `public_frame(..., theme=True, query="as=public")`: the header's
+`[data-lp-theme]` button, the landing page's one script (`landing.js`, which does nothing else without the landing
+page's elements), and the footer's language row, whose links are `?as=public&lang=<tag>`. A language there changes
+the frame only; the stored page keeps the language it was rendered in. `FRAMED_CSP` gains `script-src 'self'`, no
+inline script. `test_the_frame_has_the_landing_pages_theme_switch_and_language_row` compares the controls with the
+landing page's; the end-to-end `stored_page_layout` clicks the switch and reads the row.
+
+**Reason:** a reader moving from the start page to a project's or a person's page should find the same header and
+footer, not a frame with two controls missing. The script is the landing page's own file, served by this hub, so
+the policy admits only `'self'`.
+
+**Rejected alternatives:**
+- The frame without a language row and without script, as built first (c0868c32): one language on the page, the
+  content's, and the pages' policy without script. It lost to the decision that the two frames be identical.
+- The language row leading to `?lang=` alone: the link would drop `as=public` and a signed-in reader would land in
+  the app instead of the page they were reading.

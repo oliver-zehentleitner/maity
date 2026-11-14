@@ -15,6 +15,7 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.statements import count_statements
+from tests.test_public_pages import only_the_frames_script
 from tests.test_public_project_views import BASE, TASKS, World, pages, view
 from tests.test_reports import report
 
@@ -50,7 +51,7 @@ def test_a_card_has_a_page_with_its_text_at_the_dashboard_address(world: World) 
     assert made.status_code == 201, made.text
     card_id = made.json()["id"]
     text = page(world, card_id)
-    assert text is not None and "<script" not in text
+    assert text is not None and only_the_frames_script(text)
     assert "<h1>Fix the *pager*</h1>" in text and "<h2>Steps</h2>" in text
     assert "<li>one</li>" in text
     assert f'<link rel="canonical" href="https://hub.example{BASE}/tasks/{card_id}">' in text
