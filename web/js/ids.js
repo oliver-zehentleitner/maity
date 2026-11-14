@@ -63,6 +63,16 @@ window.Maity = window.Maity || {};
   // writes the prefix.
   const ref = (full, id, outside) => (outside && full ? full + "/" + id : id);
 
+  // A reference's text as nodes: a full one (`owner/slug/tsk-…`) may wrap in its project's
+  // name and right before the id, never inside the id (tsk-e9d52pfhvk3v: on a phone a chat
+  // bubble grew past the screen with an unbreakable `oliver-zehentleitner/maity/req-…`).
+  // The text reads and copies as written.
+  function refText(text) {
+    const cut = text.lastIndexOf("/");
+    return cut < 0 ? [text] : [h("span", { class: "ref-prefix" }, text.slice(0, cut + 1)), h("wbr"), h("span", { class: "ref-id" }, text.slice(cut + 1))];
+  }
+  const refClass = (text) => (text.includes("/") ? "id-ref full" : "id-ref");
+
   // A text as strings and links. `at`: {slug, repository, outside}; without
   // a slug ids stay text (there is no page to open), without a GitHub
   // repository numbers do.
@@ -106,9 +116,10 @@ window.Maity = window.Maity || {};
       if (!href && !kind) continue;
       if (m.index > from) out.push(s.slice(from, m.index));
       // An id with nowhere to open still reads as one, never broken.
-      if (!href) out.push(h("span", { class: "id-ref" }, m[0]));
+      const shown = !href || !kind || m[1] ? m[0] : kind === "tsk" || kind === "req" ? ref(slug, id, at.outside) : id;
+      if (!href) out.push(h("span", { class: refClass(shown) }, refText(shown)));
       else out.push(kind
-        ? h("a", { class: "id-ref", href }, m[1] ? m[0] : kind === "tsk" || kind === "req" ? ref(slug, id, at.outside) : id)
+        ? h("a", { class: refClass(shown), href }, refText(shown))
         : h("a", { class: "id-ref", href, rel: "noopener noreferrer", target: "_blank" }, m[0]));
       from = m.index + m[0].length;
     }
@@ -128,7 +139,7 @@ window.Maity = window.Maity || {};
     const parts = link(String(text).trim(), at);
     // Card, request and member ids only: a lone #12 in backticks stays code.
     const a = parts.length === 1 && typeof parts[0] !== "string" && parts[0].tagName === "A" && parts[0].textContent.charAt(0) !== "#" ? parts[0] : null;
-    if (a) { const said = a.textContent; a.textContent = ""; a.appendChild(h("code", null, said)); }
+    if (a) a.appendChild(h("code", null, Array.from(a.childNodes)));
     return a;
   }
 

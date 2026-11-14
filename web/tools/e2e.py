@@ -2114,10 +2114,30 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     )
     assert history[0] and history[1] < 48, f"the history does not scroll or is not at its end: {history}"
     run.shot(page, "chat-long")
+    # A full reference has no space to break at (tsk-e9d52pfhvk3v): another project's
+    # `<owner>/<slug>/req-…`, linked by shape. On a phone it wraps inside the bubble, in the
+    # project's name or before the id, and the id stays on one line.
+    far = "a-namespace-with-a-long-handle/a-project-with-a-rather-long-slug/req-jvg545kp0es2"
+    run.maity(alpha, "say", "human", f"Answered in {far}, see there.")
+    wide = page.locator("ol.messages li.msg.in").filter(has_text="see there.").last
+    expect(wide.locator("a.id-ref[href$='/inbox/req-jvg545kp0es2']")).to_have_text(far)
+
     # On a phone the list is one screen and the chat another.
     def fits(where: str) -> None:
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"{where} is {width[0]} px wide at {width[1]} px"
+
+    def bubble_fits(where: str) -> None:
+        wide.scroll_into_view_if_needed()
+        box = wide.evaluate(
+            "(m) => { const pane = m.closest('ol.messages').getBoundingClientRect(), r = m.getBoundingClientRect(),"
+            " id = m.querySelector('a.id-ref .ref-id'); return [r.left, r.right, pane.left, pane.right,"
+            " m.scrollWidth - m.clientWidth, id ? id.getClientRects().length : 0]; }"
+        )
+        left, right, start, end, over, lines = box
+        assert left >= start - 0.5 and right <= end + 0.5, f"{where}: the bubble spans {left}–{right} px in a pane of {start}–{end} px"
+        assert over <= 0, f"{where}: the bubble's text is {over} px wider than the bubble"
+        assert lines == 1, f"{where}: the request id is broken over {lines} lines"
 
     for phone in (390, 360):
         page.set_viewport_size({"width": phone, "height": 780})
@@ -2132,6 +2152,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         expect(heading).to_be_focused()
         expect(page.locator(".chat-list-pane")).to_be_hidden()
         fits(f"the chat at {phone} px")
+        bubble_fits(f"a message with a long reference at {phone} px")
         box = compose.bounding_box()
         assert box["y"] + box["height"] <= 780 + 1, f"the composer is below the screen at {phone} px: {box}"
         run.shot(page, f"phone-{phone}-chat")
