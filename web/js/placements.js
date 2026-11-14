@@ -106,7 +106,7 @@ window.Maity = window.Maity || {};
     const own = ctx.members.filter((m) => m.kind === "agent" && !m.removed_at && m.owner_id === ctx.me.id && !placed.has(m.id));
     const agent = select("agent", [h("option", { value: "" }, M.t("placements.new.agent_new"))]
       .concat(own.map((m) => h("option", { value: m.id }, m.display_name + " (@" + m.handle + ")"))));
-    const handle = input("handle", { pattern: M.dom.NAME_RULES.handle.pattern, autocomplete: "off", "aria-describedby": id("handle") + "-hint" });
+    const handle = input("handle", { pattern: M.dom.NAME_RULES.handle.pattern, autocomplete: "off" });
     const name = input("name", { autocomplete: "off" });
     // Trust admin and the role proxy only from an owner (§3.1, owner_only §2.3), as in a join.
     const trust = select("trust", (ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"]).map((r) => h("option", { value: r }, M.trust.trustWord(r))));
@@ -125,7 +125,7 @@ window.Maity = window.Maity || {};
     const fresh = h("fieldset", { class: "placement-new-profile" }, h("legend", null, M.t("placements.new.profile")),
       // What a handle is, as at every other agent handle (#1488), and its rule.
       h("div", { class: "field" }, h("label", { for: id("handle") }, M.t("agents.handle")), handle,
-        M.handles.explain("agent", handle), h("p", { class: "hint", id: id("handle") + "-hint" }, M.dom.NAME_RULES.handle.text)),
+        M.handles.explain("agent", handle), M.handles.rule(handle)),
       field("name", M.t("agents.display_name"), name),
       field("trust", M.t("join.field.trust"), trust),
       h("div", { class: "field" }, h("label", { for: id("role") }, M.t("join.field.role")), role, roleHelp),
@@ -198,6 +198,8 @@ window.Maity = window.Maity || {};
       // Under the page's h2 (the Join an agent menu opens it under the page's head), one level down.
       h("h3", { id: id("title") }, M.t("placements.new.title")),
       h("p", { class: "hint" }, M.t("placements.new.hint")),
+      // Until the person confirmed it, once (docs/api.md §5.1, "Experiment notice"); it holds nothing back.
+      M.experimentNotice ? M.experimentNotice.forConnecting(ctx) : null,
       field("agent", M.t("join.field.agent"), agent), fresh,
       field("runner", M.t("placements.new.runner"), runner),
       field("target", M.t("placements.new.target"), target),

@@ -416,6 +416,38 @@ def _chat_meat_proxy(chat: dict[str, Any]) -> list[str]:
     return lines
 
 
+RULE_TEXTS = (("allowed", "May talk about and work on"), ("denied", "Must not reveal"))
+
+
+def chat_rules_lines(items: Any, *, chats: bool = True) -> list[str]:
+    """The rules per side the agent's owner set (§9.6, "Rules per side"), binding in the chats
+    across that side's boundary: per item `Chat rules for <handle>'s side (set by your owner):`,
+    a project's entry named by the project, then each text quoted and, with `chats`, the chats
+    it applies in. An item with neither text prints nothing (the hub sends none)."""
+    lines: list[str] = []
+    for rule in _items(items):
+        texts = [(label, rule.get(key)) for key, label in RULE_TEXTS]
+        texts = [(label, text) for label, text in texts if isinstance(text, str) and text.strip()]
+        if not texts:
+            continue
+        project = rule.get("project")
+        if rule.get("handle"):
+            whom = f"{inline(rule['handle'])}'s side"
+        elif isinstance(project, dict):
+            whom = f"everyone in {inline(project.get('owner'))}/{inline(project.get('slug'))}"
+        else:
+            whom = "a side"
+        lines.append(f"Chat rules for {whom} (set by your owner):")
+        for label, text in texts:
+            lines.append(f"  {label}:")
+            lines += [f"  {line}" for line in quote(text)]
+        convs = rule.get("conversations")
+        listed = [inline(c) for c in convs if isinstance(c, str)] if isinstance(convs, list) else []
+        if chats and listed:
+            lines.append(f"  In: {', '.join(listed)}")
+    return lines
+
+
 def _unread_chats(packet: dict[str, Any]) -> list[str]:
     """Each conversation with unread messages (§5.2 `conversations`, newest activity first):
     a group chat's messages wake nobody unless they mention you, so the resume says so."""
@@ -1157,13 +1189,14 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
                 for ln in _request(r, names, answering=True, compact=compact)
             ],
         ),
+        ("", chat_rules_lines(packet.get("chat_rules"))),  # each item has its own heading
         ("Unread chats:", _unread_chats(packet)),
         ("Cross-project chats:", _cross_chats(packet)),
         *([(ticker[0], ticker[1:])] if (ticker := _ticker(packet)) else []),
     ]
     for title, lines in sections:
         if lines:
-            out += ["", title, *lines]
+            out += ["", *([title] if title else []), *lines]
     out += _handover(packet, slug, names)
     events = _events(packet, slug, names, compact)
     if events:

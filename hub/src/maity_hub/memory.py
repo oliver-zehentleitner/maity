@@ -19,7 +19,7 @@ from sqlalchemy import Connection, and_, func, insert, select, update
 
 from maity_hub import clock, events, idempotency, namespace, project_roles, proposals
 from maity_hub import tables as t
-from maity_hub.access import Membership, membership
+from maity_hub.access import Membership, membership, owns_agent
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
@@ -87,7 +87,12 @@ def version_view(conn: Connection, ref: str) -> dict[str, Any]:
     }
 
 
-idempotency.LOADERS["soul"] = idempotency.plain(version_view)
+idempotency.register(
+    "soul",
+    idempotency.plain(version_view),
+    # `<agent id>@<version>`: the owner's alone, as its GET (§19.1)
+    lambda conn, ref, caller: owns_agent(conn, caller, ref.rpartition("@")[0]),
+)
 
 
 def owner_membership(conn: Connection, project_id: str, owner_id: str) -> int | None:
@@ -275,7 +280,9 @@ def _load_for_caller(conn: Connection, entry_id: str, request: Request) -> dict[
     return entry_view(conn, row)
 
 
-idempotency.LOADERS["memory"] = _load_for_caller
+idempotency.register(
+    "memory", _load_for_caller, idempotency.in_project(idempotency.column_of(t.memory_entry))
+)
 
 
 def owner_of(conn: Connection, team: Any) -> str | None:

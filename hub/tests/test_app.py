@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
-from maity_hub import API_VERSION, __version__
+from maity_hub import API_VERSION, __version__, middleware
 from maity_hub.app import SchemaNotCurrentError, create_app
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import downgrade, head_revision, migrate
@@ -82,7 +82,7 @@ def test_the_shell_is_served_at_the_root_and_at_every_dashboard_path(
         assert response.headers["content-type"].startswith("text/html")
         assert response.headers["cache-control"] == "no-cache"
         assert response.headers["x-content-type-options"] == "nosniff"
-        assert response.headers["content-security-policy"] == "default-src 'self'"
+        assert response.headers["content-security-policy"] == middleware.CSP
         assert "set-cookie" not in response.headers
     # The root's `noindex` is the middleware's, while the landing page is off (§16.7); every
     # other path of the shell carries its own.
@@ -95,7 +95,66 @@ def test_the_invitation_page_sends_no_referrer_and_the_others_keep_theirs(
 ) -> None:
     # Its token is in the path: a link it opens must not carry it along (docs/api.md §16.13).
     assert client.get("/invite/some-token").headers["referrer-policy"] == "no-referrer"
-    assert "referrer-policy" not in client.get("/maintainer/maity/board").headers
+    assert client.get("/maintainer/maity/board").headers["referrer-policy"] == "same-origin"
+
+
+# A sample of the paths the shell answers (docs/api.md §1.1, §16.11).
+SHELL_PATHS = (
+    "/",
+    "/maintainer/maity/board",
+    "/login",
+    "/register",
+    "/sign-in/code",
+    "/invite/some-token",
+    "/no-such-page",
+)
+
+
+@pytest.mark.parametrize("path", SHELL_PATHS)
+def test_the_shell_may_not_be_framed(client: TestClient, web_dir: Path, path: str) -> None:
+    headers = client.get(path).headers
+    csp = [d.strip() for d in headers["content-security-policy"].split(";")]
+    assert "frame-ancestors 'none'" in csp
+    assert headers["x-frame-options"] == "DENY"
+
+
+@pytest.mark.parametrize("path", SHELL_PATHS)
+def test_the_shell_policy_closes_base_forms_and_plugins(
+    client: TestClient, web_dir: Path, path: str
+) -> None:
+    csp = [d.strip() for d in client.get(path).headers["content-security-policy"].split(";")]
+    assert csp[0] == "default-src 'self'"
+    # `'self'`, not `'none'`: the shell's own `<base href="/assets/">` must stay in force.
+    assert "base-uri 'self'" in csp
+    assert "form-action 'self'" in csp
+    assert "object-src 'none'" in csp
+
+
+@pytest.mark.parametrize("path", SHELL_PATHS)
+def test_the_shell_keeps_its_window_to_itself(client: TestClient, web_dir: Path, path: str) -> None:
+    assert client.get(path).headers["cross-origin-opener-policy"] == "same-origin"
+
+
+@pytest.mark.parametrize("path", SHELL_PATHS)
+def test_the_shell_asks_for_no_device(client: TestClient, web_dir: Path, path: str) -> None:
+    policy = client.get(path).headers["permissions-policy"]
+    for feature in ("camera", "microphone", "geolocation", "payment", "usb"):
+        assert f"{feature}=()" in policy
+
+
+@pytest.mark.parametrize("path", SHELL_PATHS)
+def test_the_shell_sends_the_referrer_to_its_own_origin_at_most(
+    client: TestClient, web_dir: Path, path: str
+) -> None:
+    policy = client.get(path).headers["referrer-policy"]
+    assert policy == ("no-referrer" if path.startswith("/invite/") else "same-origin")
+
+
+def test_the_shell_keeps_its_base_under_its_own_policy(client: TestClient, web_dir: Path) -> None:
+    # The `<base>` the hub writes into the shell is one `base-uri 'self'` admits.
+    response = client.get("/login")
+    assert '<base href="/assets/">' in response.text
+    assert "base-uri 'self'" in response.headers["content-security-policy"]
 
 
 def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_depth(

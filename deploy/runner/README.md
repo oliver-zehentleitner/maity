@@ -107,7 +107,9 @@ So the machine is capped, not trusted:
    registration token from that page (Settings → Actions → Runners; valid for an hour).
 3. As root, with every `maity-runner*` service stopped and no container left in the runner user's Docker (stopping a
    service ends the runner but not the service containers of a job it was running; `docker ps` as the runner user
-   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each
+   must be empty, the script refuses otherwise): `RUNNER_TARBALL=<tarball> install-services.sh`, which asks for the token
+   without echoing it (or reads it from standard input, `< token-file`; `RUNNER_TOKEN` in the environment also works). The
+   token never goes on a command line: `config.sh` gets it through its environment, not as `--token`. For each
    selected instance (default `pg` only; `INSTANCES="sqlite maria"` adds others later) it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
    runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
    self-update would write into its own directory, which the runner user may not: update by hand, as root, when
