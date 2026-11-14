@@ -24,7 +24,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
-from maity_hub.models import HANDLE_PATTERN, Strict, markdown, title
+from maity_hub.models import HANDLE_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import validate_assignment
@@ -45,7 +45,7 @@ REPORTS_DEFAULT, REPORTS_MAX = 10, 50
 class AgentRef(Strict):
     id: str | None = None
     handle: str | None = Field(default=None, pattern=HANDLE_PATTERN)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
 
 
 class WorkspaceIn(Strict):
