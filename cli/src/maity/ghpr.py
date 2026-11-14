@@ -22,7 +22,7 @@ import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
-from maity import clonecheck, gitfacts, inclone
+from maity import clonecheck, gitfacts, inclone, onboarding
 
 # What the runner writes for a clone whose repository's grant has `pull_requests = true`:
 # the repository (`host/owner/name`) and the gh it found, one per line. Empty: not granted.
@@ -215,23 +215,27 @@ def as_text(args: argparse.Namespace) -> bool:
 
 def _readable(answer: bytes) -> str:
     """A `pr view` answer (VIEW_FIELDS, comments with `--comments`) as text; what is not
-    the JSON gh gives is printed as it came."""
+    the JSON gh gives is printed as it came. Either way the text is someone's: every field is
+    cleaned (`onboarding`), one-line fields kept on their line, so no escape reaches the
+    terminal and no title or name starts a line of its own."""
+    one = onboarding.inline
     try:
         pr = json.loads(answer)
         author = (pr.get("author") or {}).get("login") or "?"
         state = pr["state"] + (" (draft)" if pr.get("isDraft") else "")
         lines = [
-            f"#{pr['number']} {pr['title']}",
-            f"{state}  {pr['headRefName']} -> {pr['baseRefName']}  by {author}",
-            pr["url"],
+            f"#{one(pr['number'])} {one(pr['title'])}",
+            f"{one(state)}  {one(pr['headRefName'])} -> {one(pr['baseRefName'])}  by {one(author)}",
+            one(pr["url"]),
             "",
-            (pr.get("body") or "").rstrip() or "(no description)",
+            onboarding.clean((pr.get("body") or "").rstrip()) or "(no description)",
         ]
         for comment in pr.get("comments") or []:
-            who = (comment.get("author") or {}).get("login") or "?"
-            lines += ["", f"--- {who}, {comment.get('createdAt', '')}", comment["body"].rstrip()]
+            who = one((comment.get("author") or {}).get("login") or "?")
+            when = one(comment.get("createdAt", ""))
+            lines += ["", f"--- {who}, {when}", onboarding.clean(comment["body"].rstrip())]
     except (ValueError, KeyError, TypeError, AttributeError):
-        return answer.decode("utf-8", "replace")
+        return onboarding.clean(answer.decode("utf-8", "replace"))
     return "\n".join(lines) + "\n"
 
 

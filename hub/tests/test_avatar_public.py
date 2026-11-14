@@ -396,7 +396,7 @@ def test_a_private_profile_shows_the_placeholder(world: World) -> None:
     put_human(world.owner, "/me/avatar", image())
     world.owner.patch("/me", {"public_profile": False})
     html = main(world.anyone, "/maintainer")
-    assert '<span class="pic none" style="width:128px;height:128px"' in html
+    assert '<span class="pic none size-128" aria-hidden="true"></span>' in html
     assert "<img" not in html
     assert world.anyone.get("/api/v1/public/pages/maintainer").json()["data"]["picture"] is None
 
