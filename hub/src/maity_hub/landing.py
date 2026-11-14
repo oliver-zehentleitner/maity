@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, site_values
+from maity_hub import clock, handles, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.views import ts
@@ -65,7 +65,7 @@ STATS = (
     "instances_online",
 )
 DEMO_KINDS = ("cmd", "out", "note")  # the lines of the demo's terminal (§16.7)
-HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
+HANDLE = handles.FORMAT  # a human's handle, 2 to 31 characters (§6.24)
 FULL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{1,30}/[a-z0-9][a-z0-9-]{1,62}")
 # C0 control characters other than tab, newline and carriage return (§16.7): no page has
 # them, and without them JSON escapes a page to at most three times its size.

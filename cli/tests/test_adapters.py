@@ -701,12 +701,21 @@ def test_a_dangling_login_link_is_replaced(tmp_path: Path, monkeypatch: pytest.M
 
 @pytest.mark.parametrize("harness_id", ["claude-code", "codex", "stub"])
 def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) -> None:
-    """maity refuses its git in a marked clone whose session variables are gone."""
+    """maity refuses its git in a marked clone whose session variables are gone. The git
+    maity starts is recorded in the runner's directory for the agent, which the sandbox
+    hides, never in the clone (only Codex, whose maity runs in its sandbox, keeps it there)."""
     ctx = context(tmp_path, harness_id)
     (ctx.clone / ".git").mkdir(parents=True)
-    adapters.launch(ctx)
+    launch = adapters.launch(ctx)
     assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"
-    recorded = (ctx.clone / ".git" / "maity" / "git").read_text().strip()
+    if harness_id == "codex":
+        where = ctx.clone / ".git" / "maity"
+    else:
+        where = Path(launch.env[clonecheck.GIT_PRIVATE_ENV])
+        assert where == ctx.agent_dir / "git"
+        assert not (ctx.clone / ".git" / "maity" / "git").exists()
+        assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
+    recorded = (where / "git").read_text().strip()
     assert recorded == shutil.which("git") and os.path.isabs(recorded)
 
 
@@ -751,8 +760,9 @@ def test_launch_records_the_repository_and_gh_for_a_grant_with_pull_requests(
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     (ctx.clone / ".git").mkdir(parents=True)
     launch = adapters.launch(ctx)
-    record = (ctx.clone / ".git" / "maity" / "pull_requests").read_text()
+    record = (ctx.agent_dir / "git" / "pull_requests").read_text()
     assert record == f"github.com/oliver-zehentleitner/maity\n{gh}\n"
+    assert not (ctx.clone / ".git" / "maity" / "pull_requests").exists()
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED + adapters.PULL_REQUEST_PROMPT
     assert "maity gh pr create" in adapters.PULL_REQUEST_PROMPT
 
@@ -765,9 +775,10 @@ def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
     ctx = context(tmp_path, sandbox=True,
                   placement={**PLACEMENT, "workspace": {"repository": REPOSITORY}})  # fmt: skip
     (ctx.clone / ".git" / "maity").mkdir(parents=True)
-    (ctx.clone / ".git" / "maity" / "pull_requests").write_text("github.com/o/other\n/bin/gh\n")
+    (ctx.agent_dir / "git").mkdir(parents=True)
+    (ctx.agent_dir / "git" / "pull_requests").write_text("github.com/o/other\n/bin/gh\n")
     launch = adapters.launch(ctx)
-    assert (ctx.clone / ".git" / "maity" / "pull_requests").read_text() == ""
+    assert (ctx.agent_dir / "git" / "pull_requests").read_text() == ""
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED
 
 

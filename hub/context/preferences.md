@@ -169,3 +169,8 @@ call the dashboard never sees) and would only add a click.
   had agents before the notice existed would never see it.
 - Keeping the confirmation in the browser's storage: it would come back on every new device, and the
   export could not hold it.
+
+The text lives twice, in the hub's `words/<lang>.json` for the registration page and in the
+dashboard's `web/i18n/<lang>.json`; `hub/tests/test_catalog.py` keeps the two equal in every
+language (clean-up audit, 2026-11-14). Rejected: the dashboard quoting the hub's text from `/me`, as
+the meat-proxy note does, since the registration page shows it to someone not yet signed in.

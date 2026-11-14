@@ -2669,6 +2669,18 @@ window.Maity = window.Maity || {};
     document.getElementById("header").querySelectorAll("nav, .project-links").forEach(updateCue);
     document.querySelectorAll("nav.account-tabs").forEach(updateCue);
   });
+  // The fonts load with font-display: swap, so a view can be drawn in the fallback face first.
+  // Inter is wider: the current tab, brought into sight before it arrived, could end outside its
+  // row (Security at 390 px, tsk-1cs7h9jhww36). Once a face is in, every row that brought its
+  // current tab into sight does so again (the header's and the account's), and the cues follow.
+  if (document.fonts && document.fonts.addEventListener) {
+    document.fonts.addEventListener("loadingdone", () => {
+      const header = document.getElementById("header");
+      header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); updateCue(nav); });
+      header.querySelectorAll(".project-links").forEach(updateCue);
+      document.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); updateCue(nav); });
+    });
+  }
   M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);
 })(window.Maity);
