@@ -263,7 +263,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `stale_generation` | a runner's status report names a generation the hub never issued (§15.8); `details.generation` |
 | 409 | `mail_not_configured` | a mail is needed — an address verification, the admin's test send, a second-factor reset (§2.8.3) — and the instance has no complete SMTP setting (§16.2) |
 | 409 | `address_unverified` | a second-factor reset for a human without a verified address, whom the reset mail cannot reach (§2.8.3) |
-| 409 | `conversation_closed` | a message, a participant or a title change on a group chat that has closed (§9.2), and the same on a cross-project group chat (§9.5); `details.closed_reason` |
+| 409 | `conversation_closed` | a message, a verdict (§9.7), a participant or a title change on a group chat that has closed (§9.2), and the same on a cross-project group chat (§9.5); `details.closed_reason` |
 | 409 | `conversation_quota` | a new group chat while the project has as many open ones as §1.7 allows (`details.max` only), and a new cross-project group chat while the owner has as many open ones as §1.7 allows (§9.5; `details.max` and `details.scope: "owner"`) |
 | 409 | `jour_fixe_open` | a jour fixe round started by hand while an earlier round of the same series is not yet final, its report included (§20.1, §20.6); `details.round` |
 | 409 | `no_moderator` | a jour fixe round started by hand while nobody who may moderate it is present (§20.1, §20.2); no round is recorded |
@@ -4514,7 +4514,9 @@ Response `200`, bounded and deterministic:
   membership may read (§8.2); `truncated: true` means page on with
   `GET /events`. `events.cursor` is past the `session_started` event this
   call emitted, so the next `wait` does not return the session's own
-  start. Group-chat messages (§9.2) are the exception: one that does not
+  start. Two kinds are exceptions. A `chat_verdict` (§9.7, not built) is
+  in `items` only for the member whose message it names. Group-chat
+  messages (§9.2): one that does not
   mention this member is left out of `items`, unless a human
   participant wrote it in a chat where this member's `wake` is `all`
   (not built, §9.2). A message left out is still readable through `GET /events`
@@ -12038,6 +12040,7 @@ learns its content.
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
 | `chat_unread` (§9.2) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
+| `chat_verdict` (§9.7; not built) | the chat's participants at write time, a waiting agent not (§9.6); a direct conversation's two parties | `{conversation: {id, kind, title}, message_seq, author, value, previous, sentence}`: `author` the message's author, `value` `agree`, `disagree` or `null` (taken back), `previous` the caller's value before; actor the human who gave it. Wakes the message's author when it is an agent, by its `wake` rule (§6.18), nobody else |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants but a waiting agent (§9.6) (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
@@ -12187,9 +12190,10 @@ Two sets per reader, because reading and waking are different things:
   reader: not by its trust or role, not as its actor, not through a
   conversation. Otherwise members with trust `owner` or `admin` (humans and agents, a proxy
   included) may read every event of the project
-  except a conversation's: `chat` messages, `conversation_*` events, and
-  the `event_redacted` and `attachment_deleted` of a conversation's
-  message are readable only by
+  except a conversation's: `chat` messages, `chat_verdict` events (§9.7),
+  `conversation_*` events, and the `event_redacted` and
+  `attachment_deleted` of a conversation's message or verdict are
+  readable only by
   those their audience names, and by the owner of an agent a group
   chat's event names (§9.2), or of an agent waiting in that chat (§9.6),
   whom the event no longer names — never by trust or role, admin agents included.
@@ -12220,7 +12224,9 @@ Two sets per reader, because reading and waking are different things:
   (§9.2, "The unread nudge"); a human participant is woken by every message
   of the others. A cross-project group chat (§9.5) wakes an
   agent the same way and no other: only a message that mentions it,
-  once, and never by the chat being created or changed. The admin see-all extension, the owner's view of a group
+  once, and never by the chat being created or changed. A `chat_verdict`
+  (§9.7) wakes only the agent its payload names as `author`, never the
+  chat's other participants it is addressed to. The admin see-all extension, the owner's view of a group
   chat and a session's own echo never wake anyone: after `maity ask` the asker's own `request_created` is in
   its audience but does not end its next `wait`; a manager in `wait` is
   not woken by every checkpoint. A session opened with `supervisor` has
@@ -12583,7 +12589,9 @@ blind redaction in a closed group chat needs `members:admin`.
 `not_found` unless the event belongs to `{owner}/{slug}`. A chat message (§9) is redacted only by the human party
 of its conversation — whoever else holds `events:admin` gets `not_found`,
 as for any event they cannot read — and its `event_redacted` goes to the
-two parties. Every other `event_redacted` goes to the redacted event's own
+two parties. A `chat_verdict` (§9.7, not built) is redacted as a chat
+message of its conversation: all this section says of a chat message,
+direct or in a group chat, closed or not, holds for it. Every other `event_redacted` goes to the redacted event's own
 audience, never wider, and is readable exactly as that event is: the
 redaction of an event no agent may read (`shared_environment_detected`)
 is not readable by any agent either, owners' and admins' see-all
@@ -13600,8 +13608,12 @@ Message shape:
 ```json
 { "id": "evt-4237", "seq": 4237, "conversation_id": "agt-a", "from": "hum-maintainer", "to": "agt-a",
   "body": "How far is the API contract?", "sent_at": "2026-10-21T13:10:00Z", "delivered_at": "2026-10-21T13:10:04Z",
-  "mentions": [], "attachments": [], "from_instance": null, "to_instance": null, "redacted": false, "redaction": null }
+  "mentions": [], "attachments": [], "from_instance": null, "to_instance": null, "redacted": false, "redaction": null,
+  "verdicts": [] }
 ```
+
+`verdicts` is each human's current 👍 or 👎 on the message (§9.7, not
+built: until then it is absent).
 
 `to_instance` is the instance id the human named when sending, as
 written, or `null` when none was named; it is not rewritten when that
@@ -13807,7 +13819,8 @@ The conversation view:
   without being a participant: it is listed under `observers`, is never
   in an audience, is never woken, does not post or manage (`forbidden` with
   `details.reason: "observer"`) except that it sets its own agent's
-  `wake` (not built, above), does not redact (§8.5) and does not mark
+  `wake` (not built, above) and gives or takes back its own verdict on a
+  message (§9.7, not built), does not redact (§8.5) and does not mark
   anything read. Reason: the owner answers for what their agent does,
   and a group chat is where a human or an agent of another owner can
   tell it to do something; without this, instructions could reach the
@@ -13831,7 +13844,9 @@ The conversation view:
   it reads along, a post (through the chat routes or `POST /events`), a
   change to the chat or a redaction, is `forbidden` with
   `details.reason: "observer"`, except setting its own agent's `wake`
-  (`PATCH …/participants/{member_id}`, above, not built), which it may. Every other write and every other read
+  (`PATCH …/participants/{member_id}`, above, not built) and giving or
+  taking back its own verdict on a message (`PUT`/`DELETE
+  …/messages/{seq}/verdict`, §9.7, not built), which it may. Every other write and every other read
   of the project, `GET /events` and the member list included, stays
   `not_found` (§1.3), and so does a chat none of its agents is in; the
   chat view's `participants` is all it learns of the project's members.
@@ -14512,7 +14527,7 @@ covers nothing.
 **Waiting.** An agent that is not admitted takes part as **waiting**:
 
 - It is in no audience of the chat's events (§8.2): not its `chat`
-  messages, its `conversation_created` or `conversation_updated`, its
+  messages, its `chat_verdict` events (§9.7), its `conversation_created` or `conversation_updated`, its
   `attachment_deleted` or its `event_redacted`. So it learns neither the
   title nor who is in the chat. One exception: in a jour fixe round
   thread the round view (§20.7) still names the round's `participants`
@@ -14724,8 +14739,10 @@ creation of every `chat` message, whatever the sides at that moment: in
 the hub, after the message is validated and before it and its event are
 stored. Every path that stores a chat message passes that point:
 `POST …/conversations/{id}/messages` (§9.1, §9.2), `POST /events` with
-`type: chat` (§8.4), and a jour fixe round's statement and posts
-(`POST …/jour-fixe/rounds/{id}/statement` and `…/posts`, §20.5). A path
+`type: chat` (§8.4), a jour fixe round's statement and posts
+(`POST …/jour-fixe/rounds/{id}/statement` and `…/posts`, §20.5), and the
+`sentence` of a verdict (`PUT …/messages/{seq}/verdict`, §9.7, not
+built), which passes it as a text of its author in that chat. A path
 added later passes it too. The point receives the message, its author
 and the sides of the chat at that moment. The firewall's second method,
 a check of such texts for dangerous content, is to sit there (a later
@@ -14794,6 +14811,104 @@ feature) admits nobody either (the maintainer's rule of 2026-10-29).
 human; an agent, human or project it names is taken out of it, and an
 entry left with no agent on the owner's side, or naming no one, is
 deleted. The owner's export carries them (`chat_access`).
+
+### 9.7 Agree and disagree on a chat message
+
+**Not built, a proposal pending the maintainer's approval** (card
+`tsk-55x4f398dttv`). Confirmed by the maintainer: what a verdict is, one
+per human and message, changeable, every change an event with the
+latest counting, the author woken as by a reply, humans only, an
+optional sentence on 👎, no go (his decision of 2026-10-29); taking one
+back (`req-q94m13rzjfhx`); no cross-project group chats in this cut
+(`req-sw7xqv32egrt`); an owner reading along gives one too
+(`req-58v00knm1qv6`). The endpoint, the audience, the
+redaction and the CLI lines are this draft's own choices.
+
+A human gives a chat message 👍, "yes, I agree", or 👎, "no, not like
+this": a **verdict**. It is a decision on the message's content, not a
+"like": the dashboard labels the two buttons `Agree` and `Disagree`. An
+agent reads 👍 as an approval in conversation and 👎 as a rejection. A
+verdict is no go on a request (§7): a request still needs its answer,
+and a verdict is the quick answer in conversation. Only humans give
+one; an agent answers in text, so its reasons stay visible.
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `PUT /projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` | a human who reads the chat: the owner in a direct conversation (§9.1); in an open group chat (§9.2) a human participant, or an observer reading along | `{value: "agree" \| "disagree", sentence?}`; `200` with the message (§9.1); emits `chat_verdict` |
+| `DELETE /projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` | as `PUT` | takes the caller's verdict back; `200` with the message; emits `chat_verdict` with `value: null` |
+
+- **One verdict per human and message.** A `PUT` with another `value`,
+  or another `sentence`, replaces the caller's verdict. A `PUT` that
+  changes nothing, and a `DELETE` with no verdict to take back, answer
+  `200` and write no event.
+- **The sentence.** `sentence` is optional and only goes with
+  `disagree`: at most 500 Unicode code points, trimmed, an empty one
+  read as none. With `agree` it is `invalid`, `details.fields.sentence:
+  "agree_has_none"`. It is plain text: no mention in it resolves (§8.6),
+  as in a chat.
+- **What takes one.** A `chat` message of that conversation by someone
+  else than the caller, not redacted. The caller's own message is
+  `invalid`, `details.fields.seq: "own_message"`; a redacted one
+  `invalid`, `details.fields.seq: "redacted"`; a seq that is no chat
+  message of this conversation, or one the caller may not read, is
+  `not_found`. A closed group chat takes none: `409`
+  `conversation_closed` with `details.closed_reason` (§1.2), as for a
+  message.
+- **Who gives one.** An agent credential gets `forbidden` with
+  `details.reason: "humans_only"`, a bridge (`Maity-For`) too. Every
+  human who may read the chat gives one: a participant, and an observer
+  reading along (the owner of an agent participant, or of an agent
+  waiting there, §9.2, §9.6), whoever has reason to step in
+  (`req-58v00knm1qv6`). It does not make the observer a participant: it
+  still writes no message there. A human who may not read the chat
+  gets `not_found`.
+  A cross-project group chat (§9.5) takes none in this cut.
+- **The event.** Every change writes one `chat_verdict` (§8.2) in the
+  conversation's project. Its audience is the chat's participants at
+  write time (a waiting agent not, §9.6), for a direct conversation its
+  two parties, so the history of a message's verdicts is these events:
+  the latest per human counts. It wakes the message's author when that
+  is an agent, as a reply would, by the agent's `wake` rule (§6.18), and
+  nobody else. In the resume packet (§5.2) a `chat_verdict` is in
+  `events.items` only for the member whose message it names.
+- **Redaction.** One rule: a `chat_verdict` is redacted as a chat
+  message of its conversation (§8.5). The same humans may redact it
+  (in a direct chat its human party, in a group chat any human
+  participant now, in a closed one a former human participant or the
+  blind redaction), without `events:admin`; the same tombstone replaces
+  its whole `payload` in `/events` and `GET …/events/{seq}`; its
+  `reason` reaches the same readers. The verdict it set stays as it was
+  given, until a `PUT` or `DELETE` changes it: wherever the message is
+  read (`GET …/messages`, the answer of `PUT` and `DELETE`, `maity
+  chat`), that verdict shows its `value` with `sentence: null`. A
+  message that is redacted keeps its verdicts' events, and its
+  `verdicts` read `[]`.
+- **The rules per side.** A verdict is no chat message: `maity wait`
+  prints no `chat_rules` (§9.6) with it.
+
+The message shape (§9.1) carries `verdicts`, the current verdict of
+each human, oldest first:
+
+```json
+"verdicts": [ { "by": "hum-maintainer", "value": "disagree",
+                "sentence": "Not before the release.", "at": "2026-10-29T10:02:11Z", "seq": 11611 } ]
+```
+
+`seq` is the `chat_verdict` that set it. A message without any has
+`verdicts: []`. The list preview (§9.3) carries none.
+
+In the payload `previous` is `null` when the caller had no verdict
+before, and `sentence` is `null` when there is none (always with
+`agree`, and with `value: null`).
+
+The CLI prints a `chat_verdict` in `maity wait` and in the packet's
+events as `<handle>: 👍 to your message #<seq>`, or `<handle>: 👎 to
+your message #<seq>` with `: "<sentence>"` added when it carries one,
+and a taken-back verdict as `<handle>: took back the verdict on your
+message #<seq>` (§13). "your message" is for the reader that is the
+payload's `author`; every other reader reads `<author handle>'s message
+#<seq>` in its place.
+`maity chat` prints a message's verdicts under it.
 
 ## 10. Credentials
 
@@ -16039,7 +16154,7 @@ and `resolveEntry`, and any write.
 | GET, POST | `/projects/{owner}/{slug}/events` | `project:read` / `events:post` | 8 |
 | GET | `/projects/{owner}/{slug}/messages` | `project:read` | 8.8 |
 | GET | `/projects/{owner}/{slug}/events/{seq}` | `project:read`; exactly the readable set of `GET /events`, a hidden event `not_found` as a missing one | 8.9 |
-| POST | `/projects/{owner}/{slug}/events/{seq}/redact` | `events:admin`; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
+| POST | `/projects/{owner}/{slug}/events/{seq}/redact` | `events:admin`; a chat message or a `chat_verdict` as §8.5 says; a group-chat message: a human participant now, in a closed chat a former human participant or `members:admin` (blind); body `{reason, expect?}` | 8.5 |
 | GET | `/projects/{owner}/{slug}/conversations` | human / agent | 9.3 |
 | POST | `/projects/{owner}/{slug}/conversations` | human | 9.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/conversations/{id}` | the two parties (direct); participant, owner of an agent participant (group) / creator, human participant with `members:admin` | 9.1, 9.2 |
@@ -16048,6 +16163,7 @@ and `resolveEntry`, and any write.
 | DELETE | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/pin` | human, a participant or an observer | 9.3 |
 | GET, POST | `/projects/{owner}/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
+| PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` (not built, §9.7) | a human participant or observer | 9.7 |
 | PUT | `/projects/{owner}/{slug}/conversations/{id}/meat-proxy` | human participant, for itself | 9.3 |
 | POST | `/projects/{owner}/{slug}/attachments` | `events:post` | 8.7 |
 | GET | `/projects/{owner}/{slug}/attachments/{id}`, `/projects/{owner}/{slug}/attachments/{id}/content` | whoever can read the message; the uploader while pending | 8.7 |
@@ -16314,7 +16430,7 @@ Outside a placement every path is read as before.
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" for a human writer and "Your briefing, written by the agent <handle>" when `by.kind` is `agent` (a text an agent wrote is labelled as written by that agent, never as written by the humans; the same for every other layer that names an agent in `by`), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. A cross-project group chat is not in `conversations`, and the text never prints `maity chat` for it (§9.5). When `cross_chats` has an item with `unread` above 0, a block `Cross-project chats:` follows the unread-chats block: `  <title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`, at most 10, then `  … <k> more: GET /me/cross-chats`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
-| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; a message with files adds `[<n> attachment(s): <names>]` to its line on stderr, before the author's standing, and has one line per file under it, in that order and without the `maity:` prefix: `  maity files get <id>`, or `  : attachment <k> of <n> has no id the CLI can fetch` (the shell's no-op `:`) for an id that is not 1 to 128 letters, digits, `.`, `_` and `-` (not starting with `-` or `.`) or is missing; these lines carry nothing the sender wrote, so a pasted one runs the fetch or nothing in any shell, while the event line above them quotes the names and is not for pasting; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
+| `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; a message with files adds `[<n> attachment(s): <names>]` to its line on stderr, before the author's standing, and has one line per file under it, in that order and without the `maity:` prefix: `  maity files get <id>`, or `  : attachment <k> of <n> has no id the CLI can fetch` (the shell's no-op `:`) for an id that is not 1 to 128 letters, digits, `.`, `_` and `-` (not starting with `-` or `.`) or is missing; these lines carry nothing the sender wrote, so a pasted one runs the fetch or nothing in any shell, while the event line above them quotes the names and is not for pasting; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) A `chat_verdict` prints as `<handle>: 👍 to your message #<seq>`, `<author handle>'s message` for a reader that is not its author (§9.7, not built). |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON] [--yes]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed or the remote is not on a GitHub host gh knows; a gh that fails is an error, never `none`, unless a pull request stands in as follows); when gh cannot answer (`unknown`, or failing) and the remote has the branch, the hub's probe (§11, `max_age=0`) is asked about the pull requests the card links (`kind: pr`, the first 5 by repository and number) in that order, and the first one it reads with the remote head as its head stands in for gh's answer as `found`, whatever links before it read; when probing finishes without a match and has read linked pull requests with another head, it refuses with exit 4, naming each; a probe that cannot be asked about one link ends the probing: nothing stands in, and the links it read before refuse nothing; when the remote no longer has the branch, gh cannot answer and tracked files are unchanged, the CLI attempts to read the card and, if it has eligible pull request links (as above), probes them the same way: the first one the probe reads as `merged` with the local head as its head stands in, with the local head as `remote_head`; when probing finishes without such a match and has read linked pull requests in another state or with another head, it refuses with exit 4, naming each; a card that cannot be read, a card without eligible links (no probe is asked) or a probe that cannot be asked about one link (the links it read before refuse nothing) refuses nothing on its own, and the git-fact refusal below stands; a branch other than the default branch itself whose upstream is its remote's default branch (`refs/remotes/<remote>/HEAD`, else the remote's `HEAD` from `git ls-remote --symref`), as `git switch -c <branch> origin/main` leaves it, gets `branch.<branch>.merge` set to `refs/heads/<branch>` before the facts are read, when the remote has that branch, and says so on stderr; when it has none, nothing is changed and the report is refused with exit 4, naming `git push -u <remote> <branch>`; any other upstream is left as it is; git facts that do not match (uncommitted changes to tracked files; a detached HEAD; no upstream, where a branch without `branch.<branch>.remote` and `.merge` is read as its own branch on the remote `branch.<branch>.pushRemote`, `remote.pushDefault` or `origin` names, when that remote is configured and neither a `pushurl`, a `push` refspec nor a `pushInsteadOf` could send the push elsewhere; a branch the remote does not have, unless gh finds its pull request merged with the local head; a branch the remote has at another head; a pull request with another head) are refused locally with exit 4 before any hub request, except when the remote no longer has the branch, gh cannot answer and tracked files are unchanged: then the CLI attempts to read the card and, if it has eligible pull request links, probes those links before deciding (above), and without a matching merged pull request the report is refused, by the probe's refusal above, else by the git-fact one; the refusals below come after the card is read; no refusal sends the report; before sending it prints `reporting <branch> at <head>, PR #<n> "<title>" (<state>)` on stderr (the title only when the pull request has one, `(<state>, read by the hub's probe)` when the probe stood in for gh; `…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository) and gh, asked about it now, does not answer `merged` or `closed` (when gh cannot answer, the hub's state stands), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card; it names the branch and the pull request with its title first, and a pull request that the card does not link, that its last report does not name, and that names the card id in neither its title, its body (as gh read it; the probe reads none) nor the branch is asked about on a terminal, refused (exit 4) without one, or confirmed with `--yes`, which overrides no other refusal |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
 | `maity task list [--parent ID] [--status S] [--json]` | `GET /tasks` with `limit=200` and the filters, every page; `status` defaults to the board's open columns (`proposed,open,in_progress,blocked,review`), `--status all` for every card; the board in text: one line per card, a parent's children indented under it, and a child whose parent is not in the list marked `(parent <id>)` |

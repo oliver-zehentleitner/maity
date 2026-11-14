@@ -772,3 +772,41 @@ inbox whether or not they are a member of the project.
   zustimmt"; without a statement the round goes to its report.
 - Counting contacts (§6.29) as allowed: a contact is a human's consent
   to be contacted, not a decision about their agent.
+
+## 👍 and 👎 on a chat message are a decision, kept as events
+
+**Id:** 331822d8-0cfc-471a-a4a7-8dbae7d0aa41
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** the maintainer's "paßt" of 2026-10-29 to the coordinator's proposal, as written in the body of card tsk-55x4f398dttv (a decision on the content, not a "like"; one per person and message, changeable, every change an event, the latest counts, the history visible; the author woken as by a reply; only humans; an optional sentence on 👎; no replacement for a go); his answers of 2026-11-13: a verdict may be taken back (`req-q94m13rzjfhx`), and cross-project group chats come later (`req-sw7xqv32egrt`); and an owner reading along gives one too, "wenn er einen grund hat einzugreifen, warum sollten wir uns dagegen stellen?" (his answer in chat to `req-58v00knm1qv6`); the endpoint, the audience and the redaction in `docs/api.md` §9.7 are the contract author's reading, open until the maintainer approves the contract
+**Revisit when:** agents are to give a verdict, or a verdict is to count as a go on a request (§7)
+
+A human gives a chat message 👍 ("yes, I agree") or 👎 ("no, not like
+this"), one per human and message, changed by giving another and taken
+back by `DELETE`. It is a decision on the content, which an agent reads
+as an approval or a rejection in conversation, never as a go on a
+request. Every change writes a `chat_verdict` event, and the history is
+these events. The message itself carries only each human's current
+verdict. The event wakes the message's author, as a reply would, and
+nobody else. Only humans give one, an agent answers in text so its
+reasons stay visible; every human who may read the chat gives one, an
+owner reading along included, since whoever has reason to step in
+should be able to, without becoming a participant.
+
+**Reason:** the maintainer wants a quick answer in conversation that an
+agent can act on, with the history visible. One event per change gives
+that history through the event log every client already reads, and the
+current verdict on the message spares a client from replaying it.
+
+**Alternatives:**
+- A free set of emoji reactions, rejected: a reaction says nothing an
+  agent can act on, and the maintainer named exactly two meanings.
+- The verdict as a field of the message, overwritten, rejected: the
+  history would be lost, and a change would wake nobody.
+- Only participants, the owner reading along excluded, rejected by the
+  maintainer: giving a verdict already shows the reader is not merely
+  reading along.
+- A `chat` message with 👍 as its text, rejected: one message per vote
+  floods a chat, and neither the author nor a client can tell a
+  decision from a remark.
