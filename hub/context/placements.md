@@ -168,6 +168,54 @@ takes locks the deletion already holds.
 the set of placements read before the lock could still miss one the
 exchange was changing; locking first leaves one read that is right.
 
+## Every change of a runner locks its live credential before its row
+
+**Id:** d4a8c42e-5a12-4e72-a16e-efc7b4c88d57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8s3fgn5bsyjr, from the review of pull request #1768 (the revoke route locked the runner row before its credential), 2026-11-14; `hub/tests/test_runner_revoke.py`: `test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking`
+**See:** reports.md#a-suspension-takes-the-account-lock-first-every-issue-waits-for-it — 525c4922-109b-418f-82e2-0b02b285b946 — as of 2026-11-14
+**Revisit when:** a runner's own call stops writing its credential's row before the runner's, or a new path locks a runner row and then writes its credential
+
+Every authenticated runner call writes its credential's row and then the
+runner's (`auth/caller.py`, and `hello` again in its own transaction). Every
+change of a runner that goes on to revoke or rewrite the credential takes
+the two in the same order through one helper, `runners.lock`: the
+unrevoked credentials first, then the runner rows, each in the order of
+their ids. Its users are the owner's revoke and removal (`_own_runner`
+with `lock`), a re-pair's exchange (`_consume`), the account's deletion
+and the suspension. The project locks of an owner's stop follow both.
+
+`hello` also runs its transaction again after a deadlock (`db.retrying`),
+as the authentication before it and the owner's routes (`idempotency.run`)
+do. A credential that turns live between the
+change's credential lock and its row lock (a re-pair whose new key
+committed in between) is still written under the row lock, out of the
+order; the retry covers that window.
+
+The suspension locks, for its runners, exactly what the owner's stop locks
+(`runner_revoke.projects_to_lock`), plus the projects of the account's own
+live agent credentials. Its own list also took every project where a
+runner ever had a placement. A placement whose clone was reported removed
+gives the stop nothing to close or revoke there, so nothing in the
+suspension writes in such a project.
+
+**Reason:** two writers that take the same two rows in opposite orders
+can each hold one and wait for the other; PostgreSQL and MariaDB then
+abort one of them. The route retried, but `hello` failed with an error.
+The runner's call cannot take the runner row first without a lock on
+every call, and the credential is the row each call already writes first.
+
+**Rejected alternatives:**
+- Only giving `hello` the retry: the inversion stays, and every new
+  caller of the two rows has to remember to retry.
+- Re-reading the live credential after the row lock and locking a new one
+  then: that lock is out of the order again; one retried transaction is
+  simpler.
+- Keeping the suspension's wider project list: a second copy of the rule
+  that drifts from `apply`'s, and locks taken for projects nobody writes.
+
 ## `runner_revoke.due` reads two kinds of credential row, so its `getattr` stays
 
 **Id:** 8fc1bde8-a4d6-48ce-8da5-5339f81f6e5c

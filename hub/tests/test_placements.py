@@ -811,7 +811,9 @@ def test_a_suspension_locks_the_runner_rows_before_any_project(setup: Setup) -> 
         return next(i for i, x in enumerate(statements) if test(x))
 
     keys = first(lambda x: x.startswith("SELECT runner_credential.id \nFROM runner_credential"))
-    rows = first(lambda x: x.startswith("SELECT runner.id \nFROM runner \nWHERE runner.owner_id"))
+    rows = first(
+        lambda x: x.startswith("SELECT runner.id") and "\nFROM runner \nWHERE runner.owner_id" in x
+    )
     project = first(lambda x: x.startswith("SELECT project.id,") and "WHERE project.id =" in x)
     own = first(lambda x: x.startswith("UPDATE credential "))
     runner = first(lambda x: x.startswith("UPDATE runner_credential "))

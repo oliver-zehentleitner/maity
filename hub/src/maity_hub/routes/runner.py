@@ -36,6 +36,7 @@ from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.codes import digest, new_code, new_token, normalise_code
+from maity_hub.db import retrying
 from maity_hub.deps import RunnerCaller, engine_of, settings_of, wait_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
@@ -191,55 +192,64 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
     `resume` (§15.8)."""
     runner_id = caller.runner_id
     assert runner_id is not None
-    with events.transaction(engine_of(request)) as conn:
-        now = clock.now()
-        # Rows in the order every authenticated runner call touches them (credential,
-        # runner, session), so that two calls never wait on each other in a cycle; the
-        # credential row also serialises two hellos of one credential (one live session).
-        conn.execute(
-            update(t.runner_credential)
-            .where(t.runner_credential.c.id == caller.credential_id)
-            .values(last_used_at=now)
-        )
-        conn.execute(
-            update(t.runner)
-            .where(t.runner.c.id == runner_id)
-            .values(
-                version=body.client,
-                capabilities=_stored(body.capabilities),
-                capabilities_at=now,
+
+    def run() -> dict[str, Any]:
+        with events.transaction(engine_of(request)) as conn:
+            now = clock.now()
+            # Rows in the order every authenticated runner call touches them (credential,
+            # runner, session), so that two calls never wait on each other in a cycle; the
+            # credential row also serialises two hellos of one credential (one live session).
+            conn.execute(
+                update(t.runner_credential)
+                .where(t.runner_credential.c.id == caller.credential_id)
+                .values(last_used_at=now)
             )
-        )
-        conn.execute(
-            update(t.runner_session)
-            .where(
-                t.runner_session.c.credential_id == caller.credential_id,
-                t.runner_session.c.live.is_(True),
+            conn.execute(
+                update(t.runner)
+                .where(t.runner.c.id == runner_id)
+                .values(
+                    version=body.client,
+                    capabilities=_stored(body.capabilities),
+                    capabilities_at=now,
+                )
             )
-            .values(live=None, ended_at=now)
-        )
-        session_id = new_id("runner_session")
-        conn.execute(
-            insert(t.runner_session).values(
-                id=session_id,
-                credential_id=caller.credential_id,
-                client=body.client,
-                started_at=now,
-                last_seen_at=now,
-                live=True,
+            conn.execute(
+                update(t.runner_session)
+                .where(
+                    t.runner_session.c.credential_id == caller.credential_id,
+                    t.runner_session.c.live.is_(True),
+                )
+                .values(live=None, ended_at=now)
             )
-        )
-        name = conn.execute(select(t.runner.c.name).where(t.runner.c.id == runner_id)).scalar()
-        packet = {
-            "server_time": clock.rfc3339(now),
-            "runner": {"id": runner_id, "name": name, "session_id": session_id},
-            "projects": _projects(conn, runner_id),
-            "placements": [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)],
-            "cursor": events.highest_for_runner(
-                conn, event_project_ids(conn, runner_id), runner_id
-            ),
-        }
-    return JSONResponse(packet)
+            session_id = new_id("runner_session")
+            conn.execute(
+                insert(t.runner_session).values(
+                    id=session_id,
+                    credential_id=caller.credential_id,
+                    client=body.client,
+                    started_at=now,
+                    last_seen_at=now,
+                    live=True,
+                )
+            )
+            name = conn.execute(select(t.runner.c.name).where(t.runner.c.id == runner_id)).scalar()
+            packet = {
+                "server_time": clock.rfc3339(now),
+                "runner": {"id": runner_id, "name": name, "session_id": session_id},
+                "projects": _projects(conn, runner_id),
+                "placements": [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)],
+                "cursor": events.highest_for_runner(
+                    conn, event_project_ids(conn, runner_id), runner_id
+                ),
+            }
+        return packet
+
+    # Every change of a runner takes its live credential before its row (`runners.lock`), but a
+    # credential that turned live between those two locks (a re-pair committed in between) is
+    # rewritten under the row lock. Such a change and this call can still wait on each other in
+    # a cycle; the database aborts one side, and the hello runs again, as the authentication
+    # before it does (`db.retrying`).
+    return JSONResponse(retrying(run))
 
 
 @router.patch("/runner")
