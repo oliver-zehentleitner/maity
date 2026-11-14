@@ -744,6 +744,35 @@ def _only_in_queue(engine: Engine, row_id: int) -> None:
         )
 
 
+def _remove(conn: Any, human_id: str) -> Any:
+    """End the human's active membership as a removal does; returns the row as it was."""
+    row = conn.execute(
+        select(t.membership).where(
+            t.membership.c.human_id == human_id, t.membership.c.active.is_(True)
+        )
+    ).one()
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.id == row.id)
+        .values(active=None, removed_at=clock.now())
+    )
+    return row
+
+
+def _deliver_only(engine: Engine, row_id: int) -> tuple[str, list[str]]:
+    """Send what is due with only this row in the queue: its status, the server's commands."""
+    from maity_hub.mail import outbox
+
+    _only_in_queue(engine, row_id)
+    server = FakeSmtp(Script())
+    try:
+        outbox.send_due(engine, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    [after] = [r for r in outbox_rows(engine) if r.id == row_id]
+    return after.status, server.record.commands
+
+
 def test_a_mail_waiting_for_its_budget_is_dropped_once_the_membership_ended(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
@@ -755,14 +784,10 @@ def test_a_mail_waiting_for_its_budget_is_dropped_once_the_membership_ended(
     at(minutes=3)
     run(migrated)
     [mail] = notifications(migrated)
-    assert mail.headers[outbox.PROJECTS_MARK]  # the project the item came from
+    assert mail.headers[outbox.MEMBERSHIPS_MARK]  # the membership the item was read through
     _only_in_queue(migrated, mail.id)
     with migrated.begin() as conn:  # removed from the project while the mail waits
-        conn.execute(
-            update(t.membership)
-            .where(t.membership.c.human_id == owner.id)
-            .values(removed_at=clock.now())
-        )
+        _remove(conn, owner.id)
     server = FakeSmtp(Script())
     try:
         outbox.send_due(migrated, mail_env(server.port).mail, None)
@@ -792,3 +817,45 @@ def test_a_mail_goes_out_while_the_membership_holds(
         server.close()
     [after] = [r for r in outbox_rows(migrated) if r.id == mail.id]
     assert after.status == "sent"
+
+
+def test_a_waiting_mail_is_dropped_though_the_human_joined_again(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    with migrated.begin() as conn:  # left, then joined again with a new row, while it waits
+        old = _remove(conn, owner.id)
+        again = {k: v for k, v in old._mapping.items() if k != "id"}
+        again.update(active=True, removed_at=None, joined_at=clock.now())
+        conn.execute(insert(t.membership).values(**again))
+    status, commands = _deliver_only(migrated, mail.id)
+    assert status == "dropped" and commands == []
+
+
+def test_a_removal_between_reading_the_scope_and_building_the_mail_drops_it(
+    make_client: ClientFactory, migrated: Engine, at: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.notifications import items
+
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    derive = items.derive
+
+    def removed_after_derive(conn: Any, where: Any, **kwargs: Any) -> Any:
+        found = derive(conn, where, **kwargs)
+        _remove(conn, owner.id)  # as a removal that commits after the scope was read
+        return found
+
+    monkeypatch.setattr(items, "derive", removed_after_derive)
+    run(migrated)
+    monkeypatch.setattr(items, "derive", derive)
+    [mail] = notifications(migrated)
+    status, commands = _deliver_only(migrated, mail.id)
+    assert status == "dropped" and commands == []

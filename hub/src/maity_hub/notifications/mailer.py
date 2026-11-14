@@ -289,7 +289,7 @@ def for_human(
             )
             return queued
         unique = list({key(i): i for i in due}.values())
-        queued += _send(conn, row, unique, prefs, signing_key, public_url, zone)
+        queued += _send(conn, row, where, unique, prefs, signing_key, public_url, zone)
         clocks["held_since"] = None
         mailed = {key(i) for i in unique}
         mailable = [i for i in mailable if key(i) not in mailed]
@@ -407,6 +407,7 @@ def _mark(conn: Connection, human_id: str, chosen: list[Item]) -> None:
 def _send(
     conn: Connection,
     row: Any,
+    where: items.Scope,
     chosen: list[Item],
     prefs: dict[str, Any],
     signing_key: bytes,
@@ -434,31 +435,26 @@ def _send(
         extra_headers={
             "List-Unsubscribe": f"<{links[kinds[0]]}>",
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-            outbox.PROJECTS_MARK: _member_of(conn, row.human_id, chosen),
+            outbox.MEMBERSHIPS_MARK: _memberships_of(where, chosen),
         },
     )
     _mark(conn, row.human_id, chosen)
     return 1
 
 
-def _member_of(conn: Connection, human_id: str, chosen: list[Item]) -> str:
-    """The projects of the mail's items that the human is an active member of now: the
-    outbox drops the mail if one of these memberships ends before it leaves (§18.5,
-    context/mail.md). An item of a project they are no member of (an invitation) or of no
+def _memberships_of(where: items.Scope, chosen: list[Item]) -> str:
+    """The membership rows the mail's items were read through, as the scope that derived
+    them loaded them: the outbox drops the mail if one of these rows is no longer active when
+    it leaves (§18.5, context/notifications.md 64c0fbdf). The rows themselves, not their
+    projects, so a removal after the scope was read and a later join with a new row both
+    count as ended. An item of a project they are no member of (an invitation) or of no
     project is not tied to a membership."""
-    ids = {i.project_id for i in chosen if i.project_id}
-    if not ids:
-        return ""
-    rows = conn.execute(
-        select(t.membership.c.project_id)
-        .where(
-            t.membership.c.human_id == human_id,
-            t.membership.c.project_id.in_(ids),
-            t.membership.c.removed_at.is_(None),
-        )
-        .distinct()
-    )
-    return " ".join(sorted(row.project_id for row in rows))
+    ids = set()
+    for item in chosen:
+        mine = where.membership(item.project_id) if item.project_id and item.member else None
+        if mine is not None:
+            ids.add(mine.id)
+    return " ".join(str(i) for i in sorted(ids))
 
 
 def compose(

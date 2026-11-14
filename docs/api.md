@@ -23539,10 +23539,11 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
   A digest with nothing left is not sent. A built mail that still waits
-  in the outbox (§16.2) is checked once more before it leaves: when the
-  human no longer holds an active membership of a project whose items
-  it carries (removed, or left), the whole mail is dropped, as a mail
-  to a disabled address is (§18.7); its items stay in the bell.
+  in the outbox (§16.2) is checked once more before it leaves: when a
+  membership its items were read through is no longer active (removed,
+  or left, even if the human has joined again since), the whole mail is
+  dropped, as a mail to a disabled address is (§18.7); its items stay in
+  the bell.
 
 ### 18.6 Links in mails
 
