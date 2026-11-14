@@ -25,7 +25,9 @@ from maity_hub.routes.project_images import _matches
 
 router = APIRouter()
 
-idempotency.LOADERS["avatar"] = idempotency.plain(avatars.state)
+# One's own picture, or one `_change`'s `check` allows again before the replay (an owned
+# agent's, an organisation's).
+idempotency.register("avatar", idempotency.plain(avatars.state), idempotency.checked_by_route)
 
 
 def _side(request: Request) -> int:

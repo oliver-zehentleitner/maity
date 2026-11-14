@@ -176,8 +176,50 @@ def load_removed_link(conn: Connection, entry_id: str) -> dict[str, Any]:
     return history.link_shown(row)
 
 
-idempotency.LOADERS["link"] = idempotency.plain(load_link)
-idempotency.LOADERS["removed_link"] = idempotency.plain(load_removed_link)
+def _card_project(conn: Connection, card_id: str | None) -> str | None:
+    if card_id is None:
+        return None
+    found: str | None = conn.execute(
+        select(t.card.c.project_id).where(t.card.c.id == card_id)
+    ).scalar()
+    return found
+
+
+def _link_project(conn: Connection, link_id: str) -> str | None:
+    """A link's project through its card, once removed through its add entry."""
+    card_id = conn.execute(
+        select(t.card_link.c.card_id).where(t.card_link.c.id == link_id)
+    ).scalar()
+    if card_id is None:
+        card_id = conn.execute(
+            select(t.card_history.c.card_id).where(
+                t.card_history.c.link_id == link_id, t.card_history.c.link_change == "added"
+            )
+        ).scalar()
+    return _card_project(conn, card_id)
+
+
+def _entry_project(conn: Connection, entry_id: str) -> str | None:
+    """A history entry's project, through its card."""
+    return _card_project(
+        conn,
+        conn.execute(
+            select(t.card_history.c.card_id).where(t.card_history.c.id == entry_id)
+        ).scalar(),
+    )
+
+
+def _note_project(conn: Connection, note_id: str) -> str | None:
+    return _card_project(
+        conn,
+        conn.execute(select(t.card_note.c.card_id).where(t.card_note.c.id == note_id)).scalar(),
+    )
+
+
+idempotency.register("link", idempotency.plain(load_link), idempotency.in_project(_link_project))
+idempotency.register(
+    "removed_link", idempotency.plain(load_removed_link), idempotency.in_project(_entry_project)
+)
 
 
 @router.delete("/projects/{owner}/{slug}/tasks/{card_id}/links/{link_id}")
@@ -255,7 +297,9 @@ def load_history(conn: Connection, entry_id: str) -> dict[str, Any]:
     return dict(shape_deleted(conn, [entry])[0])
 
 
-idempotency.LOADERS["history"] = idempotency.plain(load_history)
+idempotency.register(
+    "history", idempotency.plain(load_history), idempotency.in_project(_entry_project)
+)
 
 
 def _redactor(mine: Membership, caller: Caller) -> None:
@@ -323,7 +367,7 @@ def _load_note_for_caller(conn: Connection, note_id: str, request: Request) -> d
     return _note_view(conn, row, reader)
 
 
-idempotency.LOADERS["note"] = _load_note_for_caller
+idempotency.register("note", _load_note_for_caller, idempotency.in_project(_note_project))
 
 
 def _note(conn: Connection, card: Any, note_id: str) -> Any:

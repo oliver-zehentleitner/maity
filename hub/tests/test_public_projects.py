@@ -14,6 +14,7 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_moderation import resolve
+from tests.test_public_pages import only_the_frames_script
 from tests.test_reports import report
 from tests.test_reports import team as team  # noqa: F401  (the fixture)
 from tests.test_two_factor import moment as moment  # noqa: F401  (the clock fixture)
@@ -71,7 +72,7 @@ def test_turning_the_page_on_publishes_it_and_off_takes_it_away_at_once(
     assert "<h1>Maity</h1>" in text and "maintainer/maity" in text and "build" in text
     assert "<strong>agents</strong>" in text and 'rel="nofollow ugc"' in text
     assert '<link rel="canonical" href="https://hub.example/maintainer/maity">' in text
-    assert "<script" not in text
+    assert only_the_frames_script(text)
     assert owner.patch("/projects/maintainer/maity", {"public_page": "off"}).status_code == 200
     assert shown(anyone) is None
     # the text stays the owner's, and the page comes back with the switch

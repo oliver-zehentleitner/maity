@@ -339,6 +339,16 @@ session of the same credential replays the same key — and kept for
   id, so a call through an alias of the same project (§6.24, §6.25) is the same call. A
   key stored before this rule answers `idempotency_mismatch` on every repeat until it
   expires (24 hours).
+- A replay passes the same read as a fresh request: since it answers with the resource
+  as it is now, the hub first checks that the caller may still read it, as the
+  resource's own `GET` would let them (an active membership with `project:read` and the
+  resource's read rule; outside a project its owner or readers). Otherwise it is
+  `not_found`, as that `GET` is. A caller's own membership stays readable to them, so
+  the retry of a leave still replays (§6.2, "Leaving a project"). Where a route lets
+  someone act on what its `GET` does not show them, the replay shows them the state their
+  action left: a bridge agent's owner outside the project ending the connection (§2.3), an
+  owner of either side or an admin withdrawing a pair's request (§6.2), a group chat's
+  later participant redacting an earlier message (§8.5).
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
 §6.10; a watch, §6.4): the key is optional there for every caller. After
@@ -21413,8 +21423,12 @@ frame's language (`?lang`, else `Accept-Language`, chosen as for
 `GET /site/chrome`), around the page's content as it was stored. The
 stored page is not rendered again for that, and its content stays its
 escaped text and elements. The page keeps its own language. Header and
-footer carry a `lang` of their own where the frame's differs, and the
-footer has no language switch. A change to the frame (the landing
+footer carry a `lang` of their own where the frame's differs. The
+frame has the landing page's controls: the header's light/dark switch,
+with the landing page's one script (§16.7, `/assets/landing/landing.js`,
+the only script the page loads), and the footer's language row, whose
+links keep `as=public` and set `lang`, changing the frame's language,
+not the page's. A change to the frame (the landing
 page, the legal pages, the counters, the hub's stylesheets) shows on
 the next answer, with no render. A stored page of another shape is
 served bare under the policy `default-src 'none'; style-src
@@ -21422,11 +21436,12 @@ served bare under the policy `default-src 'none'; style-src
 `Cache-Control: public, max-age=60`, an `ETag` of the bytes served
 (frame, page and any maintenance banner, §16.12), so a changed frame
 is never a `304`,
-`Content-Security-Policy: default-src 'none'; style-src 'self'
-'unsafe-inline'; font-src 'self'; img-src 'self'; base-uri 'none';
-frame-ancestors 'none'` (the frame's stylesheets and fonts; no script;
-`img-src` for the pictures of a person's and an agent's page, §6.10;
-`unsafe-inline` for a picture's size), `X-Content-Type-Options: nosniff`, and never a
+`Content-Security-Policy: default-src 'none'; script-src 'self';
+style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self';
+base-uri 'none'; frame-ancestors 'none'` (the frame's stylesheets,
+fonts and its one script; `img-src` for the pictures of a person's and
+an agent's page, §6.10; `unsafe-inline` for the maintenance banner,
+§16.12; the stored page itself carries no inline style), `X-Content-Type-Options: nosniff`, and never a
 cookie, and `Vary: Cookie, Accept-Language` (`Vary: Cookie` is on every
 answer on these addresses, the app shell's included, §16.11). When a page stops being public for any
 reason above, the hub deletes its stored page in the same transaction

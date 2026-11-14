@@ -24,6 +24,7 @@ from maity_hub import (
     public_projects,
 )
 from maity_hub import tables as t
+from maity_hub.access import owns_agent
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.events import Actor
@@ -53,7 +54,12 @@ def load_agent(conn: Connection, agent_id: str) -> dict[str, Any]:
     return agent_view(conn, _row(conn, agent_id))
 
 
-idempotency.LOADERS["agent"] = idempotency.plain(load_agent)
+idempotency.register(
+    "agent",
+    idempotency.plain(load_agent),
+    # the owner's profile (§6.3)
+    lambda conn, agent_id, caller: owns_agent(conn, caller, agent_id),
+)
 
 
 def _row(conn: Connection, agent_id: str) -> Any:
