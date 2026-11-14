@@ -2575,7 +2575,7 @@ descriptor.
 **Source:** card tsk-bg81webs911m (the rule, and the lead's order for a first pull request with `files get` and the recorded git only), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
 **See:** runner.md#placed-agents-open-their-pull-requests-through-maity-gh-pinned-to-the-clones-repository — 9f43804d-cfdc-4496-b07b-b01e65fc6410 — as of 2026-11-13
 **See:** runner.md#maity-takes-the-clones-git-only-as-the-directory-the-runner-recorded — e44249f8-15d0-4104-8940-5ff48decd412 — as of 2026-11-13
-**Revisit when:** the other paths maity reads or writes for the agent (`files put`, `--attach`, the `--*-file` options, `api --json`, `--action-body`) go through the same walk; a harness runs `maity` inside its sandbox; the runner stops setting `MAITY_GIT_PRIVATE`; someone needs `--force` under a placement
+**Revisit when:** a harness runs `maity` inside its sandbox; the runner stops setting `MAITY_GIT_PRIVATE`; someone needs `--force` under a placement
 
 Under a runner placement (`MAITY_PLACEMENT`) `maity files get` writes
 only inside the runner's clone, never under its `.git`
@@ -2603,9 +2603,11 @@ noted on standard error. A saved file is not refused over it. Linking fails on a
 there, `--force` included; another file that took the temporary name
 never gets the target's, and one that took the target's name during the
 copy is refused and left alone (review of #1749). Without `-o` the
-file goes to `./maity-files/` as before, created 0700 through the same
-walk. Where a name cannot be opened through a directory's descriptor
-(Windows), only `-o -` is taken. Outside a placement nothing changes.
+file goes to the clone's `.git/maity-files/`, outside the work tree,
+opened from the checked `.git` (d1d6b49d in commands.md). Where a name
+cannot be opened through a directory's descriptor (Windows), no file is
+saved; `-o -` is not offered either since 783e476c. Outside a placement
+nothing changes.
 
 The git maity starts under the runner and the record `maity gh` reads
 (`git`, `pull_requests`) are written by the runner into its directory
@@ -2632,8 +2634,8 @@ there.
   maity wrote would need a record of its own, kept where the agent cannot
   write. The agent can remove the file itself, inside its sandbox, and
   then fetch it again.
-- On Windows, checking the path by name: it is racy, and `-o -` remains
-  (the body file's choice).
+- On Windows, checking the path by name: it is racy (the body file's
+  choice); `-o -` remained until 783e476c.
 - Confining the writes alone and keeping the records in the clone:
   without the harness's sandbox the clone's `.git/maity` is writable
   anyway, and every other path maity writes for the agent would have to
@@ -2656,6 +2658,59 @@ code can put another file under the staging name, and that file is then
 removed. POSIX has no unlink only while a name holds a given inode; the
 window is accepted, since the name is maity's own unpredictable one in
 the clone and code that can put a file there can remove it itself.
+
+## Under a placement maity reads a file for the agent only inside the clone, and writes no attachment to standard output
+
+**Id:** 783e476c-3975-43de-9c4e-7c3a5da57be7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
+**See:** runner.md#under-a-placement-maity-writes-a-file-only-inside-the-clone-and-reads-its-records-from-the-runners-directory — 818828af-24cb-4b2a-be54-1bff2211ccb0 — as of 2026-11-13
+**Revisit when:** a command gets a file option that does not read through `cli._placed_read`; an option needs more than 10 MiB; a placed agent needs to name a file with more than one hard link; a harness runs `maity` inside its sandbox
+
+Under a runner placement every file maity reads for a command goes
+through `cli._placed_read`, which reads it with `inclone.read` from the
+root and `.git` that `clonecheck.opened_clone` opened and checked once:
+`files put`, `--attach`, every `--…-file` option (`--body-file`,
+`--summary-file`, `--last-file`, `--next-file`, `--review-file`),
+`api --json`, `--action-body`, the jour fixe's `--file`, `profile
+avatar`, `memory add --soul`, `task restricted set --file` and
+`join --join-file`; `maity gh`'s body file already did. It must be a
+regular file in the clone, outside `.git`, reached without a link, whose
+opened inode has exactly one link, of at most 10 MiB (1 MiB for an
+avatar). A refusal is a usage error before any call; the one of
+`task restricted set` names no part of the path, as its other refusals
+do not. stdin (`-`) stays where an option takes it. Text is decoded as
+before: UTF-8, newlines as `read_text` gives them, a leading byte order
+mark dropped. Where a name cannot be opened through a directory's
+descriptor (Windows), only stdin is taken. `maity files get -o -` is
+refused under a placement before any call, so the walk into the clone is
+the only way maity writes an attachment there.
+
+**Reason:** maity runs outside the harness's sandbox, and what it reads
+for a command can go to the hub (an upload, a message, a request body).
+A path the agent names must not let it read what the sandbox hides from
+the agent: this clone's `.git/maity`, another clone's credential, the
+runner's state. A hard link in the clone to such a file is the same
+inode under a second name; refusing every opened file with more than one
+link catches it whatever and wherever the other name is. Standard output
+goes wherever the command line sent it, which maity cannot see.
+
+**Rejected alternatives:**
+- Comparing the opened file's device with the clone root's: a hard link
+  is always on the same device, so it would pass.
+- Refusing a hard link only when its other name lies outside the clone:
+  the other names of an inode cannot be listed.
+- Keeping `-o -` when standard output is a terminal: a harness reads a
+  command's output through a pipe, so it would be refused anyway, and a
+  terminal check says nothing about where a redirect points.
+- Checking the path by name first (`realpath` and a prefix test) and
+  then reading it: the name is looked up twice (as in 818828af).
+
+**Known gap:** a file whose other name is removed between the open and
+the link count reads as one link; that takes write access to the
+directory of that other name.
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
