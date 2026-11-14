@@ -34,7 +34,7 @@ from maity_hub import tables as t
 from maity_hub.mail import headers, outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
-from maity_hub.notifications import items, listing, preferences, presence, records
+from maity_hub.notifications import items, listing, preferences, presence, records, retention
 from maity_hub.notifications.items import Item
 
 log = logging.getLogger(__name__)
@@ -182,9 +182,14 @@ def for_human(
     now = clock.now()
     local = now.astimezone(zone)
     where = items.scope(conn, human_id, public_url)
+    # What was mailed within the age of the oldest item `derive` can give (`retention`): an
+    # older row names no item that could come again.
     sent = set(
         conn.execute(
-            select(t.mail_item_sent.c.item).where(t.mail_item_sent.c.human_id == human_id)
+            select(t.mail_item_sent.c.item).where(
+                t.mail_item_sent.c.human_id == human_id,
+                t.mail_item_sent.c.mailed_at >= now - retention.SENT_KEPT,
+            )
         ).scalars()
     )
     since = row.verified_at
