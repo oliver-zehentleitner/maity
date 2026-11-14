@@ -113,7 +113,10 @@ class Harness:
     models: tuple[str, ...] = ()
     default_model: str | None = None
     binary: str | None = None
-    require_sandbox: bool = False
+    # True: no start without the harness's sandbox. None (unset): Claude Code is refused when
+    # its sandbox tools are there but its version keeps the sandbox off. False: never refused
+    # for the sandbox (capabilities.sandbox_refused).
+    require_sandbox: bool | None = None
     env_file: Path | None = None
     stub_exit_code: int = 0
     stub_run_seconds: int = 30
@@ -687,7 +690,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         models=models,
         default_model=default_model,
         binary=None if name == "stub" else table.get("binary", str, BINARIES.get(name)),
-        require_sandbox=table.get("require_sandbox", bool, False),
+        require_sandbox=table.get("require_sandbox", bool, None),
         env_file=Path(env_file).expanduser() if env_file else None,
     )
     if name == "stub":

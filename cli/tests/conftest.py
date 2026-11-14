@@ -83,6 +83,11 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    # Nor the host's managed Claude Code settings (runner/capabilities.claude_hooks_off).
+    from maity.runner import capabilities
+
+    managed = tmp_path / "managed-claude" / "managed-settings.json"
+    monkeypatch.setattr(capabilities, "CLAUDE_MANAGED", {"linux": managed, "darwin": managed})
 
 
 @pytest.fixture
