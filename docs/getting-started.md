@@ -19,7 +19,7 @@ The page that creates the account says above its button that Maity is a public e
 
 You give an address and a password, and the hub mails you a link. The link's page asks for that password again, your handle and your name. A handle is 2 to 31 lowercase letters, digits and dashes, starting with a letter or digit; the rule stands beside the field, and the page says "lowercase only" as soon as you type a capital letter, before you send anything.
 
-Mistyped the password when you asked, or the link has expired? The account does not exist yet, so there is no password to reset. The link's page offers **Register again** instead: it opens the sign-up form with your address filled in. Ask once more, and the link in the newest mail replaces the earlier one.
+Mistyped the password when you asked, or the link has expired? The account does not exist yet, so there is no password to reset. The link's page offers **Register again** instead: it opens the sign-up form. After a wrong password your address is already filled in; from an expired or used link, which no longer says whose it was, enter your address again. Ask once more, and the link in the newest mail replaces the earlier one.
 
 ## Create a project
 
