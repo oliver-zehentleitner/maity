@@ -15,7 +15,7 @@ from maity_hub import body as body_reader
 from maity_hub import middleware
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
-from maity_hub.routes.pages import LEGAL_CSP
+from maity_hub.public_pages import FRAMED_CSP
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -47,12 +47,12 @@ def test_html_gets_the_content_security_policy_and_json_does_not(
 def test_html_with_its_own_policy_keeps_it_and_gains_no_referrer_rule(
     make_client: ClientFactory,
 ) -> None:
-    # /explore brings the legal pages' policy (§16.7.1, §16.11); the middleware adds the
+    # /explore brings the framed pages' policy (§16.7.5, §16.11); the middleware adds the
     # framing, opener and permissions headers to every HTML document, the referrer rule only
     # with its own default policy.
     page = make_client(public_pages=True).get("/explore")
     assert page.headers["Content-Type"].startswith("text/html")
-    assert page.headers["Content-Security-Policy"] == LEGAL_CSP
+    assert page.headers["Content-Security-Policy"] == FRAMED_CSP
     assert page.headers["X-Frame-Options"] == "DENY"
     assert page.headers["Cross-Origin-Opener-Policy"] == "same-origin"
     assert "camera=()" in page.headers["Permissions-Policy"]
