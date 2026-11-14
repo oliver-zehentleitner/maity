@@ -1,0 +1,3 @@
+### Changed
+
+- web: a project's Settings are in sub-tabs instead of one long page, each at an address of its own, so a link, a reload or Back opens the same tab: **General** (`settings`, the default), **Members and agents** (`settings/members`), **Way of working** (`settings/work`), **Moderation** (`settings/moderation`) and **Mine** (`settings/mine`), which now also holds the owner's absence. A tab shows only where the reader may see or change one of its sections, as each section did before; an address of a tab the reader is not shown leads to the first one that is. The tab row is the dashboard's view tabs, as on the Team and Agents pages. The restricted-access notice opens Members and agents. No section changed what it sends or checks.

@@ -37,6 +37,7 @@ from maity_hub import (
     orgs,
     placements,
     public_pages,
+    runner_revoke,
     wakeups,
     write_guard,
 )
@@ -144,14 +145,21 @@ def lock_account(conn: Connection, human_id: str) -> None:
 
 
 def _lock_namespace(conn: Connection, human_id: str) -> None:
-    """`lock_project` on every project in the human's namespace, in a stable order."""
-    for project_id in (
-        conn.execute(
-            select(t.project.c.id).where(t.project.c.owner_id == human_id).order_by(t.project.c.id)
+    """`lock_project` on every project in the human's namespace, and on every project the
+    removal of the human's runners locks (`runner_revoke.projects_to_lock`), in one pass in
+    the order of their ids: a lock taken later, out of that order, could wait for another
+    deletion that holds it and waits for one of these. The human's account lock keeps a
+    runner from being attached anywhere new meanwhile."""
+    namespace = conn.execute(select(t.project.c.id).where(t.project.c.owner_id == human_id))
+    found = set(namespace.scalars())
+    runners = conn.execute(
+        select(t.runner.c.id).where(
+            t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None)
         )
-        .scalars()
-        .all()
-    ):
+    ).scalars()
+    for runner_id in list(runners):
+        found.update(runner_revoke.projects_to_lock(conn, runner_id))
+    for project_id in sorted(found):
         lock_project(conn, project_id)
 
 

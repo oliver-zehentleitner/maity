@@ -9478,7 +9478,14 @@ Scope `events:admin`, human memberships only (an agent gets `forbidden`
 with `details.reason: humans_only`). Body `{reason}`. It replaces
 `before`, `after` and `diff` with the tombstone of §8.5 (`{"redacted":
 true, "reason": "…", "by": "…", "at": "…"}`) and sets `redacted: true`;
-`id`, `at`, `actor` and `field` stay. A secret usually sits in two
+`id`, `at`, `actor` and `field` stay. The tombstone's `reason` follows
+§8.5, as for a note (§6.16): the human owners and admins and the
+redactor read it, every other reader, agents included, reads `reason:
+null` — in the history, in the answer of this call, in the
+`task_created` or `task_updated` event below, and in a link the hub
+answers from the entry. A replay of this call or of a link's add or
+removal (§1.5) shows the reason as the caller's own read of the history
+does at the time of the replay. A secret usually sits in two
 entries — the one whose `after` added it and the one whose `before`
 removed it (or the `created` entry) — and each is redacted on its own.
 The same value also sits in the event log: `task_created` and
@@ -16681,7 +16688,19 @@ owner choose):
   (`revoked_reason: runner_revoked`, `revoked_by` the human), so an
   agent can park its work first; with `agents: "stop"` they are revoked
   at once, and so are those an earlier `stop` of this runner left to
-  their grace (never another agent's). Each revocation emits `credential_revoked` (§15.10, `reason:
+  their grace (never another agent's).
+- **Everything on the machine.** `agents: "stop"` also revokes at once
+  the credential that any other placement of this runner names, active
+  or closed for whatever reason (a `DELETE`, a detach, a member's
+  removal), in every project, attached or not, as long as the runner
+  has not reported its clone removed (`workspace_outcome.state:
+  removed`, §15.5): a retained or kept clone still holds the agent's
+  credential file, and a runner without its credential can never
+  report it removed. A policy `stop` does not reach those. The stop
+  reads the placements under each project's lock (the projects in the
+  order of their ids), as a pickup's exchange does (§15.9): an
+  exchange that came first is revoked with them, one that comes later
+  answers `not_found`. Each revocation emits `credential_revoked` (§15.10, `reason:
   runner_revoked`, to the agent and the owners), once, however many
   calls find it due. After that the agent has lost the hub: every call
   answers `credential_revoked`. The hub cannot end its process or its access to
@@ -16995,7 +17014,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | consent request withdrawn | `withdrawn` | at once, for the same reason |
 | the membership is removed | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
 | the agent is isolated (§6.2) | `membership_isolated` | at once, as for a removal. Lifting the isolation does not reopen it; a new placement does |
-| the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds` (§15.3) |
+| the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds`, at once under the owner's `agents: "stop"` (§15.3) |
 | a replacement finished its handover (§15.14) | `replaced` | uniform, as above: the old placement gets `desired: stopped` |
 | a replacement failed: its new placement reported `failed`, or a `full` transcript did not arrive in time (§15.14) | `replace_failed` | uniform, as above, for the new placement; the old one runs on. The new instance's credential, if its pickup was redeemed, is revoked when the placement closes; the same holds for a `DELETE` of the new placement before the handover (`removed`) |
 | the runner is removed | `runner_removed` | at once. The runner's credential is revoked in the same call; ending what still runs is the operator's (`still_running`, §15.3) and the runner's `orphaned` handling |
@@ -17095,6 +17114,9 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
   runner was revoked or removed (`runner_revoked`, `runner_removed`)
   has no runner left to ask the hub; its clones are the operator's
   (`maity runner stop-all`, `maity runner gc --revoked`).
+  An owner's `agents: "stop"` revokes the credential of every clone of
+  the runner not reported removed, whatever closed its placement
+  (§15.3), so none of them still reaches the hub.
 - **Outside the clone.** What a harness keeps under the agents' home —
   package caches, `~/.claude`, `~/.codex` — is shared by every agent of
   the target and stays. `maity runner check` warns when the file
@@ -21675,7 +21697,7 @@ names:
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Managed agents**: where the project's agents run and their wanted and reported state, §15.5–§15.7, the start on a runner being in the page's **Join an agent** menu; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Managed agents**: where the project's agents run and their wanted and reported state, §15.5–§15.7, the start on a runner being in the page's **Join an agent** menu; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `runners`, `why`, `settings` (one view in tabs: the project's settings for callers with `project:admin`, General at `settings` and the others at `settings/members`, `settings/work` and `settings/moderation`, each shown only where the caller has a part on it, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller opening a tab not shown to them gets the first one that is, so a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/team`, `/organisation` and
@@ -25011,13 +25033,17 @@ unlinked.
     title or the reason is redacted as §6.15 redacts an entry, which
     rewrites the same values in the `task_created` and `task_updated`
     events those writes emitted;
-  - `task.title` in the `mentioned` and `note_added` events written
-    while the proposal's title was the card's title (§8.2);
+  - `task.title` in the `mentioned`, `note_added` and `note_edited`
+    events written while the proposal's title was the card's title
+    (§8.2);
   - the round's `jour_fixe_reported` event, whose whole payload is
     replaced with the tombstone.
 
   A reader of a rewritten event sees the §8.5 tombstone where the text
-  was; ids, kinds and audiences stay. The ticker item carries counts
+  was, its `reason` shown as for the card's history (§6.15): to the
+  human owners and admins and the redactor, `null` to every other
+  reader; ids, kinds and audiences stay. A mention notification of such
+  an event shows the card's redacted title in place of the copy. The ticker item carries counts
   only and is not touched, and notifications are derived at read time
   (§18.1).
 

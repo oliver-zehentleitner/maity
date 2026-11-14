@@ -96,6 +96,10 @@ jobs:
             type=pep440,pattern={{major}}.{{minor}}
             type=sha,format=long,prefix=
 
+      # Builds for a release tag or a hand-started run use no build cache shared
+      # with other refs: no cache-from, no cache-to, and this build starts from
+      # nothing. The push below reuses only what this build left in the job's
+      # own builder, so the pushed layers are the ones just checked.
       - name: Build for the check
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -103,8 +107,7 @@ jobs:
           file: deploy/Dockerfile
           load: true
           tags: maity-hub:check
-          cache-to: type=gha,mode=max
-          cache-from: type=gha
+          no-cache: true
 
       - name: Check the image before it is pushed
         env:
@@ -138,7 +141,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
           sbom: true
           provenance: mode=max
 
