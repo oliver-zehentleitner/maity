@@ -13,6 +13,7 @@ from maity_hub import catalog, languages, registration_mail
 from maity_hub.auth import email_links
 
 WORDS = Path(catalog.__file__).with_name("words")
+WEB_WORDS = Path(__file__).resolve().parents[2] / "web" / "i18n"
 
 
 def _file(tag: str) -> dict[str, str]:
@@ -40,6 +41,15 @@ def test_a_translation_has_english_keys_and_placeholders(tag: str) -> None:
         assert re.fullmatch(r"[a-z_]+\.[a-z0-9_]+", key), key
         assert text.strip(), key
         assert _fields(text) == _fields(english[key]), key
+
+
+@pytest.mark.parametrize("tag", languages.INTERFACE)
+def test_the_experiment_notice_reads_the_same_on_the_hub_and_the_dashboard(tag: str) -> None:
+    # docs/api.md §5.1 "Experiment notice": the registration page (hub) and the dashboard
+    # (web) show one text in every interface language; each keeps its own copy, so this
+    # keeps them equal.
+    web: dict[str, str] = json.loads((WEB_WORDS / f"{tag}.json").read_text(encoding="utf-8"))
+    assert _file(tag)["register_page.experiment"] == web["experiment.notice"]
 
 
 def test_a_key_without_a_translation_reads_in_english(monkeypatch: pytest.MonkeyPatch) -> None:
