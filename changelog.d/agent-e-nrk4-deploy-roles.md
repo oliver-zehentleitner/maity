@@ -27,7 +27,8 @@
   PostgreSQL.
 - deploy: the k3s backup Job runs `pg_dump` as `maity_owner` when the Secret `maity-hub-db-migrate` exists, and as the
   superuser otherwise. The password from that Secret's URL reaches `pg_dump` through `PGPASSWORD`, never its arguments; a
-  user or password holding `%`, `/`, `?`, `#` or `@` fails the Job (`deploy/scripts/test-backup-dump.sh`).
+  user or password holding `%`, `/`, `?`, `#` or `@`, or a query naming a password or password file, fails the Job
+  (`deploy/scripts/test-backup-dump.sh`).
 - hub: `maity-hub serve` on PostgreSQL refuses to start when its database role is a superuser, owns the hub's schema
   or one of its tables, or may create objects in that schema, each also through any role it is a member of (the hub's
   schema being the one with `alembic_version`, wherever the `search_path` points); `maity-hub migrate` is not checked.

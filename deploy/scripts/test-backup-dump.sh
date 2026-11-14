@@ -4,7 +4,8 @@
 # with the Secret maity-hub-db-migrate the dump runs as the role in its URL, the password reaches pg_dump through PGPASSWORD and
 # never through its arguments (which every user on the node can read), and the rest of the URL, a query included, is kept;
 # without the Secret it runs as the superuser, as before; a URL that is not a postgresql:// URL, or whose user or password
-# holds `%`, `/`, `?`, `#` or a second `@`, fails the Job before pg_dump starts.
+# holds `%`, `/`, `?`, `#` or a second `@`, or whose query names a password or password file (in any case, or encoded),
+# fails the Job before pg_dump starts; other query options such as sslmode are kept.
 # Usage: deploy/scripts/test-backup-dump.sh   (no cluster needed; gpg 2.2+, GNU tar, python3 with PyYAML)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -92,5 +93,18 @@ refused question "$bad"
 
 run not-url "host=maity-postgres user=maity_owner password=Ownerpw123 dbname=maity"
 refused not-url "is not a postgresql:// URL"
+
+# A password or password file in the query would reach the arguments as well: refused, whatever the case or encoding.
+q="the query of maity-hub-db-migrate's database-url holds a password"
+run query-password "postgresql://maity_owner@maity-postgres/maity?password=Querypw123"
+refused query-password "$q"
+run query-upper "postgresql://maity_owner:Ownerpw123@maity-postgres/maity?sslmode=require&PASSWORD=Querypw123"
+refused query-upper "$q"
+run query-encoded "postgresql://maity_owner@maity-postgres/maity?pass%77ord=Querypw123"
+refused query-encoded "$q"
+run query-passfile "postgresql://maity_owner@maity-postgres/maity?passfile=/tmp/pgpass"
+refused query-passfile "$q"
+run query-sslmode "postgresql://maity_owner:Ownerpw123@maity-postgres/maity?sslmode=require&sslrootcert=/certs/ca.pem"
+dumped query-sslmode "-Fc -d postgresql://maity_owner@maity-postgres/maity?sslmode=require&sslrootcert=/certs/ca.pem" Ownerpw123
 
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }

@@ -106,6 +106,19 @@ spec:
                         case "${rest%%[/?#]*}" in *@*) echo "$bad" >&2; exit 1 ;; esac
                         ;;
                     esac
+                    # libpq also takes a password or a password file from the query; those would reach the arguments too.
+                    case "$rest" in
+                      *\?*)
+                        set -f; ifs=$IFS; IFS='&'
+                        for kv in ${rest#*\?}; do
+                          key=$(printf '%s' "${kv%%=*}" | tr '[:upper:]' '[:lower:]')
+                          case "$key" in
+                            *%*|password|passfile) echo "backup failed: the query of maity-hub-db-migrate's database-url holds a password, a password file or an encoded option name: put the password in the URL's user part (docs/install/README.md, step 4)" >&2; exit 1 ;;
+                          esac
+                        done
+                        IFS=$ifs; set +f
+                        ;;
+                    esac
                     case "$auth" in
                       *:*) PGPASSWORD=${auth#*:}; export PGPASSWORD; auth=${auth%%:*}
                            # the last check: whatever went wrong above, the password never reaches the arguments

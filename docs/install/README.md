@@ -591,7 +591,8 @@ with every right on the server:
 in the hub's database, run by the superuser with `psql`. It takes the two
 passwords as psql variables on standard input, can run again (it then sets
 the passwords given), and grants `maity_app` the rows of every table the
-migrations create later too. Each URL names its role:
+migrations create later too. It only grants: a right given to `maity_app`
+by hand (`TRUNCATE`, say) stays after it runs again. Each URL names its role:
 `postgresql://maity_app:<password>@<host>/maity` for the hub,
 `postgresql://maity_owner:<password>@<host>/maity` for the migrations.
 
