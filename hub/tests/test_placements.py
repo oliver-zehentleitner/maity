@@ -565,6 +565,17 @@ def test_hung_takes_its_details(setup: Setup, state: str, detail: str) -> None:
     assert refused.json()["error"]["details"]["fields"] == {"reason": "not_with_state"}
 
 
+def test_updated_goes_with_exited(setup: Setup) -> None:
+    """§15.16: a session an older `maity` started, ended at its idle point and resumed."""
+    body = placed(setup)
+    taken = report(setup, body, 1, state="exited", reason="updated")
+    assert taken.status_code == 200, taken.text
+    assert get(setup, body["id"])["reported"]["reason"] == "updated"
+    refused = report(setup, body, 2, state="failed", reason="updated")
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"reason": "not_with_state"}
+
+
 def test_since_is_clamped_to_hub_time(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, since="2999-01-01T00:00:00Z")

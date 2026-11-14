@@ -174,6 +174,9 @@ def runner_view(
         "updated_at": ts(row.updated_at),
         "removed_at": ts(row.removed_at),
     }
+    if row.capabilities and "tools" in row.capabilities:
+        # Beside the tools the runner reports, and absent like them (§15.3, §15.16).
+        view["update_requests"] = row.update_requests or []
     if not capabilities:
         del view["capabilities"]
     if viewer_id == row.owner_id:  # the record, never the value; the owner's only

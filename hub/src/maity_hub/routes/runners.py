@@ -83,6 +83,10 @@ class RunnerUpdate(Strict):
     name: str = Field(pattern=HANDLE_PATTERN)
 
 
+class UpdateNow(Strict):
+    tool: str = Field(min_length=1, max_length=200, pattern=r"^[\x20-\x7e]+$")
+
+
 class RunnerRevoke(Strict):
     reason: str | None = markdown(default=None)
     # The owner's override (§15.3): each project's rule, or stop everywhere.
@@ -607,6 +611,38 @@ def update_runner(
                 raise taken from None
         return idempotency.Outcome(
             200, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.post("/runners/{runner_id}/updates")
+def update_now(
+    runner_id: str, body: UpdateNow, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    """`Update now` (§15.16): the owner asks the runner to look for a newer version of one
+    tool. Only a tool the runner reports with `update: "daily"`; the runner's configuration
+    decides and the runner checks again. A second request for the tool replaces the first;
+    the runner reads them with `GET /runner` and nothing else wakes it."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        row = _own_runner(conn, caller, runner_id, lock=True)
+        _refuse_removed(row)
+        tools = (row.capabilities or {}).get("tools") or []
+        if not any(tool["id"] == body.tool and tool["update"] != "never" for tool in tools):
+            raise ApiError(
+                409,
+                "conflict",
+                "the runner does not update this tool",
+                {"reason": "updates_off"},
+            )
+        requests = [r for r in row.update_requests or [] if r["tool"] != body.tool]
+        requests.append({"tool": body.tool, "requested_at": clock.rfc3339(clock.now())})
+        conn.execute(
+            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=requests)
+        )
+        return idempotency.Outcome(
+            202, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
