@@ -145,6 +145,13 @@ def release_owner(conn: Connection, project: Any, human_id: str) -> None:
 
     # A signature counts while its signer may give it (§6.4): gone with the raised trust.
     cards.drop_signatures(conn, project.id, human_id, HUB)
+    if found.org_keep_trust == restricted.GUEST:
+        # Back to guest, which holds and takes no cards (§2.3): as a `PATCH` to guest does.
+        from maity_hub import isolation, takeovers
+
+        released = isolation.release_claims(conn, found.id)
+        takeovers.membership_removed(conn, found.id, HUB)
+        isolation.tell_released(conn, released, HUB, project)
     _announce(conn, project, found.id, human_id)
 
 

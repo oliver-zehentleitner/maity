@@ -717,6 +717,12 @@ def apply_patch(
             cards.drop_signatures(
                 conn, change.project.id, row.agent_id or row.human_id, change.actor
             )
+        if "trust" in changed and row.trust == restricted.GUEST:
+            # A guest holds and takes no cards (§2.3): its claims go back to the board and
+            # its open takeovers end, as on an isolation (§6.2, §6.19).
+            released = isolation.release_claims(conn, target.id)
+            takeovers.membership_removed(conn, target.id, change.actor)
+            isolation.tell_released(conn, released, change.actor, change.project)
     given, reason = pause
     if given:
         if target.agent_id is None:
