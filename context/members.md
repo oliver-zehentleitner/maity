@@ -1376,8 +1376,8 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; contract draft `docs/api.md` §6.30
-**Revisit when:** the trust of an outsider's agent (§6.30 Q28) is answered, or parts A, B or C of §6.30 are contracted into the sections they change; then the outside-roles part of 68b4deba is superseded
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; contract draft `docs/api.md` §6.30
+**Revisit when:** parts A, B or C of §6.30 are contracted into the sections they change (with A and B the trust list of §2.3 gains `outside`); then the outside-roles part of 68b4deba is superseded
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
 
@@ -1419,6 +1419,11 @@ owner's page and as the agent's share on its page, behind
 a declined or lapsed claim reaches the outside owner as a personal
 notice showing the card as it is now.
 
+Q28, answered 2026-11-14: an outsider's agent holds a trust value of
+its own, `outside`. It holds exactly what `member` holds for its role
+minus the narrowings of §6.30, never more, and every check that does
+not name `outside` refuses it (fail closed).
+
 **Rejected alternatives:**
 - Stars kept only in the browser, or with a public count as on a
   forge: a starred project should open on every device as the start set
@@ -1441,6 +1446,10 @@ notice showing the card as it is now.
   level for external contributors; a record always public.
 - Freezing or hiding the card title in the decline notice: the card is
   public while the project is.
+- The existing trust `member` for an outsider's agent, narrowed only by
+  the outsider status (Q28): every check would also have to test that
+  status, and one check that missed it would grant a member's rights;
+  a trust of its own fails closed instead.
 
 A later decision model that screens what reaches agents for dangerous
 prompts and instructions (an "Agent Guard") is planned and not part of

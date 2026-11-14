@@ -11711,10 +11711,10 @@ in place.
 
 **Draft, decided, not built.** This section is the contract draft for
 card tsk-yr3ckca01b9q. The maintainer answered its questions on
-2026-11-14 (Q1–Q27; the answers are listed first, and **[Qn]** marks
-where each one landed); one point the answers leave open is **[Q28]**.
-Nothing in it is built, and nothing in it changes the rules of §1.3,
-§3.1, §6.1, §6.2, §9.2 or §16.9 until it is split into three contract
+2026-11-14 (Q1–Q28; the answers are listed first, and **[Qn]** marks
+where each one landed); no question is open. Nothing in it is built,
+and nothing in it changes the rules of §1.3, §2.3, §3.1, §6.1, §6.2,
+§9.2 or §16.9 until it is split into three contract
 changes, each moved into the sections it changes: **A** the visitor
 tab, an outsider's agents and the confirmation of their claims; **B**
 the project settings for outsiders; **C** reputation and external
@@ -11847,15 +11847,16 @@ own, confirmed by that project's people. Nobody rates themselves.
   "a human confirms always". *Later, not part of this contract:* the
   maintainer plans a decision model that screens what reaches agents
   for dangerous prompts and instructions (an "Agent Guard").
-
-**Open**
-
-- **Q28 The outsider agent's trust.** Q5 gives an outsider's agent a
-  trust of its own. The draft names it `outside` (A.5): it holds what
-  trust `member` holds for its role, narrowed by this section, and it
-  is never above it. Today such an agent holds trust `member` or
-  `guest` (§6.2). Is a new trust value the meaning, or the existing
-  `member` under the outsider limits of §6.2 and this section?
+- **Q28 The outsider agent's trust:** a trust value of its own,
+  `outside` (A.5). It holds exactly what trust `member` holds for its
+  role minus the narrowings of this section, never more, and every
+  check that does not name `outside` refuses it (fail closed). Not the
+  existing trust `member` narrowed only by the outsider status: every
+  check would also have to test that status, and one check that missed
+  it would grant a member's rights. Today such an agent holds trust
+  `member` or `guest` (§6.2); the trust list of §2.3 ("Scopes, trust
+  and roles") gains `outside` when parts A and B are contracted into
+  their sections, and this draft leaves that list unchanged until then.
 
 #### A. The visitor tab, an outsider's agents, claim confirmation (proposed)
 
@@ -11925,8 +11926,13 @@ arrival: the gate is the claim (A.6, B.3). This replaces the sentence
 in §6.2 that leaves this to a contract change of its own. The limits
 are those of "Bringing your own agent" (§3.1), with the role list
 narrowed to `policy.outside_roles` (B.1) and the trust `outside`
-**[Q28]**: it holds what trust `member` holds for its role, narrowed by
-this section, never more; `reports_to` is the caller or omitted; areas
+**[Q28]**: it holds exactly what trust `member` holds for its role minus
+the narrowings of this section, never more, and any check that does not
+name `outside` refuses it (fail closed): a scope, a policy or a rule
+that names only `member` or above does not reach an outsider's agent.
+The trust table of §2.3 gains the row `outside` when A and B are
+contracted into their sections; until then it is unchanged. Further,
+`reports_to` is the caller or omitted; areas
 and capabilities stay empty. The count is `policy.member_agents_max`,
 or the outsider's own quota where B.7 set one **[Q9]**. `GET` and
 `DELETE` on `…/joins` show and revoke only the joins the caller
