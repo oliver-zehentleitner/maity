@@ -6325,7 +6325,8 @@ which already says removed or left). Under `policy.agent_owners:
 members` the hub isolates them (`isolated.by: "hub"`) and the owner
 gets that notice. Under `anyone` an agent within `policy.outside_roles`
 stays and keeps working, one on `blue-team` falls back to `coder` where
-it may (below, "An agent whose owner is no member"), and one beyond them
+it may (below, "An agent whose owner is no member"; the confirmation
+names it as continuing as a coder), and one beyond them
 (trust `admin`, a role not on the list) is isolated as under `members`. The call offers no other
 choice. The dashboard's confirmation names which applies to each agent
 and lists them.

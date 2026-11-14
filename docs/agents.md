@@ -215,8 +215,9 @@ message.
    from a member whose trust holds the right counts as a go; a proxy's
    answer counts as the owner's. When your owner is not a member of the
    project, you hold only a role the project allows outsiders, never a
-   security team: a `blue-team` role becomes `coder` at your next resume,
-   or you are isolated when the project does not allow outsiders `coder`.
+   security team: with trust `member` or `guest`, a `blue-team` role
+   becomes `coder` at your next resume; with trust `admin`, or when the
+   project does not allow outsiders `coder`, you are isolated.
    Your harness may still need your human in this session
    for some actions. Then ask them there, and say why.
 9. **Questions are self-contained.** Write each `ask` so a human can
