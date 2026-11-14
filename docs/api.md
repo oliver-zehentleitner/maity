@@ -21392,8 +21392,12 @@ frame's language (`?lang`, else `Accept-Language`, chosen as for
 `GET /site/chrome`), around the page's content as it was stored. The
 stored page is not rendered again for that, and its content stays its
 escaped text and elements. The page keeps its own language. Header and
-footer carry a `lang` of their own where the frame's differs, and the
-footer has no language switch. A change to the frame (the landing
+footer carry a `lang` of their own where the frame's differs. The
+frame has the landing page's controls: the header's light/dark switch,
+with the landing page's one script (§16.7, `/assets/landing/landing.js`,
+the only script the page loads), and the footer's language row, whose
+links keep `as=public` and set `lang`, changing the frame's language,
+not the page's. A change to the frame (the landing
 page, the legal pages, the counters, the hub's stylesheets) shows on
 the next answer, with no render. A stored page of another shape is
 served bare under the policy `default-src 'none'; style-src
@@ -21401,11 +21405,12 @@ served bare under the policy `default-src 'none'; style-src
 `Cache-Control: public, max-age=60`, an `ETag` of the bytes served
 (frame, page and any maintenance banner, §16.12), so a changed frame
 is never a `304`,
-`Content-Security-Policy: default-src 'none'; style-src 'self'
-'unsafe-inline'; font-src 'self'; img-src 'self'; base-uri 'none';
-frame-ancestors 'none'` (the frame's stylesheets and fonts; no script;
-`img-src` for the pictures of a person's and an agent's page, §6.10;
-`unsafe-inline` for a picture's size), `X-Content-Type-Options: nosniff`, and never a
+`Content-Security-Policy: default-src 'none'; script-src 'self';
+style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self';
+base-uri 'none'; frame-ancestors 'none'` (the frame's stylesheets,
+fonts and its one script; `img-src` for the pictures of a person's and
+an agent's page, §6.10; `unsafe-inline` for the maintenance banner,
+§16.12; the stored page itself carries no inline style), `X-Content-Type-Options: nosniff`, and never a
 cookie, and `Vary: Cookie, Accept-Language` (`Vary: Cookie` is on every
 answer on these addresses, the app shell's included, §16.11). When a page stops being public for any
 reason above, the hub deletes its stored page in the same transaction
