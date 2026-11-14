@@ -61,7 +61,20 @@ def load(conn: Connection, attachment_id: str) -> dict[str, Any]:
     return attachments.view(conn, [row])[0]
 
 
-idempotency.LOADERS["attachment"] = idempotency.plain(load)
+def _readable(conn: Connection, mine: Membership, attachment_id: str) -> bool:
+    """As its GET (§8.7): a pending upload its uploader's, a sent one its message's readers.
+    The uploader's replay of an upload deleted since still shows it gone."""
+    row = conn.execute(select(t.attachment).where(t.attachment.c.id == attachment_id)).one()
+    if row.message_seq is None:
+        return bool(row.uploaded_by == mine.id)
+    return attachments.message_readable(conn, mine, row.message_seq)
+
+
+idempotency.register(
+    "attachment",
+    idempotency.plain(load),
+    idempotency.in_project(idempotency.column_of(t.attachment), _readable),
+)
 
 
 def _admin_human(mine: Membership) -> bool:

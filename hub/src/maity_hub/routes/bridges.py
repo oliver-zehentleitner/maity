@@ -189,4 +189,21 @@ def _load(conn: Connection, bridge_id: str) -> dict[str, Any]:
     return bridges.view(conn, row)
 
 
-idempotency.LOADERS["bridge"] = idempotency.plain(_load)
+_IN_BRIDGES_PROJECT = idempotency.in_project(idempotency.column_of(t.bridge))
+
+
+def _sees_bridge(conn: Connection, bridge_id: str, caller: Any) -> bool:
+    """A member who reads the project, or the human owning the bridge agent from outside it,
+    whom `DELETE` lets end the connection: their retry finds the ended row (§2.3)."""
+    if _IN_BRIDGES_PROJECT(conn, bridge_id, caller):
+        return True
+    if caller.kind != "human":
+        return False
+    row = conn.execute(select(t.bridge.c.bridge).where(t.bridge.c.id == bridge_id)).first()
+    if row is None:
+        return False
+    bridge = conn.execute(select(t.membership).where(t.membership.c.id == row.bridge)).one()
+    return bool(owner_of(conn, bridge) == caller.human_id)
+
+
+idempotency.register("bridge", idempotency.plain(_load), _sees_bridge)
