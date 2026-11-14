@@ -1120,7 +1120,7 @@ def patch_task(
             _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
             availability.refuse_coordinator_out(conn, mine, "new assignments")
             if assigns_away and not cards.holds(mine, card):
-                takeovers.guard_move(conn, mine, card)
+                takeovers.guard_move(conn, mine, card, to=new_assignee)
             values["assigned_to"] = new_assignee
             if values["assigned_to"] != card.assigned_to:
                 # The new team's distribution decides, as on every assignment (§6.18).
@@ -1745,7 +1745,7 @@ def assign(
         before = card
         if takes:
             # An agent takes a card only through a takeover while the lease runs (§6.19).
-            takeovers.guard_move(conn, mine, card)
+            takeovers.guard_move(conn, mine, card, to=assignee)
             if not _lease_expired(card):
                 raise ApiError(
                     409,
