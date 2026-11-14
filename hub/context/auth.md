@@ -752,7 +752,10 @@ signed token of the human, the day, `unlocks` and the password generation. Its `
 day's count to zero, clears `alerted` and moves `unlocks` in one conditional update, so the link
 works once and dies with the day. A password change moves the generation, which kills the link,
 and clears `alerted`, so the next wrong code mails a link of the new password. The mail factor's
-codes and an enrolment's confirm do not count: neither is a guess at an enrolled secret.
+codes and an enrolment's confirm do not count: neither is a guess at an enrolled secret. Rows are
+locked in one order: the factor, the human, then the day. `_count_day` locks the human before it
+touches the day row, because the alert's record locks the human and a password change updates
+the human before it clears `alerted`; the other order lets the two wait on each other.
 
 **Reason:** the 15-minute window alone lets 960 guesses through a day. A count in the database,
 unlike the in-process limiters, survives a restart, which a limit over a whole day must; and
@@ -779,6 +782,9 @@ outlive the human's change of it.
   day's row already decides "once".
 - Alerting only on the code that hits the cap exactly (`==`): a lowered cap is passed without
   ever being hit, and the human is refused with neither notice nor link.
+- Clearing `alerted` before the password change updates the human: `POST /auth/password` has
+  already written the new password, and with it locked the human, by then; the count moves
+  instead (review A215 of #1756, a deadlock reproduced on PostgreSQL).
 - Leaving the link alive across a password change: it is single-use and dies with the day, but
   every other mailed link of the human dies with the old password, and this one should not be
   the exception.
