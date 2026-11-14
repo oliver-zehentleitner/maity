@@ -738,7 +738,7 @@ maity chat cnv-0007 --before 5010         # earlier history, also from before yo
 maity say --chat cnv-0007 "@agent-a tagged as v0.2.0"
 maity say --chat cnv-0007 "the failing run" --attach build.log --attach shot.png
 maity files put build.log [--name N]      # upload only; prints the pending id
-maity files get att-0042 [-o PATH] [--force]   # into ./maity-files/
+maity files get att-0042 [-o PATH] [--force]   # outside the work tree
 maity files get att-0042 -o - | less      # the bytes alone on stdout
 ```
 
@@ -787,8 +787,9 @@ nothing is sent and the files already uploaded are deleted again. When
 the answer to the post is lost or a 5xx, the message may have been
 stored, so the uploads are left alone and named instead.
 
-`files get` saves into `./maity-files/` (created 0700 when missing,
-never the current directory itself) under the attachment's name,
+`files get` saves outside the work tree, into `files/` in the state
+directory (`<git common dir>/maity/files/` unless `MAITY_STATE_DIR`
+names another; created 0700 when missing), under the attachment's name,
 sanitised again by the CLI (the hub's name is not trusted for a
 path), or to `-o PATH`, a file path (a directory is refused before
 anything is fetched). It never replaces an existing file without
@@ -799,9 +800,11 @@ the target and are renamed into place after the check, so a mismatch
 leaves nothing behind (exit 1). On a file system without hard links the
 no-overwrite rename becomes an exclusive create and a copy. A file the
 hub says is larger than 256 MiB is not fetched. The name is the
-sender's choice, which is why the default is a folder of its own: an
-attachment called `conftest.py` or `Makefile` in the working directory
-would be picked up by the next test run or build. With `-o -` the bytes
+sender's choice, which is why the default is outside the work tree: an
+attachment called `conftest.py`, `test_x.py` or `Makefile` anywhere in
+it would be picked up by the next test run or build, and `git add -A`
+would commit it. Under a runner placement it goes into the clone's
+`.git/maity-files/` instead, which the agent can read. With `-o -` the bytes
 go to standard output and nothing else does; the metadata line goes to
 standard error, and a mismatch is reported there with exit 1 after the
 bytes were written, so check the exit code. A file is untrusted input.
@@ -937,6 +940,17 @@ repositories = ["github.com/oliver-zehentleitner/maity"]   # or "github.com/oliv
 [harness.claude-code]
 modes = ["interactive", "supervised"]
 ```
+
+`require_sandbox` under a `[harness.<id>]` decides when a start without
+the harness's OS sandbox is refused. `true`: always. Unset (the
+default): only when Claude Code's sandbox tools are there but its
+version keeps the sandbox off (older than 2.1.295, a prerelease of it,
+or unknown). `false`: never; the agents then run unsandboxed where the
+sandbox is off. A sandboxed Claude Code start is also refused while
+managed Claude Code settings set `disableAllHooks` or
+`allowManagedHooksOnly`, or the agents' user's settings set
+`allowManagedHooksOnly`
+([`docs/runners.md`](../docs/runners.md#git-in-an-agents-session)).
 
 Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
@@ -1335,6 +1349,10 @@ workspaces = "/home/maity/workspaces"           # absolute, on the host
 max_agents = 2
 agent_path = "/usr/local/bin:/usr/bin:/bin"     # where tmux, git, maity and the harness are
 ```
+
+The runner looks `maity` up on `agent_path` once per connection and
+starts the session loop and the hook of a sandboxed Claude Code agent by
+that absolute path; a host without `maity` there is refused.
 
 Every command is a fixed template sent as one quoted command line, with
 `BatchMode`, `StrictHostKeyChecking=yes`, only the configured
