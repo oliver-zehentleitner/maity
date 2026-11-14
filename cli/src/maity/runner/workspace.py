@@ -23,7 +23,6 @@ plain, the way `AsUser.read` reads every file on the agents' side (limitread).
 from __future__ import annotations
 
 import configparser
-import os
 import re
 import subprocess
 import threading
@@ -326,14 +325,13 @@ class Folder:
 
 
 def read_folder(path: Path, as_user: AsUser = RUNNER) -> Folder:
-    """`path` as the agents' user sees it; OSError when it cannot be read."""
-    if as_user.direct:
-        names = tuple(sorted(os.listdir(path)))
-        repo = path / REPO
-        above = tuple(str(d) for d in path.parents if os.path.lexists(d / ".git"))
-        return Folder(os.path.realpath(path), names, repo.is_dir() and not repo.is_symlink(),
-                      above)  # fmt: skip
-    done = as_user.run(["sh", "-c", _FOLDER, "sh", str(path)])
+    """`path` as the agents' user sees it, through the one `_FOLDER` listing, whoever runs
+    it: the supervisor before a start, the loop before each run (`check_folder`). OSError
+    when it cannot be read."""
+    try:
+        done = as_user.run(["sh", "-c", _FOLDER, "sh", str(path)])
+    except subprocess.TimeoutExpired:
+        raise OSError(f"listing {path} on the agents' side did not end in time") from None
     if done.returncode != 0:
         raise OSError(f"cannot list {path} on the agents' side")
     real, repo_dir = "", False
@@ -375,7 +373,8 @@ def beside(place: Workspace, as_user: AsUser = RUNNER) -> list[str] | None:
 
 
 def check_folder(place: Workspace, as_user: AsUser = RUNNER) -> None:
-    """Before every start in a workspace folder (§15.3, §15.5): its path is its real path, no
+    """Before every start in a workspace folder (§15.3, §15.5), by the supervisor, and before
+    every run of the supervised loop, as the agents' user: its path is its real path, no
     directory above it up to `/` has an entry `.git`, and it holds nothing but the clone,
     a directory REPO. agy would load what is there or above. `Refused` otherwise, with the
     entries or the directory named for the runner's log only; nothing is deleted."""

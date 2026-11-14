@@ -1231,9 +1231,12 @@ project's own harness configuration is never loaded:
   command may leave agy's sandbox. agy also merges the agents' user's own
   `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
   continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.
-  Its sandbox is advertised `on` where unprivileged user, mount, PID and
-  network namespaces start for the agents' user (`unshare`, once per
-  service start). [`docs/runners.md`](../docs/runners.md#antigravity-agy)
+  Its sandbox is advertised `off` until the runner can see agy's own
+  sandbox start (`sandbox_unavailable`; `require_sandbox = true` refuses
+  it); `maity runner check` reports whether the namespaces it needs start
+  for the agents' user, as a diagnostic. The workspace folder is checked
+  before every start and before every run of the supervised loop.
+  [`docs/runners.md`](../docs/runners.md#antigravity-agy)
   has the details.
 
 `stub` (no model, for tests) runs as before.

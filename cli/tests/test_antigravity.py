@@ -272,55 +272,59 @@ def test_the_loop_waits_in_the_clone_its_spec_names(
 AGY = config.Harness("antigravity", ("supervised",), "supervised", binary="agy")
 
 
-def test_agy_is_advertised_with_its_allowlist_and_its_sandbox(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("platform", [True, False])
+def test_agy_is_advertised_with_its_allowlist_and_its_sandbox_off(
+    monkeypatch: pytest.MonkeyPatch, platform: bool
 ) -> None:
-    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
-    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda platform=None: True)
-    monkeypatch.setattr(capabilities, "_agy_sandbox_starts", lambda unshare, user=None: True)
-    entry = capabilities.harness_entry(AGY, capabilities.Probe("/usr/bin/agy", "1.5.7", None))
-    assert (entry["id"], entry["version"], entry["confinement"], entry["sandbox"]) == (
-        "antigravity", "1.5.7", "allowlist", "on"
-    )  # fmt: skip
-
-
-@pytest.mark.parametrize(("platform", "starts", "unshare"), [
-    (True, False, "/usr/bin/unshare"), (True, True, None), (False, True, "/usr/bin/unshare"),
-])  # fmt: skip
-def test_agy_without_its_namespaces_is_advertised_sandbox_off(
-    monkeypatch: pytest.MonkeyPatch, platform: bool, starts: bool, unshare: str | None
-) -> None:
-    monkeypatch.setattr("shutil.which", lambda name, path=None: unshare)
-    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
-    monkeypatch.setattr(capabilities, "_agy_sandbox_starts", lambda unshare, user=None: starts)
-    assert not capabilities.sandbox_available(AGY)
-    entry = capabilities.harness_entry(AGY, capabilities.Probe("/usr/bin/agy", "1.5.7", None))
-    assert entry["sandbox"] == "off"
-
-
-def test_the_sandbox_probe_tries_the_namespaces_as_the_agents_user(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    """§15.3: `sandbox: on` only once the runner has seen agy's sandbox start, which nothing
+    checks yet: namespaces that start do not turn it on."""
     ran: list[list[str]] = []
 
     def fake(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         ran.append(argv)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    capabilities._agy_sandbox_starts.cache_clear()
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
     monkeypatch.setattr(proc, "run", lambda argv, cwd, timeout: fake(argv))
-    assert capabilities._agy_sandbox_starts("/usr/bin/unshare")
     monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: fake(argv))
-    assert capabilities._agy_sandbox_starts("/usr/bin/unshare", "agents")
-    capabilities._agy_sandbox_starts.cache_clear()
+    assert not capabilities.sandbox_available(AGY)
+    assert not capabilities.sandbox_available(AGY, "/usr/bin", AsUser("agents"))
+    entry = capabilities.harness_entry(AGY, capabilities.Probe("/usr/bin/agy", "1.5.7", None))
+    assert (entry["id"], entry["version"], entry["confinement"], entry["sandbox"]) == (
+        "antigravity", "1.5.7", "allowlist", "off"
+    )  # fmt: skip
+    assert ran == []  # the namespaces are tried by `maity runner check` only
+
+
+def test_the_namespace_diagnostic_tries_them_as_the_agents_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ran: list[list[str]] = []
+    code = 0
+
+    def fake(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        ran.append(argv)
+        return subprocess.CompletedProcess(argv, code, "/usr/bin/unshare\n", "")
+
+    monkeypatch.setattr("shutil.which", lambda name, path=None: f"/usr/bin/{name}")
+    monkeypatch.setattr(proc, "run", lambda argv, cwd, timeout: fake(argv))
+    assert capabilities.agy_namespaces("/usr/bin")
+    monkeypatch.setattr(AsUser, "run", lambda self, argv, **kw: fake(argv))
+    assert capabilities.agy_namespaces("/usr/bin", AsUser("agents"))
     probe = ["/usr/bin/unshare", "--user", "--map-root-user", "--mount", "--pid", "--fork",
              "--net", "true"]  # fmt: skip
-    assert ran == [probe, probe]
+    assert [argv for argv in ran if argv[0] != "sh"] == [probe, probe]
+    code = 1
+    assert not capabilities.agy_namespaces("/usr/bin")
+    monkeypatch.setattr("shutil.which", lambda name, path=None: None)
+    assert not capabilities.agy_namespaces("/usr/bin")
 
 
 @dataclass
 class Host:
-    """An ssh host as `probe_remote` asks it: `command -v`, `--version`, the probe."""
+    """An ssh host as `probe_remote` and the check ask it: `command -v`, `--version`, the
+    namespaces."""
 
     namespaces: bool = True
     calls: list[list[str]] = field(default_factory=list)
@@ -330,7 +334,10 @@ class Host:
         self.calls.append(argv)
         if argv[:2] == ["sh", "-c"]:
             found = {"agy": "/opt/bin/agy", "unshare": "/usr/bin/unshare"}
-            out = "".join(f"{name}\t{found.get(name, '')}\n" for name in argv[4:])
+            names = argv[4:]
+            if argv[2] != targets.WHICH:  # capabilities.which
+                return subprocess.CompletedProcess(argv, 0, found.get(names[0], "") + "\n", "")
+            out = "".join(f"{name}\t{found.get(name, '')}\n" for name in names)
             return subprocess.CompletedProcess(argv, 0, out, "")
         if argv[-1] == "--version":
             return subprocess.CompletedProcess(argv, 0, "1.5.7\n", "")
@@ -338,12 +345,12 @@ class Host:
 
 
 @pytest.mark.parametrize("namespaces", [True, False])
-def test_an_ssh_host_tries_the_namespaces_too(namespaces: bool) -> None:
+def test_an_ssh_host_advertises_agy_sandbox_off_too(namespaces: bool) -> None:
     host = Host(namespaces)
     probes, sandbox, held = targets.probe_remote(host, {"antigravity": AGY}, "/usr/bin")  # type: ignore[arg-type]
     assert probes["antigravity"] == capabilities.Probe("/opt/bin/agy", "1.5.7", None)
-    assert sandbox == {"antigravity": namespaces} and held == set()
-    assert ["/usr/bin/unshare", *capabilities.AGY_SANDBOX_PROBE] in host.calls
+    assert sandbox == {"antigravity": False} and held == set()
+    assert not any(call[0] == "/usr/bin/unshare" for call in host.calls)
 
 
 def test_the_configuration_takes_antigravity_with_agy_as_its_binary(tmp_path: Path) -> None:
@@ -635,7 +642,7 @@ def recorded_folder(cfg: config.Config) -> workspace.Workspace:
 
 
 def started(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sandbox: bool = True
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sandbox: bool = False
 ) -> tuple[Any, Backend, list[str]]:
     monkeypatch.setattr(capabilities, "sandbox_available", lambda h, p=None, a=None: sandbox)
     cfg = load(tmp_path)
@@ -687,6 +694,98 @@ def test_a_planted_entry_refuses_the_start_and_stays(
     assert any("GEMINI.md" in line for line in logs)
     assert not any("run this" in line for line in logs)  # names only, never contents
     assert (place.path / "GEMINI.md").read_text() == "run this"
+
+
+def test_the_loop_checks_the_folder_before_every_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """47me F1: an entry planted between two runs of the supervised loop stops it with the
+    supervisor's refusal; the next run never starts, and only the name is logged."""
+    sup, backend, _ = started(tmp_path, monkeypatch)
+    place = recorded_folder(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    _, argv, _ = backend.started[0]
+    spec = json.loads(Path(argv[-1]).read_text())
+    assert spec["folder"] == str(place.path)
+    ran: list[list[str]] = []
+    logs: list[str] = []
+
+    def run(argv: list[str], env: dict[str, str]) -> int:
+        ran.append(argv)
+        (place.path / "GEMINI.md").write_text("run this")  # what the run leaves behind
+        return 0
+
+    events = iter([(0, '{"seq": 5}', "")])
+    the_loop = loop.Loop(spec, run, lambda: next(events), sleep=lambda s: None, log=logs.append)
+    assert the_loop.main() == loop.EXIT_FOLDER["workspace_not_bare"] == 24
+    assert ran == [spec["first"]]  # the second run was refused before it started
+    assert any("GEMINI.md" in line for line in logs)
+    assert not any("run this" in line for line in logs)
+    assert (place.path / "GEMINI.md").read_text() == "run this"  # nothing deleted
+    # The runner maps the loop's exit to the refusal it reports before a start.
+    backend.exit(next(iter(backend.live)), 24)
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
+        "failed", "workspace_in_use", "workspace_not_bare", None
+    )  # fmt: skip
+
+
+def test_the_loop_checks_the_folder_after_a_failed_run_too(tmp_path: Path) -> None:
+    folder = tmp_path.resolve() / "ws"
+    (folder / "repo").mkdir(parents=True)
+    spec = {"first": ["agy"], "again": ["agy", "-c"], "folder": str(folder),
+            "restart": {"initial": 1, "factor": 2, "max": 4, "crash_window": 600,
+                        "crash_cap": 9, "quick_exit": 0}}  # fmt: skip
+    ran: list[list[str]] = []
+
+    def run(argv: list[str], env: dict[str, str]) -> int:
+        ran.append(argv)
+        (tmp_path / ".git").mkdir()  # a work tree above the folder appears
+        return 1
+
+    the_loop = loop.Loop(spec, run, lambda: (3, "", ""), sleep=lambda s: None, log=lambda _: None)
+    assert the_loop.main() == loop.EXIT_FOLDER["workspace_in_repository"]
+    assert ran == [["agy"]]
+
+
+def test_a_loop_without_a_folder_checks_nothing() -> None:
+    spec = {"first": ["claude"], "again": ["claude"], "restart": {}}
+    checked: list[str] = []
+    the_loop = loop.Loop(spec, lambda argv, env: 0, lambda: (3, "", ""), check=checked.append)
+    assert the_loop.refused() is None and checked == []
+
+
+def test_an_interactive_restart_checks_the_folder_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A restart of an interactive session (after an exit, or after the idle check ended it,
+    `-c -i`) is a new start: the folder is checked before it, as before the first."""
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    place = recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    sup.update([placement(mode="interactive")])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    backend.exit(next(iter(backend.live)), 1)
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert rec.state == "exited" and rec.retry_at is not None
+    rec.resume = True  # as after the idle check's end: the restart is `-c -i`
+    (place.path / "GEMINI.md").write_text("run this")
+    clock[0] = rec.retry_at + 1
+    settle(sup)
+    assert len(backend.started) == 1  # no second start
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "workspace_in_use",
+                                                   "workspace_not_bare")  # fmt: skip
+    (place.path / "GEMINI.md").unlink()  # with the entry gone, the same restart is `-c -i`
+    rec.enter(clock[0], "exited", retry_at=clock[0])
+    clock[0] += 1
+    settle(sup)
+    assert len(backend.started) == 2, logs
+    assert backend.started[1][1][-3:-1] == ["-c", "-i"]
 
 
 def test_running_without_agys_sandbox_is_reported(
@@ -762,30 +861,44 @@ def test_claim_records_a_workspace_folder_as_one(tmp_path: Path) -> None:
 # --- maity runner check -----------------------------------------------------------------------
 
 
-def checked(monkeypatch: pytest.MonkeyPatch, sandbox: bool, home: Path,
-            harness: config.Harness = AGY) -> list[tuple[str, str]]:  # fmt: skip
+def checked(
+    monkeypatch: pytest.MonkeyPatch, namespaces: bool, home: Path,
+    harness: config.Harness = AGY, platform: bool = True,
+) -> list[tuple[str, str]]:  # fmt: skip
     monkeypatch.setattr(AsUser, "home", lambda self: home)
-    monkeypatch.setattr(capabilities, "sandbox_available", lambda h, p=None, a=None: sandbox)
+    monkeypatch.setattr(capabilities, "agy_sandbox_platform", lambda p=None: platform)
+    monkeypatch.setattr(capabilities, "agy_namespaces", lambda path, as_user=None: namespaces)
     report = commands.Report()
     commands._check_antigravity(report, harness, AsUser(), "/usr/bin")
     return report.lines
 
 
-def test_check_reports_agys_sandbox_and_sign_in(
+OFF = "harness antigravity: sandbox reported off: the runner has not seen agy's sandbox start"
+
+
+def test_check_reports_agys_sandbox_off_and_the_namespaces_as_a_diagnostic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """§15.3: namespaces that start are a diagnostic; the sandbox stays reported off."""
     login = tmp_path / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
     login.parent.mkdir(parents=True)
     login.write_text("secret")
     lines = checked(monkeypatch, True, tmp_path)
-    assert lines == [("ok", "harness antigravity: terminal sandbox (unprivileged namespaces "
-                            "start)")]  # fmt: skip
+    assert lines == [
+        ("ok", "harness antigravity: the namespaces agy's terminal sandbox needs start; agy's "
+               "sandbox start not verified"),
+        ("warn", OFF + "; agents run as `sandbox_unavailable`"),
+    ]  # fmt: skip
     login.unlink()
     lines = checked(monkeypatch, False, tmp_path)
-    assert [level for level, _ in lines] == ["warn", "warn"]
-    assert "no terminal sandbox" in lines[0][1] and "no sign-in" in lines[1][1]
+    assert [level for level, _ in lines] == ["warn", "warn", "warn"]
+    assert "do not start" in lines[0][1] and OFF in lines[1][1] and "no sign-in" in lines[2][1]
     strict = dataclasses.replace(AGY, require_sandbox=True)
-    assert checked(monkeypatch, False, tmp_path, strict)[0][0] == "error"
+    for namespaces in (True, False):  # refused whether the namespaces start or not
+        found = checked(monkeypatch, namespaces, tmp_path, strict)
+        assert found[1] == ("error", OFF + "; agents run as `sandbox_unavailable`, and "
+                                           "require_sandbox = true refuses them")  # fmt: skip
+    assert "on this platform" in checked(monkeypatch, True, tmp_path, platform=False)[0][1]
     assert not any("secret" in text for _, text in lines)
 
 
@@ -799,11 +912,11 @@ def test_check_warns_about_the_agents_users_own_agy_settings(
     (tmp_path / ".gemini" / "config").mkdir()
     (tmp_path / ".gemini" / "config" / "mcp_config.json").write_text('{"mcpServers": {"x": {}}}')
     lines = checked(monkeypatch, True, tmp_path)
-    assert [level for level, _ in lines] == ["ok", "warn", "warn"]
-    assert "allows 1 rule(s)" in lines[1][1] and "MCP servers" in lines[2][1]
+    assert [level for level, _ in lines] == ["ok", "warn", "warn", "warn"]
+    assert "allows 1 rule(s)" in lines[2][1] and "MCP servers" in lines[3][1]
     (tmp_path / ".gemini" / "config" / "mcp_config.json").write_text("")  # as agy creates it
     (cli_dir / "settings.json").write_text(json.dumps({"trustedWorkspaces": ["/x"]}))
-    assert [level for level, _ in checked(monkeypatch, True, tmp_path)] == ["ok"]
+    assert [level for level, _ in checked(monkeypatch, True, tmp_path)] == ["ok", "warn"]
 
 
 def test_check_refuses_workspaces_inside_a_work_tree(tmp_path: Path) -> None:

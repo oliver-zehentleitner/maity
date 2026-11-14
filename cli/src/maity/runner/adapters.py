@@ -285,6 +285,8 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             "again": again,
             "env": env,
             "clone": str(ctx.clone),  # where `maity wait` runs: agy starts above it
+            # agy's workspace folder, checked before every run as before the start (§15.5).
+            **({"folder": str(ctx.folder)} if ctx.folder is not None else {}),
             "restart": {
                 "initial": policy.initial, "factor": policy.factor, "max": policy.max,
                 "crash_window": policy.crash_window, "crash_cap": policy.crash_cap,

@@ -592,6 +592,11 @@ class Supervisor:
             rec.limits_unknown = 0
             rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
             return
+        folder = next((d for d, c in loop.EXIT_FOLDER.items() if c == code), None)
+        if folder is not None:  # the loop's check before a run (§15.5): as before a start
+            rec.enter(now, "failed", "workspace_in_use", detail=folder, exit_code=code,
+                      retry_at=None)  # fmt: skip
+            return
         if code in (loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN):
             if code == loop.EXIT_RATE_LIMITED_AFTER_CLEAN:
                 rec.limits_unknown = 0  # a clean run since the last limit: a new row

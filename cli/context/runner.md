@@ -498,7 +498,10 @@ its settings switches that off; unknown keys are refused. Started one
 level above the clone, it loaded none of the clone's configuration, also
 after the agent had worked in the clone. The folder is writable for the
 agent, so a run could leave configuration there for the next one: hence
-the check at every start. The mode is set because agy 1.5.7 made `auto`
+the check at every start, and in `supervised` mode before every run of
+the loop too, which starts agy again per event and after a failed run
+without the supervisor (the loop runs the same check, through the same
+listing, as the agents' user; review of PR #1815). The mode is set because agy 1.5.7 made `auto`
 the default, also headless, and in the test its reviewer model let a
 command leave the sandbox and list `.git/maity`. The settings are merged
 with the user's own, not replacing them; the owner accepted that for
@@ -544,39 +547,45 @@ delete what the agent left there.
 - Leaving agy's mode as it comes: `auto` lets a model decide whether a
   command leaves the sandbox.
 
-## agy's sandbox counts as on where its namespaces start for the agents' user
+## agy's sandbox is reported off until the runner sees agy's own sandbox start
 
 **Id:** 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6
-**Type:** decision
 **Type:** constraint
 **Status:** active
-**Evidence:** inferred
-**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; agy 1.5.7's `--help`, its changelog and its built-in documentation; docs/api.md §15.3
+**Evidence:** confirmed
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; agy 1.5.7's `--help`, its changelog and its built-in documentation; docs/api.md §15.3; review of PR #1815 (fix order A449: a namespace probe is a precondition, not agy's sandbox start), 2026-11-14
 **See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
-**Revisit when:** agy gains a command that starts its sandbox alone, or a setting that fails a run when the sandbox is missing; or a real run shows agy's sandbox failing where the namespaces start
+**Revisit when:** agy gains a command, flag or dry run that starts its terminal sandbox alone without a model call or the sign-in, or a setting that fails a run when the sandbox is missing: then a bounded check of that start can report `on`
 
-The runner advertises `sandbox: on` for agy where `unshare --user
---map-root-user --mount --pid --fork --net true` succeeds as the agents'
-user (on an ssh host, there), tried once per service start, on Linux
-only. Without it the placement still starts, as the other harnesses do
-(`sandbox_unavailable`), unless `require_sandbox = true`.
+The runner advertises `sandbox: off` for agy on every host, so an agy
+placement runs as `sandbox_unavailable` and `require_sandbox = true`
+refuses it. The session settings still switch agy's terminal sandbox on
+(`enableTerminalSandbox`): what the runner reports does not change what
+agy does. `maity runner check` tries, as the agents' user, whether the
+namespaces agy's sandbox needs start (`unshare --user --map-root-user
+--mount --pid --fork --net true`, on Linux, on an ssh host there) and
+prints the result as a diagnostic, "agy's sandbox start not verified";
+it never turns the capability on.
 
 **Reason:** §15.3 lets the runner say `on` only where it has seen agy's
 sandbox start, because agy runs a command without it, silently, where it
 cannot start. agy 1.5.7 has no command that starts only its sandbox, as
-`codex sandbox -- true` does for Codex. Its changelog names blocked
-unprivileged user namespaces as the Linux case where the sandbox cannot
-run, so the probe tries those namespaces. That is the precondition, not
-agy's sandbox itself: Evidence stays inferred until a real session on a
-host where the probe fails has been watched.
+`codex sandbox -- true` does for Codex. Namespaces that start are the
+precondition named in agy's changelog, not agy's sandbox start, so they
+cannot satisfy the contract; until a bounded check of agy's own start
+exists, the code follows the contract and reports `off`.
 
 **Rejected alternatives:**
+- Reporting `on` where the namespaces start (the first version of this
+  PR): a precondition probe, which the contract does not accept as having
+  seen the sandbox start.
 - A headless `agy -p` run that executes one command: it needs the
   operator's sign-in, costs model quota at every service start, and its
   answer is the model's text, not an exit code.
-- Always `off` until someone confirms by hand: with the sandbox off,
-  `proceed-in-sandbox` falls back to asking, which a supervised run
-  refuses, so no agent could run a command.
+- Turning agy's sandbox off in the session settings while it is
+  reported off: `proceed-in-sandbox` would then fall back to asking,
+  which a supervised run refuses, and a host where it does start would
+  lose it.
 
 ## agy's session settings: prefixes for grants, the sign-in denied, hosts allowed
 

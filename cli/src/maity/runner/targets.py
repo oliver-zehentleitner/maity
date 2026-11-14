@@ -191,8 +191,7 @@ def probe_remote(
     one fixed `sh -c` template whose arguments are the configured binary names; with the
     harnesses whose sandbox is off for their version alone (capabilities.sandbox_held)."""
     found: dict[str, capabilities.Probe] = {}
-    agy = {"unshare"} if "antigravity" in harnesses else set()
-    names = sorted({h.binary for h in harnesses.values() if h.binary} | set(SANDBOX_TOOLS) | agy)
+    names = sorted({h.binary for h in harnesses.values() if h.binary} | set(SANDBOX_TOOLS))
     done = as_user.run(["sh", "-c", WHICH, "sh", *names], env={"PATH": agent_path})
     if done.returncode == SSH_UNREACHABLE:
         raise Unreachable(done.stderr.strip()[:200])
@@ -217,17 +216,8 @@ def probe_remote(
     sandbox: dict[str, bool] = {}
     held: set[str] = set()
     for harness in harnesses.values():
-        if harness.id == "antigravity":  # the namespaces agy's sandbox needs, on the host
-            unshare = paths.get("unshare", "")
-            sandbox[harness.id] = (
-                found[harness.id].available
-                and bool(unshare)
-                and as_user.run(
-                    [unshare, *capabilities.AGY_SANDBOX_PROBE], env={"PATH": agent_path},
-                    timeout=30,
-                ).returncode
-                == 0
-            )  # fmt: skip
+        if harness.id == "antigravity":  # off until agy's own sandbox is seen starting
+            sandbox[harness.id] = False  # (capabilities.sandbox_available)
         elif harness.id == "codex":  # tried on the host, as the local target tries it here
             codex = found[harness.id].path
             sandbox[harness.id] = (

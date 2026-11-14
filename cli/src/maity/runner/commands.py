@@ -398,26 +398,32 @@ def _check_harness(
 
 def _check_antigravity(
     report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
-    where: str = "", sandbox: bool | None = None,
+    where: str = "",
 ) -> None:  # fmt: skip
-    """agy's sandbox (the namespaces it needs, as the agents' user), its sign-in, and what of
-    the agents' user's own agy settings every agent inherits (§15.3)."""
-    if sandbox is None:
-        sandbox = capabilities.sandbox_available(harness, agent_path, as_user)
-    if sandbox:
-        report.ok(f"{where}harness antigravity: terminal sandbox (unprivileged namespaces start)")
-    else:
-        here = not where  # an ssh host is Linux
-        if here and not capabilities.agy_sandbox_platform():
-            why = "no terminal sandbox on this platform"
-        else:
-            why = "no terminal sandbox (unprivileged namespaces do not start, or no `unshare`)"
-        line = (
-            f"{where}harness antigravity: {why}; agy would run commands unsandboxed, and "
-            "asks before every command no rule allows, which a supervised run refuses"
+    """agy's sandbox (reported off; the namespaces it needs as a diagnostic), its sign-in,
+    and what of the agents' user's own agy settings every agent inherits (§15.3)."""
+    here = not where  # an ssh host is Linux
+    if here and not capabilities.agy_sandbox_platform():
+        report.warn(f"{where}harness antigravity: no terminal sandbox on this platform")
+    elif capabilities.agy_namespaces(agent_path, as_user):
+        report.ok(
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs start; "
+            "agy's sandbox start not verified"
         )
-        refused = capabilities.sandbox_refused(harness, False, False)
-        (report.error if refused else report.warn)(line)
+    else:
+        report.warn(
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs do not "
+            "start (or no `unshare`); agy would run commands unsandboxed"
+        )
+    line = (
+        f"{where}harness antigravity: sandbox reported off: the runner has not seen agy's "
+        "sandbox start; agents run as `sandbox_unavailable`"
+    )
+    refused = capabilities.sandbox_refused(harness, False, False)
+    if refused:
+        report.error(line + ", and require_sandbox = true refuses them")
+    else:
+        report.warn(line)
     try:
         login = capabilities.agy_login(as_user)
         signed_in = as_user.exists(login, "-f")
@@ -617,8 +623,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             elif harness.id == "claude-code":
                 _check_claude_hooks(report, as_user, f"{name}: ")
             if harness.id == "antigravity":
-                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ",
-                                   sandbox=sandbox.get(harness.id, False))  # fmt: skip
+                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
