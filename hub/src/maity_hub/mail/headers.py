@@ -1,7 +1,8 @@
 """Header values and the message itself (docs/api.md §18.5).
 
-Every header value the hub builds has every control character removed first: CR, LF,
-every other C0 character, U+007F and U+2028/U+2029. A value that is not pure ASCII is
+Every header value the hub builds is one line of plain text first: each run of control and
+line-break characters (Unicode Cc: C0, U+007F and C1 such as U+0085; Zl: U+2028; Zp: U+2029)
+becomes one space, whatever a human typed into a name. A value that is not pure ASCII is
 then encoded as RFC 2047 encoded-words, which `email.policy.SMTP` does. Addresses are
 the checked single addresses of §18.4 and enter a header only as one `Address`; no
 header line or recipient list is joined from strings by hand.
@@ -16,12 +17,14 @@ from email.policy import SMTP
 
 MAX_NAME = 200
 
-_CONTROL = re.compile("[\x00-\x1f\x7f  ]")
+# Every character of Unicode category Cc (C0, U+007F, C1), Zl and Zp: all of them, since
+# `email.policy` refuses a header value with any line break it knows, U+0085 included.
+_CONTROL = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
 
 
 def clean(value: str) -> str:
-    """The value without a control character."""
-    return _CONTROL.sub("", value)
+    """The value on one line: each run of control and line-break characters is one space."""
+    return _CONTROL.sub(" ", value)
 
 
 def printable(value: object, maximum: int) -> bool:

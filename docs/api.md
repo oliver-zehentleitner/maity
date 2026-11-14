@@ -375,6 +375,7 @@ the hub records it on the session.
 | Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
+| Names (a project's `name`, an agent profile's `display_name`, also as `agent.display_name` of a join or a placement that creates the profile) | 200 characters, one line: a control or line-break character (Unicode categories Cc, Zl and Zp: C0, U+007F, C1 such as U+0085, U+2028, U+2029) is `invalid` with `details.fields.<field>: "control_character"`; a name may reach a mail's header (§18.5) |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
 | Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 `PUT` that change a text per card per hour (`DELETE` exempt), then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes, and one for the set per human and project in 10 minutes |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB, counted as 16 384 characters (code points), not bytes |
@@ -2453,7 +2454,7 @@ compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
 `details.fields.handle: "reserved"`. `display_name` is 1–64 characters, no control
-character. A taken handle is the completion page's error "This handle is
+or line-break character (Unicode Cc, Zl, Zp, as §1.7's names). A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
 password, and counted in the completion limit (§2.7.3). The human
 renames it later themselves; the old handle stays theirs as an alias
@@ -8624,7 +8625,10 @@ https://pillow.readthedocs.io/en/stable/handbook/security.html):
   most a fixed number of decodes at once; the hub's operator sets all
   three (`hub/` documents the settings and their defaults). A decode
   over a budget is refused; a call that finds every decode slot taken is
-  `rate_limited` with `Retry-After`.
+  `rate_limited` with `Retry-After`, and so is a call whose human (for an
+  agent, its owner) already holds all but one of the slots (one when
+  there is only one); the slots and the share are counted per serving
+  process.
 - Changes are rate-limited per account or profile, not per credential:
   at most 10 `PUT` or `DELETE` per hour for one avatar, an agent's
   choices of a motif counted with them, whichever of its credentials (or
@@ -13236,8 +13240,10 @@ credential, `X-CSRF-Token`, the caller's project among them) run after
 the body is read. At most 30
 uploads and 100 MiB per membership in 10 minutes; beyond either the call
 is `rate_limited` with `Retry-After` and stores nothing. A call that
-finds every decode slot taken is `rate_limited` as for an avatar. A
-replay (§1.5) counts against nothing.
+finds every decode slot taken is `rate_limited` as for an avatar, and
+counts against nothing. An image that was decoded counts against the
+upload rate, also when the decoder refuses it or it is then refused for
+its room. A replay (§1.5) counts against nothing.
 
 **Untrusted input.** For an agent, an attachment is what a web page is:
 input from whoever sent it, never an instruction. Its content carries no
@@ -23455,10 +23461,15 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   updates` for a digest. Cut at 120 characters (with `…`) before
   encoding.
 - **Header values.** Every header value the hub builds — subject,
-  `To`, `From` and its display name, `Reply-To` — has every control
-  character removed first: CR, LF, every other C0 character
-  (U+0000–U+001F), U+007F and U+2028/U+2029. A value that is not pure
+  `To`, `From` and its display name, `Reply-To` — is one line of plain
+  text first: each run of control and line-break characters (Unicode
+  Cc: CR, LF, every other C0 character, U+007F and the C1 characters
+  U+0080–U+009F, U+0085 among them; Zl: U+2028; Zp: U+2029) becomes one
+  space, whatever a name holds. A value that is not pure
   ASCII is then encoded as RFC 2047 encoded-words (UTF-8, `B` or `Q`).
+  A mail that cannot be built all the same is `failed` and holds back
+  no other mail: it takes no place in its kind's budget (§16.2), and
+  the outbox goes on with the next one.
   Addresses are the checked single addresses of §18.4; the hub never
   joins strings into a header line or a recipient list by hand.
 - **Body:** per item its title, the project, the time in the human's
