@@ -212,7 +212,11 @@ DEFAULTS = (
     ("backend.ssh.hosts[].isolation", "shared_user (own_user: not yet)"),
     ("harness.<id>.modes", '["supervised"]; default_mode: the first'),
     ("harness.<id>.binary", "the harness's usual command, resolved on agent_path"),
-    ("harness.<id>.require_sandbox", "false"),
+    (
+        "harness.<id>.require_sandbox",
+        "unset: claude-code with bwrap and socat refused below version 2.1.295 or unknown;"
+        " false: never refused for the sandbox",
+    ),
     ("harness.<id>.env_file", "unset"),
     (
         "git.name, git.email",
@@ -398,6 +402,7 @@ def _check_claude_code(
     tools = capabilities.claude_sandbox_tools()
     missing = [t for t in tools or () if not capabilities.which(t, agent_path, as_user)]
     line = None
+    held = tools is not None and not missing
     if tools is None:
         line = f"harness claude-code: no OS sandbox on {sys.platform}; agents run unsandboxed"
     elif missing:
@@ -405,10 +410,22 @@ def _check_claude_code(
     elif not capabilities.sandbox_version_ok(harness.id, version):
         line = capabilities.sandbox_version_line(version)
     if line is not None:
-        (report.error if harness.require_sandbox else report.warn)(line)
+        refused = capabilities.sandbox_refused(harness, False, held)
+        (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        _check_claude_hooks(report, as_user, "")
     _check_claude_settings(report, as_user, "")
+
+
+def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
+    """With the sandbox on, the runner's hook must run: settings that switch hooks off
+    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error."""
+    why = capabilities.claude_hooks_off(as_user)
+    if why is None:
+        report.ok(f"{where}harness claude-code: hooks are not switched off")
+    else:
+        report.error(f"{where}{capabilities.claude_hooks_line(why)}")
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
@@ -486,7 +503,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
-    probes, sandbox = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
+    probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]
         if harness.id == "stub":
@@ -503,7 +520,10 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
                 else:
                     line = f"{name}: {capabilities.sandbox_version_line(probe.version)}"
-                (report.error if harness.require_sandbox else report.warn)(line)
+                refused = capabilities.sandbox_refused(harness, False, harness.id in held)
+                (report.error if refused else report.warn)(line)
+            elif harness.id == "claude-code":
+                _check_claude_hooks(report, as_user, f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
