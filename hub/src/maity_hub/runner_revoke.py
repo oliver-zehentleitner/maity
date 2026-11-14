@@ -78,9 +78,10 @@ def apply(
     agents: str,
     instance_rule: str,
     removing: bool,
-    by: str,
+    by: str | None,
 ) -> list[dict[str, Any]]:
     """Apply each attached project's rule; returns `[{project_id, rule, stopped}]`.
+    `by` is the human who revoked, None for the hub (a suspension, §16.8).
     Under `DELETE` the placements close as `runner_removed`, under a revoke as
     `runner_revoked`; under `keep` nothing here changes."""
     now = clock.now()
@@ -120,7 +121,7 @@ def apply(
     return results
 
 
-def _due_now(conn: Connection, runner_id: str, project_id: str, by: str) -> None:
+def _due_now(conn: Connection, runner_id: str, project_id: str, by: str | None) -> None:
     """The owner's override revokes at once what an earlier `stop` left to its grace:
     the credentials named by this runner's placements in the project, closed by that
     revocation, and still waiting (§15.3) — never another agent's."""

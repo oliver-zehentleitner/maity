@@ -250,6 +250,15 @@ def _suspend_owner(s: Setup) -> Any:
     return SimpleNamespace(status_code=200, text="")
 
 
+def _leak(s: Setup) -> Any:
+    leaked = s.owner.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": s.runner.value},
+    )
+    assert error(leaked) == "credential_in_payload"  # refused, and the credential revoked
+    return SimpleNamespace(status_code=200, text="")
+
+
 def _re_pair(s: Setup, make_client: ClientFactory) -> Any:
     answer = runners.exchange(
         make_client(), runners.enroll(s.owner, name=None, runner_id=s.runner.id)
@@ -260,7 +269,15 @@ def _re_pair(s: Setup, make_client: ClientFactory) -> Any:
 
 @pytest.mark.parametrize(
     "gone",
-    ["deleted", "stopped", "runner_revoked", "runner_removed", "re_paired", "owner_suspended"],
+    [
+        "deleted",
+        "stopped",
+        "runner_revoked",
+        "runner_leaked",
+        "runner_removed",
+        "re_paired",
+        "owner_suspended",
+    ],
 )
 def test_an_unused_pickup_dies_with_its_placement_or_runner(
     setup: Setup, make_client: ClientFactory, gone: str
@@ -274,6 +291,7 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
         "stopped": lambda: setup.owner.patch(path, {"desired": "stopped"}),
         "runner_revoked": lambda: setup.owner.post(f"/runners/{setup.runner.id}/revoke", {}),
         "runner_removed": lambda: setup.owner.delete(f"/runners/{setup.runner.id}"),
+        "runner_leaked": lambda: _leak(setup),
         "re_paired": lambda: _re_pair(setup, make_client),
         "owner_suspended": lambda: _suspend_owner(setup),
     }[gone]()

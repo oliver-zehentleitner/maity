@@ -234,7 +234,7 @@ keep a live join code in the database.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the clean-up audit's finding on runner credentials (tsk-mrt77xgrexx4) and the lead's answer to its open question, 2026-11-13
+**Source:** the clean-up audit's finding on runner credentials (tsk-mrt77xgrexx4), the lead's answers to its open questions and the review of pull request #1768, 2026-11-13
 **Revisit when:** a runner credential is revoked on a new path, the re-pair stops handing the placements over to the new credential, or the "revoke and tell" helper of the runner clean-up lands
 
 `revoke_runner_credential` calls `placements.runner_credential_gone`
@@ -245,7 +245,10 @@ the credential that fetched them, but a closing placement stays closing,
 because the new credential takes over the same placements (§15.3) and
 reports the end. A suspension of the owner also stops each of the owner's
 runners as the owner's `agents: "stop"` does, whatever the projects'
-`on_runner_revoke`, like the deletion of the account.
+`on_runner_revoke`, like the deletion of the account. It revokes the
+account's own agent credentials first (`suspended`), so the stop reaches
+only other humans' agents (`runner_revoked`), with no human named as
+having revoked them (`by` None): the hub acts, not the suspended person.
 
 **Reason:** before, each caller had to remember the second call. The
 revoke route and the leak path did; the suspension and the re-pair did

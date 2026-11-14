@@ -20668,8 +20668,9 @@ report with `action` and `at`.
   and session it holds ends at once (credentials revoked with
   `revoked_reason: suspended`, §2.2; runner credentials too, with each
   of its runners stopped as under `agents: "stop"`, whatever the
-  project's `on_runner_revoke`: its placements close and the agent
-  credentials they named are revoked at once, §15.3); its memberships stay but act as paused
+  project's `on_runner_revoke`: its placements close, and the agent
+  credentials of other humans' agents they named are revoked at once,
+  `revoked_reason: runner_revoked` with `revoked_by: null`, §15.3); its memberships stay but act as paused
   (§5.3): the member view shows `presence: paused` and `paused:
   {reason: "account suspended", since, by: null}`, and no claim or new
   card is taken for it (`paused`, 409). While it is suspended, nothing issues it a new credential:
