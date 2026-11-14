@@ -91,3 +91,34 @@ beside the state the way the dashboard does.
   prose and changes.
 - A separate `GET /projects/{owner}/{slug}` on resume: an extra request
   for a field the packet can carry.
+
+## A merge never closes a release card; the releaser closes it after the checklist
+
+**Id:** ea67553d-6a2f-4caf-b731-3cb6c62faebe
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-esy7rhe9qrta ("merged_closes auto closes a release card without the readiness gate and without releases.close"); the lead's decision for option (a), 2026-11-14; contract in `docs/api.md` §6.6 and §6.7
+**See:** probe.md#a-merge-closes-the-loop-remembered-on-the-card-per-report-told-by-whoever-sees-it-first — f89f3f4d-28b0-4bda-841a-ddafe87ad18f — as of 2026-11-14
+**Revisit when:** one shared close path serves every move to `done` (the G2 refactor card), or a release can close without its checklist
+
+Under `merged_closes: auto` with `done_authority` `holder` or `admin`,
+`merged._tell` closed a card in `review` once its reported pull request
+was observed merged. On a release card that move skipped the
+`release_not_ready` gate, `releases.close` (the frozen release data and a
+`release_ready` the closing write made true) and the ticker's release
+item. Now `_blocked_by` names `release` for every release card, ready or
+not: `task_merged` says `closed: false` with `blocked_by` containing
+`release` and still wakes the done authority, and the releaser closes the
+card with `PATCH {status: "done"}` after the checklist. `_close` no longer
+clears `release_in_flight`, since it never sees a release card.
+
+**Reason:** the §6.7 gate and what closing a release does stay in one
+place, the status PATCH. A release waits on its checklist anyway, so a
+merge is never the step that finishes it.
+
+**Rejected alternative:** (b) closing a release on the merge only when it
+is ready, through the same steps as `PATCH` and report: a second copy of
+the §6.7 gate and of `releases.close` that can drift from the first, for a
+card the releaser closes after the checklist anyway. A shared `close_card`
+for all close paths stays with the G2 refactor card.

@@ -11,7 +11,6 @@ with the pending registration.
 
 from __future__ import annotations
 
-import hashlib
 import re
 import secrets
 from typing import Any
@@ -21,6 +20,7 @@ from sqlalchemy import Connection, select, update
 from maity_hub import catalog, clock, languages, render
 from maity_hub import tables as t
 from maity_hub.auth import sessions
+from maity_hub.codes import digest
 from maity_hub.mail import outbox
 from maity_hub.notifications import tokens
 
@@ -78,7 +78,7 @@ def _confirm(conn: Connection, hub: Any, pending_id: str | None) -> tuple[str, s
     conn.execute(
         update(t.pending_registration)
         .where(t.pending_registration.c.id == pending.id)
-        .values(nonce_hash=hashlib.sha256(nonce.encode()).hexdigest())
+        .values(nonce_hash=digest(nonce))
     )
     token = tokens.make(
         hub.mail.signing_key,

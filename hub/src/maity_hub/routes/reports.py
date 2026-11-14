@@ -28,7 +28,8 @@ def _load(conn: Connection, report_id: str) -> dict[str, Any]:
     return {"id": row.id, "created_at": ts(row.created_at)}
 
 
-idempotency.LOADERS["abuse_report"] = idempotency.plain(_load)
+# A report is its reporter's alone, and its replay shows only its id and time (§12).
+idempotency.register("abuse_report", idempotency.plain(_load), idempotency.own)
 
 
 @router.post("/reports")

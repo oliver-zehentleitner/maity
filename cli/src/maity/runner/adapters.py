@@ -230,19 +230,22 @@ def launch(ctx: Context) -> Launch:
     # git's own repository for each run maity starts, outside the clone, in the agent's
     # directory the sandbox hides (clonecheck._private_dir). Codex runs maity in its sandbox,
     # which cannot write there: named as the clone's `.git/maity`.
+    # The runner's records for maity are kept there too, outside the clone, whose files are
+    # the agent's to write (clonecheck.runner_record).
     if ctx.harness.id == "codex":
         env[clonecheck.GIT_PRIVATE_ENV] = clonecheck.IN_CLONE
+        records = ctx.clone / ".git" / "maity"
     else:
-        private = ctx.agent_dir / "git"
-        ctx.as_user.mkdir(private)
-        env[clonecheck.GIT_PRIVATE_ENV] = str(private)
+        records = ctx.agent_dir / "git"
+        ctx.as_user.mkdir(records)
+        env[clonecheck.GIT_PRIVATE_ENV] = str(records)
     # The git maity starts there: this one, found on the runner's PATH, not the agent's.
     git = proc.program("git")
     if git is not None:
-        ctx.as_user.write(ctx.clone / clonecheck.GIT_PATH, git + "\n")
+        ctx.as_user.write(records / clonecheck.GIT_PATH.name, git + "\n")
     # What `maity gh` may do here: the repository it pins and the gh it starts, or nothing
     # (an empty record also clears one a former grant left).
-    ctx.as_user.write(ctx.clone / ghpr.PULL_REQUESTS_PATH, pull_requests_record(ctx))
+    ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -379,8 +382,9 @@ def trust_clone(ctx: Context) -> None:
 
 
 def pull_requests_record(ctx: Context) -> str:
-    """`ghpr.PULL_REQUESTS_PATH`'s content: the placement's repository and the gh on the
-    runner's PATH when the grant has pull requests and gh is there, else empty."""
+    """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
+    and the gh on the runner's PATH when the grant has pull requests and gh is there, else
+    empty."""
     if not ctx.grant.pull_requests:
         return ""
     gh = proc.program("gh")

@@ -31,7 +31,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import catalog, clock, worker_runs
 from maity_hub import tables as t
-from maity_hub.mail import outbox
+from maity_hub.mail import headers, outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
 from maity_hub.notifications import items, listing, preferences, presence, records
@@ -441,7 +441,8 @@ def compose(
     if len(chosen) == 1:
         only = chosen[0]
         name = projects.get(only.project_id or "", "Maity")
-        subject = f"[Maity] {name}: {only.title or ''}"
+        # A project's name and a title are text the hub did not write: one line (§18.5).
+        subject = headers.clean(f"[Maity] {name}: {only.title or ''}")
     else:
         subject = "[Maity] " + words["updates"].format(n=len(chosen))
     if len(subject) > SUBJECT_MAX:
@@ -555,7 +556,7 @@ def _two_factor_mail(
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=f"[Maity] {item.title}",
+        subject=headers.clean(f"[Maity] {item.title}"),
         body=body,
     )
 

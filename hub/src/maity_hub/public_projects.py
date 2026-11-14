@@ -186,15 +186,23 @@ def stat_value(key: str, value: Any) -> str:
 
 
 def _per_day_html(series: list[dict[str, Any]]) -> str:
-    """The cards done per day as bars: inline style only, the text of each day in its title."""
+    """The cards done per day as bars of an SVG, sized by attributes and never by an inline style,
+    which the app shell's policy refuses where the page stands inside it (tsk-8fk897a9tan8); the
+    text of each day in its title."""
     peak = max((day["count"] for day in series), default=0) or 1
+    top = 41
     bars = "".join(
-        f'<span title="{escape(day["date"])}: {day["count"]}" style="display:inline-block;'
-        f"width:6px;margin-right:2px;background:currentColor;opacity:.6;"
-        f'height:{1 + 40 * day["count"] // peak}px"></span>'
-        for day in series
+        f'<rect x="{8 * i}" y="{top - (1 + 40 * day["count"] // peak)}" width="6" '
+        f'height="{1 + 40 * day["count"] // peak}">'
+        f'<title>{escape(day["date"])}: {day["count"]}</title></rect>'
+        for i, day in enumerate(series)
     )
-    return f'<p aria-label="Cards done per day, last {STAT_DAYS} days">{bars}</p>'
+    width = max(8 * len(series) - 2, 0)
+    return (
+        f'<p><svg class="per-day" role="img" width="{width}" height="{top}" '
+        f'viewBox="0 0 {width} {top}" fill="currentColor" fill-opacity=".6" '
+        f'aria-label="Cards done per day, last {STAT_DAYS} days">{bars}</svg></p>'
+    )
 
 
 def _statistics_html(stats: dict[str, Any]) -> str:
