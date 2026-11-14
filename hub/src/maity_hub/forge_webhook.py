@@ -146,7 +146,7 @@ async def handle(
     deliveries from one forge address can delay a verified one from the same
     address, which the probe then catches up on its interval."""
     slug = PATH.match(str(scope["path"])).group(1)  # type: ignore[union-attr]
-    source = scope["state"]["origin"].address
+    source = scope["state"]["origin"].limit_key
     bucket = f"{slug}|{source}"
     # Both places or neither: a full slug bucket keeps the address place free.
     wait, address_mark = NOBODY.place(source)

@@ -83,6 +83,23 @@ def test_login_is_limited_to_ten_per_minute(make_client: ClientFactory, owner: s
     assert int(response.headers["Retry-After"]) >= 1
 
 
+def test_the_login_limit_counts_an_ipv6_client_by_its_64(
+    make_client: ClientFactory, owner: str
+) -> None:
+    for n in range(10):  # ten addresses of one /64
+        factory.login_handle(make_client(peer=f"2001:db8:1:2::{n + 1:x}"), "maintainer", "wrong")
+    same = factory.login_handle(make_client(peer="2001:db8:1:2:ffff::9"), "maintainer")
+    assert same.status_code == 429
+    mapped = make_client(peer="::ffff:198.51.100.9")
+    for _ in range(10):
+        factory.login_handle(mapped, "maintainer", "wrong")
+    # the mapped address is its IPv4 address
+    assert factory.login_handle(make_client(peer="198.51.100.9"), "maintainer").status_code == 429
+    other = factory.login_handle(make_client(peer="2001:db8:1:3::1"), "maintainer")
+    assert other.status_code != 429
+    assert factory.login_handle(make_client(peer="198.51.100.10"), "maintainer").status_code != 429
+
+
 def _reason(response: Any) -> Any:
     return response.json()["error"]["details"].get("reason")
 

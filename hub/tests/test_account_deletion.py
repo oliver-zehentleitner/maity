@@ -179,6 +179,25 @@ def test_mail_and_a_verified_address_are_needed(
     assert (answer.status_code, code(answer)) == (409, "address_unverified")
 
 
+def test_a_human_asks_for_the_deletion_three_times_an_hour(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """Each request mails the confirmation as security mail: a fourth in the hour is refused
+    and sends nothing, and a refused request (a wrong handle) spends nothing (§2.8.6)."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    wrong = ask_deletion(pat, confirm="someone")
+    assert wrong.status_code == 400, wrong.text
+    for _ in range(3):
+        assert ask_deletion(pat).status_code == 202
+    mails = len([r for r in outbox_rows(migrated) if r.kind == "security"])
+    fourth = ask_deletion(pat)
+    assert (fourth.status_code, code(fourth)) == (429, "rate_limited")
+    assert int(fourth.headers["Retry-After"]) > 0
+    assert len([r for r in outbox_rows(migrated) if r.kind == "security"]) == mails
+    assert account_deletion.PER_HUMAN.limit == 3 and account_deletion.PER_HUMAN.window == 3600
+
+
 # --- refusals, at the request and again at the confirmation --------------------------------------
 
 

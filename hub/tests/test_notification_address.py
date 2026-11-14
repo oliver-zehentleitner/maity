@@ -82,7 +82,7 @@ def test_an_address_is_verified_by_its_link(make_client: ClientFactory, migrated
     assert (got["email"]["address"], got["email"]["pending_address"]) == (None, "me@example.org")
     assert got["email"]["address_status"] == "pending"
     [mail] = outbox_rows(migrated)
-    assert (mail.kind, mail.recipient) == ("security", "me@example.org")
+    assert (mail.kind, mail.recipient) == ("verification", "me@example.org")
     assert "maintainer" not in mail.body and "ignore this mail" in mail.body
     token = link(mail, "verify")
     page = owner.client.get(f"/mail/verify/{token}")
@@ -634,3 +634,46 @@ def test_a_wrong_password_holds_its_place_in_the_count_while_it_compares(
     monkeypatch.setattr(passwords, "verify_password", comparing)
     owner.patch(S, body)
     assert len(seen) == 1 and seen[0] > 0
+
+
+# --- verification mails are limited per human and per recipient (§18.4, §16.2) ----------
+
+
+def _verifications(engine: Engine) -> list[Any]:
+    rows = [r for r in outbox_rows(engine) if (r.headers or {}).get("_purpose") == "verify"]
+    return rows
+
+
+def test_a_human_asks_for_three_verification_mails_an_hour(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = with_mail(make_client, migrated)
+    for n in range(3):
+        assert owner.patch(S, {"email": {"address": f"me{n}@example.org"}}).status_code == 200
+    refused = owner.patch(S, {"email": {"address": "me3@example.org"}})
+    assert refused.status_code == 429, refused.text
+    assert refused.json()["error"]["code"] == "rate_limited"
+    assert int(refused.headers["Retry-After"]) > 0
+    sent = _verifications(migrated)
+    assert len(sent) == 3
+    # a budget of their own: security mail never waits behind them
+    assert {row.kind for row in sent} == {"verification"}
+    assert outbox.BUDGETS["verification"] == "verification_max_per_hour"
+    with migrated.connect() as conn:
+        pending = conn.execute(
+            select(t.notification_settings.c.pending_address).where(
+                t.notification_settings.c.human_id == owner.id
+            )
+        ).scalar_one()
+    assert pending == "me2@example.org"  # the refused one changed nothing
+
+
+def test_one_address_gets_three_verification_mails_an_hour_from_all_accounts(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    for n in range(4):
+        human = with_mail(make_client, migrated, f"asker-{n}")
+        answer = human.patch(S, {"email": {"address": "Target@Example.org"}})
+        assert answer.status_code == 200, answer.text  # the same answer, sent or not
+    rows = _verifications(migrated)
+    assert len(rows) == 3

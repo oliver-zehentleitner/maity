@@ -30,6 +30,7 @@ def _fresh(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         routes.BY_SOURCE,
         routes.BY_PAIR_SHORT,
         routes.BY_PAIR_DAY,
+        routes.BY_ADDRESS_HOUR,
         routes.BY_ADDRESS_DAY,
     ):
         limiter.reset()

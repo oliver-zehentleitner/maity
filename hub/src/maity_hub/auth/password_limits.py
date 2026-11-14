@@ -19,6 +19,7 @@ from sqlalchemy import Connection
 from maity_hub.auth import known_sources, sign_in_settings
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError
+from maity_hub.net import limit_key
 from maity_hub.ratelimit import Limiter, Mark
 
 WRONG = 5
@@ -64,7 +65,7 @@ class LoginAttempt:
     def __init__(
         self, conn: Connection, hub: Settings, account: str, human_id: str | None, source: str
     ) -> None:
-        self._pair = f"{account} {source}"
+        self._pair = f"{account} {limit_key(source)}"  # a source as every limit counts it
         self._account = account
         wait, mark = LOGIN.place(account)
         pair_wait, pair_mark = LOGIN_FROM.place(self._pair)

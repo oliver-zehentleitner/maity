@@ -1271,3 +1271,20 @@ cost without a purpose; stored, the read takes it with the membership row it loa
 - A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
   path that forgets the value.
 
+
+## A verification mail is limited per human and per recipient address
+
+**Id:** aedbf93a-563a-4753-9cdf-8a9bae72e43b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4; tsk-q4zynccy5t0b; `hub/src/maity_hub/notifications/preferences.py` `apply_address`, `_recipient_over`
+**See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-14
+
+Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (a digest of the normalised address, key `verify-recipient`) at most 3 an hour and 10 a day go out from all accounts together; past that the change is stored but no mail is queued, and the answer is the same.
+
+**Reason:** the budget of its own (d3113259) keeps verification mail from holding up security mail, but alone it lets one account fill it, or many accounts flood one stranger's inbox. The per-human limit tells the caller, who is signed in and owns the attempts; the per-recipient one stays silent so that it reveals nothing about what other accounts asked for that address.
+
+**Rejected alternatives:**
+- Refuse over the per-recipient limit too: it would tell one account that others are trying the same address.
+- Only the per-human limit: many accounts could still each send a stranger three mails an hour.

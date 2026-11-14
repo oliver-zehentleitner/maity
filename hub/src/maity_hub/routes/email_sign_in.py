@@ -81,7 +81,7 @@ def request_link(body: LinkRequest, request: Request, background: BackgroundTask
         if not silent:
             _enabled(conn, hub)
     origin = origin_of(request)
-    wait, allowed = LIMITS.take(body.address, origin.address)
+    wait, allowed = LIMITS.take(body.address, origin.limit_key)
     if wait:
         raise rate_limited(wait)
     pending = secrets.token_urlsafe(32)
@@ -243,7 +243,7 @@ def _cookies(response: Any, request: Request, sid: str, csrf: str, device: str |
 @router.post("/email-code")
 def redeem_code(body: CodeRequest, request: Request) -> JSONResponse:
     _anonymous(request)
-    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).address)
+    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     hub = settings_of(request)

@@ -34,6 +34,7 @@ def _fresh() -> Iterator[None]:
         registration_routes.BY_SOURCE,
         registration_routes.BY_PAIR_SHORT,
         registration_routes.BY_PAIR_DAY,
+        registration_routes.BY_ADDRESS_HOUR,
         registration_routes.BY_ADDRESS_DAY,
     ):
         limiter.reset()
@@ -799,7 +800,11 @@ def test_an_address_bound_invitation_is_mailed_when_mail_is_on(
     )
     assert made.status_code == 201, made.text
     [mail] = [r for r in outbox_rows(migrated) if r.recipient == "new@example.org"]
-    assert mail.kind == "security"  # the recipient's security budget (§3.4)
+    assert mail.kind == "invitation"  # a budget of its own, never security mail's (§16.2)
+    from maity_hub.mail import outbox
+
+    assert outbox.BUDGETS["invitation"] == "invitation_max_per_hour"
+    assert "invitation" not in outbox.DROPPED_OVER_BUDGET  # over it, queued like security mail
     assert mail.subject.startswith("[Maity] ") and "Maity" in mail.subject
     for shown in (made.json()["url"], "maintainer/maity", "member", "reviewer", "Hi!"):
         assert shown in mail.body, shown

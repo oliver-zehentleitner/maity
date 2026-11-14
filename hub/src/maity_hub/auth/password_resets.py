@@ -18,7 +18,13 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.auth.email_links import digest, lock_human
+from maity_hub.auth.email_links import (
+    RECIPIENT_PER_DAY,
+    RECIPIENT_PER_HOUR,
+    digest,
+    lock_human,
+    recipient_over,
+)
 from maity_hub.notifications import tokens
 from maity_hub.ratelimit import Limiter
 
@@ -158,21 +164,31 @@ def wrong_code(conn: Connection, human_id: str) -> int:
 class RequestLimits:
     """`POST /auth/password-reset`, as `POST /auth/email-link` (§2.6.4), in buckets of its own:
     only the source limit answers `429`; over the pair limits the answer stays `202` and nothing
-    is sent. Existing and unknown addresses take the same path."""
+    is sent, and so over the recipient's limit. Existing and unknown addresses take the same
+    path. `source` is the caller's `Origin.limit_key`."""
 
     def __init__(self) -> None:
         self.by_source = Limiter(10, 3600, name="auth.password_resets.by_source")
         self.pair_quarter = Limiter(3, 900, name="auth.password_resets.pair_quarter")
         self.pair_day = Limiter(10, 86400, name="auth.password_resets.pair_day")
+        self.recipient_hour = Limiter(
+            RECIPIENT_PER_HOUR, 3600, name="auth.password_resets.recipient_hour"
+        )
+        self.recipient_day = Limiter(
+            RECIPIENT_PER_DAY, 86400, name="auth.password_resets.recipient_day"
+        )
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
         wait = self.by_source.hit(source)
         if wait:
             return wait, False
-        key = digest(f"{source}\0{address.strip().casefold()}")
+        normalised = address.strip().casefold()
+        key = digest(f"{source}\0{normalised}")
         quarter = self.pair_quarter.hit(key)
         day = self.pair_day.hit(key)
-        return 0, not (quarter or day)
+        if quarter or day:
+            return 0, False
+        return 0, not recipient_over(self.recipient_hour, self.recipient_day, normalised)
 
 
 def password_changed(conn: Connection, human_id: str) -> None:

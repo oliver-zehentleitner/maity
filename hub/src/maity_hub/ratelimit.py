@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from datetime import datetime, timedelta
 from types import TracebackType
 
@@ -37,7 +37,9 @@ class Limiter:
         # Counted in this process only, never in `shared_counts`: a limit asked of every call
         # of a route (MAITY_ROUTE_LIMITS) would otherwise write to the database each time.
         self.local = local
-        self._hits: dict[str, deque[float]] = {}
+        # In the order of each key's newest attempt, the oldest first: the keys to forget are
+        # always at the front (`_prune`).
+        self._hits: OrderedDict[str, deque[float]] = OrderedDict()
         self._lock = threading.Lock()
 
     def configure(self, limit: int, window_seconds: float) -> None:
@@ -109,8 +111,7 @@ class Limiter:
     def _take_at(self, key: str, count: int, now: float) -> int:
         """`take` at a moment the caller read from the clock."""
         with self._lock:
-            if len(self._hits) > 1024:
-                self._prune(now)
+            self._prune(now)
             hits = self._hits.setdefault(key, deque())
             while hits and hits[0] <= now - self.window:
                 hits.popleft()
@@ -118,6 +119,7 @@ class Limiter:
             if over > 0:  # at most len(hits), as `count` is at most the limit
                 return max(1, math.ceil(hits[over - 1] + self.window - now))
             hits.extend([now] * count)
+            self._hits.move_to_end(key)
             return 0
 
     def place(self, key: str, count: int = 1) -> tuple[int, Mark]:
@@ -179,12 +181,23 @@ class Limiter:
                 return max(1, math.ceil(hits[0] + self.window - now))
             return 0
 
-    def _prune(self, now: float) -> None:
-        """Forget keys with no attempt inside the window; every new handle or
-        address would otherwise stay in memory for good."""
-        stale = [k for k, hits in self._hits.items() if not hits or hits[-1] <= now - self.window]
-        for key in stale:
+    def _prune(self, now: float) -> int:
+        """Forget keys with no attempt inside the window; every new handle or address would
+        otherwise stay in memory for good. Only from the front, where the oldest newest attempt
+        is, up to the first key still inside the window: the keys behind it were hit later, so
+        each attempt costs the keys it forgets and one look more, never a pass over all of
+        them. A key whose newest attempt was given back (`release`) may stay behind a live
+        one a little longer; it is forgotten when the keys before it are. Returns how many
+        keys were looked at."""
+        looked = 0
+        edge = now - self.window
+        while self._hits:
+            looked += 1
+            key, hits = next(iter(self._hits.items()))
+            if hits and hits[-1] > edge:
+                break
             del self._hits[key]
+        return looked
 
     def __len__(self) -> int:
         return len(self._hits)

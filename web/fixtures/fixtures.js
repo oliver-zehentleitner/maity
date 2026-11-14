@@ -18,6 +18,12 @@ window.MAITY_FIXTURES = {
       "source": "env",
       "value": "smtp.example.org"
     },
+    "invitation_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "invitation_queued": 0,
+    "invitation_sent_last_hour": 0,
     "last_test": null,
     "max_per_hour": {
       "source": "default",
@@ -36,6 +42,12 @@ window.MAITY_FIXTURES = {
       "source": "default",
       "value": null
     },
+    "second_factor_dropped_last_hour": 0,
+    "second_factor_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "second_factor_sent_last_hour": 0,
     "secret_key": {
       "set": true
     },
@@ -63,6 +75,12 @@ window.MAITY_FIXTURES = {
       "source": "default",
       "value": null
     },
+    "verification_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "verification_queued": 0,
+    "verification_sent_last_hour": 0,
     "warnings": []
   },
   "admin-reports.json": {

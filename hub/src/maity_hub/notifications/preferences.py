@@ -28,11 +28,12 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import admin, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.errors import ApiError, invalid
+from maity_hub.codes import digest
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
-from maity_hub.ratelimit import Attempt
+from maity_hub.ratelimit import Attempt, Limiter
 
 KINDS = ("inbox", "chat", "mention", "security", "invitation")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
@@ -40,6 +41,12 @@ DIGESTS = ("hourly", "daily", "weekly")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
+# Verification mails (§18.4): 3 an hour and 10 a day per human, refused beyond; and per
+# recipient address, from every account together, not sent beyond, silently.
+VERIFY_BY_HUMAN_HOUR = Limiter(3, 3600, name="notifications.verify.human_hour")
+VERIFY_BY_HUMAN_DAY = Limiter(10, 86400, name="notifications.verify.human_day")
+VERIFY_BY_RECIPIENT_HOUR = Limiter(3, 3600, name="notifications.verify.recipient_hour")
+VERIFY_BY_RECIPIENT_DAY = Limiter(10, 86400, name="notifications.verify.recipient_day")
 APPROVER_AGE = timedelta(hours=24)
 HELD_FOR = timedelta(days=7)
 READ_ONLY = (
@@ -612,6 +619,12 @@ def apply_address(
         if row.address is not None and row.address_status in ("verified", "disabled"):
             _tell_old_address(conn, human_id, row.address, None, session, public_url)
         return
+    # The human's own limits are told (`rate_limited`); nothing is changed then.
+    wait = VERIFY_BY_HUMAN_HOUR.blocked(human_id) or VERIFY_BY_HUMAN_DAY.blocked(human_id)
+    if wait:
+        raise rate_limited(wait)
+    VERIFY_BY_HUMAN_HOUR.hit(human_id)
+    VERIFY_BY_HUMAN_DAY.hit(human_id)
     nonce = secrets.token_hex(8)
     conn.execute(
         update(t.notification_settings)
@@ -638,10 +651,12 @@ def apply_address(
         },
     )
     link = f"{public_url}/mail/verify/{token}"
+    if _recipient_over(wanted):
+        return  # the address had its share: the link stays pending, no mail is sent
     # Never the handle, the name or projects: nobody confirmed this address yet (§18.4).
     outbox.enqueue(
         conn,
-        kind="security",
+        kind="verification",  # a budget of its own: security mail never waits behind it
         human_id=human_id,
         to=wanted,
         extra_headers={"_purpose": "verify"},
@@ -652,6 +667,13 @@ def apply_address(
             "The link is valid for 24 hours. If you did not ask for this, ignore this mail.\n"
         ),
     )
+
+
+def _recipient_over(address: str) -> bool:
+    """Count one verification mail to `address` against its hour and its day, from every
+    account together; True when either is spent."""
+    key = digest(f"verify-recipient\0{addresses.normalized(address)}")
+    return bool(VERIFY_BY_RECIPIENT_HOUR.hit(key) or VERIFY_BY_RECIPIENT_DAY.hit(key))
 
 
 def verify(

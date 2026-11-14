@@ -11,7 +11,10 @@ window.Maity = window.Maity || {};
     ["from", () => M.t("mail.field.from_address"), "sender"], ["reply_to", () => M.t("mail.field.reply_to"), "email"],
     ["max_per_hour", () => M.t("mail.field.max_per_hour"), "number"],
     ["security_max_per_hour", () => M.t("mail.field.security_max_per_hour"), "number"],
+    ["verification_max_per_hour", () => M.t("mail.field.verification_max_per_hour"), "number"],
+    ["invitation_max_per_hour", () => M.t("mail.field.invitation_max_per_hour"), "number"],
     ["sign_in_max_per_hour", () => M.t("mail.field.sign_in_max_per_hour"), "number"],
+    ["second_factor_max_per_hour", () => M.t("mail.field.second_factor_max_per_hour"), "number"],
   ];
   const warnings = {
     smtp_password_in_database: () => M.t("mail.warning.password_in_database"),

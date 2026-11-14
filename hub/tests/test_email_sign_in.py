@@ -317,6 +317,24 @@ def test_opt_out_then_back_in_does_not_revive_link(
     assert client.get(url).status_code == 404
 
 
+def test_many_sources_get_an_address_few_sign_in_mails_and_every_answer_alike(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    hub = client.app.state.settings
+    answers = []
+    for n in range(12):
+        source = make_client(peer=f"198.51.100.{n + 1}", mail=hub.mail, secret_key=hub.secret_key)
+        answered = ask(source)
+        answers.append((answered.status_code, answered.json()))
+    assert answers == [(202, {"expires_in": 900})] * 12
+    with migrated.connect() as conn:
+        sent = conn.execute(
+            select(t.mail_outbox.c.id).where(t.mail_outbox.c.kind == "sign_in")
+        ).all()
+    assert len(sent) == email_links.RECIPIENT_PER_HOUR
+
+
 def test_mail_factor_does_not_bypass_totp(make_client: ClientFactory, migrated: Engine) -> None:
     from datetime import UTC, datetime
 

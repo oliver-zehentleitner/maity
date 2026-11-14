@@ -112,6 +112,60 @@ def test_a_sign_in_mail_over_its_budget_is_dropped(migrated: Engine) -> None:
         assert mail_settings.counters(conn)["sign_in_dropped_last_hour"] == 1
 
 
+def test_mail_factor_mail_has_a_budget_of_its_own(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A spent sign-in budget stops no mail-factor mail, and a spent mail-factor budget no
+    sign-in mail: each is counted and dropped under its own kind."""
+    from maity_hub.mail import smtp
+
+    monkeypatch.setattr(smtp, "send", lambda resolved, message: _ok())
+    hub = mail_env(1)
+    with migrated.begin() as conn:
+        spent(conn, "sign_in", 60)
+        queue(conn, "second_factor")
+        queue(conn, "sign_in")
+    assert outbox.send_due(migrated, hub.mail, None) == 1
+    with migrated.begin() as conn:
+        rows = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id)).all()
+        counters = mail_settings.counters(conn)
+        budget = conn.execute(
+            select(t.mail_budget.c.admitted).where(t.mail_budget.c.kind == "second_factor")
+        ).scalar_one()
+    assert [(r.kind, r.status) for r in rows] == [
+        ("second_factor", "sent"),
+        ("sign_in", "dropped"),
+    ]
+    assert budget == 1
+    assert (
+        counters["second_factor_sent_last_hour"],
+        counters["second_factor_dropped_last_hour"],
+        counters["sign_in_sent_last_hour"],
+        counters["sign_in_dropped_last_hour"],
+    ) == (1, 0, 0, 1)
+
+    with migrated.begin() as conn:
+        conn.execute(t.mail_budget.delete())
+        conn.execute(t.mail_delivery.delete())
+        store.put(conn, "mail.second_factor_max_per_hour", 1, None)
+        spent(conn, "second_factor")
+        queue(conn, "second_factor")
+        queue(conn, "sign_in")
+    assert outbox.send_due(migrated, hub.mail, None) == 1
+    with migrated.begin() as conn:
+        rows = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id)).all()[2:]
+        counters = mail_settings.counters(conn)
+    # Over its budget a late code is useless: dropped, never held.
+    assert [(r.kind, r.status) for r in rows] == [
+        ("second_factor", "dropped"),
+        ("sign_in", "sent"),
+    ]
+    assert (
+        counters["second_factor_dropped_last_hour"],
+        counters["sign_in_sent_last_hour"],
+    ) == (1, 1)
+
+
 def test_a_failure_of_the_instance_is_retried_with_backoff(migrated: Engine) -> None:
     hub = mail_env(1)  # nothing listens: the connection fails
     with migrated.begin() as conn:

@@ -252,7 +252,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
     tripped = _breaker_shut_for()
     if tripped > 0:
         raise rate_limited(max(1, int(tripped + 0.999)))
-    wait = REDEEM_BY_ADDRESS.hit(origin.address)
+    wait = REDEEM_BY_ADDRESS.hit(origin.limit_key)
     if wait:
         raise rate_limited(wait)
     with engine_of(request).begin() as conn:

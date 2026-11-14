@@ -108,7 +108,7 @@ async def login(body: Login, request: Request) -> JSONResponse:
     require_secure_transport(origin, settings_of(request).allow_plain_http)
     if request.headers.get("sec-fetch-site") == "cross-site":
         raise ApiError(403, "csrf_mismatch", "cross-site login")
-    wait = LOGIN_BY_ADDRESS.hit(origin.address)
+    wait = LOGIN_BY_ADDRESS.hit(origin.limit_key)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)

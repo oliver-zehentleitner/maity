@@ -338,3 +338,38 @@ stylesheets (landing.md, dde46a41), so it had become the one page unlike its nei
 - The product line under the frame's footer: the framed pages end with the frame's footer
   (email-links.md, 89e8318d).
 
+
+## The mail factor's mails have a budget of their own, `second_factor_max_per_hour`
+
+**Id:** 443bdca8-64b0-4a07-9ea5-daf368945d35
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.8, §16.2; tsk-q4zynccy5t0b; `hub/src/maity_hub/mail/outbox.py` `BUDGETS`, `hub/src/maity_hub/auth/mail_factor.py`
+**See:** auth.md#a-forgotten-password-is-reset-by-mail-also-where-the-mail-is-the-second-factor — 2caa97c3-3a24-401b-a29f-02579a503559 — as of 2026-11-13
+
+The mail factor's links and codes, and the confirmation code that turns `email` on, go into the outbox as kind `second_factor`, counted against `second_factor_max_per_hour` (default 60, `MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR`) with `second_factor_sent_last_hour` and `second_factor_dropped_last_hour` beside the other counters. Over it a mail is dropped, never held, as for the other kinds that answer a request: a late code is useless. `mail_outbox.kind` and `mail_budget.kind` are free `String(16)` columns without a check, so the kind needed no migration.
+
+**Reason:** each kind of mail is counted on its own so that no kind's volume stops another (§16.2), and a human without TOTP cannot finish a sign-in without this mail. The reset's budget was split off for the same reason (2caa97c3); this finishes the split.
+
+**Rejected alternatives:**
+- Keep the factor's mails on `sign_in_max_per_hour`: the sign-in link's mails and the factor's would share one hour.
+- Held over budget like security mail: a code that arrives after its 15 minutes helps nobody.
+
+## Mails anyone can send to an address have budgets of their own and wait over them: verification and invitation
+
+**Id:** d3113259-e9eb-4321-8a8a-70080feaf52b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §16.2, §3.4, §18.4; tsk-q4zynccy5t0b and the lead's ruling on it, 2026-11-14; `hub/src/maity_hub/mail/outbox.py` `BUDGETS`, `DROPPED_OVER_BUDGET`
+**See:** mail.md#the-mail-factors-mails-have-a-budget-of-their-own-second_factor_max_per_hour — 443bdca8-64b0-4a07-9ea5-daf368945d35 — as of 2026-11-14
+
+An address verification mail is kind `verification` (`verification_max_per_hour`) and an address-bound invitation's mail kind `invitation` (`invitation_max_per_hour`), both default 60, each with its `…_sent_last_hour` and `…_queued` counters. Over its budget such a mail waits for the next hour, as security mail does; it is never dropped. The security budget is left to mail about the account's own security.
+
+**Reason:** any account can ask for verification mails and any project's admins can send invitations, to any address and from as many projects as they hold; on the security budget they could hold real security alerts back for hours. Unlike a sign-in code, a verification link and an invitation stay useful for a day, so waiting beats dropping.
+
+**Rejected alternatives:**
+- Leave both on the security budget with only the per-project and per-human limits: those bound one source, not the sum over many projects or accounts that fills the budget.
+- Drop them over budget like the anonymous kinds: the invitee or the human would get nothing, with no sign why, for a link that would still have worked hours later.
+- One shared budget for the two: invitations sent in bulk would stop a human's own address confirmation.

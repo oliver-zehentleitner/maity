@@ -148,7 +148,7 @@ def answer(
             maintenance.cached_frame(engine_of(request)),
             request.headers.get("accept-language"),
         )
-    wait = BY_ADDRESS.hit(origin_of(request).address)
+    wait = BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     shelled = None
@@ -222,7 +222,7 @@ def read(request: Request, path: str) -> Response:
     session and the credentials of the request are never looked at (§16.9)."""
     if not settings_of(request).public_pages:
         raise not_found()
-    wait = BY_ADDRESS.hit(origin_of(request).address)
+    wait = BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     with engine_of(request).begin() as conn:
