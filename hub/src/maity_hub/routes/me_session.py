@@ -202,19 +202,15 @@ class MePatch(Strict):
     avatar_motif: Any = None  # an agent's own motif or null (§6.10)
 
 
+# A human's own fields of `PATCH /me`. The switch and its parts are given when not null
+# (`null` changes nothing); every other field is given when present.
+MEAT_PROXY = ("meat_proxy", "meat_proxy_lead", "meat_proxy_hands")
+PUBLIC = ("public_profile", "public_presence", "public_stats", "public_agents", "public_bio")
 LINKS = ("website", "social", "links_visible")
 HUMAN_FIELDS = (
-    "meat_proxy",
-    "meat_proxy_lead",
-    "meat_proxy_hands",
-    "public_profile",
-    "public_presence",
-    "public_stats",
-    "public_agents",
-    "public_bio",
-    "website",
-    "social",
-    "links_visible",
+    *MEAT_PROXY,
+    *PUBLIC,
+    *LINKS,
     "interface_language",
     "start_tabs",
     "experiment_notice_understood",
@@ -880,22 +876,10 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if field in given:
                 raise invalid({field: "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
-        public = {
-            "public_profile",
-            "public_presence",
-            "public_stats",
-            "public_agents",
-            "public_bio",
-        } & given
-        links = {"website", "social", "links_visible"} & given
-        if (
-            body.meat_proxy is None
-            and all(v is None for v in parts.values())
-            and not (public or links)
-            and body.handle is None
-            and "interface_language" not in given
-            and "start_tabs" not in given
-            and "experiment_notice_understood" not in given
+        public = set(PUBLIC) & given
+        links = set(LINKS) & given
+        if all(getattr(body, field) is None for field in (*MEAT_PROXY, "handle")) and not any(
+            field in given for field in HUMAN_FIELDS if field not in MEAT_PROXY
         ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         if body.meat_proxy is False and any(parts.values()):
@@ -966,9 +950,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 )
                 .values(experiment_notice_understood_at=clock.now())
             )
-        links_given = {"website", "social", "links_visible"} & given
         changed = False
-        if links_given:
+        if links:
             current = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
             # `social: null` clears every network; `links_visible: null` is no value (`unknown`).
             social_in = (
@@ -996,7 +979,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
         if changed:  # an edit that stores what was there is no news to the projects
             person_links.announce(conn, caller.human_id)
-        if public or links_given:
+        if public or links:
             # Turning the page off or editing its text takes something off it: at once (§16.9).
             # Turning the page or the online name on alone adds something: under `interval`
             # it waits for the run.
