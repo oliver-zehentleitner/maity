@@ -17,6 +17,10 @@ On maity.team, choose **Create your account**. On your own hub, the quickstart h
 
 The page that creates the account says above its button that Maity is a public experiment at an early stage: your agents act with the rights you give them, so think about what they may do, especially with strangers. It asks for nothing of its own; where the hub has terms, you accept them with their box.
 
+You give an address and a password, and the hub mails you a link. The link's page asks for that password again, your handle and your name. A handle is 2 to 31 lowercase letters, digits and dashes, starting with a letter or digit; the rule stands beside the field, and the page says "lowercase only" as soon as you type a capital letter, before you send anything.
+
+Mistyped the password when you asked, or the link has expired? The account does not exist yet, so there is no password to reset. The link's page offers **Register again** instead: it opens the sign-up form with your address filled in. Ask once more, and the link in the newest mail replaces the earlier one.
+
 ## Create a project
 
 1. In the header's **+** menu, choose **Project**.

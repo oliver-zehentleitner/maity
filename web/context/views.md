@@ -6067,6 +6067,33 @@ only on wide screens, which gives two texts to keep true. The example
 `agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
 about the reader's own agent or organisation.
 
+## A handle field's rule and its word while typed come from one helper, and nothing is lower-cased
+
+**Id:** 8a767a5d-9e7b-4d4b-937a-5d28777f23a7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-pxc5cx4hgb0y (an owner request, 2026-11-14: an upper-case letter was only refused after sending); web/js/handles.js `rule`, `problem`; the rename editor's old `toLowerCase()`
+**Revisit when:** a handle may hold upper-case letters, or a field takes a handle with another syntax
+**See:** views.md#a-handle-fields-hint-is-a-sentence-of-fixed-words-with-no-handle-or-address-filled-in — e9c2136d-efa9-4222-b013-6042a56ec86c — as of 2026-11-14
+
+Where a person picks or changes a handle (their own, an organisation's, an agent's on Agents and in
+a placement), `M.handles.rule(input)` puts `NAME_RULES.handle`'s text beside the field and a status
+line under it that says, while the field is typed in, what breaks the rule, an upper-case letter in
+words of its own ("Lowercase only"). The join form keeps its free-or-taken line and gives an
+upper-case letter the same word. The rename of one's own handle sends what was typed: before, it
+lower-cased it without saying so. The sign-up's handle is on the hub's page, with the same rule
+(hub/context/mail.md, 0c6183d9-2214-4d16-a10c-a28f8ab1c0c5). `/register` takes the address that page
+hands over in a cookie, reads it once and removes it.
+
+**Reason:** a lower-cased `Ada` becomes a handle the person did not type, and they learn it from
+the answer. One helper keeps the rule and its words alike at every field, as `explain` does for what
+a handle is.
+
+**Rejected alternatives:** lower-casing as the person types (the card ruled it out: the person
+should see the rule, not have their text changed); the rule said only in the error after sending,
+as before.
+
 ## A message's seq is drawn with its "#" from the stylesheet, so a copy takes the number alone
 
 **Id:** 10d6fda7-c01c-4087-80e5-3c0a8ea4253c

@@ -13,6 +13,25 @@ window.Maity = window.Maity || {};
   // What was entered so far: choosing the page's language draws the form again in it.
   // The passwords are not kept: the person types them again, nothing holds them outside the fields.
   let kept = { address: "", language: null };
+  // "Register again" on the registration link's page (hub routes/register_page.py,
+  // tsk-pxc5cx4hgb0y) hands the address over in a cookie sent only to /register, never in the
+  // address: read once and removed at once, so a reload or a later visit starts empty. Kept for
+  // the page's life, so a redraw of the form (a language chosen) still has it.
+  const AGAIN = "maity_register_again";
+  let handed = null;
+  function handedOver() {
+    if (handed !== null) return handed;
+    handed = "";
+    let found = "";
+    try {
+      const pair = document.cookie.split("; ").find((c) => c.startsWith(AGAIN + "="));
+      if (!pair) return "";
+      found = decodeURIComponent(pair.slice(AGAIN.length + 1));
+      document.cookie = AGAIN + "=;max-age=0;path=/register;samesite=strict";
+    } catch (e) { return ""; }
+    handed = found;
+    return found;
+  }
   // The bar of a page without a project: the lockup and the theme. It stands where the frame
   // (js/site-chrome.js) cannot be read; the page's h1 is its form's heading.
   function bar(header) {
@@ -68,7 +87,7 @@ window.Maity = window.Maity || {};
       return;
     }
     const address = h("input", { id: "register-address", type: "email", autocomplete: "email", required: true });
-    address.value = kept.address;
+    address.value = kept.address || handedOver();
     // The two languages of §6.2: this page's, and the one agents write in, which starts as the
     // first of the browser's the hub offers.
     // The agents' language stays what the person made it, whatever the page's becomes.
