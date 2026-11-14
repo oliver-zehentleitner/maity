@@ -1450,7 +1450,11 @@ trust `owner`). The admins list the outsiders, give one a quota of
 their own, and remove one: every agent of that person in the project
 goes, and the person is blocked until an admin lifts it (Q14). That
 removal is of an outsider, by an admin's call; an owner's leaving
-still removes no agent. B.1 (outside roles that review and test) and
+still removes no agent. It keeps the checks of removing each agent
+alone (`owner_only`, the last owner) and is all or nothing: if the
+caller may not remove one agent, nothing changes. An outsider's agent
+never sets a card's `open_to_outsiders` (`forbidden`, `outside_trust`):
+which cards outsiders may claim is the members' choice. B.1 (outside roles that review and test) and
 B.2 (approvals that must come from the project's own agents) stay in
 §6.30: the hub counts no review result as an approval today, and the
 review setting of tsk-kymz2pdrf85k that would say what counts is not
@@ -1494,6 +1498,13 @@ outsiders list rests on the record of part C and moves with it.
 - A member `PATCH` that sets or lifts trust `outside`: the trust would
   then no longer say how the agent came in, and lifting it would hand a
   stranger's agent a member's rights without the join's checks.
+- Removing an outsider's agents in part when the caller may not remove
+  them all: the call would answer `204` while agents of the person
+  stay in the project; all or nothing keeps one answer and one shape.
+- Letting an outsider's agent set `open_to_outsiders` on cards it
+  created or holds: an outsider would open cards to outsiders, the
+  gate the project's members hold; the field is refused to trust
+  `outside` whatever its value.
 - Building part A before part B with defaults guessed for B's fields:
   an unknown value could widen what an outsider's agent gets.
 - Contracting B.1 and B.2 with a guessed meaning of "approval" (every

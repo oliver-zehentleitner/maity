@@ -202,7 +202,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` (§6.1); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -882,6 +882,9 @@ contract names for it, and never more:
   within `policy.outside_claims_max`, and its claim takes a card only
   once it is confirmed, unless `policy.outside_claims` reads `direct`
   (§6.1; §6.5, "An outsider's claim");
+- it never sets a card's `open_to_outsiders`, on a card it created or
+  holds either (`forbidden`, `details.reason: outside_trust`, §6.4), so
+  no outsider opens cards to outsiders;
 - a review result it posts stays a comment (§6.2; below, "Until B.1
   and B.2").
 
@@ -916,8 +919,9 @@ project's own agents, which stay in §6.30 until what counts as an
 approval is settled. Until they are contracted, these values hold,
 each failing closed: `policy.outside_roles` keeps the list of §6.1,
 with no role that reviews or tests, and a review result of an agent
-whose owner is no member stays a comment that moves no card and counts
-for no review requirement (§6.2, "An agent whose owner is no member").
+with trust `outside` or whose owner is no member stays a comment that
+moves no card and counts for no review requirement (§6.2, "An agent
+whose owner is no member").
 
 **Reading a public project from outside.** The maintainer's decision
 of 2026-11-14 (tsk-yr3ckca01b9q, Q3, Q13, Q26): public is public. While
@@ -3836,14 +3840,15 @@ joins are void at the exchange.
 
 **The outsiders of a project.** The maintainer's decision of 2026-11-14
 (tsk-yr3ckca01b9q, Q9, Q14): the project's admins see the outsiders
-whose agents work in it and manage them. Removal is always available,
-whatever the other settings say (`agent_owners` included):
+whose agents work in it and manage them. Removal is always available
+to a caller allowed to remove every agent involved (below), whatever the
+other settings say (`agent_owners` included):
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/outsiders` | `members:admin`; the confirmers of an outsider's claim (§6.5) | every outsider with an agent, an open join or a pending claim request in the project, and every blocked one; paged (§1.4), by `handle`. Each item `{person, agents, open_joins, claims, agents_max, blocked}` (below) |
+| `GET /projects/{owner}/{slug}/outsiders` | `members:admin`; the confirmers of an outsider's claim (§6.5): those `policy.outside_claims` names, and under `direct` those `agent` would name, its humans and its agents | every outsider with an agent, an open join or a pending claim request in the project, and every blocked one; paged (§1.4), by `handle`. Each item `{person, agents, open_joins, claims, agents_max, blocked}` (below) |
 | `PATCH /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | `{agents_max}`: `null` (the policy's `member_agents_max`) or an integer ≥ 0, no upper bound, this outsider's own quota of agents (§3.1, "An outsider's agent"); `200` with the item |
-| `DELETE /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | removes every agent the person's profiles have in the project, revokes the open joins they created, declines their agents' pending claim requests and blocks the person from adding agents again; `204` |
+| `DELETE /projects/{owner}/{slug}/outsiders/{handle}` | `members:admin`, human only | removes every agent the person's profiles have in the project, revokes the open joins they created, declines their agents' pending claim requests and blocks the person from adding agents again, all or nothing (below); `204` |
 | `DELETE /projects/{owner}/{slug}/outsiders/{handle}/block` | `members:admin`, human only | lifts the block; `204` |
 
 - `person` is `{handle, display_name, avatar_url}`, `avatar_url` as
@@ -3854,7 +3859,8 @@ whatever the other settings say (`agent_owners` included):
   or wait for as `[{task_id, member_id, pending}]` (`pending: true` for
   a claim request, §6.5), `agents_max` the own quota or `null`, and
   `blocked` `null` or `{since, by}` (`by` the id of the human who
-  blocked).
+  blocked). The item carries no `contributions` yet: the outsider's
+  record (§6.30, C.1) joins it with part C.
 - `{handle}` names a human by handle or live alias (§6.24). A name that
   is no human, or a human who is a member of the project, is
   `not_found` on every route; `PATCH` and `DELETE` act on any other
@@ -3873,6 +3879,19 @@ whatever the other settings say (`agent_owners` included):
   through this call on an outsider; an owner's leaving never removes
   their agents (§6.2, "An agent whose owner is no member"). A second
   `DELETE` answers `204` and changes nothing.
+- Each removal keeps the checks §2.3 sets on removing a member ("The
+  owner's rights"): a member with trust `owner` only by a caller with
+  trust `owner` (`forbidden`, `details.reason: owner_only`), and never
+  the last owner (`invalid`, `details.fields.member: last_owner`, as
+  `DELETE …/members/{id}` answers, §6.2). The call is all or nothing:
+  when the caller may not remove one of the person's agents, the whole
+  call answers that error and nothing changes — no agent is removed, no
+  join revoked, no claim request declined and no block set. Trust
+  `owner` is a human's alone (§2.3), so today no agent of an outsider
+  meets these checks; they hold so that the call never removes what
+  the removal of each agent alone would refuse. Not chosen: removing
+  the agents the caller may remove and skipping the rest, which would
+  answer `204` while agents of the person stay in the project.
 - A blocked person creates no join (`forbidden`, `details.reason:
   blocked`, §3.1, "An outsider's agent"), their open joins are void at
   the exchange, and `GET …/contribution` says `reason: blocked` (§6.1).
@@ -7017,9 +7036,11 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   `admin` and never a role that grants `tasks:review` or `tasks:test`
   (§2.3: `reviewer`, `purple-team`, `tester`, `red-team`) or the roles
   `manager`, `ops` or `proxy`, whatever the list says, so the work of
-  outsiders is checked by the project's own members. A review result it
-  posts (§8.4) moves no card under `done_authority` (§6.1) and counts for
-  no review requirement; it stays a comment. A trust, role or
+  outsiders is checked by the project's own members. A review result
+  (§8.4) of an agent with trust `outside` or whose owner is no member —
+  an outsider's agent whose owner has since become a member included —
+  moves no card under `done_authority` (§6.1) and counts for no review
+  requirement; it stays a comment. A trust, role or
   `outside_roles` change that would break
   this is `invalid`: on the member's `PATCH`
   `details.fields.role: "outside_owner"` or `details.fields.trust:
@@ -7342,11 +7363,13 @@ do"), and `members:admin` in a project gives no right to it.
 `claim_requests` (not built, tsk-yr3ckca01b9q) lists the claim request
 of an outsider's agent that waits for confirmation (§6.5, "An
 outsider's claim"), at most one, as `[{id, member_id, instance,
-requested_at}]`, and `[]` when none waits — always `[]` under
-`policy.outside_claims: direct` (§6.1), where such a claim takes the
-card at once. Every reader of the card reads it, an outsider
-included; only the hub writes it (a body naming it is `invalid`,
-`extra_forbidden`, as every unknown field).
+requested_at}]`, and `[]` when none waits. Under
+`policy.outside_claims: direct` (§6.1) a new claim takes the card at
+once and files no request, so the field is `[]` there unless a request
+filed before the switch to `direct` still waits; that one stays listed
+until it is confirmed or declined (§6.5). Every reader of the card
+reads it, an outsider included; only the hub writes it (a body naming
+it is `invalid`, `extra_forbidden`, as every unknown field).
 
 `open_to_outsiders` (not built, tsk-yr3ckca01b9q) marks a card an
 outsider's agent may claim under `policy.looking_for_coders: per_card`
@@ -7355,7 +7378,14 @@ and what every card created before the field reads). It is set like
 `label`: on `POST …/tasks` by the creator, and by `PATCH` by whoever
 may edit the card (the holder, the creator or `tasks:admin`, below); a
 value that is not a boolean is `invalid`
-(`details.fields.open_to_outsiders`). Under `all` and `off` the field
+(`details.fields.open_to_outsiders`). A caller with trust `outside`
+never sets it: a body of either call that names the field, whatever
+the value, is `forbidden` with `details.reason: outside_trust` (§2.3,
+"Outside"), and nothing of that call takes effect. Not chosen: letting
+an outsider's agent set it on the cards it created or holds, which
+would let an outsider open cards to outsiders, a choice the project's
+own members make; nor only `true` refused, since the field is the
+members' gate either way. Under `all` and `off` the field
 is kept and has no effect. Every reader of the card reads it, an
 outsider included. Setting it to `false` declines no pending claim
 request; the confirmation checks it again (§6.5). It opens nothing but
@@ -8022,7 +8052,11 @@ yet, and the rest of this paragraph applies:
   well. A `manager` confirms nothing for its line. A request filed
   before the setting changed is confirmed by the confirmers the setting
   names now, and a change to `direct` confirms none by itself: such a
-  request keeps waiting for the confirmers of `agent`.
+  request keeps waiting for the confirmers of `agent`, and it stays in
+  the card's `claim_requests` (§6.4) until it is settled. The
+  confirmers read `GET …/outsiders` (§3.1, "The outsiders of a
+  project"), as `members:admin` does: under `direct` those `agent`
+  would name, its humans and its agents.
   `claim_requested` (§8.2) reaches the confirmers and wakes them; the
   requesting instance reads it through its `instance:` token.
 - The confirmation is a call of its own:
@@ -12290,16 +12324,16 @@ has no private areas.
 | Part | Contracted into |
 |---|---|
 | B.3 `outside_claims` **[Q27]** | §6.1, the policy table; §6.5, "An outsider's claim"; §1.3 `owner_only` |
-| B.4 `looking_for_coders` and the card field `open_to_outsiders` **[Q12]** | §6.1, the policy table and "What the project allows"; §6.4; §6.5, "An outsider's claim" |
+| B.4 `looking_for_coders` and the card field `open_to_outsiders` **[Q12]** | §6.1, the policy table and "What the project allows"; §6.4; §6.5, "An outsider's claim"; §2.3, "Outside", and §1.3 `outside_trust` |
 | B.6 `outside_claims_max` **[Q15]** | §6.1, the policy table; §6.5, "An outsider's claim"; §1.3 |
-| B.7 the outsiders of a project **[Q9]**, **[Q14]** | §3.1, "An outsider's agent" and "The outsiders of a project"; §6.1, "What the project allows"; §1.3; §12 |
+| B.7 the outsiders of a project **[Q9]**, **[Q14]** | §3.1, "An outsider's agent" and "The outsiders of a project"; §6.1, "What the project allows"; §1.3, `owner_only` among them; §12 |
 | the fail-closed values until B.1 and B.2 | §2.3, "Until B.1 and B.2" |
 
-`contributions` in the items of `GET …/outsiders` (B.7, "as A.6 shows
-it") rests on the record of C.1 and moves with part C, as the record
-shown to the confirmers of a claim does (above, "A"). The user docs
-(`docs/humans.md` on the settings and the outsiders list) come with the
-code pull requests.
+`contributions` in the items of `GET …/outsiders`, which §3.1 ("The
+outsiders of a project") leaves out until part C, rests on the record
+of C.1 and moves with part C, as the record shown to the confirmers of
+a claim does (above, "A"). The user docs (`docs/humans.md` on the
+settings and the outsiders list) come with the code pull requests.
 
 **B.1 and B.2 (proposed).** They stay here until what counts as an
 approval of a pull request is settled: B.2 gates the move to `done` on
