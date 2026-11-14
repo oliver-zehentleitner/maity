@@ -56,9 +56,11 @@ def _policy(owner: flow.Human, **policy: Any) -> None:
     assert response.status_code == 200, response.text
 
 
-def _reported(owner: flow.Human, make_client: ClientFactory, **report: Any) -> tuple[Any, str]:
+def _reported(
+    owner: flow.Human, make_client: ClientFactory, card: dict[str, Any] | None = None, **report: Any
+) -> tuple[Any, str]:
     agent = flow.agent(make_client, owner)
-    card = owner.post(f"{BASE}/tasks", {"title": "A card"}).json()
+    card = owner.post(f"{BASE}/tasks", {"title": "A card", **(card or {})}).json()
     assert agent.post(f"{BASE}/tasks/{card['id']}/claim", {}).status_code == 200
     stored = agent.post(f"{BASE}/tasks/{card['id']}/report", _report(**report))
     assert stored.status_code == 200, stored.text
@@ -173,6 +175,45 @@ def test_auto_under_holder_closes_the_card_itself(
     assert _card(owner, card_id)["status"] == "done"
     updated = [e for e in _events(migrated, "task_updated") if e.payload.get("id") == card_id]
     assert updated[-1].payload["fields"] == ["status"] and updated[-1].payload["status"] == "done"
+
+
+RELEASE = {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}}
+
+
+def test_auto_never_closes_a_release_card_with_an_open_checklist_item(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.7: a release closes through its readiness gate, which the releaser passes
+    after the checklist; a merge of its pull request is not that step."""
+    response = owner.patch(BASE, {"settings": {"release_checklist": ["CHANGELOG has a section"]}})
+    assert response.status_code == 200, response.text
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    _, card_id = _reported(owner, make_client, RELEASE)
+    assert [i["done"] for i in _card(owner, card_id)["release"]["checklist"]] == [False]
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert (told.payload["closed"], told.payload["blocked_by"]) == (False, ["release"])
+    card = _card(owner, card_id)
+    assert card["status"] == "review"
+    assert _events(migrated, "release_ready") == []
+
+
+def test_auto_never_closes_a_release_card_even_when_nothing_is_open(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    _policy(owner, done_authority="admin", merged_closes="auto")
+    github.pull(7, merged=True)
+    _, card_id = _reported(owner, make_client, RELEASE)
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert (told.payload["closed"], told.payload["blocked_by"]) == (False, ["release"])
+    assert _card(owner, card_id)["status"] == "review"
+    with migrated.connect() as conn:
+        in_flight = conn.execute(
+            select(t.card.c.release_in_flight).where(t.card.c.id == card_id)
+        ).scalar_one()
+    assert in_flight is True  # still the open release: the releaser closes it
 
 
 def test_auto_under_reviewer_acts_as_notify(

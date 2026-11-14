@@ -223,6 +223,9 @@ def _form(
         + row("display_name", words["display_name"], "text", 'autocomplete="name"')
         + f'<p class="note">{escape(words["public"])}</p>'  # §2.7.1, profiles are public
         + box
+        # §2.7.1 step 5, §5.1 "Experiment notice": above the button, terms or not; it asks for
+        # nothing of its own.
+        + f'<p class="experiment-notice" role="note">{escape(words["experiment"])}</p>'
         + f'<input type="hidden" name="form" value="{escape(form_value)}">'
         + f'<input type="hidden" name="terms_seen" value="{escape(terms_field)}">'
         + f'<button type="submit" class="btn btn-primary">{escape(words["button"])}</button></form>'

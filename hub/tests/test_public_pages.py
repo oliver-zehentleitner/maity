@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, public_pages, render
+from maity_hub import clock, middleware, public_pages, render
 from maity_hub import shell as shell_module
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
@@ -387,7 +387,8 @@ def test_a_visitor_gets_the_shell_with_the_page_and_as_public_the_bare_page(
         "x-robots-tag" not in got.headers and got.headers["cache-control"] == "public, max-age=60"
     )
     assert client.get("/oz-team", headers={"If-None-Match": got.headers["etag"]}).status_code == 304
-    assert got.headers["content-security-policy"] == "default-src 'self'"
+    assert got.headers["content-security-policy"] == middleware.CSP
+    assert got.headers["x-frame-options"] == "DENY"
     bare = client.get("/oz-team?as=public")
     assert (
         "js/app.js" not in bare.text

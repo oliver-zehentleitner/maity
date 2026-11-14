@@ -9,8 +9,8 @@
 #
 # Usage: deploy/scripts/helm-upgrade.sh -f values.yaml [more helm upgrade arguments]
 # Environment: NAMESPACE (maity), RELEASE (maity), DEPLOYMENT (<release>-maity-hub),
-#   CHART (the chart next to this script), HELM_TIMEOUT (10m), DUMP_CRONJOB (a CronJob to run as a
-#   dump first, e.g. maity-pg-dump; unset = no dump), DUMP_TIMEOUT (seconds to wait for it, 300), DUMP_REQUIRES_ATTACHMENTS (1: the
+#   CHART (the chart next to this script), HELM_TIMEOUT (10m), DUMP_CRONJOB (the CronJob to run as a
+#   dump first, maity-pg-dump), NO_DUMP (1: no dump first; only when you took one yourself), DUMP_TIMEOUT (seconds to wait for it, 300), DUMP_REQUIRES_ATTACHMENTS (1: the
 #   dump's mark must carry the attachment tar; set it when the release has attachments.existingClaim), STOP_TIMEOUT (seconds to wait for the hub's
 #   pods to be gone, 180), KUBECONFIG as usual.
 #
@@ -21,6 +21,8 @@
 # Deployment differ from the release again, and `--wait` already saw the new pods ready, so fewer
 # pods of the same new image would fix nothing. Only when the script ends before Helm or Helm
 # fails is the hub scaled back to the replicas it had. A hub found at 0 stays at 0 either way.
+# A dump is taken by default: an upgrade migrates, and there is no downgrade, so the way back is that
+# dump. Without the CronJob the script stops before anything changed and names NO_DUMP=1.
 # Exit status: Helm's own when the upgrade failed; otherwise 3 when scaling back failed, 4 when the
 # hub did not become ready, 1 for the steps before Helm, 0 only when everything worked.
 set -uo pipefail
@@ -56,7 +58,14 @@ trap 'exit 130' INT TERM
 case "${DUMP_TIMEOUT:-300}" in
   *[!0-9]*|'') echo "DUMP_TIMEOUT must be a number of seconds, not '${DUMP_TIMEOUT}'; nothing was changed" >&2; exit 1;;
 esac
-if [ -n "${DUMP_CRONJOB:-}" ]; then
+case "${NO_DUMP:-0}" in
+  0|1) ;;
+  *) echo "NO_DUMP must be 1 (no dump first) or unset, not '${NO_DUMP}'; nothing was changed" >&2; restored=1; exit 1;;
+esac
+DUMP_CRONJOB=${DUMP_CRONJOB:-maity-pg-dump}
+if [ "${NO_DUMP:-0}" = 1 ]; then
+  echo "NO_DUMP=1: no dump is taken before this upgrade"
+else
   job="pre-upgrade-$(date +%H%M%S)"
   # Complete or Failed, whichever comes first: `kubectl wait` takes one condition and would sit out its whole timeout on a failed Job.
   dump_finished() {
@@ -70,6 +79,8 @@ if [ -n "${DUMP_CRONJOB:-}" ]; then
     done
     return 1
   }
+  kubectl -n "$NAMESPACE" get "cronjob/$DUMP_CRONJOB" -o name >/dev/null ||
+    { echo "no CronJob $DUMP_CRONJOB to take the dump before the upgrade, nothing was changed: name yours with DUMP_CRONJOB=<name>, or take a dump yourself and run again with NO_DUMP=1" >&2; restored=1; exit 1; }
   { kubectl -n "$NAMESPACE" create job --from="cronjob/$DUMP_CRONJOB" "$job" && dump_finished; } ||
     { echo "the dump failed, nothing was changed" >&2; restored=1; exit 1; }
   # A Job whose pg_dump failed used to end as Complete (see deploy/k3s-single/backup.yaml). The fixed script ends with a line

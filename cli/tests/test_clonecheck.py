@@ -17,8 +17,14 @@ from conftest import git
 
 from maity import clonecheck, gitfacts
 
-# Where the runner records its git (adapters.launch), spelled out: the tests say where.
-RECORDED_GIT = Path(".git", "maity", "git")
+# Where the runner used to record its git, in the clone: now only for Codex (IN_CLONE), and
+# otherwise a file the agent could write, which maity never reads.
+CLONE_GIT = Path(".git", "maity", "git")
+
+
+def recorded() -> Path:
+    """Where the runner records its git (adapters.launch): in its directory for the agent."""
+    return Path(os.environ[clonecheck.GIT_PRIVATE_ENV]) / "git"
 
 
 @pytest.fixture
@@ -29,13 +35,13 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     git(clone, "config", "--remove-section", f"url.{remote}")
     git(clone, "remote", "set-url", "origin", str(remote))
     (clone / ".git" / "maity").mkdir(exist_ok=True)  # the runner makes it (adapters)
-    (clone / RECORDED_GIT).write_text(f"{shutil.which('git')}\n")  # and records git
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
     private = clone.parent / "agent-dir" / "git"  # the runner's, outside the clone
     private.mkdir(parents=True)
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
+    recorded().write_text(f"{shutil.which('git')}\n")  # and records git there
     return clone
 
 
@@ -135,11 +141,16 @@ def test_an_alternates_file_in_any_case_is_refused(placed: Path, name: str) -> N
 
 
 # What one sandboxed Claude Code session left in a clone, and a plain clone has not: Claude
-# Code 2.1.321, bubblewrap (cli/context/runner.md). A trailing `/` is an empty directory.
+# Code 2.1.321, bubblewrap; `glab-cli/` and `worktrees/` from 2.1.323 on the runner's host, and
+# `modules/` from the same list of protected paths in the binary (tsk-ydxv7x37fg08;
+# cli/context/runner.md). A trailing `/` is an empty directory.
 SANDBOX_LEFT = (
     "config.worktree",
     "objects/info/alternates",
+    "glab-cli/",
+    "modules/",
     "remotes/",
+    "worktrees/",
     "info/.claude-sandbox-noreplace/",
     "objects/info/.claude-sandbox-noreplace/",
     "objects/info/commit-graphs/.claude-sandbox-noreplace/",
@@ -170,6 +181,8 @@ def test_what_the_sandbox_leaves_empty_reads_as_before(placed: Path) -> None:
         "objects/info/alternates",
         "objects/info/http-alternates",
         "remotes/origin",
+        "glab-cli/config.yml",
+        "worktrees/other/gitdir",
         "info/.claude-sandbox-noreplace/hook",
         "objects/info/.claude-sandbox-noreplace/pack",
         "objects/info/commit-graphs/.claude-sandbox-noreplace/graph",
@@ -215,7 +228,15 @@ def test_a_link_in_place_of_a_placeholder_is_refused(placed: Path, entry: str) -
         gitfacts.collect(placed)
 
 
-@pytest.mark.parametrize("entry", ["remotes/.hidden", "info/.claude-sandbox-noreplace/.hidden"])
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "remotes/.hidden",
+        "glab-cli/.hidden",
+        "worktrees/.hidden",
+        "info/.claude-sandbox-noreplace/.hidden",
+    ],
+)
 def test_a_hidden_entry_in_a_placeholder_is_refused(placed: Path, entry: str) -> None:
     _leave(placed, SANDBOX_LEFT)
     (placed / ".git" / entry).touch()
@@ -366,7 +387,7 @@ def test_status_writes_nothing_into_the_clone(placed: Path) -> None:
     assert gitfacts.collect(placed).dirty
     assert (index.read_bytes(), index.stat().st_mtime_ns) == before
     assert not (placed / ".git" / "index.lock").exists()
-    assert list((placed / ".git" / "maity").iterdir()) == [placed / RECORDED_GIT]
+    assert list((placed / ".git" / "maity").iterdir()) == []
 
 
 def test_the_state_directory_under_the_runner_is_the_clones(
@@ -515,7 +536,7 @@ def test_a_recorded_git_that_is_no_program_is_named_so(placed: Path, tmp_path: P
 
     plain = tmp_path / "git"
     plain.write_text("not a program\n")
-    (placed / RECORDED_GIT).write_text(f"{plain}\n")
+    recorded().write_text(f"{plain}\n")
     with pytest.raises(proc.ToolError, match="is not a program here"):
         proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
 
@@ -531,7 +552,6 @@ def test_a_partial_clone_is_named_so(
     monkeypatch.delenv("GIT_COMMON_DIR")  # the session's, which would point the clone there
     git(tmp_path, "clone", "-q", "--filter=blob:none", f"file://{source.as_posix()}", str(partial))
     (partial / ".git" / "maity").mkdir()
-    (partial / RECORDED_GIT).write_text(f"{shutil.which('git')}\n")
     monkeypatch.setenv("GIT_COMMON_DIR", str(partial / ".git"))
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(partial / ".git").st_ino))
     with pytest.raises(gitfacts.FactsError, match="Partial clones are not supported") as refused:
@@ -605,7 +625,7 @@ def _decoy(placed: Path, marker: Path) -> Path:
     program = placed / "marker.py"
     program.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'a').write('ran\\n')\n")
     program.chmod(0o755)
-    (placed / RECORDED_GIT).write_text(f"{program}\n")
+    (placed / CLONE_GIT).write_text(f"{program}\n")
     return real
 
 
@@ -735,6 +755,7 @@ def test_without_a_directory_outside_the_private_repository_is_made_through_the_
     `.git/maity` is made through the descriptor of the recorded `.git`, never by name."""
     from maity import proc
 
+    (placed / CLONE_GIT).write_text(f"{shutil.which('git')}\n")  # Codex's record
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, clonecheck.IN_CLONE)
     made: list[Any] = []
     real_mkdir = os.mkdir
@@ -753,8 +774,39 @@ def test_without_a_directory_outside_the_private_repository_is_made_through_the_
 def test_without_a_recorded_git_the_runners_clone_runs_none(placed: Path) -> None:
     from maity import proc
 
-    (placed / RECORDED_GIT).unlink()
-    with pytest.raises(proc.ToolError, match="no git the runner recorded"):
+    recorded().unlink()
+    with pytest.raises(proc.ToolError, match="the runner recorded no git"):
+        proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the planted git is a shebang script")
+def test_a_git_named_in_the_clone_is_never_run(placed: Path, tmp_path: Path) -> None:
+    """A program named at `.git/maity/git` in the clone is not the runner's record: maity
+    reads that in the runner's directory and never this one, with the runner's record in
+    place or without it."""
+    from maity import proc
+
+    marker = tmp_path / "ran"
+    program = tmp_path / "planted.py"
+    program.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'a').write('ran\\n')\n")
+    program.chmod(0o755)
+    (placed / CLONE_GIT).write_text(f"{program}\n")
+    assert proc.run([*proc.GIT, "rev-parse", "HEAD"], placed).returncode == 0
+    recorded().unlink()
+    with pytest.raises(proc.ToolError, match="the runner recorded no git"):
+        proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+    assert not marker.exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no links without privileges")
+def test_a_link_in_place_of_the_runners_record_is_refused(placed: Path, tmp_path: Path) -> None:
+    from maity import proc
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.write_text(f"{shutil.which('git')}\n")
+    recorded().unlink()
+    recorded().symlink_to(elsewhere)
+    with pytest.raises(proc.ToolError, match="the runner recorded no git"):
         proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
 
 
@@ -871,11 +923,13 @@ def test_the_copy_by_path_refuses_refs_that_are_a_link(placed: Path, tmp_path: P
 @pytest.mark.parametrize(
     ("change", "feature"),
     [
-        (lambda c: (c / ".git" / "modules").mkdir(), "Submodules are"),
+        # Empty, `modules/` is the sandbox's guard (tsk-ydxv7x37fg08); a submodule has one.
+        (lambda c: (c / ".git" / "modules" / "lib").mkdir(parents=True), "Submodules are"),
         (lambda c: git(c, "config", "submodule.lib.url", "../lib.git"), "Submodules are"),
         (lambda c: (c / ".git" / "lfs").mkdir(), "Git LFS is"),
         (lambda c: git(c, "config", "filter.lfs.required", "true"), "Git LFS is"),
-        (lambda c: (c / ".git" / "worktrees").mkdir(), "Worktrees are"),
+        # Empty, `worktrees/` is the sandbox's guard (tsk-ydxv7x37fg08); a linked worktree has one.
+        (lambda c: (c / ".git" / "worktrees" / "other").mkdir(parents=True), "Worktrees are"),
         (lambda c: git(c, "config", "core.sparseCheckout", "true"), "Sparse checkout is"),
     ],
 )
@@ -894,6 +948,7 @@ def test_a_private_directory_that_cannot_be_used_is_maitys_refusal(
     """Not a directory, or one maity cannot write: refused with the reason, no traceback."""
     from maity import proc
 
+    program = recorded().read_text()
     plain = tmp_path / "a-file"
     plain.write_text("")
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(plain))
@@ -901,7 +956,9 @@ def test_a_private_directory_that_cannot_be_used_is_maitys_refusal(
         proc.run([*proc.GIT, "status"], placed)
     if sys.platform != "win32" and os.geteuid() != 0:
         closed = tmp_path / "closed"
-        closed.mkdir(mode=0o500)
+        closed.mkdir()
+        (closed / "git").write_text(program)  # the runner's record is there
+        closed.chmod(0o500)
         monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(closed))
         with pytest.raises(proc.ToolError, match="cannot be made"):
             proc.run([*proc.GIT, "status"], placed)
@@ -970,3 +1027,23 @@ def test_an_inode_in_other_digits_is_refused(placed: Path, monkeypatch: pytest.M
     monkeypatch.setenv(clonecheck.GIT_INODE_ENV, "\u00b2")
     with pytest.raises(proc.ToolError, match="restart the placement"):
         proc.run([*proc.GIT, "status"], placed)
+
+
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        ("glab-cli/config.yml", "not a plain clone's"),
+        ("modules/lib/HEAD", "Submodules are not supported"),
+        ("worktrees/other/gitdir", "Worktrees are not supported"),
+    ],
+)
+def test_the_guards_with_content_say_what_they_are(placed: Path, entry: str, expected: str) -> None:
+    """Empty, the sandbox's guards pass (tsk-ydxv7x37fg08); with content, `glab-cli/` is no
+    plain clone's, `modules/` a submodule and `worktrees/` a linked worktree, which the
+    runner does not support."""
+    _leave(placed, SANDBOX_LEFT)
+    path = placed / ".git" / entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x\n")
+    with pytest.raises(gitfacts.FactsError, match=expected):
+        gitfacts.collect(placed)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The docs pages of the project site, rendered from the Markdown in the repository.
 
-    python3 tools/site_docs.py site [--nav docs/nav.yml] [--repo .]
+    python3 tools/site_docs.py site [--nav docs/nav.yml] [--repo .] [--base https://maity.dev]
 
 Run by the pages workflow after `site/` is assembled and before the sitemap. Every page
 listed in `docs/nav.yml` is rendered with one HTML template (`tools/site_docs/`) to
@@ -9,7 +9,9 @@ listed in `docs/nav.yml` is rendered with one HTML template (`tools/site_docs/`)
 `/docs/cli/`. A page marked `split` gets one page per `##` section (the API contract). Links
 between rendered pages point at their pages, every other link into the repository at GitHub.
 The pages work without JavaScript; `docs.js` only adds the copy buttons and the search, from
-`site/docs/_assets/search.json`. Needs `markdown` and `PyYAML`.
+`site/docs/_assets/search.json`. Each page's source is listed in `site/docs/_assets/sources.json`
+for the sitemap's dates (`tools/site_sitemap.py`), and its canonical link uses the same address
+as the sitemap (`--base`). Needs `markdown` and `PyYAML`.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from string import Template
 
 import markdown
 import yaml
+from site_sitemap import SITE, SOURCES
 
 GITHUB = "https://github.com/oliver-zehentleitner/maity"
 BASE = "/docs/"
@@ -263,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("site", type=Path)
     parser.add_argument("--nav", type=Path, default=Path("docs/nav.yml"))
     parser.add_argument("--repo", type=Path, default=Path("."))
+    parser.add_argument("--base", default=SITE, help="the site's address, as for the sitemap")
     args = parser.parse_args(argv)
 
     nav = yaml.safe_load((args.repo / args.nav).read_text(encoding="utf-8"))
@@ -271,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
     template = Template((ASSETS / "template.html").read_text(encoding="utf-8"))
     out_root = args.site / "docs"
     search = []
+    sources: dict[str, str] = {}  # the page in the site → its Markdown (site_sitemap.SOURCES)
 
     for page in pages:
         body = rewrite_links(page, by_src, anchors)
@@ -289,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         doc = template.substitute(
             title=html.escape(title),
             description=html.escape(page.lead, quote=True),
-            canonical=f"https://maity.dev{page.url}",
+            canonical=args.base.rstrip("/") + page.url,
             nav=nav_html(nav, by_src, page),
             toc=toc_html(page),
             content=body,
@@ -298,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         target = out_root / page.url.removeprefix(BASE) / "index.html"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(doc, encoding="utf-8")
+        sources[target.relative_to(args.site).as_posix()] = page.src
         hidden = False
         for level, anchor, text in page.toc:
             if level <= 2:
@@ -313,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     if fonts.is_dir():
         shutil.copytree(fonts, assets / "fonts", dirs_exist_ok=True)
     (assets / "search.json").write_text(json.dumps(search, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (args.site / SOURCES).write_text(json.dumps(sources, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(f"site_docs: {len(pages)} pages in {out_root}", file=sys.stderr)
     return 0
 

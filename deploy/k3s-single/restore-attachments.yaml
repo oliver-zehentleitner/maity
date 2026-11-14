@@ -1,27 +1,59 @@
 # Puts the attachment files of one night back (docs/install/README.md, "Backups on this setup"). The backups are encrypted to a key that is
 # not on the cluster, so the tar is decrypted and checked where the private key is, and streamed into this Job's pod, which waits for it.
 # It REPLACES everything in the attachment volume with the contents of that tar, so that the files match the restored database. Scale the
-# hub to 0 first (the install guide's step 1), then run this as one block with GNU tar: `sh -eu` stops at the first command that fails, so
-# a decryption that fails, a tar that tar cannot read without an error, or one that does not end with its end-of-archive block (cut off,
-# even between two files) never reaches the cluster. tar's listing goes to a file, not a pipe, since sh has no pipefail. The exec passes
-# the tar's SHA-256; the pod keeps the stream in a scratch volume first and empties the attachment volume only when what arrived has that
-# digest, so a stream cut off on the way leaves the volume as it is.
+# hub to 0 first (the install guide's step 1). Right before it empties the volume, the Job checks through the Kubernetes API that the hub's
+# Deployment wants 0 replicas and that none of its pods is left (terminating ones included); otherwise it stops with the volume unchanged.
+# For that it has a ServiceAccount of its own whose Role reads only the hub's Deployment and lists the namespace's pods. The image is the
+# hub's own (it has Python for that check, tar and sha256sum): put the digest from hub-values.yaml in place of <the image digest>. The
+# release is "maity"; for another one change HUB_DEPLOYMENT, HUB_SELECTOR and the Role's resourceNames.
+# Run this as one block with GNU tar, with the kube context of this instance as the first argument: every kubectl names it, so a shell
+# whose current context points at another cluster cannot send the tar there. `sh -eu` stops at the first command that fails, so the
+# hub found running, a decryption that fails, a tar that tar cannot read without an error, or one that does not end with its
+# end-of-archive block (cut off, even between two files) never reaches the cluster. tar's listing goes to a file, not a pipe, since sh
+# has no pipefail. The exec passes the tar's SHA-256; the pod keeps the stream in a scratch volume first and empties the attachment
+# volume only when what arrived has that digest, so a stream cut off on the way leaves the volume as it is.
 #   sh -eu -c '
-#     gpg -d "$1" > attachments.tar
+#     ctx=$1
+#     k() { kubectl --context "$ctx" -n maity "$@"; }
+#     want=$(k get deploy maity-maity-hub -o jsonpath="{.spec.replicas}")   # an assignment: a failed kubectl stops here
+#     pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
+#     [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
+#     [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
+#     gpg -d "$2" > attachments.tar
 #     LC_ALL=C tar -tRf attachments.tar > attachments.list   # read the whole tar: any error stops here
 #     tail -n 1 attachments.list | grep -q "Block of NULs"   # and it reached the end-of-archive block
 #     sum=$(sha256sum < attachments.tar | cut -c1-64)
-#     kubectl apply -f deploy/k3s-single/restore-attachments.yaml
-#     kubectl -n maity wait --for=create pod -l job-name=restore-attachments --timeout=60s || sleep 10   # 1.33+; older returns at once
-#     kubectl -n maity wait --for=condition=ready pod -l job-name=restore-attachments --timeout=120s
-#     kubectl -n maity exec -i job/restore-attachments -- sh /tmp/restore "$sum" < attachments.tar
-#     kubectl -n maity wait --for=condition=complete job/restore-attachments --timeout=120s
-#     kubectl -n maity delete job restore-attachments
+#     kubectl --context "$ctx" apply -f deploy/k3s-single/restore-attachments.yaml
+#     k wait --for=create pod -l job-name=restore-attachments --timeout=60s || sleep 10   # 1.33+; older returns at once
+#     k wait --for=condition=ready pod -l job-name=restore-attachments --timeout=120s
+#     k exec -i job/restore-attachments -- sh /tmp/restore "$sum" < attachments.tar
+#     k wait --for=condition=complete job/restore-attachments --timeout=120s
+#     kubectl --context "$ctx" delete -f deploy/k3s-single/restore-attachments.yaml
 #     rm attachments.tar attachments.list
-#   ' restore maity-<time stamp>.attachments.tar.gpg
+#   ' restore <kube context> maity-<time stamp>.attachments.tar.gpg
 # A failed step stops the block where it is and keeps attachments.tar and attachments.list. A stream that arrives incomplete fails the
-# exec with the volume unchanged: run the exec line again with the same digest. Nothing streamed within an hour ends the Job as failed,
-# with the volume unchanged. The scratch volume is on the node's disk and holds one copy of the tar while the restore runs.
+# exec with the volume unchanged: run the exec line again with the same digest. A hub found running fails the exec the same way: scale
+# it to 0, wait for its pods to go, and run the exec line again. Nothing streamed within an hour ends the Job as failed, with the volume
+# unchanged. The scratch volume is on the node's disk and holds one copy of the tar while the restore runs. The block ends by deleting
+# everything this file creates (the Job, the ServiceAccount, the Role and its binding).
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: restore-attachments, namespace: maity}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: restore-attachments, namespace: maity}
+rules:
+  - {apiGroups: [apps], resources: [deployments], resourceNames: [maity-maity-hub], verbs: [get]}
+  - {apiGroups: [""], resources: [pods], verbs: [list]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: restore-attachments, namespace: maity}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: restore-attachments}
+subjects: [{kind: ServiceAccount, name: restore-attachments, namespace: maity}]
+---
 apiVersion: batch/v1
 kind: Job
 metadata: {name: restore-attachments, namespace: maity}
@@ -31,14 +63,40 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      automountServiceAccountToken: false
+      serviceAccountName: restore-attachments
+      automountServiceAccountToken: true   # only this pod gets the token: the check below reads the API with it
       securityContext: {runAsUser: 10001, runAsGroup: 10001, runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: restore
-          image: postgres:17.10
+          image: ghcr.io/oliver-zehentleitner/maity-hub@sha256:<the image digest>   # the digest from hub-values.yaml
           command: ["/bin/sh", "-ec"]
+          env:
+            - {name: HUB_DEPLOYMENT, value: maity-maity-hub}
+            - {name: HUB_SELECTOR, value: "app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub"}
           args:
             - |
+              # The check the script below runs right before it empties the volume: exit 0 only when the hub's Deployment wants 0
+              # replicas and no pod of it is left. Any error (no such Deployment, no access, no answer) is a refusal, not a pass.
+              cat > /tmp/hub-stopped.py <<'PY'
+              import json, os, ssl, sys, urllib.parse, urllib.request
+              sa = "/var/run/secrets/kubernetes.io/serviceaccount"
+              host = os.environ["KUBERNETES_SERVICE_HOST"]
+              base = "https://%s:%s" % ("[%s]" % host if ":" in host else host, os.environ["KUBERNETES_SERVICE_PORT"])
+              ns = open(sa + "/namespace").read().strip()
+              headers = {"Authorization": "Bearer " + open(sa + "/token").read().strip()}
+              tls = ssl.create_default_context(cafile=sa + "/ca.crt")
+              def get(path):
+                  with urllib.request.urlopen(urllib.request.Request(base + path, headers=headers), context=tls, timeout=10) as r:
+                      return json.load(r)
+              try:
+                  want = get("/apis/apps/v1/namespaces/%s/deployments/%s" % (ns, os.environ["HUB_DEPLOYMENT"]))["spec"].get("replicas", 1)
+                  pods = get("/api/v1/namespaces/%s/pods?labelSelector=%s" % (ns, urllib.parse.quote(os.environ["HUB_SELECTOR"], safe="")))["items"]
+              except Exception as e:
+                  sys.exit("could not check that the hub is stopped (%s): the volume is unchanged" % e)
+              if want != 0 or pods:
+                  sys.exit("the hub is not stopped (%s wants %s replica(s), %d pod(s) left): scale it to 0, wait for its pods to go, "
+                           "and run the exec again; the volume is unchanged" % (os.environ["HUB_DEPLOYMENT"], want, len(pods)))
+              PY
               # The script the exec runs, reading the decrypted tar from its stdin.
               cat > /tmp/restore <<'EOF'
               set -e
@@ -49,6 +107,8 @@ spec:
                 rm -f /staging/attachments.tar
                 echo "the tar did not arrive whole (its SHA-256 differs): the volume is unchanged" >&2; exit 1
               fi
+              # Only now, with the tar whole in the scratch volume, and right before the volume is emptied: the hub must be stopped.
+              python3 /tmp/hub-stopped.py || { rm -f /staging/attachments.tar; exit 1; }
               find /attachments -mindepth 1 -delete
               # --strip-components=1 skips the "./" entry: the root of the volume is the provisioner's (root, 0777), not ours, and
               # tar would fail on setting its time and mode (exit 2) after the files were already back. A volume with a lost+found

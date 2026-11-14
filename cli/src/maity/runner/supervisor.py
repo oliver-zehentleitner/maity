@@ -1042,6 +1042,7 @@ class Supervisor:
             as_user=target.as_user,
             agent_path=target.agent_path,
             resume=resume,
+            git=self.cfg.git,
         )
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:

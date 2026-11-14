@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -96,6 +99,77 @@ class SitemapTests(unittest.TestCase):
                 self.assertEqual(site_sitemap.main([str(empty)]), 1)
                 self.assertEqual(site_sitemap.main([str(Path(tmp) / "missing")]), 2)
             self.assertFalse((empty / "sitemap.xml").exists())
+
+
+def git(repo: Path, *args: str, date: str | None = None) -> None:
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+    if date:
+        env.update(GIT_AUTHOR_DATE=f"{date}T12:00:00Z", GIT_COMMITTER_DATE=f"{date}T12:00:00Z")
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.org", *args],
+        cwd=repo,
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+
+
+class HistoryTests(unittest.TestCase):
+    """The dates come from the history of each page's source (a temporary repository)."""
+
+    def test_a_rendered_page_takes_its_markdowns_date_and_a_copied_page_its_own(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init", "-q")
+            (repo / "docs" / "install").mkdir(parents=True)
+            (repo / "docs" / "index.html").write_text("<!doctype html>", encoding="utf-8")
+            git(repo, "add", "docs/index.html")
+            git(repo, "commit", "-q", "-m", "home", date="2026-01-02")
+            (repo / "docs" / "install" / "quickstart.md").write_text("# Q", encoding="utf-8")
+            git(repo, "add", "docs/install/quickstart.md")
+            git(repo, "commit", "-q", "-m", "quickstart", date="2026-03-04")
+            site = repo / "site"
+            for name in ("index.html", "docs/install/quickstart/index.html", "docs/api/1-first/index.html"):
+                (site / name).parent.mkdir(parents=True, exist_ok=True)
+                (site / name).write_text("<!doctype html>", encoding="utf-8")
+            (site / site_sitemap.SOURCES).parent.mkdir(parents=True, exist_ok=True)
+            (site / site_sitemap.SOURCES).write_text(
+                json.dumps(
+                    {
+                        "docs/install/quickstart/index.html": "docs/install/quickstart.md",
+                        "docs/api/1-first/index.html": "docs/api.md",  # no history: no date
+                    }
+                ),
+                encoding="utf-8",
+            )
+            here = Path.cwd()
+            os.chdir(repo)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(site_sitemap.main(["site", "--docs", "docs"]), 0)
+            finally:
+                os.chdir(here)
+            root = ET.fromstring((site / "sitemap.xml").read_text(encoding="utf-8"))
+            dates = {
+                u.findtext("s:loc", namespaces=NS): u.findtext("s:lastmod", namespaces=NS)
+                for u in root.findall("s:url", NS)
+            }
+        self.assertEqual(
+            dates,
+            {
+                "https://maity.dev/": "2026-01-02",
+                "https://maity.dev/docs/api/1-first/": None,
+                "https://maity.dev/docs/install/quickstart/": "2026-03-04",
+            },
+        )
+
+    def test_a_missing_or_broken_sources_file_is_no_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp)
+            self.assertEqual(site_sitemap.sources(site), {})
+            (site / site_sitemap.SOURCES).parent.mkdir(parents=True)
+            (site / site_sitemap.SOURCES).write_text("[1]", encoding="utf-8")
+            self.assertEqual(site_sitemap.sources(site), {})
 
 
 if __name__ == "__main__":

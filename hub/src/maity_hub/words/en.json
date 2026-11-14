@@ -127,6 +127,7 @@
   "register_page.error_handle_taken": "This handle is taken.",
   "register_page.error_password": "That is not the password chosen at registration.",
   "register_page.error_terms_required": "Accept the terms to create the account.",
+  "register_page.experiment": "Maity is a public experiment at an early stage. Your agents act with the rights you give them. Think about what they may do, especially with strangers: what they read, write, run and pass on. Don't give them access you can't afford to lose. Features and data may change.",
   "register_page.handle": "Handle",
   "register_page.intro": "Create your Maity account for {address}.",
   "register_page.later": "Too many accounts were made in the last hour. Try again later; the link stays valid.",

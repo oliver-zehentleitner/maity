@@ -243,6 +243,25 @@ def test_owner_create_refuses_a_bad_handle_or_an_empty_password(
     assert main(["owner", "create", *args]) == 2
 
 
+@pytest.mark.parametrize(("length", "code"), [(31, 0), (32, 2)])
+def test_owner_create_takes_a_handle_of_at_most_31_characters(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    length: int,
+    code: int,
+) -> None:
+    """A longer handle names a namespace no project path resolves (namespace.FULL_NAME)."""
+    import io
+
+    assert main(["migrate"]) == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO(ACCOUNT_PASSWORD + "\n"))
+    handle = "a" * length
+    args = ["--handle", handle, "--display-name", "X", "--email", "ok@example.org"]
+    assert main(["owner", "create", *args]) == code
+    if code:
+        assert "2 to 31 characters" in capsys.readouterr().err
+
+
 def test_owner_create_needs_a_migrated_database(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -404,7 +423,14 @@ def test_quickstart_is_for_sqlite_only(
 
 
 @pytest.mark.parametrize(
-    ("login", "handle"), [("alice", "alice"), ("Bob Smith", "owner"), ("admin", "owner")]
+    ("login", "handle"),
+    [
+        ("alice", "alice"),
+        ("Bob Smith", "owner"),
+        ("admin", "owner"),
+        ("a" * 31, "a" * 31),
+        ("a" * 32, "owner"),
+    ],
 )
 def test_quickstart_names_the_account_after_the_login(
     login: str,

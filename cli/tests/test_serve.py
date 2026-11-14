@@ -256,6 +256,23 @@ def test_capabilities(tmp_path: Path, bin_dir: Path) -> None:
     assert all(32 <= ord(c) < 127 for c in text)
 
 
+@pytest.mark.parametrize(
+    ("printed", "version", "on"),
+    [("2.1.295--rc (Claude Code)", "2.1.295--rc", False),
+     ("2.1.295-rc-1+b-2 (Claude Code)", "2.1.295-rc-1+b-2", False),
+     ("2.1.295 (Claude Code)", "2.1.295", True)],
+)  # fmt: skip
+def test_the_local_probe_keeps_the_whole_version(
+    bin_dir: Path, printed: str, version: str, on: bool
+) -> None:
+    """A prerelease with `-` in it stays one: never read as the release before it."""
+    fake_tool(bin_dir, "claude", printed)
+    harness = config.Harness("claude-code", ("supervised",), "supervised", binary="claude")
+    found = capabilities.probe(harness, str(bin_dir))
+    assert found.version == version
+    assert capabilities.sandbox_version_ok("claude-code", found.version) is on
+
+
 def test_ascii_text() -> None:
     assert capabilities.ascii_text("a‮b\x01c" + "x" * 300) == "abc" + "x" * 197
 

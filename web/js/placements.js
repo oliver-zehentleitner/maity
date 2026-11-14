@@ -198,6 +198,8 @@ window.Maity = window.Maity || {};
       // Under the page's h2 (the Join an agent menu opens it under the page's head), one level down.
       h("h3", { id: id("title") }, M.t("placements.new.title")),
       h("p", { class: "hint" }, M.t("placements.new.hint")),
+      // Until the person confirmed it, once (docs/api.md §5.1, "Experiment notice"); it holds nothing back.
+      M.experimentNotice ? M.experimentNotice.forConnecting(ctx) : null,
       field("agent", M.t("join.field.agent"), agent), fresh,
       field("runner", M.t("placements.new.runner"), runner),
       field("target", M.t("placements.new.target"), target),
