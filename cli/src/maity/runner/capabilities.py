@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import functools
 import getpass
+import json
 import os
 import re
 import shutil
@@ -24,9 +25,14 @@ from .asuser import RUNNER, AsUser
 
 VERSION_TIMEOUT = 10.0
 # A version as a harness prints it, whole: its prerelease and build metadata may hold `-`
-# (`2.1.295--rc`), so neither is cut short into a release. Both probes read with it (local
-# here, ssh in targets).
-VERSION = re.compile(r"\d+(?:\.\d+)+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
+# (`2.1.295--rc`), so neither is cut short into a release. It is a token of its own: after
+# the start, a blank, `(` or `v`, and before the end, a blank, `)`, `,` or `;`. A token with
+# anything else (`2.1.295+`, `2.1.295-_dev`) is no version here; the probe keeps the whole
+# line, which no gate reads as a version. Both probes read with it (local here, ssh in
+# targets).
+VERSION = re.compile(
+    r"(?<![^\s(v])\d+(?:\.\d+)+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?(?![^\s),;])"
+)
 _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
 # The harness versions whose sandbox behaviour was checked for a call with something placed
 # in front of `maity` (runner.md, the adapters entry). Another version still runs; the runner
@@ -74,6 +80,92 @@ def sandbox_version_line(version: str | None) -> str:
         f"harness claude-code: version {version or 'unknown'} is older than {oldest} or"
         " unknown; its sandbox is not switched on (the runner's hook needs `onFailure`)"
     )
+
+
+def sandbox_held(harness_id: str, tools: bool, version: str | None) -> bool:
+    """Claude Code whose sandbox tools are there, at a version the gate does not take (older
+    than CLAUDE_SANDBOX_MIN, or unknown): its sandbox is off for the version alone."""
+    return harness_id == "claude-code" and tools and not sandbox_version_ok(harness_id, version)
+
+
+def sandbox_refused(harness: config.Harness, on: bool, held: bool) -> bool:
+    """Whether a start of `harness` is refused for its sandbox: never while it is on; with
+    `require_sandbox = true` whenever it is off; unset (the default) when it is off for the
+    version alone (`sandbox_held`); never with an explicit `require_sandbox = false`, the
+    opt-out for a host where the agents run unsandboxed on purpose."""
+    if on:
+        return False
+    if harness.require_sandbox is None:
+        return held
+    return harness.require_sandbox
+
+
+# Where Claude Code reads its managed settings, which no `--settings` file overrides: a
+# switch there that turns hooks off would leave a sandboxed agent's `maity` line unchecked.
+# Hosts of the ssh backend are Linux (bwrap and socat).
+CLAUDE_MANAGED = {
+    "linux": Path("/etc/claude-code/managed-settings.json"),
+    "darwin": Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
+}
+HOOK_SWITCHES = ("disableAllHooks", "allowManagedHooksOnly")
+_DROP_INS = 'for f in "$1"/*.json; do if [ -f "$f" ]; then printf "%s\\n" "$f"; fi; done'
+
+
+def _present(as_user: AsUser, path: Path, kind: str = "-e") -> bool:
+    """`test` on the agents' side; anything but a clear yes or no is an OSError."""
+    if as_user.direct:
+        return as_user.exists(path, kind)
+    done = as_user.run(["test", kind, str(path)])
+    if done.returncode not in (0, 1):
+        raise OSError(f"{path} cannot be checked (exit {done.returncode})")
+    return done.returncode == 0
+
+
+def claude_hooks_off(as_user: AsUser = RUNNER, platform: str | None = None) -> str | None:
+    """Why the runner's hook would not run for the agents' Claude Code, or None. Managed
+    settings (the file, and each `*.json` in `managed-settings.d/` beside it) that set
+    `disableAllHooks` or `allowManagedHooksOnly`, or that cannot be read as JSON: unknown
+    counts as off. In the agents' user settings only `allowManagedHooksOnly` counts; the
+    runner's own settings file sets `disableAllHooks` back to false over theirs."""
+    if as_user.here:
+        platform = sys.platform if platform is None else platform
+    else:
+        platform = "linux"
+    managed = next((p for key, p in CLAUDE_MANAGED.items() if platform.startswith(key)), None)
+    files: list[tuple[Path, tuple[str, ...]]] = []
+    try:
+        if managed is not None:
+            if _present(as_user, managed):
+                files.append((managed, HOOK_SWITCHES))
+            drop_ins = managed.parent / "managed-settings.d"
+            if _present(as_user, drop_ins, "-d"):
+                done = as_user.run(["sh", "-c", _DROP_INS, "sh", str(drop_ins)])
+                if done.returncode != 0:
+                    return f"{drop_ins} cannot be listed"
+                listed = sorted(done.stdout.splitlines())
+                files += [(Path(line), HOOK_SWITCHES) for line in listed]
+        user = as_user.home() / ".claude" / "settings.json"
+        if _present(as_user, user):
+            files.append((user, ("allowManagedHooksOnly",)))
+    except (OSError, KeyError) as exc:
+        return f"the Claude Code settings cannot be checked ({ascii_text(str(exc), 120)})"
+    for path, switches in files:
+        try:
+            data = json.loads(as_user.read(path))
+        except (OSError, KeyError, ValueError):
+            return f"{path} cannot be read as JSON"
+        if not isinstance(data, dict):
+            return f"{path} is not a JSON object"
+        on = [key for key in switches if data.get(key) is not False and key in data]
+        if on:
+            return f"{path} sets {' and '.join(on)}"
+    return None
+
+
+def claude_hooks_line(why: str) -> str:
+    """Why a sandboxed Claude Code agent is not started, for `check` and the log."""
+    return (f"harness claude-code: {why}, so the runner's hook would not run; its sandboxed"
+            " agents are not started until the setting is removed")  # fmt: skip
 
 
 def unchecked(harness_id: str, version: str | None) -> str | None:

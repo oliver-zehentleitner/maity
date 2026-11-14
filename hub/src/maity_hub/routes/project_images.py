@@ -106,7 +106,9 @@ def _delete(kind: str) -> Callable[..., JSONResponse]:
 
 
 for _kind in images.KINDS:
-    idempotency.LOADERS[f"project_{_kind}"] = _state_loader(_kind)
+    idempotency.register(
+        f"project_{_kind}", _state_loader(_kind), idempotency.in_project(idempotency.the_project)
+    )
     router.add_api_route(f"/projects/{{owner}}/{{slug}}/{_kind}", _get(_kind), methods=["GET"])
     router.add_api_route(f"/projects/{{owner}}/{{slug}}/{_kind}", _put(_kind), methods=["PUT"])
     router.add_api_route(

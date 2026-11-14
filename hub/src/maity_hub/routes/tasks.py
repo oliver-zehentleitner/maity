@@ -202,7 +202,7 @@ def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any
     return task_view(conn, card, reader_of(request), viewer)
 
 
-idempotency.LOADERS["task"] = load_task
+idempotency.register("task", load_task, idempotency.in_project(idempotency.column_of(t.card)))
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
@@ -2250,7 +2250,13 @@ def tick_checklist(
             mine.project.id,
             "task_updated",
             audience(conn, card),
-            {"id": card.id, "release": view["release"], "project_state": mine.project.state},
+            {
+                "id": card.id,
+                "fields": ["release"],
+                "release": view["release"],
+                "history": [],  # a tick writes no history entry (§6.15)
+                "project_state": mine.project.state,
+            },
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )

@@ -13,6 +13,28 @@ window.Maity = window.Maity || {};
   // What was entered so far: choosing the page's language draws the form again in it.
   // The passwords are not kept: the person types them again, nothing holds them outside the fields.
   let kept = { address: "", language: null };
+  // "Register again" on the registration link's page (hub routes/register_page.py,
+  // tsk-pxc5cx4hgb0y) hands the address over in a cookie sent only to /register, never in the
+  // address: read once and removed at once, so a reload starts empty. Kept while this visit's
+  // form stands, so a redraw of it (a language chosen) still has it; a visit that finds no form of
+  // the last one on screen, and a sent form, start over, so a later /register in the same document
+  // neither shows an old address nor misses a new handover.
+  const AGAIN = "maity_register_again";
+  let handed = null;
+  let drawnBox = null;
+  function handedOver() {
+    if (handed !== null) return handed;
+    handed = "";
+    let found = "";
+    try {
+      const pair = document.cookie.split("; ").find((c) => c.startsWith(AGAIN + "="));
+      if (!pair) return "";
+      found = decodeURIComponent(pair.slice(AGAIN.length + 1).split(";")[0]);
+      document.cookie = AGAIN + "=;max-age=0;path=/register;samesite=strict";
+    } catch (e) { return ""; }
+    handed = found;
+    return found;
+  }
   // The bar of a page without a project: the lockup and the theme. It stands where the frame
   // (js/site-chrome.js) cannot be read; the page's h1 is its form's heading.
   function bar(header) {
@@ -21,12 +43,14 @@ window.Maity = window.Maity || {};
   }
 
   async function register(main, header, next) {
+    if (!drawnBox || main.querySelector("article.register") !== drawnBox) handed = null;
     // Signed in, there is nothing to register: on to next, or the start.
     const session = await M.api.get("/auth/session").then(() => true, () => false);
     if (session) { M.route.go(next || "/all", { replace: true }); return; }
     bar(header);
     document.title = M.t("register.title") + " · Maity";
     const box = h("article", { class: "register" });
+    drawnBox = box;
     // The legal pages that are set, under the form (§16.7.1), until the frame's footer names them.
     const legal = M.legal ? M.legal.links() : null;
     // The panel beside the form: the art alone until the pitch is asked for (below).
@@ -68,7 +92,7 @@ window.Maity = window.Maity || {};
       return;
     }
     const address = h("input", { id: "register-address", type: "email", autocomplete: "email", required: true });
-    address.value = kept.address;
+    address.value = kept.address || handedOver();
     // The two languages of §6.2: this page's, and the one agents write in, which starts as the
     // first of the browser's the hub offers.
     // The agents' language stays what the person made it, whatever the page's becomes.
@@ -113,6 +137,7 @@ window.Maity = window.Maity || {};
           status.fail(M.t("register.not_sent"), registerWords(err));
           return;
         }
+        handed = null;  // sent: a later visit starts empty unless a new address is handed over
         // The same answer for every address (§2.7.1): what comes next is in the mail.
         const hours = Math.round(((answer && answer.expires_in) || 86400) / 3600);
         clear(box);

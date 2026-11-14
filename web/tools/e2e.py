@@ -920,6 +920,7 @@ def main() -> int:
                     form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
+                    stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -1587,6 +1588,10 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", title + "\n" + text, "--to", "human", "--class", "info")).group(0)
         for title in ("A request with a long line", "A short one below it")
     ]
+    # A request on a card: across projects its Card row names the card with the project's full
+    # name, drawn as every reference (tsk-e9d52pfhvk3v): it may wrap in the name, never in the id.
+    on_card = re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", "Which card first?", "--to", "human", "--class", "info", "--task", card_id)).group(0)
+    asked.append(on_card)
     run.maity(alpha, "note", "add", card_id, text)
     run.maity(alpha, "say", "all", text, "--type", "notice")
     # A link without a label shows its URL: 300 characters with no place to break.
@@ -1620,6 +1625,18 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
             assert not wider, f"the inbox at {where}: text wider than its box {wider}"
             if width < 1280:
                 run.shot(page, f"inbox-long-line-{scheme}" + ("" if width == 390 else f"-{width}"))
+            carded = page.locator(f"li.entry[data-request='{on_card}']")
+            carded.locator(".entry-head").first.click()
+            row = carded.locator("dd").filter(has=page.locator(f"a[href$='/tasks/{card_id}']"))
+            ref = row.locator(".id-ref.full")
+            expect(ref).to_have_text(f"owner/e2e-alpha/{card_id}")
+            placed = ref.evaluate(
+                "(r) => { const dd = r.closest('dd').getBoundingClientRect(), id = r.querySelector('.ref-id');"
+                " return [id.textContent, id.getClientRects().length, id.getBoundingClientRect().right, dd.right]; }"
+            )
+            assert placed[0] == card_id and placed[1] == 1, f"the Card row at {where}: the card's id is drawn as {placed}"
+            assert placed[2] <= placed[3] + 0.5, f"the Card row at {where}: the id ends at {placed[2]} px, its row at {placed[3]} px"
+            inside(f"the inbox's Card row at {where}")
 
             page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
             note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
@@ -2113,10 +2130,30 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     )
     assert history[0] and history[1] < 48, f"the history does not scroll or is not at its end: {history}"
     run.shot(page, "chat-long")
+    # A full reference has no space to break at (tsk-e9d52pfhvk3v): another project's
+    # `<owner>/<slug>/req-…`, linked by shape. On a phone it wraps inside the bubble, in the
+    # project's name or before the id, and the id stays on one line.
+    far = "a-namespace-with-a-long-handle/a-project-with-a-rather-long-slug/req-jvg545kp0es2"
+    run.maity(alpha, "say", "human", f"Answered in {far}, see there.")
+    wide = page.locator("ol.messages li.msg.in").filter(has_text="see there.").last
+    expect(wide.locator("a.id-ref[href$='/inbox/req-jvg545kp0es2']")).to_have_text(far)
+
     # On a phone the list is one screen and the chat another.
     def fits(where: str) -> None:
         width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
         assert width[0] <= width[1], f"{where} is {width[0]} px wide at {width[1]} px"
+
+    def bubble_fits(where: str) -> None:
+        wide.scroll_into_view_if_needed()
+        box = wide.evaluate(
+            "(m) => { const pane = m.closest('ol.messages').getBoundingClientRect(), r = m.getBoundingClientRect(),"
+            " id = m.querySelector('a.id-ref .ref-id'); return [r.left, r.right, pane.left, pane.right,"
+            " m.scrollWidth - m.clientWidth, id ? id.getClientRects().length : 0]; }"
+        )
+        left, right, start, end, over, lines = box
+        assert left >= start - 0.5 and right <= end + 0.5, f"{where}: the bubble spans {left}–{right} px in a pane of {start}–{end} px"
+        assert over <= 0, f"{where}: the bubble's text is {over} px wider than the bubble"
+        assert lines == 1, f"{where}: the request id is broken over {lines} lines"
 
     for phone in (390, 360):
         page.set_viewport_size({"width": phone, "height": 780})
@@ -2131,6 +2168,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
         expect(heading).to_be_focused()
         expect(page.locator(".chat-list-pane")).to_be_hidden()
         fits(f"the chat at {phone} px")
+        bubble_fits(f"a message with a long reference at {phone} px")
         box = compose.bounding_box()
         assert box["y"] + box["height"] <= 780 + 1, f"the composer is below the screen at {phone} px: {box}"
         run.shot(page, f"phone-{phone}-chat")
@@ -2824,6 +2862,43 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     return context, page
 
 
+def register_again(run: Run, page: Page, link: str, address: str, handle: str) -> None:
+    """The registration link's page (tsk-pxc5cx4hgb0y): the handle's rule beside its field and
+    a word for an upper-case letter while it is typed, before anything is sent; a wrong password
+    offers "Register again", which opens the sign-up form with the address filled in, the
+    address carried in a cookie and never in the sign-up page's address."""
+    run.step("the registration link's page: the handle's rule while typed, and Register again after a wrong password")
+    field, check = page.locator("#handle"), page.locator("#handle-check")
+    expect(page.locator("#handle-rule")).to_contain_text("Lowercase letters, digits and -")
+    expect(check).to_be_hidden()
+    field.fill("Ada")
+    expect(check).to_be_visible()
+    expect(check).to_contain_text("lowercase only")
+    assert field.input_value() == "Ada", "the page lower-cased the handle on its own"
+    run.shot(page, "registration-link-handle-uppercase")
+    run.a11y(page, "the registration link's page, an upper-case handle")
+    field.fill(handle)
+    expect(check).to_be_hidden()
+    page.locator("#password").fill("not the password chosen at all")
+    page.locator("#display_name").fill("Ada")
+    page.locator("form button[type=submit]").click()
+    expect(page.locator("#password-error")).to_be_visible()
+    again = page.get_by_role("link", name="Register again", exact=True)
+    expect(again).to_be_visible()
+    expect(page.locator(".register-again-why")).to_contain_text("the link in the newest mail replaces this one")
+    run.problems = [p for p in run.problems if not ("/mail/register/" in p and "answered 400" in p)]
+    run.shot(page, "registration-link-register-again")
+    run.a11y(page, "the registration link's page, Register again after a wrong password")
+    again.click()
+    expect(page.locator("#register-address")).to_have_value(address)
+    assert address not in page.url and "%40" not in page.url, page.url
+    # Read once and removed: a reload starts empty.
+    assert "maity_register_again" not in page.evaluate("() => document.cookie")
+    run.shot(page, "register-again-form")
+    page.goto(link)  # one wrong password leaves the link usable
+    expect(page.locator("#handle")).to_be_visible()
+
+
 def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     """Admin → Users (§2.8.3, §2.8.7): the admin's press only sends a mail; the person's press on
     the mail's page resets, ends their sessions, and the next sign-in starts with the setup."""
@@ -2839,7 +2914,8 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
         """([address, password]) => window.Maity.api.post("/auth/register", { address, password })""",
         [address, password],
     )
-    page.goto(catcher.link_in(address, "/mail/register/"))
+    link = catcher.link_in(address, "/mail/register/")
+    page.goto(link)
     # The registration link's page stands in the door frame, as /login does (§2.7.1, §16.7.5).
     expect(page.locator("header.site-header")).to_be_visible()
     expect(page.locator("footer.site-footer")).to_be_visible()
@@ -2850,9 +2926,12 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     run.shot(page, "registration-link-390")
     run.a11y(page, "the registration link's page at 390 px")
     page.set_viewport_size({"width": 1280, "height": 900})
+    register_again(run, page, link, address, handle)
     # A refused answer: each field's error under it, legible in light and dark (#1721's review).
+    # The field's own pattern stops a handle that breaks the rule before it is sent, so the hub's
+    # refusal is shown with a taken one.
     page.locator("#password").fill(password)
-    page.locator("#handle").fill("x")
+    page.locator("#handle").fill(OWNER)
     page.locator("#display_name").fill("Ada")
     page.locator("form button[type=submit]").click()
     expect(page.locator("#handle-error")).to_be_visible()
@@ -4963,14 +5042,63 @@ def report_pages_round(run: Run, browser) -> None:
     agent.click()
     expect(page).to_have_url(re.compile(r"/owner/agents/e2e-agent$"))
     expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
-    # Known on main, fixed by tsk-8fk897a9tan8 (whose PR removes this filter): the stored pages' inline
-    # styles, refused by the hub's own CSP: the per-day bars of a project's page
-    # (public_projects._per_day_html) and the 128 px placeholder of a person without a picture
-    # (public_people.picture_html). Only these two, by their hashes; any other refusal still fails.
-    known = ("'sha256-8xVPQegQ3n2TD8Ru9x9C/G9ctgSmSqDhi6CQln9gM7o='", "'sha256-uX/JLK1ra8Fz6XKAN8nPKzpDkutTzzz574XTranjWJU='")
-    run.problems = [p for p in run.problems if not ("Applying inline style violates" in p and any(k in p for k in known))]
+    # A project the reader is no member of shows its public page under the reader's own header
+    # (§16.9), which is none of "All projects": neither that link nor its Inbox tab is current
+    # (tsk-c9xzrzdcw8sb, the Inbox tab was marked).
+    page.goto(run.base + "/owner/e2e-alpha")
+    expect(page.locator("section.view-visitor")).to_be_visible()
+    expect(page.locator("header nav.switcher a[href='/all']")).to_be_visible()
+    expect(page.locator("header nav.switcher [aria-current], header nav.views [aria-current]")).to_have_count(0)
+    run.shot(page, "visitor-project-signed-in")
     no_problems(run, "report pages")
     context.close()
+
+
+def stored_pages_policy_round(run: Run, browser) -> None:
+    """Every stored public page the sitemap lists, plus a person's agents page, as a visitor
+    without a session: once at its address, where the page stands inside the app shell under
+    the shell's policy (`default-src 'self'`, no inline style), and once at `?as=public` under the
+    page's own. Not one refusal by the policy (tsk-8fk897a9tan8): the per-day bars of a project's
+    page and the placeholder of a person without a picture were inline styles the shell refused,
+    which no check saw while only `/explore` and `?as=public` were listened to."""
+    run.step("stored pages: no policy refusal on any of them, inside the shell and on their own")
+    with urllib.request.urlopen(run.base + "/sitemap.xml", timeout=10) as answer:
+        sitemap = answer.read().decode()
+    # One page of each shape: every page of the first project, one card of each kind (task,
+    # release, contract), the person's pages and their agents'. The page bucket spends 60 reads a
+    # minute per address (§16.9), and pages of one shape share one render.
+    paths: list[str] = []
+    shapes: set[str] = set()
+    for loc in re.findall(r"<loc>([^<]+)</loc>", sitemap):
+        path = urllib.parse.urlsplit(loc).path or "/"
+        parts = path.strip("/").split("/")
+        if parts[0] != "owner":
+            continue  # the start page, the legal pages, /explore: the hub's own, not stored pages
+        if len(parts) >= 2 and parts[1] != "agents" and parts[:2] != ["owner", "e2e-alpha"]:
+            continue  # another project: the same shapes as the first
+        shape = path if "/tasks/" not in path else "card " + parts[-1].split("-", 1)[0]
+        if shape in shapes:
+            continue
+        shapes.add(shape)
+        paths.append(path)
+    # Pages a sitemap leaves out (`noindex` ones among them) but a visitor reaches all the same.
+    paths += [p for p in ("/owner", "/owner/agents", "/owner/agents/e2e-agent") if p not in paths]
+    assert "/owner/e2e-alpha" in paths and any("/tasks/" in p for p in paths), paths
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    refused: list[str] = []
+    page.on("console", lambda m: refused.append(f"{page.url}: {m.text[:160]}") if "Content Security Policy" in m.text else None)
+    for path in paths:
+        for address in (path, path + "?as=public"):
+            answer = page.goto(run.base + address, wait_until="load")
+            if answer is not None and answer.status == 429:
+                # The bucket of earlier steps: wait as the hub says, once.
+                time.sleep(int(answer.headers.get("retry-after", "60")) + 1)
+                answer = page.goto(run.base + address, wait_until="load")
+            assert answer is not None and answer.status == 200, f"{address}: {answer.status if answer else None}"
+    context.close()
+    assert not refused, "\n".join(refused)
 
 
 def request_action_step(run: Run, page: Page) -> None:
@@ -5140,7 +5268,8 @@ def explore_layout(run: Run, browser) -> None:
 def stored_page_layout(run: Run, browser) -> None:
     """A stored public page on its own (`?as=public`) in the frame of §16.7.5, put around it when it
     is served (tsk-tp97v64vpy5z): the landing page's header and footer around the page as stored,
-    the stylesheets loaded, nothing wider than the window, no policy refusal, axe clean."""
+    the stylesheets loaded, the landing page's theme switch and language row (req-q34v0gr2rbw2),
+    nothing wider than the window, no policy refusal, axe clean."""
     for width, height in ((1280, 900), (390, 844)):
         for scheme in ("light", "dark"):
             where = f"/owner/e2e-alpha?as=public at {width}x{height} {scheme}"
@@ -5153,7 +5282,34 @@ def stored_page_layout(run: Run, browser) -> None:
             expect(seen.locator("header.site-header")).to_be_visible()
             expect(seen.locator("footer.site-footer")).to_be_visible()
             expect(seen.locator("main .stored-page h1")).to_be_visible()
-            assert seen.locator("script").count() == 0, f"{where}: a script on the page"
+            # The landing page's controls (req-q34v0gr2rbw2): its one script, the theme switch, the
+            # language row keeping `as=public`.
+            scripts = seen.evaluate("[...document.scripts].map(s => (s.src || 'inline').split('/').pop().split('?')[0])")
+            assert scripts == ["landing.js"], f"{where}: scripts {scripts}"
+            toggle = seen.locator("header.site-header button[data-lp-theme]")
+            expect(toggle).to_have_count(1)
+            # The script shows it (it is `hidden` without one); the landing page's stylesheet keeps
+            # it out of a phone's header, as on the landing page.
+            expect(toggle).not_to_have_attribute("hidden", "")
+            # The language row is the landing page's: the same languages (none on a hub whose
+            # landing page has one), each link keeping `as=public`.
+            hrefs = seen.locator("footer.site-footer p.langs a").evaluate_all(
+                "as => as.map(a => a.getAttribute('href'))"
+            )
+            landing = seen.request.get(f"{run.base}/", headers={"Cookie": ""}).text()
+            tags = re.findall(r'<a href="\?lang=([a-z-]+)" lang="', landing)
+            assert hrefs == [f"?as=public&lang={tag}" for tag in tags], f"{where}: {hrefs}, landing {tags}"
+            if width > 760:
+                expect(toggle).to_be_visible()
+                before = seen.evaluate("getComputedStyle(document.body).backgroundColor")
+                toggle.click()
+                flipped = "dark" if scheme == "light" else "light"
+                expect(seen.locator("html")).to_have_attribute("data-theme", flipped)
+                after = seen.evaluate("getComputedStyle(document.body).backgroundColor")
+                assert after != before, f"{where}: the switch changed nothing ({before})"
+                toggle.click()
+            else:
+                expect(toggle).to_be_hidden()
             sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
             assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
             wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")

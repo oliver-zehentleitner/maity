@@ -52,7 +52,7 @@ def _load(conn: Connection, takeover_id: str, request: Request | None = None) ->
     return takeovers.view(conn, takeovers.load(conn, takeover_id))
 
 
-idempotency.LOADERS["takeover"] = _load
+idempotency.register("takeover", _load, idempotency.in_project(idempotency.column_of(t.takeover)))
 
 
 def _takeover(conn: Connection, mine: Membership, takeover_id: str) -> Any:

@@ -61,7 +61,7 @@ window.Maity = window.Maity || {};
     },
     h("h3", null, M.t("agents.new.title")),
     h("label", { for: "agent-new-handle" }, M.t("agents.handle")), handle,
-    M.handles.explain("agent", handle), h("p", { class: "hint" }, HANDLE.text),
+    M.handles.explain("agent", handle), M.handles.rule(handle),
     h("label", { for: "agent-new-name" }, M.t("agents.display_name")), name,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: cancel }, M.t("agents.new.cancel")), go), status.el);
   }
@@ -169,7 +169,7 @@ window.Maity = window.Maity || {};
     h("label", { for: key("name") }, M.t("agents.display_name")), name,
     h("label", { for: key("handle") }, M.t("agents.handle")), handle,
     M.handles.explain("agent", handle),
-    h("p", { class: "hint" }, HANDLE.text + " " + M.t("agents.edit.handle_hint")),
+    M.handles.rule(handle), h("p", { class: "hint" }, M.t("agents.edit.handle_hint")),
     h("label", { for: key("git-name") }, M.t("agents.edit.git_name")), gitName,
     h("label", { for: key("git-email") }, M.t("agents.edit.git_email")), gitMail,
     h("p", { class: "hint" }, M.t("agents.edit.git_hint")),
