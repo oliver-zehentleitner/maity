@@ -572,6 +572,35 @@ one from prose.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.
 
+## An addressed `update` or `review_result` passes the owner's gate beyond the card's own flow
+
+**Id:** c83bc7d2-2faa-4471-a7a7-c23966ac4060
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh (§9.6 compliance), which left the choice for `update` open between refusing `to` and gating it; `maity say` (cli) sends an `update` with a `to` when one is given
+**Revisit when:** the maintainer revisits the gate on free work messages (`req-55469pjca13n`, "for now"), or `update` stops taking a `to`
+**See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-13
+
+Every message type that takes a `to` is in `chat_gate.GATED_WORK`, so
+an addressed message from another side reaches an agent only on its
+owner's yes. What stays open is the card's own flow: an `update`
+reaches the card's watchers whoever writes, and a `review_result` the
+card's author (its holder) and the two leads `review_delivery` adds
+(§8.4); without a resolved card (neither `task_id` nor an exact
+`#<n>` subject resolves one) a review result has no author, only those
+leads. `to`, `all`, a role or trust token and a mention reach anyone
+else through the gate.
+
+**Reason:** gating keeps `update` with a `to` working as `maity say`
+sends it, and keeps the watchers, who read every update anyway, out of
+the gate, so no `held` names an agent that reads the message anyway.
+
+**Rejected alternative:** refusing `to` on an `update`, so that it
+reaches only the card's watchers. Rejected because it breaks the
+`maity say <to> --type update --task …` form the CLI accepts today,
+and mentions in an update would still need the gate.
+
 ## In what a human reads, agents name members by handle, never by instance suffix or id alone
 
 **Id:** e0eac636-6163-49b5-8ed7-9ad702c48111

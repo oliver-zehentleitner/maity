@@ -19,6 +19,7 @@ from maity_hub import (
     CLI_VERSION,
     attachment_store,
     attachments,
+    card_watches,
     chat_gate,
     chat_request,
     clock,
@@ -646,12 +647,23 @@ def post_message(
                 pinged[token] = m["member_id"]
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
         audience = list(dict.fromkeys([*audience, *pinged]))
+    # The card's own flow stays open (§9.6, "The work channel stays open"): an update's
+    # watchers, a review result's author and two leads (§8.4). `to` and a mention reach anyone
+    # else only through the gate below.
+    passes: list[str] = []
+    # An update's watchers are read once: the gate leaves these agents be, and `events.emit`
+    # stores this same list as the event's private watcher list (§6.4), so a watch or unwatch
+    # committed meanwhile cannot leave an agent exempt but unlisted, or listed but held.
+    watching: list[int] | None = None
     if review is not None:
-        audience = _deliver_review(conn, mine, body.task_id, review, audience)
+        audience, passes = _deliver_review(conn, mine, body.task_id, review, audience)
+    elif body.type == "update" and body.task_id is not None:
+        watching = card_watches.at_write(conn, body.task_id)
+        passes = _watching_agents(conn, watching)
     if body.type == "chat":  # where a chat text may cross the owner boundary (§9.6)
         chat_gate.boundary(conn, mine.project.id, me, body.body, sides)
-    # A free work message from another side reaches an agent only on its owner's yes (§9.6).
-    audience, held = chat_gate.hold(conn, mine.project.id, mine, body.type, audience)
+    # A work message from another side reaches an agent only on its owner's yes (§9.6).
+    audience, held = chat_gate.hold(conn, mine.project.id, mine, body.type, audience, passes)
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -678,6 +690,7 @@ def post_message(
         actor=caller.actor(mine.id),
         subject=("task", body.task_id) if body.task_id else None,
         conversation_id=body.conversation_id,
+        card_watchers=watching,
     )
     attachments.attach(conn, named, seq)
     if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
@@ -689,20 +702,37 @@ def post_message(
     return load_event(conn, str(seq), mine)
 
 
+def _watching_agents(conn: Connection, watching: list[int]) -> list[str]:
+    """The agents among an update's watchers (§6.4, `card_watches.at_write`), the list
+    `events.emit` stores for it: they read it whoever writes, so the gate leaves them be
+    (§9.6)."""
+    if not watching:
+        return []
+    m = t.membership.c
+    return [
+        str(a)
+        for a in conn.execute(
+            select(m.agent_id).where(m.id.in_(watching), m.agent_id.is_not(None))
+        ).scalars()
+    ]
+
+
 def _deliver_review(
     conn: Connection,
     mine: Membership,
     task_id: str | None,
     review: dict[str, Any],
     audience: list[str],
-) -> list[str]:
-    """A review result's author and both leads (§8.4). The author's instance takes the place
-    of the author's `member:` token that `to` or a mention put in the audience, and is added
-    unless the audience holds that same instance token. A member token (a lead, or an author whose
-    card was claimed for the team) is added unless `to` or a mention reaches the member
-    already: one of its role or trust tokens, or a token of its own. `all` counts for
-    neither: it does not wake a supervised member, and beside it an added token wakes
-    only such a one. One that then reaches nobody but its sender is `invalid`."""
+) -> tuple[list[str], list[str]]:
+    """A review result's author and both leads (§8.4), and those members: the card's own flow,
+    which the §9.6 gate leaves open; without a resolved card (neither `task_id` nor the
+    exact-PR subject names one, §8.4) only the leads. The author's instance takes
+    the place of the author's `member:` token that `to` or a mention put in the audience, and is
+    added unless the audience holds that same instance token. A member token (a lead, or an
+    author whose card was claimed for the team) is added unless `to` or a mention reaches the
+    member already: one of its role or trust tokens, or a token of its own. `all` counts for
+    neither: it does not wake a supervised member, and beside it an added token wakes only such
+    a one. One that then reaches nobody but its sender is `invalid`."""
     sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
     found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
     for r in found:
@@ -732,7 +762,7 @@ def _deliver_review(
     audience = list(dict.fromkeys([*audience, *added]))
     if set(audience) <= {f"member:{mine.principal_id}"}:
         raise invalid({"to": "required"}, "a review result that reaches nobody but its sender")
-    return audience
+    return audience, [r.member_id for r in found]
 
 
 def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:
