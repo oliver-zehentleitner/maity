@@ -282,9 +282,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     ).one()
     if target.active is None:  # removed meanwhile: nothing left to change
         return
-    proposer = conn.execute(
-        select(t.membership).where(t.membership.c.id == request.asked_by)
-    ).first()
+    # An isolated or suspended manager acts on nobody's line, a go given later included.
+    proposer = proposals.proposer_row(conn, request)
     found = reach(conn, proposer) if proposer is not None else {}
     if proposer is None or target.id not in found:
         raise ApiError(409, "not_in_line", "the member is no longer in the manager's reach")

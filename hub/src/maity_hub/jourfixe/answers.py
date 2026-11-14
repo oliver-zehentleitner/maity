@@ -131,9 +131,10 @@ def answer_reader(round_row: Any, mine: Any) -> bool:
     return in_admin_team(mine.trust, mine.role)
 
 
-def readers_see_all(round_row: Any, mine: Any) -> bool:
-    """The moderator and the answer readers read every answer (§20.3)."""
-    if mine.principal_id == round_row.moderator["member_id"]:
+def readers_see_all(conn: Connection, round_row: Any, mine: Any) -> bool:
+    """The moderator, while it holds the right, and the answer readers read every answer
+    (§20.3)."""
+    if circle.moderates(conn, round_row, mine):
         return True
     return answer_reader(round_row, mine)
 
@@ -150,7 +151,7 @@ def listed(conn: Connection, round_row: Any, mine: Any, only_mine: bool) -> list
     authors = principal_ids(conn, (r.author for r in rows if r.author is not None))
     if only_mine:
         return [_view(r, authors, mine) for r in rows if _is_own(round_row, r, mine)]
-    if not readers_see_all(round_row, mine):
+    if not readers_see_all(conn, round_row, mine):
         raise not_found()
     return [_view(r, authors, mine) for r in rows]
 

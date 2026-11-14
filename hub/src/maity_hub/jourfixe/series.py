@@ -9,6 +9,7 @@ kept by the humans with `project:admin` and read by every member.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from sqlalchemy import Connection, delete, func, insert, select, update
@@ -35,6 +36,10 @@ SCHEDULE_FIELDS = (
     "report_window_hours",
 )
 Sight = Literal["full", "existence"]
+# A changed schedule opens no slot sooner than this after the last round its schedule opened
+# (§20.1): one scheduled round a day, which a change cannot multiply. Below 23 hours, the
+# shortest gap between two days' slots across a DST change.
+REST_AFTER_ROUND = timedelta(hours=20)
 
 
 def keeper_refused() -> ApiError:
@@ -354,7 +359,7 @@ def update_series(
         values["config"] = config
     if given or ("enabled" in fields and enabled and not series.enabled):
         now = clock.now()  # no slot before the change is caught up (§20.1)
-        values.update(anchor=now, last_slot=now)
+        values.update(anchor=now, last_slot=max(now, _rested(conn, series.id, now)))
     if values:
         conn.execute(
             update(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series.id).values(**values)
@@ -364,17 +369,32 @@ def update_series(
     return row
 
 
+def _rested(conn: Connection, series_id: str, now: datetime) -> datetime:
+    """When the series' schedule may open its next round: `REST_AFTER_ROUND` after the last
+    round it opened, or `now` when it opened none."""
+    r = t.jour_fixe_round.c
+    last: datetime | None = conn.execute(
+        select(func.max(r.scheduled_for)).where(
+            r.series_id == series_id, r.trigger == "schedule", r.opened_at.is_not(None)
+        )
+    ).scalar()
+    return now if last is None else last + REST_AFTER_ROUND
+
+
 def delete_series(
     conn: Connection, project: Any, series: Any, mine: Membership, actor: Actor
 ) -> dict[str, Any]:
-    """`DELETE …/jour-fixe/series/{jfs}` (§20.1): `200` with its final state. A round of it
+    """`DELETE …/jour-fixe/series/{jfs}` (§20.1): `200` with its final state as the caller
+    sees it. A round of it
     that is not yet final runs to its end; its rounds lose the reference, and keep the
     series' id, topic and circle in the `config` they opened with (`views.series_fields`)."""
     if not may_delete(series, mine):
         raise keeper_refused()
     from maity_hub.jourfixe import moderators as rights
 
-    final = view(conn, series)
+    # what the deleting party may see of it: an admin deleting an owner's series is told that
+    # it existed, not its topic or moderators (§20.1, "Who sees a series")
+    final = view(conn, series, sight(conn, series, mine) or "existence")
     audience = seen_by(conn, series)
     rows = grants(conn, series.id)
     conn.execute(

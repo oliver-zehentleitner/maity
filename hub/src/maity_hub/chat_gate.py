@@ -38,9 +38,10 @@ from maity_hub.scopes import tokens_of
 
 DENIED = "denied_participant"
 # Whether a jour fixe round's moderator that waits in the round's thread is held back from
-# the statement step too, as from the steps it is eligible for (§9.6): on, by the maintainer's
-# answer o2 to req-a89crp06kjf3 ("gesperrt bis Owner zustimmt", the request's wording).
-# The one switch point: `moderator_held` reads it, `jourfixe.exchange` asks that.
+# its own writes too (the statement, a further step, the report), as from the steps it is
+# eligible for (§9.6): on, by the maintainer's answer o2 to req-a89crp06kjf3 ("gesperrt bis
+# Owner zustimmt", the request's wording). The one switch point: `moderator_held` reads it,
+# `jourfixe.exchange` and `jourfixe.triage` ask that.
 MODERATOR_WAITS = True
 # The work messages an owner's yes gates like chat (§9.6, "Free work messages from another
 # side"): every message type that takes a `to` (all of `routes/events.MESSAGE_TYPES` but `chat`,
@@ -355,8 +356,8 @@ def waiting(conn: Connection, conversation_id: str, membership_id: int) -> bool:
 
 
 def moderator_held(conn: Connection, conversation_id: str | None, membership_id: int) -> bool:
-    """Whether the round's moderator is held back from the statement step: only when
-    `MODERATOR_WAITS` is on and it waits in the round's thread."""
+    """Whether the round's moderator is held back from its writes (the statement, a further
+    step, the report): only when `MODERATOR_WAITS` is on and it waits in the round's thread."""
     return bool(
         MODERATOR_WAITS and conversation_id and waiting(conn, conversation_id, membership_id)
     )
