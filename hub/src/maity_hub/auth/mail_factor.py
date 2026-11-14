@@ -20,6 +20,7 @@ from sqlalchemy import Connection, select, true, update
 
 from maity_hub import catalog, clock
 from maity_hub import tables as t
+from maity_hub.auth import totp
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, rate_limited
 from maity_hub.mail import outbox
@@ -45,12 +46,6 @@ def _code_mac(key: bytes, id_hash: str, code: str) -> str:
     return hmac.new(key, f"mail-factor-code:{id_hash}:{code}".encode(), hashlib.sha256).hexdigest()
 
 
-def normalise_code(value: str) -> str | None:
-    """The six digits, spaces ignored."""
-    text = value.replace(" ", "")
-    return text if len(text) == 6 and text.isascii() and text.isdigit() else None
-
-
 def _key(hub: Settings) -> bytes | None:
     return hub.mail.signing_key
 
@@ -62,13 +57,9 @@ def mail_ready(conn: Connection, hub: Settings) -> bool:
 
 
 def address_of(conn: Connection, human_id: str) -> Any:
-    """The human's notification row when its address is verified, else None."""
-    row = conn.execute(
-        select(t.notification_settings).where(t.notification_settings.c.human_id == human_id)
-    ).first()
-    if row is None or row.address_status != "verified" or row.address is None:
-        return None
-    return row
+    """The human's notification row when its address is verified, else None. Kept for
+    `second_factor`, which moves to `preferences.verified_row` after #1756."""
+    return preferences.verified_row(conn, human_id)
 
 
 def ever_had_address(conn: Connection, human_id: str) -> bool:
@@ -131,7 +122,7 @@ def send(
     key = _key(hub)
     if key is None or not mail_ready(conn, hub):
         raise ApiError(409, "mail_not_configured", "the instance's mail settings are not complete")
-    address = address_of(conn, row.human_id)
+    address = preferences.verified_row(conn, row.human_id)
     if address is None:
         raise ApiError(409, "address_unverified", "the account has no verified address")
     now = clock.now()
@@ -143,7 +134,7 @@ def send(
     if wait:
         raise rate_limited(wait)
     token = secrets.token_urlsafe(32)
-    code = f"{secrets.randbelow(1_000_000):06d}"
+    code = totp.new_six()
     stored = conn.execute(
         update(t.human_session)
         .where(t.human_session.c.id_hash == row.id_hash)
@@ -203,7 +194,7 @@ def check(
         return False
     column = t.human_session.c
     if code is not None:
-        text = normalise_code(code)
+        text = totp.normalise_six(code)
         if text is None:
             return False
         match = column.mail_code_mac == _code_mac(key, row.id_hash, text)
@@ -239,13 +230,13 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
     """Mail the admin in session `row` the code that turns `email` on (§2.8.8, "Turning it on"):
     proof that a mail of this hub arrived, not just that the server took it."""
     key = _key(hub)
-    address = address_of(conn, row.human_id)
+    address = preferences.verified_row(conn, row.human_id)
     if key is None or address is None:  # the caller refused both before it came here
         raise ApiError(409, "mail_not_configured", "the instance's mail settings are not complete")
     wait = BY_HUMAN.hit(row.human_id)
     if wait:
         raise rate_limited(wait)
-    code = f"{secrets.randbelow(1_000_000):06d}"
+    code = totp.new_six()
     conn.execute(
         update(t.human_session)
         .where(t.human_session.c.id_hash == row.id_hash)
@@ -267,7 +258,7 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
 
 
 def check_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str, code: str) -> bool:
-    key, text = _key(hub), normalise_code(code)
+    key, text = _key(hub), totp.normalise_six(code)
     if key is None or text is None:
         return False
     if row.mail_sent_at is None or clock.now() - row.mail_sent_at >= LIFETIME:
@@ -279,7 +270,7 @@ def check_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str, co
 def address_hint(conn: Connection, human_id: str) -> str | None:
     """The verified address as the second step may show it: its first character and its domain
     (§2.8.7). None without one."""
-    row = address_of(conn, human_id)
+    row = preferences.verified_row(conn, human_id)
     if row is None:
         return None
     local, _, domain = str(row.address).rpartition("@")

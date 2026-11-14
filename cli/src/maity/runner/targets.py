@@ -12,8 +12,9 @@ not a reason).
 from __future__ import annotations
 
 import os
+import re
 import shlex
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import capabilities, config
@@ -26,6 +27,8 @@ UNIX_PATH_MAX = 108  # sun_path, with its terminating NUL: ssh's ControlPath mus
 CONTROL_SUFFIX = 17  # `.` + 16 random characters: ssh binds the master's socket under this first
 SANDBOX_TOOLS = ("bwrap", "socat")
 # Each argument with where the host's PATH finds it (empty when nowhere); names are data.
+# A path the runner puts into a command line and a settings file as it is.
+REMOTE_PATH = re.compile(r"^/[A-Za-z0-9._/+-]*$")
 WHICH = 'for b; do printf "%s\\t%s\\n" "$b" "$(command -v -- "$b")"; done'
 
 
@@ -40,6 +43,8 @@ class Target:
     tmux_socket: Path | None = None
     probes: dict[str, capabilities.Probe] = field(default_factory=dict)
     sandbox: dict[str, bool] = field(default_factory=dict)  # harness id -> its OS sandbox
+    # Harnesses whose sandbox is off for their version alone (capabilities.sandbox_held).
+    held: set[str] = field(default_factory=set)
     backend: Tmux | None = None
     reachable: bool = True
     unreachable_since: float | None = None
@@ -70,7 +75,10 @@ class Target:
         home = self.as_user.home()  # Unreachable, or OSError for a host set up wrong
         self.agent_files = home / AGENT_FILES
         self.tmux_socket = self.agent_files / "tmux.sock"
-        self.probes, self.sandbox = probe_remote(self.as_user, harnesses, self.agent_path)
+        self.as_user = pin_maity(self.as_user, self.agent_path)
+        self.probes, self.sandbox, self.held = probe_remote(
+            self.as_user, harnesses, self.agent_path
+        )
         self.backend = Tmux(
             socket=self.tmux_socket,
             conf=self.agent_files / "tmux.conf",
@@ -90,6 +98,12 @@ def local(
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
     as_user = AsUser(cfg.local.agent_user if cfg.local.layout == "agent_user" else None)
     path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
+    tools = {h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user)
+             for h in cfg.harnesses}  # fmt: skip
+
+    def version(harness_id: str) -> str | None:
+        return probes[harness_id].version if harness_id in probes else None
+
     if backend is None:
         home = str(config.home_of(as_user.user)) if as_user.user else os.environ.get("HOME", "")
         backend = Tmux(
@@ -110,11 +124,8 @@ def local(
         agent_files=cfg.local.agent_files,
         tmux_socket=cfg.local.tmux_socket,
         probes=probes,
-        sandbox={
-            h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user)
-            and capabilities.sandbox_version_ok(h, probes[h].version if h in probes else None)
-            for h in cfg.harnesses
-        },
+        sandbox={h: tools[h] and capabilities.sandbox_version_ok(h, version(h)) for h in tools},
+        held={h for h in tools if capabilities.sandbox_held(h, tools[h], version(h))},
         backend=backend,
     )
 
@@ -156,11 +167,29 @@ def build(cfg: config.Config, probes: dict[str, capabilities.Probe]) -> list[Tar
     return [local(cfg, probes)]
 
 
+def pin_maity(as_user: AsUser, agent_path: str) -> AsUser:
+    """An ssh target's `as_user` with `maity` as the absolute path the host's agent_path
+    finds it at, once, on connecting: the hook and the loop then start that one, whatever
+    else a session's PATH holds. OSError when the host has none (the host is set up wrong)."""
+    if not isinstance(as_user, Ssh):
+        return as_user  # here: this interpreter, by its absolute path (AsUser.maity)
+    done = as_user.run(["sh", "-c", WHICH, "sh", "maity"], env={"PATH": agent_path})
+    if done.returncode == SSH_UNREACHABLE:
+        raise Unreachable(done.stderr.strip()[:200])
+    paths = dict(line.split("\t", 1) for line in done.stdout.splitlines() if "\t" in line)
+    found = paths.get("maity", "")
+    if not found.startswith("/") or not REMOTE_PATH.match(found):
+        raise OSError(f"{as_user.name}: `maity` is not on agent_path ({agent_path}) as a plain"
+                      " absolute path; the runner refuses the host")  # fmt: skip
+    return replace(as_user, maity_path=found)
+
+
 def probe_remote(
     as_user: AsUser, harnesses: dict[str, config.Harness], agent_path: str
-) -> tuple[dict[str, capabilities.Probe], dict[str, bool]]:
+) -> tuple[dict[str, capabilities.Probe], dict[str, bool], set[str]]:
     """The harness binaries and sandbox tools as the host's own PATH finds them, through
-    one fixed `sh -c` template whose arguments are the configured binary names."""
+    one fixed `sh -c` template whose arguments are the configured binary names; with the
+    harnesses whose sandbox is off for their version alone (capabilities.sandbox_held)."""
     found: dict[str, capabilities.Probe] = {}
     names = sorted({h.binary for h in harnesses.values() if h.binary} | set(SANDBOX_TOOLS))
     done = as_user.run(["sh", "-c", WHICH, "sh", *names], env={"PATH": agent_path})
@@ -185,6 +214,7 @@ def probe_remote(
         found[harness.id] = capabilities.Probe(path, text, None)
     tools = all(paths.get(tool) for tool in SANDBOX_TOOLS)
     sandbox: dict[str, bool] = {}
+    held: set[str] = set()
     for harness in harnesses.values():
         if harness.id == "codex":  # tried on the host, as the local target tries it here
             codex = found[harness.id].path
@@ -201,4 +231,6 @@ def probe_remote(
                 and tools
                 and capabilities.sandbox_version_ok(harness.id, found[harness.id].version)
             )
-    return found, sandbox
+            if capabilities.sandbox_held(harness.id, tools, found[harness.id].version):
+                held.add(harness.id)
+    return found, sandbox, held

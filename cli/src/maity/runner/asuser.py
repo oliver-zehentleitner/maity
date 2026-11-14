@@ -261,6 +261,7 @@ class Ssh(AsUser):
     identity: str = "agent"  # "agent": the operator's SSH_AUTH_SOCK; otherwise a key file
     control_dir: Path = Path()
     agent_path: str = ""  # the host's PATH for its `maity` (targets.ssh_hosts)
+    maity_path: str = "maity"  # the host's `maity`, absolute once connected (targets.pin_maity)
 
     @property
     def direct(self) -> bool:
@@ -272,15 +273,15 @@ class Ssh(AsUser):
 
     @property
     def maity(self) -> list[str]:
-        return ["maity"]  # the host's own install, on its PATH
+        return [self.maity_path]  # the host's own install
 
     def runner_module(self, name: str) -> list[str]:
         """The host's interpreter is not this one: its `maity`, through an internal
         subcommand (`maity runner loop`, `maity runner stub`)."""
-        return ["maity", "runner", name]
+        return [self.maity_path, "runner", name]
 
     def module_env(self) -> dict[str, str] | None:
-        """The host's `maity` is found on the configured agents' PATH."""
+        """The host's `maity` (`maity_path`) runs with the configured agents' PATH."""
         return {"PATH": self.agent_path} if self.agent_path else None
 
     def ssh(self) -> list[str]:
