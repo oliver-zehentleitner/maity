@@ -26,8 +26,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import state
+from . import limitread
 
 TIMEOUT = 60.0
+# A read on the agents' side: a few kilobytes, or a log's next chunk.
+READ_TIMEOUT = 20.0
 # `write` on the agents' side: $1 the directory, $2 the file; the text on stdin. A link at the
 # path is removed first (`mv` would otherwise move into a linked directory), a directory there
 # is refused, and the temporary file is removed when a step fails. Every `--` comes before the
@@ -131,20 +134,39 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
 
-    def read(self, path: Path, offset: int = 0) -> bytes:
-        """The file's bytes from `offset` on."""
+    def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
+        """At most `limit` bytes of the file from `offset` on: a regular file only, reached
+        from `under` (the clone, the agents' files, their home) without following a link on
+        the way, never waiting on a FIFO (limitread), within READ_TIMEOUT on the agents' side.
+        OSError otherwise; limitread.Behind for an offset past the end."""
         if self.direct:
-            with path.open("rb") as fh:
-                fh.seek(offset)
-                return fh.read()
-        done = subprocess.run(  # noqa: S603 - fixed argv
-            self.argv(["tail", "-c", f"+{offset + 1}", "--", str(path)]), capture_output=True,
-            stdin=subprocess.DEVNULL, timeout=TIMEOUT,
-            check=False,
-        )  # fmt: skip
-        if done.returncode != 0:
+            return limitread.take(str(path), offset, limit, under=str(under))
+        argv = [*self.runner_module("limitread"), "--under", str(under), "--bytes", str(limit),
+                "--offset", str(offset), str(path)]  # fmt: skip
+        try:
+            done = subprocess.run(  # noqa: S603 - fixed argv
+                self.argv(argv, self.module_env()), capture_output=True,
+                stdin=subprocess.DEVNULL, timeout=READ_TIMEOUT, check=False,
+            )  # fmt: skip
+        except subprocess.TimeoutExpired:
+            raise OSError(f"reading {path} on the agents' side did not end in time") from None
+        if done.returncode == limitread.BEHIND:
+            raise limitread.Behind(f"{path} is shorter than {offset} bytes")
+        if done.returncode != 0 or len(done.stdout) > limit:
             raise OSError(f"cannot read {path} on the agents' side")
         return done.stdout
+
+    def read_whole(self, path: Path, limit: int, *, under: Path) -> bytes:
+        """The whole file, as `read` reads it; OSError when it holds more than `limit` bytes."""
+        data = self.read(path, limit=limit + 1, under=under)
+        if len(data) > limit:
+            raise OSError(f"{path} is larger than {limit} bytes")
+        return data
+
+    def module_env(self) -> dict[str, str] | None:
+        """The environment the runner's own modules get on the agents' side: none here, where
+        `runner_module` names this interpreter."""
+        return None
 
     def tree(self, path: Path) -> list[tuple[str, str, int]]:
         """Everything under a directory on the agents' side, which may be closed to the
@@ -164,7 +186,10 @@ class AsUser:
                             else "f" if stat.S_ISREG(mode.st_mode) else "?")  # fmt: skip
                     found.append((full.relative_to(path).as_posix(), kind, mode.st_size))
             return found
-        done = self.run(["find", str(path), "-mindepth", "1", "-printf", "%y %s %P\\0"])
+        try:
+            done = self.run(["find", str(path), "-mindepth", "1", "-printf", "%y %s %P\\0"])
+        except subprocess.TimeoutExpired:
+            raise OSError(f"listing {path} on the agents' side did not end in time") from None
         if done.returncode != 0:
             raise OSError(f"cannot list {path} on the agents' side")
         entries = []
@@ -235,6 +260,7 @@ class Ssh(AsUser):
     known_hosts: Path = Path()
     identity: str = "agent"  # "agent": the operator's SSH_AUTH_SOCK; otherwise a key file
     control_dir: Path = Path()
+    agent_path: str = ""  # the host's PATH for its `maity` (targets.ssh_hosts)
     maity_path: str = "maity"  # the host's `maity`, absolute once connected (targets.pin_maity)
 
     @property
@@ -253,6 +279,10 @@ class Ssh(AsUser):
         """The host's interpreter is not this one: its `maity`, through an internal
         subcommand (`maity runner loop`, `maity runner stub`)."""
         return [self.maity_path, "runner", name]
+
+    def module_env(self) -> dict[str, str] | None:
+        """The host's `maity` (`maity_path`) runs with the configured agents' PATH."""
+        return {"PATH": self.agent_path} if self.agent_path else None
 
     def ssh(self) -> list[str]:
         command = [
