@@ -534,6 +534,81 @@ delete what the agent left there.
 - Leaving agy's mode as it comes: `auto` lets a model decide whether a
   command leaves the sandbox.
 
+## agy's sandbox counts as on where its namespaces start for the agents' user
+
+**Id:** 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; agy 1.5.7's `--help`, its changelog and its built-in documentation; docs/api.md §15.3
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** agy gains a command that starts its sandbox alone, or a setting that fails a run when the sandbox is missing; or a real run shows agy's sandbox failing where the namespaces start
+
+The runner advertises `sandbox: on` for agy where `unshare --user
+--map-root-user --mount --pid --fork --net true` succeeds as the agents'
+user (on an ssh host, there), tried once per service start, on Linux
+only. Without it the placement still starts, as the other harnesses do
+(`sandbox_unavailable`), unless `require_sandbox = true`.
+
+**Reason:** §15.3 lets the runner say `on` only where it has seen agy's
+sandbox start, because agy runs a command without it, silently, where it
+cannot start. agy 1.5.7 has no command that starts only its sandbox, as
+`codex sandbox -- true` does for Codex. Its changelog names blocked
+unprivileged user namespaces as the Linux case where the sandbox cannot
+run, so the probe tries those namespaces. That is the precondition, not
+agy's sandbox itself: Evidence stays inferred until a real session on a
+host where the probe fails has been watched.
+
+**Rejected alternatives:**
+- A headless `agy -p` run that executes one command: it needs the
+  operator's sign-in, costs model quota at every service start, and its
+  answer is the model's text, not an exit code.
+- Always `off` until someone confirms by hand: with the sandbox off,
+  `proceed-in-sandbox` falls back to asking, which a supervised run
+  refuses, so no agent could run a command.
+
+## agy's session settings: prefixes for grants, the sign-in denied, hosts allowed
+
+**Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; the test runs of agy 1.5.7 in the notes of card tsk-e062xzrgfxxc; agy's built-in documentation of its rule forms; `agy --settings <file> agents` in a home of its own, which refuses unknown settings and values but not malformed rules
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** a real session shows a rule form not matching as assumed, or git cannot reach the forge from agy's sandbox
+
+Details of the settings §15.3 describes, chosen in the code:
+
+- A grant's `allow` entry becomes `command(<prefix>)`: the words before
+  a closing ` *`; an entry with another `*` is left out. Only the prefix
+  form was seen to work in a run; agy accepts a malformed rule at start
+  without a word, so an unverified form (`regex:`) could silently match
+  nothing. The cost: an entry without ` *` allows any arguments, and a
+  left-out entry still runs inside the sandbox, as every unlisted
+  command does.
+- The file tools are denied the private paths every sandbox hides, but
+  for `~/.gemini` only agy's sign-in file: agy's sandboxed commands use
+  their scratch and artifact directories there. Other harnesses' sandboxes
+  hide all of `~/.gemini`.
+- Writes to GIT_PROTECTED are denied to the file tools, as Claude Code's
+  `Edit` denies are. Whether such a deny also makes the path read-only in
+  agy's sandbox, as the `.git/maity` read deny masked that directory in
+  the test, is unknown, so each session gets SANDBOX_GIT_CONFIG as well;
+  the three settings do no harm where `.git/config` stays writable.
+- `read_url(<host>)` for the hub, the forge and the grant's `network`
+  hosts, agy's documented rule for a domain, so git and `maity`'s
+  traffic may get out of the sandbox's network block. Not seen in a run.
+- `command(...)` denies only for prefixes (`git -c`, `git --config-env`,
+  `git --exec-path`, `gh`); git is not allowed at all and runs in the
+  sandbox, as §15.3 lists only `maity` and the grant.
+
+**Rejected alternatives:**
+- Denying all of `~/.gemini` to agy as well: it could break agy's own
+  sandboxed scratch, unseen.
+- Mapping grants with agy's `regex:` form to keep Claude Code's exact
+  match: no run showed how agy anchors it.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908

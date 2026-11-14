@@ -238,10 +238,14 @@ def sandbox_available(
     """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
     needs its tools (`claude_sandbox_tools`, §6.1) found on the agents' PATH. Codex's is
     tried once per binary (`codex sandbox -- true`): a host where it cannot start is not
-    advertised as sandboxed. Nothing else is switched on yet."""
+    advertised as sandboxed. agy's needs unprivileged namespaces on Linux, tried once
+    (`agy_sandbox_starts`). Nothing else is switched on yet."""
     if harness.id == "codex":
         binary = which(harness.binary or "codex", path, as_user)
         return binary is not None and _codex_sandbox_starts(binary, as_user.user)
+    if harness.id == "antigravity":
+        unshare = which("unshare", path, as_user) if agy_sandbox_platform() else None
+        return unshare is not None and _agy_sandbox_starts(unshare, as_user.user)
     tools = claude_sandbox_tools()
     if harness.id != "claude-code" or tools is None:
         return False
@@ -271,6 +275,39 @@ def _codex_sandbox_starts(binary: str, user: str | None = None) -> bool:
     except (proc.ToolError, subprocess.TimeoutExpired):
         return False
     return done.returncode == 0
+
+
+# agy's terminal sandbox on Linux runs each command in kernel namespaces of its own, which
+# needs unprivileged user namespaces; where they are blocked agy runs the command without it,
+# and without saying so (§15.3). agy has no command that starts its sandbox alone (as
+# `codex sandbox` does) and a headless run costs the operator's model quota, so the runner
+# tries the namespaces agy's sandbox needs, as the agents' user: user, mount, pid and network
+# (cli/context/runner.md). `sandbox: on` means they start here, not that agy was seen in them.
+AGY_SANDBOX_PROBE = ("--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "true")
+
+
+def agy_sandbox_platform(platform: str | None = None) -> bool:
+    """Where the runner knows agy's sandbox and how to try it: Linux only. Elsewhere agy runs
+    unsandboxed as far as the runner can tell (`sandbox: off`)."""
+    return (sys.platform if platform is None else platform).startswith("linux")
+
+
+@functools.lru_cache(maxsize=8)
+def _agy_sandbox_starts(unshare: str, user: str | None = None) -> bool:
+    """Once per `unshare` and agents' user for the service's lifetime, like Codex's."""
+    try:
+        if user:
+            done = AsUser(user).run([unshare, *AGY_SANDBOX_PROBE], timeout=30)
+        else:
+            done = proc.run([unshare, *AGY_SANDBOX_PROBE], cwd=Path.home(), timeout=30)
+    except (proc.ToolError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0
+
+
+def agy_login(as_user: AsUser = RUNNER) -> Path:
+    """Where agy keeps its sign-in for the agents' user without a keyring (never read)."""
+    return as_user.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
 
 
 def agent_path(cfg: config.Config, environ_path: str) -> str:

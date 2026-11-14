@@ -145,7 +145,9 @@ def _run(argv: list[str], env: dict[str, str]) -> int:
     return subprocess.run(argv, env={**os.environ, **env}, check=False).returncode  # noqa: S603
 
 
-def _wait() -> tuple[int, str, str]:
+def _wait(cwd: str | None = None) -> tuple[int, str, str]:
+    """`maity wait` in the clone (`cwd`): the harness may start elsewhere, as agy does in the
+    workspace folder that holds the clone (§15.5); None, the loop's own directory."""
     done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
         [
             sys.executable,
@@ -161,6 +163,7 @@ def _wait() -> tuple[int, str, str]:
         capture_output=True,
         text=True,
         check=False,
+        cwd=cwd,
     )
     return done.returncode, done.stdout, done.stderr
 
@@ -171,7 +174,8 @@ def main(args: Sequence[str] | None = None) -> int:
     options = parser.parse_args(args)
     with open(options.spec, encoding="utf-8") as fh:
         spec = json.load(fh)
-    return Loop(spec, _run, _wait).main()
+    clone = spec.get("clone")
+    return Loop(spec, _run, lambda: _wait(clone if isinstance(clone, str) else None)).main()
 
 
 if __name__ == "__main__":

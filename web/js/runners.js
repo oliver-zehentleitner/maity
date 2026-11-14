@@ -25,7 +25,8 @@ window.Maity = window.Maity || {};
   // ---- plain words for what a runner advertises (shared with Project → Runners)
 
   const TOOLS = {
-    "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", pi: "pi", hermes: "Hermes",
+    "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", antigravity: "Antigravity",
+    pi: "pi", hermes: "Hermes",
     kimi: "Kimi Code", cline: "Cline", omp: "oh-my-pi", get stub() { return M.t("runners.tool.stub"); },
   };
   const toolName = (id) => (Object.hasOwn(TOOLS, id) ? TOOLS[id] : id);
