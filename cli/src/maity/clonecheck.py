@@ -74,9 +74,10 @@ GIT_FILES = frozenset({
     "MERGE_HEAD", "MERGE_MODE", "MERGE_MSG", "ORIG_HEAD", "REVERT_HEAD", "config",
     "description", "gc.log", "index", "index.lock", "packed-refs", "shallow",
 })  # fmt: skip
+# `maity-files`: attachments `maity files get` saves under a placement (inclone.create_in_git).
 GIT_DIRS = frozenset({
-    "branches", "hooks", "info", "logs", "maity", "objects", "rebase-apply", "rebase-merge",
-    "refs", "sequencer",
+    "branches", "hooks", "info", "logs", "maity", "maity-files", "objects", "rebase-apply",
+    "rebase-merge", "refs", "sequencer",
 })  # fmt: skip
 INFO_FILES = frozenset({"exclude", "refs"})
 # Other object stores git would read from (and, over http, fetch from).
