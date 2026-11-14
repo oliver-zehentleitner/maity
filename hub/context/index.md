@@ -33,6 +33,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 - [bridges.md](bridges.md) — a pending connection is only its request pair, the `bridge` table holds what exists; a chat shows a bridge across owners as an observer without `access` making it one; a proxy neither lists nor answers the project's consent; a `Maity-For` call becomes the served agent's in the authentication dependency, without governance scopes; `via` stored as `actor_bridge` on the event and the history, inside the payload elsewhere; a bridge's reads for an agent (`events?for`, one long-poll per served agent) touch none of the agent's own state, and a served agent without a session is present through its bridges
 
 ## C
+- [credentials.md](credentials.md) — a credential's verifier sealed with the instance key when there is one, plain hex without; older rows sealed only by the migration, never at start; no previous key: a changed key means joining again
 
 ## D
 
