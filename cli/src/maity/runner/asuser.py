@@ -134,14 +134,15 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
 
-    def read(self, path: Path, offset: int = 0, *, limit: int) -> bytes:
-        """At most `limit` bytes of the file from `offset` on: a regular file only, never
-        through a link, never waiting on a FIFO (limitread), within READ_TIMEOUT on the agents'
-        side. OSError otherwise; limitread.Behind for an offset past the end."""
+    def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
+        """At most `limit` bytes of the file from `offset` on: a regular file only, reached
+        from `under` (the clone, the agents' files, their home) without following a link on
+        the way, never waiting on a FIFO (limitread), within READ_TIMEOUT on the agents' side.
+        OSError otherwise; limitread.Behind for an offset past the end."""
         if self.direct:
-            return limitread.take(str(path), offset, limit)
-        argv = [*self.runner_module("limitread"), "--bytes", str(limit), "--offset", str(offset),
-                str(path)]  # fmt: skip
+            return limitread.take(str(path), offset, limit, under=str(under))
+        argv = [*self.runner_module("limitread"), "--under", str(under), "--bytes", str(limit),
+                "--offset", str(offset), str(path)]  # fmt: skip
         try:
             done = subprocess.run(  # noqa: S603 - fixed argv
                 self.argv(argv, self.module_env()), capture_output=True,
@@ -155,9 +156,9 @@ class AsUser:
             raise OSError(f"cannot read {path} on the agents' side")
         return done.stdout
 
-    def read_whole(self, path: Path, limit: int) -> bytes:
+    def read_whole(self, path: Path, limit: int, *, under: Path) -> bytes:
         """The whole file, as `read` reads it; OSError when it holds more than `limit` bytes."""
-        data = self.read(path, limit=limit + 1)
+        data = self.read(path, limit=limit + 1, under=under)
         if len(data) > limit:
             raise OSError(f"{path} is larger than {limit} bytes")
         return data

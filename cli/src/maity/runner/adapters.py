@@ -416,7 +416,11 @@ def hide_placeholders(ctx: Context) -> None:
     lines: list[str] = []
     if ctx.as_user.exists(path, "-f"):
         try:
-            lines = ctx.as_user.read_whole(path, EXCLUDE_MAX).decode("utf-8").splitlines()
+            lines = (
+                ctx.as_user.read_whole(path, EXCLUDE_MAX, under=ctx.clone)
+                .decode("utf-8")
+                .splitlines()
+            )
         except (OSError, UnicodeDecodeError):  # rewriting it could change bytes not ours
             return
     kept, had_block = _without_block(lines)

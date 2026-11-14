@@ -5,7 +5,7 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -1047,11 +1047,11 @@ def test_a_clones_git_config_is_read_safely_and_bounded(tmp_path: Path, kind: st
     plant(tmp_path / ".git" / "config", kind)
     assert within(10, workspace.origin, tmp_path) is None
     with pytest.raises(OSError):
-        within(10, RUNNER.read_whole, tmp_path / ".git" / "config", 1024)
+        within(10, lambda: RUNNER.read_whole(tmp_path / ".git" / "config", 1024, under=tmp_path))
 
     # What `gc` and maity under the runner read with: a plain file up to the limit only.
     def local() -> bytes:
-        return clonecheck.LOCAL.read(tmp_path / ".git" / "config", limit=1024)
+        return clonecheck.LOCAL.read(tmp_path / ".git" / "config", limit=1024, under=tmp_path)
 
     if kind == "sparse":
         assert within(10, local) == b"\0" * 1024
@@ -1164,6 +1164,83 @@ def test_a_pane_log_is_held_to_its_limit_with_the_newest_output(tmp_path: Path) 
     assert 0 < len(kept) <= 1000
     assert kept.endswith(chunks[-1])  # the newest output stays
     assert not (tmp_path / "plc-0003.log.cut").exists()
+
+
+def _pane(log: Path, limit: int) -> tuple[int, Callable[[], int]]:
+    """logcap writing `log` from a pipe in a thread: the pipe's write end, and a call that
+    closes it and returns logcap's exit code."""
+    import threading
+
+    from maity.runner import logcap
+
+    read, write = os.pipe()
+    done: list[int] = []
+    thread = threading.Thread(target=lambda: done.append(logcap.run(str(log), limit, read)))
+    thread.start()
+
+    def end() -> int:
+        os.close(write)
+        thread.join(10)
+        os.close(read)
+        assert done, "logcap did not end"
+        return done[0]
+
+    return write, end
+
+
+def _until(check: Callable[[], bool]) -> None:
+    """Wait for logcap to have taken what was written: a condition, not a duration."""
+    import time
+
+    deadline = time.monotonic() + 10
+    while not check():
+        assert time.monotonic() < deadline, "logcap did not take the write"
+        time.sleep(0.005)
+
+
+def test_a_pane_log_holds_its_limit_when_another_writer_appends(tmp_path: Path) -> None:
+    """The log is on the agents' side: bytes another writer appends count at logcap's next
+    write, from the file's real size, so the log stays within the limit."""
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    with log.open("ab") as other:  # another writer, between two of the pane's writes
+        other.write(b"x" * 100)
+    os.write(write, b"b" * 10)
+    _until(lambda: log.read_bytes().endswith(b"b" * 10))
+    assert end() == 0
+    kept = log.read_bytes()
+    assert len(kept) <= 100 and kept.endswith(b"b" * 10)
+
+
+def test_a_pane_log_appended_to_after_the_last_write_is_cut_when_the_pane_ends(
+    tmp_path: Path,
+) -> None:
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    with log.open("ab") as other:
+        other.write(b"x" * 200)
+    assert end() == 0
+    assert len(log.read_bytes()) <= 100
+
+
+def test_a_pane_log_put_back_by_another_file_is_the_one_written(tmp_path: Path) -> None:
+    """A log renamed away and replaced is opened anew: the pane's output goes to the file at
+    the log's path, held to the limit, never on into the file moved away."""
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    log.rename(tmp_path / "moved.log")
+    log.write_bytes(b"x" * 95)
+    os.write(write, b"b" * 10)
+    _until(lambda: log.read_bytes().endswith(b"b" * 10))
+    assert end() == 0
+    assert (tmp_path / "moved.log").read_bytes() == b"a" * 10
+    assert len(log.read_bytes()) <= 100
 
 
 def test_a_full_disk_drops_log_output_and_the_pane_goes_on(

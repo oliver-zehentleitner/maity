@@ -417,8 +417,9 @@ def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
     """The agents' user's own Claude Code settings (here, through sudo, or on a host):
     agents start with --setting-sources user, so they inherit its rules and hooks."""
     try:
-        path = as_user.home() / ".claude" / "settings.json"
-        settings = _json_bytes(as_user.read_whole(path, SETTINGS_MAX))
+        home = as_user.home()
+        path = home / ".claude" / "settings.json"
+        settings = _json_bytes(as_user.read_whole(path, SETTINGS_MAX, under=home))
     except (OSError, KeyError):
         settings = None
     if settings is None:
@@ -724,11 +725,12 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     # Internal too: a file on the agents' side (the loop's limit file, a clone's, a log), read
     # there without following a link or waiting on a FIFO (limitread).
     r = rsub.add_parser("limitread")
+    r.add_argument("--under", required=True)
     r.add_argument("--bytes", type=int)
     r.add_argument("--offset", type=int)
     r.add_argument("path")
     r.set_defaults(handler=lambda a: limitread.main(
-        [*(["--bytes", str(a.bytes)] if a.bytes is not None else []),
+        ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
     # Internal too: what a pane's output goes through on an ssh host, holding its log to

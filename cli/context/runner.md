@@ -2998,7 +2998,7 @@ grant. `git apply` stays ungranted (the lead's decision).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 1, and the fix it named); implementation 2026-11-14
+**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 1, and the fix it named); implementation 2026-11-14; the anchored walk from a code review of the change on 2026-11-14, which reproduced a `.git` swapped for a link between the listing and the read
 **Revisit when:** the runner reads the agents' side through a channel of its own instead of running commands there, or the supervisor stops holding one lock for every placement
 **See:** runner.md#the-limit-file-is-read-on-the-agents-side-by-the-runners-own-module-not-by-dd — aa29acab-65eb-4f60-a8da-ee284877266f — as of 2026-11-14
 
@@ -3007,9 +3007,14 @@ Every file the runner reads from the agents' side (a clone's
 pane log, the agents' user's Claude Code settings) goes through
 `AsUser.read`, which reads the way the limit file was already read
 (`limitread`): no link followed, no wait on a FIFO, a regular file only,
-at most a limit the caller names. In the runner's own process that is
-`limitread.take`; through sudo or on an ssh host it is the runner's own
-module there (`--bytes`, `--offset`), within `READ_TIMEOUT`, a timeout
+at most a limit the caller names. Every read is anchored at a directory
+the runner knows (`under`: the clone, the agents' file directory, the
+agents' home): that directory is opened, each directory below it is
+opened from the one before with `O_NOFOLLOW | O_DIRECTORY` (`dir_fd`),
+and the file from the last of them, so no link anywhere below the anchor
+is followed. In the runner's own process that is `limitread.take`;
+through sudo or on an ssh host it is the runner's own module there
+(`--under`, `--bytes`, `--offset`), within `READ_TIMEOUT`, a timeout
 turned into an `OSError` every caller handles. The supervisor's tick,
 which holds the lock `update` and the reports wait on, reads only the
 runner's own workspace record of an existing clone (`workspace.owned`);
@@ -3022,6 +3027,10 @@ endless device, waits on a FIFO or takes a huge file into memory, done
 while the supervisor holds its lock, stops every placement on the runner,
 not only the one whose clone it is. One way of reading for everything on
 that side means a new caller cannot pick the unsafe one by accident.
+`O_NOFOLLOW` covers only a path's last name: an agent could swap its
+already listed `.git` for a link to a directory outside the clone, and a
+read of `.git/config` by its full path would take that directory's file
+as the clone's. Walking down from the anchor refuses that swap.
 
 **Rejected alternatives:**
 - `tail -c` and `head -c` through sudo, as the logs were read: bounded in
@@ -3029,6 +3038,14 @@ that side means a new caller cannot pick the unsafe one by accident.
   killed `sudo` leaves them waiting.
 - `dd` with `iflag=nofollow,nonblock`: macOS's `dd` has no `iflag`
   (aa29acab).
+- Comparing `.git`'s inode with the one seen at the listing (as
+  `MAITY_GIT_INODE` does for git's own runs): it covers `.git` alone,
+  not the other directories on the way to a log or the limit file, and
+  leaves a window between the comparison and the open.
+- Walking from `/` without following any link: refuses ordinary
+  configured paths that run through a link (`/home` on some systems,
+  macOS's `/var`); the anchor is the runner's own path, only what lies
+  below it is the agents'.
 - Keeping the origin check in the tick with a safe read: still a command
   through sudo or ssh, up to its timeout, under the lock every placement
   needs.
@@ -3042,8 +3059,8 @@ that side means a new caller cannot pick the unsafe one by accident.
 **Id:** 9bdc2aa5-b5dc-489a-bda6-db7c06d3eed5
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 2: `limits.log_keep_bytes` was documented and never applied); implementation 2026-11-14. Which way to hold the limit was the implementer's choice, not confirmed yet
+**Evidence:** confirmed
+**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 2: `limits.log_keep_bytes` was documented and never applied); implementation 2026-11-14; cutting to the newer half instead of rotating confirmed by the lead on 2026-11-14; the real-size check from a code review of the change on 2026-11-14, which reproduced another writer's append taking the log past the limit
 **Revisit when:** someone needs a pane's older output after the limit, or tmux's `pipe-pane` gains a size limit of its own
 
 tmux's `pipe-pane` hands a pane's output to `maity.runner.logcap` (`maity
@@ -3052,12 +3069,20 @@ agents' side, appends to `<agent_files>/logs/<placement>.log`, and when
 the next chunk would take the log past `limits.log_keep_bytes` it first
 cuts the file to its newest half, through a copy renamed over it. A
 write that fails (a full disk) drops that chunk and the module reads on.
+The module is the log's only writer, but the log lies on the agents'
+side, where they can write it too: before every write, and once more
+when the pane ends, it takes the file's real size (`fstat`), not its own
+count, and reopens the path when the file there is no longer the one it
+holds (device and inode). Bytes another writer appends count at the
+module's next write, so the log holds the limit after each of its
+writes and when it ends.
 `maity runner logs --follow` starts again at the log's beginning when it
 finds the log shorter than what it showed.
 
 **Reason:** the writer is the only process that sees every byte as it
-arrives, so it holds the limit exactly and without a second process
-watching the file. Keeping the newest half leaves the output that
+arrives, so it holds the limit without a second process watching the
+file. A private count of its own bytes missed what others append, and a
+log renamed away and replaced kept receiving output in the old file. Keeping the newest half leaves the output that
 explains a failure, which is what the log is read for, and bounds the
 disk to one limit per placement.
 

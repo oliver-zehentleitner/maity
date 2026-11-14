@@ -325,8 +325,10 @@ def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
     read = clonecheck.Local.read
     rewritten: list[bool] = []
 
-    def then_rewrite(self: clonecheck.Local, path: Path, offset: int = 0, *, limit: int) -> bytes:
-        data = read(self, path, offset, limit=limit)
+    def then_rewrite(
+        self: clonecheck.Local, path: Path, offset: int = 0, *, limit: int, under: Path
+    ) -> bytes:
+        data = read(self, path, offset, limit=limit, under=under)
         if path.name == "config" and not rewritten:  # once the check has its copy
             rewritten.append(True)
             with path.open("a") as config:
@@ -340,6 +342,41 @@ def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
     assert "refs/heads/work" in listed.stdout
     with pytest.raises(proc.ToolError, match="uploadpack"):
         proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+
+
+@pytest.mark.skipif(os.open not in os.supports_dir_fd, reason="POSIX: openat")
+def test_a_git_dir_swapped_for_a_link_after_the_listing_is_never_read_through(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent swaps its listed `.git` for a link to a directory outside the clone before
+    the configuration is read: the read walks down from the clone without following a link,
+    so the inspection refuses and the outside configuration is never taken."""
+    from maity.runner import limitread, workspace
+
+    outside = placed.parent / "outside"
+    shutil.copytree(placed / ".git", outside)
+    text = (outside / "config").read_text()
+    url = re.search(r"^\s*url = .*$", text, re.M)
+    assert url is not None
+    (outside / "config").write_text(text.replace(url[0], "\turl = https://example.invalid/outside"))
+    listed = clonecheck.Local.tree
+
+    def then_swap(self: clonecheck.Local, path: Path) -> list[tuple[str, str, int]]:
+        found = listed(self, path)
+        if path == placed / ".git":  # listed as a plain directory; swapped before the read
+            (placed / ".git").rename(placed.parent / "moved")
+            (placed / ".git").symlink_to(outside)
+        return found
+
+    monkeypatch.setattr(clonecheck.Local, "tree", then_swap)
+    assert clonecheck.not_inspectable(placed) == "its .git/config cannot be read"
+    assert workspace.origin(placed) is None  # never https://example.invalid/outside
+    with pytest.raises(OSError):
+        limitread.take(str(placed / ".git" / "config"), limit=1024, under=str(placed))
+    # The same file reached without a link on the way is read.
+    assert b"example.invalid" in limitread.take(
+        str(outside / "config"), limit=4096, under=str(outside.parent)
+    )
 
 
 def test_git_runs_on_a_repository_maity_writes_in_the_runners_directory(

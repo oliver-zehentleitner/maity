@@ -255,7 +255,7 @@ def test_logs_are_read_as_the_agents_user(
         == 0
     )
     assert capsysbinary.readouterr().out == b"hello\n"
-    assert "-m maity.runner.limitread --bytes" in fake_sudo.read_text()  # never `tail`
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()  # never `tail`
 
 
 def test_a_log_is_read_from_where_the_last_read_stopped(tmp_path: Path, fake_sudo: Path) -> None:
@@ -265,11 +265,11 @@ def test_a_log_is_read_from_where_the_last_read_stopped(tmp_path: Path, fake_sud
     log = tmp_path / "plc.log"
     log.write_bytes(b"one\ntwo\n")
     for as_user in (AsUser(), AsUser("maity-agent")):
-        assert as_user.read(log, 4, limit=100) == b"two\n"
-        assert as_user.read(log, 8, limit=100) == b""
-        assert as_user.read(log, 0, limit=3) == b"one"  # at most the limit
+        assert as_user.read(log, 4, limit=100, under=tmp_path) == b"two\n"
+        assert as_user.read(log, 8, limit=100, under=tmp_path) == b""
+        assert as_user.read(log, 0, limit=3, under=tmp_path) == b"one"  # at most the limit
         with pytest.raises(limitread.Behind):  # the log was cut since: the reader starts over
-            as_user.read(log, 9, limit=100)
+            as_user.read(log, 9, limit=100, under=tmp_path)
 
 
 @pytest.mark.parametrize("kind", ["fifo", "endless", "sparse"])
@@ -288,8 +288,34 @@ def test_a_clone_file_is_read_safely_through_sudo(
     as_user = AsUser("maity-agent")
     assert within(30, workspace.origin, tmp_path, as_user) is None
     with pytest.raises(OSError):
-        within(30, as_user.read_whole, tmp_path / ".git" / "config", 1024)
-    assert "-m maity.runner.limitread --bytes" in fake_sudo.read_text()
+        within(30, lambda: as_user.read_whole(tmp_path / ".git" / "config", 1024, under=tmp_path))
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()
+
+
+def test_a_directory_swapped_for_a_link_is_never_read_through(
+    tmp_path: Path, fake_sudo: Path
+) -> None:
+    """Both readers, here and through sudo, walk down from the clone without following a
+    link: a `.git` swapped for a link to a directory outside it is refused, not read."""
+    from maity.runner import workspace
+
+    skip_unless_maity_is_installed()
+    clone, outside = tmp_path / "clone", tmp_path / "outside"
+    (clone / ".git").mkdir(parents=True)
+    (clone / ".git" / "config").write_text(
+        '[remote "origin"]\n\turl = https://example.invalid/in\n'
+    )
+    outside.mkdir()
+    (outside / "config").write_text('[remote "origin"]\n\turl = https://example.invalid/out\n')
+    for as_user in (AsUser(), AsUser("maity-agent")):
+        assert workspace.origin(clone, as_user) == "https://example.invalid/in"
+    (clone / ".git").rename(tmp_path / "moved")
+    (clone / ".git").symlink_to(outside)
+    for as_user in (AsUser(), AsUser("maity-agent")):
+        assert workspace.origin(clone, as_user) is None
+        with pytest.raises(OSError):
+            as_user.read_whole(clone / ".git" / "config", 1024, under=clone)
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()
 
 
 def test_a_read_through_sudo_that_does_not_end_is_cut_off(
@@ -304,7 +330,7 @@ def test_a_read_through_sudo_that_does_not_end_is_cut_off(
     (tmp_path / ".git").mkdir()
     (tmp_path / ".git" / "config").write_text('[remote "origin"]\n\turl = x\n')
     with pytest.raises(OSError, match="did not end in time"):
-        AsUser("maity-agent").read(tmp_path / ".git" / "config", limit=100)
+        AsUser("maity-agent").read(tmp_path / ".git" / "config", limit=100, under=tmp_path)
     assert workspace.origin(tmp_path, AsUser("maity-agent")) is None
 
 

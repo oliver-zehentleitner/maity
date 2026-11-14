@@ -4,9 +4,16 @@ tmux's `pipe-pane` hands every byte an agent's pane shows to this module, starte
 agents' side (`python -I -m maity.runner.logcap LOG LIMIT`, `maity runner logcap LOG LIMIT` on
 an ssh host). It appends to LOG; when the next chunk would take the file past LIMIT bytes,
 the file is cut to its newest LIMIT / 2 bytes first, through a copy renamed over it, so the
-log keeps the latest output and never holds more than LIMIT bytes. A write that fails (a full
-disk) drops that chunk and the module reads on: the pane never waits on its log. Only the
-standard library: the module runs with `-I`.
+log keeps the latest output. A write that fails (a full disk) drops that chunk and the module
+reads on: the pane never waits on its log.
+
+This module is the log's only writer. The log lies on the agents' side, though, where they can
+write it too: so before every write, and once more when the pane ends, the module takes the
+file as it is, not its own count of what it wrote. A file at LOG that is no longer the one it
+opened (renamed, replaced) is opened anew, never through a link; the file's real size decides
+the cut. Bytes another writer appends count at the module's next write, so the log holds at
+most LIMIT bytes after each of the module's writes and when it ends. Only the standard
+library: the module runs with `-I`.
 """
 
 from __future__ import annotations
@@ -57,22 +64,42 @@ def _cut(path: str, fd: int, keep: int) -> tuple[int, int]:
     return reopened
 
 
+def _same(path: str, fd: int) -> bool:
+    """Whether `path` is still the file open at `fd`, not a link or another file put there."""
+    try:
+        here = os.stat(path, follow_symlinks=False)
+    except OSError:
+        return False
+    there = os.fstat(fd)
+    return (here.st_dev, here.st_ino) == (there.st_dev, there.st_ino)
+
+
+def _hold(path: str, fd: int, limit: int, incoming: int) -> int:
+    """The log's descriptor, with room for `incoming` more bytes within `limit`: the file at
+    `path` as it is now, its real size, whoever else wrote to it."""
+    if not _same(path, fd):
+        fresh, _ = _open(path)
+        os.close(fd)
+        fd = fresh
+    if os.fstat(fd).st_size + incoming > limit:
+        fd, _ = _cut(path, fd, min(limit // 2, limit - incoming))
+    return fd
+
+
 def run(path: str, limit: int, source: int = 0) -> int:
     """Copy `source` into the log at `path` until it ends, holding the log to `limit`."""
-    fd, size = _open(path)
+    fd, _ = _open(path)
     try:
         while True:
-            chunk = os.read(source, CHUNK)
-            if not chunk:
-                return 0
-            chunk = chunk[-limit:]
+            chunk = os.read(source, CHUNK)[-limit:]
             try:
-                if size + len(chunk) > limit:
-                    fd, size = _cut(path, fd, min(limit // 2, limit - len(chunk)))
+                fd = _hold(path, fd, limit, len(chunk))
+                if not chunk:  # the pane ended: what others wrote since is cut too
+                    return 0
                 os.write(fd, chunk)
-                size += len(chunk)
             except OSError:  # a full disk: this chunk is lost, the pane goes on
-                size = os.fstat(fd).st_size
+                if not chunk:
+                    return 0
     finally:
         os.close(fd)
 

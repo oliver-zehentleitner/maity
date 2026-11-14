@@ -764,16 +764,18 @@ class Supervisor:
         side, which may have written or replaced it: a regular file only, never followed
         through a link, at most limitread.LIMIT_BYTES, and nothing but a plain exit code taken."""
         path, as_user = self._limit_file(pid, target), target.as_user
+        assert target.agent_files is not None  # noqa: S101 - connected before a launch
+        under = str(target.agent_files)  # the agents' directory: read from it down
         try:
             if not as_user.direct:  # the agents' user, or the ssh host's
                 # Read there by the runner's own module (limitread): opened without following
                 # a link and without blocking on a FIFO, so a file swapped after any check
                 # cannot hold the read. A host's `maity` without it reads nothing: no code.
-                done = as_user.run([*as_user.runner_module("limitread"), str(path)],
-                                   env={"PATH": target.agent_path})  # fmt: skip
+                argv = [*as_user.runner_module("limitread"), "--under", under, str(path)]
+                done = as_user.run(argv, env={"PATH": target.agent_path})
                 raw = done.stdout if done.returncode == 0 else ""
             else:
-                raw = limitread.read(str(path)) or ""
+                raw = limitread.read(str(path), under=under) or ""
             data = json.loads(raw)
         except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
             return None
@@ -994,7 +996,7 @@ class Supervisor:
         try:
             if not as_user.direct:
                 path = place.credential.parent / state.STATE_FILE
-                found = json.loads(as_user.read_whole(path, STATE_MAX))
+                found = json.loads(as_user.read_whole(path, STATE_MAX, under=place.path))
                 member = found.get("member_id") if isinstance(found, dict) else None
             else:
                 member = state.load_state(place.credential.parent).get("member_id")

@@ -106,7 +106,7 @@ def origin(path: Path, as_user: AsUser = RUNNER) -> str | None:
     """`remote.origin.url` from `.git/config`, parsed, never through git."""
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
-        data = as_user.read_whole(path / ".git" / "config", clonecheck.CONFIG_MAX)
+        data = as_user.read_whole(path / ".git" / "config", clonecheck.CONFIG_MAX, under=path)
         parser.read_string(data.decode("utf-8"))
     except (OSError, UnicodeDecodeError, configparser.Error):
         return None

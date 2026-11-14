@@ -116,7 +116,7 @@ def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
     shown = 0
     while True:
         try:  # only what is new, a chunk at a time: the agent sets the log's size
-            data = as_user.read(path, shown, limit=LOG_CHUNK)
+            data = as_user.read(path, shown, limit=LOG_CHUNK, under=target.agent_files)
         except limitread.Behind:  # the log was cut to its kept tail (logcap): from its start
             shown = 0
             continue
