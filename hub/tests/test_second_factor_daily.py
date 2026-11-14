@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import tables as t
 from maity_hub.auth import password_resets, second_factor, totp
@@ -16,6 +16,7 @@ from maity_hub.config import ConfigError, Settings
 from maity_hub.notifications import mailer, tokens
 from maity_hub.routes import password_reset
 from tests import factory, flow
+from tests.concurrency import finished, race, waiting
 from tests.conftest import ClientFactory
 from tests.test_email_sign_in import setup
 from tests.test_password_reset import finish, mailed, refused
@@ -327,3 +328,43 @@ def test_the_setting_has_its_range() -> None:
     for bad in ("9", "10001", "many"):
         with pytest.raises(ConfigError):
             Settings.from_env({**base, "MAITY_SECOND_FACTOR_WRONG_PER_DAY": bad})
+
+
+def test_a_wrong_code_and_a_password_change_take_the_rows_in_one_order(
+    migrated: Engine,
+) -> None:
+    """The wrong code that reaches the cap and a password change of the same human, at once:
+    both lock the human before the day's row, so the one waits for the other and neither
+    fails (§2.8.6). PostgreSQL and MariaDB; SQLite has one writer."""
+    human_id = factory.human(migrated, "ada")
+    hub = Settings.from_env({"MAITY_DATABASE_URL": "sqlite://"})
+    cap = hub.second_factor_wrong_per_day
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.second_factor_day).values(
+                human_id=human_id,
+                day=second_factor._today(),
+                wrong_codes=cap - 1,
+                unlocks=0,
+                alerted=False,
+            )
+        )
+    with race(migrated) as r:
+        # The password change has written the new password: it holds the human's row.
+        r.first.execute(
+            update(t.human).where(t.human.c.id == human_id).values(password_hash="changed")
+        )
+        counting = r.run(
+            r.second, lambda: second_factor._count_day(r.second, hub, human_id, (None,) * 3)
+        )
+        assert waiting(counting)  # on the human's row, holding nothing the change needs
+        password_resets.password_changed(r.first, human_id)
+        r.first.commit()
+        finished(counting)
+        r.second.commit()
+    with migrated.connect() as conn:
+        day = conn.execute(
+            select(t.second_factor_day).where(t.second_factor_day.c.human_id == human_id)
+        ).one()
+    assert (day.wrong_codes, day.alerted) == (cap, True)  # counted after the change
+    assert [a.data["password_generation"] for a in alerts(migrated)] == [1]
