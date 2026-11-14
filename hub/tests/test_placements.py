@@ -709,6 +709,7 @@ REVOCATIONS = [
 
 @pytest.mark.parametrize(("reason", "by", "anyone"), REVOCATIONS)
 @pytest.mark.parametrize("caller", ["profile_owner", "runner_owner", "proposing_agent"])
+@pytest.mark.parametrize("how", ["asked", "stored_restart", "stored_patch"])
 def test_only_the_owner_undoes_a_revocation_no_system_made(
     setup: Setup,
     make_client: ClientFactory,
@@ -716,11 +717,15 @@ def test_only_the_owner_undoes_a_revocation_no_system_made(
     by: str | None,
     anyone: bool,
     caller: str,
+    how: str,
 ) -> None:
     # §15.6: a rejoin issues a new credential for the agent, so after a person's or a leak's
     # revocation only the agent's owner asks for one; the runner's owner or a proposing agent
     # only after the hub's own (a removed clone) or the runner's owner's revocation of the
     # runner. "runner_owner" is the setup's owner with the profile moved to someone else.
+    # The same however the start comes: `rejoin: true`, or a `rejoin` stored on the placement
+    # (the clone's removal sets it) carried out by a `restart` with `{}` or a `PATCH
+    # desired: running`.
     body = placed(setup, desired="stopped")
     someone = flow.human(make_client, setup.engine, "someone")
     who = {"owner": setup.owner.id, "runner_owner": setup.owner.id, "someone": someone.id}
@@ -743,17 +748,24 @@ def test_only_the_owner_undoes_a_revocation_no_system_made(
                 .where(t.agent_profile.c.id == setup.agent.id)
                 .values(owner_id=someone.id)
             )
+        if how != "asked":
+            conn.execute(
+                update(t.placement).where(t.placement.c.id == body["id"]).values(rejoin=True)
+            )
     asker = admin_agent(make_client, setup) if caller == "proposing_agent" else setup.owner
-    response = asker.post(
-        f"/projects/maintainer/maity/placements/{body['id']}/restart", {"rejoin": True}
-    )
+    path = f"/projects/maintainer/maity/placements/{body['id']}"
+    if how == "stored_patch":
+        response = asker.patch(path, {"desired": "running", "reason": "go on"})
+    else:
+        response = asker.post(f"{path}/restart", {"rejoin": True} if how == "asked" else {})
     if caller == "profile_owner" or anyone:
         assert response.status_code == 200, response.text
         assert response.json()["rejoin"] is True
     else:
         assert response.status_code == 403, response.text
         assert response.json()["error"]["details"] == {"reason": "owner_only"}
-        assert get(setup, body["id"])["generation"] == body["generation"]
+        after = get(setup, body["id"])
+        assert after["generation"] == body["generation"] and after["desired"] == "stopped"
 
 
 def test_a_project_admin_reads_only_their_projects_part_of_the_runner(

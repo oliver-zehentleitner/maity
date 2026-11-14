@@ -561,7 +561,11 @@ after a revocation no person chose for that agent: the hub's own after the
 runner removed the clone (`workspace_removed` with `revoked_by` null) or the
 runner owner's revocation of the runner (`runner_revoked` with `revoked_by`
 that owner). Everything else is `forbidden` with `details.reason:
-"owner_only"` (`routes/placements._undone_by_anyone`).
+"owner_only"` (`routes/placements._undone_by_anyone`). The check runs on
+every start that carries a rejoin out, not only on `rejoin: true`: a
+`rejoin` stored on the placement by the clone's removal is carried out by a
+`restart` with `{}` or a `PATCH desired: running` too
+(`routes/placements._check_rejoin`).
 
 **Reason:** a revocation is how a person stops their agent, and a leak's
 revocation ends a credential someone else may hold. Undoing either by a new
@@ -572,4 +576,7 @@ revoking through the member routes writes the reason freely, so
 `"workspace_removed"` typed by a person would pass. Letting only the owner
 rejoin after any revocation: a removed clone revokes the credential on the
 runner's own report, and its placement is meant to join anew at its next
-start (§15.5) without waiting for the owner.
+start (§15.5) without waiting for the owner. Not storing `rejoin` on the
+removal when the credential was already revoked otherwise: the owner's
+next plain start should still join anew, and a check at the start covers
+every way a start comes.

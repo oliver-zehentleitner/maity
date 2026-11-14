@@ -568,6 +568,7 @@ def patch_placement(
             if body.desired == "running":
                 _require_open(project)
                 _require_live(conn, runner)
+                _check_rejoin(conn, placement, runner, owner, asked=False)
             placement = pl.set_desired(conn, placement, body.desired, actor, by)
         return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
 
@@ -613,6 +614,39 @@ def _undone_by_anyone(revoked: Any, runner: Any) -> bool:
     return False
 
 
+def _check_rejoin(
+    conn: Connection, placement: Any, runner: Any, owner: bool, *, asked: bool
+) -> None:
+    """A start that replaces a revoked credential, asked for (`rejoin: true`) or stored on
+    the placement (`rejoin` set by the clone's removal, §15.5): only the agent's owner
+    starts it after a revocation no one else may undo (`_undone_by_anyone`), however the
+    start comes, a `restart` with `{}` and a `PATCH desired: running` included."""
+    if not (asked or placement.rejoin):
+        return
+    revoked = (
+        None
+        if placement.credential_id is None
+        else conn.execute(
+            select(
+                t.credential.c.revoked_at,
+                t.credential.c.revoked_by,
+                t.credential.c.revoked_reason,
+            ).where(t.credential.c.id == placement.credential_id)
+        ).first()
+    )
+    if revoked is None or revoked.revoked_at is None:
+        if asked:
+            raise invalid({"rejoin": "credential_not_revoked"})
+        return  # nothing revoked to replace
+    if not owner and not _undone_by_anyone(revoked, runner):
+        raise ApiError(
+            403,
+            "forbidden",
+            "only the agent's owner starts it again after this revocation",
+            {"reason": "owner_only"},
+        )
+
+
 @router.post("/projects/{owner}/{slug}/placements/{placement_id}/restart")
 def restart_placement(
     slug: str, placement_id: str, request: Request, caller: AnyCaller, body: RestartIn | None = None
@@ -621,10 +655,11 @@ def restart_placement(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        if rejoin:  # a rejoin issues a credential: none for a suspended account (§16.8)
-            # Before the project lock: the suspension takes the account lock, then projects.
-            account = pl.profile_owner(conn, _placement(conn, mine, placement_id))
-            moderation.refuse_suspended(conn, account)
+        before = _placement(conn, mine, placement_id)
+        if rejoin or before.rejoin:  # a rejoin issues a credential: none for a suspended
+            # account (§16.8). Before the project lock: the suspension takes the account
+            # lock, then projects.
+            moderation.refuse_suspended(conn, pl.profile_owner(conn, before))
         project = events.lock_project(conn, mine.project.id)
         placement = _placement(conn, mine, placement_id)
         runner = _runner(conn, placement.runner_id)
@@ -633,27 +668,7 @@ def restart_placement(
         if not (right or owner or _proposer(mine)):
             raise forbidden("members:admin" if mine.kind == "human" else "agents:propose")
         _transition(placement)
-        if rejoin:
-            revoked = (
-                None
-                if placement.credential_id is None
-                else conn.execute(
-                    select(
-                        t.credential.c.revoked_at,
-                        t.credential.c.revoked_by,
-                        t.credential.c.revoked_reason,
-                    ).where(t.credential.c.id == placement.credential_id)
-                ).first()
-            )
-            if revoked is None or revoked.revoked_at is None:
-                raise invalid({"rejoin": "credential_not_revoked"})
-            if not owner and not _undone_by_anyone(revoked, runner):
-                raise ApiError(
-                    403,
-                    "forbidden",
-                    "only the agent's owner starts it again after this revocation",
-                    {"reason": "owner_only"},
-                )
+        _check_rejoin(conn, placement, runner, owner, asked=rejoin)
         actor = caller.actor(mine.id)
         if pl.open_request_id(conn, placement.id) is not None:
             if not right:
