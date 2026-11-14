@@ -1781,21 +1781,27 @@ def withdraw(
         _refuse_unless_open(row)
         proposals.require_known(row)
         now = clock.now()
-        conn.execute(
+        done = conn.execute(
             update(t.request)
-            .where(t.request.c.id == row.id)
+            .where(t.request.c.id == row.id, t.request.c.status == "open")
             .values(
                 status="withdrawn",
                 withdrawn_at=now,
                 withdraw_reason=body.reason,
                 changed_by_credential=caller.credential_id,
                 changed_via=caller.via,
+                **_snapshot(conn, row),
             )
-        )
+        ).rowcount
+        if done != 1:
+            _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
-        view = request_view(conn, _row(conn, row.id))
+        closed = _row(conn, row.id)
+        # One record per state change of a personal request, on this route too (§18.1).
+        records.personal_request(conn, closed)
+        view = request_view(conn, closed)
         emit(
             conn,
             mine.project.id,
@@ -2194,7 +2200,7 @@ def file_to_human_outside(
                 "id": request_id,
                 "project_id": project_id,
                 "class": "consent",
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": [],
                 "priority": "normal",
@@ -2279,7 +2285,7 @@ def _file_personal(
                 "project_id": mine.project.id,
                 "org_id": org_id,
                 "class": class_,
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": options or [],
                 "priority": "normal",
