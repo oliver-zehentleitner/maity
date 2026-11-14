@@ -1187,10 +1187,12 @@ def patch_project(
         if needs_reason and not body.reason:
             raise invalid({"reason": "required"}, "a change of state or policy needs a reason")
         _refuse_against_a_hold(conn, project, state_changes, new_policy)
-        if (
+        roles_changed = (
             new_policy is not None
             and new_policy["outside_roles"] != policy.of(project)["outside_roles"]
-        ):
+        )
+        if roles_changed:
+            assert new_policy is not None
             _refuse_outside_roles(conn, project, new_policy, values)
         if values:
             conn.execute(update(t.project).where(t.project.c.id == project.id).values(**values))
@@ -1291,6 +1293,9 @@ def patch_project(
                 .where(t.project.c.id == project.id)
                 .values(**policy.columns(new_policy), **_set_keep_the_why(body.policy))
             )
+            if roles_changed:
+                # A connection across owners a new request would now refuse ends (§2.3).
+                bridges.after_policy_change(conn, project.id, actor)
             rules.bump(
                 conn,
                 project,

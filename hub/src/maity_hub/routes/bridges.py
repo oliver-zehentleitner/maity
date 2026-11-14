@@ -10,12 +10,12 @@ from fastapi.responses import JSONResponse
 from pydantic import StringConstraints
 from sqlalchemy import Connection, select
 
-from maity_hub import bridges, idempotency, namespace
+from maity_hub import bridges, idempotency, namespace, plain_text
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.cross_owner import owner_of
 from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import ApiError, forbidden, humans_only, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, lock_project
 from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
@@ -27,6 +27,14 @@ router = APIRouter(route_class=ProjectRoute)
 Purpose = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=BRIDGE_PURPOSE)
 ]
+
+
+def _plain(purpose: str) -> str:
+    """The purpose is one plain line (§2.3): it stands quoted in the consent request, where a
+    line break or a control could make it read as the request's own text."""
+    if not plain_text.is_plain_line(purpose):
+        raise invalid({"purpose": "plain_line"}, "the purpose is one line of plain text")
+    return purpose
 
 
 class BridgeIn(Strict):
@@ -61,6 +69,8 @@ def connect(
 ) -> JSONResponse:
     """Connect a bridge to the served agent: at once with one owner behind both, else a
     consent of the bridge's owner and of the project (§2.3)."""
+
+    _plain(body.purpose)
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -98,6 +108,7 @@ def change_purpose(
 ) -> JSONResponse:
     """Change what a connection is for: at once with one owner, else a new consent while
     the old purpose holds until `go` (§2.3)."""
+    _plain(body.purpose)
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)

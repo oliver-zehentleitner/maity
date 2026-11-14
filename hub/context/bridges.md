@@ -121,6 +121,24 @@ row, so its views take `via` from there; an answer keeps it in the stored `answe
 `via` only when a bridge made the call, so nothing changes in what a call without the header reads.
 `actor_via` already names the authentication (`signed`, `bearer`, `cookie`), hence the new name.
 
+## `via` exists only where a carried write can happen
+
+**Id:** 6d5563b7-541b-40cf-b00d-bd3b1e8fbc0c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 ("The bridge": the header is not taken on `…/memory` or `…/members/{id}/bridges`); the lead's ruling for card tsk-kpaye5hmyz39, 2026-11-13
+**Revisit when:** a memory or connection route takes `Maity-For` after all
+
+The memory routes and the connection routes refuse `Maity-For` (`bridges._never_carried`, checked
+in `bridges.carry` with the other route checks), so a bridge never writes there as the served
+agent: without the header it calls them as itself, and the record names it as its author. A
+memory entry and a connection therefore get no `via` field and no `actor_bridge` column. Rejected:
+storing `via` on memory entries and on the connection's `created_by` as well, which would add a
+column that is always empty and suggest a carried write that cannot happen. A route table test
+(`test_every_memory_and_connection_route_refuses_the_header`) keeps a new memory or connection
+route from taking the header unnoticed.
+
 ## A bridge reads for an agent without touching the agent's own state
 
 **Id:** c61f6f5d-c525-4da4-9ecb-873206d1eeed
@@ -158,3 +176,25 @@ it. A bridge carries no presence when it is isolated, paused, suspended with its
 or when every one of its instances is paused. A request filed through the bridge names no asking
 instance: `_asking_instance` only takes a session of the asker's own membership, so the answer
 wakes `member:` of the served agent.
+
+## A carried write checks its connection in `write_guard`, not in each route
+
+**Id:** d341f696-e783-463f-bdeb-776f91895406
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kpaye5hmyz39; the review of #1795 found an upload through an ended connection committed, since the first check sat only in `events.emit`
+**Revisit when:** a carried write must run without the project's lock, or `write_guard` stops seeing every transaction of a request
+
+`bridges.carry` reads the connection live before the route runs, but an owner may end it
+before the route writes. `deps` binds the carried connection (`write_guard.bind_bridge`), and
+the transaction's first locking statement takes the organisation's lock where the project has
+one, then the project's, and refuses with `not_your_bridge` when the connection's `live` is no
+longer true. An ending holds the project's lock too, so a carried write commits before it or
+waits and is refused, whether the write emits an event or not. `events.emit` keeps its own
+check, which costs one read under a lock it already holds.
+
+Rejected: the check in `events.emit` alone, which misses writes without an event (an upload);
+the check in `idempotency.run`, which several project writes do not use (a pin, a watch, the
+jour fixe); a shared lock on the bridge row at the transaction's start, which would wait in the
+opposite order to an ending that holds the project's lock and then updates that row.

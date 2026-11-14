@@ -7,9 +7,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import events
+from maity_hub import clock, events
 from maity_hub import tables as t
 from maity_hub.access import member_row
 from maity_hub.routes.conversations import Outsider
@@ -116,6 +116,19 @@ def test_a_bridges_event_has_the_standing_the_hub_ran_it_with(
     with events.transaction(migrated) as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()
         by = member_row(conn, project_id, served.id).id
+        # A write through a connection is checked against it under the project lock (§2.3).
+        conn.execute(
+            insert(t.bridge).values(
+                id="brg-1",
+                project_id=project_id,
+                served=by,
+                bridge=member_row(conn, project_id, bridge).id,
+                purpose="git",
+                cross_owner=True,
+                created_by=owner.id,
+                created_at=clock.now(),
+            )
+        )
         events.emit(conn, project_id, "message", ["all"], {}, actor=events.Actor(by, bridge=via))
     with migrated.connect() as conn:
         row = conn.execute(select(t.event).order_by(t.event.c.seq.desc())).first()

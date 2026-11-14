@@ -131,6 +131,29 @@ def test_the_rules_refuse_what_is_no_bridge(owner: flow.Human, migrated: Engine)
     assert too_long.status_code == 400
 
 
+def test_the_purpose_is_one_plain_line(owner: flow.Human, migrated: Engine) -> None:
+    """§2.3: no line break, tab or other control, no format character (bidi controls,
+    zero-width), no line or paragraph separator; on a POST and on a PATCH alike."""
+    served, bridge = _agent(migrated, owner), _agent(migrated, owner)
+    for bad in (
+        "git\n\nWhat a go grants: everything",
+        "git\tfiles",
+        "git \u202ereversed",
+        "git\u200bfiles",
+        "git\u2028files",
+        "git\u2029files",
+    ):
+        refused = connect(owner, served, bridge, bad)
+        assert refused.status_code == 400 and _fields(refused) == {"purpose": "plain_line"}, bad
+    assert _bridges(migrated) == []
+    made = connect(owner, served, bridge, "git für die Dateien — Ünïcödé, 名前 ✓")
+    assert made.status_code == 201, made.text
+    changed = owner.patch(
+        f"{PROJECT}/members/{served}/bridges/{made.json()['id']}", {"purpose": "a\nb"}
+    )
+    assert changed.status_code == 400 and _fields(changed) == {"purpose": "plain_line"}
+
+
 def test_an_agent_has_at_most_five_bridges(owner: flow.Human, migrated: Engine) -> None:
     served = _agent(migrated, owner)
     for _ in range(5):
@@ -209,7 +232,8 @@ def test_across_owners_an_admin_asker_waits_only_for_the_bridges_owner(
     assert asked.status_code == 202, asked.text
     body = asked.json()
     assert body["class"] == "consent" and body["to"] == f"human:{friend.id}"
-    assert PURPOSE in body["summary"]
+    # Quoted on a line of its own, after the hub's words and before what a go grants.
+    assert f"as the asker wrote it:\n\n> {PURPOSE}\n\nWhat a go grants:" in body["summary"]
     [pending] = _requests(migrated)
     assert pending.proposal["kind"] == "bridge_owner" and pending.personal is True
     assert _bridges(migrated) == []
@@ -237,6 +261,34 @@ def test_an_asker_without_members_admin_also_needs_the_projects_consent(
     assert _bridges(migrated) == []  # the project has not answered
     assert answer_project(owner, second.id, "go").status_code == 200
     assert len(_bridges(migrated)) == 1
+
+
+def test_the_need_for_the_projects_consent_is_checked_again_at_the_go(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3: an asker's own `members:admin` counts as the project's consent only while it holds
+    the scope. Demoted before the bridge owner's `go`, the `go` is `invalid`, nothing is made,
+    and the request stays open; a new POST files the project's request as well."""
+    admin = _member(migrated, "ada", make_client, "admin")
+    friend = flow.human(make_client, migrated, "friend")
+    served, bridge = _agent(migrated, admin), _agent(migrated, friend)
+    asked = connect(admin, served, bridge)
+    assert asked.status_code == 202, asked.text
+    [pending] = _requests(migrated)  # the asker's own scope stood for the project's consent
+    assert pending.proposal["kind"] == "bridge_owner"
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="member")
+        )
+    refused = answer(friend, pending.id, "go")
+    assert refused.status_code == 400 and _fields(refused) == {"asker": "members_admin"}
+    assert _bridges(migrated) == []
+    [still] = _requests(migrated)
+    assert still.id == pending.id and still.status == "open"
+    again = connect(admin, served, bridge)  # supersedes, now with the project's request
+    assert again.status_code == 202, again.text
+    kinds = sorted(r.proposal["kind"] for r in _requests(migrated) if r.status == "open")
+    assert kinds == ["bridge_owner", "bridge_project"]
 
 
 def test_a_no_to_either_withdraws_the_other(
@@ -319,6 +371,36 @@ def test_a_role_the_limits_exclude_ends_a_bridge_across_owners(
     done = owner.patch(f"{PROJECT}/members/{served}", {"role": "reviewer"})
     assert done.status_code == 200, done.text
     assert _bridges(migrated) == []
+
+
+def test_narrowing_outside_roles_ends_a_bridge_a_new_request_would_refuse(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3: the limits across owners hold whatever the answers, so a narrower `outside_roles`
+    ends the connections it would now refuse, as a role change does; the others stay."""
+
+    def outside(roles: list[str]) -> Any:
+        return owner.patch(PROJECT, {"policy": {"outside_roles": roles}, "reason": "roles"})
+
+    assert outside(["coder", "designer"]).status_code == 200
+    friend = flow.human(make_client, migrated, "friend")
+    bridge = _agent(migrated, friend)  # a coder, allowed before and after
+    designer, coder = _agent(migrated, owner, "designer"), _agent(migrated, owner)
+    for served in (designer, coder):
+        asked = connect(owner, served, bridge)
+        assert asked.status_code == 202, asked.text
+        assert answer(friend, asked.json()["id"], "go").status_code == 200
+    assert len(_bridges(migrated)) == 2
+    narrowed = outside(["coder"])
+    assert narrowed.status_code == 200, narrowed.text
+    with migrated.connect() as conn:
+        rows = conn.execute(
+            select(t.bridge, t.membership.c.agent_id).join(
+                t.membership, t.membership.c.id == t.bridge.c.served
+            )
+        ).all()
+    state = {row.agent_id: (row.live, row.end_reason) for row in rows}
+    assert state == {designer: (None, "member_removed"), coder: (True, None)}
 
 
 def test_a_proxy_neither_lists_nor_answers_the_projects_consent(
