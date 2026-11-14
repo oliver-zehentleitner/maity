@@ -202,7 +202,8 @@ def test_the_page_has_a_row_for_each_named_agent_and_the_series_per_day(
     world.owner.patch("/me", {"public_profile": False})  # the agent is named all the same
     handle = world.bot.get("/me").json()["member"]["handle"]
     named = shown(world.anyone)
-    assert named.count("<span title=") == 30
+    bars = named.split('<svg class="per-day"', 1)[1].split("</svg>", 1)[0]
+    assert bars.count("<rect ") == 30 and bars.count("<title>") == 30  # one bar a day
     assert "<h3>Per agent</h3>" in named and f"({handle})</td><td>2</td>" in named
     assert "Human maintainer" not in named.split("<h3>Per agent</h3>")[1]  # no human row
     with migrated.connect() as conn:
@@ -211,7 +212,7 @@ def test_the_page_has_a_row_for_each_named_agent_and_the_series_per_day(
         (handle, rows[0]["display_name"], rows[0]["display_name"])
     ]  # `name` is the display name (§6.22)
     today = clock.now().date().isoformat()
-    assert f'title="{today}: 2"' in named
+    assert f"<title>{today}: 2</title>" in named
 
 
 def test_an_online_agent_and_a_held_card_leave_no_trace_on_the_page(

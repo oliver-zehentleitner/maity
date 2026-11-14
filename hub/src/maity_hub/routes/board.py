@@ -156,21 +156,15 @@ def observe_soon(request: Request, slug: str, response: JSONResponse) -> None:
         worker.links_added(project.id)
 
 
-def _reader(conn: Connection, project_id: str, request: Request) -> Membership | None:
+def _reader(conn: Connection, project_id: str | None, request: Request) -> Membership | None:
     """The caller's membership for a replay, which shows a redaction's reason only to whom
-    §8.5 gives it; none when the caller left the project since."""
-    slug = namespace.name_of(conn, project_id)
+    §8.5 gives it; none when the caller is no member (the replay's read check stops them
+    first)."""
+    slug = namespace.name_of(conn, project_id) if project_id else None
     try:
         return membership(conn, request.state.caller, slug) if slug else None
     except ApiError:
         return None
-
-
-def _card_project(conn: Connection, card_id: str) -> str:
-    project_id: str = conn.execute(
-        select(t.card.c.project_id).where(t.card.c.id == card_id)
-    ).scalar_one()
-    return project_id
 
 
 def load_link(conn: Connection, link_id: str, request: Request) -> dict[str, Any]:
@@ -193,8 +187,48 @@ def load_removed_link(conn: Connection, entry_id: str, request: Request) -> dict
     return history.link_shown(row, _reader(conn, _card_project(conn, row.card_id), request))
 
 
-idempotency.LOADERS["link"] = load_link
-idempotency.LOADERS["removed_link"] = load_removed_link
+def _card_project(conn: Connection, card_id: str | None) -> str | None:
+    if card_id is None:
+        return None
+    found: str | None = conn.execute(
+        select(t.card.c.project_id).where(t.card.c.id == card_id)
+    ).scalar()
+    return found
+
+
+def _link_project(conn: Connection, link_id: str) -> str | None:
+    """A link's project through its card, once removed through its add entry."""
+    card_id = conn.execute(
+        select(t.card_link.c.card_id).where(t.card_link.c.id == link_id)
+    ).scalar()
+    if card_id is None:
+        card_id = conn.execute(
+            select(t.card_history.c.card_id).where(
+                t.card_history.c.link_id == link_id, t.card_history.c.link_change == "added"
+            )
+        ).scalar()
+    return _card_project(conn, card_id)
+
+
+def _entry_project(conn: Connection, entry_id: str) -> str | None:
+    """A history entry's project, through its card."""
+    return _card_project(
+        conn,
+        conn.execute(
+            select(t.card_history.c.card_id).where(t.card_history.c.id == entry_id)
+        ).scalar(),
+    )
+
+
+def _note_project(conn: Connection, note_id: str) -> str | None:
+    return _card_project(
+        conn,
+        conn.execute(select(t.card_note.c.card_id).where(t.card_note.c.id == note_id)).scalar(),
+    )
+
+
+idempotency.register("link", load_link, idempotency.in_project(_link_project))
+idempotency.register("removed_link", load_removed_link, idempotency.in_project(_entry_project))
 
 
 @router.delete("/projects/{owner}/{slug}/tasks/{card_id}/links/{link_id}")
@@ -279,7 +313,7 @@ def _load_history_for_caller(conn: Connection, entry_id: str, request: Request) 
     return load_history(conn, entry_id, _reader(conn, _card_project(conn, row.card_id), request))
 
 
-idempotency.LOADERS["history"] = _load_history_for_caller
+idempotency.register("history", _load_history_for_caller, idempotency.in_project(_entry_project))
 
 
 def _redactor(mine: Membership, caller: Caller) -> None:
@@ -341,7 +375,7 @@ def _load_note_for_caller(conn: Connection, note_id: str, request: Request) -> d
     return _note_view(conn, row, _reader(conn, _card_project(conn, row.card_id), request))
 
 
-idempotency.LOADERS["note"] = _load_note_for_caller
+idempotency.register("note", _load_note_for_caller, idempotency.in_project(_note_project))
 
 
 def _note(conn: Connection, card: Any, note_id: str) -> Any:

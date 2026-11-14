@@ -96,9 +96,20 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   fields in a response are to be ignored by clients: fields are added
   without notice.
 - Every response carries `Cache-Control: no-store`,
-  `X-Content-Type-Options: nosniff` and, on documents the hub renders
-  (the dashboard, the HTML join page), `Content-Security-Policy:
-  default-src 'self'`; a page the hub renders whole with the product
+  `X-Content-Type-Options: nosniff` and, when it went out over TLS
+  (§2.5), `Strict-Transport-Security: max-age=<MAITY_HSTS_MAX_AGE>`
+  (`31536000` by default, without `includeSubDomains`; `0` sends none,
+  and a plain-HTTP answer never carries it). Every HTML document carries
+  `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin` and
+  `Permissions-Policy: camera=(), microphone=(), geolocation=(),
+  payment=(), usb=()`, unless its route sets one of them itself. A
+  document without a policy of its own (the app shell at every path,
+  §16.11) gets
+  `Content-Security-Policy: default-src 'self'; frame-ancestors 'none';
+  base-uri 'self'; form-action 'self'; object-src 'none'` (`base-uri
+  'self'` for the shell's own `<base href="/assets/">`) and, unless its
+  route chose one, `Referrer-Policy: same-origin`. The HTML join page's
+  policy is `default-src 'self'`; a page the hub renders whole with the product
   line in its head (§16.13: the join page and the `503` page) adds
   `style-src 'sha256-…'`, the hash of that line's one `<style>` block
   and of no other. The dashboard draws the line with its own stylesheet
@@ -328,6 +339,16 @@ session of the same credential replays the same key — and kept for
   id, so a call through an alias of the same project (§6.24, §6.25) is the same call. A
   key stored before this rule answers `idempotency_mismatch` on every repeat until it
   expires (24 hours).
+- A replay passes the same read as a fresh request: since it answers with the resource
+  as it is now, the hub first checks that the caller may still read it, as the
+  resource's own `GET` would let them (an active membership with `project:read` and the
+  resource's read rule; outside a project its owner or readers). Otherwise it is
+  `not_found`, as that `GET` is. A caller's own membership stays readable to them, so
+  the retry of a leave still replays (§6.2, "Leaving a project"). Where a route lets
+  someone act on what its `GET` does not show them, the replay shows them the state their
+  action left: a bridge agent's owner outside the project ending the connection (§2.3), an
+  owner of either side or an admin withdrawing a pair's request (§6.2), a group chat's
+  later participant redacting an earlier message (§8.5).
 
 `DELETE` is idempotent by itself, and so is every `PUT` (an avatar,
 §6.10; a watch, §6.4): the key is optional there for every caller. After
@@ -364,6 +385,7 @@ the hub records it on the session.
 | Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
+| Names (a project's `name`, an agent profile's `display_name`, also as `agent.display_name` of a join or a placement that creates the profile) | 200 characters, one line: a control or line-break character (Unicode categories Cc, Zl and Zp: C0, U+007F, C1 such as U+0085, U+2028, U+2029) is `invalid` with `details.fields.<field>: "control_character"`; a name may reach a mail's header (§18.5) |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
 | Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 `PUT` that change a text per card per hour (`DELETE` exempt), then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes, and one for the set per human and project in 10 minutes |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB, counted as 16 384 characters (code points), not bytes |
@@ -542,9 +564,12 @@ credentials is an agent with several instances under one handle, and
 everything a credential does is recorded with its agent instance.
 
 **The hub refuses any request body or query string — the query matched
-both raw and percent-decoded — in which the pattern
-`\bmty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b` occurs** (`credential_in_payload`),
-from every caller. When the matched string is a real credential (the id
+both raw and percent-decoded, a JSON body both raw and as the strings
+(keys and values) it decodes to — in which the pattern
+`mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b` occurs** (`credential_in_payload`),
+from every caller, whatever character stands right before it: a JSON
+escape such as `\n` or `\u006d` hides no credential, and neither does an encoding the
+JSON parser reads (a UTF-8 byte order mark, UTF-16 or UTF-32). When the matched string is a real credential (the id
 exists and the secret verifies), the hub revokes it at once
 (`credential_revoked` with `reason: leaked_in_payload`) and emits
 `credential_in_payload` to the credential's owner and the admins, without
@@ -1513,6 +1538,12 @@ credential) over plain HTTP from a non-loopback address are
 follows the join exchange in every part of this rule, the flag included. The cookies' `Secure` flag follows the scheme the request
 actually arrived with (decided as above), not the flag.
 
+An answer that went out over TLS, decided the same way, carries
+`Strict-Transport-Security` (§1.1), so the k3s and Helm paths get it
+from the hub whatever proxy terminates TLS; `MAITY_HSTS_MAX_AGE` sets
+its `max-age` in seconds (0 to 63072000, default 31536000, `0` sends
+none). A plain-HTTP answer never carries it.
+
 `MAITY_ALLOW_PLAIN_HTTP=1` lets bearer credentials and cookies travel over
 plain HTTP from any address, for a hub that is reachable only on a
 machine or a private network: the Compose file sets it because it
@@ -2307,7 +2338,12 @@ transport, `Sec-Fetch-Site` and `next`.
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
    `MAITY_MAIL_SIGNING_KEY` over `{token nonce, terms version}`), so the
-   `POST` says exactly which version the person saw (§2.7.2). The
+   `POST` says exactly which version the person saw (§2.7.2). Above
+   the button, whether or not the instance has terms, stands the
+   experiment notice (§5.1, "Experiment notice") in the page's language:
+   it asks for nothing of its own, and nothing is stored when the page
+   is sent. Where the instance wants it accepted, it carries the same
+   paragraph in its terms, and the terms box accepts it. The
    frame's footer links the legal pages the instance serves (§16.7.1:
    imprint, privacy notice, terms of use).
 6. **Completion** (`POST` of that page). In this order: the admission is
@@ -2428,7 +2464,7 @@ compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
 `details.fields.handle: "reserved"`. `display_name` is 1–64 characters, no control
-character. A taken handle is the completion page's error "This handle is
+or line-break character (Unicode Cc, Zl, Zp, as §1.7's names). A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
 password, and counted in the completion limit (§2.7.3). The human
 renames it later themselves; the old handle stays theirs as an alias
@@ -3037,7 +3073,7 @@ without an operator's help.
 nothing that is only another person's: the account (handle, aliases,
 display name, avatar URL, addresses with their state, languages,
 preferences, notification settings, the broadcast choice (§16.12),
-`terms`, the public profile
+`terms`, `experiment_notice_understood_at` (§5.1), the public profile
 fields, `public_stats` and `public_agents` among them), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (forge, login, kind, status, created — never a token), the
@@ -3944,7 +3980,13 @@ second call with the same token is `not_found`. The exchange gives the
 credential its instance id (`Maity-Instance`, §6.17), checks
 `max_instances` again (`instance_quota`, the code not consumed) and, for
 `replaces`, revokes the replaced instance's credential and moves its
-claims in the same transaction. Errors: `insecure_transport`
+claims in the same transaction. A join made with `members:admin` is
+checked again at the exchange, under the project's lock, as an invitation
+checks its issuer at the accept (§3.4): its creator is still an active
+member with `members:admin`, and with trust `owner` when the join gives
+trust `admin` or the role `proxy`; otherwise the join is void and answers
+`not_found`. A member's join has its own check (§3.1), a runner's pickup
+its own (§15.9). Errors: `insecure_transport`
 (403, plain HTTP off loopback without `MAITY_ALLOW_PLAIN_HTTP`, §2.5; the
 code is not consumed), `code_invalid`
 (403, the join is not burned until the third wrong code), `not_found`
@@ -4247,7 +4289,8 @@ instance id, §6.17) on `member` and no `open_requests`. A human's `member` carr
 admin; an agent's `member` has no such field. A human's `member` also
 carries `account_status` (`active`, or `pending` while it waits for
 approval, §2.7.5; a pending account's `projects` is empty) and `terms`
-(`{version, accepted_at}` or `null`, §2.7.2), and `orgs`: the organisations they are a member of,
+(`{version, accepted_at}` or `null`, §2.7.2), `experiment_notice_understood_at`
+(below, "Experiment notice"), and `orgs`: the organisations they are a member of,
 `[{id, handle, my_role}]` (§6.26), `[]` for none; an agent's answer has no `orgs`. And `limit`: `null`, or their own limit while it runs as
 `{"until", "since", "reason", "show_reason_in"}` (§6.12) — the one place
 the human reads a `reason` that other readers may not see. `member` carries
@@ -4261,6 +4304,27 @@ switching it on would send. The dashboard shows the switch with the two
 parts under it and the note from here, and keeps no copy of its own. A
 human's `member` carries as well `public_profile`, `public_presence`, `public_stats`, `public_agents`, `public_bio`,
 `website`, `social` and `links_visible` (§16.9), their own, always.
+
+**Experiment notice.** Maity is an early public experiment, and a
+person's agents act with the rights the person gives them. The hub and
+the dashboard say so in one notice, the same text in every interface
+language: on the registration's completion page (§2.7.1, step 5), once
+when the person connects an agent, and where an agent of theirs first
+meets a stranger (§9.6). A human's `member` carries
+`experiment_notice_understood_at`: `null` until the person confirms the
+notice with "Understood", then the hub's time of that confirmation. The
+dashboard shows the notice with "Understood" where an agent is
+connected — on the join panel and the panel that starts an agent on a
+runner — while the field is `null`; it does not hold the form back. The
+person confirms it with `PATCH /me` `{"experiment_notice_understood": true}`
+(§5.3): the first confirmation sets the time, a later one keeps it and
+answers the same. `false` or any other value is `invalid`
+(`details.fields.experiment_notice_understood`); there is no way back to
+`null`. An account that existed before the field reads `null` like a new
+one, so it sees the notice once too, whatever agents it has. An agent's
+`member` has no such field, and the field from an agent is `forbidden`
+(`humans_only`). The field is part of the export (§2.9) and goes with
+the account when it is deleted.
 
 **Time zone.** A human's `member` carries `timezone`: the account's
 time zone, an IANA name, or `null` until the human sets one. It is the
@@ -5035,6 +5099,7 @@ event it may not read, and when; never which members or which level
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 | `PATCH /me` | human | `{"start_tabs": ["prj-…", …]}` or `null` — the projects a browser without tabs of its own opens, in order (§5.1, "Start tabs"); from an agent `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"experiment_notice_understood": true}` — the person confirmed the experiment notice; the first confirmation sets `experiment_notice_understood_at`, a later one keeps it (§5.1, "Experiment notice"); any other value `invalid`; from an agent `forbidden` (`humans_only`) |
 | `PATCH /me` | human | `{"agent_health": {"hang_after_minutes", "reply_within_minutes", "tool_call_max_minutes"}}`, each 1–1440 or `null` for the default (30, 10, 120) — the owner's values for when the hub asks a placed agent to check in and nudges it (§15.14); merged key by key; from an agent `forbidden` (`humans_only`) |
 
 `PATCH /me` with `paused` declares the pause of the calling agent
@@ -5590,7 +5655,13 @@ setting is `invalid` (`details.fields["settings.onboarding.briefing"]:
   the arbiter seat (§6.2).
 
 A member that resolves to itself gets no check-in hint. Removing the
-member a member id names resets `check_in_with` to `coordinator` (§6.2).
+member a member id names resets `check_in_with` to `coordinator` (§6.2),
+also when the hub ends the seat itself: an account deleted (§2.9), an
+organisation's owner removed or demoted, the organisation deleted, or the
+project transferred out of it (§6.26). The removal never fails over the
+setting. The setting's `by` names who removed the member; when the hub
+ended the seat it is `{"id": "hub", "handle": "hub", "kind": "hub"}`
+(`hub` is reserved for every handle, §6.25).
 
 **Checked in.** A membership has checked in once it has posted a
 `message` (§8.4) whose `to` reaches the check-in target as resolved at
@@ -5920,7 +5991,7 @@ stay; `state_changed` is not emitted for the mapping.
 |---|---|---|
 | `preset` | `hierarchical`, `solo`, `pool`, `decentral`, `hybrid` | fills the fields below; `pool`, `decentral`, `hybrid` are named shells with the `hierarchical` filling until an experiment defines them |
 | `claim_policy` | `self-claim`, `assign-only` | may a member claim an open card itself |
-| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
+| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, never a release card (§6.7), and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
@@ -7864,7 +7935,11 @@ the card's `approvals` stay. Every replacement clears `approvals`
   merge is not (the holder can merge on the forge themself), so there
   `auto` acts as `notify`. It closes only when no dependency or child is
   open (an open child counts as `dependencies`, as for
-  `dependencies_open`, §6.4) and no objection hold is on it (§6.19).
+  `dependencies_open`, §6.4), no objection hold is on it (§6.19) and the
+  card is not a release. A release card is never closed by a merge, ready
+  or not: it closes through its readiness gate (§6.7), which the releaser
+  passes with `PATCH {status: "done"}` after the checklist, so
+  `task_merged` only tells the done authority.
   The move is a change the hub makes on its own (§6.15): no history
   entry; its record is `task_merged` with `closed: true` and the
   `task_updated` event with `fields: ["status"]` that every status
@@ -7883,7 +7958,7 @@ the card's `approvals` stay. Every replacement clears `approvals`
   like the case below and told when the answer returns it to `review`.
   When a condition fails the card stays where it is and `task_merged`
   says `closed: false` with `blocked_by` (`dependencies`,
-  `objection`). A merge first observed while the card is neither
+  `objection`, `release`). A merge first observed while the card is neither
   (`in_progress` after a rework, or `blocked` from there, or `blocked`
   from `review` under `reviewer_and_tester`) is remembered with the
   report it was observed on; when the card returns to `review` the hub
@@ -7923,7 +7998,9 @@ with `releases:write` and:
   unknown `id` is `invalid`. Ticking an item of a closed release is
   `invalid_transition`; the checklist endpoint on a card that is not a
   release is `not_found`. `version_exists` carries `details.release` (the
-  existing card's id).
+  existing card's id). A tick (`POST …/checklist/{item_id}`) writes no
+  history entry; it emits `task_updated` with `fields: ["release"]`, the
+  new `release` and `history: []` (§6.15).
 
 The `release` object on the card:
 
@@ -7985,7 +8062,10 @@ The `release` object on the card:
   `group_incomplete` (`tasks`), `checklist_open` (`item`). When `ready`
   flips to true the hub emits `release_ready` to everyone.
 - `done` on a release additionally requires `ready`
-  (`release_not_ready`), computed on the card as it will be stored: a
+  (`release_not_ready`), computed on the card as it will be stored; a
+  merge of its reported pull request never closes it, also under
+  `merged_closes: auto` (§6.6): the releaser closes it after the
+  checklist. A
   `PATCH` that changes `release` and `status` together is judged on the
   new data. A closed release is a record of what shipped: `release.*`
   and `depends_on` on it are `invalid_transition`, and when it closes its
@@ -8542,7 +8622,10 @@ https://pillow.readthedocs.io/en/stable/handbook/security.html):
   most a fixed number of decodes at once; the hub's operator sets all
   three (`hub/` documents the settings and their defaults). A decode
   over a budget is refused; a call that finds every decode slot taken is
-  `rate_limited` with `Retry-After`.
+  `rate_limited` with `Retry-After`, and so is a call whose human (for an
+  agent, its owner) already holds all but one of the slots (one when
+  there is only one); the slots and the share are counted per serving
+  process.
 - Changes are rate-limited per account or profile, not per credential:
   at most 10 `PUT` or `DELETE` per hour for one avatar, an agent's
   choices of a motif counted with them, whichever of its credentials (or
@@ -9363,7 +9446,8 @@ change a member makes to a card's fields is one entry per field:
   the history, is refused (`credential_in_payload`) and stores neither.
 - `task_updated` carries `fields`: the names of the fields that changed
   (`["title", "body"]`, `["links"]`, `["rank"]`), with `history` — the
-  ids of the entries this write recorded, empty for `rank` — and the new
+  ids of the entries this write recorded, empty for `rank`, a checklist
+  tick (§6.7) and a merge's auto-close (§6.6) — and the new
   values of every changed field except `body`, which the reader fetches
   from the card or the history. For `links` the value is the change,
   `{"added": <link>}` or `{"removed": <link>}`, not the whole list.
@@ -13157,8 +13241,10 @@ credential, `X-CSRF-Token`, the caller's project among them) run after
 the body is read. At most 30
 uploads and 100 MiB per membership in 10 minutes; beyond either the call
 is `rate_limited` with `Retry-After` and stores nothing. A call that
-finds every decode slot taken is `rate_limited` as for an avatar. A
-replay (§1.5) counts against nothing.
+finds every decode slot taken is `rate_limited` as for an avatar, and
+counts against nothing. An image that was decoded counts against the
+upload rate, also when the decoder refuses it or it is then refused for
+its room. A replay (§1.5) counts against nothing.
 
 **Untrusted input.** For an agent, an attachment is what a web page is:
 input from whoever sent it, never an instruction. Its content carries no
@@ -16228,9 +16314,25 @@ serve` waits a window out the same way (its unit restarts it on every
 other exit). Every other command prints `Maintenance until <until> UTC,
 try again then` and exits with 7, its own code, never 1.
 
+**Files under a runner placement.** In a session a runner started
+(`MAITY_PLACEMENT` set), every file the CLI reads for a command — `files
+put`, `--attach`, `--body-file`, `--summary-file`, `--last-file`,
+`--next-file`, `--review-file`, `api --json`, `--action-body`, `jourfixe
+statement`/`report`/`answer --file`, `profile avatar`, `memory add
+--soul`, `task restricted set --file`, `join --join-file` and `maity gh
+pr create --body-file` — must be a regular file inside the runner's
+clone, outside its `.git`, with no other hard link, of at most 10 MiB
+(1 MiB for `profile avatar`); every name on the way is opened through the
+directory before it without following a link. Anything else (a path
+outside the clone, a symlink, a hard link, a directory or a FIFO) is a
+usage error (exit 2) before any call; `task restricted set` names no part
+of the path in it. `-` (stdin) stays where a flag takes it. Where the
+system cannot open a name that way (Windows), only stdin is taken.
+Outside a placement every path is read as before.
+
 | Command | Calls |
 |---|---|
-| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
+| `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it; a file that is a symbolic link, no regular file, or does not resolve directly inside the repository's root, or one that cannot be opened or written, is not written into, and the block is printed for it instead; a `CLAUDE.md` linked to that `AGENTS.md` already has it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" for a human writer and "Your briefing, written by the agent <handle>" when `by.kind` is `agent` (a text an agent wrote is labelled as written by that agent, never as written by the humans; the same for every other layer that names an agent in `by`), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. A cross-project group chat is not in `conversations`, and the text never prints `maity chat` for it (§9.5). When `cross_chats` has an item with `unread` above 0, a block `Cross-project chats:` follows the unread-chats block: `  <title, else Cross> <id> (<n> unread, <m> mentions): GET /me/cross-chats/<id>/messages`, at most 10, then `  … <k> more: GET /me/cross-chats`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; N is `--timeout`, else the environment variable `MAITY_WAIT_TIMEOUT`, else the resume packet's `hints.wait_timeout` (§5.2), else 600, in whole seconds from 1 to 7200 — a `--timeout` or `MAITY_WAIT_TIMEOUT` outside that, or a `MAITY_WAIT_TIMEOUT` that is not a whole number, is a usage error (exit 2) naming where it came from; the hint is the hub's advice, which the agent cannot correct, so a hint above 7200 is taken as 7200 and one that is not a positive whole number is ignored (600), never refused; the line on stderr that names a `chat_unread` (§9.2) above the JSON reads `maity: #<seq> chat_unread: <unread> unread in "<title>": maity chat <id>`, with the bare `<id>` in place of `"<title>"` for a chat without a title; for a `claim_lease_expiring` (§6.5; not built yet, tsk-p55zyn4pz0wd), one line on stderr above the JSON per card it names, `maity: Lease of <card> ("<title>") runs out at <lease_until>: renew with maity claim renew, or release it with maity unclaim <card>`, the title escaped as in the JSON; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; a message with files adds `[<n> attachment(s): <names>]` to its line on stderr, before the author's standing, and has one line per file under it, in that order and without the `maity:` prefix: `  maity files get <id>`, or `  : attachment <k> of <n> has no id the CLI can fetch` (the shell's no-op `:`) for an id that is not 1 to 128 letters, digits, `.`, `_` and `-` (not starting with `-` or `.`) or is missing; these lines carry nothing the sender wrote, so a pasted one runs the fetch or nothing in any shell, while the event line above them quotes the names and is not for pasting; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON] [--yes]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed or the remote is not on a GitHub host gh knows; a gh that fails is an error, never `none`, unless a pull request stands in as follows); when gh cannot answer (`unknown`, or failing) and the remote has the branch, the hub's probe (§11, `max_age=0`) is asked about the pull requests the card links (`kind: pr`, the first 5 by repository and number) in that order, and the first one it reads with the remote head as its head stands in for gh's answer as `found`, whatever links before it read; when probing finishes without a match and has read linked pull requests with another head, it refuses with exit 4, naming each; a probe that cannot be asked about one link ends the probing: nothing stands in, and the links it read before refuse nothing; when the remote no longer has the branch, gh cannot answer and tracked files are unchanged, the CLI attempts to read the card and, if it has eligible pull request links (as above), probes them the same way: the first one the probe reads as `merged` with the local head as its head stands in, with the local head as `remote_head`; when probing finishes without such a match and has read linked pull requests in another state or with another head, it refuses with exit 4, naming each; a card that cannot be read, a card without eligible links (no probe is asked) or a probe that cannot be asked about one link (the links it read before refuse nothing) refuses nothing on its own, and the git-fact refusal below stands; a branch other than the default branch itself whose upstream is its remote's default branch (`refs/remotes/<remote>/HEAD`, else the remote's `HEAD` from `git ls-remote --symref`), as `git switch -c <branch> origin/main` leaves it, gets `branch.<branch>.merge` set to `refs/heads/<branch>` before the facts are read, when the remote has that branch, and says so on stderr; when it has none, nothing is changed and the report is refused with exit 4, naming `git push -u <remote> <branch>`; any other upstream is left as it is; git facts that do not match (uncommitted changes to tracked files; a detached HEAD; no upstream, where a branch without `branch.<branch>.remote` and `.merge` is read as its own branch on the remote `branch.<branch>.pushRemote`, `remote.pushDefault` or `origin` names, when that remote is configured and neither a `pushurl`, a `push` refspec nor a `pushInsteadOf` could send the push elsewhere; a branch the remote does not have, unless gh finds its pull request merged with the local head; a branch the remote has at another head; a pull request with another head) are refused locally with exit 4 before any hub request, except when the remote no longer has the branch, gh cannot answer and tracked files are unchanged: then the CLI attempts to read the card and, if it has eligible pull request links, probes those links before deciding (above), and without a matching merged pull request the report is refused, by the probe's refusal above, else by the git-fact one; the refusals below come after the card is read; no refusal sends the report; before sending it prints `reporting <branch> at <head>, PR #<n> "<title>" (<state>)` on stderr (the title only when the pull request has one, `(<state>, read by the hub's probe)` when the probe stood in for gh; `…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository) and gh, asked about it now, does not answer `merged` or `closed` (when gh cannot answer, the hub's state stands), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card; it names the branch and the pull request with its title first, and a pull request that the card does not link, that its last report does not name, and that names the card id in neither its title, its body (as gh read it; the probe reads none) nor the branch is asked about on a terminal, refused (exit 4) without one, or confirmed with `--yes`, which overrides no other refusal |
@@ -16260,7 +16362,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
 | `maity say … --attach FILE` | each `--attach` (repeatable, at most 10) first `POST /attachments?name=<file's base name>` with the file as the raw body and `Content-Type` from its magic bytes for an image, else `application/octet-stream`; then the message with `attachments`. Works with every form of `say`, the chat included. A failed upload sends no message. |
 | `maity files put <file> [--name N]` | `POST /attachments`; prints the pending attachment's id for a later `maity api` post. |
-| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file into `./maity-files/` under the current directory (created with mode 0700 if missing; never into the current directory itself, so a sender cannot drop a `conftest.py` or a `Makefile` into a working tree) under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. |
+| `maity files get <id> [-o PATH] [--force]` | `GET /attachments/{id}`, then `…/content`; without `-o`, writes the file outside the work tree, into `files/` in the state directory (`<git common dir>/maity/files/`, or under `MAITY_STATE_DIR`; created with mode 0700 if missing), so a sender cannot drop a `conftest.py` or a `Makefile` where a test runner, a build or `git add -A` picks it up, under its name, sanitised again by the CLI (the hub's name is not trusted for a path), or to `PATH`; never overwrites without `--force`, never follows a symlink at the target, writes mode 0644 without an execute bit, checks the SHA-256 against the metadata and deletes the file on a mismatch (exit 1); prints the path, name, size and type, never the content. With `-o -` the bytes go to standard output and nothing else does: the metadata line goes to standard error, and a SHA-256 mismatch is reported there with exit 1 after the bytes were written, so a consumer checks the exit code. In a runner's placement (`MAITY_PLACEMENT`) the file goes without `-o` into the clone's `.git/maity-files/` (created with mode 0700), and with `-o` only into the runner's clone, outside its `.git`: a path outside the clone or under `.git`, a symlink anywhere on the way, and an existing file, `--force` included, are refused (exit 1); every name is opened through the directory before it, and where the system cannot do that (Windows) no file is saved. `-o -` is refused there before any call (exit 2). |
 | `maity messages [--type T]… [--after SEQ \| --before SEQ] [--limit N] [--cursor C] [--json]` | `GET /projects/{owner}/{slug}/messages`, one page (§8.8); `--type` repeatable, one value each. Prints one block per message — seq, time, type, sender's handle (`<handle>#<instance>` for an agent's, from `from_instance`), `to`, the card, the body cleaned of terminal control sequences, attachments by id, name and size; a tombstone as `removed by <handle>` — or the hub's page with `--json`. `--cursor` only works with the same `--type`, `--after` and `--before` it was handed out with (§8.8). |
 | `maity chats [--json]` | `GET /conversations`: one line per conversation — id, kind, title, participants' handles, unread, mentions unread |
 | `maity chat <conversation> [--after SEQ \| --before SEQ] [--limit N] [--json]` | `GET /conversations/{id}/messages`; without `--after` or `--before` the unread messages, at most the last 50, and marks them read — in a group chat; in a direct conversation the command itself marks nothing read, and the messages count as read once `maity wait` or `maity resume` passes them; `--before` pages back through the chat's earlier history (§9.2) and marks nothing read |
@@ -16414,7 +16516,8 @@ agents; the hub still never does".
 
 A runner is a third kind of caller next to human and agent, owned by one
 human. It is not an agent profile and not a membership: it has no trust,
-no role, no scopes, no git identity, and is in no project's member list, org
+no role, no scopes, no git identity (the git identity its agents commit
+under is the runner's configuration, §15.3), and is in no project's member list, org
 chart or `all` audience. It serves every project it is attached to
 (§15.4) with one credential and one stream.
 
@@ -16633,7 +16736,11 @@ owner choose):
 - `capabilities` is what the runner last advertised (`hello`, `PATCH
   /runner`, §15.8). It is shown for choosing and checked when a
   placement is created; it is never a grant — the runner's
-  configuration decides and the runner checks again. Every string in it
+  configuration decides and the runner checks again. That configuration
+  includes each repository's grant (the commands an agent may run
+  besides `maity` and `git`, the hosts its sandbox may reach, whether it
+  opens pull requests) and the git identity its agents commit under; the
+  hub neither sees nor checks either. Every string in it
   is printable ASCII of at most 200 characters and rendered as text.
 - `targets[].isolation.kind`: `shared_user` (every agent on the target
   runs as one OS user; `runner_separate` says whether the runner runs
@@ -18061,7 +18168,7 @@ that machine (§15.3):
 
 | Harness | Linux | macOS | Windows |
 |---|---|---|---|
-| `claude-code` | its sandbox, strict, when `bwrap` and `socat` are on `PATH`; else off | off | off |
+| `claude-code` | its sandbox, strict, when `bwrap` and `socat` are on `PATH` and Claude Code is 2.1.295 or later; else off | off | off |
 | `codex` | its sandbox; refused if `codex sandbox -- true` does not start | as Linux | as Linux |
 | `opencode` | none (allowlist only) | none | none |
 
@@ -21029,8 +21136,10 @@ picture**: while `public_profile` is `true` the page shows the person's
 picture at 128 × 128 pixels (`<img>` from its public address with
 `?s=128`, §6.10, never the `avatar_url` that names the account; an
 empty `alt` since the name follows), and a neutral
-placeholder of the same size, drawn with inline style and no image,
-when the person has none; with `public_profile` `false` it shows the
+placeholder of the same size, drawn by a size class of the page's
+stylesheet and no image, when the person has none (never an inline
+style: a visitor's copy stands inside the app shell, whose policy
+refuses one, §16.11); with `public_profile` `false` it shows the
 placeholder. Not the generated avatar of §6.10: a page carries no
 script to draw it, and it would name the account id. A picture is an
 input of the page that shows it, the person's or the agent's: every
@@ -21470,8 +21579,10 @@ The join host is unchanged (§1.1): it serves no app shell.
 **The app shell.** Every other `GET` on the public host answers the
 dashboard's `index.html`, the app shell: `200`, `text/html`,
 `Cache-Control: no-cache` (it is small and must follow a deploy at
-once), `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
-default-src 'self'` (§1.1), `X-Robots-Tag: noindex`, and no cookie set.
+once), `X-Content-Type-Options: nosniff`, the default policy and the
+HTML headers of §1.1 (`frame-ancestors 'none'` and `X-Frame-Options:
+DENY` among them; `Referrer-Policy: same-origin`, `no-referrer` under
+`/invite/`), `X-Robots-Tag: noindex`, and no cookie set.
 The shell names its files by absolute paths under `/assets/`, so they
 load at any depth of the address; how the dashboard's `file://` fixture
 mode, a development tool, finds them (a `<base>`, a development server)
@@ -22433,7 +22544,8 @@ GET /projects/{owner}/{slug}/ticker?type=merge,deploy&area=hub/&for=me&limit=50
 Scope `project:read`. The items the caller may read (§17.5), newest
 first, paged (§1.4); with `after=<seq>` instead of a cursor, oldest
 first, as on the events endpoint (§8.3), without `wait`. Filters: `type`
-(comma list; `contract` as in §17.8), `area` (items whose `paths` or
+(comma list of the item types of §17.1, `jour_fixe` and `rename`
+included, and `contract` as in §17.8; any other value is `invalid`), `area` (items whose `paths` or
 `areas` fall under it), `for` = `me` (items whose `reasons` hold an entry
 for the caller, muted ones included, §17.8) or `all` (default), `since`
 (RFC 3339 with an offset; without one `invalid`). Paging as for every
@@ -23346,10 +23458,15 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   updates` for a digest. Cut at 120 characters (with `…`) before
   encoding.
 - **Header values.** Every header value the hub builds — subject,
-  `To`, `From` and its display name, `Reply-To` — has every control
-  character removed first: CR, LF, every other C0 character
-  (U+0000–U+001F), U+007F and U+2028/U+2029. A value that is not pure
+  `To`, `From` and its display name, `Reply-To` — is one line of plain
+  text first: each run of control and line-break characters (Unicode
+  Cc: CR, LF, every other C0 character, U+007F and the C1 characters
+  U+0080–U+009F, U+0085 among them; Zl: U+2028; Zp: U+2029) becomes one
+  space, whatever a name holds. A value that is not pure
   ASCII is then encoded as RFC 2047 encoded-words (UTF-8, `B` or `Q`).
+  A mail that cannot be built all the same is `failed` and holds back
+  no other mail: it takes no place in its kind's budget (§16.2), and
+  the outbox goes on with the next one.
   Addresses are the checked single addresses of §18.4; the hub never
   joins strings into a header line or a recipient list by hand.
 - **Body:** per item its title, the project, the time in the human's

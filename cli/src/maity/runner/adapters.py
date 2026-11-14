@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,13 +40,16 @@ GIT_PROMPT = (
     "origin <branch>`; never `push -u`, `--set-upstream`, `--track` or `branch -m`, which "
     "store an upstream or rename one and print an error. `maity report` needs no upstream."
 )
-# Claude Code's sandbox hides the clone's credential; only a command that is a `maity` call
-# alone matches `excludedCommands` and runs outside it (cli/context/runner.md).
+# Claude Code's sandbox hides the clone's credential; `maity` runs outside it, and only as
+# one plain call: the runner's hook (plaincall) refuses anything else on its line
+# (cli/context/runner.md).
 CLAUDE_MAITY_PROMPT = (
-    " Run every `maity` command alone: in a pipe, chained with `;`, `&&` or `||`, sent to the "
-    "background with `&` or inside `$(...)` it runs "
-    "inside the sandbox and cannot read this clone's credential."
+    " Run every `maity` command alone, as one plain call: a line that pipes, chains with `;`, "
+    "`&&` or `||`, redirects, sends it to the background with `&`, uses `$(...)`, a heredoc "
+    "or a `$` is refused. Pass longer text in a file in this clone (`--body-file`)."
 )
+# What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
+MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")
 # An interactive session the runner ended because its agent stopped listening (§15.14) starts
 # again on the same conversation with this line, where the harness can resume one.
 RESUME_PROMPT = (
@@ -67,8 +71,11 @@ SUPERVISED_PROMPT = (
 GIT_SUBCOMMANDS = (
     "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
     "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
-    "ls-files", "blame", "grep", "remote -v", "config user.name", "config user.email",
+    "ls-files", "blame", "grep", "remote -v",
 )  # fmt: skip
+# Not `config user.name` or `config user.email`: the session's identity comes from the
+# runner (git_identity), which wins over any configuration, and without a sandbox those
+# would write `.git/config`.
 GIT_DENIED = (
     "git -c *", "git --config-env*", "git --exec-path*", "git * --no-index*",
     "git * --upload-pack*", "git * --receive-pack*", "git * --exec=*", "git *.git/maity*",
@@ -131,6 +138,15 @@ def git_config(ctx: Context) -> dict[str, str]:
     return env
 
 
+def git_identity(ctx: Context) -> dict[str, str]:
+    """Who the session commits as: the runner's `[git]`, author and committer alike. The
+    variables win over every git configuration, so neither the agents' user's own (the
+    operator's, in the `single` layout) nor one the agent sets is used (cli/context/runner.md)."""
+    name, email = ctx.git.name, ctx.git.email
+    return {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}  # fmt: skip
+
+
 def writes_denied(ctx: Context) -> bool:
     """Whether the session's git cannot write `.git/config`: Claude Code's and Codex's
     sandboxes deny it (claude_settings, codex_config)."""
@@ -178,6 +194,7 @@ class Context:
     as_user: AsUser = AsUser()  # who the agents run as (§7.6)
     agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
     resume: bool = False  # interactive: continue the harness's last conversation (§15.14)
+    git: config.GitIdentity = config.GitIdentity()  # who the session commits as (`[git]`)
 
 
 @dataclass(frozen=True)
@@ -200,6 +217,7 @@ def launch(ctx: Context) -> Launch:
         # A nested repository the agent registers as a submodule keeps its own configuration,
         # which the pin does not reach; git passes these settings on to it.
         **git_config(ctx),
+        **git_identity(ctx),
         **ctx.extra_env,
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
@@ -212,19 +230,22 @@ def launch(ctx: Context) -> Launch:
     # git's own repository for each run maity starts, outside the clone, in the agent's
     # directory the sandbox hides (clonecheck._private_dir). Codex runs maity in its sandbox,
     # which cannot write there: named as the clone's `.git/maity`.
+    # The runner's records for maity are kept there too, outside the clone, whose files are
+    # the agent's to write (clonecheck.runner_record).
     if ctx.harness.id == "codex":
         env[clonecheck.GIT_PRIVATE_ENV] = clonecheck.IN_CLONE
+        records = ctx.clone / ".git" / "maity"
     else:
-        private = ctx.agent_dir / "git"
-        ctx.as_user.mkdir(private)
-        env[clonecheck.GIT_PRIVATE_ENV] = str(private)
+        records = ctx.agent_dir / "git"
+        ctx.as_user.mkdir(records)
+        env[clonecheck.GIT_PRIVATE_ENV] = str(records)
     # The git maity starts there: this one, found on the runner's PATH, not the agent's.
     git = proc.program("git")
     if git is not None:
-        ctx.as_user.write(ctx.clone / clonecheck.GIT_PATH, git + "\n")
+        ctx.as_user.write(records / clonecheck.GIT_PATH.name, git + "\n")
     # What `maity gh` may do here: the repository it pins and the gh it starts, or nothing
     # (an empty record also clears one a former grant left).
-    ctx.as_user.write(ctx.clone / ghpr.PULL_REQUESTS_PATH, pull_requests_record(ctx))
+    ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -320,6 +341,22 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          *(f"{git}/{name}" for name in GIT_PROTECTED)]},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
+        # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
+        # that starts with `maity` and holds anything else (plaincall). It runs for every
+        # tool, outside the sandbox, from the runner's own code; a hook that fails or times
+        # out refuses the call (`onFailure`, Claude Code 2.1.295 and later: the sandbox is not
+        # switched on for an older one, capabilities.sandbox_version_ok). Shell form, so a
+        # version that predates exec form runs it too; `|| exit 2` refuses on any version
+        # when the hook cannot start or fails.
+        module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
+        hook = f"{module} || exit 2"
+        settings["hooks"] = {
+            "PreToolUse": [
+                {"hooks": [{"type": "command", "command": hook, "timeout": 30,
+                            "onFailure": "block"}]},
+            ],
+        }  # fmt: skip
+        settings["disableAllHooks"] = False  # over a `true` in the agents' user settings
     return settings
 
 
@@ -345,8 +382,9 @@ def trust_clone(ctx: Context) -> None:
 
 
 def pull_requests_record(ctx: Context) -> str:
-    """`ghpr.PULL_REQUESTS_PATH`'s content: the placement's repository and the gh on the
-    runner's PATH when the grant has pull requests and gh is there, else empty."""
+    """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
+    and the gh on the runner's PATH when the grant has pull requests and gh is there, else
+    empty."""
     if not ctx.grant.pull_requests:
         return ""
     gh = proc.program("gh")
@@ -523,8 +561,11 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins.
+    # After the allows: the last match wins. A `maity` call only as one plain call, as the
+    # Claude Code hook has it (plaincall): opencode checks each command its scanner finds,
+    # and a redirect or a substitution on maity's line would pass `maity *`.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
+    bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited
     # (agents commit through git; its config and hooks would turn a git call into anything).

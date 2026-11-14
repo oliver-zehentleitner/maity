@@ -20,13 +20,10 @@ import logging
 import threading
 from datetime import timedelta
 
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, worker_runs
-from maity_hub import instance_settings as store
+from maity_hub import clock, secretbox, worker_runs
 from maity_hub import tables as t
 from maity_hub.mail import address as addresses
 
@@ -48,14 +45,10 @@ def configure(secret_key: bytes | None) -> None:
 def _key(conn: Connection) -> bytes | None:
     base = _secret_key[0]
     if base is None:
-        stored = store.sealed(conn, addresses.LOCK_PEPPER)
-        if stored is None or len(stored) != 32:
+        base = secretbox.stored_fallback(conn, addresses.LOCK_PEPPER)
+        if base is None:
             return None
-        base = stored
-    derived: bytes = HKDF(
-        algorithm=hashes.SHA256(), length=32, salt=None, info=PURPOSE.encode()
-    ).derive(base)
-    return derived
+    return secretbox.derive(base, PURPOSE)
 
 
 def fingerprint(conn: Connection, source: str) -> str | None:
