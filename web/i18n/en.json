@@ -4682,7 +4682,7 @@
   "settings.remove.title": "Remove a reported message",
   "settings.repo.confirm_change": "Change the repository to {url}? The probe, the Keep the Why dashboard and new clones of runners follow it.",
   "settings.repo.confirm_remove": "Remove the repository? The probe and the Keep the Why dashboard stop, and runners cannot clone for this project.",
-  "settings.repo.forge_rule": "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.",
+  "settings.repo.forge_rule": "Must be https://<host>/<owner>/<name>, on any forge; a GitLab group path such as https://gitlab.example.com/group/subgroup/name works too.",
   "settings.repo.hint": "Leave it empty to remove it. The hub reads the forge's state and the Keep the Why dashboard from it.",
   "settings.repo.not_saved": "Repository not saved: {reason}",
   "settings.repo.save": "Save repository",

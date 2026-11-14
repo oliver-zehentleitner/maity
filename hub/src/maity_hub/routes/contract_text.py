@@ -36,7 +36,7 @@ def read_contract(slug: str, card_id: str, request: Request, caller: AnyCaller) 
     project = mine.project
     fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        reason = fg.refused or "no_grant"
+        reason = forge.unread_reason(fg, project.repository_url)
         raise probe_not_configured(reason if mine.may("project:admin") else None)
     # Only the project's own repository (§6.13): the card names a path in it, never another.
     repository = forge.repository_of(project.repository_url)
@@ -75,7 +75,7 @@ def read_whole_contract(slug: str, request: Request, caller: AnyCaller) -> Respo
     path = (project.settings or {}).get("contract_path") or contract_text.DEFAULT_PATH
     fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        reason = fg.refused or "no_grant"
+        reason = forge.unread_reason(fg, project.repository_url)
         raise probe_not_configured(reason if mine.may("project:admin") else None)
     repository = forge.repository_of(project.repository_url)
     branch = project.repository_default_branch or "main"

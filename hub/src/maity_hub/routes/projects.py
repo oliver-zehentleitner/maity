@@ -62,7 +62,7 @@ from maity_hub.models import SLUG_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
 from maity_hub.scopes import in_admin_team
-from maity_hub.views import confirmed_by_of, forge_of, member_view, principal_id, project_view
+from maity_hub.views import confirmed_by_of, member_view, principal_id, project_view
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -71,14 +71,17 @@ ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover o
 
 
 class RepositoryIn(Strict):
-    url: str = Field(min_length=1, max_length=255)
+    # No length here: an empty or over-long URL is `not_a_repository_url` (§6.1).
+    # The request body cap is the outer bound.
+    url: str
     default_branch: str = Field(default="main", min_length=1, max_length=255)
     # §6.1: left out, it keeps the current value on the same `url` (`_repository_columns`).
     required_check: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class RepositoryConfirmIn(Strict):
-    url: str = Field(min_length=1, max_length=255)
+    # The owner sends the URL they saw. Length is the body cap's, not this field's.
+    url: str
 
 
 class PolicyIn(Strict):
@@ -444,12 +447,13 @@ def _repository_columns(repository: RepositoryIn | None, current: Any = None) ->
             "repository_default_branch": None,
             "repository_required_check": None,
         }
-    url = repository.url.rstrip("/")
-    if not url.startswith("https://") or forge_of(url) is None or url.count("/") != 4:
+    try:
+        url = forge.stored_repository_url(repository.url)
+    except forge.RepositoryURLError:
         raise invalid(
-            {"repository.url": "not_a_configured_forge"},
-            "the repository must be https://<forge host>/<owner>/<name> on a configured forge",
-        )
+            {"repository.url": "not_a_repository_url"},
+            "the repository must be an https URL on a DNS host",
+        ) from None
     required = repository.required_check
     if (
         "required_check" not in repository.model_fields_set
@@ -474,6 +478,9 @@ def _looks_public(request: Request, repository: RepositoryIn | None, served: boo
     if not served:
         return False  # nothing reads it before the owner confirms it (§11.4)
     url = _repository_columns(repository)["repository_url"]
+    # The first look is a forge read. Off GitHub nothing is asked (§11).
+    if forge.kind_of(url) != "github":
+        return False
     return reader_of(request).repository_public(forge.repository_of(url))
 
 

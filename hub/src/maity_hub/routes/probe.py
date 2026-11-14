@@ -44,7 +44,7 @@ def read_probe(
         commit = commit.lower()
     fg = reader_of(request).for_project(project.id)
     if not fg.configured_for(project.repository_url):
-        reason = fg.refused or "no_grant"
+        reason = forge.unread_reason(fg, project.repository_url)
         raise probe_not_configured(reason if mine.may("project:admin") else None)
     wanted = [("pr", str(pr) if pr else None), ("branch", branch), ("tag", tag)]
     wanted.append(("commit", commit))

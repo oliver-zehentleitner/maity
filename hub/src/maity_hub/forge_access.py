@@ -181,8 +181,11 @@ class ForgeAccess:
         )
 
     def _choose(self, project_id: str, facts: _Facts, base: forge.Forge) -> forge.Forge:
-        if forge.kind_of(facts.repository_url) != "github" or facts.repository_url is None:
+        if facts.repository_url is None:
             return base
+        # Off GitHub the hub stores the URL and sends no token (§6.1, §11).
+        if forge.kind_of(facts.repository_url) != "github":
+            return self._refusing(base, project_id, "forge_not_github")
         repository = forge.repository_of(facts.repository_url).lower()
         owner_reason: str | None = None
         has_grant = any(status != "removed" for _, _, status in facts.links) or (
