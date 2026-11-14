@@ -56,13 +56,7 @@ _HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 DEFAULTS: dict[str, Any] = {
     "browser": {
         "enabled": False,
-        "kinds": {
-            "inbox": True,
-            "chat": True,
-            "mention": True,
-            "security": True,
-            "invitation": True,
-        },
+        "kinds": dict.fromkeys(KINDS, True),
     },
     "email": {
         "language": "en",
