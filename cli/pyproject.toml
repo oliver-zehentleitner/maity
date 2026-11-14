@@ -40,7 +40,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "maity" = ["_build.json"]
-"maity.runner" = ["maity-runner.service"]
+"maity.runner" = ["maity-runner.service", "claude-code-release.asc"]
 
 [tool.black]
 line-length = 100

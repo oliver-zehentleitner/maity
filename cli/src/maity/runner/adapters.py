@@ -453,8 +453,15 @@ def _placeholder_only(ctx: Context, path: Path) -> bool:
         return False
 
 
+def managed(ctx: Context) -> bool:
+    """The runner installs or updates this harness's tool (§15.16)."""
+    return ctx.harness.install or ctx.harness.update != "never"
+
+
 def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
+    if managed(ctx):  # the runner swaps versions (§15.16); the tool never updates itself
+        env = {**env, "DISABLE_UPDATES": "1"}
     if ctx.sandbox:
         hide_placeholders(ctx)
     settings = _write(ctx, ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
@@ -506,7 +513,9 @@ def codex_config(ctx: Context) -> str:
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
         'approval_policy = "never"\n'
-        'default_permissions = "maity"\n\n'
+        'default_permissions = "maity"\n'
+        # A version the runner manages is never swapped by Codex itself (§15.16).
+        + ("check_for_update_on_startup = false\n" if managed(ctx) else "") + "\n"
         # The clone's own .codex/config.toml would override this profile; an untrusted
         # project's configuration layers are not loaded.
         f'[projects.{json.dumps(str(ctx.clone))}]\ntrust_level = "untrusted"\n\n'

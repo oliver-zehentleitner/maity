@@ -29,6 +29,7 @@ from . import (
     stub,
     supervisor,
     targets,
+    tools,
     trust,
 )
 from .asuser import RUNNER, AsUser
@@ -359,12 +360,24 @@ def _existing_parent(path: Path) -> Path:
 
 
 def _check_harness(
-    report: Report, harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER
+    report: Report,
+    harness: config.Harness,
+    agent_path: str,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
         return
-    found = capabilities.probe(harness, agent_path, as_user)
+    found = capabilities.probe(harness, agent_path, as_user, tools_dir)
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.install:
+        report.ok(f"harness {harness.id}: not installed yet; `serve` installs it (§15.16)")
+        return
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.update != "never":
+        report.error(
+            f"harness {harness.id}: no version installed by the runner; set install = true"
+        )
+        return
     if found.reason == "binary_not_found":
         report.error(f"harness {harness.id}: `{harness.binary}` not found on {agent_path}")
         return
@@ -592,7 +605,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         else:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
+            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -627,6 +640,46 @@ def _alive(pid: Any) -> bool:
     except OSError:
         return True  # no /proc: the signal check is all there is
     return b"runner" in command and b"serve" in command
+
+
+def cmd_tools(args: argparse.Namespace) -> int:
+    """The tools this runner installs and updates (§15.16), from its tools directory only;
+    `rollback` makes the kept version the one new sessions start with. Never contacts the
+    hub: a running `serve` notices within a minute and tells the hub."""
+    cfg = config.load(config.path_of(args.config))
+    managed = {h.id: h for h in cfg.harnesses.values() if h.install or h.update != "never"}
+    if getattr(args, "tools_action", None) == "rollback":
+        if args.tool not in managed:
+            print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
+            return 1
+        try:
+            done = tools.rollback(cfg.tools_dir, args.tool)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(
+            f"{args.tool}: new sessions start with {done.version}; {done.previous_version} "
+            "stays for a second rollback; running sessions keep the version they started with"
+        )
+        return 0
+    rows = [
+        tools.report(cfg.tools_dir, h.id, install=h.install, update=h.update,
+                     sessions_on_older=0)  # fmt: skip
+        for h in managed.values()
+    ]
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("no tool is installed or updated by this runner (harness install / update)")
+    for row in rows:
+        state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        print(
+            f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"checked {row['checked_at'] or 'never'}"
+        )
+    return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -812,6 +865,29 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--json", action="store_true", help="print it as JSON")
     r.set_defaults(handler=cmd_status)
+
+    r = rsub.add_parser(
+        "tools",
+        help="the tools this runner installs and updates; `rollback <tool>` goes back",
+        description="List the harness tools this runner installs or updates (harness "
+        "install / update): the version new sessions start with, the one kept, the latest "
+        "found. `rollback <tool>` swaps the two for new sessions; a second rollback swaps "
+        "back. Reads the tools directory only; a running serve picks the change up.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.set_defaults(handler=cmd_tools)
+    tsub = r.add_subparsers(dest="tools_action")
+    rb = tsub.add_parser(
+        "rollback",
+        help="new sessions start with the kept version",
+        description="Make the kept version the one new sessions start with (§15.16).",
+        formatter_class=fmt,
+    )
+    rb.add_argument("tool", help="a harness id, e.g. codex")
+    rb.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    rb.set_defaults(handler=cmd_tools, json=False)
 
     r = rsub.add_parser(
         "unit",

@@ -19031,8 +19031,9 @@ or limit: the hub stays out of pricing and billing.
 
 ### 15.16 Harness tools and maity on the runner
 
-Not built yet, tsk-29nmydbzrg5z. A runner can install and update the
-harness tools its placements need, and `maity` itself, each only when its
+The runner's part for harness tools is built; `maity`'s own update and
+the hub's and dashboard's parts are not yet (tsk-29nmydbzrg5z). A runner
+can install and update the harness tools its placements need, and `maity` itself, each only when its
 owner allows it for that tool (the owner's decision of 2026-11-12). Without
 that, nothing changes from today: the runner uses what it finds and
 touches nothing.
@@ -19051,10 +19052,13 @@ update = "daily"    # maity itself; default "never"
 
 - **Install.** A harness tool that the configuration lists, that has
   `install = true` and that is missing is installed by the runner when it
-  starts, and again when the configuration is reloaded. Only with the
-  tool vendor's own installer, only into the runner user's own space,
-  never with elevated rights, and with the checksum check where the
-  installer offers one. Which installer belongs to which tool is fixed in
+  starts, and again when the configuration is reloaded. Only from the
+  tool vendor's own release of one exact version, never by running a
+  script the vendor serves, only into the runner user's own space, never
+  with elevated rights, and only after the vendor's signature or checksum
+  for that release checked out: a release the runner cannot check is
+  refused, never installed unchecked (what each tool's check covers:
+  docs/runners.md). Which installer belongs to which tool is fixed in
   the runner's code, never taken from the configuration or the hub.
   `maity` is never installed by the runner; it is what runs it.
 - **Update.** With `update = "daily"`, the runner looks for a newer
@@ -19098,7 +19102,9 @@ update = "daily"    # maity itself; default "never"
   machine.
 - **Where.** On the runner's local target. On an `ssh` target the
   runner only reports what it finds there, and manages nothing (the
-  owner's answer to req-vpcfh15h247c, event 119538).
+  owner's answer to req-vpcfh15h247c, event 119538). Not yet in the
+  `agent_user` layout, whose agents run as another OS user: the runner
+  refuses `install` and `update` there.
 
 **What the runner reports.** `capabilities.tools` (§15.3), one entry
 per harness tool the configuration lists, and one for `maity`:

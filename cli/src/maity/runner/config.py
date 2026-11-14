@@ -23,6 +23,7 @@ from ..hub import HubError, hub_base
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
+DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -120,6 +121,9 @@ class Harness:
     env_file: Path | None = None
     stub_exit_code: int = 0
     stub_run_seconds: int = 30
+    # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
+    install: bool = False
+    update: str = "never"
 
 
 @dataclass(frozen=True)
@@ -154,6 +158,10 @@ class Config:
     repositories: dict[str, RepositoryGrant]
     ssh: Ssh | None = None
     git: GitIdentity = GitIdentity()
+    maity_update: str = "never"  # `[maity] update` (§15.16)
+    # The versions the runner installs (§15.16): beside, not inside, state_dir, which no
+    # sandboxed command may read, while a harness's sandbox runs the harness's own files.
+    tools_dir: Path = Path(DEFAULT_TOOLS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -493,10 +501,32 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
         )
         git_in.done()
 
+    maity_update = "never"
+    maity_in = root.table("maity")
+    if maity_in is not None:
+        maity_update = maity_in.get("update", str, "never", check=_one_of("daily", "never"))
+        maity_in.done()
+
+    # §15.16 "Where": the runner manages tools on its local target only; on an ssh target it
+    # reports what it finds. Managed versions live in the runner user's own tools_dir, which
+    # the agents' own user in the agent_user layout cannot rely on (lotse 131453, not yet).
+    for name, harness in harnesses.items():
+        if not harness.install and harness.update == "never":
+            continue
+        if kind != "local":
+            problems.append(f"harness.{name}: install and update work on the local backend only")
+        elif local is not None and local.layout == "agent_user":
+            problems.append(
+                f"harness.{name}: install and update are not available in the agent_user "
+                "layout yet"
+            )
+
     root.done()
     if problems:
         raise ConfigError(problems)
-    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh, git)
+    return Config(
+        path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh, git, maity_update
+    )
 
 
 _RESTART = Restart()
@@ -591,6 +621,8 @@ def unsupported(cfg: Config) -> list[str]:
     for harness in cfg.harnesses.values():
         if harness.env_file is not None:
             found.append(f"harness.{harness.id}.env_file is not passed on yet (R5)")
+    if cfg.maity_update != "never":
+        found.append('maity.update is not carried out yet; remove it or set "never"')
     return found
 
 
@@ -683,6 +715,18 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     if default_model is not None and default_model not in models:
         problems.append(f"{where}.default_model: must be one of its models")
     env_file = table.get("env_file", str, None)
+    install = table.get("install", bool, False)
+    update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    if install or update != "never":
+        from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
+        from maity.runner.tools import INSTALLERS
+
+        if name not in INSTALLERS:
+            problems.append(
+                f"{where}: the runner has no installer for this harness; " "drop install and update"
+            )
+        if "binary" in table.data:
+            problems.append(f"{where}.binary: a tool the runner installs or updates is its own")
     harness = Harness(
         id=name,
         modes=modes,
@@ -692,6 +736,8 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         binary=None if name == "stub" else table.get("binary", str, BINARIES.get(name)),
         require_sandbox=table.get("require_sandbox", bool, None),
         env_file=Path(env_file).expanduser() if env_file else None,
+        install=install,
+        update=update,
     )
     if name == "stub":
         return Harness(

@@ -1666,6 +1666,13 @@ resolve, so a busy moment would drop agents out of their wait loops.
   answering `Retry-After: 1` would be asked again every second.
 - Exit 3 at once on a `429`: the loop re-arms at once, the same pace as
   retrying without any pause.
+- Keep `Retry-After` on every `5xx`: the hub sends it on no `5xx` but
+  `503`, so a value on a `502` or `504` comes from a proxy or gateway the
+  hub does not speak for, and it would stretch the pause without the hub
+  asking for it. A real need is the entry's revisit condition.
+- Cap a `503`'s `Retry-After` at the 30 s backoff ceiling: the hub's
+  value is a fixed 5 s, and the wait's deadline already caps every pause.
+  A `429` is not capped either, so one rule covers both.
 
 ## `join` ends with how to put `maity` on PATH
 
