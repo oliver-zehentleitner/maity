@@ -661,6 +661,12 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
    paragraph with several ids stays quiet (the designer's pass part 3). */
 .id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }
 a.id-ref { text-decoration: none; }
+/* A full reference (owner/slug/tsk-…, docs/api.md §6.25) is longer than a phone's
+   chat bubble: it wraps in the project's name or before the id, the id itself stays
+   whole (js/ids.js refText, tsk-e9d52pfhvk3v). */
+.id-ref.full { white-space: normal; }
+.id-ref .ref-prefix { overflow-wrap: anywhere; }
+.id-ref .ref-id { white-space: nowrap; }
 a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
@@ -2068,7 +2074,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
 .member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
-/* A view's own tabs (Overview, the Team page): links, the shown one marked. */
+/* A view's own tabs (Overview, the Team page, a project's Settings): links, the shown one marked. */
 .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
 .view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
@@ -2103,11 +2109,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .review-cite { display: grid; gap: 0 8px; grid-template-columns: minmax(0, auto) minmax(0, 1fr); overflow-wrap: anywhere; }
 .review-quote { white-space: pre-wrap; }
 @media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
-
-/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
-.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
-.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
-.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
 
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
@@ -2161,7 +2162,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
-.handle-form .handle-explain { flex-basis: 100%; margin: 0; }
+.handle-form .handle-explain, .handle-form .hint { flex-basis: 100%; margin: 0; }
+/* A handle field's word while what is typed breaks the rule (js/handles.js rule()). */
+.handle-check:empty { display: none; }
 .handle-at { color: var(--muted, inherit); }
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }

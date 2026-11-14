@@ -115,7 +115,10 @@ class LocalRefusal(Exception):
 
 
 def _err(message: str) -> None:
-    print(f"maity: {message}", file=sys.stderr)
+    """One message on stderr. It often carries text the hub, GitHub or the repository wrote
+    (ids, statuses, a refusal): cleaned (`onboarding.clean`), so no escape reaches the
+    terminal; line breaks the message itself has are kept."""
+    print(f"maity: {onboarding.clean(message)}", file=sys.stderr)
 
 
 def _print_json(data: Any) -> None:
@@ -497,7 +500,8 @@ def cmd_join(args: argparse.Namespace) -> int:
         },
     )
     print(
-        f"joined {result.project} as {result.member_id}; credential {result.credential_id} "
+        f"joined {onboarding.inline(result.project)} as {onboarding.inline(result.member_id)}; "
+        f"credential {onboarding.inline(result.credential_id)} "
         f"stored in {path} ({'private' if sys.platform == 'win32' else 'mode 0600'}, not printed)",
         file=sys.stderr,
     )
@@ -511,8 +515,17 @@ def cmd_join(args: argparse.Namespace) -> int:
     if args.pointer:
         root = pointer.repo_root(Path.cwd())
         if root is not None:
-            for changed in pointer.write(root):
+            changed_files, refused = pointer.write(root)
+            for changed in changed_files:
                 print(f"wrote the Maity pointer block into {changed}", file=sys.stderr)
+            for reason in refused:
+                _err(f"not written: {reason}")
+            if refused:
+                print(
+                    "Add the block by hand where it belongs:\n" + pointer.BLOCK,
+                    file=sys.stderr,
+                    end="",
+                )
     else:
         # AGENTS.md is usually tracked: writing into it unasked dirties the clone, and the
         # next `git add -A` commits it. The block is offered instead (`--pointer` writes it).
@@ -1574,12 +1587,15 @@ def cmd_request_claim(args: argparse.Namespace) -> int:
     return _done(args, request, f"claimed {onboarding.inline(args.request)}")
 
 
-def _done(args: argparse.Namespace, result: Any, line: str) -> int:
-    """Print the hub's answer with --json, otherwise one status line."""
+def _done(args: argparse.Namespace, result: Any, line: str | list[str]) -> int:
+    """Print the hub's answer with --json, otherwise the status line (or lines). Every line is
+    collapsed and cleaned (`onboarding.inline`): the lines name ids, statuses and titles the hub
+    returned, so none of them can start a line of its own or reach the terminal as an escape.
+    The JSON stays the hub's data as sent."""
     if getattr(args, "json", False):
         _print_json(result)
     else:
-        print(line)
+        print("\n".join(onboarding.inline(x) for x in ([line] if isinstance(line, str) else line)))
     return EXIT_OK
 
 
@@ -1777,7 +1793,7 @@ def _discard(session: Session, ids: list[str]) -> None:
         except hub.HubError:
             left.append(aid)
     if left:
-        _err(f"uploaded and still pending (they expire after 24 hours): {', '.join(left)}")
+        _err(f"uploaded and still pending (they expire after 24 hours): {_ids(left)}")
     elif ids:
         _err(f"nothing was sent; the {len(ids)} uploaded file(s) were deleted again")
 
@@ -1808,12 +1824,17 @@ def _post_with(session: Session, paths: list[str], post: Callable[[list[str]], A
         if _refused(exc):
             _discard(session, ids)
         elif ids:
-            _err(f"the message may have been sent; its attachments: {', '.join(ids)}")
+            _err(f"the message may have been sent; its attachments: {_ids(ids)}")
         raise
     except BaseException:
         if ids:
-            _err(f"the message may have been sent; its attachments: {', '.join(ids)}")
+            _err(f"the message may have been sent; its attachments: {_ids(ids)}")
         raise
+
+
+def _ids(ids: list[str]) -> str:
+    """Attachment ids as the hub returned them, cleaned for the terminal."""
+    return ", ".join(onboarding.inline(aid) for aid in ids)
 
 
 def _refused(exc: BaseException) -> bool:
@@ -3216,17 +3237,18 @@ def _release_card(session: Session, card: str | None) -> dict[str, Any]:
 def _release_summary(card: dict[str, Any]) -> list[str]:
     release = card.get("release") or {}
     readiness = release.get("readiness") or {}
+    one = onboarding.inline  # every field is the hub's; the checklist text is free text
     lines = [
-        f"{card.get('id')}  {release.get('version')}  {card.get('status')}  "
+        f"{one(card.get('id'))}  {one(release.get('version'))}  {one(card.get('status'))}  "
         f"ready: {'yes' if readiness.get('ready') else 'no'}"
     ]
     for block in readiness.get("blocking") or []:
         detail = {k: v for k, v in block.items() if k != "reason"}
-        extra = " ".join(f"{k}={v}" for k, v in detail.items())
-        lines.append(f"  blocking: {block.get('reason')} {extra}".rstrip())
+        extra = " ".join(f"{one(k)}={one(v)}" for k, v in detail.items())
+        lines.append(f"  blocking: {one(block.get('reason'))} {extra}".rstrip())
     for item in release.get("checklist") or []:
         mark = "x" if item.get("done") else " "
-        lines.append(f"  [{mark}] {item.get('id')}  {item.get('text')}")
+        lines.append(f"  [{mark}] {one(item.get('id'))}  {one(item.get('text'))}")
     return lines
 
 
@@ -4180,7 +4202,7 @@ def cmd_jourfixe_statement(args: argparse.Namespace) -> int:
                if isinstance(s, dict)]  # fmt: skip
         line = f"  {onboarding.inline(topic.get('id'))} {onboarding.inline(topic.get('title'))}"
         lines.append(line + (f" (proposals {', '.join(ids)})" if ids else ""))
-    return _done(args, round_, "\n".join(lines))
+    return _done(args, round_, lines)
 
 
 def cmd_jourfixe_post(args: argparse.Namespace) -> int:
@@ -4234,7 +4256,7 @@ def cmd_jourfixe_report(args: argparse.Namespace) -> int:
     for left in [x for x in report.get("proposals_not_carded") or [] if isinstance(x, dict)]:
         left_id, why = (onboarding.inline(left.get(k)) for k in ("proposal_id", "reason"))
         lines.append(f"  not carded: {left_id} ({why})")
-    return _done(args, answer, "\n".join(lines))
+    return _done(args, answer, lines)
 
 
 # Why a start did not open (§20.1), as the hub names it; no round is recorded.
@@ -4345,7 +4367,7 @@ def cmd_jourfixe_report_to(args: argparse.Namespace) -> int:
 
 def cmd_release_show(args: argparse.Namespace) -> int:
     card = _release_card(Session(), args.card)
-    return _done(args, card, "\n".join(_release_summary(card)))
+    return _done(args, card, _release_summary(card))
 
 
 def cmd_release_tick(args: argparse.Namespace) -> int:
@@ -4389,8 +4411,10 @@ def cmd_api(args: argparse.Namespace) -> int:
     else:
         result = session.client.call(args.method, args.path, query=query, body=body, text=True)
     if isinstance(result, hub.Text):
-        # A route that answers Markdown or plain text (`…/rules`): printed as sent.
-        print(result.body, end="" if result.body.endswith("\n") else "\n")
+        # A route that answers Markdown or plain text (`…/rules`): printed as sent, with
+        # terminal escapes and other control characters shown, never acted on.
+        text = onboarding.clean(result.body)
+        print(text, end="" if text.endswith("\n") else "\n")
     elif result is not None:
         _print_json(result)
     return EXIT_OK
@@ -4404,7 +4428,7 @@ def cmd_help(args: argparse.Namespace) -> int:
         if not isinstance(stored, str):
             raise state.StateError("not joined in this clone; pass --hub <url>")
         base = hub.hub_base(stored)
-    print(hub.get_text(f"{base}{hub.API}/help"), end="")
+    print(onboarding.clean(hub.get_text(f"{base}{hub.API}/help")), end="")
     return EXIT_OK
 
 
@@ -4495,7 +4519,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--pointer",
         action="store_true",
         help="write the Maity pointer block into AGENTS.md (and CLAUDE.md); otherwise it is "
-        "printed for you to add",
+        "printed for you to add. A file that is a symbolic link is not written into: the "
+        "block is printed for it instead",
     )
     p.add_argument("--no-pointer", action="store_true", help=argparse.SUPPRESS)  # the default
     _session_args(p)

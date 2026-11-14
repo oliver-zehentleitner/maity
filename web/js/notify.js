@@ -89,8 +89,9 @@ window.Maity = window.Maity || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
     if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
     if (t.type === "request") return base + "inbox/" + encodeURIComponent(t.id);
-    // The restricted-access set changed (§6.4): the project's setting.
-    if (projectSetting(t)) return base + "settings";
+    // The restricted-access set changed (§6.4): the project's setting, on Settings' Members and
+    // agents tab; a member without project:admin is led on to settings/mine, where it is read.
+    if (projectSetting(t)) return base + "settings/members";
     return base + "inbox";
   }
 

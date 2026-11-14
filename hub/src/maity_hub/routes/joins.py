@@ -68,7 +68,7 @@ from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
@@ -90,7 +90,7 @@ _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 class JoinAgent(Strict):
     id: str | None = None
     handle: str | None = title(default=None, pattern=HANDLE_PATTERN)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
     git_identity: GitIdentity | None = None
 
 
@@ -129,7 +129,22 @@ def load_join(conn: Connection, join_id: str) -> dict[str, Any]:
     return join_view(conn, row)
 
 
-idempotency.LOADERS["join"] = idempotency.plain(load_join)
+def _sees_join(conn: Connection, mine: Any, join_id: str) -> bool:
+    """As the joins list (§3.1): every join to `members:admin`, one's own to whoever may
+    bring agents."""
+    if mine.may("members:admin"):
+        return True
+    created_by = conn.execute(
+        select(t.join_link.c.created_by).where(t.join_link.c.id == join_id)
+    ).scalar()
+    return bool(may_bring(mine)) and created_by == mine.principal_id
+
+
+idempotency.register(
+    "join",
+    idempotency.plain(load_join),
+    idempotency.in_project(idempotency.column_of(t.join_link), _sees_join),
+)
 
 
 # --- the join link (human) --------------------------------------------------------

@@ -172,6 +172,7 @@ def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:
                 "id": card.id,
                 "status": "done",
                 "fields": ["status"],
+                "history": [],  # the auto-close writes no history entry (§6.15)
                 "project_state": project.state,
             },
             subject=("task", card.id),

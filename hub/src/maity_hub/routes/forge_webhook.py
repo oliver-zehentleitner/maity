@@ -68,4 +68,11 @@ def _replayed(conn: Connection, project_id: str, request: Request) -> dict[str, 
     )
 
 
-idempotency.LOADERS["forge_webhook"] = _replayed
+idempotency.register(
+    "forge_webhook",
+    _replayed,
+    # Its GET is the admins' (§6.1): a replay is too.
+    idempotency.in_project(
+        idempotency.the_project, lambda _conn, mine, _id: mine.may("project:admin")
+    ),
+)
