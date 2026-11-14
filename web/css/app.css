@@ -661,6 +661,12 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
    paragraph with several ids stays quiet (the designer's pass part 3). */
 .id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }
 a.id-ref { text-decoration: none; }
+/* A full reference (owner/slug/tsk-…, docs/api.md §6.25) is longer than a phone's
+   chat bubble: it wraps in the project's name or before the id, the id itself stays
+   whole (js/ids.js refText, tsk-e9d52pfhvk3v). */
+.id-ref.full { white-space: normal; }
+.id-ref .ref-prefix { overflow-wrap: anywhere; }
+.id-ref .ref-id { white-space: nowrap; }
 a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
@@ -2161,7 +2167,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
-.handle-form .handle-explain { flex-basis: 100%; margin: 0; }
+.handle-form .handle-explain, .handle-form .hint { flex-basis: 100%; margin: 0; }
+/* A handle field's word while what is typed breaks the rule (js/handles.js rule()). */
+.handle-check:empty { display: none; }
 .handle-at { color: var(--muted, inherit); }
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }

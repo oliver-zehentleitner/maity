@@ -2327,7 +2327,10 @@ transport, `Sec-Fetch-Site` and `next`.
    The page is in the language of the mail. The account it creates takes
    both languages of the pending registration; one not given stays unset (§6.2).
    The `GET` shows "Create your Maity account for <address>" with four
-   fields: the **password chosen at registration**, the **handle**, the
+   fields: the **password chosen at registration**, the **handle** — its
+   syntax (§2.7.4) beside it and in its `pattern`, and, since the page has
+   no script, a word the stylesheet shows while what is typed breaks it,
+   "lowercase only" first; nothing is lower-cased for the person — the
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
    your real one. Your profile is public by default, with your public
@@ -2354,7 +2357,15 @@ transport, `Sec-Fetch-Site` and `next`.
    issuer without authority: the page says registration is closed,
    nothing is created and the pending registration is void); the password must match the stored hash (a
    wrong one is the page's error; the fifth voids the pending
-   registration); the handle and the display name follow §2.7.4; the
+   registration). A wrong password's page also offers **Register again**:
+   a link to `/register` (with the stored `next` where it is not `/`),
+   and the sentence that the newest mail's link replaces the earlier one
+   (below). Its answer hands the address to the sign-up page in the
+   cookie `maity_register_again` — the address percent-encoded,
+   `Path=/register`, `SameSite=Strict`, ten minutes, readable by the
+   page's script, which fills the field and removes it — never in the
+   sign-up page's address; the person saw the address on this page. The
+   handle and the display name follow §2.7.4; the
    terms box must be checked when terms are set, and the signed version
    in the form must be the instance's current one — if the terms changed
    since the page was shown, nothing is created and no acceptance is
@@ -2393,7 +2404,9 @@ single use, by `sha256(nonce)` stored with the pending registration. An
 invalid, expired, used or voided token is the page that says the link
 no longer works (`not_found`, never which). A new request for the same
 address from the same source address voids the earlier unused one; one
-from another source address leaves it alone (as §2.6.3). At most 5
+from another source address leaves it alone (as §2.6.3). The dead
+link's page offers **Register again** too, as a link to `/register`
+without an address and without saying why the link no longer works. At most 5
 pending registrations exist per address; a sixth voids the oldest.
 Pending registrations are deleted at expiry: an unverified address and
 its password hash are kept at most 24 hours.
@@ -21418,8 +21431,12 @@ frame's language (`?lang`, else `Accept-Language`, chosen as for
 `GET /site/chrome`), around the page's content as it was stored. The
 stored page is not rendered again for that, and its content stays its
 escaped text and elements. The page keeps its own language. Header and
-footer carry a `lang` of their own where the frame's differs, and the
-footer has no language switch. A change to the frame (the landing
+footer carry a `lang` of their own where the frame's differs. The
+frame has the landing page's controls: the header's light/dark switch,
+with the landing page's one script (§16.7, `/assets/landing/landing.js`,
+the only script the page loads), and the footer's language row, whose
+links keep `as=public` and set `lang`, changing the frame's language,
+not the page's. A change to the frame (the landing
 page, the legal pages, the counters, the hub's stylesheets) shows on
 the next answer, with no render. A stored page of another shape is
 served bare under the policy `default-src 'none'; style-src
@@ -21427,11 +21444,12 @@ served bare under the policy `default-src 'none'; style-src
 `Cache-Control: public, max-age=60`, an `ETag` of the bytes served
 (frame, page and any maintenance banner, §16.12), so a changed frame
 is never a `304`,
-`Content-Security-Policy: default-src 'none'; style-src 'self'
-'unsafe-inline'; font-src 'self'; img-src 'self'; base-uri 'none';
-frame-ancestors 'none'` (the frame's stylesheets and fonts; no script;
-`img-src` for the pictures of a person's and an agent's page, §6.10;
-`unsafe-inline` for a picture's size), `X-Content-Type-Options: nosniff`, and never a
+`Content-Security-Policy: default-src 'none'; script-src 'self';
+style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self';
+base-uri 'none'; frame-ancestors 'none'` (the frame's stylesheets,
+fonts and its one script; `img-src` for the pictures of a person's and
+an agent's page, §6.10; `unsafe-inline` for the maintenance banner,
+§16.12; the stored page itself carries no inline style), `X-Content-Type-Options: nosniff`, and never a
 cookie, and `Vary: Cookie, Accept-Language` (`Vary: Cookie` is on every
 answer on these addresses, the app shell's included, §16.11). When a page stops being public for any
 reason above, the hub deletes its stored page in the same transaction
