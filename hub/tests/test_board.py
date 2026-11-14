@@ -377,6 +377,26 @@ def test_a_history_tombstones_reason_reaches_only_owners_admins_and_the_redactor
     assert stored_reasons == {"a password"}
 
 
+def test_only_a_tombstone_with_who_and_when_is_shaped_per_reader() -> None:
+    """§8.5: a task event's field value or task copy counts as a tombstone only with
+    `redacted: true`, `by` and `at`; another dict value keeps its keys as they are."""
+    from types import SimpleNamespace
+
+    from maity_hub.views import _without_reason
+
+    mark = {"redacted": True, "reason": "a password", "by": "hum-x", "at": "2026-11-14T00:00:00Z"}
+    lookalike = {"redacted": True, "reason": "kept"}  # a dict-valued field, not a tombstone
+    for kind, payload in (
+        ("task_updated", {"title": mark, "extra": lookalike}),
+        ("note_added", {"note": {"body": "n"}, "task": {"title": mark, "extra": lookalike}}),
+    ):
+        row = SimpleNamespace(kind=kind, payload=payload, redacted=False, conversation_id=None)
+        shown = _without_reason(row, None)
+        values = shown if kind == "task_updated" else shown["task"]
+        assert values["title"] == {**mark, "reason": None}, kind
+        assert values["extra"] == lookalike, kind
+
+
 def test_a_replayed_link_removal_shows_its_tombstone_without_the_reason(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
