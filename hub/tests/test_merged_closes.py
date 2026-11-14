@@ -175,6 +175,7 @@ def test_auto_under_holder_closes_the_card_itself(
     assert _card(owner, card_id)["status"] == "done"
     updated = [e for e in _events(migrated, "task_updated") if e.payload.get("id") == card_id]
     assert updated[-1].payload["fields"] == ["status"] and updated[-1].payload["status"] == "done"
+    assert updated[-1].payload["history"] == []  # §6.15: the auto-close writes no entry
 
 
 RELEASE = {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}}

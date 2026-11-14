@@ -19,16 +19,36 @@ def new_token() -> str:
     return secrets.token_urlsafe(16)
 
 
+ALPHABET = CROCKFORD.upper()  # as a code is shown and stored: 0-9 and A-Z without I, L, O, U
+
+
+def random_code(length: int) -> str:
+    """`length` random characters of Crockford base32, upper case, no groups."""
+    return "".join(secrets.choice(ALPHABET) for _ in range(length))
+
+
 def new_code() -> str:
     """60 random bits as Crockford base32 in groups of four: `Q7MD-3XPL-8ZWE`."""
-    raw = "".join(secrets.choice(CROCKFORD) for _ in range(12)).upper()
+    raw = random_code(12)
     return "-".join(raw[i : i + 4] for i in range(0, 12, 4))
+
+
+def _read(code: str) -> str:
+    cleaned = re.sub(r"[\s-]", "", code.upper())
+    return cleaned.translate(str.maketrans("ILO", "110"))
 
 
 def normalise_code(code: str) -> str:
     """Crockford's reading: case-blind, `-` and spaces ignored, I and L are 1, O is 0."""
-    cleaned = re.sub(r"[\s-]", "", code.upper())
-    return cleaned.translate(str.maketrans("ILO", "110"))
+    return _read(code)
+
+
+def normalise(code: str, length: int) -> str | None:
+    """Crockford's reading as `normalise_code`, checked: the upper-case code without
+    hyphens when it is `length` characters of the alphabet, else None. A stored hash is
+    taken over exactly this form (device codes, docs/api.md §2.6.2)."""
+    text = _read(code)
+    return text if len(text) == length and all(c in ALPHABET for c in text) else None
 
 
 def code_matches(code: str, code_hash: str) -> bool:
