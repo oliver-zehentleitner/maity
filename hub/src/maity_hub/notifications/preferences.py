@@ -167,6 +167,16 @@ def row_of(conn: Connection, human_id: str, *, lock: bool = False) -> Any:
     return conn.execute(query.with_for_update()).one()
 
 
+def verified_row(conn: Connection, human_id: str) -> Any:
+    """The human's settings row when it holds a verified address, else None."""
+    row = conn.execute(
+        select(t.notification_settings).where(t.notification_settings.c.human_id == human_id)
+    ).first()
+    if row is None or row.address_status != "verified" or row.address is None:
+        return None
+    return row
+
+
 _NONE = SimpleNamespace(
     preferences={},
     address=None,

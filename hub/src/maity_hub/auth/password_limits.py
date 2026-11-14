@@ -30,7 +30,6 @@ LOGIN_FROM = Limiter(WRONG, WINDOW, name="auth.password_limits.LOGIN_FROM")  # p
 CHANGE = Limiter(WRONG, WINDOW, name="auth.password_limits.CHANGE")
 REAUTHENTICATE = Limiter(WRONG, WINDOW, name="auth.password_limits.REAUTHENTICATE")
 ADDRESS_CHANGE = Limiter(WRONG, WINDOW, name="auth.password_limits.ADDRESS_CHANGE")
-ALL = (LOGIN, LOGIN_FROM, CHANGE, REAUTHENTICATE, ADDRESS_CHANGE)
 
 
 def account_key(conn: Connection, human_id: str | None, normalized_address: str) -> str:

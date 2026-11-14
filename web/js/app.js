@@ -143,6 +143,9 @@ window.Maity = window.Maity || {};
       || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
+    // /<handle>/agents: the person's tab Agents (§6.27, §16.11); `agents` is never a slug (a project
+    // view), and an agent's own page, /<owner>/agents/<handle>, stays the project scope's.
+    if (parts.length === 2 && parts[1] === "agents" && !OWN_WORDS.includes(parts[0])) return { scope: "person", handle: parts[0], tab: "agents" };
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
       return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
     }
@@ -2530,7 +2533,7 @@ window.Maity = window.Maity || {};
       } else if (where.scope === "agents") {
         await M.views.agentsPage(ctx, root, where.args);
       } else if (where.scope === "person") {
-        await M.views.person(ctx, root, where.handle);
+        await M.views.person(ctx, root, where.handle, where.tab);
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
@@ -2566,7 +2569,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "runners") label = M.t("view.runners");
     else if (where.scope === "invitations") label = M.t("header.invitations");
     else if (where.scope === "agents") label = M.t("view.agents");
-    else if (where.scope === "person") label = "@" + where.handle;
+    else if (where.scope === "person") label = where.tab === "agents" ? M.t("person.title.agents", { name: "@" + where.handle }) : "@" + where.handle;
     else if (where.scope === "instance-admin") label = M.t("view.instance_admin");
     else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;
@@ -2666,6 +2669,18 @@ window.Maity = window.Maity || {};
     document.getElementById("header").querySelectorAll("nav, .project-links").forEach(updateCue);
     document.querySelectorAll("nav.account-tabs").forEach(updateCue);
   });
+  // The fonts load with font-display: swap, so a view can be drawn in the fallback face first.
+  // Inter is wider: the current tab, brought into sight before it arrived, could end outside its
+  // row (Security at 390 px, tsk-1cs7h9jhww36). Once a face is in, every row that brought its
+  // current tab into sight does so again (the header's and the account's), and the cues follow.
+  if (document.fonts && document.fonts.addEventListener) {
+    document.fonts.addEventListener("loadingdone", () => {
+      const header = document.getElementById("header");
+      header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); updateCue(nav); });
+      header.querySelectorAll(".project-links").forEach(updateCue);
+      document.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); updateCue(nav); });
+    });
+  }
   M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);
 })(window.Maity);

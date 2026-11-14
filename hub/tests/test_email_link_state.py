@@ -9,6 +9,7 @@ from sqlalchemy import Connection, Engine, insert, select, update
 from maity_hub import clock, db
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
+from maity_hub.auth import totp
 
 KEY = b"test-mail-key-not-a-live-secret"
 HUMAN = "hum-email-state"
@@ -122,8 +123,14 @@ def test_code_proof_is_bound_to_its_flow_and_key(conn: Connection) -> None:
 
 @pytest.mark.parametrize("value", ["１２３４５６", "12345", "1234567", "123\t456", "123\n456"])
 def test_code_is_six_ascii_digits_with_spaces_only(value: str) -> None:
-    assert links.normalise_code(value) is None
-    assert links.normalise_code("012 345") == "012345"
+    # One reading for every six-digit code: the mail link's, the mail factor's and TOTP's.
+    assert totp.normalise_six(value) is None
+    assert totp.normalise_six("012 345") == "012345"
+
+
+def test_a_new_six_digit_code_keeps_its_leading_zeros() -> None:
+    drawn = {totp.new_six() for _ in range(200)}
+    assert all(len(c) == 6 and c.isdigit() for c in drawn)
 
 
 def test_stale_read_cannot_bypass_the_fifth_guess(conn: Connection) -> None:

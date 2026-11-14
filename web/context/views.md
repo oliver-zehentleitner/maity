@@ -3252,7 +3252,7 @@ named in the digest can be resumed or ended only from one's agents.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30
+**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11
 **Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
 
 `/<handle>` (one segment, not one of the dashboard's own words) is the
@@ -3269,6 +3269,15 @@ Overview, any other to its public page. An alias answers with the
 current handle and the address follows it; `not_found` says that there
 is nobody to see, as for an unknown name.
 
+A person's view has two tabs, **Profile** at `/<handle>` and **Agents**
+at `/<handle>/agents` (card tsk-zrjxhxanfwzd, 2026-11-11: the public
+agents page existed, the signed-in address showed nothing). The Agents
+tab draws the same answer's `agents` (§6.27), as the public agents page
+lists them (§16.9); it does not read `GET /public/pages/<handle>/agents`
+signed in. Signed out, the dashboard's copy of that page
+(`person_agents`, `js/visitor.js`) draws its list with the same helper
+and carries the same tabs, so the address shows one list either way.
+
 **Reason:** what a reader may see of another person (the bio only while
 the page is public, the links by `links_visible`, a picture by §6.10)
 is the hub's to decide per reader; one read that already answers that
@@ -3283,6 +3292,10 @@ shares no project with, and no organisation for a non-member. A
 generated avatar from the handle: it would differ from the one every
 other view draws for the same person, and change with a rename. Hiding
 the picture's place: the layout would jump from one person to the next.
+For the Agents tab, reading the visitors' route signed in as well: §6.27
+names `GET /people` as the dashboard's read of a person, and gives the
+same list there (the hub's `listed_agents` serves both), so a second
+route would add a read without adding anything to see.
 
 ## The fixture hub serves an organisation's page by its switch, which the hub does not yet
 
@@ -6676,3 +6689,41 @@ panel the same edge, and a new form inside it needs no width of its own.
 - A `dl` of facts at the full width like a list: rejected, its pairs are
   short, and in a padded box (the settings' webhook) the column's parts
   beside it would end the box's padding past the column's edge.
+
+## A tab row brings its current tab into sight again once the fonts are in
+
+**Id:** 826df576-d97f-458e-bb40-89f6de67a4d6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-1cs7h9jhww36 (2026-11-13): the e2e step `account_tabs_layout` failed now and then at 390 px, "a.view-tab 'Security' is out of sight in its row" on /account/security, on main of 2026-11-11 and of 2026-11-13 alike, and passed in other runs on the same commits; reproduced every time by drawing the view in the fallback face and letting Inter arrive afterwards; the review of #1767 found the header's row of a project's views left out (Settings 16 px past its row at 390 px)
+**Revisit when:** the fonts stop loading with `font-display: swap`, or the account's tab row stops scrolling sideways
+
+The fonts load with `font-display: swap`, so a view can be drawn in the
+fallback face before Inter is in. A tab row that scrolls sideways (the
+account's tabs, the header's row of a project's views) brings its
+current tab into sight once, when it is put in the page (`showCurrent`
+in `js/app.js`). Inter is wider than the face the row was measured in:
+at 390 px the account's row is 722 px wide in Inter and 712 px in the
+page's own fallback stack (the fonts held back); the e2e step's forced
+serif face makes it 641 px. In either narrower face Security, the
+current tab, stands in sight without scrolling; from the serif face,
+once Inter is in, its right edge ended 1 px past the row's. On the
+document's `loadingdone` (`document.fonts`) every such row is set
+again: the header's rows and the account's bring their current tab
+into sight, and the fade cues follow, as on a resize. The
+e2e step draws every account tab and a project's Settings at 390 and
+360 px with no element using Inter, then lets Inter load and measures
+the account's rows and the header's.
+
+**Reason:** whether Inter arrives before the first drawing depends on
+the machine and the network, so the step failed only on a busy machine
+and a phone on a slow line meets the same cut tab.
+
+**Alternatives considered:**
+- `font-display: block`: rejected, the text would be invisible until
+  the fonts arrive, up to three seconds on a slow line, for every view.
+- Preloading the fonts: rejected, a preload makes the fonts come sooner
+  but not before the first drawing for sure, so the race stays.
+- A looser measure in the e2e step: rejected, the tab really ends
+  outside its row, and a longer label (another language) cuts more of it.

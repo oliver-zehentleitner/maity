@@ -806,8 +806,16 @@ class Supervisor:
             # Codex cannot honour a command allowlist, and its `maity` runs inside its
             # sandbox, where `maity gh` reaches neither gh's login nor the forge's API.
             return ("harness_refused", None)
-        if harness.require_sandbox and not target.sandbox.get(harness.id, False):
-            return ("harness_refused", None)  # the operator asked for no run without it
+        on = target.sandbox.get(harness.id, False)
+        if capabilities.sandbox_refused(harness, on, harness.id in target.held):
+            return ("harness_refused", None)  # no run without it, or held back by its version
+        if on and harness.id == "claude-code":
+            # The sandboxed session relies on the runner's hook; settings that switch hooks
+            # off would start it without one. Read at every start: they change without us.
+            why = capabilities.claude_hooks_off(target.as_user)
+            if why is not None:
+                self.log(capabilities.claude_hooks_line(why))
+                return ("harness_refused", None)
         return None
 
     def _wait(self, rec: Record, why: str, name: str) -> int:
@@ -1042,6 +1050,7 @@ class Supervisor:
             as_user=target.as_user,
             agent_path=target.agent_path,
             resume=resume,
+            git=self.cfg.git,
         )
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
