@@ -89,6 +89,11 @@ def test_an_immediate_item_waits_its_window_and_goes_once(
     assert "Stop these mails (inbox): https://hub.example/mail/unsubscribe/" in mail.body
     assert mail.headers["List-Unsubscribe"].startswith("<https://hub.example/mail/unsubscribe/")
     assert mail.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+    stop = mail.headers["List-Unsubscribe"][1:-1]
+    assert mail.body.endswith(
+        f"\n\nStop these mails (inbox): {stop}\nSettings: {PUBLIC}/account/notifications\n\n"
+        f"Maity only links to {PUBLIC}; a link anywhere else in this mail was not sent by Maity.\n"
+    )
     at(minutes=10)
     run(migrated)
     assert len(notifications(migrated)) == 1  # an item goes out once
@@ -901,3 +906,68 @@ def test_removed_invited_and_accepted_again_the_old_mail_is_dropped(
     assert len(rows) == 2 and sum(1 for r in rows if r.active) == 1  # a new row
     status, commands = _deliver_only(migrated, mail.id)
     assert status == "dropped" and commands == []
+
+
+def test_the_security_mails_read_exactly_as_composed(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    # The whole body and headers of each record mail, so that the shared closing lines and
+    # the record read (mailer._footer, mailer._record) stay byte for byte what they were.
+    from maity_hub.notifications import preferences, records
+
+    owner, _ = setup(make_client, migrated)
+    seen = {"ip": "203.0.113.9", "browser": "Firefox", "os": "Linux"}
+    with migrated.begin() as conn:
+        records.session_created(conn, owner.id, {"method": "password", **seen})
+        records.write(conn, owner.id, "second_factor_changed", {"change": "enrolled", "by": "x"})
+        records.write(conn, owner.id, "password_reset", {})
+        epoch = conn.execute(
+            select(t.notification_settings.c.epoch).where(
+                t.notification_settings.c.human_id == owner.id
+            )
+        ).scalar_one()
+        stamps = {
+            row.type: row.at.astimezone(UTC).strftime("%Y-%m-%d %H:%M %Z")
+            for row in conn.execute(
+                select(t.account_record).where(t.account_record.c.human_id == owner.id)
+            )
+        }
+    at(minutes=1)
+    run(migrated)
+    waiting = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
+    mails = {r.subject: r for r in waiting}
+    key = mail_env().mail.signing_key
+    assert key is not None
+    stop = f"{PUBLIC}/mail/unsubscribe/" + preferences.unsubscribe_token(
+        key, owner.id, "security", epoch
+    )
+    only = (
+        f"\n\nMaity only links to {PUBLIC}; a link anywhere else in this mail was not sent "
+        "by Maity.\n"
+    )
+    settings = f"\nSettings: {PUBLIC}/account/notifications"
+    [sign_in] = [r for r in waiting if "Browser: Firefox" in r.body]
+    assert sign_in.body == (
+        f"A new session signed in to your account at {PUBLIC}.\n\n"
+        f"Time: {stamps['session_created']}\nMethod: password\nBrowser: Firefox\nSystem: Linux\n"
+        f"Address: 203.0.113.9\n\nIf this was not you, end it here: {PUBLIC}/account/sessions\n"
+        f"\nStop these mails (security): {stop}" + only
+    )
+    assert sign_in.headers["List-Unsubscribe"] == f"<{stop}>"
+    assert sign_in.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+    factor = mails["[Maity] Two-factor sign-in turned on"]
+    assert factor.body == (
+        f"Two-factor sign-in turned on.\n\nTime: {stamps['second_factor_changed']}\n\n"
+        f"If this was not you, sign in and check your account here: {PUBLIC}/account/security\n"
+        + settings
+        + only
+    )
+    assert "List-Unsubscribe" not in factor.headers
+    reset = mails["[Maity] Your password was reset"]
+    assert reset.body == (
+        f"The password of your Maity account was reset at {stamps['password_reset']} from a "
+        "browser on an unknown system, ?. Every session has ended.\n\nIf this was not you, reset "
+        "it again, set up an authenticator app, and end your agents' access under Agents: "
+        f"{PUBLIC}/agents\n" + settings + only
+    )
+    assert "List-Unsubscribe" not in reset.headers
