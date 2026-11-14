@@ -6083,7 +6083,7 @@ line under it that says, while the field is typed in, what breaks the rule, an u
 words of its own ("Lowercase only"). The join form keeps its free-or-taken line and gives an
 upper-case letter the same word. The rename of one's own handle sends what was typed: before, it
 lower-cased it without saying so. The sign-up's handle is on the hub's page, with the same rule
-(hub/context/mail.md, 0c6183d9-2214-4d16-a10c-a28f8ab1c0c5). `/register` takes the address that page
+(hub/context/registration.md, 0c6183d9-2214-4d16-a10c-a28f8ab1c0c5). `/register` takes the address that page
 hands over in a cookie, reads it once and removes it.
 
 **Reason:** a lower-cased `Ada` becomes a handle the person did not type, and they learn it from
