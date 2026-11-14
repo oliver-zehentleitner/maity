@@ -184,6 +184,7 @@
      "avatar_source": "null",
      "avatar_url": "null",
      "display_name": "string",
+     "experiment_notice_understood_at": "null",
      "handle": "string",
      "id": "string",
      "instance_admin": "boolean",

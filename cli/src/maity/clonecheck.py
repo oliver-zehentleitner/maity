@@ -29,8 +29,10 @@ PLACEMENT_ENV = "MAITY_PLACEMENT"
 # Written by the runner into every clone it starts an agent in (adapters.launch), in the
 # directory Claude Code's sandbox keeps the agent from writing.
 MARKER_PATH = Path(".git", "maity", "placement")
-# Beside it, the git the runner found: the one maity starts under the runner, not one the
-# PATH of maity's command line picks.
+# The git the runner found: the one maity starts under the runner, not one the PATH of
+# maity's command line picks. A record of the runner's (runner_record): in its directory for
+# the agent, beside git's own repositories (GIT_PRIVATE_ENV), and only for Codex here in the
+# clone (IN_CLONE).
 GIT_PATH = Path(".git", "maity", "git")
 # The inode of the clone's `.git` when the runner started the session (adapters.launch).
 # The sandbox keeps the agent out of `.git/maity`, not from renaming `.git` itself, so a
@@ -83,7 +85,11 @@ ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
 # empty, they change nothing git does. Anything in them is refused as before.
 SANDBOX_DIR = ".claude-sandbox-noreplace"  # an empty directory, wherever it appears
 SANDBOX_EMPTY_FILES = frozenset({"config.worktree", *ALTERNATES})
-SANDBOX_EMPTY_DIRS = frozenset({"remotes"})
+# `glab-cli/`, `modules/` and `worktrees/`: Claude Code lists `.git/glab-cli`, `.git/modules` and
+# `.git/worktrees` among the paths its sandbox protects (read in the binary of 2.1.321; seen made
+# empty at every session start by 2.1.323 for `glab-cli` and `worktrees`). With anything in
+# them `modules/` is still refused as submodules and `worktrees/` as worktrees (UNSUPPORTED).
+SANDBOX_EMPTY_DIRS = frozenset({"glab-cli", "modules", "remotes", "worktrees"})
 CONFIG_MAX = 64 * 1024
 # More entries than this in `.git` are refused rather than listed on every git run.
 TREE_MAX = 20_000
@@ -614,14 +620,23 @@ def _copy_refs_by_path(dot_git: Path, private: Path) -> None:
         raise Refused(f"the clone's refs cannot be copied ({exc})") from None
 
 
+class Opened(NamedTuple):
+    """The runner's clone as `opened_clone` checked it: its root and its `.git`, each an open
+    descriptor, the second opened from the first."""
+
+    top: int
+    git: int
+
+
 @contextlib.contextmanager
-def opened_git(root: Path) -> Iterator[int | None]:
-    """The clone's `.git` as the runner left it: opened once from the clone's root without
-    following a link, and refused unless it is the directory whose inode the runner set in
-    GIT_INODE_ENV at the session's start. Yields its descriptor, so what maity reads from it
-    afterwards is not looked up through the name `.git` again; sandboxed code can rename
-    `.git` and put a directory of its own there. Where directories cannot be opened (Windows,
-    local mode) the inode is checked by name and None is yielded."""
+def opened_clone(root: Path) -> Iterator[Opened | None]:
+    """The clone's root and `.git` as the runner left them: the root opened once without
+    following a link, `.git` opened from that descriptor without following one, and refused
+    unless it is the directory whose inode the runner set in GIT_INODE_ENV at the session's
+    start. Yields both descriptors, so what maity reads or writes afterwards is not looked up
+    through the clone's path or the name `.git` again; sandboxed code can rename `.git`, and
+    a root exchanged after the check is not the one written to. Where directories cannot be
+    opened (Windows, local mode) the inode is checked by name and None is yielded."""
     value = os.environ.get(GIT_INODE_ENV, "")
     if not (value.isascii() and value.isdigit()):
         raise Refused(
@@ -641,19 +656,31 @@ def opened_git(root: Path) -> Iterator[int | None]:
             raise replaced
         yield None
         return
-    top = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        fd = os.open(".git", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+        top = os.open(root, os.O_RDONLY | os.O_DIRECTORY | NOFOLLOW)
     except OSError:
-        raise replaced from None
+        raise Refused(f"the clone {root} cannot be opened as a directory") from None
+    try:
+        try:
+            fd = os.open(".git", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+        except OSError:
+            raise replaced from None
+        try:
+            if os.fstat(fd).st_ino != int(value):
+                raise replaced
+            yield Opened(top, fd)
+        finally:
+            os.close(fd)
     finally:
         os.close(top)
-    try:
-        if os.fstat(fd).st_ino != int(value):
-            raise replaced
-        yield fd
-    finally:
-        os.close(fd)
+
+
+@contextlib.contextmanager
+def opened_git(root: Path) -> Iterator[int | None]:
+    """The descriptor of the clone's `.git` that `opened_clone` checked, or None where
+    directories cannot be opened."""
+    with opened_clone(root) as opened:
+        yield None if opened is None else opened.git
 
 
 def _walks() -> bool:
@@ -661,24 +688,34 @@ def _walks() -> bool:
     return not _windows() and os.open in os.supports_dir_fd and hasattr(os, "O_DIRECTORY")
 
 
-def _private_dir(root: Path, top: int | None) -> Path:
-    """A new directory for one git run's own repository (its configuration, HEAD, refs): in
-    the directory GIT_PRIVATE_ENV names, outside the clone, since git opens it by path and no
-    path through `.git` is safe once `.git` can be renamed. With IN_CLONE (Codex, whose maity
-    has the agent's own rights) in the clone's `.git/maity`, made through `.git`'s descriptor
-    `top` where there is one. Unset, maity runs no git: a lost variable must not put git's
-    repository back under `.git`."""
+def runner_dir(root: Path) -> Path | None:
+    """The runner's directory for the agent, as GIT_PRIVATE_ENV names it: outside the clone,
+    hidden from the sandbox and not writable from it. None for IN_CLONE (Codex, whose maity
+    has the agent's own rights), where the clone's `.git/maity` stands in. Unset, refused: a
+    lost variable must not send maity back to a directory the agent can write."""
     outside = os.environ.get(GIT_PRIVATE_ENV, "")
     if not outside:
         raise Refused(
             f"{GIT_PRIVATE_ENV} is not set, so git has no repository of maity's own; the runner"
             " sets it when it starts a session: restart the placement"
         )
-    if outside != IN_CLONE:
-        where = Path(outside)
-        if (not where.is_absolute() or where.is_symlink() or not where.is_dir()
-                or _within(where.resolve(), root)):  # fmt: skip
-            raise Refused(f"{GIT_PRIVATE_ENV} names no directory of maity's own ({where})")
+    if outside == IN_CLONE:
+        return None
+    where = Path(outside)
+    if (not where.is_absolute() or where.is_symlink() or not where.is_dir()
+            or _within(where.resolve(), root)):  # fmt: skip
+        raise Refused(f"{GIT_PRIVATE_ENV} names no directory of maity's own ({where})")
+    return where
+
+
+def _private_dir(root: Path, top: int | None) -> Path:
+    """A new directory for one git run's own repository (its configuration, HEAD, refs): in
+    the runner's directory for the agent (runner_dir), outside the clone, since git opens it
+    by path and no path through `.git` is safe once `.git` can be renamed. With IN_CLONE
+    (Codex) in the clone's `.git/maity`, made through `.git`'s descriptor `top` where there
+    is one."""
+    where = runner_dir(root)
+    if where is not None:
         try:
             return Path(tempfile.mkdtemp(prefix="git-", dir=where))
         except OSError as exc:
@@ -700,25 +737,45 @@ def _private_dir(root: Path, top: int | None) -> Path:
     return own / name
 
 
-def _recorded_git(root: Path, top: int | None) -> str:
-    """The git the runner recorded for this clone (GIT_PATH): an absolute path to a program,
-    read through `.git`'s descriptor `top` (by name where None)."""
-    missing = Refused(f"the clone {root} has no git the runner recorded ({GIT_PATH})")
+def runner_record(root: Path, top: int | None, name: str, limit: int) -> bytes:
+    """A record the runner wrote at the session's start (`git`, `pull_requests`): a regular
+    file of at most `limit` bytes in the runner's directory for the agent (runner_dir), never
+    one in the clone, whose files are the agent's to write. With
+    IN_CLONE (Codex) the clone's `.git/maity/<name>`, through `.git`'s descriptor `top`.
+    OSError when it is missing or not such a file; Refused when the directory is unknown."""
+    where = runner_dir(root)
+    if where is None and top is not None:
+        folder = os.open("maity", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
+    elif where is not None and _walks():
+        folder = os.open(where, os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY)
+    else:  # no descriptors (Windows): by name, never through a link
+        path = (where if where is not None else root / ".git" / "maity") / name
+        mode = path.lstat()
+        if not stat.S_ISREG(mode.st_mode) or mode.st_size > limit:
+            raise OSError(f"{name}: not a plain file")
+        return path.read_bytes()
     try:
-        if top is None:
-            where = root / GIT_PATH
-            mode = where.lstat()
-            if not stat.S_ISREG(mode.st_mode) or mode.st_size > REF_MAX:
-                raise OSError("not a plain file")
-            data = where.read_bytes()
-        else:
-            fd = os.open("maity", os.O_RDONLY | NOFOLLOW | os.O_DIRECTORY, dir_fd=top)
-            try:
-                data = _read_regular("git", fd, REF_MAX)
-            finally:
-                os.close(fd)
-        program = data.decode("utf-8").strip()
-    except (OSError, UnicodeDecodeError, Refused):
+        fd = os.open(name, os.O_RDONLY | NOFOLLOW, dir_fd=folder)
+    finally:
+        os.close(folder)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(f"{name}: not a regular file")
+        data = os.read(fd, limit + 1)
+    finally:
+        os.close(fd)
+    if len(data) > limit:
+        raise OSError(f"{name}: larger than the runner writes")
+    return data
+
+
+def _recorded_git(root: Path, top: int | None) -> str:
+    """The git the runner recorded for this clone (runner_record): an absolute path to a
+    program."""
+    missing = Refused(f"the runner recorded no git for the clone {root} ({GIT_PATH.name})")
+    try:
+        program = runner_record(root, top, GIT_PATH.name, REF_MAX).decode("utf-8").strip()
+    except (OSError, UnicodeDecodeError):
         raise missing from None
     if not (os.path.isabs(program) and os.path.isfile(program) and os.access(program, os.X_OK)):
         raise Refused(f"the git the runner recorded for {root} is not a program here")

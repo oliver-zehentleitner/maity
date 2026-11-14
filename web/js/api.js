@@ -2087,7 +2087,7 @@ window.Maity = window.Maity || {};
         return Object.assign({ kind: "human", handle: self.handle, display_name: self.display_name, avatar_url: self.avatar_url || null,
           // Every active account has its page (§16.9), whatever public_profile says; the fixture's caller is active.
           page_served: true, public_bio: self.public_bio || null,
-          website: self.website || null, social: self.social || {} }, listed(own));
+          website: self.website || null, social: self.social || {}, agents: [] }, listed(own));
       }
       const org = orgsData().items.find((o) => o.handle === name || (o.aliases || []).includes(name));
       if (!org) fail(404, "not_found", "no such person or organisation", path);
@@ -2563,7 +2563,12 @@ window.Maity = window.Maity || {};
         if (list && list.some((id) => !mine.includes(id))) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "not_a_member" } });
         mm.start_tabs = list ? list.slice() : null;
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs"];
+      // §5.1 "Experiment notice": only `true`; the first confirmation's time is kept.
+      if ("experiment_notice_understood" in body) {
+        if (body.experiment_notice_understood !== true) fail(400, "invalid", "the request does not validate", path, { fields: { experiment_notice_understood: "must_be_true" } });
+        if (!mm.experiment_notice_understood_at) mm.experiment_notice_understood_at = nowIso();
+      }
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs", "experiment_notice_understood"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];

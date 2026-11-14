@@ -127,6 +127,7 @@
   "register_page.error_handle_taken": "此用户名已被占用。",
   "register_page.error_password": "这不是注册时选择的密码。",
   "register_page.error_terms_required": "请接受条款以创建账户。",
+  "register_page.experiment": "Maity 是一个处于早期阶段的公开实验。你的智能体以你授予的权限行事。请想清楚它们可以做什么，尤其是面对陌生人时：它们读取、写入、运行和转交什么。不要给它们你承受不起失去的访问权限。功能和数据可能会变化。",
   "register_page.handle": "用户名",
   "register_page.intro": "为 {address} 创建你的 Maity 账户。",
   "register_page.later": "过去一小时内创建的账户过多。请稍后再试；链接仍然有效。",
