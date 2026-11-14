@@ -4,8 +4,10 @@ write lock on SQLite").
 
 A board of `MAITY_LOAD_UNIT` cards (1000 by default) is listed by `READERS` threads without
 a pause, while one writer changes a card `WRITES` times. The writes must all commit, their
-median under `WRITE_LIMIT`; the maximum is printed, not checked, since on a shared machine it
-is noise. The numbers are printed (`pytest -m load -s`) for the pull request's before and
+median under `WRITE_LIMIT`. Every read must answer 200, an exception in a reader thread is
+kept and fails the test in the main thread, every reader must have ended, and at least one
+read must have run beside the writes. The write maximum is printed, not checked, since on a
+shared machine it is noise. The numbers are printed (`pytest -m load -s`) for the pull request's before and
 after. On SQLite a read used to take the write lock for as long as it read; on PostgreSQL a
 read never locked, and the test guards that it stays so."""
 
@@ -66,15 +68,19 @@ def test_writes_stay_quick_while_a_large_board_is_read(owner: flow.Human, migrat
     stop = threading.Event()
     reads: list[float] = []
     failed_reads: list[int] = []
+    raised: list[BaseException] = []  # an exception in a reader thread, kept for the main thread
 
     def read() -> None:
-        while not stop.is_set():
-            began = time.perf_counter()
-            status = owner.get(path).status_code
-            if status == 200:
-                reads.append(time.perf_counter() - began)
-            else:
-                failed_reads.append(status)
+        try:
+            while not stop.is_set():
+                began = time.perf_counter()
+                status = owner.get(path).status_code
+                if status == 200:
+                    reads.append(time.perf_counter() - began)
+                else:
+                    failed_reads.append(status)
+        except BaseException as error:  # noqa: BLE001 - asserted in the main thread
+            raised.append(error)
 
     readers = [threading.Thread(target=read) for _ in range(READERS)]
     for reader in readers:
@@ -117,7 +123,12 @@ def test_writes_stay_quick_while_a_large_board_is_read(owner: flow.Human, migrat
         "failed_writes": failed_writes,
         "failed_reads": len(failed_reads),
     }
+    shown["reader_errors"] = [repr(error) for error in raised]
+    shown["readers_alive"] = sum(reader.is_alive() for reader in readers)
     print(f"\nLOAD read routes: {shown}")
+    assert not shown["readers_alive"], shown
+    assert not raised, shown
     assert failed_writes == 0, shown
     assert not failed_reads, shown
+    assert reads, shown  # the reads ran side by side with the writes
     assert statistics.median(writes) < WRITE_LIMIT, shown
