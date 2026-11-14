@@ -586,7 +586,8 @@ window.Maity = window.Maity || {};
 
   // What an agent of an owner from outside may hold (§6.2): trust member or guest, a role
   // on outside_roles, on a base that does the work. A built-in role's base is itself.
-  const OUTSIDE_BASES = ["coder", "designer", "writer", "blue-team", "expert"];
+  // Not blue-team: an outsider's agent on it falls back to coder where the list holds coder.
+  const OUTSIDE_BASES = ["coder", "designer", "writer", "expert"];
   function roleBase(ctx, agent) {
     if (agent.role_base) return agent.role_base;
     if (M.trust.ROLES.includes(agent.role)) return agent.role;
@@ -617,9 +618,11 @@ window.Maity = window.Maity || {};
     if (rule.mode === "members" || agent.isolated) return "isolated";
     const base = roleBase(ctx, agent);
     if (!base) return null;
-    const stays = (agent.trust === "member" || agent.trust === "guest")
-      && rule.roles.includes(agent.role) && OUTSIDE_BASES.includes(base);
-    return stays ? "stays" : "isolated";
+    const trusted = agent.trust === "member" || agent.trust === "guest";
+    const stays = trusted && rule.roles.includes(agent.role) && OUTSIDE_BASES.includes(base);
+    if (stays) return "stays";
+    // An outsider's agent holds no security team (§6.2): blue-team continues as coder where it may.
+    return trusted && base === "blue-team" && rule.roles.includes("coder") ? "falls_back" : "isolated";
   }
   function ownedAgents(ctx) {
     const list = [];
@@ -641,9 +644,9 @@ window.Maity = window.Maity || {};
     if (fates && fates.some((f) => !f)) fates = null;
     const list = fates && agents.length ? h("ul", { class: "leave-agents" }, agents.map((m, i) => h("li", {
       class: "leave-agent", "data-fate": fates[i],
-    }, fates[i] === "stays"
-      ? M.t("mine.leave.stays", { name: m.display_name })
-      : M.t("mine.leave.isolated", { name: m.display_name })))) : null;
+    }, fates[i] === "stays" ? M.t("mine.leave.stays", { name: m.display_name })
+      : fates[i] === "falls_back" ? M.t("mine.leave.falls_back", { name: m.display_name })
+        : M.t("mine.leave.isolated", { name: m.display_name })))) : null;
     const cancel = h("button", { type: "button", class: "leave-cancel" }, M.t("mine.leave.cancel"));
     const confirm = h("button", { type: "button", class: "danger leave-confirm" }, M.t("mine.leave.confirm", { project: projectName }));
     let busy = false;

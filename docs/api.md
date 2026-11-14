@@ -6007,7 +6007,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
-| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team`, `expert` and project roles on the first four (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `expert` and project roles on the first three (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `blue-team`, `manager`, `ops` and `proxy`, and a project role on one of them, are `invalid` here (`details.fields.outside_roles: "role_not_allowed"`), since the project's own members check what outsiders deliver and a security team stays among the project's own owners (§6.2). A list stored before `blue-team` left it reads without `blue-team`, and the next write of the policy stores it so. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -6395,8 +6395,10 @@ Agents it owns follow the removal ("An agent whose owner is no member",
 which already says removed or left). Under `policy.agent_owners:
 members` the hub isolates them (`isolated.by: "hub"`) and the owner
 gets that notice. Under `anyone` an agent within `policy.outside_roles`
-stays and keeps working, and one beyond them (trust `admin`, a role not
-on the list) is isolated as under `members`. The call offers no other
+stays and keeps working, one on `blue-team` falls back to `coder` where
+it may (below, "An agent whose owner is no member"; the confirmation
+names it as continuing as a coder), and one beyond them
+(trust `admin`, a role not on the list) is isolated as under `members`. The call offers no other
 choice. The dashboard's confirmation names which applies to each agent
 and lists them.
 
@@ -6744,7 +6746,10 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   `admin` and never a role that grants `tasks:review` or `tasks:test`
   (§2.3: `reviewer`, `purple-team`, `tester`, `red-team`) or the roles
   `manager`, `ops` or `proxy`, whatever the list says, so the work of
-  outsiders is checked by the project's own members. A review result it
+  outsiders is checked by the project's own members. Nor does it hold
+  `blue-team`: a security team stays among the
+  project's own owners, as a security team's agent gets no bridge of
+  another owner (§2.3; the maintainer's decision of 2026-11-13). A review result it
   posts (§8.4) moves no card under `done_authority` (§6.1) and counts for
   no review requirement; it stays a comment. A trust, role or
   `outside_roles` change that would break
@@ -6764,6 +6769,22 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   member. How an owner from outside offers a
   new agent to a public project is a contract change of its own; until
   then only members create joins (§3.1).
+  An outsider's agent that holds `blue-team` (its owner left, or it
+  held the role before the rule) falls back to
+  `coder` instead of being isolated, when `coder` is on
+  `policy.outside_roles` and its trust is `member` or `guest`; otherwise
+  it is beyond the limits and isolated as above. The hub settles it in
+  the same pass that isolates (when its owner's membership ends, after a
+  policy change) and at the agent's next `POST /me/resume`, before the
+  packet is built, so the packet already names `coder` (or answers as
+  isolated). The change is a role change as a `PATCH` makes it:
+  `member_updated` with `changed` naming `role` and `role_base`, the
+  rules bump of a role change (§6.9), and connections the new role ends
+  (§2.3); its owner receives a personal notice (class `info`, §7) with
+  the project, the old role and the reason. A narrower
+  `outside_roles` is not refused for such an agent
+  (`details.fields.outside_roles: "outside_owner"` does not count it):
+  the pass after the change settles it.
 - Under both, when a human's membership ends the open joins they
   created are revoked and the placements they created that have not
   made their membership yet are closed (§15.6), so no link or runner

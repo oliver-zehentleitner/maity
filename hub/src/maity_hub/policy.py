@@ -90,8 +90,9 @@ DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
 
 # What an owner from outside may let an agent do (§6.1 `outside_roles`, §6.2): the built-in
 # roles that work, and project roles on them, and the expert, which only answers (§2.3) and
-# is no base. Whatever else a list names is `invalid`.
-OUTSIDE_BASES = ("coder", "designer", "writer", "blue-team", "expert")
+# is no base. Whatever else a list names is `invalid`. Not `blue-team`: a security team stays
+# among the project's own owners, as a bridge across owners does (§2.3; context/members.md).
+OUTSIDE_BASES = ("coder", "designer", "writer", "expert")
 OUTSIDE_DEFAULT = ["coder"]
 
 
@@ -159,9 +160,15 @@ def of(project: Any) -> dict[str, Any]:
 
 
 def outside_roles(project: Any) -> list[str]:
-    """`policy.outside_roles` (§6.1): the stored list, `["coder"]` while nobody set one."""
+    """`policy.outside_roles` (§6.1): the stored list, `["coder"]` while nobody set one. A
+    stored role an outsider may no longer hold (`blue-team`, which a list set before
+    2026-11-13 may name) is read as absent; the next write of the policy stores it without."""
+    from maity_hub import project_roles  # it reads this module
+
     stored = project.outside_roles
-    return list(OUTSIDE_DEFAULT) if stored is None else list(stored)
+    if stored is None:
+        return list(OUTSIDE_DEFAULT)
+    return [role for role in stored if project_roles.base_of(project, role) in OUTSIDE_BASES]
 
 
 def columns(policy: dict[str, Any]) -> dict[str, Any]:

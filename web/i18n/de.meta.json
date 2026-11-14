@@ -11311,6 +11311,10 @@
     "en": "8fc269a069ea6764",
     "text": "aabca00096532334"
   },
+  "mine.leave.falls_back": {
+    "en": "b095ba0018f43503",
+    "text": "7f759c02e29c1ddf"
+  },
   "mine.leave.hint": {
     "en": "61a78e46ceef3f3a",
     "text": "e0e913f79ee1fc78"
@@ -17512,8 +17516,8 @@
     "text": "1a911130bbaf4eb5"
   },
   "settings.outside_roles.hint": {
-    "en": "8060f77c5aa9f254",
-    "text": "514fad8c0bac2701"
+    "en": "c484f2b7d688f94b",
+    "text": "4f4bb80fda99f305"
   },
   "settings.outside_roles.label": {
     "en": "deedc9fe832d5a0e",

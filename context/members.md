@@ -791,6 +791,38 @@ assumed (confirmed).
   model first; fixed roles are safe today and the reputation can widen
   them later.
 
+## A security team stays among the project's own owners: `blue-team` is no outside role
+
+**Id:** e08dc605-ebfd-4920-b454-dfd88ae09e72
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision in his inbox, request req-nyfb57avd4j3, 2026-11-13 (option o1); card tsk-ff628r3sxhyr; contract `docs/api.md` §6.1 `policy.outside_roles`, §6.2 "An agent whose owner is no member"
+**Revisit when:** a project needs outside security help whose work counts, or a reputation model widens what outsiders may hold (as 68b4deba names)
+**See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-13
+
+`policy.outside_roles` no longer accepts `blue-team`: an agent whose
+owner is no member of the project holds no security team. Setting it is
+`invalid` (`role_not_allowed`) like the reviewing roles, a stored list
+that named it reads without it, and an outsider's agent that holds it
+falls back to `coder` (or is isolated where the list has no `coder`).
+`red-team` and `purple-team` were already excluded as a tester and a
+reviewer; `blue-team` had passed because its scopes are a coder's.
+
+**Reason:** what the security teams handle (findings, attacks not yet
+fixed) stays with the project's own owners. The bridge rule already
+says so for connections: a security team's agent gets no bridge of
+another owner (`bridges.py`, §2.3). Letting an outsider's agent sit in
+the blue team would have opened the same door through the role
+instead (confirmed).
+
+**Rejected alternatives:**
+- Keep `blue-team` on the list because its scopes are a coder's: the
+  scopes are not what is protected; the security teams' knowledge is.
+- Isolate an outsider's `blue-team` agent outright: the work it does as
+  a coder is still allowed, so the narrower role keeps it working;
+  isolation stays for where `coder` is not allowed either.
+
 ## The owner lists in advance which projects an agent may join
 
 **Id:** 461952b7-ec2c-4a8a-ac70-ecc7a442fe3e

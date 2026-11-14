@@ -9,8 +9,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
+from maity_hub import agent_owners, events
 from maity_hub import tables as t
-from tests import factory, flow
+from tests import concurrency, factory, flow
 from tests.conftest import ClientFactory
 
 PROJECT = "/projects/maintainer/maity"
@@ -75,7 +76,7 @@ def test_the_fields_default_and_are_checked(owner: flow.Human, make_client: Clie
     assert _fields(_set(owner, outside_roles=["coder", "reviewer"])) == {
         "outside_roles": "role_not_allowed"
     }
-    for forbidden in ("tester", "red-team", "purple-team", "manager", "ops", "proxy"):
+    for forbidden in ("tester", "red-team", "blue-team", "purple-team", "manager", "ops", "proxy"):
         assert _fields(_set(owner, outside_roles=[forbidden])) == {
             "outside_roles": "role_not_allowed"
         }
@@ -409,3 +410,175 @@ def test_a_narrower_list_in_the_call_that_switches_to_members_is_not_refused(
     both = _set(owner, agent_owners="members", outside_roles=["coder"])
     assert both.status_code == 200, both.text
     assert _isolated(migrated, worker)
+
+
+# --- blue-team: a security team stays among the project's own owners (req-nyfb57avd4j3) ---------
+
+FELL_BACK = "is now a coder"
+
+
+def _blue(engine: Engine, owner_id: str, role: str = "blue-team") -> factory.Agent:
+    made = factory.agent(engine, _project(engine), owner_id, "coder")
+    with engine.begin() as conn:  # a membership from before the rule, or a member's agent
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == made.membership_id)
+            .values(role=role, role_base="blue-team")
+        )
+    return made
+
+
+def _store_outside_roles(engine: Engine, roles: list[str]) -> None:
+    with engine.begin() as conn:  # as a list set before the rule stored it
+        conn.execute(update(t.project).values(outside_roles=roles))
+
+
+def _fell_back(engine: Engine, made: factory.Agent) -> list[Any]:
+    with engine.connect() as conn:
+        events = conn.execute(
+            select(t.event).where(t.event.c.kind == "member_updated").order_by(t.event.c.seq)
+        ).all()
+    return [
+        e
+        for e in events
+        if e.payload["id"] == made.agent_id
+        and "role" in e.payload["changed"]
+        and e.payload["role"] == "coder"
+    ]
+
+
+def _notices(engine: Engine, human_id: str) -> list[str]:
+    with engine.connect() as conn:
+        return [
+            str(n.title)
+            for n in conn.execute(
+                select(t.request).where(
+                    t.request.c.filed_by == "hub", t.request.c.to_human == human_id
+                )
+            ).all()
+        ]
+
+
+def test_blue_team_is_no_outside_role(owner: flow.Human) -> None:
+    for listed in (["blue-team"], ["coder", "blue-team"]):
+        refused = _set(owner, agent_owners="anyone", outside_roles=listed)
+        assert refused.status_code == 400 and _fields(refused) == {
+            "outside_roles": "role_not_allowed"
+        }
+
+
+def test_a_stored_list_that_names_blue_team_reads_without_it(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    _roles(owner, [{"name": "doc-writer", "base": "writer"}])
+    _store_outside_roles(migrated, ["coder", "blue-team", "doc-writer"])
+    assert owner.get(PROJECT).json()["policy"]["outside_roles"] == ["coder", "doc-writer"]
+    assert _set(owner, agent_owners="anyone").status_code == 200  # the next write stores it so
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.project.c.outside_roles)).scalar_one() == [
+            "coder",
+            "doc-writer",
+        ]
+
+
+def test_an_outsiders_blue_team_falls_back_to_coder_when_its_owner_leaves(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    blue = _blue(migrated, friend.id)
+    lent = _blue(migrated, owner.id)  # its owner stays a member: no limits
+    _set(owner, agent_owners="anyone")
+    assert _remove(owner, migrated, friend.id).status_code == 200
+    row = _row(migrated, blue.agent_id)
+    assert (row.role, row.role_base, row.trust) == ("coder", "coder", "member")
+    assert not _isolated(migrated, blue.agent_id)
+    assert len(_fell_back(migrated, blue)) == 1
+    assert any(FELL_BACK in title for title in _notices(migrated, friend.id))
+    assert _row(migrated, lent.agent_id).role == "blue-team"
+    refused = owner.patch(f"{PROJECT}/members/{blue.agent_id}", {"role": "blue-team"})
+    assert refused.status_code == 400 and _fields(refused) == {"role": "outside_owner"}
+
+
+def test_without_coder_on_the_list_an_outsiders_blue_team_is_isolated(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated)
+    blue = _blue(migrated, friend.id)
+    _set(owner, agent_owners="anyone", outside_roles=["designer"])
+    _remove(owner, migrated, friend.id)
+    assert _isolated(migrated, blue.agent_id)
+    assert _row(migrated, blue.agent_id).role == "blue-team"
+    assert not _fell_back(migrated, blue)
+
+
+def test_a_blue_team_from_before_the_rule_falls_back_at_its_resume(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated, member=False)  # an owner from outside already
+    _set(owner, agent_owners="anyone")
+    blue = _blue(migrated, friend.id)
+    agent = flow.Agent(make_client(), blue.value, blue.credential_id, blue.agent_id, blue.instance)
+    resumed = agent.resume()
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["membership"]["role"] == "coder"
+    assert len(_fell_back(migrated, blue)) == 1
+    assert any(FELL_BACK in title for title in _notices(migrated, friend.id))
+    again = agent.resume()  # settled once: no second change
+    assert again.status_code == 200 and len(_fell_back(migrated, blue)) == 1
+
+
+def test_an_unsettled_blue_team_does_not_block_a_policy_change(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated, member=False)
+    _set(owner, agent_owners="anyone")
+    blue = _blue(migrated, friend.id)  # not resumed yet
+    changed = _set(owner, outside_roles=["coder", "designer"])
+    assert changed.status_code == 200, changed.text
+    assert _row(migrated, blue.agent_id).role == "coder"  # the pass after the change settled it
+
+
+def _stale(engine: Engine, made: factory.Agent) -> tuple[Any, Any]:
+    """The project and the member as a resume read them before it took the project's lock."""
+    with engine.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+        row = conn.execute(
+            select(t.membership).where(t.membership.c.id == made.membership_id)
+        ).one()
+    return project, row
+
+
+def test_a_settle_on_an_older_row_changes_nothing_and_tells_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated, member=False)
+    _set(owner, agent_owners="anyone")
+    blue = _blue(migrated, friend.id)
+    project, row = _stale(migrated, blue)  # both resumes read the member as blue-team
+    for _ in range(2):
+        with events.transaction(migrated) as conn:
+            agent_owners.settle(conn, project, row, agent_owners.HUB)
+    assert _row(migrated, blue.agent_id).role == "coder"
+    assert len(_fell_back(migrated, blue)) == 1
+    assert sum(FELL_BACK in title for title in _notices(migrated, friend.id)) == 1
+
+
+def test_two_resumes_racing_settle_once(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend = _friend(make_client, migrated, member=False)
+    _set(owner, agent_owners="anyone")
+    blue = _blue(migrated, friend.id)
+    project, row = _stale(migrated, blue)
+    with concurrency.race(migrated) as race:
+        agent_owners.settle(race.first, project, row, agent_owners.HUB)  # holds the lock
+        second = race.run(
+            race.second, lambda: agent_owners.settle(race.second, project, row, agent_owners.HUB)
+        )
+        assert concurrency.waiting(second)  # at the project's lock
+        race.first.commit()
+        concurrency.finished(second)
+        race.second.commit()
+    assert _row(migrated, blue.agent_id).role == "coder"
+    assert len(_fell_back(migrated, blue)) == 1
+    assert sum(FELL_BACK in title for title in _notices(migrated, friend.id)) == 1
