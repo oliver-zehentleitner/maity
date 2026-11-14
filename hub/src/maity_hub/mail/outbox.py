@@ -18,7 +18,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, String, cast, delete, insert, or_, select, update
+from sqlalchemy import Connection, Engine, String, cast, delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from maity_hub import clock, worker_runs
@@ -131,6 +131,9 @@ def _deliver(engine: Engine, resolved: settings.Resolved, row: Any) -> int:
         if _disabled_address(conn, row):
             _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
             return 0
+        if _membership_ended(conn, row):
+            _finish(conn, row.id, "dropped")  # it carries a project they left (§18.5)
+            return 0
         try:
             mail = _built(resolved, row)
         except Exception as error:
@@ -234,6 +237,33 @@ def _disabled_address(conn: Connection, row: Any) -> bool:
             and found.pending_address == row.recipient
         )
     )
+
+
+# A mark (never a header, as every name with `_`): the ids of the membership rows a
+# notification mail's items were read through, separated by spaces (§18.5).
+MEMBERSHIPS_MARK = "_memberships"
+
+
+def _membership_ended(conn: Connection, row: Any) -> bool:
+    """Whether the mail carries items read through a membership that is no longer active,
+    or has a `removed_at` (§18.5): a mail that waited for its budget does not take a
+    project's items to someone who was removed from it, or left, in the meantime, whether
+    they joined again since (a new row) or not. The rows are the row's `MEMBERSHIPS_MARK`,
+    written by the notification mailer; a row that is gone counts as ended."""
+    marked = str((row.headers or {}).get(MEMBERSHIPS_MARK) or "").split()
+    ids = {int(i) for i in marked if i.isdigit()}
+    if not ids:
+        return False
+    active = conn.execute(
+        select(func.count())
+        .select_from(t.membership)
+        .where(
+            t.membership.c.id.in_(ids),
+            t.membership.c.active.is_(True),
+            t.membership.c.removed_at.is_(None),
+        )
+    ).scalar_one()
+    return int(active) != len(ids)
 
 
 def _release(conn: Connection, row_id: int, not_before: datetime) -> None:
