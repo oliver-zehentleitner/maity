@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +64,11 @@ def fake_ssh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "remote" / "home"
     home.mkdir(parents=True)
     (tmp_path / "remote" / "bin").mkdir()
+    # The host's own maity (targets.pin_maity finds it on agent_path): this checkout's.
+    maity = tmp_path / "remote" / "bin" / "maity"
+    src = Path(__file__).resolve().parent.parent / "src"
+    maity.write_text(f'#!/bin/sh\nPYTHONPATH={src} exec {sys.executable} -m maity "$@"\n')
+    maity.chmod(0o755)
     log = tmp_path / "ssh.log"
     script = bin_dir / "ssh"
     script.write_text(
@@ -165,6 +172,38 @@ def test_a_target_connects_and_finds_its_harnesses(tmp_path: Path, fake_ssh: Pat
     assert target.backend is not None and target.backend.socket == home / ".maity-runner/tmux.sock"
     assert target.probes["stub"].available
     assert "b1.lan" in fake_ssh.read_text()
+
+
+def test_a_target_starts_the_hosts_maity_by_its_absolute_path(
+    tmp_path: Path, fake_ssh: Path
+) -> None:
+    """Found once on agent_path when connecting: the hook and the loop start that file, not
+    whatever `maity` comes first on a session's PATH."""
+    from maity.runner import adapters
+
+    cfg = load(tmp_path)
+    target = targets.ssh_hosts(cfg)[0]
+    target.connect(cfg.harnesses)
+    host_maity = str(tmp_path / "remote" / "bin" / "maity")
+    assert isinstance(target.as_user, Ssh) and target.as_user.maity_path == host_maity
+    assert target.as_user.runner_module("loop") == [host_maity, "runner", "loop"]
+    assert target.backend is not None and target.backend.as_user == target.as_user
+    harness = config.Harness("claude-code", ("supervised",), "supervised")
+    ctx = adapters.Context(
+        placement={"placement_id": "plc-0003", "mode": "supervised"}, harness=harness,
+        binary="/usr/bin/claude", clone=tmp_path / "ws" / "c", agent_dir=tmp_path / "a",
+        grant=config.RepositoryGrant(), restart=config.Restart(), sandbox=True,
+        as_user=target.as_user,
+    )  # fmt: skip
+    hook = adapters.claude_settings(ctx)["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    assert hook == f"{shlex.quote(host_maity)} runner plaincall || exit 2"
+
+
+def test_a_host_without_maity_on_agent_path_is_refused(tmp_path: Path, fake_ssh: Path) -> None:
+    cfg = load(tmp_path)
+    (tmp_path / "remote" / "bin" / "maity").unlink()
+    with pytest.raises(OSError, match="`maity` is not on agent_path"):
+        targets.ssh_hosts(cfg)[0].connect(cfg.harnesses)
 
 
 def test_an_unreachable_host_raises_unreachable(tmp_path: Path, fake_ssh: Path) -> None:
@@ -572,5 +611,85 @@ def test_codexs_sandbox_is_tried_on_the_host(tmp_path: Path, fake_ssh: Path) -> 
     codex.chmod(0o755)
     harnesses = {"codex": config.Harness("codex", ("supervised",), "supervised", binary="codex")}
     target = targets.ssh_hosts(cfg)[1]
-    probes, sandbox = targets.probe_remote(target.as_user, harnesses, target.agent_path)
+    probes, sandbox, held = targets.probe_remote(target.as_user, harnesses, target.agent_path)
     assert probes["codex"].available and sandbox["codex"] is False  # its sandbox fails there
+
+
+def _remote_claude(tmp_path: Path, printed: str, tools: bool = True) -> None:
+    names = (("claude", printed), *((("bwrap", ""), ("socat", "")) if tools else ()))
+    for name, out in names:
+        tool = tmp_path / "remote" / "bin" / name
+        tool.write_text(f"#!/bin/sh\necho '{out}'\n")
+        tool.chmod(0o755)
+
+
+@pytest.mark.parametrize(
+    ("printed", "version", "tools", "held"),
+    [("2.1.294 (Claude Code)", "2.1.294", True, True),
+     ("2.1.295+ (Claude Code)", "2.1.295+ (Claude Code)", True, True),
+     ("2.1.295-_dev (Claude Code)", "2.1.295-_dev (Claude Code)", True, True),
+     ("2.1.295 (Claude Code)", "2.1.295", True, False),
+     ("2.1.294 (Claude Code)", "2.1.294", False, False)],
+)  # fmt: skip
+def test_a_hosts_claude_code_is_held_back_by_its_version_alone(
+    tmp_path: Path, fake_ssh: Path, printed: str, version: str, tools: bool, held: bool
+) -> None:
+    """A malformed version token is no version (whole line kept): unknown, so held back
+    where bwrap and socat are there, and refused by default (supervisor)."""
+    cfg = load(tmp_path)
+    _remote_claude(tmp_path, printed, tools)
+    harnesses = {"claude-code": config.Harness("claude-code", ("supervised",), "supervised",
+                                               binary="claude")}  # fmt: skip
+    target = targets.ssh_hosts(cfg)[1]
+    shell = tmp_path / "remote" / "shell"  # sh alone, not the test host's bwrap and socat
+    shell.mkdir()
+    (shell / "sh").symlink_to("/bin/sh")
+    only = f"{tmp_path / 'remote' / 'bin'}:{shell}"
+    probes, sandbox, found = targets.probe_remote(target.as_user, harnesses, only)
+    assert probes["claude-code"].version == version
+    assert ("claude-code" in found) is held and sandbox["claude-code"] is (tools and not held)
+    harness = dataclasses.replace(harnesses["claude-code"])
+    assert capabilities.sandbox_refused(harness, sandbox["claude-code"], held) is held
+
+
+def test_a_hosts_settings_that_switch_hooks_off_are_read_on_the_host(
+    tmp_path: Path, fake_ssh: Path
+) -> None:
+    cfg = load(tmp_path)
+    target = targets.ssh_hosts(cfg)[1]
+    assert capabilities.claude_hooks_off(target.as_user) is None
+    user = tmp_path / "remote" / "home" / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text('{"allowManagedHooksOnly": true}')
+    why = capabilities.claude_hooks_off(target.as_user)
+    assert why is not None and "sets allowManagedHooksOnly" in why
+    user.unlink()
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True)
+    managed.write_text('{"disableAllHooks": true}')
+    why = capabilities.claude_hooks_off(target.as_user)
+    assert why is not None and "sets disableAllHooks" in why
+    (tmp_path / "down-b2.lan").touch()  # a host that does not answer: unknown, so off
+    assert capabilities.claude_hooks_off(target.as_user) is not None
+
+
+@pytest.mark.parametrize(
+    ("version", "on"),
+    [("2.1.294", False), ("2.1.295", True), ("2.1.295-rc.1", False), ("2.1.295-dev", False),
+     ("2.1.295+build", True), ("2.1.296-rc.1", True), ("2.1.295--rc", False)],
+)  # fmt: skip
+def test_claude_codes_sandbox_on_a_host_needs_the_hook_failure_policy(
+    tmp_path: Path, fake_ssh: Path, version: str, on: bool
+) -> None:
+    """As on the local target: the sandbox only from Claude Code 2.1.295, a prerelease of it
+    below it (cli/context/runner.md 63492c65)."""
+    cfg = load(tmp_path)
+    for name, out in (("claude", f"{version} (Claude Code)"), ("bwrap", ""), ("socat", "")):
+        tool = tmp_path / "remote" / "bin" / name
+        tool.write_text(f"#!/bin/sh\necho '{out}'\n")
+        tool.chmod(0o755)
+    harnesses = {"claude-code": config.Harness("claude-code", ("supervised",), "supervised",
+                                               binary="claude")}  # fmt: skip
+    target = targets.ssh_hosts(cfg)[1]
+    probes, sandbox, held = targets.probe_remote(target.as_user, harnesses, target.agent_path)
+    assert probes["claude-code"].version == version and sandbox["claude-code"] is on
