@@ -204,6 +204,9 @@ def test_a_password_change_kills_the_link_and_the_next_wrong_code_mails_a_new_on
     assert step_up(ada, wrong_code(secret, moment)).json()["error"]["code"] == "code_invalid"
     [_, again] = [a for a in alerts(migrated) if a.data["method"] == "daily_limit"]
     assert again.data["password_generation"] == 1
+    # Alerted again at the same count of lifts: only the password tells the old link apart.
+    assert again.data["unlocks"] == 0
+    assert ada.client.post(old).status_code == 404
     moment.move(seconds=31)
     assert step_up(ada, code_now(secret, moment.at)).status_code == 429
     new = unlock_link(migrated, ada)
