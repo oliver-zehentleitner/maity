@@ -148,12 +148,25 @@ def _readers(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
     return {r.id: found.get(r.conversation_id, set()) for r in rows}
 
 
-def _views(conn: Connection, rows: list[Any], slug: str, reader: Any) -> list[dict[str, Any]]:
+def _views(
+    conn: Connection, rows: list[Any], slug: str, reader: Any, caller: Any = None
+) -> list[dict[str, Any]]:
+    """The rounds as `reader` reads them; `caller` the member they are answered to when it is
+    not the reader (a write's answer, a replay), whose isolation windows (§6.2) and waiting
+    (§9.6) apply all the same."""
+    caller = reader if caller is None else caller
     now, readers = _now(conn, rows), _readers(conn, rows)
-    found = [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+    hidden = views.Hidden.of(conn, caller)
+    found = [views.full(r, slug, now[r.id], reader, readers[r.id], hidden) for r in rows]
     for row, view in zip(rows, found, strict=True):
-        _mask_waiting(conn, row, view, reader)
+        _mask_waiting(conn, row, view, caller)
     return found
+
+
+def _reads(conn: Connection, row: Any, mine: Any, hidden: views.Hidden | None) -> bool:
+    """The member reads the round: its circle admits it (§20.7), and it did not open while
+    the member was isolated in a window hidden from it (§6.2)."""
+    return circle.reads(conn, row, mine) and not (hidden is not None and hidden.round(row))
 
 
 def _mask_waiting(conn: Connection, row: Any, view: dict[str, Any], reader: Any) -> None:
@@ -172,7 +185,7 @@ def _round(conn: Connection, mine: Any, round_id: str) -> Any:
             t.jour_fixe_round.c.id == round_id, t.jour_fixe_round.c.project_id == mine.project.id
         )
     ).first()
-    if row is None or not circle.reads(conn, row, mine):
+    if row is None or not _reads(conn, row, mine, views.Hidden.of(conn, mine)):
         raise not_found()
     return row
 
@@ -182,9 +195,7 @@ def round_view(conn: Connection, round_id: str, caller: Any) -> dict[str, Any]:
     without the thread's text for an agent `caller` that waits in the thread (§9.6)."""
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
     slug = namespace.name_of(conn, row.project_id)
-    view = _views(conn, [row], slug, None)[0]
-    _mask_waiting(conn, row, view, caller)
-    return view
+    return _views(conn, [row], slug, None, caller)[0]
 
 
 def answer_view(conn: Connection, answer_id: str) -> dict[str, Any]:
@@ -280,6 +291,7 @@ def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         mine.require("project:read")
         now = clock.now()
         shown = []
+        hidden = views.Hidden.of(conn, mine)
         for row in series.of_project(conn, mine.project.id):
             seen = series.sight(conn, row, mine)
             if seen is None:
@@ -290,7 +302,7 @@ def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             if seen == "full":
                 running, last = rounds.current(conn, row.id), _last_reported(conn, row.id)
                 running, last = (
-                    r if r is not None and circle.reads(conn, r, mine) else None
+                    r if r is not None and _reads(conn, r, mine, hidden) else None
                     for r in (running, last)
                 )
                 found = [r for r in (running, last) if r is not None]
@@ -543,8 +555,10 @@ def list_rounds(
 
 def _readable(conn: Connection, mine: Any, query: Any, wanted: int) -> list[Any]:
     """Up to `wanted` rounds of the ordered query that the member reads: the rounds of an
-    owner's series it may not read are left out, not counted against the page (§20.7)."""
+    owner's series it may not read, and those of its hidden isolation windows (§6.2), are
+    left out, not counted against the page (§20.7)."""
     c, last = t.jour_fixe_round.c, None
+    hidden = views.Hidden.of(conn, mine)
     found: list[Any] = []
     while len(found) < wanted:
         batch = query
@@ -556,7 +570,7 @@ def _readable(conn: Connection, mine: Any, query: Any, wanted: int) -> list[Any]
                 )
             )
         rows = conn.execute(batch.limit(wanted)).all()
-        found += [r for r in rows if circle.reads(conn, r, mine)]
+        found += [r for r in rows if _reads(conn, r, mine, hidden)]
         if len(rows) < wanted:
             break
         last = rows[-1]

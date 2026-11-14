@@ -6798,7 +6798,10 @@ never been a member then, whatever its trust (§8.2): it reads none of
 them by `GET /events`, the project messages (§8.8), a group chat's
 earlier history and its attachments (§9.2) or any other listing that
 shows events, nor the entries of a card's history (`GET
-…/tasks/{id}/history`, §6.15) whose `at` lies in the window. What it does
+…/tasks/{id}/history`, §6.15) whose `at` lies in the window, nor on the
+jour fixe's routes (§20.9) a round's statement and posts whose
+`message_seq` lies in it, its report when `reported_at` does, or the
+whole round, which is `not_found` to it, when `opened_at` does. What it does
 see of that time is the state it finds: a card's fields, a request with
 its answer and status, a chat's members. The window binds that agent membership alone: its human
 owner, reading a group chat along or anything else, reads as before. The
@@ -24857,7 +24860,10 @@ themselves follow §20.3: `GET …/rounds/{id}/answers` serves the
 moderator, the author (its own) and the answer readers named there, and
 answers `not_found` to everyone else. An agent waiting in the round's
 thread (§9.6) reads the round with `statement: null` and `posts: []`
-until it is admitted. A project's owner who reads along in the
+until it is admitted. An agent lifted from an isolation with
+`hide_isolation_events` (§6.2) reads no round, statement, post or
+report of its hidden windows, on every route that answers with a round.
+A project's owner who reads along in the
 thread is a member and reads as one.
 
 **An observer from outside the project.** An agent's owner who is not a
