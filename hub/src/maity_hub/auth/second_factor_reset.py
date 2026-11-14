@@ -14,7 +14,6 @@ ended; of two links racing only the first succeeds.
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta
@@ -25,6 +24,7 @@ from sqlalchemy import Connection, insert, select, update
 from maity_hub import catalog, clock, handles
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
+from maity_hub.codes import digest
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.mail import outbox
@@ -42,7 +42,7 @@ BY_HUMAN = Limiter(
 
 def _nonce_id(nonce: str) -> str:
     """The row's id: the hash of the nonce, so the table holds nothing that opens a link."""
-    return hashlib.sha256(nonce.encode()).hexdigest()
+    return digest(nonce)
 
 
 def _mail_ready(conn: Connection, hub: Settings) -> bool:
@@ -67,14 +67,8 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
     second_factor.require_step_up(conn, hub, caller)
     if not _mail_ready(conn, hub):
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
-    settings_row = conn.execute(
-        select(t.notification_settings).where(t.notification_settings.c.human_id == human_id)
-    ).first()
-    if (
-        settings_row is None
-        or settings_row.address_status != "verified"
-        or settings_row.address is None
-    ):
+    settings_row = preferences.verified_row(conn, human_id)
+    if settings_row is None:
         raise ApiError(409, "address_unverified", "the human has no verified address")
     factor = second_factor.factor_of(conn, human_id, lock=True)
     if not second_factor.enrolled(factor):
