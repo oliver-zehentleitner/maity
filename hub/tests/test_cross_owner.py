@@ -634,3 +634,51 @@ def test_an_admin_agents_change_waiting_for_a_go_does_not_end_the_owners_decisio
     go = owner.post(f"{PROJECT}/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
     assert go.status_code == 200, go.text
     assert _status(migrated, pair).status == "withdrawn"
+
+
+def test_a_withdrawal_on_the_project_route_records_it_for_each_addressee(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    # §18.1: one record per state change of a personal request, whichever route closes it;
+    # §7: a personal request keeps its card as it was when it closes.
+    friend = flow.human(make_client, migrated, "friend")
+    other = flow.human(make_client, migrated, "other")
+    for human in (friend, other):
+        factory.membership(migrated, _project(migrated), human_id=human.id, role="coder")
+    lent = _lent(migrated, friend)
+    boss = factory.agent(migrated, _project(migrated), other.id).agent_id
+    request_id = put(owner, lent, reports_to=boss).json()["id"]
+    card = factory.card(migrated, _project(migrated), _row(migrated, owner.id).id, title="Ship")
+    with migrated.begin() as conn:
+        conn.execute(update(t.request).where(t.request.c.id == request_id).values(task_id=card))
+    assert other.post(f"{PROJECT}/requests/{request_id}/withdraw", {}).status_code == 200
+    rows = _requests(migrated)
+    assert rows and all(r.status == "withdrawn" for r in rows)
+    with migrated.connect() as conn:
+        records = conn.execute(
+            select(t.account_record.c.human_id, t.account_record.c.data).where(
+                t.account_record.c.type == "personal_request_withdrawn"
+            )
+        ).all()
+    recorded = {(r.human_id, r.data["request_id"]) for r in records}
+    assert recorded == {(r.to_human, r.id) for r in rows}
+    assert _status(migrated, request_id).task_snapshot == {
+        "id": card, "title": "Ship", "status": "open"
+    }  # fmt: skip
+
+
+def test_a_change_in_a_project_with_a_long_name_files_a_title_that_fits(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    # The title is "Change <handle> in <project name>"; a name may fill the 200 characters
+    # alone, and PostgreSQL refuses a longer title (tables.TITLE).
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(name="N" * 200))
+    friend, other, lent, boss = _two_sides(owner, make_client, migrated)
+    assert put(owner, lent, reports_to=boss).status_code == 202
+    # Clearing the edge asks the agent's owner in person (`foreign_agent_change`, §6.2).
+    asked = put(owner, lent, reports_to=None)
+    assert asked.status_code == 202, asked.text
+    titles = [r.title for r in _requests(migrated)]
+    assert titles and all(len(title) <= t.TITLE for title in titles)
+    assert any(title.startswith("Change ") for title in titles)
