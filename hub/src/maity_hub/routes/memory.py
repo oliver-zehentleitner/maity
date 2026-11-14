@@ -22,6 +22,7 @@ from maity_hub.models import Strict, markdown
 from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.agents import owned
 from maity_hub.routes.requests import file_consent, file_personal, request_view
+from maity_hub.routes.requests import may_see as may_see_request
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -233,7 +234,7 @@ def _load_proposal(conn: Connection, request_id: str) -> dict[str, Any]:
     return request_view(conn, row, with_proposal=True)
 
 
-idempotency.LOADERS["proposal_request"] = idempotency.plain(_load_proposal)
+idempotency.register("proposal_request", idempotency.plain(_load_proposal), may_see_request)
 
 
 def _propose_community(

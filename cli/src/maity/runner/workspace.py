@@ -9,6 +9,10 @@ No git in an existing clone: the agent can write `.git/config` and `.git/hooks`,
 command run there by the runner would run the agent's code as the runner. `origin` is read by
 parsing `.git/config`, a stale `index.lock` is a stat. The only git the runner runs is
 `git clone` into a directory that does not exist yet.
+
+Nothing in a clone is read while the supervisor holds its lock: `owned` reads the runner's own
+record only, and `prepare`, in the start task, reads the clone after `clonecheck` found it
+plain, the way `AsUser.read` reads every file on the agents' side (limitread).
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import proc, redact, state
+from .. import clonecheck, proc, redact, state
 from . import config
 from .asuser import RUNNER, AsUser
 
@@ -102,7 +106,8 @@ def origin(path: Path, as_user: AsUser = RUNNER) -> str | None:
     """`remote.origin.url` from `.git/config`, parsed, never through git."""
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
-        parser.read_string(as_user.read(path / ".git" / "config").decode("utf-8"))
+        data = as_user.read_whole(path / ".git" / "config", clonecheck.CONFIG_MAX, under=path)
+        parser.read_string(data.decode("utf-8"))
     except (OSError, UnicodeDecodeError, configparser.Error):
         return None
     try:
@@ -140,6 +145,22 @@ def record(state_dir: Path, workspace: Workspace, agent: str, placement_id: str)
         state.save_state(state_dir, found, name=RECORDS)
 
 
+def owned(
+    cfg: config.Config, workspace: Workspace, agent: str, placement_id: str | None = None
+) -> dict[str, Any]:
+    """The runner's record of an existing clone, when it is `agent`'s (or was made for this
+    placement, which covers the time between a join and the hub naming the new member);
+    `Refused` otherwise. Reads the runner's own record only, nothing in the clone."""
+    found = records(cfg.state_dir).get(workspace.key)
+    if not isinstance(found, dict):
+        raise Refused("workspace_in_use", "workspace_unrecorded")
+    if found.get("agent") != agent and (
+        placement_id is None or found.get("placement_id") != placement_id
+    ):
+        raise Refused("workspace_in_use", "other_agent")
+    return found
+
+
 def inspect(
     cfg: config.Config,
     workspace: Workspace,
@@ -148,20 +169,25 @@ def inspect(
     placement_id: str | None = None,
     as_user: AsUser = RUNNER,
 ) -> dict[str, Any]:
-    """An existing clone's record, when it is `agent`'s (or was made for this placement,
-    which covers the time between a join and the hub naming the new member) and points at
-    `repository`; `Refused` otherwise. Reads the record and `.git/config` only."""
-    found = records(cfg.state_dir).get(workspace.key)
-    if not isinstance(found, dict):
-        raise Refused("workspace_in_use", "workspace_unrecorded")
-    if found.get("agent") != agent and (
-        placement_id is None or found.get("placement_id") != placement_id
-    ):
-        raise Refused("workspace_in_use", "other_agent")
+    """`owned`, and then whether the clone is plain (`clonecheck`) and its origin is
+    `repository`; `Refused` otherwise. Reads the record, the clone's `.git` listing and its
+    `.git/config`: never under the supervisor's lock."""
+    found = owned(cfg, workspace, agent, placement_id)
+    plain(workspace, as_user)
     url = origin(workspace.path, as_user)
     if url is None or config.normalise_repository(url) != config.normalise_repository(repository):
         raise Refused("workspace_in_use", "origin_mismatch")
     return found
+
+
+def plain(workspace: Workspace, as_user: AsUser = RUNNER) -> None:
+    """`Refused` when the clone's `.git` is not a plain clone's (clonecheck): an earlier
+    session of the agent may have planted what git follows elsewhere (a `commondir`,
+    `worktrees/`), so nothing starts in such a clone, and neither the agent nor a person's
+    later git in it lands where the plant points (§15.7)."""
+    finding = clonecheck.not_inspectable(workspace.path, as_user)
+    if finding is not None:
+        raise Refused("workspace_in_use", "not_a_plain_clone", why=finding)
 
 
 def prepare(
@@ -173,8 +199,9 @@ def prepare(
     branch: str | None = None,
     as_user: AsUser = RUNNER,
 ) -> None:
-    """Make sure the clone exists and belongs to `agent`; clone it when it is missing.
-    `Refused` otherwise. `agent` is the agent's id, or its handle before the first join."""
+    """Make sure the clone exists, is plain and belongs to `agent`; clone it when it is
+    missing. `Refused` otherwise. `agent` is the agent's id, or its handle before the first
+    join. Runs in the start task, never under the supervisor's lock (`inspect`)."""
     if as_user.exists(workspace.path):
         existing = inspect(cfg, workspace, repository, agent, placement_id, as_user)
         if existing.get("placement_id") != placement_id:
@@ -209,6 +236,7 @@ def prepare(
         why = said(done.stderr or "") or f"git clone exited {done.returncode}"
         raise Refused("clone_failed", exit_code=done.returncode, why=why)
     record(cfg.state_dir, workspace, agent, placement_id)
+    plain(workspace, as_user)
 
 
 def rebind(state_dir: Path, workspace: Workspace, old: str, new: str) -> None:

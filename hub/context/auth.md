@@ -729,3 +729,71 @@ that a member that calls is never shown away.
   write at T, a call at T + 59 that wrote nothing, a read at T + 121), and a session in use could
   expire up to a minute early.
 - Other options of the first request: unknown.
+
+## The credential filter has no boundary in front, and reads a JSON body's decoded strings too
+
+**Id:** d539d36c-45e7-4178-8428-835e67549e0f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-bg5f4cv0894w (credential filter hardening), 2026-11-13
+**Revisit when:** a body arrives in an encoding other than JSON that can escape characters, or the filter's matches start revoking credentials nobody leaked
+
+`credentials.PATTERN` (§2.2) matches `mty1.<id>.<secret>` whatever
+character stands right before it, and `find_all` scans a JSON body twice:
+the raw bytes, and every key and string value it decodes to. The CLI's
+check before sending (`sign.CREDENTIAL_IN_TEXT_RE`, `hub._guard_payload`)
+does the same, so it refuses what the hub would refuse.
+
+**Reason:** with a word boundary in front, a credential right after a
+letter, a digit or `_` did not match, and in a JSON body that includes
+every escape that ends in a letter: the `n` of `\n`, the `t` of `\t`.
+Dropping the boundary costs nothing in safety: a match is refused, and
+only a credential whose secret verifies is revoked, so a false match
+only refuses a request. Escapes such as `\u006d` change the bytes of
+the credential itself, which no pattern over the raw bytes can see.
+Reading the decoded strings catches them. The body is decoded as the
+app's JSON parser decodes it (`json.detect_encoding`: a UTF-8 byte
+order mark, UTF-16 and UTF-32), since a body the app reads as JSON
+but the scan does not would carry an escaped credential past it.
+
+**Rejected alternatives:**
+- Keeping the boundary and scanning only the decoded strings: a
+  credential right after a letter in plain text, or in a body that is
+  no JSON, would still pass.
+- Scanning only the decoded strings: the raw scan is what covers a
+  body that is not JSON, or JSON that does not decode, and the query.
+
+## Every anonymous sign-in and sign-up call keeps one rule, `same-site` refused too
+
+**Id:** 5c274a37-aec7-45d5-86e6-49bbee326b87
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hkgnd1dp0c9c (sign-in routes clean-up), the lead's ruling 2026-11-14; docs/api.md §2.1, §2.6.5
+**Revisit when:** the dashboard is served from a host other than the hub's own, or an anonymous call has to be started from another site on purpose
+
+The password login, the registration, the device login and its
+completion, the mail link and code and the password reset all call
+`auth.anonymous.entry` first: an `Authorization` header is `forbidden`
+with `humans_only`, plain HTTP is refused as §2.5 says, and a
+`Sec-Fetch-Site` of `cross-site` or `same-site` is `forbidden`. The mail
+link's `GET` page only shows a form and keeps `anonymous.no_credential`
+without the site check.
+
+**Reason:** these calls run before a session exists, so neither the
+`SameSite` cookie nor `X-CSRF-Token` protects them, and a sibling host
+under the same registrable domain counts as the same site for
+`SameSite`; refusing `same-site` keeps such a host from signing a
+visitor into an account of its choosing or starting a registration in
+their name. Nothing legitimate is lost: the dashboard posts
+same-origin, the hub has no separate web origin, and the CLI sends no
+`Sec-Fetch-Site` at all. One guard with no switch per route, because
+each route's own copy is how the registration and the login came to
+refuse only `cross-site` while §2.6.5 asked for both.
+
+**Rejected alternatives:**
+- Keeping the login at `cross-site` only and rewording §2.6.5: it
+  leaves login CSRF from a sibling host open for no gain.
+- A guard with a per-route switch for the site rule: the switch is the
+  divergence this replaces.

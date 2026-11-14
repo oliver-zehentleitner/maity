@@ -15,6 +15,7 @@ import hashlib
 import json
 import re
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -279,16 +280,32 @@ def _mark_read(kind: str, url: str) -> None:
     ktw.RAW.mark(kind, url)
 
 
+class NoPermit(ktw.MemberError):
+    """No permit freed up in time: a `timeout` that no read of the file has made."""
+
+    def __init__(self) -> None:
+        super().__init__("timeout")
+
+
+def _left(until: float) -> float:
+    """Seconds to `until` (monotonic), never below zero: an acquire with it does not block."""
+    return max(0.0, until - time.monotonic())
+
+
 @contextmanager
-def _permits(project_id: str) -> Iterator[None]:
+def _permits(project_id: str, until: float | None = None) -> Iterator[None]:
     """One of the project's ktw.IN_FLIGHT reads and one of the hub's IN_FLIGHT_ALL, for the
-    time of the read; `ktw.MemberError("timeout")` when none frees up in time."""
+    time of the read; `NoPermit` when none frees up by `until`, at most
+    ktw.LOCK_WAIT from now, as §11.3's reads wait: a read in flight may take
+    ktw.FAMILY_DEADLINE, and a call's own time stays bounded."""
+    if until is None:
+        until = time.monotonic() + ktw.LOCK_WAIT
     slot = _slot(project_id)
-    if not slot.acquire(timeout=ktw.FAMILY_DEADLINE):
-        raise ktw.MemberError("timeout")
+    if not slot.acquire(timeout=_left(until)):
+        raise NoPermit
     try:
-        if not _all.acquire(timeout=ktw.FAMILY_DEADLINE):
-            raise ktw.MemberError("timeout")
+        if not _all.acquire(timeout=_left(until)):
+            raise NoPermit
         try:
             yield
         finally:
@@ -298,15 +315,18 @@ def _permits(project_id: str) -> Iterator[None]:
 
 
 @contextmanager
-def _one_read(key: tuple[str, str]) -> Iterator[None]:
+def _one_read(key: tuple[str, str], until: float) -> Iterator[bool]:
+    """The file's one read: yields True once this call holds it, False when another read
+    of it is still under way at `until` (the caller answers without waiting longer)."""
     with _flights_guard:
         flight = _flights.setdefault(key, [threading.Lock(), 0])
         flight[1] += 1
     try:
-        if not flight[0].acquire(timeout=ktw.FAMILY_DEADLINE):
-            raise ktw.MemberError("timeout")
+        if not flight[0].acquire(timeout=_left(until)):
+            yield False
+            return
         try:
-            yield
+            yield True
         finally:
             flight[0].release()
     finally:
@@ -430,22 +450,39 @@ def _file(
 ) -> tuple[ktw.Raw, bool]:
     """(file, fresh): `fresh` when it was read since `start`, the request's beginning, by
     this call, by a call it waited for, or by §11.3's read of the family that the same call
-    made."""
-    with _one_read((kind, url)):  # after a read under way, which may answer this call too
+    made. The call waits at most ktw.LOCK_WAIT in all, for a read of the same file under way
+    and for the permits; past that it answers the file it holds (`fresh: false`), else
+    `ktw.MemberError("timeout")`."""
+    until = time.monotonic() + ktw.LOCK_WAIT
+    with _one_read((kind, url), until) as mine:  # after a read under way, which may answer
+        if not mine:
+            return _held_or_timeout(kind, url)
         answered = _answered(kind, url, max_age, start)
         if answered is not None:
             return answered
-        with _permits(project_id):
-            _mark_read(kind, url)
-            try:
-                found = _read(kind, url, cap)
-            except ktw.MemberError as error:
-                _failed[(kind, url)] = error
-                while len(_failed) > HELD_KEPT:
-                    _failed.popitem(last=False)
-                raise
-            _failed.pop((kind, url), None)
-            return found, True
+        try:
+            with _permits(project_id, until):
+                _mark_read(kind, url)
+                try:
+                    found = _read(kind, url, cap)
+                except ktw.MemberError as error:
+                    _failed[(kind, url)] = error
+                    while len(_failed) > HELD_KEPT:
+                        _failed.popitem(last=False)
+                    raise
+                _failed.pop((kind, url), None)
+                return found, True
+        except NoPermit:
+            return _held_or_timeout(kind, url)
+
+
+def _held_or_timeout(kind: str, url: str) -> tuple[ktw.Raw, bool]:
+    """The file as the store holds it (`fresh: false`) for a call that waited its
+    ktw.LOCK_WAIT out; `ktw.MemberError("timeout")` when the store holds none."""
+    kept = ktw.RAW.get(kind, url)
+    if kept is None:
+        raise ktw.MemberError("timeout")
+    return kept, False
 
 
 def _answered(kind: str, url: str, max_age: int, start: float) -> tuple[ktw.Raw, bool] | None:

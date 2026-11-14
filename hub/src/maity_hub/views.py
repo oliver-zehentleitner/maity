@@ -1241,6 +1241,10 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
     Every other event's `reason` is untouched."""
     payload = row.payload
+    if isinstance(payload, dict) and not row.redacted:
+        # A redacted card field copied into an event (`task.title` of `mentioned`,
+        # `note_added`, `note_edited`, §20.8) shows its reason as the card's history does.
+        payload = _task_copy_for(payload, reader)
     if row.kind in ("note_added", "note_edited") and isinstance(payload, dict) and not row.redacted:
         # A redacted note's tombstone sits inside the event that carried it (§6.16).
         note = payload.get("note")
@@ -1250,6 +1254,11 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
 
             return {**payload, "note": {**note, "body": notes.tombstone_for(body, reader)}}
         return payload
+    task_event = row.kind in ("task_created", "task_updated")
+    if task_event and isinstance(payload, dict) and not row.redacted:
+        # A redacted history entry's tombstone sits in the field values of the event its
+        # write emitted (§6.15).
+        return _field_tombstones_for(payload, reader)
     redaction = row.kind == "event_redacted" or row.redacted
     if not redaction or not isinstance(payload, dict):
         return payload
@@ -1261,6 +1270,35 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     if reader is not None and row.redacted and payload.get("by") == reader.principal_id:
         return payload  # the redactor's own tombstone
     return {**payload, "reason": None}  # no reader known: hidden, never shown by default
+
+
+def is_tombstone(value: Any) -> bool:
+    """A redaction's tombstone (§8.5): `redacted: true` with who and when, so a field whose
+    value happens to be a dict is never taken for one."""
+    return (
+        isinstance(value, dict)
+        and value.get("redacted") is True
+        and "by" in value
+        and "at" in value
+    )
+
+
+def _field_tombstones_for(payload: dict[str, Any], reader: Any) -> dict[str, Any]:
+    """A task event's field values with each tombstone's reason as `reader` may read it."""
+    from maity_hub.board import notes
+
+    if not any(is_tombstone(v) for v in payload.values()):
+        return payload
+    return {k: notes.tombstone_for(v, reader) if is_tombstone(v) else v for k, v in payload.items()}
+
+
+def _task_copy_for(payload: dict[str, Any], reader: Any) -> dict[str, Any]:
+    """An event's copy of a card (`task`) with each redacted field's reason as `reader` may
+    read it."""
+    task = payload.get("task")
+    if not isinstance(task, dict) or not any(is_tombstone(v) for v in task.values()):
+        return payload
+    return {**payload, "task": _field_tombstones_for(task, reader)}
 
 
 def _standing_of(conn: Connection, events: Sequence[Any], reader: Any) -> dict[int, dict[str, Any]]:

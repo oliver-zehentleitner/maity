@@ -25,7 +25,9 @@ from maity_hub.routes.project_images import _matches
 
 router = APIRouter()
 
-idempotency.LOADERS["avatar"] = idempotency.plain(avatars.state)
+# One's own picture, or one `_change`'s `check` allows again before the replay (an owned
+# agent's, an organisation's).
+idempotency.register("avatar", idempotency.plain(avatars.state), idempotency.checked_by_route)
 
 
 def _side(request: Request) -> int:
@@ -131,7 +133,9 @@ def _change(
             raise invalid({"body": "unsupported_type"}, "PNG, JPEG or WebP only")
         avatars.check_rate(owner_id)
         try:
-            png = avatars.decode(settings_of(request), data, sniffed)
+            png = avatars.decode(
+                settings_of(request), data, sniffed, holder=avatars.holder_of(caller)
+            )
         except ApiError as refused:
             if refused.status == 400:  # a refused image counts as a change tried
                 avatars.count_change(None, owner_id)
