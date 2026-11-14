@@ -755,7 +755,9 @@ and clears `alerted`, so the next wrong code mails a link of the new password. T
 codes and an enrolment's confirm do not count: neither is a guess at an enrolled secret. Rows are
 locked in one order: the factor, the human, then the day. `_count_day` locks the human before it
 touches the day row, because the alert's record locks the human and a password change updates
-the human before it clears `alerted`; the other order lets the two wait on each other.
+the human before it clears `alerted`; the other order lets the two wait on each other. A reset by
+mail locks the factor before the human (`routes/password_reset._live`), since its code is
+checked after the token: the human's lock first would cross a wrong code counted elsewhere.
 
 **Reason:** the 15-minute window alone lets 960 guesses through a day. A count in the database,
 unlike the in-process limiters, survives a restart, which a limit over a whole day must; and
@@ -782,6 +784,8 @@ outlive the human's change of it.
   day's row already decides "once".
 - Alerting only on the code that hits the cap exactly (`==`): a lowered cap is passed without
   ever being hit, and the human is refused with neither notice nor link.
+- Leaving the reset by mail to lock the human first and the factor at its code check (review A308
+  of #1756): a wrong code elsewhere holds the factor and waits for the human, so the two cross.
 - Clearing `alerted` before the password change updates the human: `POST /auth/password` has
   already written the new password, and with it locked the human, by then; the count moves
   instead (review A215 of #1756, a deadlock reproduced on PostgreSQL).
