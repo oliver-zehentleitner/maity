@@ -180,6 +180,10 @@ def test_a_forward_to_an_agent_the_gate_holds_it_for_is_refused(
     refused = owner.post(f"{path}/forward", {"to": theirs.id})
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["details"] == {"reason": "held_by_gate"}
+    assert refused.json()["error"]["message"] == (
+        "the gate of §9.6 holds this request for that agent: its owner has not said yes"
+        " to the asker's side. The owner can allow the asker's side and then forward"
+    )
     with migrated.connect() as conn:
         holder = conn.execute(
             select(t.request.c.holder_member).where(t.request.c.id == request["id"])
@@ -192,6 +196,11 @@ def test_a_forward_to_an_agent_the_gate_holds_it_for_is_refused(
     again = other.post(f"{PROJECT}/requests/{pooled['id']}/forward", {"to": theirs.id})
     assert again.status_code == 403, again.text
     assert again.json()["error"]["details"]["reason"] == "held_by_gate"
+    assert again.json()["error"]["message"] == (
+        "the gate of §9.6 held this request for that agent when it was filed, and a later yes"
+        " does not release it. Its owner can allow the asker's side, and the asker then asks"
+        " again"
+    )
 
 
 def test_a_forward_to_an_admitted_agent_goes_through(

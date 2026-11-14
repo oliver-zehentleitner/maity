@@ -12350,8 +12350,11 @@ POST /projects/{owner}/{slug}/requests/{id}/claim
   for (`held`), or that the gate of §9.6 would hold it for were the
   asker to file it to that agent now, is `forbidden` (`details.reason:
   "held_by_gate"`): the text is the asker's, so the asker's side is
-  judged, whoever forwards. The request stays with its holder, and the
-  asker may still withdraw it.
+  judged, whoever forwards. The message names the next step: where the
+  gate would hold it now, the agent's owner allows the asker's side and
+  then forwards; where it was held when filed, a later yes does not
+  release it, and the asker asks again after that yes. The request
+  stays with its holder, and the asker may still withdraw it.
 - **Claim.** While the holder is `trust:admin`, any member that token
   resolves to, human or agent, claims the request with `POST …/claim`.
   The first claim wins and becomes the holder. A later claim is
