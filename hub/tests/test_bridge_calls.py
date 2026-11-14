@@ -232,6 +232,32 @@ def test_an_isolated_served_agent_is_refused_and_keeps_its_bridge(
         assert conn.execute(select(t.bridge)).first() is not None
 
 
+@pytest.mark.parametrize("change", ["owner_suspended", "bridge_guest"])
+def test_a_bridge_carries_nothing_once_its_standing_ends(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, change: str
+) -> None:
+    # §2.3, §16.8: checked at every carried call, so no path that suspends the served
+    # agent's owner or lowers the bridge to guest leaves the connection carrying.
+    served, bridge, _ = _pair(migrated, owner)
+    calls = Calls(make_client(), bridge)
+    assert _say(calls, served.agent_id).status_code == 201
+    with migrated.begin() as conn:
+        if change == "owner_suspended":  # the served agent's owner, not the bridge's call
+            conn.execute(
+                update(t.human).where(t.human.c.id == owner.id).values(suspended_at=clock.now())
+            )
+        else:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == bridge.membership_id)
+                .values(trust="guest")
+            )
+    refused = _say(calls, served.agent_id)
+    assert (refused.status_code, _reason(refused)) == (403, "not_your_bridge")
+    read = calls.get(f"{PROJECT}/members/{served.agent_id}", served.agent_id)
+    assert (read.status_code, _reason(read)) == (403, "not_your_bridge")
+
+
 def test_a_claim_through_the_bridge_is_the_served_agents_without_an_instance(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

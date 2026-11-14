@@ -220,7 +220,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `release_not_ready` | status `done` on a release whose readiness is false; `details.blocking` |
 | 409 | `release_in_flight` | a second release card while one is open; `details.release` |
 | 409 | `version_exists` | a release with that version exists in the project |
-| 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to`; `details.reason: "project_moved"` instead when the project changed its owning organisation during the call, which is to be made again (§6.26) |
+| 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to`; `details.reason: "project_moved"` instead when the project changed its owning organisation during the call, which is to be made again (§6.26); `details.reason: "proposer_lost"` for a `go` on a member's proposal whose proposer no longer stands (§7) |
 | 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
 | 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
 | 409 | `alias_limit` | a rename that would give a human, an organisation or an agent profile more aliases than the instance's `max_aliases` (§6.24, §6.26, §16.5), or a project rename or transfer that would give the project more (§6.25); `details.limit` (the value), `details.aliases`. Taking an own alias back is never refused with it |
@@ -1045,7 +1045,10 @@ carries only what the bridge posts.
   `isolation_windows` hold for what the bridge reads for it; isolation
   can be lifted, so it blocks a connection and does not end it. One header
   names one served agent and the connection must be direct, so a bridge
-  never chains. A `chat` into the served agent's direct conversation is
+  never chains. A connection carries nothing while the bridge member has
+  trust `guest` or the served agent's owner is suspended (§16.8): every
+  call for it is `forbidden` with `details.reason: not_your_bridge`,
+  checked at each call, and it carries again once that ends. A `chat` into the served agent's direct conversation is
   `forbidden` with `details.reason: bridge_observer` on both routes
   (§8.4, §9.1). Without the header the bridge acts as itself, with its
   own role's scopes.
@@ -4120,7 +4123,8 @@ the person is not a member already (`invalid`,
 for someone else when it is not address-bound, else it is used up; two
 different invitations for the same person and project end the same
 way, the first accept wins); and that the issuer still holds the
-authority the invitation needs — still an active human member, still
+authority the invitation needs — still an active human member whose
+account is not suspended (§16.8), still
 trust `owner` for an invitation with trust `owner` or `admin` or the role `proxy`, still `members:admin` for
 the others. An issuer who lost it in the meantime voids the invitation
 at that moment: `forbidden`, `invitation_void`, the invitation marked
@@ -11102,8 +11106,11 @@ a personal `consent` request (§7, "Personal requests") to that human,
 organisation and the role, with the replies `go` and `no`; it reaches
 them through the account records of §18.1 like every personal request.
 `go` makes them a member with that role, in one transaction with the
-checks that the invitation is still open and the organisation not
-deleted; `no` ends the invitation, and so does the invited human's
+checks that the invitation is still open, the organisation not
+deleted and the inviter still able to send it — still an owner, or an
+admin for the role `member` or `admin`, with an account not suspended
+(§16.8); otherwise the `go` is `409 invalid_transition` with
+`details.reason: invitation_stale`; `no` ends the invitation, and so does the invited human's
 withdrawal of their own request (§7). The answer to the inviter is the
 same `202` with the item whether or not the handle names a human who can
 be invited, so the call tells nobody who has an account: for a handle
@@ -11779,6 +11786,16 @@ another owner's agent, a human asker or a request the hub filed itself,
 nor on a takeover's, which needs one of its replies (§6.19). There it is
 disabled with the reason below the buttons. Ctrl+Enter is offered only
 where the send button can send at all.
+A `go` on a request that carries a member's proposal — a preferences
+proposal (§19.4), a soul or community-memory proposal (§19.1, §19.2), a
+manager's change (§2.3, "The manager") — acts on the proposer's
+authority, so it is checked again when the `go` is given: the proposing
+member must still be active, not isolated and no guest, its account (a
+human's own, an agent's owner's) not suspended, and for preferences
+still an admin agent or the human's proxy. Otherwise the `go` is `409
+invalid_transition` with `details.reason: proposer_lost` (a manager's
+change answers `not_in_line` as before), nothing is applied, and the
+request stays open for a `no` or a withdrawal.
 A request with `report` (§16.8) shows neither field nor buttons but a
 link to the report under `/admin/reports/{id}`.
 
@@ -20783,8 +20800,9 @@ report with `action` and `at`.
   set to `off` (§16.9), every open transfer into it is withdrawn (a `go`
   on one still open is refused the same way), and each of its projects
   that is not `archived` is archived as `remove` archives a project,
-  with the same hold. While it is suspended, `public_page: on`, a rename
-  and new invitations are refused as well (`moderation_hold`); changes
+  with the same hold. While it is suspended, `public_page: on` (its own
+  and that of each of its projects), a rename and new invitations are
+  refused as well (`moderation_hold`); changes
   of its members, removing its avatar and deleting it stay allowed
   (§6.26). The
   accounts of its owners, admins and members stay untouched: suspending

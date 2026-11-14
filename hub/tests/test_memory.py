@@ -467,6 +467,41 @@ def test_an_agents_community_entry_is_a_proposal_a_project_admin_confirms(
     assert _events(migrated, "memory_added")[-1].audience == ["all"]
 
 
+@pytest.mark.parametrize("change", ["isolated", "owner_suspended"])
+def test_a_go_on_a_proposal_needs_the_proposer_still_standing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, change: str
+) -> None:
+    # §19.2: the entry is the proposing agent's; a go after its isolation, or after its
+    # owner's suspension, stores nothing and leaves the request open.
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    request = agent.post(M, {"store": "community", "text": "Never on a Friday."}).json()
+    with migrated.begin() as conn:
+        if change == "isolated":
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.agent_id == agent.id)
+                .values(isolated_since=clock.now())
+            )
+        else:  # beside the route: the hub reads the column at the go
+            conn.execute(
+                update(t.human).where(t.human.c.id == owner.id).values(suspended_at=clock.now())
+            )
+    answer = f"/projects/maintainer/maity/requests/{request['id']}/answer"
+    if change == "owner_suspended":  # a co-owner answers: the suspended one signs in no more
+        other = flow.human(make_client, migrated, "co-owner")
+        with migrated.connect() as conn:
+            project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        factory.membership(migrated, project_id, "owner", human_id=other.id)
+        refused = other.post(answer, {"reply_id": "go"})
+    else:
+        refused = owner.post(answer, {"reply_id": "go"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "proposer_lost"}
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.memory_entry)).first() is None
+
+
 def test_a_refused_or_withdrawn_proposal_stores_nothing(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:

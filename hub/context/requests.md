@@ -237,3 +237,27 @@ the instance-address change). `to=<member>#<id>` matches that address only, as w
 - Syncing only in the worker's minute pass: the owner would wait up to a minute for the question, and the answer's "a new request at once" would not hold.
 - A unique index of open requests per owner pair: a new column and a migration for a guarantee the deterministic id gives, and the second writer would fail instead of joining the open request.
 - Locking the owner's human row in `sync` (the first version of this part): it serialised the filing, but every chat change of the owner's agents then took the human's row after its project's lock, the opposite of an entry change, so the two could deadlock whenever they met.
+
+## A go on a member's proposal checks the proposer again
+
+**Id:** 7ce9c6c4-bfbf-4b16-bd5c-ac6a461e7e5d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0f7nbt07f98r; `docs/api.md` §7, §19.1, §19.2, §19.4, §2.3 "The manager"
+
+A proposal is filed on its proposer's standing and answered later.
+`proposals.proposer_row` reads the asking membership when the `go` is
+given: active, not isolated, no guest, its account (a human's own, an
+agent's owner's) not suspended. Preferences, soul and community-memory
+proposals refuse the `go` with `proposer_lost` when it no longer stands
+(preferences also re-run `may_propose`); a manager's change refuses it
+with `not_in_line`, as a lost reach does. The request stays open.
+
+**Reason:** the answerer approves a change made on the proposer's
+authority; that authority can end in the hours between, by paths that do
+not know about open proposals.
+
+**Rejected alternatives:** withdrawing the open proposals on each such
+change — every path that lowers standing would need to find them, and
+one missed would leave a go acting on authority that is gone.
