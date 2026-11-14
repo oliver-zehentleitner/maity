@@ -16628,7 +16628,8 @@ running is a setting, chosen per project within the instance default
 owner choose):
 
 - **When it applies.** On `POST /runners/{id}/revoke` and on
-  `DELETE /runners/{id}`. Never on a re-pair (`revoked_reason:
+  `DELETE /runners/{id}`, and as `agents: "stop"` when an instance admin
+  suspends the runner's owner (§16.8). Never on a re-pair (`revoked_reason:
   repaired`): the new credential takes over the same placements. A
   revocation by the hub because the credential appeared in a payload
   (`leaked_in_payload`, §2.2) applies `keep`: the runner's key leaked,
@@ -17557,8 +17558,12 @@ POST /api/v1/runner/placements/plc-0003/join
   removed and with a live credential; a member's pickup or a rejoin also
   requires the membership still active, so a pickup never brings back a
   member a human removed. Otherwise the exchange answers `not_found`
-  (§1.1). Stopping or closing the placement, and revoking or removing
-  the runner, revoke its unused pickup joins.
+  (§1.1). Stopping or closing the placement, revoking, re-pairing or
+  removing the runner, and suspending its owner (§16.8) revoke its unused
+  pickup joins: a pickup ends with the runner credential that fetched it.
+  A placement that is closing closes at once when the runner's
+  credential is revoked, since no live credential is left to report its
+  end; on a re-pair it stays closing, and the new credential reports it.
 - **A lost response is recoverable.** A pickup while an earlier one of
   the same generation is unused revokes that join in the same
   transaction and issues a fresh one: never more than one live code per
@@ -20768,8 +20773,11 @@ report with `action` and `at`.
   keeps its tombstones as everywhere.
 - `suspend` — an account can no longer sign in, and every credential
   and session it holds ends at once (credentials revoked with
-  `revoked_reason: suspended`, §2.2; runner credentials too, so its
-  placements stop, §15.3); its memberships stay but act as paused
+  `revoked_reason: suspended`, §2.2; runner credentials too, with each
+  of its runners stopped as under `agents: "stop"`, whatever the
+  project's `on_runner_revoke`: its placements close, and the agent
+  credentials of other humans' agents they named are revoked at once,
+  `revoked_reason: runner_revoked` with `revoked_by: null`, §15.3); its memberships stay but act as paused
   (§5.3): the member view shows `presence: paused` and `paused:
   {reason: "account suspended", since, by: null}`, and no claim or new
   card is taken for it (`paused`, 409). While it is suspended, nothing issues it a new credential:

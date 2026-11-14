@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import typing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 
+from maity_hub import events, moderation
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.routes import runner as runner_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_runner_stream import attach, hello, send
-from tests.test_runners import Runner, call, error, paired
+from tests.test_runners import Runner, call, enroll, error, paired
+from tests.test_runners import exchange as pair_exchange
 
 REPOSITORY = "https://github.com/oliver-zehentleitner/maity"
 
@@ -673,6 +675,160 @@ def test_a_revoked_runner_closes_what_is_closing(setup: Setup) -> None:
     report(setup, body, 1)
     setup.owner.delete(f"/projects/maintainer/maity/placements/{body['id']}")
     setup.owner.post(f"/runners/{setup.runner.id}/revoke")
+    assert get(setup, body["id"])["closed_reason"] == "removed"
+
+
+def test_a_leaked_runner_credential_closes_what_is_closing(setup: Setup) -> None:
+    body = placed(setup)
+    report(setup, body, 1)
+    setup.owner.delete(f"/projects/maintainer/maity/placements/{body['id']}")
+    leaked = setup.owner.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": setup.runner.value},
+    )
+    assert error(leaked) == "credential_in_payload"
+    assert get(setup, body["id"])["closed_reason"] == "removed"
+
+
+def test_a_suspended_owners_runner_closes_what_is_closing(setup: Setup) -> None:
+    """The suspension stops the runner (§15.3): what was closing closes at once too."""
+    body = placed(setup)
+    report(setup, body, 1)
+    setup.owner.delete(f"/projects/maintainer/maity/placements/{body['id']}")
+    assert get(setup, body["id"])["active"] is True
+    with events.transaction(setup.engine) as conn:
+        moderation.suspend(conn, setup.owner.id, "rpt-000000000000")
+    with setup.engine.connect() as conn:
+        closed = conn.execute(
+            select(t.placement.c.active, t.placement.c.closed_reason).where(
+                t.placement.c.id == body["id"]
+            )
+        ).one()
+    assert (closed.active, closed.closed_reason) == (None, "runner_revoked")
+
+
+@pytest.mark.parametrize("revoked_before", [False, True])
+def test_a_suspension_stops_the_owners_runners_whatever_the_rule(
+    setup: Setup, revoked_before: bool
+) -> None:
+    """As the owner's `agents: "stop"` (§15.3): the placements close and the agent
+    credentials they named go at once, another human's agent's included, also on a
+    runner whose key a `keep` revoked before."""
+    body = placed(setup)
+    other = factory.human(setup.engine, "pat")
+    with setup.engine.begin() as conn:  # as the pickup sets it (§15.9), for pat's agent
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == body["id"])
+            .values(credential_id=setup.agent.credential_id)
+        )
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == setup.agent.id)
+            .values(owner_id=other)
+        )
+    if revoked_before:
+        assert setup.owner.post(f"/runners/{setup.runner.id}/revoke").status_code == 200
+        assert get(setup, body["id"])["active"] is True  # `keep`, the default
+    with events.transaction(setup.engine) as conn:
+        moderation.suspend(conn, setup.owner.id, "rpt-000000000000")
+    with setup.engine.connect() as conn:
+        closed = conn.execute(
+            select(t.placement.c.active, t.placement.c.closed_reason).where(
+                t.placement.c.id == body["id"]
+            )
+        ).one()
+        agent = conn.execute(
+            select(t.credential.c.revoked_reason, t.credential.c.revoked_by).where(
+                t.credential.c.id == setup.agent.credential_id
+            )
+        ).one()
+        runner = conn.execute(
+            select(t.runner_credential.c.revoked_reason, t.runner_credential.c.stopped).where(
+                t.runner_credential.c.id == setup.runner.credential_id
+            )
+        ).one()
+    assert (closed.active, closed.closed_reason) == (None, "runner_revoked")
+    assert tuple(agent) == ("runner_revoked", None)  # the hub's act, not the suspended human's
+    assert runner.revoked_reason == ("revoked" if revoked_before else "suspended")
+    assert [(a["rule"], a["stopped"]) for a in runner.stopped] == [("stop", [body["id"]])]
+    refused = setup.agent.get("/me")
+    assert (refused.status_code, error(refused)) == (401, "credential_revoked")
+
+
+def _running_on_the_runner(s: Setup) -> dict[str, Any]:
+    body = placed(s)
+    with s.engine.begin() as conn:  # as the pickup sets it (§15.9)
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == body["id"])
+            .values(credential_id=s.agent.credential_id)
+        )
+    return body
+
+
+def test_a_suspension_revokes_the_accounts_own_placed_agent_as_suspended(setup: Setup) -> None:
+    """The account's own agent on its own runner ends as every credential it holds
+    (`suspended`, §16.8), not as the runner's stop; nobody is named as having revoked it."""
+    body = _running_on_the_runner(setup)
+    with events.transaction(setup.engine) as conn:
+        moderation.suspend(conn, setup.owner.id, "rpt-000000000000")
+    with setup.engine.connect() as conn:
+        agent = conn.execute(
+            select(t.credential.c.revoked_reason, t.credential.c.revoked_by).where(
+                t.credential.c.id == setup.agent.credential_id
+            )
+        ).one()
+        closed = conn.execute(
+            select(t.placement.c.closed_reason).where(t.placement.c.id == body["id"])
+        ).scalar_one()
+        told = conn.execute(
+            select(t.event.c.seq).where(t.event.c.kind == "credential_revoked")
+        ).all()
+    assert tuple(agent) == ("suspended", None)
+    assert closed == "runner_revoked"
+    assert told == []
+
+
+def test_a_suspension_locks_the_runner_rows_before_any_project(setup: Setup) -> None:
+    """Runner credentials, then runner rows, as a runner's own call takes them; then the
+    projects in one pass; then the account's own credentials, then the runners' stop."""
+    from tests.test_moderation import transactions
+
+    _running_on_the_runner(setup)
+    with transactions(setup.engine) as seen, events.transaction(setup.engine) as conn:
+        moderation.suspend(conn, setup.owner.id, "rpt-000000000000")
+    [statements] = [x for x in seen if any("UPDATE human_session" in y for y in x)]
+
+    def first(test: typing.Callable[[str], bool]) -> int:
+        return next(i for i, x in enumerate(statements) if test(x))
+
+    keys = first(lambda x: x.startswith("SELECT runner_credential.id \nFROM runner_credential"))
+    rows = first(lambda x: x.startswith("SELECT runner.id \nFROM runner \nWHERE runner.owner_id"))
+    project = first(lambda x: x.startswith("SELECT project.id,") and "WHERE project.id =" in x)
+    own = first(lambda x: x.startswith("UPDATE credential "))
+    runner = first(lambda x: x.startswith("UPDATE runner_credential "))
+    assert keys < rows < project < own < runner, statements
+    if setup.engine.dialect.name != "sqlite":  # SQLite renders no lock clause
+        assert "FOR UPDATE" in statements[keys] and "FOR UPDATE" in statements[rows]
+
+
+def test_a_re_paired_runner_reports_the_end_of_what_is_closing(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """A re-pair's new credential takes over the same placements (§15.3): it stays closing."""
+    body = placed(setup)
+    report(setup, body, 1)
+    setup.owner.delete(f"/projects/maintainer/maity/placements/{body['id']}")
+    answer = pair_exchange(make_client(), enroll(setup.owner, name=None, runner_id=setup.runner.id))
+    assert answer.status_code == 201, answer.text
+    new = Runner(setup.runner.id, answer.headers["Maity-Credential-Id"], answer.text)
+    assert get(setup, body["id"])["active"] is True
+    again = replace(setup, runner=new)
+    assert hello(again.client, new).status_code == 200
+    assert runner_reads(again) == [body["id"]]
+    done = report(again, body, 2, state="stopped", reason="stopped_by_hub")
+    assert done.json()["active"] is False
     assert get(setup, body["id"])["closed_reason"] == "removed"
 
 
