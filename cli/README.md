@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a10 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a11 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -941,6 +941,17 @@ repositories = ["github.com/oliver-zehentleitner/maity"]   # or "github.com/oliv
 modes = ["interactive", "supervised"]
 ```
 
+`require_sandbox` under a `[harness.<id>]` decides when a start without
+the harness's OS sandbox is refused. `true`: always. Unset (the
+default): only when Claude Code's sandbox tools are there but its
+version keeps the sandbox off (older than 2.1.295, a prerelease of it,
+or unknown). `false`: never; the agents then run unsandboxed where the
+sandbox is off. A sandboxed Claude Code start is also refused while
+managed Claude Code settings set `disableAllHooks` or
+`allowManagedHooksOnly`, or the agents' user's settings set
+`allowManagedHooksOnly`
+([`docs/runners.md`](../docs/runners.md#git-in-an-agents-session)).
+
 Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
@@ -1338,6 +1349,10 @@ workspaces = "/home/maity/workspaces"           # absolute, on the host
 max_agents = 2
 agent_path = "/usr/local/bin:/usr/bin:/bin"     # where tmux, git, maity and the harness are
 ```
+
+The runner looks `maity` up on `agent_path` once per connection and
+starts the session loop and the hook of a sandboxed Claude Code agent by
+that absolute path; a host without `maity` there is refused.
 
 Every command is a fixed template sent as one quoted command line, with
 `BatchMode`, `StrictHostKeyChecking=yes`, only the configured

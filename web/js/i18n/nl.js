@@ -2925,6 +2925,8 @@ window.MAITY_I18N["nl"] = {
   "mine.title": "Jouw instellingen voor {name}",
   "mine.use_default": "Mijn standaard gebruiken",
   "name_rules.handle": "Kleine letters, cijfers en -, 2–31 tekens, beginnend met een letter of cijfer.",
+  "name_rules.handle_bad": "Nog geen handle: {rule}",
+  "name_rules.handle_lowercase": "Alleen kleine letters: een handle heeft geen hoofdletters.",
   "name_rules.slug": "Kleine letters, cijfers en -, 2–63 tekens, beginnend met een letter of cijfer.",
   "names.aliases": "Eerdere namen, die hier nog voorgaan: {names}.",
   "names.current": "Dit project heet {name}.",

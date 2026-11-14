@@ -2384,7 +2384,7 @@ do, and hid that the cause was the shape of its own command.
 **Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
-**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
 
 Under its sandbox, a placed Claude Code session runs a hook before every
 tool call (`runner/plaincall.py`), written by the runner into the
@@ -2402,8 +2402,8 @@ counts however the harness trims it; a line that starts with a variable
 or another command is left to the permission rules.
 
 The hook is the runner's own interpreter and module (`-I -m
-maity.runner.plaincall`; on an ssh host `maity runner plaincall`, as for
-the loop), outside the clone and not the agent's to change. It has no
+maity.runner.plaincall`; on an ssh host `<maity> runner plaincall` with
+the host's `maity` by its absolute path, as for the loop, 92a3aa0a), outside the clone and not the agent's to change. It has no
 matcher, so it sees every tool, and checks any tool input with a
 `command`. A hook that fails, cannot start or times out refuses the call
 (`onFailure: "block"`), and unreadable input is refused too. The session's
@@ -2412,11 +2412,11 @@ Because the hook's refusal on failure needs `onFailure` (Claude Code
 2.1.295), the runner switches Claude Code's sandbox on only from that
 version (`capabilities.sandbox_version_ok`); an unknown or unreadable
 version counts as older, and so does a prerelease of 2.1.295 (SemVer
-sorts `2.1.295-rc.1` before `2.1.295`; build metadata does not count). With `require_sandbox` that is an error in
-`maity runner check` and a refused start (`harness_refused`); without
-it the session runs unsandboxed (`sandbox_unavailable`), with no
-exclusion for the hook to guard, as on a host without the sandbox's
-tools. The hook's shell form ends in `|| exit 2`, so a hook that cannot
+sorts `2.1.295-rc.1` before `2.1.295`; build metadata does not count).
+Where the sandbox's tools are there, such a start is refused unless
+`require_sandbox = false` (92a3aa0a); then, and on a host without the
+tools, the session runs unsandboxed (`sandbox_unavailable`), with no
+exclusion for the hook to guard. The hook's shell form ends in `|| exit 2`, so a hook that cannot
 start or fails refuses the call on any version; only a timeout needs
 `onFailure`.
 opencode, which runs without a sandbox and gets no hook, denies
@@ -2451,6 +2451,75 @@ spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
   required or not: without the sandbox there is no exclusion and nothing
   for the hook to hold; a runner without `require_sandbox` already runs
   such sessions where the sandbox's tools are missing.
+
+## A sandboxed Claude Code start needs the hook to run; an old or unknown version is refused where the sandbox could run
+
+**Id:** 92a3aa0a-eed2-412a-9bad-5d0af30e7add
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m, the follow-up to #1752 the lead ordered (lotse seq 127403, 127806, 128291) with the review of #1752 (hcrb, seq 128028: a version token needs its boundaries), 2026-11-14; Claude Code's settings documentation (managed settings take precedence over a `--settings` file; `disableAllHooks`, `allowManagedHooksOnly`). Which paths and switches count is the author's reading, not checked against a managed Claude Code install
+**See:** runner.md#a-placed-claude-code-agents-maity-line-is-one-plain-call-held-to-that-by-a-hook — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-14
+**Revisit when:** Claude Code reads managed settings from another place or under another switch, or reports whether hooks are on; a host without bubblewrap must run Claude Code sandboxed; the opt-out `require_sandbox = false` is no longer used; agents on an ssh host may install their own `maity` on purpose
+
+Four rules hold a sandboxed Claude Code session to the hook of 63492c65:
+
+- **Settings that switch hooks off refuse the start.** Before every
+  sandboxed Claude Code start (supervisor `_refusal`) and in `maity
+  runner check`, the runner reads the managed settings (Linux
+  `/etc/claude-code/managed-settings.json` and each `*.json` in
+  `managed-settings.d/` beside it, macOS under `/Library/Application
+  Support/ClaudeCode/`; on an ssh host the Linux paths, read there) and
+  the agents' user's `~/.claude/settings.json`
+  (`capabilities.claude_hooks_off`). `disableAllHooks` or
+  `allowManagedHooksOnly` set to anything but `false` in a managed file,
+  or `allowManagedHooksOnly` in the user's, refuses the start
+  (`harness_refused`) with the file and the switch in the log. A managed
+  file that is not a JSON object, cannot be read, or a host that cannot
+  be asked counts as switched off. The user's `disableAllHooks` does not
+  count: the session's own settings file sets it back to `false`.
+- **The hook starts the host's `maity` by its absolute path.** On an ssh
+  host the runner looks `maity` up on `agent_path` once per connection
+  (`targets.pin_maity`) and writes that path into the hook and the loop
+  (`Ssh.maity_path`); a host without it, or with a path that is not plain
+  (`/` and `A-Za-z0-9._+-`), is refused. Locally the hook already is
+  the runner's own interpreter by its absolute path.
+- **An old or unknown version is refused where the sandbox could run.**
+  `require_sandbox` has three values (`capabilities.sandbox_refused`):
+  `true` refuses any start without the sandbox, `false` none, and unset
+  (the default) refuses Claude Code when its sandbox tools are there but
+  its version keeps the sandbox off (older than 2.1.295, a prerelease of
+  it, or unknown; `capabilities.sandbox_held`, `Target.held`). A host
+  without the tools runs unsandboxed as before, with a warning.
+- **A version is a token of its own.** The probes read a version only
+  between the start, a blank, `(` or `v` and the end, a blank, `)`, `,`
+  or `;` (`capabilities.VERSION`). `2.1.295+` or `2.1.295-_dev` is no
+  version: the probe keeps the whole line, which the gate reads as
+  unknown, so the rule above refuses it.
+
+**Reason:** the sandboxed session relies on the hook for its `maity`
+line (63492c65). Managed settings win over the session's `--settings`
+file, so a switch there would start the session without the hook, and
+an unsandboxed start of a version that the gate refuses was the same
+outcome by another way. Refusing, with the reason in `check` and the
+log, leaves the choice to the operator: remove the switch, update Claude
+Code, or opt out with `require_sandbox = false`. A name looked up on a
+session's PATH is whatever comes first there; the path found once on the
+configured `agent_path` is the one `check` reported.
+
+**Rejected alternatives:**
+- Starting unsandboxed when hooks are switched off: the session would
+  run with the exclusion for `maity` and no hook, or without its sandbox
+  where the operator installed one.
+- Checking the settings only in `maity runner check`: managed settings
+  change without the runner; they are read at every start.
+- Making `require_sandbox = true` the default: a host without
+  bubblewrap, where Claude Code has never run sandboxed, would stop
+  starting agents with no change on it.
+- A `PATH` check at each start instead of the absolute path: the hook
+  runs with the session's environment, not the one checked.
+- Taking the leading part of a malformed version token as the version:
+  `2.1.295+` would pass the gate as `2.1.295`.
 
 ## Placed agents open their pull requests through `maity gh`, pinned to the clone's repository
 

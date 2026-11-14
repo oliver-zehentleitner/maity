@@ -3058,6 +3058,8 @@ window.MAITY_I18N["en"] = {
   "mine.title": "Your settings for {name}",
   "mine.use_default": "Use my default",
   "name_rules.handle": "Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit.",
+  "name_rules.handle_bad": "Not a handle yet: {rule}",
+  "name_rules.handle_lowercase": "Lowercase only: a handle has no capital letters.",
   "name_rules.slug": "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit.",
   "names.aliases": "Earlier names, still leading here: {names}.",
   "names.current": "This project is {name}.",
