@@ -73,6 +73,43 @@ def test_the_moderator_redacts_an_answer_and_its_readers_hear_of_it(round_: Roun
     )
 
 
+def _end_right(round_: Round) -> None:
+    ended = round_.owner.delete(
+        f"/projects/maintainer/maity/jour-fixe/series/{round_.series}/moderators/{round_.lead.id}"
+    )
+    assert ended.status_code == 200, ended.text
+
+
+def _delete_series(round_: Round) -> None:
+    owner = round_.owner
+    gone = owner.client.request(
+        "DELETE",
+        f"/api/v1/projects/maintainer/maity/jour-fixe/series/{round_.series}",
+        json={"reason": "t"},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert gone.status_code == 200, gone.text
+
+
+@pytest.mark.parametrize(
+    ("change", "hears"), [(None, True), (_end_right, False), (_delete_series, True)]
+)
+def test_an_answers_redaction_goes_to_the_moderator_while_it_holds_the_right(
+    round_: Round, change: Any, hears: bool
+) -> None:
+    """§20.8 with §20.2: the round's moderator is among an answer's readers while it holds
+    the series' right; a round whose series was deleted keeps its moderator to its end."""
+    named = next(a for a in answers_of(round_.owner, round_) if not a["anonymous"])
+    if change is not None:
+        change(round_)
+    done = redact(round_.owner, round_, f"answer:{named['id']}")
+    assert done.status_code == 200, done.text
+    [notice] = [e for e in kinds(round_.engine, "event_redacted") if e.payload.get("round_id")]
+    assert f"member:{round_.owner.id}" in notice.audience
+    assert f"member:{round_.member.id}" in notice.audience  # the named author
+    assert (f"member:{round_.lead.id}" in notice.audience) is hears
+
+
 def test_who_may_redact_what(round_: Round) -> None:
     anonymous = next(a for a in answers_of(round_.owner, round_) if a["anonymous"])
     hidden = redact(round_.member, round_, f"answer:{anonymous['id']}")

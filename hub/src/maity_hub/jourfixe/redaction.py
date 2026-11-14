@@ -273,10 +273,10 @@ def statement_redacted(
 
 
 def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
-    """§20.3's readers by `member:`: the moderator, the humans of the admin team (no proxy), or
-    an owner's series' `circle_owner`, and a named answer's author; never the author of an
-    anonymous one. The project admin-team selection follows `scopes.in_admin_team`:
-    owner/admin trust, no proxy."""
+    """§20.3's readers by `member:`: the moderator while it holds the series' right (§20.2), the
+    humans of the admin team (no proxy), or an owner's series' `circle_owner`, and a named
+    answer's author; never the author of an anonymous one. The project admin-team selection
+    follows `scopes.in_admin_team`: owner/admin trust, no proxy."""
     owner = circle.owner_of(round_row)
     humans = (
         [owner]
@@ -291,7 +291,8 @@ def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
             )
         ).scalars()
     )
-    tokens = [f"member:{round_row.moderator['member_id']}", *(f"member:{h}" for h in humans)]
+    moderator = circle.moderator_now(conn, round_row)
+    tokens = [*([f"member:{moderator}"] if moderator else []), *(f"member:{h}" for h in humans)]
     if not row.anonymous and row.author is not None:
         author = conn.execute(select(t.membership).where(t.membership.c.id == row.author)).one()
         tokens.append(f"member:{author.agent_id or author.human_id}")

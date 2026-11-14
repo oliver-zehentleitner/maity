@@ -25782,10 +25782,11 @@ A tombstone is §8.5's: the text becomes `null`, and `redaction`
 `reason` shown as §8.5 allows the reader. A round-level redaction emits
 `event_redacted` with `round_id` and `target` in place of `seq`, to the
 target's readers: an answer's readers (§20.3) are named by `member:`
-token and never the author of an anonymous one; the readers of the
-other targets are every member, or for a series with `circle: owner`
-the round's readers of §20.7. A redacted anonymous answer stays
-unlinked.
+token, the moderator among them while it holds the series' right
+(§20.2, "Ending it"), and never the author of an anonymous one; the
+readers of the other targets are every member, or for a series with
+`circle: owner` the round's readers of §20.7. A redacted anonymous
+answer stays unlinked.
 
 **The derived copies, by target:**
 

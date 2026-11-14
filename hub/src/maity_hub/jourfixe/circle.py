@@ -53,8 +53,9 @@ def moderates(conn: Connection, round_row: Any, mine: Any) -> bool:
     return who is not None and mine.principal_id == who and holds_right(conn, round_row, mine.id)
 
 
-def _moderator_now(conn: Connection, round_row: Any) -> str | None:
-    """The round's stored moderator while it holds the right, else None."""
+def moderator_now(conn: Connection, round_row: Any) -> str | None:
+    """The round's stored moderator while it holds the right, else None; a round whose
+    series was deleted keeps it (`holds_right`)."""
     who = _moderator(round_row)
     if who is None or round_row.series_id is None:
         return who
@@ -114,7 +115,7 @@ def audience(conn: Connection, round_row: Any, default: list[str]) -> list[str]:
     found = [
         owner,
         *owner_agents(conn, round_row.project_id, owner),
-        _moderator_now(conn, round_row),
+        moderator_now(conn, round_row),
     ]
     return [f"member:{who}" for who in dict.fromkeys(found) if who]
 
