@@ -457,7 +457,9 @@ and writes the event: the `DELETE`, the deletion of the agent profile a join nam
 `revoked_by` whoever ended it). The hub's own revocations leave it null and write nothing:
 `placements.revoke_unused_joins` and the pickup's reissue (a runner's joins, no person behind
 them), an account's deletion with its profiles and memberships (the membership end it carries
-out has the `HUB` actor), and the joins revoked before the column existed.
+out has the `HUB` actor), the release of an organisation owner's seat the hub kept
+(`org_projects.release_owner`, also with the `HUB` actor), and the joins revoked before the
+column existed.
 
 **Reason:** a join mints an agent's credential, so who stopped one belongs on the record, readable
 by those who may revoke it. The invitation events already reach exactly them and wake no agent;
@@ -473,6 +475,12 @@ revocation says what happened without naming the deleted human as the actor.
   the hub did.
 - Recording `revoked_by` on the cascades without the event: the creator and the admins would see a
   join stop working with nobody told, unlike the `DELETE` that does the same thing directly.
+- Attributing the release of an organisation owner's kept seat to whoever changed the
+  organisation (review of #1756 by maity-review-team-grok#axvg): the seat is the hub's, the
+  release follows from a change to the organisation in four places (a role, a removal, its
+  deletion, a project's move) and the deletion has no remover to pass; naming one would change
+  `Change.by`, which pauses and placement closures read as well. The seat's `member_updated`
+  names the hub too.
 - One revoking `UPDATE … WHERE` per cascade as before: the ids it hit are not known, so no event
   can name them; `revoke` selects the rows and revokes each with its own conditional update, so a
   join revoked meanwhile is neither attributed nor announced twice.
