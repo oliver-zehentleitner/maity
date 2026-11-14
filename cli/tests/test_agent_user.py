@@ -255,14 +255,83 @@ def test_logs_are_read_as_the_agents_user(
         == 0
     )
     assert capsysbinary.readouterr().out == b"hello\n"
-    assert "tail -c +1 --" in fake_sudo.read_text()
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()  # never `tail`
 
 
 def test_a_log_is_read_from_where_the_last_read_stopped(tmp_path: Path, fake_sudo: Path) -> None:
+    from maity.runner import limitread
+
+    skip_unless_maity_is_installed()  # through sudo, `python -I -m maity.runner.limitread`
     log = tmp_path / "plc.log"
     log.write_bytes(b"one\ntwo\n")
     for as_user in (AsUser(), AsUser("maity-agent")):
-        assert as_user.read(log, 4) == b"two\n" and as_user.read(log, 8) == b""
+        assert as_user.read(log, 4, limit=100, under=tmp_path) == b"two\n"
+        assert as_user.read(log, 8, limit=100, under=tmp_path) == b""
+        assert as_user.read(log, 0, limit=3, under=tmp_path) == b"one"  # at most the limit
+        with pytest.raises(limitread.Behind):  # the log was cut since: the reader starts over
+            as_user.read(log, 9, limit=100, under=tmp_path)
+
+
+@pytest.mark.parametrize("kind", ["fifo", "endless", "sparse"])
+def test_a_clone_file_is_read_safely_through_sudo(
+    tmp_path: Path, fake_sudo: Path, kind: str
+) -> None:
+    """On the agents' side, by the runner's own module: no link followed, no wait on a FIFO,
+    a regular file only, never more than the limit."""
+    from test_supervisor import plant, within
+
+    from maity.runner import workspace
+
+    skip_unless_maity_is_installed()
+    (tmp_path / ".git").mkdir()
+    plant(tmp_path / ".git" / "config", kind)
+    as_user = AsUser("maity-agent")
+    assert within(30, workspace.origin, tmp_path, as_user) is None
+    with pytest.raises(OSError):
+        within(30, lambda: as_user.read_whole(tmp_path / ".git" / "config", 1024, under=tmp_path))
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()
+
+
+def test_a_directory_swapped_for_a_link_is_never_read_through(
+    tmp_path: Path, fake_sudo: Path
+) -> None:
+    """Both readers, here and through sudo, walk down from the clone without following a
+    link: a `.git` swapped for a link to a directory outside it is refused, not read."""
+    from maity.runner import workspace
+
+    skip_unless_maity_is_installed()
+    clone, outside = tmp_path / "clone", tmp_path / "outside"
+    (clone / ".git").mkdir(parents=True)
+    (clone / ".git" / "config").write_text(
+        '[remote "origin"]\n\turl = https://example.invalid/in\n'
+    )
+    outside.mkdir()
+    (outside / "config").write_text('[remote "origin"]\n\turl = https://example.invalid/out\n')
+    for as_user in (AsUser(), AsUser("maity-agent")):
+        assert workspace.origin(clone, as_user) == "https://example.invalid/in"
+    (clone / ".git").rename(tmp_path / "moved")
+    (clone / ".git").symlink_to(outside)
+    for as_user in (AsUser(), AsUser("maity-agent")):
+        assert workspace.origin(clone, as_user) is None
+        with pytest.raises(OSError):
+            as_user.read_whole(clone / ".git" / "config", 1024, under=clone)
+    assert "-m maity.runner.limitread --under" in fake_sudo.read_text()
+
+
+def test_a_read_through_sudo_that_does_not_end_is_cut_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_sudo: Path
+) -> None:
+    """Whatever holds the read on the agents' side, it ends within READ_TIMEOUT as an
+    OSError, which every caller handles, never as an exception that escapes them."""
+    from maity.runner import asuser, workspace
+
+    (fake_sudo.parent / "sbin" / "sudo").write_text("#!/bin/sh\nexec sleep 30\n")
+    monkeypatch.setattr(asuser, "READ_TIMEOUT", 0.5)
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "config").write_text('[remote "origin"]\n\turl = x\n')
+    with pytest.raises(OSError, match="did not end in time"):
+        AsUser("maity-agent").read(tmp_path / ".git" / "config", limit=100, under=tmp_path)
+    assert workspace.origin(tmp_path, AsUser("maity-agent")) is None
 
 
 def test_the_agents_commands_never_read_the_runners_terminal(
@@ -301,8 +370,9 @@ def test_the_clone_as_the_agents_user_never_prompts_for_a_login(
     cfg = load(tmp_path, monkeypatch)
     assert cfg.local is not None
     place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
-    workspace.prepare(cfg, place, "https://github.com/oliver-zehentleitner/maity", "agt-3",
-                      "plc-0003", None, Recorder("maity-agent"))  # fmt: skip
+    with pytest.raises(workspace.Refused):  # the recorder clones nothing: no plain clone
+        workspace.prepare(cfg, place, "https://github.com/oliver-zehentleitner/maity", "agt-3",
+                          "plc-0003", None, Recorder("maity-agent"))  # fmt: skip
     clone = next(env for argv, env in calls if "clone" in argv)
     assert clone is not None and all(clone.get(k) == v for k, v in proc.NO_PROMPT.items())
 

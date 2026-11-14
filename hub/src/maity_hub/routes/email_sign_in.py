@@ -16,17 +16,16 @@ from sqlalchemy import Connection, Engine, select
 
 from maity_hub import catalog, clock, landing, link_frame, paths, render
 from maity_hub import tables as t
+from maity_hub.auth import anonymous, second_factor, sessions, sign_in_settings
 from maity_hub.auth import email_links as links
-from maity_hub.auth import second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import (
     SESSION_COOKIE,
-    require_secure_transport,
     session_alive,
     session_id_hash,
 )
 from maity_hub.config import Settings
 from maity_hub.deps import engine_of, origin_of, settings_of
-from maity_hub.errors import ApiError, forbidden, humans_only, rate_limited
+from maity_hub.errors import ApiError, forbidden, rate_limited
 from maity_hub.mail import address, outbox
 from maity_hub.notifications import preferences, tokens
 from maity_hub.routes import auth, device_codes
@@ -57,7 +56,7 @@ def _enabled(conn: Connection, hub: Settings) -> None:
 
 
 def _anonymous(request: Request) -> None:
-    device_codes._anonymous(request)
+    anonymous.entry(request)
     presented = request.cookies.get(SESSION_COOKIE)
     if not presented:
         return
@@ -298,9 +297,7 @@ def _dead(conn: Connection, request: Request) -> HTMLResponse:
 
 @page_router.get("/mail/sign-in/{token}")
 def link_page(token: str, request: Request) -> HTMLResponse:
-    if request.headers.get("authorization"):
-        raise humans_only("a sign-in link is for a browser, never a credential")
-    require_secure_transport(origin_of(request), settings_of(request).allow_plain_http)
+    anonymous.no_credential(request)
     hub = settings_of(request)
     payload = _token(hub, token)
     with engine_of(request).begin() as conn:
@@ -344,7 +341,7 @@ def link_page(token: str, request: Request) -> HTMLResponse:
 
 @page_router.post("/mail/sign-in/{token}")
 async def complete_link(token: str, request: Request) -> Response:
-    device_codes._anonymous(request)
+    anonymous.entry(request)
     if request.headers.get("sec-fetch-site") != "same-origin":
         raise forbidden(message="a sign-in needs a same-origin form")
     if request.headers.get("content-type", "").split(";")[0] != "application/x-www-form-urlencoded":

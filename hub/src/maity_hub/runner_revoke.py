@@ -80,9 +80,10 @@ def apply(
     agents: str,
     instance_rule: str,
     removing: bool,
-    by: str,
+    by: str | None,
 ) -> list[dict[str, Any]]:
     """Apply each attached project's rule; returns `[{project_id, rule, stopped}]`.
+    `by` is the human who revoked, None for the hub (a suspension, §16.8).
     Under `DELETE` the placements close as `runner_removed`, under a revoke as
     `runner_revoked`; under `keep` nothing here changes."""
     now = clock.now()
@@ -167,7 +168,7 @@ def _on_disk(runner_id: str) -> Any:
     )
 
 
-def _on_the_machine(conn: Connection, runner_id: str, by: str) -> None:
+def _on_the_machine(conn: Connection, runner_id: str, by: str | None) -> None:
     """The owner's stop revokes at once every agent credential that may still be on the
     machine (§15.3): the one each placement of the runner names whose clone was not
     reported removed, in every project, attached or not. A placement closed for another
@@ -184,7 +185,7 @@ def _on_the_machine(conn: Connection, runner_id: str, by: str) -> None:
         revoke_agent(conn, credential_id, by)
 
 
-def _due_now(conn: Connection, runner_id: str, project_id: str, by: str) -> None:
+def _due_now(conn: Connection, runner_id: str, project_id: str, by: str | None) -> None:
     """The owner's override revokes at once what an earlier `stop` left to its grace:
     the credentials named by this runner's placements in the project, closed by that
     revocation, and still waiting (§15.3) — never another agent's."""

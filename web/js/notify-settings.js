@@ -762,9 +762,10 @@ window.Maity = window.Maity || {};
   // A project's Settings, the Mine tab (/<owner>/<slug>/settings/mine,
   // docs/api.md §6.2, §16.11): one's own settings for this project, each
   // either one's personal default (null) or a value for here, with the
-  // value that applies now. Every human member; the Project tab beside it
-  // is its admins'.
-  M.mySettings = async function (ctx, root) {
+  // value that applies now. Every human member; the project's tabs beside it
+  // are its admins'. `extra`: what the view puts before leaving the project
+  // (the owner's absence), or null.
+  M.mySettings = async function (ctx, root, extra) {
     const heading = h("h3", { id: "my-settings-heading", tabindex: "-1" }, M.t("mine.title", { name: ctx.project.name || ctx.slug }));
     append(root, heading, h("p", { class: "hint" }, M.tn("mine.hint", { link: h("a", { href: "/account/notifications" }, M.t("mine.account")) })));
     if (ctx.me.kind !== "human") { append(root, h("p", null, M.t("mine.humans_only"))); return; }
@@ -773,7 +774,8 @@ window.Maity = window.Maity || {};
     try {
       mine = await M.api.get(path);
     } catch (err) {
-      append(root, h("p", { class: "send-status failed" }, M.t("notify.read_failed", { reason: err.message })));
+      // The absence does not depend on this read: it stays.
+      append(root, h("p", { class: "send-status failed" }, M.t("notify.read_failed", { reason: err.message })), extra || null);
       return;
     }
     const status = M.statusLine();
@@ -826,7 +828,7 @@ window.Maity = window.Maity || {};
       h("label", { class: "check", for: "my-nl-here" }, useHere, " " + M.t("mine.here")),
       h("label", { class: "visually-hidden", for: "my-nl-minutes" }, M.t("mine.minutes_label")), minutes, error,
       h("p", { class: "hint" }, M.t("mine.hint_minutes"))),
-    now, button, status.el), startTab(ctx));
+    now, button, status.el), startTab(ctx), extra || null);
     leaveProject(ctx, root);
   };
 
