@@ -41,6 +41,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.cards import CLOSED
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -1195,7 +1196,7 @@ def list_requests(
     cursor: str | None = None,
 ) -> JSONResponse:
     _check_sort(sort)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
@@ -1219,7 +1220,7 @@ def list_all_requests(
     """The cross-project inbox (§7): every membership of the human, `project` inline."""
     _check_sort(sort)
     _check_status(status)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         projects = conn.execute(
             select(t.project)
             .join(t.membership, t.membership.c.project_id == t.project.c.id)
@@ -1253,7 +1254,7 @@ def list_all_requests(
 
 @router.get("/projects/{owner}/{slug}/requests/{request_id}")
 def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         row = _project_request(conn, mine, request_id)
         if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
