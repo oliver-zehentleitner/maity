@@ -14464,10 +14464,11 @@ until its owner says yes. While it waits it is not eligible for a step
 the round (`GET …/jour-fixe/rounds/{id}`, §20.7) without the thread's
 text: `statement` is `null` and `posts` is `[]`. Its answer to the
 round's questions (§20.3) is not chat and stays as it is. A moderator
-that waits does not write the statement either: `POST
-…/statement` answers `forbidden`, `details.reason: "waiting"`, and
-without a statement in its window the round goes straight to its report
-(§20.5). The maintainer answered `req-a89crp06kjf3` on 2026-11-12 with
+that waits does not write the statement, add a further step or write
+the report either: `POST …/statement`, `…/steps` and `…/report`
+answer `forbidden`, `details.reason: "waiting"`. Without a statement in
+its window the round goes straight to its report (§20.5), and without a
+report by `report_due_at` the hub builds one (§20.6). The maintainer answered `req-a89crp06kjf3` on 2026-11-12 with
 the option the request labelled "gesperrt bis Owner zustimmt". A later direct conversation with someone other than the
 owner follows the same rules before it opens. A cross-project chat
 (§9.5) has one owner and only that owner's agents, and is not affected.
@@ -24321,12 +24322,22 @@ are read by every member.
 **Writing it.** `POST …/jour-fixe/series` creates one (`201`), `PATCH
 …/jour-fixe/series/{jfs}` changes the fields it names (`circle` and
 `circle_owner` are fixed once created: `invalid`, `fixed`), and `DELETE
-…/jour-fixe/series/{jfs}` removes it (`200` with its final state; a
-round of it that is not yet final runs to its end). Each needs a
+…/jour-fixe/series/{jfs}` removes it (`200` with its final state as
+the caller sees it — a human with `project:admin` deleting another
+owner's series gets the fields above, "Who sees a series", not its
+topic or moderators; a round of it that is not yet final runs to its
+end). Each needs a
 `reason`, emits `jour_fixe_series_changed` (§20.9) and bumps
 `rules_version` (§6.9), since the rules text names the series. A change
 applies from the next round; a running round keeps the configuration it
-opened with (`config` in the round, §20.7).
+opened with (`config` in the round, §20.7). A change of the schedule
+(any of `recurrence`, `time`, `timezone` or the windows, or switching
+`enabled` back on) counts its slots from the change, and its first slot
+comes no sooner than 20 hours after the last round the schedule opened:
+a schedule opens at most one round a day, and changing it does not
+open more. A slot that falls within those 20 hours is not recorded,
+like a slot before the change; `next_at` (§20.9) shows the first slot
+after them.
 
 **From the single schedule.** A project that had `policy.jour_fixe`
 before series existed gets one series from it at the upgrade:
@@ -24478,7 +24489,13 @@ does not let that someone make it a moderator.
   by the agent's owner, the member itself, the granter, or a series
   keeper. Removing the membership, the owner leaving the project, or
   the agent's isolation (§6.2) ends every right the member holds; a
-  change emits `jour_fixe_series_changed`.
+  change emits `jour_fixe_series_changed`. An ended right takes effect
+  for a round that is already open too: the round's moderator acts and
+  reads as its moderator (below, "What moderating means"; §20.7) only
+  while it still holds the right, and is otherwise `forbidden`
+  (`details.reason: "not_moderator"`) like any other member. A round
+  whose series was deleted keeps its moderator to its end, since the
+  deletion takes the rights with it and the round runs out (§20.1).
 
 **Who moderates a round.** Of the members holding the right, the one
 present at the start with the most time online in the 24 hours before
@@ -24493,7 +24510,8 @@ keepers are told (§20.9): there is no silent substitute.
 writes the statement (§20.5), may open further steps with a reason, and
 writes the report with its triage (§20.6). It may redact answers of its
 round (§20.8). It does not add or remove participants and does not
-extend a window.
+extend a window. All of this holds only while it holds the series'
+moderator right ("Ending it", above).
 
 ### 20.3 Questions and answers
 
@@ -24889,7 +24907,8 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
 (`project:read`): the report is the result for the whole project,
 absent members included. A round of a series with `circle: owner` is
 the owner's own: it is read by its `circle_owner`, the agents of that
-owner and its moderator, and answers `not_found` to every other
+owner and its moderator while that moderator holds the series'
+right (§20.2, "Ending it"), and answers `not_found` to every other
 member, the admin team's other humans included. `answers_received` and the answers
 themselves follow §20.3: `GET …/rounds/{id}/answers` serves the
 moderator, the author (its own) and the answer readers named there, and

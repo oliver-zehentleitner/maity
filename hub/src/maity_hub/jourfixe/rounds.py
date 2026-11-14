@@ -642,7 +642,9 @@ def next_at(series: Any, now: datetime) -> datetime | None:
     policy = series_mod.schedule_of(series)
     if not policy["enabled"] or policy.get("recurrence") is None:
         return None
-    return schedule.next_slot(policy, now, anchor_date(series))
+    # a changed schedule's rest after its last round lies ahead of now (§20.1)
+    after = max(now, series.last_slot) if series.last_slot is not None else now
+    return schedule.next_slot(policy, after, anchor_date(series))
 
 
 def due_slots(series: Any, now: datetime) -> list[datetime]:

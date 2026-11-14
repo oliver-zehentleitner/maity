@@ -402,13 +402,68 @@ def test_a_waiting_agent_posts_nothing_and_gets_the_round_without_its_text(
     _wait(round_, round_.member)
     refused = round_.post(round_.member, "response", body="again")
     assert refused.status_code == 403 and refused.json()["error"]["details"]["reason"] == "waiting"
-    _wait(round_, round_.lead)
     path = f"/api/v1{rounds_path(round_.id, '/steps')}"
     headers = round_.lead.auth | {"Idempotency-Key": "waiting-agent-step-0001"}
     first = round_.lead.client.post(path, json={"reason": "more"}, headers=headers)
     assert first.status_code == 201, first.text
+    assert first.json()["statement"] is not None  # admitted: it reads the text
+    _wait(round_, round_.lead)
     again = round_.lead.client.post(path, json={"reason": "more"}, headers=headers)
     assert again.status_code == 201, again.text
-    for answered in (first.json(), again.json()):
-        assert answered["statement"] is None and answered["posts"] == []
+    assert again.json()["statement"] is None and again.json()["posts"] == []
     assert round_.get()["statement"] is not None  # the owner reads it in full
+
+
+def test_a_waiting_moderator_adds_no_step_and_writes_no_report(round_: Round) -> None:
+    """§9.6: the hold on the statement covers the moderator's other writes too."""
+    assert round_.statement().status_code == 201
+    _wait(round_, round_.lead)
+    step = round_.lead.post(rounds_path(round_.id, "/steps"), {"reason": "more"})
+    assert step.status_code == 403, step.text
+    assert step.json()["error"]["details"]["reason"] == "waiting"
+    round_.tick()
+    round_.tick()
+    assert round_.get()["status"] == "reporting"
+    report = round_.lead.post(rounds_path(round_.id, "/report"), {"findings": [], "proposals": []})
+    assert report.status_code == 403, report.text
+    assert report.json()["error"]["details"]["reason"] == "waiting"
+
+
+def _end_right(round_: Round) -> None:
+    ended = round_.owner.delete(
+        f"/projects/maintainer/maity/jour-fixe/series/{round_.series}/moderators/{round_.lead.id}"
+    )
+    assert ended.status_code == 200, ended.text
+
+
+def test_an_ended_right_ends_the_moderators_hand_in_the_open_round(round_: Round) -> None:
+    """§20.2: the stored moderator acts only while it still holds the series' right."""
+    answers = round_.lead.get(rounds_path(round_.id, "/answers"))
+    assert answers.status_code == 200 and len(answers.json()["items"]) == 2
+    _end_right(round_)
+    assert round_.lead.get(rounds_path(round_.id, "/answers")).status_code == 404
+    refused = round_.statement()
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "not_moderator"
+    anonymous = next(
+        a
+        for a in round_.owner.get(rounds_path(round_.id, "/answers")).json()["items"]
+        if a["anonymous"]
+    )
+    redacted = round_.lead.post(
+        rounds_path(round_.id, "/redact"), {"target": f"answer:{anonymous['id']}", "reason": "r"}
+    )
+    assert redacted.status_code == 404, redacted.text
+
+
+def test_an_ended_right_stops_further_steps_and_the_report(round_: Round) -> None:
+    assert round_.statement().status_code == 201
+    _end_right(round_)
+    step = round_.lead.post(rounds_path(round_.id, "/steps"), {"reason": "more"})
+    assert step.json()["error"]["details"]["reason"] == "not_moderator", step.text
+    round_.tick()
+    round_.tick()
+    assert round_.get()["status"] == "reporting"
+    report = round_.lead.post(rounds_path(round_.id, "/report"), {"findings": [], "proposals": []})
+    assert report.status_code == 403, report.text
+    assert report.json()["error"]["details"]["reason"] == "not_moderator"
