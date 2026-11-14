@@ -3,7 +3,8 @@ account, readable by that human alone, never events.
 
 A record's number comes from the table's own sequence, taken while the human's row is
 locked until commit, so one account never shows a number before every lower one, and
-`at` never decreases along one account's records. Kept 90 days.
+`at` never decreases along one account's records. Kept 90 days, then deleted by the hourly
+sweep (`retention`), except an inbox record whose matter is still open.
 """
 
 from __future__ import annotations

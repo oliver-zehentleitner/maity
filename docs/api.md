@@ -23235,7 +23235,8 @@ rules that make a position safe to resume from:
   them reads them (§18.3) or their record expires after 90 days, and
   `registration_pending`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
-  is closed. No
+  is closed; their record is kept past 90 days until then, while every other account record is
+  deleted after 90 days. No
   item read — by age or by a marking — grants a session good standing;
   only confirming its sign-in does (§2.6.5). `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record

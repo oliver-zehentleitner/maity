@@ -1371,3 +1371,63 @@ items to someone removed from that project in the meantime.
 - Mark the projects and check for any active membership in them (the first version of #1807):
   a join after a leave passes with its new row, and a second query for the mark races a removal
   on READ COMMITTED.
+
+## Account records and the mail's bookkeeping are deleted by an hourly sweep; an open inbox record stays until its matter closes
+
+**Id:** c28a0dba-829b-4476-a422-9eadcca9337a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ar6h2s0kff5, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); docs/api.md §2.6.5 and §18.1 ("kept 90 days"), §18.2 (open inbox items "stay listed while their matter is open, however old"; a stored position "kept at least 30 days after its last use"); `notifications/retention.py`, `mail/outbox.py` `Worker._prune`; tests in `tests/test_notification_retention.py`
+**See:** https://github.com/oliver-zehentleitner/maity — b735056d-fb73-458b-8a85-d656dc7e218b — as of 2026-11-14
+**Revisit when:** an index is built for the sweep (`mail_item_sent.mailed_at`, `notification_position.last_used_at`; card tsk-3ar6h2s0kff5 leaves it as a follow-up), the bell lists an open record past `records.KEPT` (TODO #280 for `mail_disabled`), or a new inbox record type is added to `records.INBOX`
+
+Nothing deleted `account_record`, `mail_item_sent`, `mail_delivery` or `notification_position`
+but an account's deletion, though the contract keeps records 90 days and stored positions 30 days
+after their last use; a `session_created` record holds the IP, browser and system of a sign-in.
+`outbox.Worker` now runs `retention.prune` once an hour (one pod per hour through `worker_runs`,
+name `mail-retention`; the first sweep an hour after the process starts). It deletes:
+
+- account records older than `records.KEPT` plus a day (`MARGIN`), so a reader that filters by
+  `>= now - KEPT` never races the sweep for a row at the edge;
+- `mail_item_sent` rows mailed more than `records.KEPT` plus a day ago, and the mailer reads only
+  that span of them;
+- `mail_delivery` rows older than a day: the counters (`mail.settings.counters`) and the
+  instance budget (`mailer._instance_full`) read the last hour;
+- stored positions unused for 30 days.
+
+An inbox record whose matter is still open is kept past 90 days and goes on the first sweep
+after the matter closed, judged as the bell judges it: `registration_pending` while the
+registration it names is `pending`; `mail_disabled` while the human's `address_status` is
+`disabled`; `agents_not_listening` when it is the owner's newest of the type and its count is not 0.
+
+Each table goes in batches of 500 rows chosen by key and deleted by key in a short transaction of
+their own; the DELETE checks the condition again, so a position used in between stays. Account
+records are walked by number (`n > last`), so a batch that holds only open records is passed, not
+read again. A sweep stops after 30 seconds or when the worker stops and leaves the rest to the
+next hour; the mail worker's thread runs it between two looks at the outbox.
+
+**Reason:** the contract's "kept 90 days" and "kept at least 30 days after its last use" were
+true only as filters on read; a copy of the database kept every sign-in's address for good.
+Keeping open records follows §18.2, which lists them while their matter is open, however old:
+deleting one would end that promise for good, while keeping it costs one row per matter. In
+practice none stays long: a pending registration expires after 30 days
+(`registration_accounts.PENDING_ACCOUNT_FOR`), the digest writes a new `agents_not_listening`
+record once the open one left the window (`not_listening_digest.latest`), after which the old one
+is no longer the newest; only `mail_disabled` stays as long as the address stays disabled.
+`mail_item_sent` is kept as long as records, not the 30 days of events: an item from a record (a
+sign-in's alert, a security item) is derived for 90 days, so a row deleted after 30 would mail an
+unread one again; the test fails with a 31-day window.
+
+**Rejected alternatives:**
+- Deleting `mail_item_sent` after the 30-day item window and a margin, as the card proposed: the
+  record items above would be mailed a second time.
+- Reissuing an open inbox record past 90 days instead of keeping it: a new number and `at` for an
+  old matter, so the bell would show it as new and a position would not cover it.
+- Deleting open records past 90 days: §18.2 keeps their items listed while the matter is open.
+- A worker of its own, as `known_sources.Worker`: one more thread for a pass an hour; the mail
+  worker already holds the outbox's sweep.
+- One DELETE per table without a batch (`known_sources.forget_old`): the first sweep on a hub that
+  never pruned would delete every old row in one statement and hold their locks to its end.
+- An index for the sweep in the same change: a migration needs a slot, and the sweep runs once an
+  hour, the account records' walk on their primary key.
