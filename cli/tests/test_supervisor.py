@@ -1175,7 +1175,10 @@ def _pane(log: Path, limit: int) -> tuple[int, Callable[[], int]]:
 
     read, write = os.pipe()
     done: list[int] = []
-    thread = threading.Thread(target=lambda: done.append(logcap.run(str(log), limit, read)))
+    # A daemon: a failed test leaves it reading, and must not keep the test run from ending.
+    thread = threading.Thread(
+        target=lambda: done.append(logcap.run(str(log), limit, read)), daemon=True
+    )
     thread.start()
 
     def end() -> int:
