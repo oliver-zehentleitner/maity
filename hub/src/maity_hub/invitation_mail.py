@@ -18,7 +18,7 @@ from sqlalchemy import Connection, select
 
 from maity_hub import clock, namespace, registration
 from maity_hub import tables as t
-from maity_hub.mail import headers, outbox
+from maity_hub.mail import outbox
 
 
 def send(conn: Connection, *, invitation_id: str, to: str, url: str, hub: Any) -> None:
@@ -66,13 +66,14 @@ def text(
     """Subject and body of the invitation's mail. What the hub did not write (the inviter's
     name, the project's name, the `note`) is defanged, so that no mail client makes a link of
     it: the only links are the hub's own (§18.5). The subject is one line, whatever the names
-    hold."""
-    from maity_hub.notifications.mailer import defang, quoted
+    hold, and cut as every subject is."""
+    from maity_hub.notifications.mailer import defang, quoted, subject_line
 
+    title = subject_line(f"[Maity] {inviter} invites you to {project_name}")
     inviter, project_name = defang(inviter), defang(project_name)
     said = f"{inviter} wrote: {quoted(note)}\n\n" if note else ""
     return (
-        headers.clean(f"[Maity] {inviter} invites you to {project_name}"),
+        title,
         f"{inviter} invites you to the Maity project {project_name} ({full_name}) on "
         f"{public_url}, with trust {trust} and the role {role}.\n\n"
         f"{said}"

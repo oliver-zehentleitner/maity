@@ -23441,8 +23441,13 @@ device; the browser's own permission is per browser and is not stored.
 Plain text only, UTF-8, no HTML, no images, no tracking.
 
 - **Subject:** `[Maity] <project>: <title>` for one item; `[Maity] 7
-  updates` for a digest. Cut at 120 characters (with `…`) before
-  encoding.
+  updates` for a digest. What the hub did not write in a subject — a
+  project's name, a title, a display name within it — is defanged as
+  in the body ("Only the hub's own links", below), on one line with
+  control characters removed (Header values, below), and the subject
+  is cut at 120 characters (with `…`) before encoding. The same holds
+  for every subject that carries such text: a change of the second
+  factor (§2.8.1) and an invitation (§3.4).
 - **Header values.** Every header value the hub builds — subject,
   `To`, `From` and its display name, `Reply-To` — is one line of plain
   text first: each run of control and line-break characters (Unicode
@@ -23538,7 +23543,12 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
     when they end.
 - **Freshness.** Every item is checked against the readable set and its
   read flag when the mail is built, not when the event happened (§18.1).
-  A digest with nothing left is not sent.
+  A digest with nothing left is not sent. A built mail that still waits
+  in the outbox (§16.2) is checked once more before it leaves: when a
+  membership its items were read through is no longer active (removed,
+  or left, even if the human has joined again since), the whole mail is
+  dropped, as a mail to a disabled address is (§18.7); its items stay in
+  the bell.
 
 ### 18.6 Links in mails
 
