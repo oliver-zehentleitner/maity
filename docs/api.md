@@ -3969,7 +3969,13 @@ second call with the same token is `not_found`. The exchange gives the
 credential its instance id (`Maity-Instance`, §6.17), checks
 `max_instances` again (`instance_quota`, the code not consumed) and, for
 `replaces`, revokes the replaced instance's credential and moves its
-claims in the same transaction. Errors: `insecure_transport`
+claims in the same transaction. A join made with `members:admin` is
+checked again at the exchange, under the project's lock, as an invitation
+checks its issuer at the accept (§3.4): its creator is still an active
+member with `members:admin`, and with trust `owner` when the join gives
+trust `admin` or the role `proxy`; otherwise the join is void and answers
+`not_found`. A member's join has its own check (§3.1), a runner's pickup
+its own (§15.9). Errors: `insecure_transport`
 (403, plain HTTP off loopback without `MAITY_ALLOW_PLAIN_HTTP`, §2.5; the
 code is not consumed), `code_invalid`
 (403, the join is not burned until the third wrong code), `not_found`
