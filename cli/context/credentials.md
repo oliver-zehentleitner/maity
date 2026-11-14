@@ -113,7 +113,7 @@ those bytes (`docs/api.md` §2.3).
 Three smaller Windows choices belong with it. The home's `env-secret` lies under
 `%LOCALAPPDATA%\maity`. `core.hooksPath` is `os.devnull`, because `/dev/null`
 there names a path under the drive root that any user can create, with hooks in
-it. An existing `./maity-files/` goes through `check_private` on Windows only:
+it. An existing attachments folder (`files/` in the state directory) goes through `check_private` on Windows only:
 a clone there may inherit write access for everyone, so someone else may have
 made the folder, while POSIX keeps a folder as its owner set it.
 

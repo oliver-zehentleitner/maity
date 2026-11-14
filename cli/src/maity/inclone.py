@@ -1,5 +1,6 @@
 """Files maity reads or writes for an agent under a runner placement: only inside the clone,
-outside its `.git`, never through a link.
+outside its `.git` (an attachment saved without `-o`: in `.git/maity-files/`), never
+through a link.
 
 Under a placement maity runs outside the harness's sandbox (cli/context/runner.md), so a
 path the agent names must not take maity where the sandbox keeps the agent out. Every name
@@ -92,7 +93,7 @@ def _walk(
     The walk starts at `opened.top`, the root `clonecheck.opened_clone` checked with `.git`;
     without it (a caller that holds no check) the root is opened here, without following a
     link, and `.git` is read from it. A missing last directory named `make` is created 0700
-    first (`./maity-files/`)."""
+    first."""
     if not WALKS:  # Windows
         raise Refused(
             f"{what} {given}: this system cannot open a file without following links,"
@@ -188,25 +189,77 @@ def create(
         " (--force included): remove it first or name another file"
     )
     with _walk(root, path[:-1], opened, given, what, make) as directory:
-        leaf = path[-1]
+        shown = os.path.dirname(given)
+        _new_file(directory, path[-1], fill, mode, exists, f"{what} {given}", shown, kept)
+
+
+def create_in_git(
+    folder: str,
+    leaf: str,
+    what: str,
+    fill: Callable[[IO[bytes]], None],
+    opened: clonecheck.Opened | None,
+    *,
+    mode: int = 0o644,
+    kept: Callable[[str], None] | None = None,
+) -> None:
+    """A new file `leaf` in `.git/<folder>/` of the clone `opened` holds, with what `fill`
+    writes: outside the work tree, where no test runner collects it and `git add -A` does not
+    take it, and outside `.git/maity`, which the harness keeps the agent from reading. The
+    folder is created 0700 when missing and opened from the checked `.git` without following
+    a link; the file is made as `create` makes one, never over an existing name. `folder` is
+    one of clonecheck.GIT_DIRS, so the clone check still passes afterwards."""
+    said = f"{what} .git/{folder}/{leaf}"
+    if not WALKS or opened is None:  # Windows
+        raise Refused(
+            f"{said}: this system cannot open a file without following links,"
+            " so under a runner placement maity saves no such file here"
+        )
+    if folder not in clonecheck.GIT_DIRS or leaf in ("", os.curdir, os.pardir) or "/" in leaf:
+        raise Refused(f"{said}: not a name maity saves a file under")
+    exists = Refused(
+        f"{said}: exists; under a runner placement maity never replaces a file"
+        " (--force included): remove it first or name another file with -o"
+    )
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(folder, 0o700, dir_fd=opened.git)
+    directory = _open_at(opened.git, folder, FOLDER, f".git/{folder}/{leaf}", what)
+    try:
+        _new_file(directory, leaf, fill, mode, exists, said, f".git/{folder}", kept)
+    finally:
+        os.close(directory)
+
+
+def _new_file(
+    directory: int,
+    leaf: str,
+    fill: Callable[[IO[bytes]], None],
+    mode: int,
+    exists: Refused,
+    said: str,
+    shown: str,
+    kept: Callable[[str], None] | None,
+) -> None:
+    """The file `leaf` in `directory`, new, with what `fill` writes (`create`); `shown` is
+    the directory as a refusal or a kept staging name names it."""
+    try:
+        os.stat(leaf, dir_fd=directory, follow_symlinks=False)
+        raise exists
+    except FileNotFoundError:
+        pass
+    fd, part = _fresh(directory)
+    try:
+        with os.fdopen(os.dup(fd), "wb") as fh:
+            fill(fh)
+        os.fchmod(fd, mode)
+        _publish(directory, fd, part, leaf, mode, exists, said)
+    finally:
         try:
-            os.stat(leaf, dir_fd=directory, follow_symlinks=False)
-            raise exists
-        except FileNotFoundError:
-            pass
-        fd, part = _fresh(directory)
-        try:
-            with os.fdopen(os.dup(fd), "wb") as fh:
-                fill(fh)
-            os.fchmod(fd, mode)
-            _publish(directory, fd, part, leaf, mode, exists, f"{what} {given}")
+            if part is not None:  # while `fd` is open, so its inode is not reused
+                staged = os.path.join(shown, part)
+                _drop_staging(directory, part, os.fstat(fd), staged, kept or _say_kept)
         finally:
-            try:
-                if part is not None:  # while `fd` is open, so its inode is not reused
-                    shown = os.path.join(os.path.dirname(given), part)
-                    _drop_staging(directory, part, os.fstat(fd), shown, kept or _say_kept)
-            finally:
-                os.close(fd)
+            os.close(fd)
 
 
 def _drop_staging(

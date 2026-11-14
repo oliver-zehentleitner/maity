@@ -5,7 +5,10 @@ only if that commits. The worker sends what is due with the settings in effect a
 moment and counts each outcome in `mail_delivery` by its budget kind. Security mail over
 `security_max_per_hour` waits for the next hour, in order, never dropped; `enabled:
 false` holds every mail. A failure of the instance's own setting (connection, TLS,
-`AUTH`) is retried with backoff for up to 24 hours, whoever the mail was for.
+`AUTH`) is retried with backoff for up to 24 hours, whoever the mail was for. One row
+never stops the outbox: a row whose message cannot be built, or whose handling fails in
+any other way than the database, is `failed`, logged without its content, and the pass
+goes on with the next row.
 """
 
 from __future__ import annotations
@@ -15,8 +18,8 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, String, cast, delete, insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import Connection, Engine, String, cast, delete, func, insert, or_, select, update
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from maity_hub import clock, worker_runs
 from maity_hub import tables as t
@@ -107,29 +110,70 @@ def send_due(
         resolved = _resolved(engine, env, secret_key)
         if resolved is None:
             break
-        with engine.begin() as conn:
-            if not _claim(conn, row.id):
-                continue  # another process took it
-            if _disabled_address(conn, row):
-                _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
-                continue
-            # A retry was admitted when it first went out; a claim that lapsed is
-            # admitted again, which errs on the side of the budget.
-            attempts = conn.execute(
-                select(t.mail_outbox.c.attempts).where(t.mail_outbox.c.id == row.id)
-            ).scalar_one()
-            if attempts == 0 and not _admit(conn, row.kind, int(resolved.value(BUDGETS[row.kind]))):
-                if row.kind in DROPPED_OVER_BUDGET:
-                    _finish(conn, row.id, "dropped")
-                    _count(conn, row.kind, "dropped")
-                else:
-                    # Over the budget: security mail waits for the next hour (§16.2).
-                    _release(conn, row.id, clock.now() + timedelta(minutes=5))
-                continue
-        outcome = smtp.send(resolved, _message(resolved, row))
-        with engine.begin() as conn:
-            sent += _settle(conn, row, outcome)
+        try:
+            sent += _deliver(engine, resolved, row)
+        except SQLAlchemyError:
+            raise  # the database, not this row: the pass ends and the worker tries again
+        except Exception as error:  # one row never stops the outbox
+            _failed(engine, row, "sent", error)
     return sent
+
+
+def _deliver(engine: Engine, resolved: settings.Resolved, row: Any) -> int:
+    """Claim, build, admit and send one row; 1 when it left the hub.
+
+    The message is built before the row is admitted: a row that cannot be built is
+    `failed` in the claim's own transaction and takes no place in its kind's budget, so
+    it neither comes back on the next pass nor holds back the mail behind it."""
+    with engine.begin() as conn:
+        if not _claim(conn, row.id):
+            return 0  # another process took it
+        if _disabled_address(conn, row):
+            _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
+            return 0
+        if _membership_ended(conn, row):
+            _finish(conn, row.id, "dropped")  # it carries a project they left (§18.5)
+            return 0
+        try:
+            mail = _built(resolved, row)
+        except Exception as error:
+            _unsendable(conn, row, "built", error)
+            return 0
+        # A retry was admitted when it first went out; a claim that lapsed is
+        # admitted again, which errs on the side of the budget.
+        attempts = conn.execute(
+            select(t.mail_outbox.c.attempts).where(t.mail_outbox.c.id == row.id)
+        ).scalar_one()
+        if attempts == 0 and not _admit(conn, row.kind, int(resolved.value(BUDGETS[row.kind]))):
+            if row.kind in DROPPED_OVER_BUDGET:
+                _finish(conn, row.id, "dropped")
+                _count(conn, row.kind, "dropped")
+            else:
+                # Over the budget: security mail waits for the next hour (§16.2).
+                _release(conn, row.id, clock.now() + timedelta(minutes=5))
+            return 0
+    outcome = smtp.send(resolved, mail)
+    with engine.begin() as conn:
+        return _settle(conn, row, outcome)
+
+
+def _unsendable(conn: Connection, row: Any, stage: str, error: Exception) -> None:
+    """The row leaves the queue as `failed`, emptied as every finished row is. The log
+    names the row, its kind and the error's class, never the mail's text or headers."""
+    log.error(
+        "mail: outbox row %s (%s) could not be %s (%s); marked failed",
+        row.id,
+        row.kind,
+        stage,
+        type(error).__name__,
+    )
+    _finish(conn, row.id, "failed")
+    _count(conn, row.kind, "failed")
+
+
+def _failed(engine: Engine, row: Any, stage: str, error: Exception) -> None:
+    with engine.begin() as conn:
+        _unsendable(conn, row, stage, error)
 
 
 def _resolved(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> Any:
@@ -195,6 +239,33 @@ def _disabled_address(conn: Connection, row: Any) -> bool:
     )
 
 
+# A mark (never a header, as every name with `_`): the ids of the membership rows a
+# notification mail's items were read through, separated by spaces (§18.5).
+MEMBERSHIPS_MARK = "_memberships"
+
+
+def _membership_ended(conn: Connection, row: Any) -> bool:
+    """Whether the mail carries items read through a membership that is no longer active,
+    or has a `removed_at` (§18.5): a mail that waited for its budget does not take a
+    project's items to someone who was removed from it, or left, in the meantime, whether
+    they joined again since (a new row) or not. The rows are the row's `MEMBERSHIPS_MARK`,
+    written by the notification mailer; a row that is gone counts as ended."""
+    marked = str((row.headers or {}).get(MEMBERSHIPS_MARK) or "").split()
+    ids = {int(i) for i in marked if i.isdigit()}
+    if not ids:
+        return False
+    active = conn.execute(
+        select(func.count())
+        .select_from(t.membership)
+        .where(
+            t.membership.c.id.in_(ids),
+            t.membership.c.active.is_(True),
+            t.membership.c.removed_at.is_(None),
+        )
+    ).scalar_one()
+    return int(active) != len(ids)
+
+
 def _release(conn: Connection, row_id: int, not_before: datetime) -> None:
     """Give a claimed row back to the queue, due again at `not_before`."""
     conn.execute(
@@ -234,6 +305,14 @@ def _finish(conn: Connection, row_id: int, status: str) -> None:
         .where(t.mail_outbox.c.id == row_id)
         .values(status=status, body="", headers={})
     )
+
+
+def _built(resolved: settings.Resolved, row: Any) -> Any:
+    """The row's message, already turned into bytes once, so that whatever cannot be
+    serialised fails here and not halfway through the conversation with the server."""
+    mail = _message(resolved, row)
+    mail.as_bytes()
+    return mail
 
 
 def _message(resolved: settings.Resolved, row: Any) -> Any:

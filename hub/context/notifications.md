@@ -87,7 +87,8 @@ AES-256-GCM, a random nonce in front, the human's id and
 `notifications.position` as associated data, base64url without padding.
 The key is HKDF-SHA256 of `MAITY_SECRET_KEY` with that purpose as info.
 Without an instance key, the hub makes a random 32-byte key at first use
-and keeps it as `notifications.position_key` in `instance_secret`. That
+and keeps it as `notifications.position_key` in `instance_secret`, until
+an instance key is set (then it is removed, `secretbox.prepare_fallback`). That
 value is not sealed, since there is nothing to seal it with. Past 4096
 characters the vector is stored in `notification_position` and the
 position is a sealed `{v, h: handle}`, which looks like any other
@@ -1271,3 +1272,102 @@ cost without a purpose; stored, the read takes it with the membership row it loa
 - A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
   path that forgets the value.
 
+## A key per purpose comes from one helper in `secretbox`: HKDF of the instance key, else a fallback key made at first use
+
+**Id:** dc952df1-de40-4d07-b091-cb95d4063e6b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit tsk-hgnbapyw7hnh (area 12, item 4) and its card tsk-8vdegd61y70v, which proposed `secretbox` as the home; the follow-up card tsk-2y0qbc1zm7r1 (rate_count keys from one keyed helper); the lead's ruling on the wipe question on that card (`maity say`, seqs 129388 and 130728, 2026-11-14), after a read-only check of every reader of the fallback keys
+**Revisit when:** a keyed value needs a key that is not 32 bytes, a stored value comes to need a fallback key while an instance key is set, or the hub runs processes with and without `MAITY_SECRET_KEY` side by side
+
+`secretbox.derive` (HKDF-SHA256, no salt, the purpose as `info`),
+`secretbox.purpose_key` (derived from `MAITY_SECRET_KEY` when it is set,
+else the stored fallback key as it is) and `secretbox.prepare_fallback`
+(make the fallback at first use in a transaction of its own, keep a
+concurrent winner's) serve the address locks' pepper
+(`address.lock_pepper`), the notification positions' key and the known
+sources' fingerprints; a new keyed value (the rate counts' keys of
+tsk-2y0qbc1zm7r1) uses them too. The purpose strings are pinned by a test:
+a changed byte invalidates every lock row, position and fingerprint.
+
+**Once an instance key is set, every fallback key is removed**
+(`prepare_fallback`, at the next first use): the address pepper always
+was, the position key since the follow-up of the clean-up. The rule is
+the lead's: remove only if nothing stored still has to be read or
+compared with the fallback key once the instance key is set. The check
+found nothing. A position's stored vector (`notification_position`) is
+plain JSON; its token is held by the client and opens only under the
+derived key, so one sealed under the fallback already fails closed
+(docs/api.md §18.2: a change of `MAITY_SECRET_KEY` invalidates every
+position). Lock digests and known-source fingerprints are made again
+under the instance key. No other code reads the two names.
+
+**Limit:** while processes with and without `MAITY_SECRET_KEY` run side
+by side (a rollout), one removes the fallback key and the other makes a
+new one, so the positions the keyless process issued keep going invalid
+until every process has the key; the address locks already behaved so.
+
+**Reason:** the derivation had been copied three times, the generic part
+inside `mail/address.py` and the known sources reaching into the mail
+module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
+`cryptography` dependency, so every key the hub derives is in one module.
+
+**Rejected alternatives:**
+- Keeping a fallback key once an instance key is set (the position key
+  until the follow-up): nothing reads it, so it is only key material in
+  the database; removing the key again later makes a new one, which the
+  contract already allows, since every position is invalidated then.
+- A per-caller switch (`wipe_when_keyed`): two answers to one question.
+- A new module for the three functions: one more home for the instance
+  key, beside the one that parses and uses it.
+- `instance_settings`: it stores the fallback, but knows nothing of keys.
+
+## A notification mail's subject is defanged and cut like its body; a waiting mail is dropped once a membership it relies on ended
+
+**Id:** 64c0fbdf-0e1d-443e-af22-6bbc9c95df04
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (maity-review-team-antigravity#na6z, seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change
+**Revisit when:** the defang helpers move to `mail/` (card tsk-xx108ajy287x), `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
+
+A subject that carries text the hub did not write (a project's name, an item's title with a
+display name or a card's title in it, the inviter and project of an invitation) goes through
+`mailer.subject_line`: control characters become spaces (`headers.clean`), whitespace runs become
+one space, the result is defanged with the same `defang` as the body, and it is cut at
+`SUBJECT_MAX` (120) with `…`. The body was defanged already; the subject only lost its line
+breaks. Cleaning comes before defanging, so a control character between a name and its dot cannot
+hide a host from `defang`; cutting comes after, so a cut can shorten `[.]` but never undo it.
+
+A notification mail is built with the items readable at that moment, then may wait in the outbox
+for the hour's budget. The mailer marks the row with `_memberships` (a mark, never a header): the
+ids of the membership rows its items were read through, taken from the `items.scope` that derived
+them (items with a project and `member`), with no query of their own. Before delivery the outbox
+checks that each of those rows is still `active`; if one is not, or is gone, the whole row is
+`dropped`, as a row to a disabled address is. Items of a project the human is no member of (an
+invitation) or of no project add nothing to the mark.
+
+The mark holds rows, not projects, for two cases: a human who leaves and joins again gets a new
+row whose history begins at the new join (`joined_seq`), so the old mail is not theirs to read
+any more; and on READ COMMITTED a removal can commit between the scope's read and a second query
+for the mark, which would leave the project out and let the mail go. Taking the ids from the scope
+ties the mark to exactly what the items were read through.
+
+**Reason:** the subject is read before the mail is opened, from the hub's trusted sender, so text
+there needs the same treatment as in the body. A mail that waited should not take a project's
+items to someone removed from that project in the meantime.
+
+**Rejected alternatives:**
+- Defang only the project name and title separately before formatting: same result, two places
+  to forget; one helper on the whole line also covers the second-factor subject's display name.
+- Delete waiting rows when a membership is removed: every removal path would need it, the row
+  has no project column to find them by, and a send-time check also covers leaving and any path
+  added later.
+- Drop only the items of the ended project and rebuild the mail: the outbox holds built text; a
+  rebuild belongs to the mailer. The items stay in the bell.
+- A `project_id` column on `mail_outbox`: a migration for a mark only notification mail needs,
+  and a digest spans several projects.
+- Mark the projects and check for any active membership in them (the first version of #1807):
+  a join after a leave passes with its new row, and a second query for the mark races a removal
+  on READ COMMITTED.

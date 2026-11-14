@@ -3,8 +3,9 @@
 When the probe first observes a report's pull request merged, with `mismatch` false,
 on a card in `review`, the hub emits `task_merged` once per report: it wakes the done
 authority, and under `merged_closes: auto` with `done_authority` `holder` or `admin`
-the hub moves the card to `done` itself, unless a dependency or child is open or a
-takeover of it is objected or escalated. A card `blocked` from `review` (a waiting request
+the hub moves the card to `done` itself, unless a dependency or child is open, a
+takeover of it is objected or escalated, or it is a release card (the releaser closes
+those after the checklist, §6.7). A card `blocked` from `review` (a waiting request
 of its holder is open, §7) counts as in `review`, except under `reviewer_and_tester`: its
 report is what waits, so the merge is told at once and `auto` may close it, which ends
 the block. A merge observed while the
@@ -123,6 +124,10 @@ def _blocked_by(conn: Connection, card: Any) -> list[str]:
     ).first()
     if held is not None:
         reasons.append("objection")
+    if card.kind == "release":
+        # A release closes through its readiness gate (§6.7), which the releaser
+        # passes after the checklist; a merge of its pull request is not that step.
+        reasons.append("release")
     return reasons
 
 
@@ -167,6 +172,7 @@ def _tell(conn: Connection, card_id: str, merge_sha: str | None) -> None:
                 "id": card.id,
                 "status": "done",
                 "fields": ["status"],
+                "history": [],  # the auto-close writes no history entry (§6.15)
                 "project_state": project.state,
             },
             subject=("task", card.id),
@@ -215,6 +221,4 @@ def _close(conn: Connection, card: Any) -> None:
         "blocked_by_request": None,
         "updated_at": now,
     }
-    if card.kind == "release":
-        values["release_in_flight"] = None
     conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))

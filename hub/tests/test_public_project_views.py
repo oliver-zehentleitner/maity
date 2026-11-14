@@ -15,6 +15,7 @@ from maity_hub import clock, public_pages, render
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_public_pages import only_the_frames_script
 from tests.test_reports import report
 
 BASE = "/maintainer/maity"
@@ -69,7 +70,7 @@ def world(make_client: ClientFactory, migrated: Engine, settings: Any) -> World:
 def test_the_views_are_served_exactly_while_the_page_is(world: World) -> None:
     for name in ("board", "team", "organisation"):
         text = view(world.anyone, name)
-        assert text is not None and "<script" not in text
+        assert text is not None and only_the_frames_script(text)
         assert f'<link rel="canonical" href="https://hub.example{BASE}/{name}">' in text
     assert view(world.anyone, "inbox") is None
     world.owner.patch("/projects/maintainer/maity", {"public_page": "off"})
