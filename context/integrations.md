@@ -336,10 +336,10 @@ one the export names, beside that URL (§11.5). Neither is derived from
 checks a GitHub signature and does not call the sender; a delivery
 does not start a read when the probe is not configured. Real probes,
 CI status and merge-request reads for a reachable GitLab stay out of
-this decision. The dashboard already derives a merge-request link from
-`forge`. Its project-settings field still refuses a path that is not
-exactly two segments before it asks the hub; that check is the web
-change.
+this decision. The dashboard derives a merge-request link from
+`forge`. Its project-settings and new-project fields check the shape
+alone (https, two to twenty-two segments) and leave the rest to the
+hub, which answers `not_a_repository_url`.
 
 **Reason:** a person has to be able to create a project and point
 agents at the repository when it lives on a forge the operator does

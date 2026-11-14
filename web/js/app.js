@@ -560,7 +560,9 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         error.textContent = "";
         input.removeAttribute("aria-invalid");
-        const url = input.value.trim().replace(/\/+$/, "");
+        // One trailing slash comes off, as the hub takes it off (§6.1 step 2); a second stays,
+        // so the hub refuses it for its empty segment.
+        const url = input.value.trim().replace(/([^/])\/$/, "$1");
         if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.repo.unchanged"))); return; }
         // The shape alone, a GitLab group path included; the hub checks the rest (§6.1).
         if (url && !/^https:\/\/[^\s/]+(?:\/[^\s/]+){2,22}$/i.test(url)) { fail(forgeRule()); return; }

@@ -1811,7 +1811,10 @@ window.Maity = window.Maity || {};
   function repositoryUrl(raw) {
     const m = /^([^:/]*):\/\/([^/]*)\/(.*)$/s.exec(raw);
     if (!m || m[1].toLowerCase() !== "https") return null;
+    // ASCII before case-folding, as the hub (a Unicode host is refused, never folded into ASCII).
+    if (!/^[\x00-\x7f]*$/.test(m[2])) return null;
     const host = m[2].toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost")) return null;
     let path = m[3];
     if (path.endsWith("/") && !path.endsWith("//")) path = path.slice(0, -1);
     const segments = path.split("/");
