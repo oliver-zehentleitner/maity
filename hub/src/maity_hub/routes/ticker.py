@@ -71,7 +71,7 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
     kind = body.type
     if kind is None:
         errors["type"] = "required"
-    elif kind in ("merge", "decision", "rename"):
+    elif kind in ("merge", "decision", "jour_fixe", "rename"):
         errors["type"] = "not_for_type"
     elif kind not in ("note", "deploy", "release"):
         errors["type"] = "invalid"
@@ -376,7 +376,14 @@ def patch_subscription(
                 name = f"{side}.{kind}"
                 if set(add) & set(remove):
                     errors[name] = "invalid"
-                if kind == "types" and any(v not in ticker.FILTER_TYPES for v in add + remove):
+                # A value stored before it stopped counting (`rename`) can still be removed.
+                if kind == "types" and (
+                    any(v not in ticker.SUBSCRIPTION_TYPES for v in add)
+                    or any(
+                        v not in ticker.SUBSCRIPTION_TYPES and v not in current[side][kind]
+                        for v in remove
+                    )
+                ):
                     errors[name] = "invalid"
                 if kind == "areas" and any(not AREA.match(v) for v in add + remove):
                     errors[name] = "invalid"
