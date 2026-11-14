@@ -471,6 +471,26 @@ def after_role_change(conn: Connection, project: Any, target: Any, actor: Actor)
             end(conn, row, actor, "member_removed")
 
 
+def after_policy_change(conn: Connection, project_id: str, actor: Actor) -> None:
+    """A changed `outside_roles` ends every connection across owners the limits now refuse,
+    as a role change does (§2.3): read from the project row as the change left it."""
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    rows = conn.execute(
+        select(t.bridge).where(
+            t.bridge.c.project_id == project_id,
+            t.bridge.c.live.is_(True),
+            t.bridge.c.cross_owner.is_(True),
+        )
+    ).all()
+    for row in rows:
+        served = conn.execute(select(t.membership).where(t.membership.c.id == row.served)).one()
+        bridge = conn.execute(select(t.membership).where(t.membership.c.id == row.bridge)).one()
+        try:
+            limits(conn, project, served, owner_of(conn, bridge))
+        except ApiError:
+            end(conn, row, actor, "member_removed")
+
+
 def owner_left(conn: Connection, project_id: str, human_id: str, actor: Actor) -> None:
     """An owner leaving the project ends every connection of the agents they own (§2.3)."""
     a, m = t.agent_profile.c, t.membership.c
@@ -566,7 +586,9 @@ def _summary(
             f"In the project {project.name} ({namespace.full_name(conn, project)}), {asker} "
             f"asks that the agent {bridge}, owned by {bridge_owner}, lend its hands to the "
             f"agent {served}.",
-            f"Purpose, the frame of the agreement: {purpose}",
+            # Quoted, one plain line (routes/bridges.py): what the asker wrote, never a part of
+            # the request's own text.
+            f"Purpose, the frame of the agreement, as the asker wrote it:\n\n> {purpose}",
             f"What a go grants: {bridge} reads what {served} reads in this project (its cards, "
             "its messages, the group chats it takes part in and its direct conversation with "
             f"its owner) and acts there as {served}, within the purpose stated. The purpose is "
@@ -575,6 +597,33 @@ def _summary(
             "members:admin) said go; a no to either withdraws both.",
         ]
     )
+
+
+def _project_consented(conn: Connection, project: Any, request: Any, proposal: Any) -> None:
+    """The project's consent at the last `go` (§2.3): its own request, answered `go`, or the
+    asker's own action while the asker still holds `members:admin`, checked now and not only
+    at filing. Otherwise the `go` is `invalid` and the request stays open; a new `POST` (or
+    `PATCH`) files the project's request."""
+    filed = conn.execute(
+        select(t.request.c.proposal).where(t.request.c.id.in_(proposal.get("requests") or []))
+    ).scalars()
+    if any((one or {}).get("kind") == PROJECT_KIND for one in filed):
+        return  # answered `go`: a `no` or a withdrawal would have withdrawn this request too
+    asker = (
+        None
+        if request.asked_by is None
+        else conn.execute(
+            select(t.membership).where(
+                t.membership.c.id == request.asked_by, t.membership.c.active.is_(True)
+            )
+        ).first()
+    )
+    kind = "human" if asker is not None and asker.human_id is not None else "agent"
+    if asker is None or not Membership(project, asker, kind).may("members:admin"):
+        raise invalid(
+            {"asker": "members_admin"},
+            "the asker no longer holds members:admin, so the project's own consent is needed",
+        )
 
 
 def settle(conn: Connection, s: proposals.Settlement) -> None:
@@ -597,6 +646,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     served = conn.execute(select(t.membership).where(t.membership.c.id == proposal["served"])).one()
     bridge = conn.execute(select(t.membership).where(t.membership.c.id == proposal["bridge"])).one()
     actor = s.proposer
+    _project_consented(conn, project, request, proposal)
     if proposal.get("connection") is not None:
         row = conn.execute(
             select(t.bridge).where(
@@ -673,6 +723,25 @@ def not_your_bridge() -> ApiError:
     )
 
 
+def still_live(conn: Connection, bridge_id: str) -> None:
+    """Refuse a write made through a connection that has ended since the call was carried
+    (§2.3): read under the project's lock, which an ending holds as well, so no write through
+    the connection lands after the ending commits."""
+    live = conn.execute(select(t.bridge.c.live).where(t.bridge.c.id == bridge_id)).scalar()
+    if live is not True:
+        raise not_your_bridge()
+
+
+def _never_carried(path: str) -> bool:
+    """The project routes a bridge never calls for the agent it serves (§2.3): the memory
+    stores, as the soul, are the agent's own; the connections, so that a bridge neither makes,
+    changes nor ends one in the served agent's name."""
+    rest = path.split("/")[6:]  # after /api/v1/projects/{owner}/{slug}
+    if rest[:1] == ["memory"]:
+        return True
+    return len(rest) >= 3 and rest[0] == "members" and rest[2] == "bridges"
+
+
 def carry(
     conn: Connection,
     caller: Caller,
@@ -694,6 +763,8 @@ def carry(
         raise not_your_bridge()
     if slug is None or not path.startswith("/api/v1/projects/"):
         raise invalid({"Maity-For": "route"}, "Maity-For is taken on project routes only")
+    if _never_carried(path):
+        raise invalid({"Maity-For": "route"}, "Maity-For is not taken by this route")
     m, b, a = t.membership.c, t.bridge.c, t.agent_profile.c
     found = conn.execute(
         select(t.membership, b.id.label("bridge_id"), a.owner_id.label("served_owner"))

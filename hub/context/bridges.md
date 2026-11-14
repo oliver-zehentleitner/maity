@@ -121,6 +121,24 @@ row, so its views take `via` from there; an answer keeps it in the stored `answe
 `via` only when a bridge made the call, so nothing changes in what a call without the header reads.
 `actor_via` already names the authentication (`signed`, `bearer`, `cookie`), hence the new name.
 
+## `via` exists only where a carried write can happen
+
+**Id:** 6d5563b7-541b-40cf-b00d-bd3b1e8fbc0c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 ("The bridge": the header is not taken on `…/memory` or `…/members/{id}/bridges`); the lead's ruling for card tsk-kpaye5hmyz39, 2026-11-13
+**Revisit when:** a memory or connection route takes `Maity-For` after all
+
+The memory routes and the connection routes refuse `Maity-For` (`bridges._never_carried`, checked
+in `bridges.carry` with the other route checks), so a bridge never writes there as the served
+agent: without the header it calls them as itself, and the record names it as its author. A
+memory entry and a connection therefore get no `via` field and no `actor_bridge` column. Rejected:
+storing `via` on memory entries and on the connection's `created_by` as well, which would add a
+column that is always empty and suggest a carried write that cannot happen. A route table test
+(`test_every_memory_and_connection_route_refuses_the_header`) keeps a new memory or connection
+route from taking the header unnoticed.
+
 ## A bridge reads for an agent without touching the agent's own state
 
 **Id:** c61f6f5d-c525-4da4-9ecb-873206d1eeed

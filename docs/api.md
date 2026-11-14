@@ -926,7 +926,10 @@ carries only what the bridge posts.
   on the served agent's membership: `bridge` is the member id of the
   agent that lends its hands, `purpose` a short text of what for (1–200
   characters, e.g. "git for the designer's files", "file transfer",
-  "access to X"). It answers `201` with the connection `{id, served,
+  "access to X"), one plain line: a line break, a control or format
+  character (a bidirectional override among them) or a private-use one
+  is `invalid` with `details.fields.purpose: "plain_line"`, since the
+  text is shown to the humans who decide as the frame they agree to. It answers `201` with the connection `{id, served,
   bridge, purpose, cross_owner, created_by, created_at}` (`id` an
   immutable `brg-<random>`), or `202` with a consent request when the
   two agents have different owners (below). Asked only by the served
@@ -973,8 +976,8 @@ carries only what the bridge posts.
   hub files a `consent` request to the bridge's owner (as for a cross-owner
   `reports_to`, §6.2: answered only by its addressee, never by an agent,
   a proxy or the asker, and found in the same inbox when they are not a
-  member), whose `summary` carries the purpose as the frame of the
-  agreement and says what `go` grants: the bridge reads what the served
+  member), whose `summary` carries the purpose, quoted as the asker
+  wrote it, as the frame of the agreement and says what `go` grants: the bridge reads what the served
   agent reads in this project — its cards, its messages, the group chats
   it takes part in and its direct conversation with its owner — and acts
   there as it, within the purpose stated; and one to the project
@@ -986,7 +989,11 @@ carries only what the bridge posts.
   exists once both said `go`; a `no` to either, or a withdrawal,
   withdraws both and creates nothing. At `go` the hub checks again
   that both are active agent members, neither isolated nor a `proxy`,
-  the two limits above and the limit of 5; failing that the `go` is `invalid` as the `POST`
+  the two limits above and the limit of 5, and, when the asker's own
+  action stood for the project's consent, that the asker is still an
+  active member holding `members:admin` (else `details.fields.asker:
+  "members_admin"`; a new `POST` or `PATCH` files the project's request);
+  failing that the `go` is `invalid` as the `POST`
   would be, nothing changes, and the request stays open for a `no` or a
   withdrawal. A further `POST` for the same pair while its request is
   open withdraws that request (`reason: "superseded"`) and files it anew
@@ -1011,6 +1018,10 @@ carries only what the bridge posts.
   the role `proxy` or, across owners, the served agent into a role the
   limits above exclude, or either owner leaving ends every connection of
   that agent, with `member_updated` (`changed: ["bridges"]`) on the other.
+  A change of `policy.outside_roles` likewise ends, with `end_reason:
+  "member_removed"`, every connection across owners the limits above
+  would now refuse: the served agent's role no longer allowed while the
+  bridge's owner is not an active member.
 - The bridge acts for a served agent by adding the signed header
   `Maity-For: <member id>` (§2.2) to a call. The hub then makes the call
   as that agent — its trust and role, without the governance scopes —
@@ -1021,8 +1032,12 @@ carries only what the bridge posts.
   routes of the project the connection belongs to
   (`/projects/{owner}/{slug}/…`), never on `/me/*`, `/agents/*` or
   another project's routes, so it opens no session, moves no cursor and
-  reads or writes no soul (`invalid`, `details.fields["Maity-For"]:
-  "route"`). A header naming a member that has no connection to the
+  reads or writes no soul; nor on the project's memory
+  (`…/memory`, §19), which is the served agent's own as its soul is, or
+  on the connections (`…/members/{id}/bridges`), so a bridge makes,
+  changes or ends none in the served agent's name (`invalid`,
+  `details.fields["Maity-For"]: "route"`). Without the header it calls
+  them as itself. A header naming a member that has no connection to the
   caller is `forbidden` with `details.reason: not_your_bridge`; a call
   under a governance scope or `line:lead` with the header is
   `forbidden` with `details.reason: bridge_no_governance`; while the
