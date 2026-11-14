@@ -601,6 +601,69 @@ reaches only the card's watchers. Rejected because it breaks the
 `maity say <to> --type update --task …` form the CLI accepts today,
 and mentions in an update would still need the gate.
 
+## Only a watch the watcher set itself lets an update pass the owner's gate
+
+**Id:** 3239fcab-1dfe-4aee-a6c8-dec85ac53228
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh, PR 2; the decision of the lead, lotse#wtwy, on the watcher exemption of the first PR, after a review of it
+**Revisit when:** a derived watch gets a consent of its own (a cross-owner gate on area routing or on assigning), or the maintainer revisits the gate on work messages
+**See:** messages.md#an-addressed-update-or-review_result-passes-the-owners-gate-beyond-the-cards-own-flow — c83bc7d2-2faa-4471-a7a7-c23966ac4060 — as of 2026-11-14
+
+An `update` passes the §9.6 gate for a card's watcher only when the
+watch is the watcher's own: a `card_watch` row, which only
+`PUT …/watch` by that member writes (`card_watches.own`). A watch that
+comes with a dependent card the watcher holds or is assigned
+(`card_watches.at_write` counts it) is derived: such a watcher on
+another side reaches the update through the gate like anyone `to`
+names, with or without a `to`, and where it is held it is left off the
+event's private watcher list and named `held:<id>`. A watcher of the
+own side or of a consenting owner still gets the update by a derived
+watch, as before.
+
+**Reason:** a derived watch is made by whoever files or routes the
+dependent card, not by the watcher's side, so it says nothing about
+whether that side agreed to hear from the writer. A watch set by the
+member itself is that member's own choice.
+
+**Rejected alternative:** a cross-owner gate on area routing, so that a
+card filed into another owner's agent's area needs that owner's yes.
+Rejected for now by the lead: routing stays as it is, and the gate
+looks at the watch instead, which covers every way a derived watch
+arises.
+
+## A request and a ticker note are gated per path, in the row, not by a filter in `events.emit`
+
+**Id:** 10ecd5bc-2349-4bc2-bcc5-faeab043643c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yy88szfa7sfh, PR 2; the decisions of the lead, lotse#wtwy, applying the maintainer's o2 of 2026-11-12 (§9.6) to these two paths
+**Revisit when:** the maintainer looks at the contract change (lotse put it on his list), or a further path addresses agents with a member's free text
+**See:** messages.md#an-addressed-update-or-review_result-passes-the-owners-gate-beyond-the-cards-own-flow — c83bc7d2-2faa-4471-a7a7-c23966ac4060 — as of 2026-11-14
+
+A request whose `to` reaches an agent of another owner, and a manual
+ticker post whose own `to` (a token list or `all`) does, pass the same
+judging as a work message (`chat_gate.gate`, which `hold` calls),
+decided at write time. A request stores the agents it holds in
+`request.held`: inbox, resume packet, reading and answering skip it for
+them for good, and its events name them `held:<id>`. A ticker post
+gates only the reasons `addressed` and `posted_to_all`; the computed
+ones (an area's owner, a release, a deploy to whom it concerns) and a
+member's own follow stay open. A held request or item stays held
+after a later yes; the asker asks again, as for messages.
+
+**Reason:** the request row itself is read outside its events (the
+inbox, the resume packet, the answer rights), so an audience filter on
+the event alone would leave it reachable; and a write-time snapshot
+matches what the gate does for messages.
+
+**Rejected alternative:** one central filter in `events.emit` for every
+kind that carries a member's text. Rejected because it gates only the
+event, not the request row, and would hold events the hub writes for
+its own reasons.
+
 ## In what a human reads, agents name members by handle, never by instance suffix or id alone
 
 **Id:** e0eac636-6163-49b5-8ed7-9ad702c48111

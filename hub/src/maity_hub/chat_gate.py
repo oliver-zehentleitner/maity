@@ -13,7 +13,9 @@ An agent a deny entry stops leaves the chat with `reason: "denied_participant"`.
 A work message from another side (`GATED_WORK`) is gated the same way, per message: `hold`
 takes each agent it reaches that is not admitted for its author out of its audience and names it
 `held:<id>`, which its owner reads along by; a lead's message passes, and so does the card's own
-flow the caller names (`passes`: an update's watchers, a review result's author and two leads).
+flow the caller names (`passes`: an update's watchers by a watch of their own, a review result's
+author and two leads). A request (§7) and a ticker item's `to` (§17.6) pass the same judging,
+`gate`.
 
 `settle` is the one place that writes the state: every change of who is in a chat, and every
 change of an owner's entries, ends in it. It hands the owners whose agents waited or wait to
@@ -506,14 +508,32 @@ def hold(
     kind: str,
     audience: list[str],
     passes: Iterable[str] = (),
+    reaches: Iterable[str] = (),
 ) -> tuple[list[str], list[str]]:
     """A work message's audience with every agent it reaches on another side than its author,
     and not admitted for the author, taken out and named `held:<id>` instead; and those agents
-    (§9.6). A lead's message is not gated: a member with trust `owner` or `admin`, or a manager
-    whose line the agent is in (§2.3, "The manager"). `passes` names the agents the message
-    reaches on the card's own flow, which stays open whoever writes: an update's watchers, a
-    review result's author and two leads (§8.4)."""
-    if kind not in GATED_WORK or mine.trust in LEAD_TRUSTS:
+    (§9.6). `passes` names the agents the message reaches on the card's own flow, which stays
+    open whoever writes: an update's watchers by a watch they set themselves, a review result's
+    author and two leads (§8.4). `reaches` names agents it reaches otherwise than by a token in
+    `audience` (an update's other watchers, §6.4), judged the same way. The judging is `gate`."""
+    if kind not in GATED_WORK:
+        return audience, []
+    return gate(conn, project_id, mine, audience, passes, reaches)
+
+
+def gate(
+    conn: Connection,
+    project_id: str,
+    mine: Any,
+    audience: list[str],
+    passes: Iterable[str] = (),
+    reaches: Iterable[str] = (),
+) -> tuple[list[str], list[str]]:
+    """`hold`'s judging, for every path that addresses an agent with a member's own text: a
+    work message, a request (§7) and a ticker item's `to` (§17.6). A lead's text is not gated:
+    a member with trust `owner` or `admin`, or a manager whose line the agent is in (§2.3,
+    "The manager"). Decided once, at write time: a later yes admits what comes after it."""
+    if mine.trust in LEAD_TRUSTS:
         return audience, []
     author = mine.principal_id
     side = owners_of(conn, [author]).get(author, author) if mine.row.agent_id else author
@@ -527,6 +547,7 @@ def hold(
     ).all()
     tokens = set(audience)
     open_to = set(passes)
+    also = set(reaches)
     reached = [
         r
         for r in rows
@@ -534,7 +555,8 @@ def hold(
         and r.agent_id != author
         and r.agent_id not in open_to
         and (
-            "all" in tokens
+            r.agent_id in also
+            or "all" in tokens
             or f"member:{r.agent_id}" in tokens
             or any(x.startswith(f"instance:{r.agent_id}#") for x in tokens)
             or bool(tokens_of(r.trust, r.role, r.role_base) & tokens)

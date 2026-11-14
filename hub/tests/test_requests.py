@@ -18,6 +18,7 @@ from tests.test_tasks import _report, task
 REQUEST_KEYS = {
     "cover",  # §6.12: null unless a substitute covers it
     "action",  # §2.3: a proxy's call, null otherwise
+    "held",  # §7, §9.6: the agents of other owners it is held for, [] when none
     "id",
     "class",
     "title",

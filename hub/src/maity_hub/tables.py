@@ -1683,6 +1683,10 @@ request = Table(
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
+    # The agents of other owners its `to` reached without their owner's yes when it was filed
+    # (§7, §9.6): it is not theirs to read, find or answer, whatever their owner says later;
+    # null when it held nobody.
+    Column("held", JSON_VALUE),
     Column("ktw_ref", String(255)),
     # The owner's digest (§5.3): what the request shows, one entry per listed instance
     # (`{membership_id, instance, kind, since, last_seen_at, cards, reason}`), compared on the

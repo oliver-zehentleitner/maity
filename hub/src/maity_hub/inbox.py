@@ -82,8 +82,8 @@ def forwarded(request: Any) -> bool:
 def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     """`to=me`: whoever holds the request now (§7). Before a forward that is `to`;
     after one, the holding member, or every admin while the admins hold it as a pool;
-    an earlier holder no longer."""
-    if request.personal:
+    an earlier holder no longer. Never an agent it is held for (§9.6)."""
+    if request.personal or held_back(request, mine.principal_id):
         return False
     if request.holder_member is not None:
         return bool(request.holder_member == mine.id)
@@ -92,11 +92,19 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     return originally_addressed(conn, request, mine)
 
 
+def held_back(request: Any, principal: str | None) -> bool:
+    """`to` reached this agent of another owner without its owner's yes when the request was
+    filed (§7, §9.6): the request is not its to read, find or answer, whatever that owner
+    says later."""
+    return principal is not None and principal in (getattr(request, "held", None) or ())
+
+
 def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bool:
     """`to` as filed: the caller's member id, `owner` for the owner, a role the caller
     holds, or the substitute covering the addressee (§6.12). A personal request is
-    addressed to a human, never through a project (§7)."""
-    if request.personal:
+    addressed to a human, never through a project (§7); one held for the caller is not
+    addressed to it (§9.6)."""
+    if request.personal or held_back(request, mine.principal_id):
         return False
     return covers(request, mine) or _in_own_right(request, mine)
 
@@ -140,11 +148,12 @@ def owners_alone(conn: Connection, requests: Iterable[Any]) -> set[str]:
 
 
 def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
-    if (
-        is_asker(request, mine)
-        or addressed_to(conn, request, mine)
-        or originally_addressed(conn, request, mine)  # it follows what it passed on
-    ):
+    if is_asker(request, mine):
+        return True
+    if held_back(request, mine.principal_id):  # no scope opens it to the agent held (§9.6)
+        return False
+    # `originally_addressed`: it follows what it passed on.
+    if addressed_to(conn, request, mine) or originally_addressed(conn, request, mine):
         return True
     return mine.may("requests:answer") and not owners_alone(conn, [request])
 
@@ -183,6 +192,8 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
     through a project for a personal request: its human answers it through
     `POST /requests/{id}/answer` (§7)."""
     if request.personal or not proposals.known(request):
+        return False
+    if held_back(request, mine.principal_id):  # held for it when filed (§9.6)
         return False
     if mine.trust == "guest":  # answers none, whatever reaches it (§2.3 "Guest")
         return False

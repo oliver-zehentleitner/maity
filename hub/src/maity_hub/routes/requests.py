@@ -19,6 +19,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     bridges,
+    chat_gate,
     chat_request,
     clock,
     cover,
@@ -441,6 +442,7 @@ def _view(conn: Connection, row: Any, known: _Known) -> dict[str, Any]:
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
+        "held": list(row.held or []),  # the agents `to` reached without their owner's yes
         "action": _action_view(row),
         "report": _report_view(known, row),  # set by the hub only (§16.8)
     }
@@ -782,6 +784,11 @@ def create_request(
             ).first()
             if card is None:
                 raise invalid({"task_id": "unknown_task"})
+        # An agent of another owner that `to` reaches without its owner's yes is held (§9.6):
+        # decided now, for good; a later yes admits the next request, not this one.
+        audience, held = chat_gate.gate(
+            conn, mine.project.id, mine, _addressee_audience(conn, mine, to)
+        )
         # Links only: a mention in a request pings nobody (§8.6).
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
             mentions.resolve(conn, mine.project.id, body.tried, "tried")
@@ -813,6 +820,7 @@ def create_request(
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
                     "action": _action_stored(body.action),
+                    "held": held or None,
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -842,15 +850,17 @@ def create_request(
             )
             blocked = card.id
         view = request_view(conn, _row(conn, request_id))
-        emit(
+        seq = emit(
             conn,
             mine.project.id,
             "request_created",
-            _addressee_audience(conn, mine, to),
+            audience,
             view,
             actor=caller.actor(mine.id),
             subject=("request", request_id),
         )
+        if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "request", held)
         _status_moved(conn, blocked, caller.actor(mine.id))
         return idempotency.Outcome(201, "request", request_id, view)
 
@@ -1569,7 +1579,22 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
             )
         ).scalars()
         return [f"member:{h}" for h in humans]
-    return _addressee_audience(conn, mine, inbox.addressee_of(row))
+    return _filed_audience(conn, mine, row)
+
+
+def _filed_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
+    """`to` as filed, as an audience, with each agent it was held for (§9.6) named
+    `held:<id>` in place of its own tokens, as the request's first event named it."""
+    audience = _addressee_audience(conn, mine, inbox.addressee_of(row))
+    held = list(row.held or [])
+    if not held:
+        return audience
+    kept = [
+        x
+        for x in audience
+        if not any(x == f"member:{a}" or x.startswith(f"instance:{a}#") for a in held)
+    ]
+    return [*kept, *(f"held:{a}" for a in held)]
 
 
 def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after: Any) -> list[str]:
@@ -1580,7 +1605,7 @@ def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after:
                 *_asker_audience(conn, before),
                 *_holder_audience(conn, mine, before),
                 *_holder_audience(conn, mine, after),
-                *_addressee_audience(conn, mine, inbox.addressee_of(before)),
+                *_filed_audience(conn, mine, before),
             ]
         )
     )

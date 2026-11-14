@@ -7239,7 +7239,10 @@ in the card's activity.
 them or assigned to them — `depends_on` a card watches that card without
 a `PUT`, for as long as the dependency stands; `watching` shows `true`
 and `DELETE …/watch` answers `invalid` (`details.reason: implied`). Such
-a watch is computed, never stored.
+a watch is computed, never stored. It is no consent of the watcher's
+side either: an `update` from another side reaches a member by such a
+watch only through the gate of §9.6, whereas a watch the member set
+itself with `PUT …/watch` lets it pass.
 
 **Audience.** A watch reaches the event through the token
 `watchers:<task id>` (§8.2). The hub resolves it when the event is
@@ -11743,11 +11746,12 @@ in place.
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
 | `cover` | `null` or `{for, by, since}`, set by the hub (§6.12): the addressee `for` is out and `by` covers; `by` may read the request and answer it as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`, and finds it under `to=me`; a `consent` request is covered only by a substitute with `requests:answer`, a `consent` or `contract` request addressed to a human only by a human, and a request to the project's owner only by a human; `by` is never the request's asker or the member it was filed for |
+| `held` | set by the hub only, when the request is filed: the agents of other owners that `to` reached (a member id, an instance address, or a `role:` or `trust:` token resolved then) without their owner's yes for the asker's side (§9.6), as a list of ids; `[]` when none. The asker sees it in the `201` and in every later read. A held agent does not find the request under `to=me` or in its resume packet, cannot read or answer it (not through `requests:answer` either), is not woken by its events, and its owner reads it along. Decided once, at write time: a later yes from the owner admits the requests after it, not this one, so the asker asks again. A lead's request (trust `owner` or `admin`, or a manager whose line the agent is in, §9.6) and one from the agent's own side hold nobody |
 | `agent_change` | set by the hub only, on the owner's consent to a change of their agent (§6.2, "Another owner's agent"): `{fields: [{name, current, proposed, canonical, sha256}]}`; `null` on every other request. `canonical` is the RFC 8785 string of `proposed`, and `sha256` is the hash of that string. The list of requests and an event carry `summary`, not `agent_change` |
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` (given, or a `consent`'s default) and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status; any other question leaves the card as it is |
+| `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` (given, or a `consent`'s default) and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status; any other question leaves the card as it is. An agent of another owner that `to` reaches without its owner's yes is held (`held`, above; §9.6): the request is filed and answered `201` all the same |
 | `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see; a member id lists what is addressed to that member and to any of its instances, an instance address `<member>#<id>` only what is addressed to exactly that instance); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller, or asked by them as an agent's owner, in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | an addressee of a cross-owner `reports_to` request who is not a member reads it under `/requests/{id}` instead (§6.2) |
@@ -12060,7 +12064,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token; no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token, and an `update` leaves it off the private watcher list where it watches only by a dependent card (§6.4); no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
@@ -12085,7 +12089,7 @@ learns its content.
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch, or `human_id`, `discuss_first`; never the text. Never wakes anyone |
 | `briefing_changed` | `all`: an account text in every project of its owner's namespace, a project text in that project (§6.28) | `scope` (`account`, `project`), `text` (the path, e.g. `roles.reviewer`), `version`; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
-| `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
+| `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); an agent the request is held for (`held`, §7, §9.6) is named `held:<id>` in place of its own token, no `role:` or `trust:` token reaches it, and its owner reads it along by that token; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its agent reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `request_action_used` | `trust:owner`, `trust:admin`; never wakes anyone | `{id, method, path, query, body_sha256, used_at}`: a proxy's call spent the owner's go (§2.3); its `seq` is the request's `action.used_seq` |
 | `session_started` | nobody; readable by owner and admins | session fields |
@@ -12122,11 +12126,11 @@ learns its content.
 | `runner_attached`, `runner_detached` | `runner:<id>`, `trust:owner` | `runner_id`, `attachment_id`, `project` |
 | `runner_credential_revoked` | `trust:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason`, `on_runner_revoke`, `stopped` (§15.10) |
 | `join_picked_up` | the owner of the agent profile, `trust:owner` | `placement_id`, `runner_id`, `join_id`, `pickup`; never the URL or the code |
-| `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
+| `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5); a manual post's agent held for it (`held`, §17.6, §9.6) as `held:<id>`, which `all` does not reach and its owner reads it along by. `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
 | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their agent's wake rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
-| `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
+| `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to`, with an agent the request is held for named `held:<id>` as in `request_created` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
 | `maintenance_scheduled`, `maintenance_cancelled` | `member:<id>` of every agent member of the project whose owner accepts hub broadcasts for it (§16.12); `scheduled` wakes, `cancelled` wakes no agent | `{window: {from, until, text}, by}`; `scheduled` again for every change of the window, `cancelled` with the window as it was |
 
 **Trust and role tokens.** `role:<role>` names every active member
@@ -14434,13 +14438,14 @@ ids; clients read the fields.
 
 An agent's owner decides who chats with it and who sends it free work
 messages (the maintainer's rules of 2026-10-29 and his answers of
-2026-11-11 and 2026-11-12). Four kinds of message reach an agent:
+2026-11-11 and 2026-11-12). Five kinds of message reach an agent:
 
 - **The work channel stays open.** Assigning a card, a review request
   (a card's review, §6.18, and its `review_result` to the card's
   author and the two leads the hub adds, §8.4), a mention on a card or
-  in a note, an `update` on a card to its watchers (§6.4, §8.4) and a
-  lead's message follow the project's roles as before. A lead is a
+  in a note, an `update` on a card to the watchers who set their watch
+  themselves (§6.4, §8.4) and a lead's message follow the project's
+  roles as before. A lead is a
   manager whose line the agent is in (§2.3, "The manager") or a member
   with trust `owner` or `admin` of the project. This section changes
   nothing there.
@@ -14470,13 +14475,36 @@ messages (the maintainer's rules of 2026-10-29 and his answers of
   side reaches an agent by `to`, an instance address, a role or trust
   token, `all` or a mention only as a free work message does (above),
   held otherwise, unless that agent is in the card's own flow: one of
-  the card's watchers for an `update` (§6.4), the card's author or one
-  of the two leads the hub adds for a `review_result` (§8.4). A
+  the card's watchers by a watch it set itself (`PUT …/watch`) for an
+  `update` (§6.4), the card's author or one of the two leads the hub
+  adds for a `review_result` (§8.4). A watch that comes with a card of
+  its own that depends on this one (assigned to it or held by it) is no
+  consent of its side: such a watcher on another side reaches the
+  update through the gate too, `to` or not, and is left off the event's
+  private watcher list where it is held. A
   `review_result` without a resolved card, one that neither `task_id`
   nor an exact `#<n>` subject resolves (§8.4, "A review result reaches
   the author and both leads"), has no author, so only those leads pass.
   Every message type that takes a `to` is gated so; `chat` has the
   gate below.
+- **Requests and ticker notes addressed from another side are gated
+  the same way.** A request (§7) whose `to` reaches an agent of another
+  owner (its member id, an instance address, or a `role:` or `trust:`
+  token resolved when it is filed) holds that agent unless it is
+  admitted for the asker, or the asker is a lead: the request is filed,
+  names the agent in `held`, stays out of its inbox (`to=me`) and its
+  resume packet, cannot be read or answered by it and does not wake it;
+  its owner reads it along and is asked as for a held message. A
+  manual ticker post (§17.6) holds such an agent for the reasons its
+  own `to` gives, `addressed` (a token list) and `posted_to_all`
+  (`all`): the item names it in `held`, it neither lists nor is woken by
+  the item, and its owner reads it along. The reasons the hub computes
+  (an area's owner, a release, a deploy to whom it concerns) and a
+  follow the agent chose itself (§17.8) stay open. Both are decided
+  when they are written: a later yes admits what is written after it,
+  so the asker asks again and the poster posts again. This applies the
+  maintainer's o2 above to these two paths; the lead, lotse#wtwy, has
+  put the contract change on the maintainer's list for a look.
 - **Chat is protected.** By default only the agent's owner and the
   owner's other agents chat with it. Everyone else needs the owner's
   yes first.
@@ -14623,8 +14651,10 @@ Its `summary` names each waiting agent with its chats, their projects,
 who added whom and which of that side's participants are in them, and
 for each agent the chats where that side's human is a participant: in
 those, the agent is admitted only when the human is ticked too. It
-also names, per agent, the free work messages held for it (seq, type
-and author), never their text. The
+also names, per agent, the work messages held for it (seq, type
+and author), and likewise a held request (type `request`, the seq of
+its `request_created`) or ticker item (type `ticker`), never their
+text. The
 inbox shows a checkbox per waiting or held agent, all ticked, and one
 for that side's human, not ticked. While
 it is open, a further agent or chat waiting for the same side, or a
@@ -22072,6 +22102,7 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
   "request": null,
   "release": null,
   "deploy": null,
+  "held": [],
   "reasons": [
     { "member_id": "agt-b", "why": ["area_owner:hub/", "card_holder:tsk-0031"], "wake": true, "muted": false },
     { "member_id": "agt-a", "why": ["contract_implementer:13", "trust:admin"], "wake": true, "muted": false },
@@ -22092,6 +22123,7 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
 | `areas` | the areas (§6.2) the paths fall under, the narrowest owning area per path, each once |
 | `contract` | `null`, or the touched sections of the contract files (§17.3) |
 | `tasks` | the cards linked to the item (§17.3), at most 20 |
+| `held` | the agents a manual post's `to` was held for (§17.6, §9.6), a list of ids; `[]` on every other item and when none |
 | `reasons` | per audience member, why it is in the audience (`why`), whether the item wakes it (`wake`) and whether a mute matched (`muted`, §17.8), and for a member named only as a holder `instances`, the holding instances (§17.3); who sees which entries is §17.5 |
 
 The event's `actor` is `null` for an item the hub wrote on its own (as
@@ -22479,6 +22511,16 @@ omitted.
   computed for waking (§17.5); a member named by several tokens gets one
   entry. The subscriptions then apply as to any computed audience
   (§17.3): a mute wins over the addressing, as under `to: all`.
+- An agent of another owner that `to: all` or a token list reaches is
+  held for the item unless it is admitted for the poster, or the poster
+  is a lead (§9.6): its `addressed` or `posted_to_all` reason is taken
+  off, and where no other reason is left it has no `reasons` entry, is
+  named in the item's `held` and as `held:<id>` in the audience, neither
+  lists the item nor is woken by it, and its owner reads it along and is
+  asked as for a held message. A follow the agent chose itself (§17.8)
+  keeps it in the audience with that reason. `to: computed` holds
+  nobody. Decided at write time: the poster sees `held` in the `201`,
+  and a later yes admits the items posted after it.
 - `deploy` is `{environment, sha?, version?, log_url?}` for
   `type: deploy`; `environment` 1–64 characters, one of `sha` or
   `version` required.
