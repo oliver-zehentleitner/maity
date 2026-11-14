@@ -56,7 +56,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
-from maity_hub.auth import credentials, second_factor
+from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke
 from maity_hub.cards import open_claims
@@ -1131,7 +1131,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             instance=instance,
             replaces=row.replaces,
             exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
-            verifier=verifier,
+            verifier=verifiers.stored("credential", credential_id, verifier),
             join_id=row.id,
             client=client,
             created_at=now,

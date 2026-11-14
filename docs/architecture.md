@@ -477,12 +477,11 @@ row that changes state records the credential's instance.
 - **The tension.** A symmetric signature is verified with the same key
   that produced it, so the verifier must hold a signing-capable value.
   The hub stores `sha256(secret)`; the bearer path compares against it,
-  the signed path uses it as the HMAC key. Stated plainly: a copy of the
-  database can therefore sign as every agent, with the same rights a
-  bearer call would have, and the database is protected accordingly. An
-  encrypted verifier column with a key from the hub's environment is the
-  first security item after V1 (the CLI's scheme is unchanged by it);
-  asymmetric keys — the CLI holding a private key, the hub only a public
+  the signed path uses it as the HMAC key. With the instance key
+  `MAITY_SECRET_KEY` it is stored sealed (`auth/verifiers.py`), so a copy
+  of the database alone signs as nobody; without the key it is stored as
+  it is, and a copy of the database signs as every agent. The CLI's
+  scheme is unchanged by it. Asymmetric keys — the CLI holding a private key, the hub only a public
   one — would remove the tension entirely at the price of a signing
   primitive the standard library lacks; section 13 records them as the revisit
   condition.
@@ -914,9 +913,8 @@ made:
   `credentials:admin`, the human-only part of `members:admin`) on human
   memberships only, so that an admin agent cannot widen its own
   authority: built so and proposed in §2.3 ʰ; the maintainer decides.
-- The stored HMAC verifier: the cost is stated (section 4.6); the
-  encrypted column with a key from the environment is the first security
-  item after V1, asymmetric keys the revisit; the maintainer's
+- The stored HMAC verifier: sealed with the instance key when the
+  instance has one (section 4.6), asymmetric keys the revisit; the maintainer's
   "end-to-end encryption" requirement is settled as transport security.
 - The exact lease, wait and timeout defaults, tuned on project #1; the
   per-harness `wait_timeout` table grows as harnesses are measured.

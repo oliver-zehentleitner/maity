@@ -1745,3 +1745,83 @@ def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Eng
         ("cnv-closed", a): (None, False),
         ("cnv-closed", agent_b.agent_id): (None, False),
     }
+
+
+def test_sealed_verifiers_seals_with_the_key_and_the_downgrade_opens_them(engine: Engine) -> None:
+    """With the instance key the upgrade seals every verifier of both tables, again only the
+    plain ones, and the downgrade writes the same hex back; it refuses without the key."""
+    from sqlalchemy import insert, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from maity_hub.auth import credentials
+    from tests import factory
+
+    revision = "20261114020000_sealed_verifiers"
+    key, other = bytes(range(32)), bytes(32)
+    migrate(engine)
+    project_id = factory.project(engine)
+    human = factory.human(engine)
+    factory.membership(engine, project_id, human_id=human)
+    agent = factory.agent(engine, project_id, human)
+    _, runner_verifier = credentials.issue("rcrd-migration")
+    now = clock.now()
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.runner).values(
+                id="rnr-migration", owner_id=human, name="laptop", created_at=now, updated_at=now
+            )
+        )
+        conn.execute(
+            insert(t.runner_enrollment).values(
+                id="renr-migration",
+                name="laptop",
+                attach=[],
+                token_hash="a" * 64,
+                code_hash="b" * 64,
+                created_by=human,
+                created_at=now,
+                expires_at=now,
+                failed_attempts=0,
+            )
+        )
+        conn.execute(
+            insert(t.runner_credential).values(
+                id="rcrd-migration",
+                runner_id="rnr-migration",
+                verifier=runner_verifier,
+                enrollment_id="renr-migration",
+                created_at=now,
+            )
+        )
+    plain = {agent.credential_id: agent.verifier, "rcrd-migration": runner_verifier}
+
+    def stored() -> dict[str, str]:
+        with engine.connect() as conn:
+            rows = [
+                *conn.execute(select(t.credential.c.id, t.credential.c.verifier)),
+                *conn.execute(select(t.runner_credential.c.id, t.runner_credential.c.verifier)),
+            ]
+        return {row.id: row.verifier for row in rows}
+
+    before = _before(engine, revision)
+    downgrade(engine, before)
+    migrate(engine)  # without the key: the rows stay as they are
+    assert stored() == plain
+    downgrade(engine, before)
+    migrate(engine, secret_key=key)
+    sealed = stored()
+    assert all(value.startswith("s1:") for value in sealed.values())
+    assert not set(sealed.values()) & set(plain.values())
+    for refused_with in (None, other):
+        with pytest.raises(RuntimeError, match="sealed verifiers|does not open"):
+            downgrade(engine, before, secret_key=refused_with)
+        if engine.dialect.name in ("mariadb", "mysql"):
+            migrate(engine, secret_key=key)  # it stays at the refusing revision there
+        assert stored() == sealed
+    downgrade(engine, before, secret_key=key)
+    assert stored() == plain
+    migrate(engine, secret_key=key)
+    resealed = stored()
+    migrate(engine, secret_key=key)  # at head, nothing runs; a repeated upgrade seals nothing twice
+    assert stored() == resealed

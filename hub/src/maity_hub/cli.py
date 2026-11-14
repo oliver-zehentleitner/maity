@@ -46,7 +46,7 @@ from maity_hub.app import (
     start_once,
     warn_on_connection_budget,
 )
-from maity_hub.auth import second_factor_reset
+from maity_hub.auth import second_factor_reset, verifiers
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
@@ -285,6 +285,7 @@ def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        verifiers.configure(settings.secret_key)  # sealed as the hub seals them
         made = loadtest.seed(engine, humans, out)
     except FileExistsError:
         return _fail(f"refused: {out} exists", EXIT_CONFIG)
@@ -483,7 +484,7 @@ def _migrate(settings: Settings) -> int:
             )
         before = current_revision(engine)
         try:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
         except SQLAlchemyError:
             # Where the run left the schema, after the last attempt (db.migrate): on PostgreSQL
             # the chain is one transaction and this is `before`; MariaDB commits per step.
@@ -550,7 +551,7 @@ def _quickstart(
     new = unversioned
     try:
         if new:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
             print(f"maity-hub: schema empty -> {head_revision(engine)}")
         else:
             require_current_schema(engine)

@@ -25,7 +25,7 @@ from sqlalchemy import Connection, and_, or_, select, update
 from maity_hub import availability, clock, timing
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id_query
-from maity_hub.auth import credentials, nonces
+from maity_hub.auth import credentials, nonces, verifiers
 from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
@@ -340,7 +340,8 @@ def _possessed(conn: Connection, facts: RequestFacts, value: str) -> Any:
     if presented is None:
         raise unauthenticated()
     row = _credential(conn, presented.credential_id)
-    if not credentials.secret_matches(presented.secret, row.verifier):
+    verifier = _verifier(row)
+    if verifier is None or not credentials.secret_matches(presented.secret, verifier):
         raise unauthenticated()
     return row
 
@@ -390,7 +391,8 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         facts.headers.get("maity-for"),
         facts.headers.get("maity-on-request"),
     )
-    if not credentials.signature_matches(row.verifier, canonical, signature):
+    verifier = _verifier(row)
+    if verifier is None or not credentials.signature_matches(verifier, canonical, signature):
         raise ApiError(401, "signature_invalid", "the signature does not verify")
     _refuse_revoked(row)  # only now: the signature proved possession (§1.3)
     # Only a verified request spends its nonce, so a forger cannot burn them.
@@ -445,6 +447,12 @@ RUNNER_CREDENTIAL_PREFIX = "rcrd-"
 def is_runner_credential(credential_id: str) -> bool:
     """Runner and agent credentials share the format and differ by the id's prefix."""
     return credential_id.startswith(RUNNER_CREDENTIAL_PREFIX)
+
+
+def _verifier(row: Any) -> str | None:
+    """The row's verifier, unsealed; None when the instance key does not open it."""
+    table: verifiers.Table = "runner_credential" if is_runner_credential(row.id) else "credential"
+    return verifiers.usable(table, row.id, row.verifier)
 
 
 def _credential(conn: Connection, credential_id: str) -> Any:
