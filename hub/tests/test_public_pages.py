@@ -3,18 +3,20 @@ shows: the switch, the session, `?as=public`, the headers, the ETag, the rate li
 
 from __future__ import annotations
 
+import re
 from html import escape
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock, middleware, public_pages, render
+from maity_hub import clock, landing_files, middleware, public_pages, render
 from maity_hub import shell as shell_module
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.test_pages import hero, publish
 
 PATH = "/oz-team"
 
@@ -61,9 +63,9 @@ def test_a_visitor_gets_the_stored_page_with_the_headers_of_the_contract(
     assert "<h1>OZ Team</h1>" in got.text
     assert got.headers["content-type"].startswith("text/html")
     assert got.headers["cache-control"] == "public, max-age=60"
-    # In its frame (§16.7.5): the landing page's stylesheets and fonts, still no script.
+    # In its frame (§16.7.5): the landing page's stylesheets, fonts and its one script.
     assert got.headers["content-security-policy"] == (
-        "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
         "img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
     )
     assert got.headers["x-content-type-options"] == "nosniff"
@@ -88,11 +90,51 @@ def test_the_frame_is_put_around_the_stored_page_when_it_is_served(
     assert page.index(content) < page.index('<footer class="site-footer">')
     assert '<html lang="en">' in page and "<title>OZ Team</title>" in page
     assert '<link rel="canonical" href="https://hub.example/oz-team">' in page
-    assert "/assets/landing/public-pages.css?v=" in page and "<script" not in page
-    # One language, the content's: no switch in the footer, no hreflang links.
-    assert 'href="?lang=' not in page and "hreflang" not in page
+    assert "/assets/landing/public-pages.css?v=" in page
+    # The page has one language, the content's: no hreflang links.
+    assert "hreflang" not in page
     with migrated.connect() as conn:
         assert conn.execute(select(t.public_page.c.body)).scalar_one() == row.body
+
+
+def only_the_frames_script(html: str) -> bool:
+    """The page loads the landing page's script and no other (req-q34v0gr2rbw2)."""
+    return re.findall(r"<script[^>]*>", html) == [
+        f'<script src="{landing_files.url("landing.js")}" defer>'
+    ]
+
+
+def controls(html: str) -> tuple[str, str, list[str]]:
+    """The header's theme switch, the footer's language row and the scripts a page loads."""
+    switch = re.search(r'<button type="button" class="theme-toggle" data-lp-theme[^>]*>', html)
+    langs = re.search(r'<p class="langs">.*?</p>', html, re.S)
+    assert switch is not None and langs is not None
+    return switch.group(0), langs.group(0), re.findall(r'<script src="([^"]*)"', html)
+
+
+def test_the_frame_has_the_landing_pages_theme_switch_and_language_row(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """req-q34v0gr2rbw2: a stored page in its frame has the same header and footer controls as the
+    landing page; its language links keep `as=public` and change the frame's language only."""
+    owner = flow.human(make_client, migrated)
+    publish(owner, [hero()])
+    client = visitor(make_client)
+    store(migrated)
+    landing = client.get("/").text
+    framed = client.get(PATH, params={"as": "public"}).text
+    switch, langs, scripts = controls(landing)
+    framed_switch, framed_langs, framed_scripts = controls(framed)
+    assert framed_switch == switch
+    assert framed_scripts == scripts == [landing_files.url("landing.js")]
+    tags = re.findall(r'<a href="\?lang=([a-z-]+)" lang="\1">', langs)
+    assert len(tags) > 1
+    assert re.findall(r'<a href="\?as=public&amp;lang=([a-z-]+)" lang="\1">', framed_langs) == tags
+    assert framed_langs.replace("?as=public&amp;lang=", "?lang=") == langs
+    german = client.get(PATH, params={"as": "public", "lang": tags[1]}).text
+    assert (
+        '<html lang="en">' in german and f'<footer lang="{tags[1]}" class="site-footer">' in german
+    )
 
 
 def test_the_stored_content_stays_data_inside_the_frame(
@@ -111,7 +153,8 @@ def test_the_stored_content_stays_data_inside_the_frame(
         ),
     )
     page = client.get(PATH).text
-    assert "<script" not in page
+    # The frame's one script is the landing page's own file; nothing of the content runs.
+    assert only_the_frames_script(page)
     assert "<h1>&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;quoted&quot;</h1>" in page
     assert "<title>&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;quoted&quot;</title>" in page
 
@@ -161,7 +204,7 @@ def test_the_page_carries_its_title_description_and_canonical_link(
     assert "<title>OZ Team</title>" in text
     assert '<meta name="description" content="OZ Team We build things.">' in text
     assert '<link rel="canonical" href="https://hub.example/oz-team">' in text
-    assert "<script" not in text
+    assert only_the_frames_script(text)
 
 
 def test_the_description_is_cut_first_and_then_escaped(migrated: Engine) -> None:

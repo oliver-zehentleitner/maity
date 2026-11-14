@@ -864,7 +864,7 @@ def load_human_profile(conn: Connection, human_id: str) -> dict[str, Any]:
     return {**human_body(conn, human_id), "server_time": clock.rfc3339(clock.now())}
 
 
-idempotency.LOADERS["human_profile"] = idempotency.plain(load_human_profile)
+idempotency.register("human_profile", idempotency.plain(load_human_profile), idempotency.is_caller)
 
 
 @router.patch("/me")

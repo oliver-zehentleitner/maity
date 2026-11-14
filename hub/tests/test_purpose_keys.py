@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 from sqlalchemy import Engine
 
@@ -31,7 +33,7 @@ def test_the_derived_keys_stay_byte_identical(purpose: str) -> None:
 def test_the_instance_key_comes_first_else_the_fallback(migrated: Engine) -> None:
     with migrated.connect() as conn:
         assert secretbox.purpose_key(conn, None, positions.PURPOSE, positions.KEY_NAME) is None
-    secretbox.prepare_fallback(migrated, None, positions.KEY_NAME, wipe_when_keyed=False)
+    secretbox.prepare_fallback(migrated, None, positions.KEY_NAME)
     with migrated.connect() as conn:
         stored = store.sealed(conn, positions.KEY_NAME)
         assert stored is not None and len(stored) == 32
@@ -41,25 +43,39 @@ def test_the_instance_key_comes_first_else_the_fallback(migrated: Engine) -> Non
 
 
 def test_a_second_first_use_keeps_the_key(migrated: Engine) -> None:
-    secretbox.prepare_fallback(migrated, None, positions.KEY_NAME, wipe_when_keyed=False)
+    secretbox.prepare_fallback(migrated, None, positions.KEY_NAME)
     with migrated.connect() as conn:
         first = secretbox.stored_fallback(conn, positions.KEY_NAME)
-    secretbox.prepare_fallback(migrated, None, positions.KEY_NAME, wipe_when_keyed=False)
+    secretbox.prepare_fallback(migrated, None, positions.KEY_NAME)
     with migrated.connect() as conn:
         assert first is not None and secretbox.stored_fallback(conn, positions.KEY_NAME) == first
 
 
-@pytest.mark.parametrize("wipe", [True, False])
-def test_an_instance_key_makes_nothing_and_wipes_only_on_request(
-    migrated: Engine, wipe: bool
-) -> None:
-    secretbox.prepare_fallback(migrated, KEY, positions.KEY_NAME, wipe_when_keyed=wipe)
+def test_an_instance_key_makes_nothing(migrated: Engine) -> None:
+    secretbox.prepare_fallback(migrated, KEY, positions.KEY_NAME)
     with migrated.connect() as conn:
         assert store.sealed(conn, positions.KEY_NAME) is None
-    secretbox.prepare_fallback(migrated, None, positions.KEY_NAME, wipe_when_keyed=wipe)
-    secretbox.prepare_fallback(migrated, KEY, positions.KEY_NAME, wipe_when_keyed=wipe)
+
+
+@pytest.mark.parametrize(
+    ("prepare", "name"),
+    [(positions.prepare, positions.KEY_NAME), (addresses.prepare, addresses.LOCK_PEPPER)],
+)
+def test_the_fallback_key_is_gone_once_an_instance_key_is_set(
+    migrated: Engine, prepare: Callable[[Engine, bytes | None], None], name: str
+) -> None:
+    """Nothing stored needs a fallback key once `MAITY_SECRET_KEY` is set: the position key
+    and the address pepper are both removed at the next first use."""
+    prepare(migrated, None)
     with migrated.connect() as conn:
-        assert (store.sealed(conn, positions.KEY_NAME) is None) is wipe
+        assert store.sealed(conn, name) is not None
+    prepare(migrated, KEY)
+    with migrated.connect() as conn:
+        assert store.sealed(conn, name) is None
+        if name == positions.KEY_NAME:  # positions keep working, under the derived key
+            token = positions.issue(conn, KEY, "hum_wipe", positions.Position(account=3))
+            found = positions.read(conn, KEY, "hum_wipe", token)
+            assert found is not None and found.account == 3
 
 
 def test_a_stored_value_of_the_wrong_length_is_no_key(migrated: Engine) -> None:

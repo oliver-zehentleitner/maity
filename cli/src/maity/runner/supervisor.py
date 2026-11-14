@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import __version__, clonecheck, hub, onboarding, state
+from .. import __version__, hub, onboarding, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
@@ -119,6 +119,8 @@ KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
 APPROVED_FILE = "approved.json"
 LOGS = "logs"
+# The agent-side state the runner reads after a join (its member id): far below this.
+STATE_MAX = 64 * 1024
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
 # The idle check of an interactive session (§15.14): a pane is read at most once per IDLE_EVERY;
@@ -762,16 +764,18 @@ class Supervisor:
         side, which may have written or replaced it: a regular file only, never followed
         through a link, at most limitread.LIMIT_BYTES, and nothing but a plain exit code taken."""
         path, as_user = self._limit_file(pid, target), target.as_user
+        assert target.agent_files is not None  # noqa: S101 - connected before a launch
+        under = str(target.agent_files)  # the agents' directory: read from it down
         try:
             if not as_user.direct:  # the agents' user, or the ssh host's
                 # Read there by the runner's own module (limitread): opened without following
                 # a link and without blocking on a FIFO, so a file swapped after any check
                 # cannot hold the read. A host's `maity` without it reads nothing: no code.
-                done = as_user.run([*as_user.runner_module("limitread"), str(path)],
-                                   env={"PATH": target.agent_path})  # fmt: skip
+                argv = [*as_user.runner_module("limitread"), "--under", under, str(path)]
+                done = as_user.run(argv, env={"PATH": target.agent_path})
                 raw = done.stdout if done.returncode == 0 else ""
             else:
-                raw = limitread.read(str(path)) or ""
+                raw = limitread.read(str(path), under=under) or ""
             data = json.loads(raw)
         except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
             return None
@@ -843,12 +847,14 @@ class Supervisor:
             rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
             return 0
         owner = agent.get("id") or agent.get("handle") or ""
-        repository = p["workspace"].get("repository") or ""
         if agent.get("id") and agent.get("handle"):  # recorded under the handle before a join
             workspace.rebind(self.cfg.state_dir, place, agent["handle"], agent["id"])
         if as_user.exists(place.path):
-            try:  # an existing directory that is not this agent's comes before its credential
-                workspace.inspect(self.cfg, place, repository, owner, p["id"], as_user)
+            # An existing directory that is not this agent's comes before its credential. Only
+            # the runner's record here: the clone itself is read in the start task, outside the
+            # lock this runs under (workspace.prepare).
+            try:
+                workspace.owned(self.cfg, place, owner, p["id"])
             except workspace.Refused as refused_:
                 rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
                 return 0
@@ -903,12 +909,6 @@ class Supervisor:
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"), as_user,
             )  # fmt: skip
-            # An earlier session of the agent may have planted what git follows elsewhere (a
-            # `commondir`, `worktrees/`): nothing starts in such a clone, so neither the agent
-            # nor a person's later git in it lands where the plant points (§15.7).
-            finding = clonecheck.not_inspectable(place.path, as_user)
-            if finding is not None:
-                raise workspace.Refused("workspace_in_use", "not_a_plain_clone", why=finding)
             if join:
                 self._join(p, place, owner, rejoin, target)
                 with self.lock:
@@ -1003,7 +1003,8 @@ class Supervisor:
             raise workspace.Refused("join_failed", why)
         try:
             if not as_user.direct:
-                found = json.loads(as_user.read(place.credential.parent / state.STATE_FILE))
+                path = place.credential.parent / state.STATE_FILE
+                found = json.loads(as_user.read_whole(path, STATE_MAX, under=place.path))
                 member = found.get("member_id") if isinstance(found, dict) else None
             else:
                 member = state.load_state(place.credential.parent).get("member_id")

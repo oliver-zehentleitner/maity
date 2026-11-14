@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a10 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a11 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -1394,6 +1394,21 @@ maity runner stop-all [--grace 30]     # end every agent; refused while the serv
 maity runner gc --revoked [--yes]      # workspaces whose credential is revoked: list, then remove
 maity runner workspace claim prj-7k2m9q/agent-h --agent agt-h   # record a clone made by hand
 ```
+
+A placement's log holds at most `limits.log_keep_bytes` (10 MiB by
+default); when it is full, its older half is dropped and the newest output
+stays. `logs --follow` starts again at the log's beginning when that
+happens. The log is written only by the runner's log writer, which the
+agent's tmux pane feeds; it checks the file's real size before each
+write and when the pane ends, so bytes anything else appends are counted
+at its next write too. Whatever the runner reads from the agents' side (a
+clone's `.git/config`, a log, the loop's limit file) it reads as a
+regular file only, reached from the clone or the agents' directory
+without following a link at any step on the way, never waiting on a
+FIFO, up to a fixed size; it reads a clone only while it starts an agent
+there, never while it decides what to start or stop. An ssh host needs
+`maity` of the same version as the runner for these reads: with an older
+one, an existing clone there is refused as `origin_mismatch`.
 
 `gc` asks the hub through each clone's own `maity`, so the runner never
 holds an agent's credential, and asks the hub which placements are active,

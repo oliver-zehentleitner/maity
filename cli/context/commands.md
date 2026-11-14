@@ -1117,6 +1117,67 @@ an agent persuaded to save a line could also leave it out.
 - Quoting every card title: all of them are people's text, and the board would lose its form; only
   an imported one comes from outside the project.
 
+## Hub and forge text is printed with escapes shown; `join --pointer` writes no symbolic link
+
+**Id:** 78d3ee5c-2120-429c-ae72-caadabfc2751
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-2tf7921xpmr8 (hardening from the security rounds, tsk-v9kheekgq115)
+
+The CLI prints text that comes from the hub, from GitHub or from files in
+the repository through the cleaners of `onboarding.py`, the ones the resume
+packet and the runner log already use. A hub error's `code` and `message`
+(`hub._error_from`, so every command's refusal), the join's and the
+pairing's header values and every one-line field of `maity gh pr view` go
+through `inline`; a text answer of `maity api`, `maity help` and a pull
+request's body and comments through `clean`, which keeps their lines. The
+stored `HubError.code` is the cleaned one too, since `maity-error` prints
+it. The status lines go through the boundary instead of each call site:
+`_done` collapses and cleans every line it prints (`inline`; a multi-line
+answer such as `release show` passes its lines as a list), and `_err` cleans
+its message (`clean`), so a hub id, status or checklist text interpolated
+into either cannot act on the terminal; `--json` output stays the hub's data
+(`_print_json` escapes the same characters inside JSON strings). `maity join --pointer` writes only into a regular `AGENTS.md` or
+`CLAUDE.md` directly in the repository's root. Where the platform opens
+relative to a directory (not Windows), the root is opened once and both files
+are looked up in that open directory, never following a link
+(`O_NOFOLLOW`), and only a regular file is truncated and written. For any
+other file, and for a file the system will not open or write, it says so and
+prints the block, and the join goes on. On Windows the files are opened by
+path after the check, so a directory swapped in between is a known gap
+there.
+
+**Reason:** a terminal acts on escape sequences in what it is given; text a
+hub, a proxy or a pull request's author wrote must not move the cursor,
+retitle the window or reach the clipboard. One cleaner for every path means
+one rule to check. A linked `AGENTS.md` can point anywhere the agent's user
+may write, and a clone brings its links with it.
+
+**Rejected alternatives:**
+- Dropping the characters instead of showing them: the reader could not
+  tell that the text was changed. `clean` shows them, as the resume does.
+- A call at each site that interpolates a hub field: a review of the first
+  version found a dozen sites left out (release summary, claim, ask,
+  answer, say, attachment ids); the next status line would be missed as
+  easily. Fields that `release list` prints outside `_done` are still
+  cleaned where they are formatted.
+- `inline` for multi-line text (help, a body): it would put a whole page on
+  one line; `clean` keeps the newlines, and those cannot act on a terminal.
+- Checking the resolved path and then opening by path (the first version
+  of this change): only the last component is opened without following a
+  link, so a repository directory replaced between the check and the open
+  leads the write elsewhere. A review found it.
+- Following a link whose target lies inside the repository: the check and
+  the write are two steps a second link can fall between, and the block in a
+  link's target is not what the repository's `AGENTS.md` shows. The one
+  exception is a `CLAUDE.md` linked to this `AGENTS.md`, a common layout:
+  it has the block once `AGENTS.md` has it, so it is neither written nor
+  refused.
+- Failing the join on a refused file: the join code is spent by then, and
+  the credential is already stored; the block is printed as without
+  `--pointer`.
+
 ## An isolation refusal exits 5, and `wait` does not retry it
 
 **Id:** c5c3fa28-87ae-4bff-a1f3-0a159e685722
