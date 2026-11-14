@@ -176,6 +176,8 @@ def _soul_proposal_view(conn: Connection, request: Any, proposal: dict[str, Any]
 def _settle_soul(conn: Connection, settled: proposals.Settlement) -> None:
     if settled.outcome != "go":
         return
+    if proposals.proposer_row(conn, settled.request) is None:
+        raise proposals.proposer_lost()  # proposed on a standing it no longer has
     agent = conn.execute(
         select(t.agent_profile).where(t.agent_profile.c.id == settled.proposal["agent_id"])
     ).one()
@@ -471,6 +473,8 @@ def settle(conn: Connection, settled: proposals.Settlement) -> None:
     if settled.outcome != "go":
         return
     request = settled.request
+    if proposals.proposer_row(conn, request) is None:
+        raise proposals.proposer_lost()  # proposed on a standing it no longer has
     writer = Writer(member(conn, request.asked_by), "agent", settled.proposer.session_id)
     add_entry(
         conn,

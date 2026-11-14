@@ -1,0 +1,3 @@
+### Security
+
+- hub: a suspension and a drop to guest also reach bridges, invitations and proposals (tsk-0f7nbt07f98r). A bridge carries nothing while the bridge member is a guest or the served agent's owner is suspended (`not_your_bridge`). A project invitation needs its issuer's account not suspended, and an organisation invitation's `go` needs the inviter still able to send it (`invitation_stale`). A `go` on a member's proposal (preferences, soul, community memory, a manager's change) needs the proposer still standing (`proposer_lost`; a manager's change `not_in_line`). A project of a suspended organisation does not turn its public page on (`moderation_hold`).
