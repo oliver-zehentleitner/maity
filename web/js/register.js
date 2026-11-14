@@ -15,10 +15,13 @@ window.Maity = window.Maity || {};
   let kept = { address: "", language: null };
   // "Register again" on the registration link's page (hub routes/register_page.py,
   // tsk-pxc5cx4hgb0y) hands the address over in a cookie sent only to /register, never in the
-  // address: read once and removed at once, so a reload or a later visit starts empty. Kept for
-  // the page's life, so a redraw of the form (a language chosen) still has it.
+  // address: read once and removed at once, so a reload starts empty. Kept while this visit's
+  // form stands, so a redraw of it (a language chosen) still has it; a visit that finds no form of
+  // the last one on screen, and a sent form, start over, so a later /register in the same document
+  // neither shows an old address nor misses a new handover.
   const AGAIN = "maity_register_again";
   let handed = null;
+  let drawnBox = null;
   function handedOver() {
     if (handed !== null) return handed;
     handed = "";
@@ -40,12 +43,14 @@ window.Maity = window.Maity || {};
   }
 
   async function register(main, header, next) {
+    if (!drawnBox || main.querySelector("article.register") !== drawnBox) handed = null;
     // Signed in, there is nothing to register: on to next, or the start.
     const session = await M.api.get("/auth/session").then(() => true, () => false);
     if (session) { M.route.go(next || "/all", { replace: true }); return; }
     bar(header);
     document.title = M.t("register.title") + " · Maity";
     const box = h("article", { class: "register" });
+    drawnBox = box;
     // The legal pages that are set, under the form (§16.7.1), until the frame's footer names them.
     const legal = M.legal ? M.legal.links() : null;
     // The panel beside the form: the art alone until the pitch is asked for (below).
@@ -132,6 +137,7 @@ window.Maity = window.Maity || {};
           status.fail(M.t("register.not_sent"), registerWords(err));
           return;
         }
+        handed = null;  // sent: a later visit starts empty unless a new address is handed over
         // The same answer for every address (§2.7.1): what comes next is in the mail.
         const hours = Math.round(((answer && answer.expires_in) || 86400) / 3600);
         clear(box);

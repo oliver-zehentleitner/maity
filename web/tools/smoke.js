@@ -10209,6 +10209,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "javascript:alert(1)", version: "1" } }) : rgGet(p));
   await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
+  // "Register again" on the registration link's page (tsk-pxc5cx4hgb0y) hands the address over in a cookie
+  // only /register is sent: read once into the field and removed; a later visit in the same document starts
+  // empty, reads a new handover, and a sent form forgets it.
+  {
+    const agCookie = () => String(document.cookie);
+    const agVisit = async () => { await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick(); };
+    document.cookie = "maity_register_again=ada%2Bx%40example.org";
+    await agVisit();
+    expect(byId("register-address").value === "ada+x@example.org" && !agCookie().includes("example.org"),
+      "register: the address Register again handed over fills the field, and its cookie is removed " + JSON.stringify([byId("register-address").value, agCookie()]));
+    await agVisit();
+    expect(byId("register-address").value === "", "register: a later visit in the same document starts empty");
+    document.cookie = "maity_register_again=bo%40example.org";
+    await agVisit();
+    expect(byId("register-address").value === "bo@example.org", "register: a new handover in the same document is read");
+    const agPost = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => (p === "/auth/register" ? Promise.resolve({ expires_in: 86400 }) : agPost(p, b));
+    byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
+    rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.post = agPost;
+    expect(text(main).includes("Check your mail"), "register: the handed-over address is sent like a typed one");
+    await agVisit();
+    expect(byId("register-address") && byId("register-address").value === "", "register: after sending, the form starts empty again");
+    document.cookie = "";
+  }
   win.Maity.api.get = rgGet;
   // A forgotten password (docs/api.md §2.10, tsk-yksxdpd2pk0m): "Forgot password?" under the
   // password field where the hub offers it, one answer for every address; the mailed link's page.
