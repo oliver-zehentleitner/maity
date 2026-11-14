@@ -100,6 +100,14 @@ def quoted(text: str) -> str:
     return '"' + defang(" ".join(text.split())) + '"'
 
 
+def subject_line(text: str) -> str:
+    """A subject with text the hub did not write in it: on one line with every control
+    character gone, defanged as the body is, and cut at `SUBJECT_MAX` (§18.5). A subject is
+    shown before the mail is opened, so it is no place for a link either."""
+    flat = defang(" ".join(headers.clean(text).split()))
+    return flat if len(flat) <= SUBJECT_MAX else flat[: SUBJECT_MAX - 1] + "…"
+
+
 def key(item: Item) -> str:
     return f"e:{item.seq}" if item.seq is not None else f"r:{item.record}"
 
@@ -426,10 +434,31 @@ def _send(
         extra_headers={
             "List-Unsubscribe": f"<{links[kinds[0]]}>",
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            outbox.PROJECTS_MARK: _member_of(conn, row.human_id, chosen),
         },
     )
     _mark(conn, row.human_id, chosen)
     return 1
+
+
+def _member_of(conn: Connection, human_id: str, chosen: list[Item]) -> str:
+    """The projects of the mail's items that the human is an active member of now: the
+    outbox drops the mail if one of these memberships ends before it leaves (§18.5,
+    context/mail.md). An item of a project they are no member of (an invitation) or of no
+    project is not tied to a membership."""
+    ids = {i.project_id for i in chosen if i.project_id}
+    if not ids:
+        return ""
+    rows = conn.execute(
+        select(t.membership.c.project_id)
+        .where(
+            t.membership.c.human_id == human_id,
+            t.membership.c.project_id.in_(ids),
+            t.membership.c.removed_at.is_(None),
+        )
+        .distinct()
+    )
+    return " ".join(sorted(row.project_id for row in rows))
 
 
 def compose(
@@ -441,12 +470,10 @@ def compose(
     if len(chosen) == 1:
         only = chosen[0]
         name = projects.get(only.project_id or "", "Maity")
-        # A project's name and a title are text the hub did not write: one line (§18.5).
-        subject = headers.clean(f"[Maity] {name}: {only.title or ''}")
+        # A project's name and a title are text the hub did not write (§18.5).
+        line = subject_line(f"[Maity] {name}: {only.title or ''}")
     else:
-        subject = "[Maity] " + words["updates"].format(n=len(chosen))
-    if len(subject) > SUBJECT_MAX:
-        subject = subject[: SUBJECT_MAX - 1] + "…"
+        line = "[Maity] " + words["updates"].format(n=len(chosen))
     lines: list[str] = []
     shown = chosen[:DIGEST_MAX]
     for project_id in dict.fromkeys(i.project_id for i in shown):
@@ -465,7 +492,7 @@ def compose(
     if len(chosen) > DIGEST_MAX:
         lines.append(words["more"].format(n=len(chosen) - DIGEST_MAX, url=f"{public_url}/"))
     kinds = list(dict.fromkeys(i.kind for i in chosen))
-    return subject, "\n".join(lines), kinds
+    return line, "\n".join(lines), kinds
 
 
 def _message_text(conn: Connection, item: Item) -> str | None:
@@ -556,7 +583,7 @@ def _two_factor_mail(
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=headers.clean(f"[Maity] {item.title}"),
+        subject=subject_line(f"[Maity] {item.title}"),
         body=body,
     )
 

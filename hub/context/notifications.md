@@ -1322,3 +1322,42 @@ module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
 - A new module for the three functions: one more home for the instance
   key, beside the one that parses and uses it.
 - `instance_settings`: it stores the fallback, but knows nothing of keys.
+
+## A notification mail's subject is defanged and cut like its body; a waiting mail is dropped once a membership it relies on ended
+
+**Id:** 64c0fbdf-0e1d-443e-af22-6bbc9c95df04
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); `notifications/mailer.py` `subject_line`, `_member_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change
+**Revisit when:** the defang helpers move to `mail/` (card tsk-xx108ajy287x), `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
+
+A subject that carries text the hub did not write (a project's name, an item's title with a
+display name or a card's title in it, the inviter and project of an invitation) goes through
+`mailer.subject_line`: control characters become spaces (`headers.clean`), whitespace runs become
+one space, the result is defanged with the same `defang` as the body, and it is cut at
+`SUBJECT_MAX` (120) with `…`. The body was defanged already; the subject only lost its line
+breaks. Cleaning comes before defanging, so a control character between a name and its dot cannot
+hide a host from `defang`; cutting comes after, so a cut can shorten `[.]` but never undo it.
+
+A notification mail is built with the items readable at that moment, then may wait in the outbox
+for the hour's budget. The mailer marks the row with `_projects` (a mark, never a header): the
+projects of its items in which the human held an active membership when it was built. Before
+delivery the outbox checks that each of them still has an active membership of that human; if one
+ended, the whole row is `dropped`, as a row to a disabled address is. Items of a project the human
+is no member of (an invitation) or of no project add nothing to the mark.
+
+**Reason:** the subject is read before the mail is opened, from the hub's trusted sender, so text
+there needs the same treatment as in the body. A mail that waited should not take a project's
+items to someone removed from that project in the meantime.
+
+**Rejected alternatives:**
+- Defang only the project name and title separately before formatting: same result, two places
+  to forget; one helper on the whole line also covers the second-factor subject's display name.
+- Delete waiting rows when a membership is removed: every removal path would need it, the row
+  has no project column to find them by, and a send-time check also covers leaving and any path
+  added later.
+- Drop only the items of the ended project and rebuild the mail: the outbox holds built text; a
+  rebuild belongs to the mailer. The items stay in the bell.
+- A `project_id` column on `mail_outbox`: a migration for a mark only notification mail needs,
+  and a digest spans several projects.

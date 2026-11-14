@@ -131,6 +131,9 @@ def _deliver(engine: Engine, resolved: settings.Resolved, row: Any) -> int:
         if _disabled_address(conn, row):
             _finish(conn, row.id, "dropped")  # no further mail to it (§18.7)
             return 0
+        if _membership_ended(conn, row):
+            _finish(conn, row.id, "dropped")  # it carries a project they left (§18.5)
+            return 0
         try:
             mail = _built(resolved, row)
         except Exception as error:
@@ -234,6 +237,31 @@ def _disabled_address(conn: Connection, row: Any) -> bool:
             and found.pending_address == row.recipient
         )
     )
+
+
+# A mark (never a header, as every name with `_`): the ids of the projects whose items a
+# notification mail carries, separated by spaces (§18.5).
+PROJECTS_MARK = "_projects"
+
+
+def _membership_ended(conn: Connection, row: Any) -> bool:
+    """Whether the mail carries items of a project whose membership the human held when it
+    was built and holds no more (§18.5): a mail that waited for its budget does not take a
+    project's items to someone who was removed from it, or left, in the meantime. The
+    projects are the row's `PROJECTS_MARK`, written by the notification mailer."""
+    projects = set(str((row.headers or {}).get(PROJECTS_MARK) or "").split())
+    if row.human_id is None or not projects:
+        return False
+    held = conn.execute(
+        select(t.membership.c.project_id)
+        .where(
+            t.membership.c.human_id == row.human_id,
+            t.membership.c.project_id.in_(projects),
+            t.membership.c.removed_at.is_(None),
+        )
+        .distinct()
+    )
+    return {found.project_id for found in held} != projects
 
 
 def _release(conn: Connection, row_id: int, not_before: datetime) -> None:

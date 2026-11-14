@@ -709,3 +709,86 @@ def test_a_sign_in_alert_in_a_digest_travels_with_it(
     assert "New sign-in:" in digest.body  # the sign-in itself, not a link every digest has
     waiting = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
     assert waiting == []  # no mail of its own: it went in the digest
+
+
+# --- subjects and memberships (§18.5) ------------------------------------------------
+
+
+def test_the_subject_defangs_what_the_hub_did_not_write(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    ask(agent, "Sign in at https://evil.example/login or www.evil.example now")
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert "https://evil" not in mail.subject and "www.evil" not in mail.subject
+    assert "https[:]//evil[.]example/login" in mail.subject
+    assert "www[.]evil[.]example" in mail.subject
+
+
+def test_subject_line_is_one_defanged_line_cut_at_its_maximum() -> None:
+    line = mailer.subject_line("[Maity] p: go to\x85evil.example  " + "x" * 300)
+    assert line.startswith("[Maity] p: go to evil[.]example x")
+    assert len(line) == mailer.SUBJECT_MAX and line.endswith("…")
+    assert mailer.subject_line("[Maity] Ann: version 1.2") == "[Maity] Ann: version 1.2"
+
+
+def _only_in_queue(engine: Engine, row_id: int) -> None:
+    """Every other row of the set-up out of the way: the fake server takes one mail."""
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.id != row_id, t.mail_outbox.c.status == "waiting")
+            .values(status="sent")
+        )
+
+
+def test_a_mail_waiting_for_its_budget_is_dropped_once_the_membership_ended(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub.mail import outbox
+
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.headers[outbox.PROJECTS_MARK]  # the project the item came from
+    _only_in_queue(migrated, mail.id)
+    with migrated.begin() as conn:  # removed from the project while the mail waits
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner.id)
+            .values(removed_at=clock.now())
+        )
+    server = FakeSmtp(Script())
+    try:
+        outbox.send_due(migrated, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    [after] = [r for r in outbox_rows(migrated) if r.id == mail.id]
+    assert after.status == "dropped"
+    assert server.record.commands == []  # nothing left the hub
+
+
+def test_a_mail_goes_out_while_the_membership_holds(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub.mail import outbox
+
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    _only_in_queue(migrated, mail.id)
+    server = FakeSmtp(Script())
+    try:
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
+    finally:
+        server.close()
+    [after] = [r for r in outbox_rows(migrated) if r.id == mail.id]
+    assert after.status == "sent"
