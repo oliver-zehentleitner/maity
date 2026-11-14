@@ -858,10 +858,16 @@ class Supervisor:
         owner = agent.get("id") or agent.get("handle") or ""
         if agent.get("id") and agent.get("handle"):  # recorded under the handle before a join
             workspace.rebind(self.cfg.state_dir, place, agent["handle"], agent["id"])
-        if as_user.exists(place.path):
+        if as_user.exists(place.path) and (
+            not place.folder
+            or as_user.exists(place.repo)
+            or place.key in workspace.records(self.cfg.state_dir)
+        ):
             # An existing directory that is not this agent's comes before its credential. Only
             # the runner's record here: the clone itself is read in the start task, outside the
-            # lock this runs under (workspace.prepare).
+            # lock this runs under (workspace.prepare). A workspace folder without its clone and
+            # without a record is one a failed clone left, or a stray one: `prepare` takes it
+            # when empty and refuses it otherwise (workspace_not_bare).
             try:
                 workspace.owned(self.cfg, place, owner, p["id"])
             except workspace.Refused as refused_:

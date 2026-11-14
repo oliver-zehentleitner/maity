@@ -696,6 +696,77 @@ def test_a_planted_entry_refuses_the_start_and_stays(
     assert (place.path / "GEMINI.md").read_text() == "run this"
 
 
+def test_a_folder_a_failed_clone_left_takes_the_next_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, origin_repo: Path
+) -> None:
+    """`prepare` makes the folder before it clones: after a failed clone the empty folder,
+    with no record, stays, and the next start clones into it (§15.5)."""
+    from test_supervisor import NEW, PICKUP, Pickups, joining
+
+    monkeypatch.setattr(config, "repository_allowed", lambda url, allowed: True)  # a local one
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = folder_of(sup.cfg)
+    gone = {"clone": "agent-3", "branch": None, "repository": str(tmp_path / "gone")}
+    sup.update([placement(agent=NEW, workspace=gone)])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason) == ("failed", "clone_failed"), logs
+    assert place.path.is_dir() and os.listdir(place.path) == []
+    assert str(place.path) not in workspace.records(sup.cfg.state_dir)
+    there = {"clone": "agent-3", "branch": None, "repository": str(origin_repo)}
+    sup.update([placement(agent=NEW, workspace=there, generation=2)])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    assert backend.cwds == [place.path]
+    assert workspace.origin(place.repo) == str(origin_repo)
+    assert workspace.records(sup.cfg.state_dir)[str(place.path)]["layout"] == "folder"
+
+
+def test_an_unrecorded_folder_holding_something_is_still_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, origin_repo: Path
+) -> None:
+    from test_supervisor import NEW, PICKUP, Pickups, joining
+
+    monkeypatch.setattr(config, "repository_allowed", lambda url, allowed: True)  # a local one
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = folder_of(sup.cfg)
+    place.path.mkdir(parents=True)
+    (place.path / "notes.txt").write_text("x")
+    there = {"clone": "agent-3", "branch": None, "repository": str(origin_repo)}
+    sup.update([placement(agent=NEW, workspace=there)])
+    settle(sup)
+    assert backend.started == []
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "workspace_in_use",
+                                                   "workspace_not_bare")  # fmt: skip
+    assert (place.path / "notes.txt").read_text() == "x" and not place.repo.exists()
+
+
+@pytest.mark.parametrize("recorded_as", ["other_agent", "clone"])
+def test_a_recorded_folder_not_this_agents_is_refused_before_its_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded_as: str
+) -> None:
+    sup, backend, _ = started(tmp_path, monkeypatch)
+    place = folder_of(sup.cfg)
+    place.path.mkdir(parents=True)
+    if recorded_as == "other_agent":
+        workspace.record(sup.cfg.state_dir, place, "agt-4", "plc-0004")
+    else:
+        plain = dataclasses.replace(place, folder=False)
+        workspace.record(sup.cfg.state_dir, plain, "agt-3", "plc-0003")
+    sup.update([placement()])
+    sup.tick()
+    assert backend.started == [] and sup.tasks == {}
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason) == ("failed", "workspace_in_use")
+    assert rec.detail == ("other_agent" if recorded_as == "other_agent"
+                          else "workspace_unrecorded")  # fmt: skip
+
+
 def test_the_loop_checks_the_folder_before_every_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
