@@ -179,15 +179,57 @@ def _load_revoked(conn: Connection, runner_id: str, request: Request) -> dict[st
     }
 
 
-idempotency.LOADERS["runner_enrollment"] = idempotency.plain(load_enrollment)
-idempotency.LOADERS["runner"] = lambda conn, runner_id, request: load_runner(
-    conn, runner_id, _viewer(request)
+def _sees_runner(conn: Connection, runner_id: str | None, caller: Caller) -> bool:
+    """As a runner's GET (§15.3): the runner itself, its owner, or `members:admin` in a project
+    it is attached to."""
+    if runner_id is None:
+        return False
+    if caller.kind == "runner":
+        return caller.runner_id == runner_id
+    row = conn.execute(select(t.runner).where(t.runner.c.id == runner_id)).first()
+    return row is not None and caller.kind == "human" and visible_to(conn, row, caller.principal_id)
+
+
+def _sees_enrollment(conn: Connection, enrollment_id: str, caller: Caller) -> bool:
+    """The human who made it, or whoever sees the runner it enrolled."""
+    row = conn.execute(
+        select(t.runner_enrollment).where(t.runner_enrollment.c.id == enrollment_id)
+    ).first()
+    if row is None:
+        return False
+    return (caller.kind == "human" and row.created_by == caller.principal_id) or _sees_runner(
+        conn, row.runner_id, caller
+    )
+
+
+def _sees_attachment(conn: Connection, attachment_id: str, caller: Caller) -> bool:
+    """Whoever sees the runner, or a member of the project it is attached to."""
+    row = conn.execute(
+        select(t.runner_attachment).where(t.runner_attachment.c.id == attachment_id)
+    ).first()
+    if row is None:
+        return False
+    in_project = idempotency.in_project(idempotency.the_project)
+    return _sees_runner(conn, row.runner_id, caller) or in_project(conn, row.project_id, caller)
+
+
+def _sees_runner_by_id(conn: Connection, runner_id: str, caller: Caller) -> bool:
+    return _sees_runner(conn, runner_id, caller)
+
+
+idempotency.register("runner_enrollment", idempotency.plain(load_enrollment), _sees_enrollment)
+idempotency.register(
+    "runner",
+    lambda conn, runner_id, request: load_runner(conn, runner_id, _viewer(request)),
+    _sees_runner_by_id,
 )
-idempotency.LOADERS["runner_removal"] = _load_removal
-idempotency.LOADERS["runner_revoked"] = lambda conn, runner_id, request: _load_revoked(
-    conn, runner_id, request
+idempotency.register("runner_removal", _load_removal, _sees_runner_by_id)
+idempotency.register(
+    "runner_revoked",
+    lambda conn, runner_id, request: _load_revoked(conn, runner_id, request),
+    _sees_runner_by_id,
 )
-idempotency.LOADERS["runner_attachment"] = load_attachment
+idempotency.register("runner_attachment", load_attachment, _sees_attachment)
 
 
 def _name_taken(conn: Connection, owner_id: str, name: str, but: str | None = None) -> bool:

@@ -318,6 +318,36 @@ registry alone.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
 
+## The image is built without a build cache shared with other refs
+
+**Id:** 5b7e2c94-1d3a-4f6e-9a08-c2e71f4d8b36
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 1 (release chain hardening, 2026-11-13); `.github/workflows/publish-image.yml`
+**Revisit when:** `publish-image.yml` gains a trigger other than a `v*` tag and a hand start, or a release build becomes too slow without a cache
+
+Builds for a release tag or a hand-started run use no build cache shared
+with other refs. `publish-image.yml` runs only for those two, so neither
+build step of its `image` job names `cache-from` or `cache-to`: the build
+for the check runs with `no-cache` in a builder that `setup-buildx-action`
+creates for the job, and the push build after it reuses only what that
+build left there. Nothing else in the workflow restores a cache: the
+`gate` job's `setup-python` has no `cache:`, and the Dockerfile has no
+cache mounts and installs with `pip --no-cache-dir`.
+
+**Reason:** an image that installations run should consist of what its
+own run built from the tagged commit, not of layers another ref's run
+stored. The push build keeps the job's own builder cache so that the
+pushed layers are the ones the check just ran, not a second build.
+
+**Rejected alternatives:**
+- A cache scope per ref (`scope=` on `type=gha`): a tag runs once, so a
+  scope of its own is never hit, and a hand start from main would still
+  share main's scope.
+- `no-cache` on the push build as well: a second build from nothing, so
+  the pushed image would not be the image the check ran.
+
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
 **Id:** 843b8d35-45c7-4b91-827f-7109f470ca54

@@ -24,7 +24,7 @@ Why Maity is built the way it is.
 
 ## A
 - [architecture.md](architecture.md) — database-agnostic persistence (PostgreSQL in production, SQLite and MySQL/MariaDB supported); Kubernetes in production, Docker or plain Python locally; Python 3.11 the minimum everywhere; presence is a side effect of the calls, no heartbeat endpoint or events
-- [attachments.md](attachments.md) — files on messages: stored by the hub, images re-encoded and shown inline, every other file an inert download; read by exactly who reads the message; untrusted input for agents; fetched by the CLI into `./maity-files/`, never the working directory; pending uploads capped per member; one limit on all attachments of the instance, under the project lock, no numbers to members; a project's quota is an admin limit like the others, the old variable gone; while attachments are off delete is refused too, the upload keeps its own checks first
+- [attachments.md](attachments.md) — files on messages: stored by the hub, images re-encoded and shown inline, every other file an inert download; read by exactly who reads the message; untrusted input for agents; fetched by the CLI into a folder outside the work tree; pending uploads capped per member; one limit on all attachments of the instance, under the project lock, no numbers to members; a project's quota is an admin limit like the others, the old variable gone; while attachments are off delete is refused too, the upload keeps its own checks first
 
 ## B
 
