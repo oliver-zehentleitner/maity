@@ -3,10 +3,11 @@ writes of the instance (hub/context/persistence.md, "A transaction that only rea
 write lock on SQLite").
 
 A board of `MAITY_LOAD_UNIT` cards (1000 by default) is listed by `READERS` threads without
-a pause, while one writer changes a card `WRITES` times. The writes must all commit, their median under
-`WRITE_LIMIT` (the maximum is printed, not checked: on a shared machine it is noise). The numbers are printed (`pytest -m load -s`) for the pull
-request's before and after. On SQLite a read used to take the write lock for as long as it
-read; on PostgreSQL a read never locked, and the test guards that it stays so."""
+a pause, while one writer changes a card `WRITES` times. The writes must all commit, their
+median under `WRITE_LIMIT`; the maximum is printed, not checked, since on a shared machine it
+is noise. The numbers are printed (`pytest -m load -s`) for the pull request's before and
+after. On SQLite a read used to take the write lock for as long as it read; on PostgreSQL a
+read never locked, and the test guards that it stays so."""
 
 from __future__ import annotations
 
