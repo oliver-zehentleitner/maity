@@ -203,15 +203,17 @@ def test_two_requests_in_one_clock_reading_are_distinct(
     runner = paired(make_client, owner)
     client = make_client()
     hello(client, runner, capabilities=with_tools(tool()))
-    frozen = datetime(2026, 11, 14, 9, 0, 0, 123456, tzinfo=UTC)
+    # Now, so the runner's signed calls stay inside the timestamp window.
+    frozen = datetime.now(UTC).replace(microsecond=123456)
+    stamp = frozen.strftime("%Y-%m-%dT%H:%M:%S")
     clock.set_source(lambda: frozen)
     try:
         update_now(owner, runner, "claude-code")
         [first] = requests_of(client, runner)
         update_now(owner, runner, "claude-code")
         [second] = requests_of(client, runner)
-        assert first["requested_at"] == "2026-11-14T09:00:00.123Z"
-        assert second["requested_at"] == "2026-11-14T09:00:00.124Z"
+        assert first["requested_at"] == f"{stamp}.123Z"
+        assert second["requested_at"] == f"{stamp}.124Z"
         # The runner decided on the first before it read the second: the second stands.
         advertise(client, runner, with_tools(tool(update_requested_at=first["requested_at"])))
         assert requests_of(client, runner) == [second]
@@ -220,7 +222,7 @@ def test_two_requests_in_one_clock_reading_are_distinct(
         assert requests_of(client, runner) == []
         update_now(owner, runner, "claude-code")
         [third] = requests_of(client, runner)
-        assert third["requested_at"] == "2026-11-14T09:00:00.125Z"
+        assert third["requested_at"] == f"{stamp}.125Z"
     finally:
         clock.reset()
 

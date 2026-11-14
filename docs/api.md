@@ -19148,7 +19148,10 @@ runner's owner only: the hub stores the request on the runner
 runner does not list in `capabilities.tools`, or lists with `update:
 "never"`, is `conflict` (`details.reason: "updates_off"`): the runner's
 configuration decides, and the runner checks again. A second request for
-the same tool replaces the first. The runner reads its requests with
+the same tool replaces the first. A request's `requested_at` is the hub's
+time in milliseconds, made strictly later than the tool's standing
+request and than the last `update_requested_at` the runner reported for
+it, so no two requests for a tool are the same string. The runner reads its requests with
 `GET /runner` (§15.8) after every wake of its event wait, so a request
 reaches it within a minute; a runner that is offline reads it when it is
 back. It carries out a request with the same rules as the daily check.
@@ -19159,7 +19162,9 @@ it read it. The hub drops the stored request for that tool only when
 the two are equal and the report's `state` is neither `installing` nor
 `updating`, so a report decided before the runner saw a newer
 request leaves that one standing; no clock of the runner's is compared
-with the hub's. A request does not restart a session: a newer version
+with the hub's. A report that lists the tool with `update: "never"`,
+leaves it out, or carries no `tools` drops its request: it would never
+be carried out. A request does not restart a session: a newer version
 is used from the next start on.
 
 **Seen by people.** The runner view (§15.3) carries `capabilities.tools`
