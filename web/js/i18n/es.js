@@ -2925,6 +2925,8 @@ window.MAITY_I18N["es"] = {
   "mine.title": "Tus ajustes para {name}",
   "mine.use_default": "Usar mi valor predeterminado",
   "name_rules.handle": "Letras minúsculas, dígitos y -, de 2 a 31 caracteres, empezando por una letra o un dígito.",
+  "name_rules.handle_bad": "Aún no es un identificador: {rule}",
+  "name_rules.handle_lowercase": "Solo minúsculas: un identificador no lleva mayúsculas.",
   "name_rules.slug": "Letras minúsculas, dígitos y -, de 2 a 63 caracteres, empezando por una letra o un dígito.",
   "names.aliases": "Nombres anteriores, que aún llevan aquí: {names}.",
   "names.current": "Este proyecto es {name}.",

@@ -2862,6 +2862,43 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     return context, page
 
 
+def register_again(run: Run, page: Page, link: str, address: str, handle: str) -> None:
+    """The registration link's page (tsk-pxc5cx4hgb0y): the handle's rule beside its field and
+    a word for an upper-case letter while it is typed, before anything is sent; a wrong password
+    offers "Register again", which opens the sign-up form with the address filled in, the
+    address carried in a cookie and never in the sign-up page's address."""
+    run.step("the registration link's page: the handle's rule while typed, and Register again after a wrong password")
+    field, check = page.locator("#handle"), page.locator("#handle-check")
+    expect(page.locator("#handle-rule")).to_contain_text("Lowercase letters, digits and -")
+    expect(check).to_be_hidden()
+    field.fill("Ada")
+    expect(check).to_be_visible()
+    expect(check).to_contain_text("lowercase only")
+    assert field.input_value() == "Ada", "the page lower-cased the handle on its own"
+    run.shot(page, "registration-link-handle-uppercase")
+    run.a11y(page, "the registration link's page, an upper-case handle")
+    field.fill(handle)
+    expect(check).to_be_hidden()
+    page.locator("#password").fill("not the password chosen at all")
+    page.locator("#display_name").fill("Ada")
+    page.locator("form button[type=submit]").click()
+    expect(page.locator("#password-error")).to_be_visible()
+    again = page.get_by_role("link", name="Register again", exact=True)
+    expect(again).to_be_visible()
+    expect(page.locator(".register-again-why")).to_contain_text("the link in the newest mail replaces this one")
+    run.problems = [p for p in run.problems if not ("/mail/register/" in p and "answered 400" in p)]
+    run.shot(page, "registration-link-register-again")
+    run.a11y(page, "the registration link's page, Register again after a wrong password")
+    again.click()
+    expect(page.locator("#register-address")).to_have_value(address)
+    assert address not in page.url and "%40" not in page.url, page.url
+    # Read once and removed: a reload starts empty.
+    assert "maity_register_again" not in page.evaluate("() => document.cookie")
+    run.shot(page, "register-again-form")
+    page.goto(link)  # one wrong password leaves the link usable
+    expect(page.locator("#handle")).to_be_visible()
+
+
 def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     """Admin → Users (§2.8.3, §2.8.7): the admin's press only sends a mail; the person's press on
     the mail's page resets, ends their sessions, and the next sign-in starts with the setup."""
@@ -2877,7 +2914,8 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
         """([address, password]) => window.Maity.api.post("/auth/register", { address, password })""",
         [address, password],
     )
-    page.goto(catcher.link_in(address, "/mail/register/"))
+    link = catcher.link_in(address, "/mail/register/")
+    page.goto(link)
     # The registration link's page stands in the door frame, as /login does (§2.7.1, §16.7.5).
     expect(page.locator("header.site-header")).to_be_visible()
     expect(page.locator("footer.site-footer")).to_be_visible()
@@ -2888,9 +2926,12 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     run.shot(page, "registration-link-390")
     run.a11y(page, "the registration link's page at 390 px")
     page.set_viewport_size({"width": 1280, "height": 900})
+    register_again(run, page, link, address, handle)
     # A refused answer: each field's error under it, legible in light and dark (#1721's review).
+    # The field's own pattern stops a handle that breaks the rule before it is sent, so the hub's
+    # refusal is shown with a taken one.
     page.locator("#password").fill(password)
-    page.locator("#handle").fill("x")
+    page.locator("#handle").fill(OWNER)
     page.locator("#display_name").fill("Ada")
     page.locator("form button[type=submit]").click()
     expect(page.locator("#handle-error")).to_be_visible()

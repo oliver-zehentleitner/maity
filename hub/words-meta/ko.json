@@ -471,6 +471,18 @@
     "en": "32548671ddc1415a",
     "text": "752f57c256ccf490"
   },
+  "register_page.again": {
+    "en": "e3eb981a5111d261",
+    "text": "8fcd36980abbfca2"
+  },
+  "register_page.again_dead": {
+    "en": "ce628d661377887c",
+    "text": "28c4792641bcddc3"
+  },
+  "register_page.again_password": {
+    "en": "01c90acff032ebd4",
+    "text": "2f58e98390afa491"
+  },
   "register_page.button": {
     "en": "e63588a861737d67",
     "text": "411cb77187a73bfe"
@@ -518,6 +530,14 @@
   "register_page.handle": {
     "en": "41483b645efc0c65",
     "text": "614e92be8c1545d8"
+  },
+  "register_page.handle_lower": {
+    "en": "1418319d65caffe0",
+    "text": "b7448c07e17ad1c7"
+  },
+  "register_page.handle_rule": {
+    "en": "91068c8308ff7d7d",
+    "text": "39e361c493ffffe9"
   },
   "register_page.intro": {
     "en": "3af54dd923e1059b",
