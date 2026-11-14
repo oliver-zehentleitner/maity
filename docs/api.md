@@ -471,7 +471,12 @@ and changes no answer (a credential in a body or query string is still
 
 Login is limited to 10 attempts per minute per source address, every
 attempt (`rate_limited`, the one limit of the login that answers `429`),
-and refuses `Sec-Fetch-Site: cross-site` like every cookie request.
+and keeps the rules of every anonymous sign-in call (§2.6.5): an
+`Authorization` header is `forbidden` with `details.reason: humans_only`,
+plain HTTP is `insecure_transport` (§2.5), and a `Sec-Fetch-Site` of
+`cross-site` or `same-site` is `forbidden`, since no cookie protects a
+call made before a session exists and a sibling host under the same
+registrable domain is another site too.
 
 **Wrong passwords** count per account: 5 in 15 minutes, kept per id for
 an account's address and per string for an address of no account. Once 5 are in the window, the password signs in for the rest
@@ -1908,7 +1913,8 @@ and is never affected by mail limits; the password is not either.
   the only thing that makes a mailed code usable in §2.6.3.
 - **CSRF before a session exists.** `POST /auth/device-login`, `…/complete`,
   `/auth/email-link` and `/auth/email-code` refuse a `Sec-Fetch-Site`
-  of `cross-site` or `same-site` (`forbidden`), like a login (§2.1), and
+  of `cross-site` or `same-site` (`forbidden`), as the login (§2.1) and
+  the registration (§2.7.1) do, and
   the pending cookie is `SameSite=Strict`; so no other site can start
   or finish a sign-in in a visitor's browser. Calls made with a session
   (`/auth/device-codes/*`, `/auth/sessions/*`) carry `X-CSRF-Token` as
