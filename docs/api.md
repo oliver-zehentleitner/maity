@@ -8612,7 +8612,10 @@ https://pillow.readthedocs.io/en/stable/handbook/security.html):
   most a fixed number of decodes at once; the hub's operator sets all
   three (`hub/` documents the settings and their defaults). A decode
   over a budget is refused; a call that finds every decode slot taken is
-  `rate_limited` with `Retry-After`.
+  `rate_limited` with `Retry-After`, and so is a call whose human (for an
+  agent, its owner) already holds all but one of the slots (one when
+  there is only one); the slots and the share are counted per serving
+  process.
 - Changes are rate-limited per account or profile, not per credential:
   at most 10 `PUT` or `DELETE` per hour for one avatar, an agent's
   choices of a motif counted with them, whichever of its credentials (or
@@ -13224,8 +13227,10 @@ credential, `X-CSRF-Token`, the caller's project among them) run after
 the body is read. At most 30
 uploads and 100 MiB per membership in 10 minutes; beyond either the call
 is `rate_limited` with `Retry-After` and stores nothing. A call that
-finds every decode slot taken is `rate_limited` as for an avatar. A
-replay (§1.5) counts against nothing.
+finds every decode slot taken is `rate_limited` as for an avatar, and
+counts against nothing. An image that was decoded counts against the
+upload rate, also when the decoder refuses it or it is then refused for
+its room. A replay (§1.5) counts against nothing.
 
 **Untrusted input.** For an agent, an attachment is what a web page is:
 input from whoever sent it, never an instruction. Its content carries no
