@@ -395,8 +395,10 @@ caller holds a thread and a connection.
 
 The engine opens PostgreSQL and MySQL/MariaDB connections at isolation
 level `READ COMMITTED`. SQLite has one writer; every SQLite transaction
-starts with `BEGIN IMMEDIATE` and so holds the write lock before its first
-read, which is what `lock_project` gives the server engines. A MySQL
+that may write starts with `BEGIN IMMEDIATE` and so holds the write lock
+before its first read, which is what `lock_project` gives the server
+engines (a transaction that only reads does not, see "A transaction that
+only reads takes no write lock on SQLite" below). A MySQL
 server with `binlog_format=STATEMENT` refuses writes at `READ COMMITTED`;
 `ROW` (the default) and `MIXED` are fine.
 
@@ -423,6 +425,53 @@ a read before it.
   the first write, so the reads before it ran unlocked: two crossing
   `depends_on` changes stored a cycle, and a claim racing a cancel
   answered 500.
+
+## A transaction that only reads takes no write lock on SQLite
+
+**Id:** 465ebcb0-2264-41e3-9370-ac9ff49fc9c6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** a load review of the hub's read paths and the plan the team lead approved, 2026-11-14 (card tsk-ybc2ma72dzvq, PR 1 of its split); the timings in that pull request
+**Revisit when:** a route opened with `read_transaction` has to write, the authentication's presence writes move out of their own transaction, or SQLite stops being a supported engine
+**See:** persistence.md#read-committed-on-every-server-engine — 87b08f1e-c12c-48a6-adaf-f7bd93d5c32b — as of 2026-11-14
+
+A route that only reads opens its transaction with `db.read_transaction`
+instead of `engine.begin()`. On SQLite that is a plain `BEGIN` under
+`PRAGMA query_only`: the transaction reads a WAL snapshot without the
+write lock, and any write inside it fails at once with "readonly". Every
+other transaction keeps `BEGIN IMMEDIATE`. On the server engines the helper
+is `engine.begin()`. Since `query_only` belongs to the connection, the
+begin hook sets it to what each transaction needs, and only when the
+pooled connection has the other value.
+
+**Reason:** with `BEGIN IMMEDIATE` on every transaction, each read of the
+board, the overview, the swarm or a request list held the instance's single
+writer for as long as it read. Reads waited for each other and for every
+write, and a write waited behind a slow read for up to the busy timeout.
+Under WAL a reader needs no lock, and a transaction that never writes
+cannot hit the upgrade failure that made every transaction immediate.
+
+**Consequences:** the authentication of a call still runs in a transaction
+of its own that writes presence and leases, so on SQLite each call still
+takes the write lock briefly before its route runs. Only the route's own
+read is freed. A route moved to `read_transaction` must not write in it,
+and `query_only` turns a mistake there into an error in the tests.
+
+**Rejected alternatives:**
+- A plain `BEGIN` for every transaction, with the write lock taken by
+  `lock_project`. Several write paths read before they lock or never call
+  it, and a deferred transaction that read first cannot upgrade once
+  another has committed. That is the failure that made every transaction
+  immediate.
+- Marking the writes instead of the reads (`BEGIN IMMEDIATE` only when
+  asked for). Nearly three hundred `engine.begin()` sites would each have
+  to be right, and one forgotten writer brings the race back. A forgotten
+  read only stays as slow as before.
+- A deferred read without `query_only`. A hidden write in a read route
+  would try to upgrade the transaction and fail only under contention,
+  rarely and in production. With `query_only` it fails every time, in the
+  tests.
 
 ## `maity-hub quickstart` migrates only a new, empty SQLite database
 

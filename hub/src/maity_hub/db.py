@@ -14,7 +14,8 @@ import random
 import re
 import threading
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
@@ -380,16 +381,44 @@ def xact_lock(conn: Connection, name: str) -> None:
         conn.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(name, 0))))
 
 
+# The execution option that marks a transaction as one that only reads (`read_transaction`).
+READ_ONLY = "maity_read_only"
+# `info` of the pooled connection: whether SQLite's `query_only` is on for it now.
+_QUERY_ONLY = "maity_query_only"
+
+
+@contextmanager
+def read_transaction(engine: Engine) -> Iterator[Connection]:
+    """`engine.begin()` for a transaction that only reads (hub/context/persistence.md).
+
+    On SQLite it starts with a plain `BEGIN` under `PRAGMA query_only`: it reads a WAL
+    snapshot without the write lock, so it neither waits for a writer nor holds one up, and
+    a write inside it fails at once instead of trying to upgrade the transaction. On the
+    server engines it is `engine.begin()`: they never lock for a read."""
+    with engine.connect() as conn:
+        conn.execution_options(**{READ_ONLY: True})
+        with conn.begin():
+            yield conn
+
+
 def _sqlite_begin_immediate(conn: Any) -> None:
-    """Every SQLite transaction takes the write lock at its start.
+    """Every SQLite transaction takes the write lock at its start, except one
+    `read_transaction` opened.
 
     pysqlite would send BEGIN only at the first write, so the reads before it
     ran unlocked, and `events.lock_project` serialised nothing; a transaction
     that read first could not even upgrade to a write once another had
     committed. SQLite has one writer anyway; this makes the hub wait for it
-    where the other engines wait for the project row.
+    where the other engines wait for the project row. A transaction that only
+    reads needs none of that: it runs `query_only`, so it cannot write at all.
     """
-    conn.exec_driver_sql("BEGIN IMMEDIATE")
+    reading = bool(conn.get_execution_options().get(READ_ONLY))
+    if bool(conn.info.get(_QUERY_ONLY)) != reading:
+        # Connection-wide: set for each transaction that needs the other value, since the
+        # pooled connection serves reads and writes alike.
+        conn.exec_driver_sql(f"PRAGMA query_only={'ON' if reading else 'OFF'}")
+        conn.info[_QUERY_ONLY] = reading
+    conn.exec_driver_sql("BEGIN" if reading else "BEGIN IMMEDIATE")
 
 
 def _sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:

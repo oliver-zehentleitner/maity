@@ -44,6 +44,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.board import history
 from maity_hub.board import links as card_links
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -663,7 +664,7 @@ def list_tasks(
     cursor: str | None = None,
 ) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         query = select(t.card).where(t.card.c.project_id == mine.project.id)
@@ -793,7 +794,7 @@ def _after(
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}")
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
