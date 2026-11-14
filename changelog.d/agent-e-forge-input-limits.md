@@ -6,8 +6,9 @@
   percent-encoded part, a query, a fragment or a second trailing slash is
   refused too, so the
   probe's API paths name the repository and nothing else; a URL stored
-  before this check is checked again before the forge is asked, and an
-  invalid one asks nothing (tsk-qtr9myhtysbs).
+  before this check is checked again before the forge is asked, a REST
+  path and a GraphQL read's variables alike, and an invalid one, or one
+  short of two segments, asks nothing (tsk-qtr9myhtysbs).
 - hub: a request to the forge's API ends 10 seconds after it starts (§11.1), from
   the connection attempts and the TLS handshake to the last byte of the answer
   (the name's resolution comes before and is not part of it), and a JSON answer past

@@ -87,7 +87,7 @@ SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,255}")
 def valid_repository(repository: str) -> bool:
     """Whether `repository` is an `owner/name` of two segments of the contract's shape, never
     `.` or `..`, and not ending in `.git` or `.atom` (§6.1). Checked when a URL is stored
-    and again before a stored one names the repository in a request (`_repository_checked`)."""
+    and again before a stored one names the repository in a request (`repository_checked`)."""
     segments = repository.split("/")
     return len(segments) == 2 and all(
         SEGMENT.fullmatch(s) and s not in (".", "..") and not s.lower().endswith((".git", ".atom"))
@@ -95,21 +95,32 @@ def valid_repository(repository: str) -> bool:
     )
 
 
-def repository_checked(path: str) -> None:
-    """Refuses a request whose `/repos/{owner}/{name}` is no valid repository (§6.1): a URL
-    stored before the check names nothing else, and the forge is not asked."""
-    if not path.startswith("/repos/"):
+def repository_checked(path: str, query: dict[str, Any] | None = None) -> None:
+    """Refuses a request whose `/repos/{owner}/{name}`, or a GraphQL read's `owner` and
+    `name` variables, name no valid repository (§6.1): a URL stored before the check names
+    nothing else, and the forge is not asked."""
+    if query is not None:
+        variables = query.get("variables") or {}
+        if "owner" not in variables and "name" not in variables:
+            return
+        owner, name = variables.get("owner"), variables.get("name")
+        named = f"{owner}/{name}" if isinstance(owner, str) and isinstance(name, str) else ""
+    elif path.startswith("/repos/"):
+        owner, _, rest = path.removeprefix("/repos/").partition("/")
+        named = f"{owner}/{rest.split('/', 1)[0]}"
+    else:
         return
-    owner, _, rest = path.removeprefix("/repos/").partition("/")
-    name = rest.split("/", 1)[0]
-    if not valid_repository(f"{owner}/{name}"):
+    if not valid_repository(named):
         raise ForgeUnavailableError("the project's repository URL names no valid repository")
 
 
 def repository_of(url: str) -> str:
-    """`owner/name` of a repository URL on a configured forge."""
-    path = url.split("://", 1)[-1].split("/", 1)[1]
-    owner, name = path.strip("/").split("/")[:2]
+    """`owner/name` of a repository URL on a configured forge. A stored URL with fewer
+    segments gives them empty (`acme/`): no valid repository, which a request refuses
+    (`repository_checked`) instead of the caller failing here."""
+    path = url.split("://", 1)[-1].partition("/")[2]
+    owner, _, rest = path.strip("/").partition("/")
+    name = rest.split("/", 1)[0]
     return f"{owner}/{name.removesuffix('.git')}"
 
 
@@ -746,7 +757,7 @@ class Forge:
                 rate_limited=True,
                 retry_at=held,
             )
-        repository_checked(path)
+        repository_checked(path, query)
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         accept = "application/vnd.github+json" if raw_cap is None else "application/vnd.github.raw"

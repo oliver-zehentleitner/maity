@@ -966,6 +966,34 @@ def test_a_stored_repository_path_is_checked_before_the_forge_is_asked(
     assert opener.requests == []
 
 
+@pytest.mark.parametrize("read", ["social_preview", "items"])
+def test_a_graphql_read_on_a_grant_checks_the_repository_too(opener: FakeOpener, read: str) -> None:
+    # A GraphQL read names its repository in the variables, not the path: a grant bound to
+    # a stored invalid `owner/name` asks the forge nothing either (§6.1).
+    granted = forge.Forge(TOKEN, granted="owner_token", repository="acme/..")
+    with pytest.raises(forge.ForgeUnavailableError, match="names no valid repository"):
+        if read == "social_preview":
+            granted.social_preview("acme/..")
+        else:
+            granted.items("acme/..", [1])
+    assert opener.requests == []
+
+
+@pytest.mark.parametrize(
+    ("url", "repository"),
+    [("https://github.com/acme/", "acme/"), ("https://github.com/", "/"), ("github.com", "/")],
+)
+def test_a_stored_url_short_of_two_segments_is_no_repository(
+    opener: FakeOpener, url: str, repository: str
+) -> None:
+    # Fewer than two path segments give no `owner/name`, never an exception that ends the
+    # probe round: the read is refused as for any invalid repository (§6.1).
+    assert forge.repository_of(url) == repository
+    with pytest.raises(forge.ForgeUnavailableError, match="names no valid repository"):
+        READER._send(f"/repos/{forge.repository_of(url)}/commits/x")
+    assert opener.requests == []
+
+
 def test_a_valid_repository_path_is_asked(opener: FakeOpener) -> None:
     opener.answers["/repos/a/b.c_d-e/commits/x"] = {"sha": "a" * 40}
     assert READER._send("/repos/a/b.c_d-e/commits/x") == {"sha": "a" * 40}
