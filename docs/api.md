@@ -22481,7 +22481,8 @@ GET /projects/{owner}/{slug}/ticker?type=merge,deploy&area=hub/&for=me&limit=50
 Scope `project:read`. The items the caller may read (§17.5), newest
 first, paged (§1.4); with `after=<seq>` instead of a cursor, oldest
 first, as on the events endpoint (§8.3), without `wait`. Filters: `type`
-(comma list; `contract` as in §17.8), `area` (items whose `paths` or
+(comma list of the item types of §17.1, `jour_fixe` and `rename`
+included, and `contract` as in §17.8; any other value is `invalid`), `area` (items whose `paths` or
 `areas` fall under it), `for` = `me` (items whose `reasons` hold an entry
 for the caller, muted ones included, §17.8) or `all` (default), `since`
 (RFC 3339 with an offset; without one `invalid`). Paging as for every
