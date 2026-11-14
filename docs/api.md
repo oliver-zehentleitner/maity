@@ -14970,7 +14970,9 @@ read:
   cap and the read is refused at the first byte past it, or at once when
   its declared length is over the cap; the cap counts the decoded bytes
   when the answer is compressed. The reads of the forge's API (§11.4)
-  ask for no compression, and their cap is 16 MiB.
+  ask for no compression, and their cap is 16 MiB; their 10 seconds
+  cut off every connection attempt, the handshake and the answer, but
+  not the name's resolution, which comes before any connection.
 - A failure is reported by a reason code, never by the upstream's body
   or error text.
 

@@ -914,6 +914,63 @@ def test_a_socket_held_after_the_deadline_is_shut_at_once(
         theirs.close()
 
 
+class _SlowSocket:
+    """A socket whose connect waits out its own timeout and fails, as a black hole does."""
+
+    waits: list[float] = []
+
+    def __init__(self, *_args: Any) -> None:
+        self.wait: float | None = None
+
+    def settimeout(self, wait: float | None) -> None:
+        self.wait = wait
+
+    def connect(self, _peer: Any) -> None:
+        assert self.wait is not None
+        _SlowSocket.waits.append(self.wait)
+        time.sleep(self.wait)
+        raise TimeoutError("timed out")
+
+    def close(self) -> None:
+        pass
+
+
+def test_the_connection_attempts_end_at_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Three addresses that never answer, each attempt with the per-recv TIMEOUT of 10 s:
+    # without the deadline the connect alone would take 30 s. Each attempt gets the time left.
+    monkeypatch.setattr(forge, "READ_SECONDS", 0.3)
+    peers = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (f"192.0.2.{n}", 443)) for n in (1, 2, 3)]
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *_a, **_k: peers)
+    monkeypatch.setattr(socket, "socket", _SlowSocket)
+    _SlowSocket.waits = []
+    started = time.monotonic()
+    with (
+        pytest.raises(forge.ForgeUnavailableError, match="did not answer: timeout"),
+        forge.bounded(),
+    ):
+        forge._connect(("api.example", 443), forge.TIMEOUT)
+    assert time.monotonic() - started < 1.0
+    assert _SlowSocket.waits and all(w <= 0.3 for w in _SlowSocket.waits)
+
+
+@pytest.mark.parametrize(
+    "repository", ["acme/..", "acme/name%2Fother", "acme/n?x=1", "../evil", "acme/w.git"]
+)
+def test_a_stored_repository_path_is_checked_before_the_forge_is_asked(
+    opener: FakeOpener, repository: str
+) -> None:
+    # §6.1: a URL stored before the write checked it names no other path at the forge; the
+    # read is refused and nothing is sent.
+    with pytest.raises(forge.ForgeUnavailableError, match="names no valid repository"):
+        READER._send(f"/repos/{repository}/commits/x")
+    assert opener.requests == []
+
+
+def test_a_valid_repository_path_is_asked(opener: FakeOpener) -> None:
+    opener.answers["/repos/a/b.c_d-e/commits/x"] = {"sha": "a" * 40}
+    assert READER._send("/repos/a/b.c_d-e/commits/x") == {"sha": "a" * 40}
+
+
 @contextlib.contextmanager
 def _short(head: bytes, body: bytes) -> Any:
     """A server that sends `head`, then `body`, and closes: less than it declared."""

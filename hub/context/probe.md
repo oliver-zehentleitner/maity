@@ -482,7 +482,11 @@ through `unknown` needs a stored value the observation does not have today.
 Every request the hub makes to the forge's API, the probe's (`forge.Forge._send`)
 and the GitHub App's (`github_app._open`), runs inside `forge.bounded`: a timer
 shuts the sockets the request opened (`_Registering`) `READ_SECONDS` (10 s)
-after it starts, so the connection, the headers and the body all end there. A
+after it starts, so the connection, the headers and the body all end there.
+The connection attempts themselves (`_connect`, in place of
+`socket.create_connection`) each get at most the time left, so several
+addresses together end at the deadline too; only the name's resolution
+(`getaddrinfo`), which comes before any socket, is outside it. A
 socket is held from the moment its TCP connection stands, and the TLS
 handshake runs only after the TLS socket is held too, since wrapping takes the
 descriptor from the TCP socket; holding and the deadline take one lock, so a

@@ -123,6 +123,17 @@ TOKEN_PREFIXES = frozenset({"join", "j", "r", "i", "invite", "invitations", "pai
 ROUTE_WORD = re.compile(r"[a-z-]+")
 
 
+def _decoded(segment: str) -> str:
+    """A segment %-decoded until nothing changes (`%256Aoin` is `join` too), at most a few
+    rounds."""
+    for _ in range(5):
+        once = urllib.parse.unquote(segment)
+        if once == segment:
+            break
+        segment = once
+    return segment
+
+
 def safe_url(url: str) -> str:
     """A URL fit for a message: scheme, host, port and path; never userinfo or query, and
     never a link's token, which reads as `<token>`: the message may be pasted into a chat or
@@ -138,7 +149,7 @@ def safe_url(url: str) -> str:
         return "<not a URL>"
     segments = parts.path.split("/")
     named = [i for i, raw in enumerate(segments) if raw]  # `//` is no segment
-    words = {i: urllib.parse.unquote(segments[i]).casefold() for i in named}
+    words = {i: _decoded(segments[i]).casefold() for i in named}
     for k, i in enumerate(named):
         before = [words[j] for j in named[:k]]
         lone = len(named) == 1 and not ROUTE_WORD.fullmatch(urllib.parse.unquote(segments[i]))

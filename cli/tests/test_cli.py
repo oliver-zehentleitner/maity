@@ -721,6 +721,7 @@ def test_safe_url_drops_userinfo_and_query() -> None:
         ("https://h.example/invite/abc123", "https://h.example/invite/<token>"),
         ("https://h.example/JOIN/abc123", "https://h.example/JOIN/<token>"),
         ("https://h.example/jo%69n/abc123", "https://h.example/jo%69n/<token>"),
+        ("https://h.example/%256Aoin/abc123", "https://h.example/%256Aoin/<token>"),
         ("https://h.example/join//abc123", "https://h.example/join//<token>"),
         (
             "https://h.example/api/v1/runners/pair/abc",

@@ -243,6 +243,7 @@ def _expiry(value: Any) -> float | None:
 
 def _call(path: str, authorization: str, post: bool = False) -> Any | None:
     """A read on the forge API with the given credential; None for a 404."""
+    forge.repository_checked(path)
     request = urllib.request.Request(
         f"https://{forge.API_HOST}{path}",
         data=b"" if post else None,

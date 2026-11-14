@@ -436,18 +436,10 @@ def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor:
 # A path segment of the repository URL (§6.1, "The shape of `url`", step 4): owner and name are
 # what the probe puts into its API paths (`forge.repository_of`), so `.`, `..`, percent-encoding,
 # a query or a fragment would make it read another path than the repository's.
-_SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,255}")
-
-
 def _repository_path(path: str) -> bool:
     """Whether `owner/name` holds two segments of the contract's shape; a lower-case `.git` at
     the end of the name is the clone suffix and is taken off first (step 3)."""
-    segments = path.split("/")
-    segments[-1] = segments[-1].removesuffix(".git")
-    return all(
-        _SEGMENT.fullmatch(s) and s not in (".", "..") and not s.lower().endswith((".git", ".atom"))
-        for s in segments
-    )
+    return forge.valid_repository(path.removesuffix(".git"))
 
 
 def _repository_columns(repository: RepositoryIn | None, current: Any = None) -> dict[str, Any]:

@@ -18,6 +18,7 @@ import base64
 import hashlib
 import http.client
 import json
+import re
 import socket
 import threading
 import time
@@ -79,6 +80,32 @@ def kind_of(url: str | None) -> str | None:
     return HOSTS.get(host)
 
 
+# One segment of a repository's `owner/name` (§6.1): letters, digits, `.`, `_` and `-`.
+SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,255}")
+
+
+def valid_repository(repository: str) -> bool:
+    """Whether `repository` is an `owner/name` of two segments of the contract's shape, never
+    `.` or `..`, and not ending in `.git` or `.atom` (§6.1). Checked when a URL is stored
+    and again before a stored one names the repository in a request (`_repository_checked`)."""
+    segments = repository.split("/")
+    return len(segments) == 2 and all(
+        SEGMENT.fullmatch(s) and s not in (".", "..") and not s.lower().endswith((".git", ".atom"))
+        for s in segments
+    )
+
+
+def repository_checked(path: str) -> None:
+    """Refuses a request whose `/repos/{owner}/{name}` is no valid repository (§6.1): a URL
+    stored before the check names nothing else, and the forge is not asked."""
+    if not path.startswith("/repos/"):
+        return
+    owner, _, rest = path.removeprefix("/repos/").partition("/")
+    name = rest.split("/", 1)[0]
+    if not valid_repository(f"{owner}/{name}"):
+        raise ForgeUnavailableError("the project's repository URL names no valid repository")
+
+
 def repository_of(url: str) -> str:
     """`owner/name` of a repository URL on a configured forge."""
     path = url.split("://", 1)[-1].split("/", 1)[1]
@@ -95,6 +122,10 @@ class _Deadline:
         self.lock = threading.Lock()
         self.socks: list[Any] = []
         self.expired = False
+        self.ends = time.monotonic() + READ_SECONDS
+
+    def left(self) -> float:
+        return self.ends - time.monotonic()
 
     def hold(self, sock: Any) -> None:
         with self.lock:
@@ -121,6 +152,35 @@ def _shut(sock: Any) -> None:
 _held = threading.local()  # the `_Deadline` of the current thread's `bounded` read
 
 
+def _connect(address: tuple[str, int], timeout: Any = None, source: Any = None) -> Any:
+    """`socket.create_connection` within the running `bounded` read's time: each address
+    gets at most the time left, so the attempts together end at the deadline. The name's
+    resolution (`getaddrinfo`) comes before any socket and is not bounded by it."""
+    deadline = getattr(_held, "deadline", None)
+    host, port = address
+    error: OSError | None = None
+    for family, kind, proto, _, peer in socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM):
+        wait = timeout if isinstance(timeout, (int, float)) else None
+        if deadline is not None:
+            left = deadline.left()
+            if left <= 0:
+                raise TimeoutError("timed out")
+            wait = left if wait is None else min(wait, left)
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(wait)
+            if source:
+                sock.bind(source)
+            sock.connect(peer)
+        except OSError as failed:
+            sock.close()
+            error = failed
+            continue
+        sock.settimeout(timeout if isinstance(timeout, (int, float)) else None)
+        return _hold(sock)
+    raise error or OSError(f"no address for {host}")
+
+
 def _hold(sock: Any) -> Any:
     """Gives `sock` to the running `bounded` read, so its deadline can shut it."""
     deadline = getattr(_held, "deadline", None)
@@ -139,8 +199,7 @@ class _Registering:
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        create = self._create_connection
-        self._create_connection = lambda *a, **k: _hold(create(*a, **k))
+        self._create_connection = _connect
 
 
 class _RegisteringHTTPS(_Registering, http.client.HTTPSConnection):
@@ -182,7 +241,9 @@ def bounded() -> Iterator[None]:
     try:
         yield
     except (OSError, ValueError, http.client.HTTPException, ForgeUnavailableError):
-        if deadline.expired:  # whatever the shut socket made of the read, it was the deadline
+        if (
+            deadline.expired or deadline.left() <= 0
+        ):  # whatever the read made of it, it was the deadline
             raise ForgeUnavailableError("the forge did not answer: timeout") from None
         raise
     finally:
@@ -685,6 +746,7 @@ class Forge:
                 rate_limited=True,
                 retry_at=held,
             )
+        repository_checked(path)
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         accept = "application/vnd.github+json" if raw_cap is None else "application/vnd.github.raw"
