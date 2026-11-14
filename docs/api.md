@@ -5638,7 +5638,13 @@ setting is `invalid` (`details.fields["settings.onboarding.briefing"]:
   the arbiter seat (§6.2).
 
 A member that resolves to itself gets no check-in hint. Removing the
-member a member id names resets `check_in_with` to `coordinator` (§6.2).
+member a member id names resets `check_in_with` to `coordinator` (§6.2),
+also when the hub ends the seat itself: an account deleted (§2.9), an
+organisation's owner removed or demoted, the organisation deleted, or the
+project transferred out of it (§6.26). The removal never fails over the
+setting. The setting's `by` names who removed the member; when the hub
+ended the seat it is `{"id": "hub", "handle": "hub", "kind": "hub"}`
+(`hub` is reserved for every handle, §6.25).
 
 **Checked in.** A membership has checked in once it has posted a
 `message` (§8.4) whose `to` reaches the check-in target as resolved at
