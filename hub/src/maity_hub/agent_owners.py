@@ -128,8 +128,9 @@ def human_left(conn: Connection, project: Any, human_id: str, actor: Actor, by: 
     from maity_hub import bridges, join_revocation, placements
 
     j = t.join_link.c
-    # Attributed to whoever ended the membership, and told (§3.1); a change the hub makes on
-    # its own (no actor: an account's deletion, §2.9) names nobody and tells nobody.
+    # Attributed to whoever ended the membership, and told (§3.1); an end the hub carries out
+    # with its `HUB` actor (an account's deletion, §2.9; an organisation owner's seat it kept,
+    # released, §6.26) names nobody and tells nobody.
     join_revocation.revoke(
         conn,
         j.project_id == project.id,

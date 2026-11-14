@@ -3,10 +3,13 @@
 Every path that revokes a human's join goes through `revoke`: the `DELETE` of one join, a
 profile's deletion by its owner (§6.3), and the end of the creator's membership (§6.2). Each
 names the principal on whose authority it happens as `revoked_by` and writes one `join_revoked`
-per join it revoked. The hub's own revocations, with no person behind them, do not come here
-and leave `revoked_by` null with no event: a runner's pickups (`placements.revoke_unused_joins`
-and the pickup's reissue, §15.9) and an account's deletion (§2.9), whose profiles' joins pass
-`by=None`.
+per join it revoked. The hub's own revocations leave `revoked_by` null with no event: a runner's
+pickups (`placements.revoke_unused_joins` and the pickup's reissue, §15.9) do not come here; an
+account's deletion (§2.9), whose profiles' joins pass `by=None`, and every membership end the hub
+carries out with its `HUB` actor pass `by=None` too. The latter is the account's deletion and an
+organisation owner's release from the seats the hub kept in its projects
+(`org_projects.release_owner`, §6.26): a consequence of a change to the organisation (a role,
+a removal, its deletion, a project's move), which is no revocation of a join by anyone.
 """
 
 from __future__ import annotations

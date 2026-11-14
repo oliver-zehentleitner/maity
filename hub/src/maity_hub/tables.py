@@ -1050,7 +1050,8 @@ join_link = Table(
     # Who revoked it (§3.1): the principal behind a `DELETE`, a profile's deletion by its owner
     # or the end of the creator's membership (`join_revocation`); null when the hub revoked it
     # on its own: a runner's pickups (§15.9), an account's deletion (§2.9), and joins revoked
-    # before the column existed. No foreign key: the record stays as written, as
+    # before the column existed, and a membership end the hub carries out (an organisation
+    # owner's seat it kept, released, §6.26). No foreign key: the record stays as written, as
     # `credential.revoked_by`.
     Column("revoked_by", String(ID)),
     # A runner's pickup for a placement (§15.9): the placement, the runner and the
