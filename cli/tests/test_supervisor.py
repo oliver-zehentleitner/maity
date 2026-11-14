@@ -189,6 +189,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         clonecheck.GIT_PRIVATE_ENV: env[clonecheck.GIT_PRIVATE_ENV],
         "MAITY_SUPERVISOR": f"maity-runner/{__version__}",
         **adapters.SESSION_GIT_CONFIG,
+        "GIT_AUTHOR_NAME": "Maity agent", "GIT_AUTHOR_EMAIL": "maity-agent@invalid",
+        "GIT_COMMITTER_NAME": "Maity agent", "GIT_COMMITTER_EMAIL": "maity-agent@invalid",
     }  # fmt: skip
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
@@ -347,6 +349,37 @@ def test_placements_outside_the_configuration_fail(
     sup.tick()
     assert states(reports) == [("failed", *expected)]
     assert backend.started == []
+
+
+@pytest.mark.parametrize(
+    ("version", "refused"),
+    [("2.1.294", True), ("2.1.295", False), ("2.1.325", False), (None, True), ("dev", True),
+     ("2.1.295-rc.1", True), ("2.1.295-dev", True), ("2.1.295+build", False),
+     ("2.1.296-rc.1", False)],
+)  # fmt: skip
+def test_claude_codes_sandbox_starts_only_where_its_hooks_refuse_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str | None, refused: bool
+) -> None:
+    """The runner's hook relies on `onFailure: "block"` (Claude Code 2.1.295): an older or
+    unknown version gets no sandbox, and `require_sandbox` refuses the start."""
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path, max_agents=2)
+                    + "\n[harness.claude-code]\nrequire_sandbox = true\n")  # fmt: skip
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    monkeypatch.setattr(capabilities, "sandbox_available", lambda *a, **k: True)
+    probes = {
+        "stub": capabilities.Probe(None, None, None),
+        "codex": capabilities.Probe("/usr/bin/codex", "0.40.0", None),
+        "claude-code": capabilities.Probe("/usr/bin/claude", version, None),
+    }
+    sup = supervisor.Supervisor(
+        config.load(path), FakeTmux(), Reports(), [].append, probes, now=Clock(),  # type: ignore[arg-type]
+        rand=lambda: 0.5,
+    )  # fmt: skip
+    target = sup.targets["local"]
+    assert target.sandbox["claude-code"] is not refused
+    found = sup._refusal(placement(harness="claude-code"), target)
+    assert (found == ("harness_refused", None)) is refused
 
 
 def test_a_missing_harness_binary(world: Any) -> None:
@@ -602,7 +635,7 @@ def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     for entry in ("config.worktree", "objects/info/alternates"):
         (place.path / ".git" / entry).parent.mkdir(parents=True, exist_ok=True)
         (place.path / ".git" / entry).write_text("")
-    for entry in ("remotes", "info/.claude-sandbox-noreplace",
+    for entry in ("glab-cli", "modules", "remotes", "worktrees", "info/.claude-sandbox-noreplace",
                   "objects/info/.claude-sandbox-noreplace",
                   "objects/info/commit-graphs/.claude-sandbox-noreplace"):  # fmt: skip
         (place.path / ".git" / entry).mkdir(parents=True)
