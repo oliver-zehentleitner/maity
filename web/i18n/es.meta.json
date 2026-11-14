@@ -10915,6 +10915,14 @@
     "en": "91068c8308ff7d7d",
     "text": "59b2933f261e2172"
   },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "ef68d974b43017f4"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "5a965741bfa19842"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "38ec513607e10824"

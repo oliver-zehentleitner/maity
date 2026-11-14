@@ -2332,7 +2332,10 @@ transport, `Sec-Fetch-Site` and `next`.
    The page is in the language of the mail. The account it creates takes
    both languages of the pending registration; one not given stays unset (§6.2).
    The `GET` shows "Create your Maity account for <address>" with four
-   fields: the **password chosen at registration**, the **handle**, the
+   fields: the **password chosen at registration**, the **handle** — its
+   syntax (§2.7.4) beside it and in its `pattern`, and, since the page has
+   no script, a word the stylesheet shows while what is typed breaks it,
+   "lowercase only" first; nothing is lower-cased for the person — the
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
    your real one. Your profile is public by default, with your public
@@ -2359,7 +2362,15 @@ transport, `Sec-Fetch-Site` and `next`.
    issuer without authority: the page says registration is closed,
    nothing is created and the pending registration is void); the password must match the stored hash (a
    wrong one is the page's error; the fifth voids the pending
-   registration); the handle and the display name follow §2.7.4; the
+   registration). A wrong password's page also offers **Register again**:
+   a link to `/register` (with the stored `next` where it is not `/`),
+   and the sentence that the newest mail's link replaces the earlier one
+   (below). Its answer hands the address to the sign-up page in the
+   cookie `maity_register_again` — the address percent-encoded,
+   `Path=/register`, `SameSite=Strict`, ten minutes, readable by the
+   page's script, which fills the field and removes it — never in the
+   sign-up page's address; the person saw the address on this page. The
+   handle and the display name follow §2.7.4; the
    terms box must be checked when terms are set, and the signed version
    in the form must be the instance's current one — if the terms changed
    since the page was shown, nothing is created and no acceptance is
@@ -2398,7 +2409,9 @@ single use, by `sha256(nonce)` stored with the pending registration. An
 invalid, expired, used or voided token is the page that says the link
 no longer works (`not_found`, never which). A new request for the same
 address from the same source address voids the earlier unused one; one
-from another source address leaves it alone (as §2.6.3). At most 5
+from another source address leaves it alone (as §2.6.3). The dead
+link's page offers **Register again** too, as a link to `/register`
+without an address and without saying why the link no longer works. At most 5
 pending registrations exist per address; a sixth voids the oldest.
 Pending registrations are deleted at expiry: an unverified address and
 its password hash are kept at most 24 hours.

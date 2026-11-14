@@ -10923,6 +10923,14 @@
     "en": "91068c8308ff7d7d",
     "text": "5a93e952eeff7705"
   },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "d037594ec052efe7"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "69de48eddd28560a"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "869d87ca98a831f4"

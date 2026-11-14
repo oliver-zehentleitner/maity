@@ -2928,6 +2928,8 @@ window.MAITY_I18N["it"] = {
   "mine.title": "Le tue impostazioni per {name}",
   "mine.use_default": "Usa il mio valore predefinito",
   "name_rules.handle": "Lettere minuscole, cifre e -, da 2 a 31 caratteri, con una lettera o una cifra all'inizio.",
+  "name_rules.handle_bad": "Non è ancora un handle: {rule}",
+  "name_rules.handle_lowercase": "Solo minuscole: un handle non ha lettere maiuscole.",
   "name_rules.slug": "Lettere minuscole, cifre e -, da 2 a 63 caratteri, con una lettera o una cifra all'inizio.",
   "names.aliases": "Nomi precedenti, ancora validi qui: {names}.",
   "names.current": "Questo progetto è {name}.",

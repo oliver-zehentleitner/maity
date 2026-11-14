@@ -3053,6 +3053,8 @@ window.MAITY_I18N["de"] = {
   "mine.title": "Deine Einstellungen für {name}",
   "mine.use_default": "Meinen Standard verwenden",
   "name_rules.handle": "Kleinbuchstaben, Ziffern und -, 2–31 Zeichen, beginnend mit einem Buchstaben oder einer Ziffer.",
+  "name_rules.handle_bad": "Noch kein Handle: {rule}",
+  "name_rules.handle_lowercase": "Nur Kleinbuchstaben: Ein Handle hat keine Großbuchstaben.",
   "name_rules.slug": "Kleinbuchstaben, Ziffern und -, 2–63 Zeichen, beginnend mit einem Buchstaben oder einer Ziffer.",
   "names.aliases": "Frühere Namen, die weiterhin hierher führen: {names}.",
   "names.current": "Dieses Projekt ist {name}.",

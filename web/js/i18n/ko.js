@@ -2865,6 +2865,8 @@ window.MAITY_I18N["ko"] = {
   "mine.title": "{name}에 대한 내 설정",
   "mine.use_default": "내 기본값 사용",
   "name_rules.handle": "소문자, 숫자, -를 사용하는 2–31자이며 문자나 숫자로 시작해요.",
+  "name_rules.handle_bad": "아직 핸들이 아님: {rule}",
+  "name_rules.handle_lowercase": "소문자만 쓸 수 있어요. 핸들에는 대문자를 쓸 수 없어요.",
   "name_rules.slug": "소문자, 숫자, -를 사용하는 2–63자이며 문자나 숫자로 시작해요.",
   "names.aliases": "이전 이름, 여기로 계속 연결돼요: {names}.",
   "names.current": "이 프로젝트의 이름: {name}",

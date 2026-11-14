@@ -2928,6 +2928,8 @@ window.MAITY_I18N["fr"] = {
   "mine.title": "Vos réglages pour {name}",
   "mine.use_default": "Utiliser ma valeur par défaut",
   "name_rules.handle": "Lettres minuscules, chiffres et -, 2 à 31 caractères, commençant par une lettre ou un chiffre.",
+  "name_rules.handle_bad": "Pas encore un identifiant valide : {rule}",
+  "name_rules.handle_lowercase": "Minuscules uniquement : un identifiant n'a pas de majuscules.",
   "name_rules.slug": "Lettres minuscules, chiffres et -, 2 à 63 caractères, commençant par une lettre ou un chiffre.",
   "names.aliases": "Anciens noms, qui mènent toujours ici : {names}.",
   "names.current": "Ce projet s'appelle {name}.",

@@ -2838,6 +2838,8 @@
   "mine.title": "{name} に関するあなたの設定",
   "mine.use_default": "自分のデフォルトを使う",
   "name_rules.handle": "小文字の英字、数字、-。2〜31文字で、英字または数字で始めます。",
+  "name_rules.handle_bad": "ハンドルとして使えません: {rule}",
+  "name_rules.handle_lowercase": "小文字のみ: ハンドルに大文字は使えません。",
   "name_rules.slug": "小文字の英字、数字、-。2〜63文字で、英字または数字で始めます。",
   "names.aliases": "以前の名前 (引き続きここに転送されます): {names}。",
   "names.current": "このプロジェクトは {name} です。",
