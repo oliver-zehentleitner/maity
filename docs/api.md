@@ -21168,11 +21168,13 @@ from the hub's catalogue in `language`.
   `language` where the hub's catalogue has the page's words in it, else
   in English; header and footer then say theirs with a `lang` of their
   own. Its footer keeps the landing page's language switch, whose links
-  (`?lang=`) reopen `/explore` in that language. No count is shown: with
-  no project the page says so in a sentence. It has no script and no
-  inline `style` attribute of its own (the maintenance banner keeps its
-  own, §16.12); its policy is the legal pages' (§16.7.1),
-  with `Vary: Cookie, Accept-Language`.
+  (`?lang=`) reopen `/explore` in that language. Its header keeps the
+  landing page's light/dark switch, as a stored page's frame does: the
+  landing page's one script (§16.7, `/assets/landing/landing.js`) is the
+  only script the page loads. No count is shown: with no project the page
+  says so in a sentence. It has no inline `style` attribute of its own
+  (the maintenance banner keeps its own, §16.12); its policy is a stored
+  page's in its frame (§16.9), with `Vary: Cookie, Accept-Language`.
 
 ### 16.8 Abuse reports
 
@@ -22247,7 +22249,7 @@ names:
 | `/agents`, `/agents/<id>`, `/agents/placements`, `/agents/maintenance` | the human's agent profiles across projects (§6.3), and one of them marked; and the page's two tabs: **Managed agents**, where the human's agents run in the projects the human reads (§15.6), and **Maintenance notices**, which of them the hub tells about a maintenance window (§16.12). `placements` and `maintenance` under `/agents/` are view names: the hub never issues either as an id |
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
-| `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for every visitor with or without a session, under the public pages' `Cache-Control` and `nosniff` (§16.9), the legal pages' policy (§16.7.1) and `Vary: Cookie, Accept-Language`, without an `ETag`; the shell while the instance serves no public pages |
+| `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for every visitor with or without a session, under the public pages' `Cache-Control` and `nosniff` (§16.9), the policy of a stored page in its frame (§16.9) and `Vary: Cookie, Accept-Language`, without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<handle>/agents` | a person's agents, the tab **Agents** of the person's view (§6.27); its public page where one is served (§16.9, "A person's agents", below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
