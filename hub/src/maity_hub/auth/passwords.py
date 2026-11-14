@@ -54,6 +54,6 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(derived, _unb64(key))
 
 
-# Verified against when the handle does not exist, so that a wrong handle
-# costs the same time as a wrong password.
+# Verified against when the address belongs to no account or the account has no password,
+# so that an unknown address costs the same time as a wrong password.
 DUMMY_HASH = hash_password(secrets.token_urlsafe(16))

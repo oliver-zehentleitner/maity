@@ -87,7 +87,8 @@ AES-256-GCM, a random nonce in front, the human's id and
 `notifications.position` as associated data, base64url without padding.
 The key is HKDF-SHA256 of `MAITY_SECRET_KEY` with that purpose as info.
 Without an instance key, the hub makes a random 32-byte key at first use
-and keeps it as `notifications.position_key` in `instance_secret`. That
+and keeps it as `notifications.position_key` in `instance_secret`, until
+an instance key is set (then it is removed, `secretbox.prepare_fallback`). That
 value is not sealed, since there is nothing to seal it with. Past 4096
 characters the vector is stored in `notification_position` and the
 position is a sealed `{v, h: handle}`, which looks like any other
@@ -1271,3 +1272,53 @@ cost without a purpose; stored, the read takes it with the membership row it loa
 - A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
   path that forgets the value.
 
+## A key per purpose comes from one helper in `secretbox`: HKDF of the instance key, else a fallback key made at first use
+
+**Id:** dc952df1-de40-4d07-b091-cb95d4063e6b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit tsk-hgnbapyw7hnh (area 12, item 4) and its card tsk-8vdegd61y70v, which proposed `secretbox` as the home; the follow-up card tsk-2y0qbc1zm7r1 (rate_count keys from one keyed helper); the lead's ruling on the wipe question on that card (`maity say`, seqs 129388 and 130728, 2026-11-14), after a read-only check of every reader of the fallback keys
+**Revisit when:** a keyed value needs a key that is not 32 bytes, a stored value comes to need a fallback key while an instance key is set, or the hub runs processes with and without `MAITY_SECRET_KEY` side by side
+
+`secretbox.derive` (HKDF-SHA256, no salt, the purpose as `info`),
+`secretbox.purpose_key` (derived from `MAITY_SECRET_KEY` when it is set,
+else the stored fallback key as it is) and `secretbox.prepare_fallback`
+(make the fallback at first use in a transaction of its own, keep a
+concurrent winner's) serve the address locks' pepper
+(`address.lock_pepper`), the notification positions' key and the known
+sources' fingerprints; a new keyed value (the rate counts' keys of
+tsk-2y0qbc1zm7r1) uses them too. The purpose strings are pinned by a test:
+a changed byte invalidates every lock row, position and fingerprint.
+
+**Once an instance key is set, every fallback key is removed**
+(`prepare_fallback`, at the next first use): the address pepper always
+was, the position key since the follow-up of the clean-up. The rule is
+the lead's: remove only if nothing stored still has to be read or
+compared with the fallback key once the instance key is set. The check
+found nothing. A position's stored vector (`notification_position`) is
+plain JSON; its token is held by the client and opens only under the
+derived key, so one sealed under the fallback already fails closed
+(docs/api.md §18.2: a change of `MAITY_SECRET_KEY` invalidates every
+position). Lock digests and known-source fingerprints are made again
+under the instance key. No other code reads the two names.
+
+**Limit:** while processes with and without `MAITY_SECRET_KEY` run side
+by side (a rollout), one removes the fallback key and the other makes a
+new one, so the positions the keyless process issued keep going invalid
+until every process has the key; the address locks already behaved so.
+
+**Reason:** the derivation had been copied three times, the generic part
+inside `mail/address.py` and the known sources reaching into the mail
+module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
+`cryptography` dependency, so every key the hub derives is in one module.
+
+**Rejected alternatives:**
+- Keeping a fallback key once an instance key is set (the position key
+  until the follow-up): nothing reads it, so it is only key material in
+  the database; removing the key again later makes a new one, which the
+  contract already allows, since every position is invalidated then.
+- A per-caller switch (`wipe_when_keyed`): two answers to one question.
+- A new module for the three functions: one more home for the instance
+  key, beside the one that parses and uses it.
+- `instance_settings`: it stores the fallback, but knows nothing of keys.

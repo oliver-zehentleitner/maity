@@ -260,7 +260,10 @@ def test_capabilities(tmp_path: Path, bin_dir: Path) -> None:
     ("printed", "version", "on"),
     [("2.1.295--rc (Claude Code)", "2.1.295--rc", False),
      ("2.1.295-rc-1+b-2 (Claude Code)", "2.1.295-rc-1+b-2", False),
-     ("2.1.295 (Claude Code)", "2.1.295", True)],
+     ("2.1.295 (Claude Code)", "2.1.295", True),
+     # A malformed token is no version: the line is kept whole, and the gate takes none.
+     ("2.1.295+ (Claude Code)", "2.1.295+ (Claude Code)", False),
+     ("2.1.295-_dev (Claude Code)", "2.1.295-_dev (Claude Code)", False)],
 )  # fmt: skip
 def test_the_local_probe_keeps_the_whole_version(
     bin_dir: Path, printed: str, version: str, on: bool

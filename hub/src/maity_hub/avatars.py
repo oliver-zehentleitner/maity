@@ -13,9 +13,9 @@ Every picture is served in four sizes; the smaller ones are scaled once by the d
 kept in `avatar_size` until the picture they were made from changes.
 
 An upload is decoded and encoded again in a process of its own (`avatar_decode`), under
-the operator's time and memory budgets, at most `avatar_decodes` at once; the hub stores
-and serves only the PNG that comes out. Changes are limited per avatar, whichever
-credential makes them.
+the operator's time and memory budgets, at most `avatar_decodes` at once, of which one
+human's calls take at most all but one; the hub stores and serves only the PNG that comes
+out. Changes are limited per avatar, whichever credential makes them.
 """
 
 from __future__ import annotations
@@ -55,32 +55,89 @@ SIZES = (*avatar_decode.SIZES, STORED_SIDE)  # what `?s=` may ask for
 # At most 10 changes an hour for one avatar, whichever credential (or owner) makes them.
 CHANGES = Limiter(10, 3600, name="avatars.CHANGES")
 
+
+class DecodeSlots:
+    """The decodes one process runs at once, `count` in all, of which one holder (the human
+    behind a call) takes at most all but one, so a single account cannot take every slot
+    while others wait. A take that does not fit is refused at once, never queued."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self.share = max(1, count - 1)
+        self._lock = threading.Lock()
+        self._taken = 0
+        self._held: dict[str, int] = {}
+
+    def acquire(self, blocking: bool = False, holder: str | None = None) -> bool:
+        if blocking:
+            raise ValueError("decode slots are never waited for")
+        with self._lock:
+            if self._taken >= self.count:
+                return False
+            if holder is not None and self._held.get(holder, 0) >= self.share:
+                return False
+            self._taken += 1
+            if holder is not None:
+                self._held[holder] = self._held.get(holder, 0) + 1
+            return True
+
+    def release(self, holder: str | None = None) -> None:
+        with self._lock:
+            if self._taken <= 0:
+                raise ValueError("a decode slot released more often than taken")
+            self._taken -= 1
+            if holder is not None:
+                left = self._held[holder] - 1
+                if left:
+                    self._held[holder] = left
+                else:
+                    del self._held[holder]
+
+
 _slots_lock = threading.Lock()
-_slots: dict[int, threading.BoundedSemaphore] = {}
+_slots: dict[int, DecodeSlots] = {}
 
 
-def _slots_for(count: int) -> threading.BoundedSemaphore:
+def _slots_for(count: int) -> DecodeSlots:
     with _slots_lock:
         if count not in _slots:
-            _slots[count] = threading.BoundedSemaphore(count)
+            _slots[count] = DecodeSlots(count)
         return _slots[count]
+
+
+def holder_of(caller: Any) -> str | None:
+    """Whose share of the decode slots a call takes: the human behind it, an agent's owner
+    for an agent, so that one person's agents and sessions share one share."""
+    found: str | None = None
+    if caller.kind == "agent":
+        found = caller.owner_id or caller.agent_id
+    elif caller.kind == "human":
+        found = caller.human_id
+    return found
 
 
 DECODER = Path(avatar_decode.__file__)
 REASONS = ("dimensions", "undecodable")  # what the decoder may answer (§6.10)
 
 
-def decode(settings: Settings, data: bytes, content_type: str, mode: str = "avatar") -> bytes:
+def decode(
+    settings: Settings,
+    data: bytes,
+    content_type: str,
+    mode: str = "avatar",
+    *,
+    holder: str | None = None,
+) -> bytes:
     """The PNG to store (with `mode` `attachment`: the re-encoded image file), or `invalid`
     (`details.fields.body`) for an image that is not accepted, or `rate_limited` when
-    every decode slot is taken (§6.10).
+    every decode slot is taken, or `holder` already holds its share of them (§6.10).
 
     The child runs the decoder file by path under `python -I` with an empty
     environment: neither the hub's settings (the database URL, the forge token) nor its
     `sys.path` reach the process that parses untrusted bytes. It keeps the hub's user,
     so this narrows what an exploited decoder holds; it is not a sandbox."""
     slots = _slots_for(settings.avatar_decodes)
-    if not slots.acquire(blocking=False):
+    if not slots.acquire(blocking=False, holder=holder):
         raise rate_limited(max(1, math.ceil(settings.avatar_decode_seconds)))
     seconds = max(1, math.ceil(settings.avatar_decode_seconds))
     command = [
@@ -105,7 +162,7 @@ def decode(settings: Settings, data: bytes, content_type: str, mode: str = "avat
         log.warning("%s decode killed after %ss", mode, settings.avatar_decode_seconds)
         raise invalid({"body": "undecodable"}, "the image did not decode in time") from None
     finally:
-        slots.release()
+        slots.release(holder)
     if done.returncode == 0 and done.stdout:
         return done.stdout
     detail = done.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
@@ -638,11 +695,14 @@ STORED_TYPE = {
 }
 
 
-def decode_attachment(settings: Settings, data: bytes, content_type: str) -> Reencoded:
+def decode_attachment(
+    settings: Settings, data: bytes, content_type: str, *, holder: str | None = None
+) -> Reencoded:
     """An attachment's image decoded and encoded again, in the avatar decoder's process,
     under its budgets and its decode slots (§8.7); `invalid` (`details.fields.body`) for
-    an image that is not accepted, `rate_limited` when every slot is taken."""
-    stored = decode(settings, data, content_type, "attachment")
+    an image that is not accepted, `rate_limited` when every slot is taken or `holder`
+    holds its share."""
+    stored = decode(settings, data, content_type, "attachment", holder=holder)
     kind = STORED_TYPE[content_type]
     try:
         width, height = avatar_decode.dimensions(stored, kind)
