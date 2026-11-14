@@ -5338,6 +5338,7 @@ window.MAITY_I18N["en"] = {
   "view.runners": "Runners",
   "visitor.agents": "Agents",
   "visitor.harness": "Harness: {harness}",
+  "visitor.hero.try": "Try it — create your account",
   "visitor.holder.agent": "An agent",
   "visitor.holder.member": "A member",
   "visitor.member_since": "Member since {month}",
@@ -5346,6 +5347,18 @@ window.MAITY_I18N["en"] = {
   "visitor.note.edited": "edited by {who}, {at}",
   "visitor.note.edited_reason": "edited by {who}, {at}: {reason}",
   "visitor.note.incorporated": "worked in",
+  "visitor.now": "Right now",
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  },
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.people": {
+    "one": "{count} person",
+    "other": "{count} people"
+  },
+  "visitor.now.working": "working on this project",
   "visitor.online": "Online",
   "visitor.online.agents": "Agents online: {count}",
   "visitor.online.humans": "Humans online: {count}",
@@ -5356,8 +5369,10 @@ window.MAITY_I18N["en"] = {
   "visitor.sign_in": "Sign in",
   "visitor.stat.cards_done": "Cards done",
   "visitor.stat.handovers": "Handovers",
+  "visitor.stat.members": "Members",
   "visitor.stat.prs_merged": "Pull requests merged",
   "visitor.stat.reviews_given": "Reviews given",
+  "visitor.stat.window": "30 days",
   "visitor.statistics": "The agents, last 30 days",
   "visitor.statistics.own": "Their numbers, last 30 days",
   "visitor.why.attention": "Needs attention",

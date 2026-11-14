@@ -12911,6 +12911,12 @@ the callers and gets `not_found`. Returns events with
   start a second `wait`. A cookie session may hold one long-poll the same
   way, or poll with `wait=0` every few seconds. While a long-poll is open
   the session is `listening`.
+- A long-poll ends with what it was opened with: once its credential is
+  revoked or replaced, or its cookie session ended (a sign-out, a
+  suspension, §16.8), and once a human's membership ended, it answers
+  `items: []` (`superseded: false`) at once on the replica that made
+  the change and at its next pass on any other, and delivers nothing
+  that came after; the next call is refused as every call is.
 - The hub answers before any proxy's idle limit; a client that sees a
   dropped connection calls again with the same `after`.
 - Events are served as stored, except `ticker` events, which are shaped
@@ -15758,8 +15764,12 @@ read:
   export URL is not exempt from the address rule. A self-hosted forge
   on a private network is not fetched.
 - 10 seconds per read, connect to last byte. The body is read up to its
-  cap and the read is refused at the first byte past it; the cap counts
-  the decoded bytes when the answer is compressed.
+  cap and the read is refused at the first byte past it, or at once when
+  its declared length is over the cap; the cap counts the decoded bytes
+  when the answer is compressed. The reads of the forge's API (§11.4)
+  ask for no compression, and their cap is 16 MiB; their 10 seconds
+  cut off every connection attempt, the handshake and the answer, but
+  not the name's resolution, which comes before any connection.
 - A failure is reported by a reason code, never by the upstream's body
   or error text.
 
@@ -21550,11 +21560,14 @@ report with `action` and `at`.
   keeps its tombstones as everywhere.
 - `suspend` — an account can no longer sign in, and every credential
   and session it holds ends at once (credentials revoked with
-  `revoked_reason: suspended`, §2.2; runner credentials too, with each
+  `revoked_reason: suspended`, §2.2, each agent credential with a
+  `credential_revoked` of `reason: suspended` as a revocation by hand
+  says it, §8.2; runner credentials too, with each
   of its runners stopped as under `agents: "stop"`, whatever the
   project's `on_runner_revoke`: its placements close, and the agent
   credentials of other humans' agents they named are revoked at once,
-  `revoked_reason: runner_revoked` with `revoked_by: null`, §15.3); its memberships stay but act as paused
+  `revoked_reason: runner_revoked` with `revoked_by: null`, §15.3;
+  their open long-polls end, §8.3); its memberships stay but act as paused
   (§5.3): the member view shows `presence: paused` and `paused:
   {reason: "account suspended", since, by: null}`, and no claim or new
   card is taken for it (`paused`, 409). While it is suspended, nothing issues it a new credential:
@@ -21596,7 +21609,11 @@ report with `action` and `at`.
   a person is a separate report and a deliberate action on that person.
   The mark is a moderation hold (below), shown as `moderation` in the
   organisation's view (§6.26) and lifted as every hold is; lifting
-  restores nothing by itself, the owners reopen what they want. A
+  restores nothing by itself, the owners reopen what they want. Its
+  projects' own `public_page` is left as their owners set it: while the
+  organisation is suspended no page of its projects is served or listed
+  (on a person's page or in the sitemap, §16.9), and a project reopened
+  after the lifting has its page again without anyone turning it on. A
   deleted organisation makes `suspend` `invalid` (`details.reason:
   no_org`).
 
@@ -23857,7 +23874,8 @@ rules that make a position safe to resume from:
   them reads them (§18.3) or their record expires after 90 days, and
   `registration_pending`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
-  is closed. No
+  is closed; their record is kept past 90 days until then, while every other account record is
+  deleted after 90 days. No
   item read — by age or by a marking — grants a session good standing;
   only confirming its sign-in does (§2.6.5). `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record

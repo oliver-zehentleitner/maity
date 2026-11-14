@@ -86,21 +86,140 @@ window.Maity = window.Maity || {};
     return who(holder);
   }
 
+  // ---- the project's hero, figures and tab bar, signed out (tsk-9482zxza3gs3) ------------
+  // The approved mockup's project page (project.html, pp.css): a dark hero in the landing's dark
+  // zone, the figures in a band under it, the views as a full-width bar under both. The rules are
+  // css/public-sections.css, on with the frame's stylesheets (js/site-chrome.js).
+
+  // The project's tile: it has no picture, so its letter in the accent colour, the first letter of
+  // its name or else the first character of its slug, as the hub's /explore draws it
+  // (hub/src/maity_hub/public_projects.py, monogram).
+  function monogram(name, slug) {
+    const letter = Array.from(name || "").find((c) => /\p{L}/u.test(c));
+    return (letter || String(slug || "").slice(0, 1)).toUpperCase();
+  }
+
+  // A forge the repository button names by its own name; any other reads "Repository".
+  const FORGE_HOSTS = { "github.com": "GitHub", "gitlab.com": "GitLab" };
+  const HOST = /^https:\/\/(?:www\.)?([^/?#:]+)(?::\d+)?([^?#]*)/i;
+  // GitHub's mark (Octicons, MIT), as app.js draws it beside a repository; drawn as nodes, the
+  // dashboard's policy refuses an inline style.
+  const GITHUB_MARK = "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z";
+  function githubMark() {
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    [["viewBox", "0 0 16 16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "ico"]].forEach(([k, v]) => svg.setAttribute(k, v));
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", GITHUB_MARK);
+    p.setAttribute("fill", "currentColor");
+    svg.appendChild(p);
+    return svg;
+  }
+
+  // A project link's short word for the link row: a page of the repository by the dashboard's own
+  // words (Issues, Wiki, Discussions), any other by its host and path ("t.me/unicorndevs"). The
+  // full address stays the link's title.
+  const REPO_PAGES = {
+    get issues() { return M.t("project.link.issues"); },
+    get wiki() { return M.t("project.link.wiki"); },
+    get discussions() { return M.t("project.link.discussions"); },
+  };
+  function shortLabel(url, repo) {
+    const base = repo ? repo.replace(/\/+$/, "").replace(/\.git$/, "") : null;
+    if (base && url.toLowerCase().startsWith(base.toLowerCase() + "/")) {
+      const page = url.slice(base.length + 1).split(/[/?#]/)[0].toLowerCase();
+      if (Object.hasOwn(REPO_PAGES, page)) return REPO_PAGES[page];
+    }
+    const found = HOST.exec(url);
+    return found ? (found[1] + found[2]).replace(/\/+$/, "") : url;
+  }
+
+  // Who is online, as the hub counts them (`online`), and who of them it names. The pictures of
+  // the mockup's stack need data the project's page does not carry yet (tsk-h822960mytm9).
+  function rightNow(online) {
+    if (!online || !(online.humans > 0 || online.agents > 0)) return null;
+    const people = M.t("visitor.now.people", { count: online.humans });
+    const agents = M.t("visitor.now.agents", { count: online.agents });
+    const said = online.humans > 0 && online.agents > 0 ? M.t("visitor.now.both", { people, agents })
+      : M.t("visitor.now.one", { who: online.humans > 0 ? people : agents });
+    return h("div", { class: "ph-live" },
+      h("p", { class: "eyebrow" }, M.t("visitor.now")),
+      h("p", { class: "big" }, h("i", { class: "dot", "aria-hidden": "true" }), said),
+      online.named && online.named.length ? h("p", { class: "ph-named" }, online.named.flatMap((p, i) => (i ? [", ", who(p)] : [who(p)]))) : null,
+      h("p", { class: "muted" }, M.t("visitor.now.working")));
+  }
+
+  // The dark hero: the crumb `owner / slug`, the tile, the title and the state; on the Overview
+  // the about text, the repository and the project's links as one row, and who is online beside it.
+  // The other views carry only the parts their own answer has. `cta` is the slot the frame's
+  // model fills with the header's own call to action (its address, only where the hub offers it).
+  function hero(answer, d, base, reporting, cta) {
+    const [owner, slug] = base.split("/").filter(Boolean);
+    const overview = answer.kind === "project";
+    const title = overview ? d.name : answer.kind === "card" ? d.title : slug;
+    const repo = overview && d.repository_url ? safeUrl(d.repository_url) : null;
+    const host = repo ? (HOST.exec(repo) || [])[1] : null;
+    const forge = host ? FORGE_HOSTS[host.toLowerCase()] : null;
+    const repoButton = repo ? h("a", { class: "btn btn-secondary", href: repo, rel: "nofollow ugc", title: repo },
+      forge === "GitHub" ? githubMark() : null, forge || M.t("project.link.repository")) : null;
+    const links = overview ? d.links.map((url) => {
+      const safe = safeUrl(url);
+      return safe ? h("a", { href: safe, rel: "nofollow ugc", title: safe }, shortLabel(safe, repo)) : null;
+    }).filter(Boolean) : [];
+    return h("section", { class: "phero hero dz" }, h("div", { class: "wrap" },
+      h("div", { class: "ph-main" },
+        h("p", { class: "crumb" }, owner, " / ", answer.path === base ? slug : h("a", { href: base }, slug)),
+        h("div", { class: "ph-title" },
+          answer.kind === "card" ? null : h("span", { class: "pmark", "aria-hidden": "true" }, monogram(overview ? d.name : "", slug)),
+          h("h1", null, title),
+          overview ? h("span", { class: "chip state" }, M.dom.word("project", d.state)) : null),
+        overview && d.about ? h("div", { class: "sub about" }, M.markdown(d.about)) : null,
+        h("div", { class: "cta" }, cta, repoButton),
+        links.length ? h("p", { class: "plinks" }, links.flatMap((a, i) => (i ? [" · ", a] : [a]))) : null,
+        reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null),
+      overview ? rightNow(d.online) : null));
+  }
+
+  // The figures band: the members, counted from the project's own lists (§16.9 names every
+  // member), and the agents' four counts of the last 30 days. A figure that is 0 or that the hub
+  // left empty is not shown (the mockup's README, decided by the marketing head); none, no band.
+  function band(d) {
+    const figures = [[M.t("visitor.stat.members"), d.people.length + d.agents.length, false]]
+      .concat(Object.keys(COUNTERS).map((key) => [COUNTERS[key], d.statistics.totals[key], true]))
+      .filter(([, n]) => typeof n === "number" && n > 0);
+    if (!figures.length) return null;
+    return h("section", { class: "band" }, h("div", { class: "wrap stats5" }, figures.map(([label, n, window]) => h("div", { class: "stat" },
+      h("b", null, M.fmt.number(n)), h("span", { class: "label" }, label), window ? h("small", null, M.t("visitor.stat.window")) : null))));
+  }
+
+  // The project's views as a bar across the page, under the hero and the band.
+  function tabBar(answer, base, title) {
+    return h("nav", { class: "ptabs", "aria-label": title }, h("div", { class: "wrap" }, VIEWS.map((v) => h("a", {
+      href: base + v.path,
+      class: "view-tab",
+      "aria-current": base + v.path === answer.path || (answer.kind === "card" && v.path === "/board") ? "page" : null,
+    }, v.label))));
+  }
+
   const draw = {
-    project(d) {
+    // `framed`: signed out, in the landing's frame, where the hero and the band already show the
+    // state, the about text, the links, who is online and the figures.
+    project(d, base, framed) {
       return [
-        h("p", { class: "muted" }, M.dom.word("project", d.state)),
-        d.about ? h("div", { class: "about" }, M.markdown(d.about)) : null,
-        d.repository_url ? h("p", null, external(d.repository_url)) : null,
-        d.links.map((url) => h("p", null, external(url))),
+        framed ? null : [
+          h("p", { class: "muted" }, M.dom.word("project", d.state)),
+          d.about ? h("div", { class: "about" }, M.markdown(d.about)) : null,
+          d.repository_url ? h("p", null, external(d.repository_url)) : null,
+          d.links.map((url) => h("p", null, external(url)))],
         d.people.length ? [h("h2", null, M.t("visitor.people")), names(d.people)] : null,
         d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
         d.ticker && d.ticker.length ? [h("h2", null, M.t("visitor.recently")), h("ul", { class: "visitor-ticker" }, d.ticker.map((e) => h("li", null,
           h("span", { class: "muted" }, M.dom.formatTime(e.at)), " ", (e.url && external(e.url, e.text)) || e.text)))] : null,
-        d.online ? [h("h2", null, M.t("visitor.online")),
-          h("p", null, M.t("visitor.online.humans", { count: d.online.humans }), " · ", M.t("visitor.online.agents", { count: d.online.agents })),
-          d.online.named.length ? names(d.online.named) : null] : null,
-        h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals),
+        framed ? null : [
+          d.online ? [h("h2", null, M.t("visitor.online")),
+            h("p", null, M.t("visitor.online.humans", { count: d.online.humans }), " · ", M.t("visitor.online.agents", { count: d.online.agents })),
+            d.online.named.length ? names(d.online.named) : null] : null,
+          h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals)],
       ];
     },
     board(d, base) {
@@ -264,6 +383,26 @@ window.Maity = window.Maity || {};
     // its id with the project. Signed out, a link to the sign-in that comes back with the form open.
     const report = M.report ? reportOf(answer, base) : null;
     const reporting = report ? M.report.control(report.target, report.what, { signedOut: signedIn ? null : path }) : null;
+    if (!signedIn && inProject) {
+      // Signed out, a project's page in the approved mockup's layout (tsk-9482zxza3gs3): the hero,
+      // the figures on the Overview, the views as a bar, then the view itself in the stored pages' look.
+      const cta = h("span", { class: "cta-slot" });
+      append(clear(main), h("section", { class: "view-visitor public-view", "data-kind": answer.kind },
+        hero(answer, d, base, reporting, cta),
+        answer.kind === "project" ? band(d) : null,
+        tabBar(answer, base, title),
+        h("div", { class: "stored-page" }, h("div", { class: "wrap" },
+          draw[answer.kind] ? draw[answer.kind](d, base, true) : null))));
+      document.title = title;
+      // The hero's "Try it" leads where the header's call to action does (§16.7.5, the landing
+      // hero's primary button): its address from the frame's model, and none where it has none.
+      M.siteChrome.enter(path, (model) => {
+        const offer = model.header && model.header.cta;
+        if (offer) append(clear(cta), M.siteChrome.link(Object.assign({}, offer, { label: M.t("visitor.hero.try") }), { class: "btn btn-primary" }));
+      }, { next: path });
+      if (reporting && reporting.open && M.report.asked()) reporting.open();
+      return true;
+    }
     const content = [
       h("h1", null, title),
       reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
