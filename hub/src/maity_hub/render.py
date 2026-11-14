@@ -277,6 +277,7 @@ border-radius:.7rem;padding:1rem 1.1rem}.card h3{margin:.2rem 0 .4rem;font-size:
 .tag{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .pic{display:inline-block;vertical-align:middle;border-radius:.6rem;margin:.4rem .6rem .4rem 0}
 .pic.none{background:var(--card);border:1px solid var(--line)}
+.pic.none.size-64{width:64px;height:64px}.pic.none.size-128{width:128px;height:128px}
 .stats{display:flex;flex-wrap:wrap;gap:2rem}.stat b{display:block;font-size:2rem;line-height:1.1}
 .stat span{color:var(--muted);font-size:.9rem}
 pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padding:.7rem .9rem;
