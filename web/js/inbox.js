@@ -198,8 +198,11 @@ window.Maity = window.Maity || {};
 
   // A card as an entry names it: its reference, title and status (the hub's word).
   // The reference is drawn as every other one (M.ids.plain): a full one wraps in its project's
-  // name, never inside the id (tsk-e9d52pfhvk3v); the translation places it.
-  const cardLine = (cardRef, task) => M.tn("inbox.card", { ref: M.ids.plain(cardRef), title: task.title, status: task.status.replace("_", " ") });
+  // name, never inside the id (tsk-e9d52pfhvk3v); the translation places it. Placed as a piece,
+  // the status is a text of its own, so it is the board's word for it, translated (M.dom.word);
+  // a status the dashboard does not know yet reads as the hub's word.
+  const statusWord = (status) => M.dom.word("status", status).replace("_", " ");
+  const cardLine = (cardRef, task) => M.tn("inbox.card", { ref: M.ids.plain(cardRef), title: task.title, status: statusWord(task.status) });
 
   // The member ids of the reader's own agent profiles (GET /agents), read once
   // per view: who Talk may go to across projects and for personal requests.
