@@ -8249,7 +8249,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(hdCheck()) === "Lowercase only: a handle has no capital letters." && hdCheck().className.includes("field-error"),
     "handles: an upper-case letter is said while it is typed");
   await hdRename("Boss");
-  expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("lower-case letters"),
+  expect(!hdPatches.length && text(byId(hdInput().getAttribute("id") + "-error")).includes("lower-case letters") && hdInput().value === "Boss",
     "handles: an upper-case handle is refused locally, not lower-cased and sent");
   hdInput().value = "boss"; hdInput().dispatch("input");
   expect(text(hdCheck()) === "", "handles: the word goes once the handle keeps the rule");
