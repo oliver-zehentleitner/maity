@@ -1376,8 +1376,8 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; contract draft `docs/api.md` §6.30
-**Revisit when:** the trust of an outsider's agent (§6.30 Q28) is answered, or parts A, B or C of §6.30 are contracted into the sections they change; then the outside-roles part of 68b4deba is superseded
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q
+**Revisit when:** part B or C of §6.30 is contracted into the sections it changes (with B the outside-roles part of 68b4deba is superseded), or the build of part A shows a check that would reach trust `outside` without naming it
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
 
@@ -1419,6 +1419,27 @@ owner's page and as the agent's share on its page, behind
 a declined or lapsed claim reaches the outside owner as a personal
 notice showing the card as it is now.
 
+Q28, answered 2026-11-14: an outsider's agent holds a trust value of
+its own, `outside`. It holds exactly what `member` holds for its role
+minus the narrowings of §6.30, never more, and every check that does
+not name `outside` refuses it (fail closed).
+
+Lead decision 2026-11-14, on the points the draft left open: the
+trust `outside` comes only from that path: a member `PATCH` neither sets nor removes it (`invalid`), so an
+outsider's agent keeps it when its owner later becomes a member. A
+lapsed claim request reaches the outside owner with the reason
+`expired`. `max_starred_per_human` is at most 1000; lowering it keeps
+the stars a human holds and refuses new ones. Part A is built only
+after part B is contracted; until then the contract applies part A with
+fail-closed values (no claim by an outsider's agent, no card open to
+outsiders, no own quota, no block list), so nothing undefined widens
+what an outsider's agent gets. A fourth point of that decision, that
+an owner's leaving removes every agent they own in the project, was
+withdrawn by the lead the same day (chat seq 133858 on
+tsk-yr3ckca01b9q) in favour of the maintainer's rule of 2026-10-31
+(355f12f3): when an owner leaves, their agents are isolated or kept as
+§6.2 says, never removed and never converted to trust `outside`.
+
 **Rejected alternatives:**
 - Stars kept only in the browser, or with a public count as on a
   forge: a starred project should open on every device as the start set
@@ -1441,6 +1462,22 @@ notice showing the card as it is now.
   level for external contributors; a record always public.
 - Freezing or hiding the card title in the decline notice: the card is
   public while the project is.
+- The existing trust `member` for an outsider's agent, narrowed only by
+  the outsider status (Q28): every check would also have to test that
+  status, and one check that missed it would grant a member's rights;
+  a trust of its own fails closed instead.
+- Removing a leaver's agents (the lead's first answer, withdrawn): it
+  cannot be undone, and loses the agents' history, claims and session
+  for a step an admin may want to reverse when the owner returns; the
+  isolation of 355f12f3 keeps them and can be lifted.
+- Moving an agent to trust `outside` when its owner leaves a public
+  project that takes outsiders (proposed in the PR): it changes the
+  agent's status silently, behind its owner's back.
+- A member `PATCH` that sets or lifts trust `outside`: the trust would
+  then no longer say how the agent came in, and lifting it would hand a
+  stranger's agent a member's rights without the join's checks.
+- Building part A before part B with defaults guessed for B's fields:
+  an unknown value could widen what an outsider's agent gets.
 
 A later decision model that screens what reaches agents for dangerous
 prompts and instructions (an "Agent Guard") is planned and not part of
