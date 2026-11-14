@@ -37,6 +37,7 @@ from maity_hub import (
     handover,
     idempotency,
     instances,
+    invitations,
     join_line,
     landing,
     landing_stats,
@@ -67,7 +68,7 @@ from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
@@ -89,7 +90,7 @@ _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 class JoinAgent(Strict):
     id: str | None = None
     handle: str | None = title(default=None, pattern=HANDLE_PATTERN)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
     git_identity: GitIdentity | None = None
 
 
@@ -547,6 +548,16 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     # maximum holds for it too.
     held = _agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
     if len(held) > project.member_agents_max:
+        raise not_found()
+
+
+def _recheck_creator(conn: Connection, row: Any) -> None:
+    """A join made with `members:admin` at the exchange, under the project lock (§3.3):
+    its creator still an active member who may give what it carries, as an invitation's
+    issuer (§3.4): `members:admin`, and trust `owner` for trust `admin` or the role
+    `proxy`. Areas and capabilities need no more than `members:admin`. Otherwise it
+    answers as a revoked join. A runner's pickup has its own check."""
+    if not invitations.issuer_holds(conn, row):
         raise not_found()
 
 
@@ -1072,6 +1083,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         raise not_found()  # the list changed since the join was handed out (§6.3)
     if row.member_rule:
         _recheck_member_rule(conn, row, project, _active_member(conn, row))
+    elif row.placement_id is None:
+        _recheck_creator(conn, row)
     agent_id = row.agent_id or _create_for_join(conn, row)
     member = conn.execute(
         select(t.membership).where(

@@ -58,7 +58,7 @@ from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, setting
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
-from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
+from maity_hub.models import SLUG_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
 from maity_hub.scopes import in_admin_team
@@ -349,7 +349,7 @@ def _provider(memory: MemoryIn | None) -> bool | None:
 
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
-    name: str = title()
+    name: Name = title()
     # The handle of an organisation to create the project in (§6.26); the caller's own
     # handle or nothing is the default of §6.1.
     owner: str | None = Field(default=None, max_length=64)
@@ -364,7 +364,7 @@ class ProjectCreate(Strict):
 
 class ProjectPatch(Strict):
     slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
-    name: str | None = title(default=None)
+    name: Name | None = title(default=None)
     repository: RepositoryIn | None = None
     # The project's own links (§6.11), merged by key; checked by project_links.
     links: Any = None
