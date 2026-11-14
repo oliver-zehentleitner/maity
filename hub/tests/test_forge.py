@@ -1003,6 +1003,33 @@ def test_a_stored_url_short_of_two_segments_is_no_repository(
     assert opener.requests == []
 
 
+@pytest.mark.parametrize("url", ["https://github.com/acme/", "https://github.com/acme/.."])
+def test_a_token_read_of_an_invalid_repository_is_refused_as_one(
+    opener: FakeOpener, url: str
+) -> None:
+    # On the token's path, too, before it looks for the repository in the path: an empty
+    # segment is not the plain refusal of a read that names none, which ends a probe round.
+    path = f"/repos/{forge.repository_of(url)}/releases?per_page=1"
+    with pytest.raises(forge.InvalidRepositoryError):
+        READER._get(path)
+    with pytest.raises(forge.InvalidRepositoryError):
+        READER._call(path)
+    assert opener.requests == []
+
+
+def test_a_refused_read_holds_none_of_the_budget(opener: FakeOpener) -> None:
+    source = forge._source(TOKEN)
+    before = forge._budgets[source].in_flight if source in forge._budgets else 0
+    for _ in range(3):
+        with pytest.raises(forge.InvalidRepositoryError):
+            READER._send("/repos/acme//commits/x")
+        with pytest.raises(forge.InvalidRepositoryError):
+            forge.Forge(None)._send("/repos/acme//commits/x")
+    assert (forge._budgets[source].in_flight if source in forge._budgets else 0) == before
+    assert (forge._budgets[""].in_flight if "" in forge._budgets else 0) == 0
+    assert opener.requests == []
+
+
 def test_a_valid_repository_path_is_asked(opener: FakeOpener) -> None:
     opener.answers["/repos/a/b.c_d-e/commits/x"] = {"sha": "a" * 40}
     assert READER._send("/repos/a/b.c_d-e/commits/x") == {"sha": "a" * 40}

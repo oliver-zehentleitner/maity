@@ -21,7 +21,14 @@ forge does not answer, and between two reads when the hub stops. A project
 no source covers (`NotCoveredError`) is no such read: only its own work is
 left out, it logs its id, and its reports don't count against the 15. Ending
 the round there stopped every round from reaching the re-reads, in production
-for as long as one project lacked a grant. Forge reads
+for as long as one project lacked a grant. A stored repository URL that names
+no valid repository (`InvalidRepositoryError`, a URL stored before the write
+checked it) is that project's own fault just the same and is left out the same
+way, on every path: the check runs before any branch reads the path and before
+the read counts against the source's budget, so a refusal ends no round and
+holds no budget. Every GraphQL read of the hub names its repository in its
+`owner` and `name` variables; one that does not is refused, so no read skips
+the check. Forge reads
 happen with no database connection held; each result is written in a short
 transaction of its own under the project lock. The thread starts only when
 `MAITY_FORGE_GITHUB_TOKEN` is set.

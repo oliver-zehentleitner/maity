@@ -638,7 +638,10 @@ class Forge:
         """A read on the forge API, with the token when the hub holds one and without it
         otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
         With the token, only of a repository the forge reports public (`NotCoveredError`
-        otherwise); a read that names no repository is not made with it."""
+        otherwise); a read that names no repository is not made with it. An invalid
+        repository is refused first (`InvalidRepositoryError`), before any branch reads the
+        path: on the token's path an empty segment would otherwise end as a plain refusal."""
+        repository_checked(path, query)
         if self.refused is not None:
             raise NotCoveredError(self.refused)
         if self.token is not None and self.granted is not None:
@@ -754,6 +757,7 @@ class Forge:
         While the source's budget is spent nothing is sent (§11.4). With `raw_cap` the
         answer is a file's raw bytes, at most `raw_cap + 1` read, so a caller tells a file
         over its cap from one at it without the forge sending the rest."""
+        repository_checked(path, query)  # before `_take`: a refused read holds no budget
         source = _source(self.token)
         held = _take(source)
         if held is not None:
@@ -762,7 +766,6 @@ class Forge:
                 rate_limited=True,
                 retry_at=held,
             )
-        repository_checked(path, query)
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
         accept = "application/vnd.github+json" if raw_cap is None else "application/vnd.github.raw"

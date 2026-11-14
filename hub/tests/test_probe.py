@@ -1085,8 +1085,11 @@ def test_a_project_whose_stored_url_names_no_repository_ends_only_its_own_turn(
 
     def short_url(_engine: Engine, fg: Any, project_id: str) -> None:
         releases.append(project_id)
-        if project_id == other_project:  # the read the stored URL would make
-            fg._send(f"/repos/{forge.repository_of('https://github.com/acme/')}/releases")
+        if project_id == other_project:  # the read the stored URL would make, as made:
+            # through the real `_get`, with the operator's token and no grant
+            assert fg.token is not None and fg.granted is None
+            repository = forge.repository_of("https://github.com/acme/")
+            REAL_GET(fg, f"/repos/{repository}/releases?per_page=1")
 
     monkeypatch.setattr(probe, "observe_release", short_url)
     monkeypatch.setattr(probe, "observe_links", lambda _e, _f, p: links.append(p))
