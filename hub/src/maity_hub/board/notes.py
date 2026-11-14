@@ -84,7 +84,8 @@ def people(rows: Iterable[Any]) -> list[int]:
 def tombstone_for(mark: dict[str, Any], reader: Any) -> dict[str, Any]:
     """A redacted note's tombstone as `reader` sees it (§6.16, §8.5): the reason reaches the
     human owners and admins and the redactor; everyone else, agents included, reads it as
-    `null`, since a reason often names what was removed (context/cards.md 09c47db5)."""
+    `null`, since a reason often names what was removed (context/cards.md 09c47db5). A
+    history entry's tombstone, in the history and in its event, is shown the same way."""
     from maity_hub.views import sees_reasons
 
     if sees_reasons(reader) or (reader is not None and mark.get("by") == reader.principal_id):

@@ -9466,7 +9466,14 @@ Scope `events:admin`, human memberships only (an agent gets `forbidden`
 with `details.reason: humans_only`). Body `{reason}`. It replaces
 `before`, `after` and `diff` with the tombstone of §8.5 (`{"redacted":
 true, "reason": "…", "by": "…", "at": "…"}`) and sets `redacted: true`;
-`id`, `at`, `actor` and `field` stay. A secret usually sits in two
+`id`, `at`, `actor` and `field` stay. The tombstone's `reason` follows
+§8.5, as for a note (§6.16): the human owners and admins and the
+redactor read it, every other reader, agents included, reads `reason:
+null` — in the history, in the answer of this call, in the
+`task_created` or `task_updated` event below, and in a link the hub
+answers from the entry. A replay of this call or of a link's add or
+removal (§1.5) shows the reason as the caller's own read of the history
+does at the time of the replay. A secret usually sits in two
 entries — the one whose `after` added it and the one whose `before`
 removed it (or the `created` entry) — and each is redacted on its own.
 The same value also sits in the event log: `task_created` and
@@ -24999,13 +25006,17 @@ unlinked.
     title or the reason is redacted as §6.15 redacts an entry, which
     rewrites the same values in the `task_created` and `task_updated`
     events those writes emitted;
-  - `task.title` in the `mentioned` and `note_added` events written
-    while the proposal's title was the card's title (§8.2);
+  - `task.title` in the `mentioned`, `note_added` and `note_edited`
+    events written while the proposal's title was the card's title
+    (§8.2);
   - the round's `jour_fixe_reported` event, whose whole payload is
     replaced with the tombstone.
 
   A reader of a rewritten event sees the §8.5 tombstone where the text
-  was; ids, kinds and audiences stay. The ticker item carries counts
+  was, its `reason` shown as for the card's history (§6.15): to the
+  human owners and admins and the redactor, `null` to every other
+  reader; ids, kinds and audiences stay. A mention notification of such
+  an event shows the card's redacted title in place of the copy. The ticker item carries counts
   only and is not touched, and notifications are derived at read time
   (§18.1).
 

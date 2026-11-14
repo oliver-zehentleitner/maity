@@ -156,7 +156,18 @@ def observe_soon(request: Request, slug: str, response: JSONResponse) -> None:
         worker.links_added(project.id)
 
 
-def load_link(conn: Connection, link_id: str) -> dict[str, Any]:
+def _reader(conn: Connection, project_id: str | None, request: Request) -> Membership | None:
+    """The caller's membership for a replay, which shows a redaction's reason only to whom
+    §8.5 gives it; none when the caller is no member (the replay's read check stops them
+    first)."""
+    slug = namespace.name_of(conn, project_id) if project_id else None
+    try:
+        return membership(conn, request.state.caller, slug) if slug else None
+    except ApiError:
+        return None
+
+
+def load_link(conn: Connection, link_id: str, request: Request) -> dict[str, Any]:
     """A replayed add: the link as it is, or once removed as its add entry holds it."""
     row = conn.execute(select(t.card_link).where(t.card_link.c.id == link_id)).first()
     if row is not None:
@@ -168,12 +179,12 @@ def load_link(conn: Connection, link_id: str) -> dict[str, Any]:
     ).first()
     if entry is None:
         raise not_found()
-    return history.link_shown(entry)
+    return history.link_shown(entry, _reader(conn, _card_project(conn, entry.card_id), request))
 
 
-def load_removed_link(conn: Connection, entry_id: str) -> dict[str, Any]:
+def load_removed_link(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    return history.link_shown(row)
+    return history.link_shown(row, _reader(conn, _card_project(conn, row.card_id), request))
 
 
 def _card_project(conn: Connection, card_id: str | None) -> str | None:
@@ -216,10 +227,8 @@ def _note_project(conn: Connection, note_id: str) -> str | None:
     )
 
 
-idempotency.register("link", idempotency.plain(load_link), idempotency.in_project(_link_project))
-idempotency.register(
-    "removed_link", idempotency.plain(load_removed_link), idempotency.in_project(_entry_project)
-)
+idempotency.register("link", load_link, idempotency.in_project(_link_project))
+idempotency.register("removed_link", load_removed_link, idempotency.in_project(_entry_project))
 
 
 @router.delete("/projects/{owner}/{slug}/tasks/{card_id}/links/{link_id}")
@@ -239,7 +248,8 @@ def delete_link(
             removal = history.link_entry(conn, card.id, link_id, removed=True)
             if removal is None:
                 raise not_found()
-            return idempotency.Outcome(200, "removed_link", removal.id, history.link_shown(removal))
+            shown_removal = history.link_shown(removal, mine)
+            return idempotency.Outcome(200, "removed_link", removal.id, shown_removal)
         holder = card.claim_holder == mine.id
         if not (row.added_by == mine.id or holder or card.created_by == mine.id):
             mine.require("tasks:admin")
@@ -285,21 +295,25 @@ def get_history(
         next_cursor = paging.cursor(page[-1].at, page[-1].id) if len(rows) > limit else None
         return JSONResponse(
             {
-                "items": shape_deleted(conn, [history.view(r, actors) for r in page]),
+                "items": shape_deleted(conn, [history.view(r, actors, mine) for r in page]),
                 "next_cursor": next_cursor,
             }
         )
 
 
-def load_history(conn: Connection, entry_id: str) -> dict[str, Any]:
+def load_history(conn: Connection, entry_id: str, reader: Any = None) -> dict[str, Any]:
     row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
-    entry = history.view(row, history.members(conn, [row.actor_membership]))
+    entry = history.view(row, history.members(conn, [row.actor_membership]), reader)
     return dict(shape_deleted(conn, [entry])[0])
 
 
-idempotency.register(
-    "history", idempotency.plain(load_history), idempotency.in_project(_entry_project)
-)
+def _load_history_for_caller(conn: Connection, entry_id: str, request: Request) -> dict[str, Any]:
+    """A replay shows the entry as the caller sees it now (§8.5)."""
+    row = conn.execute(select(t.card_history).where(t.card_history.c.id == entry_id)).one()
+    return load_history(conn, entry_id, _reader(conn, _card_project(conn, row.card_id), request))
+
+
+idempotency.register("history", _load_history_for_caller, idempotency.in_project(_entry_project))
 
 
 def _redactor(mine: Membership, caller: Caller) -> None:
@@ -335,7 +349,7 @@ def redact_history(
                 actor=caller.actor(mine.id),
                 subject=("task", card.id),
             )
-        return idempotency.Outcome(200, "history", row.id, load_history(conn, row.id))
+        return idempotency.Outcome(200, "history", row.id, load_history(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -358,13 +372,7 @@ def _load_note_for_caller(conn: Connection, note_id: str, request: Request) -> d
     """A replay shows the note as the caller sees it: a redaction's reason only to whom
     §8.5 gives it."""
     row = conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one()
-    card = conn.execute(select(t.card.c.project_id).where(t.card.c.id == row.card_id)).one()
-    slug = namespace.name_of(conn, card.project_id)
-    try:
-        reader = membership(conn, request.state.caller, slug) if slug else None
-    except ApiError:
-        reader = None
-    return _note_view(conn, row, reader)
+    return _note_view(conn, row, _reader(conn, _card_project(conn, row.card_id), request))
 
 
 idempotency.register("note", _load_note_for_caller, idempotency.in_project(_note_project))
