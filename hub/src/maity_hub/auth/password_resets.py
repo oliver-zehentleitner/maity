@@ -179,7 +179,9 @@ def password_changed(conn: Connection, human_id: str) -> None:
     """A new password, by `POST /auth/password` or a reset: the generation moves, so every
     link made under the old one dies with it, and the open ones are voided now too. That
     includes the link that lifts the daily second-factor cap (§2.8.6): the day's alert counts
-    as not written, so the next wrong code mails one under the new generation."""
+    as not written, so the next wrong code mails one under the new generation. The human's
+    row is updated before the day's, the order a wrong code's count takes too
+    (`second_factor._count_day`)."""
     conn.execute(
         update(t.human)
         .where(t.human.c.id == human_id)

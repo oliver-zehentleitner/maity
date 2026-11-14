@@ -515,7 +515,12 @@ def _count_day(
     cap since the day began or the cap was last lifted writes `second_factor_failed`
     (`method: daily_limit`), whose mail carries the link that lifts the cap. The record names
     the human's password generation, which the link carries: a password change kills it.
-    Earlier days of the human go: nothing reads them."""
+    Earlier days of the human go: nothing reads them.
+
+    The human's row is locked before the day's: the alert's record locks it too, and a
+    password change locks it before it clears `alerted` (`password_resets.password_changed`),
+    so every path takes the human before the day row."""
+    records.lock_human(conn, human_id)
     day = _today()
     row = _day(conn, human_id, day)
     if row is None:
