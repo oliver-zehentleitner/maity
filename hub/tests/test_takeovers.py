@@ -520,3 +520,154 @@ def test_a_takeover_between_two_owners_is_refused_for_now(
         assert response.status_code == 403, response.text
         assert response.json()["error"]["details"]["reason"] == "cross_owner"
     assert _card(owner, card_id)["claim"]["holder"] == theirs.id
+
+
+# --- where a member's work ends ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("ends", ["guest", "isolated", "paused"])
+def test_a_receiver_that_takes_no_work_is_refused(
+    owner: flow.Human, make_client: ClientFactory, ends: str
+) -> None:
+    holder = flow.agent(make_client, owner)
+    receiver = flow.agent(make_client, owner)
+    admin = flow.agent(make_client, owner, role="admin")
+    path = f"/projects/maintainer/maity/members/{receiver.id}"
+    if ends == "guest":
+        assert owner.patch(path, {"trust": "guest"}).status_code == 200
+    elif ends == "isolated":
+        assert owner.post(f"{path}/isolate", {"reason": "checking"}).status_code == 200
+    else:
+        assert owner.patch(path, {"paused": {"reason": "quota"}}).status_code == 200
+    response = _open(admin, _held(owner, holder), to=f"{receiver.id}#{receiver.instance}")
+    if ends == "paused":
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "paused"
+    else:
+        assert response.status_code == 400, response.text
+        assert response.json()["error"]["details"]["fields"] == {"to": ends}
+
+
+@pytest.mark.parametrize("ends", ["guest", "isolated", "paused"])
+def test_a_receiver_that_stopped_taking_work_gets_nothing_on_transfer(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, ends: str
+) -> None:
+    holder = flow.agent(make_client, owner)
+    asker = flow.agent(make_client, owner, role="admin")
+    receiver = flow.agent(make_client, owner)
+    card_id = _held(owner, holder)
+    takeover_id = _open(asker, card_id, to=f"{receiver.id}#{receiver.instance}").json()["id"]
+    if ends == "paused":  # a pause leaves an open takeover as it is: the move checks it
+        member = f"/projects/maintainer/maity/members/{receiver.id}"
+        assert owner.patch(member, {"paused": {"reason": "quota"}}).status_code == 200
+    else:  # the change lands without the route's cancel, as a race between the two would
+        with migrated.begin() as conn:
+            values: dict[str, Any] = (
+                {"trust": "guest"} if ends == "guest" else {"isolated_since": clock.now()}
+            )
+            conn.execute(
+                update(t.membership).where(t.membership.c.agent_id == receiver.id).values(values)
+            )
+    path = f"/projects/maintainer/maity/takeovers/{takeover_id}"
+    assert holder.post(f"{path}/respond", {"accept": True}).status_code == 200
+    row = owner.get(path).json()
+    assert row["status"] == "cancelled"
+    assert _card(owner, card_id)["claim"]["holder"] == holder.id
+
+
+@pytest.mark.parametrize("ends", ["guest", "isolated"])
+def test_dropping_to_guest_or_isolating_ends_its_takeovers_and_claims(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, ends: str
+) -> None:
+    holder = flow.agent(make_client, owner)
+    asker = flow.agent(make_client, owner)
+    card_id = _held(owner, holder)
+    own_card = _held(owner, asker)
+    takeover_id = _open(asker, card_id).json()["id"]
+    path = f"/projects/maintainer/maity/members/{asker.id}"
+    if ends == "guest":
+        assert owner.patch(path, {"trust": "guest"}).status_code == 200
+    else:
+        assert owner.post(f"{path}/isolate", {"reason": "checking"}).status_code == 200
+    row = owner.get(f"/projects/maintainer/maity/takeovers/{takeover_id}").json()
+    assert (row["status"], row["outcome"]["how"]) == ("cancelled", "cancelled")
+    assert _card(owner, own_card)["claim"] is None
+    assert _card(owner, card_id)["claim"]["holder"] == holder.id
+
+
+def test_a_guests_lease_is_not_renewed_by_its_calls(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    holder = flow.agent(make_client, owner)
+    card_id = _held(owner, holder)
+    # Trust set beside the route, so the claim is still there to test the renewal alone.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == holder.id).values(trust="guest")
+        )
+    _expire(migrated, card_id)
+    with migrated.connect() as conn:
+        before = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card_id)).scalar()
+    holder.get("/projects/maintainer/maity/tasks")
+    with migrated.connect() as conn:
+        after = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card_id)).scalar()
+    assert after == before
+
+
+def _colleague(make_client: ClientFactory, migrated: Engine, role: str = "admin") -> flow.Human:
+    colleague = flow.human(make_client, migrated, "colleague")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, role, human_id=colleague.id)
+    return colleague
+
+
+def test_after_the_lease_a_move_across_owners_is_refused_too(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    colleague = _colleague(make_client, migrated)
+    theirs = flow.agent(make_client, colleague, agent={"handle": "theirs", "display_name": "T"})
+    admin = flow.agent(make_client, owner, role="admin")
+    card_id = _held(owner, theirs)
+    _expire(migrated, card_id)
+    path = f"/projects/maintainer/maity/tasks/{card_id}"
+    for response in (
+        admin.post(f"{path}/assign", {"assignee": admin.id}),
+        admin.patch(path, {"assigned_to": admin.id}),
+        admin.post(f"{path}/release", {}),
+    ):
+        assert response.status_code == 403, response.text
+        assert response.json()["error"]["details"]["reason"] == "cross_owner"
+    assert _card(owner, card_id)["claim"]["holder"] == theirs.id
+    # Within one owner it moves, onto that owner's agent from the other owner's admin agent
+    # neither.
+    mine = flow.agent(make_client, owner)
+    own_card = _held(owner, mine)
+    _expire(migrated, own_card)
+    across = admin.post(
+        f"/projects/maintainer/maity/tasks/{own_card}/assign", {"assignee": theirs.id}
+    )
+    assert across.status_code == 403, across.text
+    assert across.json()["error"]["details"]["reason"] == "cross_owner"
+    moved = admin.post(
+        f"/projects/maintainer/maity/tasks/{own_card}/assign", {"assignee": admin.id}
+    )
+    assert moved.status_code == 200, moved.text
+
+
+def test_another_owners_admin_agent_does_not_decide_an_escalation(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    holder, _, card_id, takeover_id = _disputed(owner, make_client)
+    path = f"/projects/maintainer/maity/takeovers/{takeover_id}"
+    request_id = holder.post(f"{path}/escalate", {}).json()["request_id"]
+    colleague = _colleague(make_client, migrated, "owner")  # owners grant trust admin
+    judge = flow.agent(
+        make_client, colleague, role="admin", agent={"handle": "judge", "display_name": "J"}
+    )
+    answer = f"/projects/maintainer/maity/requests/{request_id}/answer"
+    refused = judge.post(answer, {"reply_id": "transfer"})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "admin_team_only"
+    assert owner.get(path).json()["status"] == "escalated"
+    assert _card(owner, card_id)["claim"]["holder"] == holder.id

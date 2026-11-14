@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, case, func, select, update
 
-from maity_hub import cards, clock, group_chats, longpoll, placements, restricted
+from maity_hub import cards, clock, group_chats, longpoll, placements, restricted, takeovers
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, emit, lock_project, on_commit
@@ -151,6 +151,7 @@ def isolate(
         )
     )
     released = release_claims(conn, target.id)
+    takeovers.membership_removed(conn, target.id, actor)  # no party any more (§6.19)
     group_chats.membership_removed(conn, target, actor, human_id, REASON)
     if target.agent_id is not None:
         from maity_hub import cross_chats
