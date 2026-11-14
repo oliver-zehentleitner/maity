@@ -398,6 +398,41 @@ def test_a_replayed_link_removal_shows_its_tombstone_without_the_reason(
     assert owner.delete(path.removeprefix("/api/v1")).json()["reason"] == "a password"
 
 
+def test_a_replayed_history_redaction_shows_the_reason_as_a_fresh_read_does(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§1.5, §8.5: a replay of `…/redact` shows the tombstone's reason as the caller's own
+    `GET …/history` does now, not as it did when the key was stored."""
+    bea = flow.human(make_client, migrated, "bea")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=bea.id)
+    card = task(owner, title="hunter2 in the title")
+    entry = history(owner, card)[0]
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/history/{entry['id']}/redact"
+    assert owner.post(path, {"reason": "a password"}).status_code == 200
+    keyed = {"X-CSRF-Token": bea.csrf, "Idempotency-Key": "history-redaction-reason-0001"}
+
+    def bea_redacts() -> Any:  # she loses to the owner's redaction: the answer is his tombstone
+        answer = bea.client.post(f"/api/v1{path}", json={"reason": "bea's"}, headers=keyed)
+        assert answer.status_code == 200, answer.text
+        return answer
+
+    first = bea_redacts()
+    assert first.json()["after"]["reason"] == "a password"  # an admin reads it (§8.5)
+    again = bea_redacts()
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json()["after"]["reason"] == "a password"
+    demoted = owner.patch(f"/projects/maintainer/maity/members/{bea.id}", {"trust": "member"})
+    assert demoted.status_code == 200, demoted.text
+    fresh = next(e for e in history(bea, card) if e["id"] == entry["id"])
+    assert fresh["after"]["reason"] is None
+    replayed = bea_redacts()
+    assert replayed.headers["Idempotent-Replayed"] == "true"
+    assert {replayed.json()[side]["reason"] for side in ("before", "after", "diff")} == {None}
+    assert "a password" not in replayed.text
+
+
 # --- notes ------------------------------------------------------------------------------------
 
 
