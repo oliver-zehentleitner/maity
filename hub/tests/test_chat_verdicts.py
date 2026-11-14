@@ -398,6 +398,9 @@ def test_a_direct_verdict_is_redacted_by_the_human_party_without_events_admin(
     assert event_row(migrated, row.seq).payload["redacted"] is True
     [shown] = message(owner, agent.id, seq)["verdicts"]
     assert (shown["value"], shown["sentence"], shown["seq"]) == ("disagree", None, row.seq)
+    with migrated.connect() as conn:  # no copy of the text is left in storage
+        kept = conn.execute(select(t.chat_verdict.c.value, t.chat_verdict.c.sentence)).one()
+    assert tuple(kept) == ("disagree", None)
     with migrated.connect() as conn:
         notice = conn.execute(select(t.event).where(t.event.c.kind == "event_redacted")).one()
     assert sorted(notice.audience) == sorted([f"member:{agent.id}", f"member:{owner.id}"])
@@ -432,6 +435,8 @@ def test_a_group_verdict_is_redacted_as_a_message_of_the_chat(
     assert done.status_code == 200, done.text
     [shown] = message(owner, chat["id"], seq)["verdicts"]
     assert (shown["value"], shown["sentence"]) == ("disagree", None)
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.chat_verdict.c.sentence)).scalar_one() is None
     as_owner = owner.get(f"/projects/maintainer/maity/events/{row.seq}").json()
     assert as_owner["payload"]["reason"] == "a secret"
     as_agent = agent.get(f"/projects/maintainer/maity/events/{row.seq}").json()

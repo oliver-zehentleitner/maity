@@ -96,6 +96,14 @@ def change(
     return seq
 
 
+def redact_sentence(conn: Connection, set_seq: int) -> None:
+    """The redaction of the `chat_verdict` event `set_seq`: the verdict it set keeps its
+    value and loses its sentence in storage, not only where it is read (§8.5, §9.7)."""
+    conn.execute(
+        update(t.chat_verdict).where(t.chat_verdict.c.set_seq == set_seq).values(sentence=None)
+    )
+
+
 def of_messages(conn: Connection, rows: Sequence[Any]) -> dict[int, list[dict[str, Any]]]:
     """`verdicts` of each message (§9.7): the current verdict of each human, oldest first. A
     redacted message reads none; a verdict whose event was redacted shows its `value` with

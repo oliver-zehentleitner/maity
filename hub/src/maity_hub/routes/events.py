@@ -1018,6 +1018,10 @@ def tombstone(
         return
     if row.kind == "message":
         attachments.redact_message(conn, row.seq, by, store)
+    if row.kind == chat_verdicts.KIND:
+        # The verdict it set stays, its sentence goes with the event's text: the row kept
+        # it apart from the payload, and a redaction leaves no copy of the text (§9.7).
+        chat_verdicts.redact_sentence(conn, row.seq)
     marker = (row.payload or {}).get("jour_fixe") if row.kind == "message" else None
     if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
         from maity_hub.jourfixe import exchange
