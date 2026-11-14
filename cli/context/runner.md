@@ -2972,8 +2972,9 @@ answer: something in the clone may still be needed.
 **Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); the owner's answers of 2026-11-12: req-r2egh0ry0c4c (older sessions restart at their next idle point; answer event 119533), req-vpcfh15h247c (local target only, ssh targets reported; answer event 119538), both relayed by the lead in 119605; docs/api.md §15.16
 **Revisit when:** an ssh target's owner wants the runner to manage its tools, a harness tool ships without an installer the runner can run in the user's space, or a tool's update needs a step only a person can do
 
-Not built yet (tsk-29nmydbzrg5z): this records the contract's decision;
-the runner and the dashboard follow in their own pull requests.
+The harness tools are built (tsk-29nmydbzrg5z, runner part; how they are
+fetched and checked is the next entry); `maity`'s own update and the
+dashboard follow in their own pull requests.
 
 Operators kept the runner's tools and `maity` current by hand, and
 sessions started by an older `maity` stayed on it until someone
@@ -3035,6 +3036,64 @@ Rejected:
 - Installing on ssh targets too: a vendor's installer would run on a
   machine whose owner did not set it up for that, with more ways to fail
   (the owner's answer); a later card can add it.
+
+## The runner takes a tool only as an exact vendor release it can check, and keeps it beside its state directory
+
+**Id:** 841ed5f8-10e3-4682-8d8e-76adf97edf15
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-29nmydbzrg5z, the lead's rules for the installers (2026-11-14: no script fetched and run unless its version is pinned, the vendor's package at an exact version, the vendor's checksum checked, refuse rather than fall back, what each tool verifies written down for the security team) and the lead's approval of the agent_user scope (2026-11-14); the vendors' install scripts and documentation read 2026-11-14 (Claude Code's signed `manifest.json`, release key fingerprint 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE; Codex's GitHub releases with a SHA-256 `digest` per asset and a sigstore bundle); `cli/src/maity/runner/installers.py`, `tools.py`, `keeper.py`
+**Revisit when:** a vendor stops publishing the checksum or signature used here, the runner gains a sigstore verifier, or an operator of the agent_user layout needs managed tools
+**See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-14
+
+The contract says "the vendor's installer"; the runner runs none of the
+vendors' install scripts. It downloads one exact version's release
+straight from the vendor and refuses it unless the vendor's own check
+passes, before anything is unpacked or run:
+
+- **Claude Code:** the release's `manifest.json` must carry a valid
+  signature by Anthropic's release key, checked with `gpgv` against the
+  key shipped inside `maity` (the fingerprint above is pinned; nothing
+  fetched at install time is trusted as a key). The manifest must name
+  the version asked for, so an older signed manifest cannot be replayed,
+  and the binary must match its SHA-256 and size. A host without `gpgv`
+  is refused.
+- **Codex:** the release tagged `rust-v<version>`, neither draft nor
+  prerelease, its package tarball matched against the SHA-256 that
+  GitHub's release API states, from the one expected URL, unpacked with
+  tarfile's `data` filter. Not checked: the sigstore bundle, since the
+  runner has no verifier for it; that trust is GitHub's and the vendor's
+  account over HTTPS.
+- **opencode** has no installer: its install route offers no checksum,
+  and the runner does not offer it to placements yet.
+
+The versions live in `~/.local/share/maity-runner/tools`, not in the
+state directory: the state directory is hidden from every sandboxed
+command (supervisor.private_paths), and Codex's sandbox starts the Codex
+binary and its bundled helpers inside the sandbox. In the agent_user
+layout `install` and `update` are refused at load for now: the agents
+run as another OS user, and the runner user's own directory is not
+theirs to rely on. A managed session is started with the tool's own
+self-update switched off (`DISABLE_UPDATES` for Claude Code,
+`check_for_update_on_startup = false` for Codex), so only the runner
+changes the version.
+
+**Rejected alternatives:**
+- Running the vendor's install script (`curl … | bash`): it would run
+  whatever the vendor's server sends that minute, with no version the
+  runner chose (the lead's rule).
+- Trusting the manifest's or the API's checksum alone: for Claude Code
+  the signature is offered, so it is used; the checksum is only as good
+  as the document that carries it.
+- Fetching the release key at install time: a key from the same server
+  as the manifest proves nothing about the manifest.
+- Falling back to an unchecked download when `gpgv` or a digest is
+  missing: refused instead (the lead's rule).
+- Keeping the versions under the state directory: the harness sandboxes
+  could not run them.
+- A world-readable tools directory for the agent_user layout now: only
+  built when someone needs it (the lead's decision).
 
 ## Placed sessions commit as the runner's `[git]` identity, set through the environment
 

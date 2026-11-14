@@ -952,6 +952,17 @@ managed Claude Code settings set `disableAllHooks` or
 `allowManagedHooksOnly`
 ([`docs/runners.md`](../docs/runners.md#git-in-an-agents-session)).
 
+`install = true` and `update = "daily"` under `[harness.claude-code]` or
+`[harness.codex]` let the runner install that tool and keep it current
+in `~/.local/share/maity-runner/tools/` (default off; local backend,
+`single` layout only; no `binary` with them). It runs no vendor install
+script: it fetches the exact release and checks Claude Code's signed
+manifest with `gpgv` (needed on the machine) or Codex's SHA-256 from
+GitHub, and refuses otherwise. `maity runner tools` lists the versions,
+`maity runner tools rollback <tool>` swaps the kept one in for new
+sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-current)).
+`[maity] update` is not carried out yet; `check` and `serve` refuse it.
+
 Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
@@ -1043,8 +1054,8 @@ Open gaps:
 - `git push` in the sandbox reads the same login, so code an allowed
   command runs can push to other repositories the account reaches
   (tsk-anek9pkb5r82).
-- Without the harness's sandbox (opencode, Claude Code off Linux or
-  without bwrap and socat) the deny rules are no boundary: repository
+- Without the harness's sandbox (opencode, Claude Code outside Linux
+  and macOS, or on Linux without bwrap and socat) the deny rules are no boundary: repository
   code can run gh or rewrite the runner's record of the repository.
 - On an ssh target, gh must be at the path the runner found on its own
   host, or `maity gh` refuses.
@@ -1062,6 +1073,8 @@ SIGTERM exits 0. In every case the agents keep running.
 ```sh
 maity runner serve            # in the foreground; as a service: `sudo maity runner install`
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
+maity runner tools [--json]   # the harness tools this runner installs and updates; no hub call
+maity runner tools rollback codex  # new sessions start with the kept version
 ```
 
 `status` shows each placement's state as the supervisor last recorded
