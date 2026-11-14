@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import re
 import secrets
 import time
 from datetime import datetime, timedelta
@@ -25,6 +24,7 @@ from maity_hub import admin, clock, secretbox, shared_counts
 from maity_hub import tables as t
 from maity_hub.auth import mail_factor, passwords, sessions, totp
 from maity_hub.auth.caller import Caller, session_expires_at
+from maity_hub.auth.permitted import API, Calls
 from maity_hub.auth.sign_in_settings import second_factor_policy
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, rate_limited, unauthenticated
@@ -55,24 +55,23 @@ SECRET_FIELD = "second_factor.secret"
 _CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
 _CROCKFORD_READ = str.maketrans({"i": "1", "l": "1", "o": "0"})
 
-# What a second-factor and an enrolment session may call (§2.8.2, §2.8.5), below
-# `/api/v1`.
-SECOND_STEP_CALLS = {
+# What a second-factor and an enrolment session may call (§2.8.2, §2.8.5).
+SECOND_STEP_CALLS = Calls(
     ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/second-factor/verify"),
     ("POST", "/auth/second-factor/email"),  # under `via: email` (§2.8.8)
     ("POST", "/auth/logout"),
-}
+)
 # A session in good standing that was full before it was held at enrolment keeps the
 # decisions its standing allows, "This was me" on a sign-in alert among them (§2.8.5): the
 # list that shows the alert, the call that marks it and the confirm itself.
-MOVED_ENROLMENT_CALLS = {
+MOVED_ENROLMENT_CALLS = Calls(
     ("GET", "/me/notifications"),
     ("POST", "/me/notifications/read"),
-}
-MOVED_ENROLMENT_CONFIRM = re.compile(r"/auth/sessions/[^/]+/confirm")
-ENROLMENT_CALLS = {
+    ("POST", "/auth/sessions/{public_id}/confirm"),
+)
+ENROLMENT_CALLS = Calls(
     ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/logout"),
@@ -80,7 +79,7 @@ ENROLMENT_CALLS = {
     ("GET", "/auth/second-factor"),
     ("POST", "/auth/second-factor/totp"),
     ("POST", "/auth/second-factor/totp/confirm"),
-}
+)
 
 
 # --- reading -------------------------------------------------------------------------
@@ -223,25 +222,23 @@ def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str
     if current in ("ended", "expired"):
         by = "expired" if current == "expired" else "second_factor_disabled"
         raise SessionEnded(row.id_hash, by)
-    call = (method, path.removeprefix("/api/v1"))
-    if current == "second_factor" and call not in SECOND_STEP_CALLS:
+    # A path without `/api/v1` is read as one below it; only API routes come here.
+    below = path.removeprefix(API)
+    if current == "second_factor" and not SECOND_STEP_CALLS.admits(method, below):
         raise refused("second_factor_required", "this session owes the second factor")
-    if current == "enrolment" and _moved_call(row, call):
+    if current == "enrolment" and _moved_call(row, method, below):
         return  # a session in good standing moved into enrolment keeps "This was me" (§2.8.5)
-    if current == "enrolment" and call not in ENROLMENT_CALLS:
+    if current == "enrolment" and not ENROLMENT_CALLS.admits(method, below):
         raise refused("second_factor_enrolment_required", "set up the second factor first")
 
 
-def _moved_call(row: Any, call: tuple[str, str]) -> bool:
-    """Whether `call` is one a session moved into enrolment keeps (§2.8.5): only a session
+def _moved_call(row: Any, method: str, path: str) -> bool:
+    """Whether the call is one a session moved into enrolment keeps (§2.8.5): only a session
     whose sign-in was complete before it was moved (a fresh enrolment sign-in is not), and
     only while it is in good standing."""
     if not row.sign_in_complete or not sessions.good_standing(row):
         return False
-    method, path = call
-    return call in MOVED_ENROLMENT_CALLS or (
-        method == "POST" and MOVED_ENROLMENT_CONFIRM.fullmatch(path) is not None
-    )
+    return MOVED_ENROLMENT_CALLS.admits(method, path)
 
 
 def _session(conn: Connection, id_hash: str) -> Any:

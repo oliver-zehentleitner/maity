@@ -797,3 +797,49 @@ refuse only `cross-site` while §2.6.5 asked for both.
   leaves login CSRF from a sibling host open for no gain.
 - A guard with a per-route switch for the site rule: the switch is the
   divergence this replaces.
+
+## The permitted-call allowlists share one format and one matcher, each gate keeping the path it reads
+
+**Id:** a8fd69cb-de04-4977-af4e-90a06ddc6415
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f5sdcgr7vzj0, item 3 (clean-up audit tsk-hgnbapyw7hnh, area 14, finding #12), 2026-11-15; docs/api.md §2.7.5, §2.8.2, §2.8.5, §6.2
+
+The lists of what an isolated agent (`caller.ISOLATED_MAY`), a
+second-factor or enrolment session (`second_factor.SECOND_STEP_CALLS`,
+`ENROLMENT_CALLS`, `MOVED_ENROLMENT_CALLS`) and a pending account
+(`deps.PENDING_MAY`) may still call are `auth.permitted.Calls`: a
+method and the path template below `/api/v1` as the router writes it,
+`{name}` for one segment and `{name:path}` for the rest. A list refuses
+an entry in another form when it is built, and a test holds every entry
+to exactly one route of the router.
+
+The matcher only compares. Each gate hands it the path it always read:
+the isolated agent's authentication the raw request path (decoded
+byte for byte as Latin-1, so `/api/v1/m%65` is not `/me`), the
+second-factor gate and the pending check the decoded path. The
+second-factor gate still takes `/api/v1` off only where it is there, so
+a path without it reads as one below it; the other two refuse such a
+path. The pending account's own-session delete is
+`/auth/sessions/{public_id:path}`, the `startswith` it replaced.
+`tests/test_permitted_calls.py` pins what each gate let through and
+refused before the change, the edges included.
+
+**Reason:** three formats for one concept (bytes with the prefix,
+strings without it plus a regex, strings with it plus a `startswith`)
+meant a path written in the wrong form opened or closed a call
+silently, and nothing checked the lists against the router. One format
+checked at build time and against the routes makes such a slip fail a
+test instead.
+
+**Rejected alternatives:**
+- Matching on the router's own route (the matched `path_format`)
+  instead of the path: the isolated agent is judged during
+  authentication, on the raw path, and `GET /bootstrap` judges each
+  part on a path no route matched for it; moving the gates would
+  change what they see.
+- Narrowing the pending delete to `{public_id}` and making the
+  second-factor gate require the prefix: no route tells them apart
+  today, but either is a change of an access gate, left to a card of
+  its own.

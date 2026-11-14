@@ -12,18 +12,22 @@ allowed path, a path that only starts like an allowed one, percent-encoding, a p
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi.routing import iter_route_contexts
 from sqlalchemy import Engine, update
 
 from maity_hub import deps
 from maity_hub import tables as t
+from maity_hub.app import create_app
 from maity_hub.auth import caller as caller_module
-from maity_hub.auth import second_factor
+from maity_hub.auth import permitted, second_factor
 from maity_hub.auth.caller import Caller, RequestFacts
+from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.net import Origin
 from tests import flow
@@ -163,9 +167,7 @@ def test_a_bootstrap_part_of_an_isolated_agent_passes_on_its_few_paths(
         ("GET", "/api/v1/projects/maintainer/maity/events"),
     ],
 )
-def test_a_bootstrap_part_of_an_isolated_agent_is_refused_elsewhere(
-    method: str, path: str
-) -> None:
+def test_a_bootstrap_part_of_an_isolated_agent_is_refused_elsewhere(method: str, path: str) -> None:
     assert not _bootstrap_part_passes(method, path)
 
 
@@ -493,3 +495,71 @@ def test_a_second_factor_session_is_judged_on_the_decoded_path(
     assert client.get("/api/v1/auth/session?x=1").status_code == 200
     refused = client.get("/api/v1/m%65")
     assert refused.json()["error"]["details"]["reason"] == "second_factor_required"
+
+
+# --- one format, every entry a route ----------------------------------------------------
+
+LISTS = {
+    "ISOLATED_MAY": caller_module.ISOLATED_MAY,
+    "SECOND_STEP_CALLS": second_factor.SECOND_STEP_CALLS,
+    "MOVED_ENROLMENT_CALLS": second_factor.MOVED_ENROLMENT_CALLS,
+    "ENROLMENT_CALLS": second_factor.ENROLMENT_CALLS,
+    "PENDING_MAY": deps.PENDING_MAY,
+}
+
+
+def _routes(settings: Settings, migrated: Engine) -> set[tuple[str, str]]:
+    return {
+        (method, route.path_format)
+        for route in iter_route_contexts(list(create_app(settings, migrated).routes))
+        if route.path_format is not None
+        for method in route.methods or ()
+    }
+
+
+@pytest.mark.parametrize("name", sorted(LISTS))
+def test_every_entry_names_a_route_and_admits_no_other(
+    name: str, settings: Settings, migrated: Engine
+) -> None:
+    routes = _routes(settings, migrated)
+    for method, template in LISTS[name]:
+        route = (method, permitted.API + template.replace(":path}", "}"))
+        assert route in routes, f"{name}: {method} {template} is no route of the router"
+        # Each route of the router, its parameters filled: the entry admits its own and no
+        # other (a `{name:path}` entry too).
+        one = permitted.Calls((method, template))
+        admitted = {(m, p) for m, p in routes if one.admits_api(m, re.sub(r"\{[^}]+\}", "x", p))}
+        assert admitted == {route}, f"{name}: {method} {template} admits {sorted(admitted)}"
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        ("GET", "/api/v1/me"),  # the prefix belongs to no entry
+        ("GET", "/api/v1"),
+        ("get", "/me"),
+        ("OPTIONS", "/me"),
+        ("GET", "me"),
+        ("GET", "/auth/sessions/{public_id/confirm"),
+        ("GET", "/auth/sessions/{Public}"),
+        ("GET", "/auth/sessions/{public_id:int}"),
+        ("GET", "/auth/sessions/}"),
+    ],
+)
+def test_an_entry_in_another_form_is_refused_when_the_list_is_built(
+    entry: tuple[str, str],
+) -> None:
+    with pytest.raises(ValueError):
+        permitted.Calls(entry)
+
+
+def test_a_parameter_is_one_segment_and_a_path_parameter_the_rest() -> None:
+    calls = permitted.Calls(("POST", "/a/{x}/b"), ("DELETE", "/c/{rest:path}"))
+    assert calls.admits("POST", "/a/1/b") and calls.admits("POST", "/a/1.2/b")
+    assert not calls.admits("POST", "/a//b") and not calls.admits("POST", "/a/1/2/b")
+    assert not calls.admits("POST", "/a/1/b/") and not calls.admits("GET", "/a/1/b")
+    assert calls.admits("DELETE", "/c/") and calls.admits("DELETE", "/c/1/2\n3")
+    assert not calls.admits("DELETE", "/c") and not calls.admits("DELETE", "/cx/1")
+    assert calls.admits_api("DELETE", "/api/v1/c/1") and not calls.admits_api("DELETE", "/c/1")
+    dots = permitted.Calls(("GET", "/a.b"))  # a literal is compared as written, no pattern
+    assert dots.admits("GET", "/a.b") and not dots.admits("GET", "/axb")
