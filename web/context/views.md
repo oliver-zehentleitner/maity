@@ -6696,20 +6696,25 @@ panel the same edge, and a new form inside it needs no width of its own.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-1cs7h9jhww36 (2026-11-13): the e2e step `account_tabs_layout` failed now and then at 390 px, "a.view-tab 'Security' is out of sight in its row" on /account/security, on main of 2026-11-11 and of 2026-11-13 alike, and passed in other runs on the same commits; reproduced every time by drawing the view in the fallback face and letting Inter arrive afterwards
+**Source:** card tsk-1cs7h9jhww36 (2026-11-13): the e2e step `account_tabs_layout` failed now and then at 390 px, "a.view-tab 'Security' is out of sight in its row" on /account/security, on main of 2026-11-11 and of 2026-11-13 alike, and passed in other runs on the same commits; reproduced every time by drawing the view in the fallback face and letting Inter arrive afterwards; the review of #1767 found the header's row of a project's views left out (Settings 16 px past its row at 390 px)
 **Revisit when:** the fonts stop loading with `font-display: swap`, or the account's tab row stops scrolling sideways
 
 The fonts load with `font-display: swap`, so a view can be drawn in the
-fallback face before Inter is in. A tab row that scrolls sideways
-(the account's tabs) brings its current tab into sight once, when the
-view is put in the page (`showCurrent` in `js/app.js`). Inter is wider:
-at 390 px the row measured 641 px wide in the fallback face, so
-Security, the current tab, stood in sight without scrolling, and 722 px
-in Inter, which put its right edge 1 px past the row's. On the
-document's `loadingdone` (`document.fonts`) the rows are set again: the
-current tab into sight and the fade cues, the header's rows' cues too,
-as on a resize. The e2e step draws every account tab at 390 and 360 px
-with no element using Inter, then lets Inter load and measures.
+fallback face before Inter is in. A tab row that scrolls sideways (the
+account's tabs, the header's row of a project's views) brings its
+current tab into sight once, when it is put in the page (`showCurrent`
+in `js/app.js`). Inter is wider than the face the row was measured in:
+at 390 px the account's row is 722 px wide in Inter and 712 px in the
+page's own fallback stack (the fonts held back); the e2e step's forced
+serif face makes it 641 px. In either narrower face Security, the
+current tab, stands in sight without scrolling; from the serif face,
+once Inter is in, its right edge ended 1 px past the row's. On the
+document's `loadingdone` (`document.fonts`) every such row is set
+again: the header's rows and the account's bring their current tab
+into sight, and the fade cues follow, as on a resize. The
+e2e step draws every account tab and a project's Settings at 390 and
+360 px with no element using Inter, then lets Inter load and measures
+the account's rows and the header's.
 
 **Reason:** whether Inter arrives before the first drawing depends on
 the machine and the network, so the step failed only on a busy machine
