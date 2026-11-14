@@ -102,23 +102,101 @@ else
     { echo "could not render the upgrade to find its image; nothing was changed" >&2; restored=1; exit 1; }
   # The forms an image can take in the rendered YAML: `image: <ref>` as a mapping key, also as the
   # first key of a list item (`- image: <ref>`, a sidecar or init container written that way), the
-  # key quoted ("image" or 'image'), the value plain, double- or single-quoted, with or without a
-  # trailing comment. An empty value (nothing, "", '', null, ~) names no image and is skipped, unless
-  # the lines after a bare `image:` continue it. Every other line with an image key (a flow mapping
-  # `{image: …}`, a block scalar, an anchor, an alias, a tag) is not taken, and stops the script:
-  # an image the check did not see must not be deployed.
+  # key quoted ("image" or 'image'), in any letter case, the value plain, double- or single-quoted,
+  # with or without a trailing comment. An empty value (nothing, "", '', null, ~) names no image and
+  # is skipped, unless the lines after a bare `image:` continue it. Every other line with an image key
+  # (a flow mapping `{image: …}`, a block scalar, an anchor, an alias, a tag) is not taken, and stops
+  # the script: an image the check did not see must not be deployed.
+  # Every line outside a block scalar's text is also read for keys the reader cannot decode exactly,
+  # whatever key they spell, and any one stops the script: a quoted key that is not plain letters,
+  # digits and . _ / - (an escape such as "\x69mage", a doubled '' quote, a space), a plain key with
+  # a backslash, an explicit key (`? …`), a tag, an anchor or an alias, a quoted scalar or a flow
+  # collection that does not end on its line, or a collection used as a key.
   found=$(printf '%s\n' "$rendered_manifest" | awk -v q="'" '
+    # The index of the quote closing the one at s[i], on this line; 0 when it does not close here.
+    function qend(s, i,   qc, c, n) {
+      qc = substr(s, i, 1); n = length(s)
+      for (i++; i <= n; i++) {
+        c = substr(s, i, 1)
+        if (qc == "\"" && c == "\\") { i++; continue }
+        if (c == qc) {
+          if (qc == q && substr(s, i + 1, 1) == q) { i++; continue }
+          return i
+        }
+      }
+      return 0
+    }
+    # Reads one line as YAML keys and values: "bad" for a key or node it cannot decode exactly (a
+    # plain key with a backslash too: plain YAML has no escapes, but no plain key needs one),
+    # "block" when the line ends in a block scalar (| or >), "" otherwise.
+    function scan(s,   n, i, c, nx, d, e, k, st) {
+      n = length(s); i = 1; d = 0; st = 1
+      while (i <= n) {
+        c = substr(s, i, 1); nx = substr(s, i + 1, 1)
+        if (c == " " || c == "\t") { i++; continue }
+        if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t]/)) break
+        if (st) {
+          if (c == "-" && d == 0 && (nx == "" || nx ~ /[ \t]/)) { i++; continue }
+          if (c == "?" && (nx == "" || nx ~ /[ \t]/)) return "bad"
+          if (c ~ /[&*!]/) return "bad"
+          if (c == "|" || c == ">") return (d == 0) ? "block" : "bad"
+          if (c == "{" || c == "[") { d++; i++; continue }
+          if (d > 0 && (c == "}" || c == "]")) { d--; st = 0; i++; continue }
+          if (c == "\"" || c == q) {
+            e = qend(s, i); if (!e) return "bad"
+            k = substr(s, i + 1, e - i - 1); i = e + 1
+            while (i <= n && substr(s, i, 1) ~ /[ \t]/) i++
+            if (substr(s, i, 1) == ":") {
+              if (k !~ /^[A-Za-z0-9._\/-]+$/) return "bad"
+              i++; continue
+            }
+            st = 0; continue
+          }
+          # A plain scalar: a key when ": " (or ":" at the end, or before a flow indicator) follows.
+          st = 0; k = i
+          while (i <= n) {
+            c = substr(s, i, 1); nx = substr(s, i + 1, 1)
+            if (c == ":" && (nx == "" || nx ~ /[ \t]/ || (d > 0 && nx ~ /[],[{}]/))) {
+              if (index(substr(s, k, i - k), "\\")) return "bad"
+              st = 1; i++; break
+            }
+            if (c == "#" && substr(s, i - 1, 1) ~ /[ \t]/) { i = n + 1; break }
+            if (d > 0 && c ~ /[],[{}]/) break
+            i++
+          }
+          continue
+        }
+        if (d > 0 && c == ",") { st = 1; i++; continue }
+        if (d > 0 && (c == "}" || c == "]")) { d--; i++; continue }
+        return "bad"
+      }
+      return (d > 0) ? "bad" : ""
+    }
     BEGIN {
-      key = "(image|\"image\"|" q "image" q ")"
+      img = "[Ii][Mm][Aa][Gg][Ee]"
+      key = "(" img "|\"" img "\"|" q img q ")"
       lead = "^[[:space:]]*(-[[:space:]]+)*"
       ref = "[A-Za-z0-9][-A-Za-z0-9._/:@+]*"
-      pend = ""
+      pend = ""; blk = -1
     }
     pend != "" {
       if ($0 ~ /^[[:space:]]*$/) next
       match($0, /^[[:space:]]*/)
       if (RLENGTH > pendcol) { print "bad " pendnr ": " pend; pend = ""; next }
       pend = ""
+    }
+    {
+      # The text of a block scalar (the lines indented deeper than the key that opened it) holds no keys.
+      inblk = 0
+      if (blk >= 0) {
+        match($0, /^[ \t]*/)
+        if ($0 ~ /^[ \t]*$/ || RLENGTH > blk) inblk = 1; else blk = -1
+      }
+      if (!inblk) {
+        r = scan($0)
+        if (r == "bad") { print "bad " NR ": " $0; next }
+        if (r == "block") { match($0, /^[ \t]*(-[ \t]+)*/); blk = RLENGTH }
+      }
     }
     $0 ~ ("(^|[[:space:]{,])" key "[[:space:]]*:") {
       if (!match($0, lead key "[[:space:]]*:")) { print "bad " NR ": " $0; next }

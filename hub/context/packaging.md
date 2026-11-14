@@ -336,7 +336,13 @@ each to be pinned by digest and to pass `cosign verify` with the issuer and
 identity regexp of the chart README's install step 2 (the stub test holds
 the script's issuer and identity equal to the README's). An image key in any
 other form (a flow mapping, a block scalar, an anchor or alias) stops the
-script: an image the check cannot read is not deployed. All of this
+script: an image the check cannot read is not deployed. So does any
+mapping key, whatever it spells, that the reader cannot decode exactly: a
+quoted key that is not plain letters, digits and `._/-` (an escape such as
+`"\x69mage"` is the same key as `image` in YAML), a plain key with a
+backslash, a tag, anchor or alias (a merge key `<<: *x` too), an explicit
+`? ` key, or a quoted scalar or flow collection that does not end on its
+line. All of this
 happens before the dump (and its CronJob lookup), the migrate Job and the
 scale-down, so a refusal changes nothing. A missing cosign is a refusal
 too. `NO_SIGNATURE_CHECK=1`
@@ -364,6 +370,10 @@ pull.
   without cosign would never check, and nobody would notice.
 - Taking the image from an extra argument or variable: it could differ
   from what the values make Helm deploy.
+- Decoding YAML escapes in the awk reader, or a YAML parser (yq, PyYAML):
+  a decoder in awk is easy to get subtly wrong, and a parser is one more
+  tool on the deploy host. Refusing what the reader cannot decode is
+  exact, and the stock chart's rendering has no such key.
 - Only the script's own `--dry-run` last: a caller's flag that ends the
   list waiting for a value would take it as its value. Only first: a
   caller's later `--dry-run=false` wins. Hence both, and the refusal.

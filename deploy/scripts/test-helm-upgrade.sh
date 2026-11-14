@@ -376,6 +376,50 @@ form_case anchor "        - name: side
           image: &img $side_ref"
 form_case alias "        - name: side
           image: *img"
+# A key the reader cannot decode exactly stops the script before anything changes, whatever key it
+# spells: beside a signed hub (name first), a sidecar whose image key is escaped or otherwise not plain
+# would otherwise pass unchecked. The lines are taken as they are (single quotes: the backslashes stay).
+key_case() { # name, the sidecar's line(s) after "- name: side"
+  printf 'MANIFEST:\n    spec:\n      containers:\n        - name: hub\n          image: %s\n        - name: side\n%s\n' \
+    "$DIGEST_REF" "$2" > "$work/key-$1.yaml"
+  UNTOUCHED=1 MANIFEST_FILE="$work/key-$1.yaml" run "key_$1" none 1 1 no 1
+  grep -q 'form the check does not read' "$work/key_$1/out" || { echo "FAIL key_$1: not refused as an unread form"; failures=$((failures + 1)); }
+}
+# shellcheck disable=SC1003 # a lone backslash, on purpose
+bs='\'
+key_case escaped_x69 '          "\x69mage": registry.example.org/untrusted:latest'
+key_case escaped_x61 '          "im\x61ge": registry.example.org/untrusted:latest'
+key_case escaped_u "          \"${bs}u0069mage\": registry.example.org/untrusted:latest"
+key_case escaped_quote '          "image\"": registry.example.org/untrusted:latest'
+key_case first_key_escaped '        - "\x69mage": registry.example.org/untrusted:latest'
+key_case single_doubled "          'im''age': registry.example.org/untrusted:latest"
+key_case plain_backslash '          im\x61ge: registry.example.org/untrusted:latest'
+key_case tagged_key '          !!str image: registry.example.org/untrusted:latest'
+key_case explicit_key '          ? image
+          : registry.example.org/untrusted:latest'
+key_case anchored_key '          &k image: registry.example.org/untrusted:latest'
+key_case spaced_quoted '          "image ": registry.example.org/untrusted:latest'
+key_case flow_escaped '          resources: {"\x69mage": registry.example.org/untrusted:latest}'
+key_case flow_two_lines '          env: [{name: a,
+            "\x69mage": registry.example.org/untrusted:latest}]'
+key_case quoted_two_lines '          args: "a
+            b"
+          "\x69mage": registry.example.org/untrusted:latest'
+key_case after_block_text '          command: |
+            * text of the block, not a key
+          "\x69mage": registry.example.org/untrusted:latest'
+key_case merge_key '          <<: *base'
+# Controls: the same sidecar with the key plain, "image" or 'image' (no escape) is read and checked,
+# and passes when signed; quoted keys and escapes elsewhere (annotations, values, block text) are fine.
+key_control() { # name, the key as written
+  printf 'MANIFEST:\n    metadata:\n      annotations:\n        "helm.sh/hook": pre-upgrade\n    spec:\n      containers:\n        - name: hub\n          image: %s\n          args: ["a\\"b", "c:\\\\d"]\n          command: |\n            * "\\x69mage": text\n        - name: side\n          %s: %s\n' \
+    "$DIGEST_REF" "$2" "$side_ref" > "$work/key-$1.yaml"
+  MANIFEST_FILE="$work/key-$1.yaml" run "key_$1" none 1 0 yes 1
+  grep -qF -- "cosign verify $side_ref " "$work/key_$1/log" || { echo "FAIL key_$1: the sidecar was not checked"; failures=$((failures + 1)); }
+}
+key_control control_plain image
+key_control control_double '"image"'
+key_control control_single "'image'"
 # Real Helm parses the flags: the script's rendering against a loopback stand-in for the Kubernetes API
 # that answers reads and refuses every write. With the caller's --install it renders with no write and
 # reaches cosign; a caller's --dry-run=false is refused before Helm runs. The control shows that the same
