@@ -319,7 +319,7 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
   you need, then delete them from the volume.
-- **A lost or exposed backup.** A backup holds the verifiers of every agent credential. Encrypted, it is safe as long as
+- **A lost or exposed backup.** A backup holds the verifiers of every agent and runner credential, sealed with `MAITY_SECRET_KEY` when the hub has one ([Backups](#backups)). Encrypted, it is safe as long as
   the private key is. If the private key or an unencrypted backup was exposed, revoke the agent sessions it holds in the
   running hub ([Backups](#backups)), make a new key pair, and replace the Secret.
 - **A failed dump fails the Job.** `pg_dump` is retried a few times; if it still fails, the Job fails and no empty `.part` stays behind
@@ -552,8 +552,16 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
 ## Backups
 
 The database is the whole hub. It also holds the verifiers of every agent
-credential, and a verifier is enough to sign requests as that agent. Store
-backups like you store secrets. If a backup was exposed, revoke the agent
+and runner credential, and a verifier is enough to sign requests as that
+agent or runner. With `MAITY_SECRET_KEY` set, the hub stores them sealed
+with that key, so a database read without the key yields no usable
+verifier; without the key they are stored as they are. Verifiers stored
+before the key was set are sealed when `maity-hub migrate` runs the
+migration that seals them with the key set; otherwise they stay unsealed
+until their agent or runner joins again, and the hub logs their number at
+startup. Keep the key apart
+from the backups. Store backups like you store secrets. If a backup and
+the key, or a backup made without a key, were exposed, revoke the agent
 sessions it holds in the running hub, whether you restore it or not.
 
 | Engine | Backup | Restore |

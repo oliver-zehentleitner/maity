@@ -118,9 +118,11 @@ example; any cluster with the same pieces works.
    ```
 
    The instance key for secrets the hub stores (`MAITY_SECRET_KEY`: the
-   forge webhook's secret, a stored SMTP password, second-factor secrets;
-   docs/api.md §16.2, §17.4) is optional: without it none of those can be
-   stored, and the second factor `required_admins` refuses to start. 32
+   forge webhook's secret, a stored SMTP password, second-factor secrets,
+   the verifiers of agent and runner credentials; docs/api.md §2.2, §16.2,
+   §17.4) is optional: without it none of the first three can be stored,
+   the verifiers are stored unsealed, and the second factor
+   `required_admins` refuses to start. 32
    random bytes, base64:
 
    ```sh
@@ -131,7 +133,8 @@ example; any cluster with the same pieces works.
    A value that is not exactly 32 bytes of base64 stops the hub and the
    migrate Job from starting, so a typo shows at once. Keep a copy outside
    the cluster: a lost or changed key makes every stored secret unusable (the hub logs it at startup, and each webhook
-   needs a new secret). In the values it is `secretKey.existingSecret`
+   needs a new secret). With sealed credential verifiers it also means that every agent and runner
+   must join again. In the values it is `secretKey.existingSecret`
    (below); the Secret's key defaults to `secret-key`, set `secretKey.key` if you named it differently.
 
 4. **Values.** A `values.yaml` behind an ingress controller with

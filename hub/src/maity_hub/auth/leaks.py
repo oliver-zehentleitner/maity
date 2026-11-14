@@ -15,7 +15,7 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import clock, environment, placements
 from maity_hub import tables as t
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, verifiers
 from maity_hub.auth.caller import is_runner_credential
 from maity_hub.events import emit
 from maity_hub.runners import attached_project_ids, human_actor
@@ -54,9 +54,7 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
     for row in rows:
         if row.revoked_at is not None:
             continue
-        if not any(
-            credentials.secret_matches(secret, row.verifier) for secret in secrets_by_id[row.id]
-        ):
+        if not _verifies("credential", row, secrets_by_id[row.id]):
             continue
         revoke(conn, row.id, REASON, by=None)
         payload = {"credential_id": row.id, "reason": REASON}
@@ -158,6 +156,13 @@ def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> No
         )
 
 
+def _verifies(table: verifiers.Table, row: Any, secrets: set[str]) -> bool:
+    verifier = verifiers.usable(table, row.id, row.verifier)
+    return verifier is not None and any(
+        credentials.secret_matches(secret, verifier) for secret in secrets
+    )
+
+
 def _revoke_leaked_runners(
     conn: Connection, ids: list[str], secrets_by_id: dict[str, set[str]]
 ) -> list[str]:
@@ -175,9 +180,7 @@ def _revoke_leaked_runners(
     for row in rows:
         if row.revoked_at is not None:
             continue
-        if not any(
-            credentials.secret_matches(secret, row.verifier) for secret in secrets_by_id[row.id]
-        ):
+        if not _verifies("runner_credential", row, secrets_by_id[row.id]):
             continue
         revoke_runner_credential(conn, row.id, REASON, by=None)
         runner_id = conn.execute(

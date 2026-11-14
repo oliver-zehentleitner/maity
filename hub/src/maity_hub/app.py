@@ -65,7 +65,7 @@ from maity_hub import (
 )
 from maity_hub import admin as instance_admin
 from maity_hub.auth import device_codes as codes
-from maity_hub.auth import known_sources, mail_factor
+from maity_hub.auth import known_sources, mail_factor, verifiers
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.compression import Compression
 from maity_hub.config import ConfigError, Settings
@@ -241,6 +241,7 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
             )
     check_secrets(engine, settings.secret_key)
+    verifiers.check_at_startup(engine, settings.secret_key)  # read only (§2.2)
 
 
 def start_once(engine: Engine, settings: Settings) -> None:
@@ -333,6 +334,7 @@ def create_app(
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
     known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
+    verifiers.configure(settings.secret_key)  # seals the credentials' verifiers (§2.2)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

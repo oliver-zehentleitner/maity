@@ -642,12 +642,19 @@ string, before any normalisation); the CLI sends paths as it built them
 and never relies on a proxy to rewrite them. Signatures are compared in
 constant time.
 
-The cost, stated plainly: for the signed path the stored verifier is the
-signing key, so a copy of the database signs as every agent (it cannot
-present bearer credentials, but signed and bearer calls carry the same
-rights). In V1 the database is therefore protected like the probe token.
-An encrypted verifier column with a key from the hub's environment is the
-first V1.x security item; asymmetric keys are the revisit condition
+For the signed path the verifier is the signing key, so the hub stores
+it sealed with the instance key `MAITY_SECRET_KEY` (§16.2: AES-256-GCM,
+the table, column and credential id as associated data), for agent and
+runner credentials alike. A copy of the database alone then signs as
+nobody. The CLI's scheme is unchanged. Without `MAITY_SECRET_KEY` the
+verifier is stored as it is, and a copy of the database signs as every
+agent (signed and bearer calls carry the same rights): such an instance
+protects its database like the probe token. Verifiers stored before the
+key was set stay so until their credential is replaced; `maity-hub
+migrate` seals them when it runs with the key. A key that is changed or
+lost opens no sealed verifier: those credentials answer as unknown ones
+(`unauthenticated`, `signature_invalid`), and their agents and runners
+join again. Asymmetric keys remain the revisit condition
 (`docs/architecture.md` §4.6 and §13).
 
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
@@ -19365,7 +19372,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | — | **insecure**, environment only, default `false`. With `true`, a `starttls` connection to a server that offers no STARTTLS sends the mail in clear instead of failing — every mail, sign-in links included, then crosses the network readable and changeable by anyone on the path. `AUTH` is still never sent without TLS (a configured username then fails at stage `auth`). While it is `true` the admin view carries `warnings: ["smtp_plaintext_allowed"]` and the hub logs a warning at startup and at every plaintext send. Meant for a test bench only |
 | `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS. Printable ASCII, as the password (`invalid` otherwise; in the environment the hub stops at startup) |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
-| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets). Never returned; `{set}` in the answer as `secret_key` |
+| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets, the verifiers of agent and runner credentials, §2.2). Never returned; `{set}` in the answer as `secret_key` |
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
