@@ -231,9 +231,20 @@ def _replay_series(conn: Connection, series_id: str, request: Request) -> dict[s
     return series_view(conn, series_id)
 
 
-idempotency.LOADERS["jour_fixe_round"] = _replay_round
-idempotency.LOADERS["jour_fixe_answer"] = _replay_answer
-idempotency.LOADERS["jour_fixe_series"] = _replay_series
+def _answer_project(conn: Connection, answer_id: str) -> str | None:
+    found: str | None = conn.execute(
+        select(t.jour_fixe_round.c.project_id)
+        .join(t.jour_fixe_answer, t.jour_fixe_answer.c.round_id == t.jour_fixe_round.c.id)
+        .where(t.jour_fixe_answer.c.id == answer_id)
+    ).scalar()
+    return found
+
+
+_IN_ROUNDS_PROJECT = idempotency.in_project(idempotency.column_of(t.jour_fixe_round))
+_IN_SERIES_PROJECT = idempotency.in_project(idempotency.column_of(t.jour_fixe_series))
+idempotency.register("jour_fixe_round", _replay_round, _IN_ROUNDS_PROJECT)
+idempotency.register("jour_fixe_answer", _replay_answer, idempotency.in_project(_answer_project))
+idempotency.register("jour_fixe_series", _replay_series, _IN_SERIES_PROJECT)
 
 
 def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[str, Any]:
@@ -257,7 +268,7 @@ def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[st
     return {"series": series.view(conn, row), "requests": ids}
 
 
-idempotency.LOADERS["jour_fixe_grant"] = _replay_grant
+idempotency.register("jour_fixe_grant", _replay_grant, _IN_SERIES_PROJECT)
 
 
 def _last_reported(conn: Connection, series_id: str) -> Any | None:
@@ -720,7 +731,14 @@ def _replay_post(conn: Connection, ref: str, request: Request) -> dict[str, Any]
     return views.post(found, mine, _readers(conn, [row])[row.id])
 
 
-idempotency.LOADERS["jour_fixe_post"] = _replay_post
+idempotency.register(
+    "jour_fixe_post",
+    _replay_post,
+    # `<round id>/<post id>`
+    idempotency.in_project(
+        lambda conn, ref: idempotency.column_of(t.jour_fixe_round)(conn, ref.split("/", 1)[0])
+    ),
+)
 
 
 @router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/posts")
@@ -770,7 +788,7 @@ def _replay_report(conn: Connection, round_id: str, request: Request) -> dict[st
     return report_view(conn, round_id, mine)
 
 
-idempotency.LOADERS["jour_fixe_report"] = _replay_report
+idempotency.register("jour_fixe_report", _replay_report, _IN_ROUNDS_PROJECT)
 
 
 @router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/report")

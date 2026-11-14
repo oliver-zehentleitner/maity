@@ -85,6 +85,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "links_visible": "private",
         "account_status": "active",  # §2.7.5
         "terms": None,  # made by the operator: nothing accepted (§2.7.2)
+        "experiment_notice_understood_at": None,  # not confirmed yet (§5.1)
         "limit": None,  # no limit declared (§6.12)
         "start_tabs": None,  # §5.1: every membership opens as a tab
     }

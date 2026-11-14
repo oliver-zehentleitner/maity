@@ -239,6 +239,7 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
             if human.terms_version is not None
             else None
         ),
+        "experiment_notice_understood_at": ts(human.experiment_notice_understood_at),  # §5.1
         "limit": (
             {
                 "until": ts(human.limit_until),

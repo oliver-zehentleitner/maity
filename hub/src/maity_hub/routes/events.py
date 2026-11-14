@@ -107,7 +107,36 @@ def _load_for_caller(conn: Connection, seq: str, request: Request) -> dict[str, 
     return event_views(conn, [row], reader)[0]
 
 
-idempotency.LOADERS["event"] = _load_for_caller
+def _reads_event(conn: Connection, mine: Membership, seq: str) -> bool:
+    """What `GET …/events/{seq}` reads (§8.9): the event list's own read, bounded to this one
+    `seq`, so a replay shows an event only to whom that read serves it now."""
+    number = int(seq)
+    rows, _, _ = events.read(
+        conn,
+        mine.project.id,
+        mine.row,
+        mine.principal_id,
+        number - 1,
+        1,
+        until=number,
+        carried=mine.bridged,  # `Maity-For` (§2.3)
+    )
+    if rows:
+        return True
+    # A group chat's message is also read through the chat's history, as its redaction
+    # counts it (`_redact_in_group`): someone added later redacts an earlier message there.
+    row = conn.execute(select(t.event.c.conversation_id).where(t.event.c.seq == number)).first()
+    if row is None or not group_chats.is_group(row.conversation_id):
+        return False
+    return group_chats.access(conn, row.conversation_id, mine) is not None
+
+
+_IN_EVENTS_PROJECT = idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int))
+idempotency.register(
+    "event",
+    _load_for_caller,
+    idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int), _reads_event),
+)
 
 
 # --- reading and waiting -------------------------------------------------------------------
@@ -1074,4 +1103,10 @@ def _blind(seq: int) -> dict[str, Any]:
     return {"seq": seq, "redacted": True}
 
 
-idempotency.LOADERS["blind_redaction"] = idempotency.plain(lambda _conn, seq: _blind(int(seq)))
+# A blind redaction's answer is `{seq, redacted}` alone, and its event was never the
+# redacting admin's to read (§8.5): the replay checks the project, not the event.
+idempotency.register(
+    "blind_redaction",
+    idempotency.plain(lambda _conn, seq: _blind(int(seq))),
+    _IN_EVENTS_PROJECT,
+)

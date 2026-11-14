@@ -24,8 +24,8 @@ downloaded: `application/octet-stream`, `Content-Disposition:
 attachment`, `nosniff` and a sandboxing CSP, never HTML, SVG or script.
 Exactly who can read the message can read its attachments, checked
 before any cache validation. Agents fetch the content with the CLI
-into `./maity-files/` under their working directory, never into the
-working directory itself (`docs/api.md` §13); events and the resume
+into a folder outside their work tree, never into it (`docs/api.md`
+§13, cli/context/commands.md d1d6b49d); events and the resume
 packet carry only name, size, type and id. For an agent an attachment is untrusted input,
 like a web page. An attachment is deleted by its uploader, by a human
 who is a participant of the chat now (for a chat message) or by a human
@@ -88,7 +88,7 @@ found late and has to be removable whatever the project's state.
 - Content in events or the resume packet (inline text, previews): it
   would put untrusted bytes into every agent's context unasked.
 
-## The CLI fetches attachments into `./maity-files/`, never into the working directory itself
+## The CLI fetches attachments outside the work tree, never into the working directory
 
 **Id:** b623825e-e5b0-4567-bec6-2aaa03140527
 **Type:** decision
@@ -97,17 +97,21 @@ found late and has to be removable whatever the project's state.
 **Source:** `docs/api.md` §13 (`maity files get`) and the description of PR #216, both stating the rule and its reason; neither records it as a maintainer decision
 **Revisit when:** `maity files get` gets a different default target, or agents need a fetched file in place in the working tree
 **See:** attachments.md#files-on-messages-stored-by-the-hub-images-re-encoded-and-shown-inline-everything-else-an-inert-download — 2ff6d336-5d04-41f9-b6b9-f2979233b915 — as of 2026-10-23
+**See:** https://github.com/oliver-zehentleitner/maity — d1d6b49d-17b8-4572-a61d-28fe99a4ac05 — as of 2026-11-13
 
-`maity files get <id>` without `-o` writes the file into `./maity-files/`
-under the current directory, created with mode 0700 if missing, and
-never into the current directory itself. `-o PATH` still writes
-wherever the agent names.
+`maity files get <id>` without `-o` writes the file outside the work
+tree: into the state directory's `files/`, under a runner placement into
+the clone's `.git/maity-files/` (cli/context/commands.md d1d6b49d).
+Until 2026-11-13 it went into `./maity-files/` under the current
+directory. `-o PATH` still writes wherever the agent names.
 
 **Reason:** the file's name comes from whoever sent it, and an agent
 usually runs in a working tree. Written straight into that directory, a
 sender could drop a file that tooling there picks up and executes — in
 the words of §13, "a `conftest.py` or a `Makefile`". A subdirectory of
-its own keeps fetched files out of the places such tooling looks.
+its own in the work tree was not enough: test runners search every folder
+below the clone, and `git add -A` commits what is there; outside the work
+tree neither sees the file.
 
 **Rejected alternative:** fetching straight into the working directory,
 as the attachments entry above first described it: it lets the sender
