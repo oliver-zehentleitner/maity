@@ -14,10 +14,13 @@ window.Maity = window.Maity || {};
   const { h, append } = M.dom;
   // Asked without ?v=<digest>: the hub then answers the current file with no-cache and an ETag
   // (hub/src/maity_hub/landing_files.py), so a revalidation costs no body and never goes stale.
+  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css"];
   // After them the dashboard's own sections of the signed-out pages (css/public-sections.css: the
-  // project's hero, its figures band, its tab bar, the sections), relative as every file of the
-  // dashboard: they build on the landing's tokens and classes, so they load last and only here.
-  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css", "css/public-sections.css"];
+  // project's hero, its figures band, its tab bar, the sections). They build on the landing's
+  // tokens and classes, so they come last and are on only here. index.html names the file,
+  // disabled, so the shell gives it its version as every file of the dashboard (§16.11); it is
+  // moved behind the two the first time the frame is entered.
+  const OWN_SHEET = "public-sections";
   const ON = "public-frame";
   let links = [];
   let header = null;
@@ -34,6 +37,11 @@ window.Maity = window.Maity || {};
         document.head.appendChild(link);
         return link;
       });
+      const own = document.getElementById(OWN_SHEET);
+      if (own) {
+        document.head.appendChild(own);
+        links.push(own);
+      }
     }
     links.forEach((link) => { link.disabled = !on; });
   }

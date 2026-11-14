@@ -15245,6 +15245,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(h2.querySelector("div.sub pre.md-code") && /\.md-code \{[^}]*background: var\(--surface-2\)/.test(appCss)
         && /\.phero \{[^}]*--surface-2: var\(--surface2\)[^}]*--ok: #7ee2a0/.test(ppCss),
       "visitor: without a session, a code block in the about text stands in the hero on the dark zone's ground, the app's --surface-2 and --ok mapped there");
+      // The sections' stylesheet is named in index.html, so the shell names it with its version (§16.11; the
+      // e2e's warm load refuses a dashboard file named without one); site-chrome.js only moves and switches it.
+      const ppIndex = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
+      const ppChrome = fs.readFileSync(path.join(WEB, "js/site-chrome.js"), "utf8");
+      const ppSheets = /const SHEETS = \[([^\]]*)\]/.exec(ppChrome);
+      expect(/<link rel="stylesheet" href="css\/public-sections\.css" id="public-sections" disabled>/.test(ppIndex)
+        && ppSheets && !/"(?:brand|css|js|vendor)\//.test(ppSheets[1]) && ppChrome.includes('const OWN_SHEET = "public-sections"'),
+      "visitor: the sections' stylesheet is named in index.html, disabled, for the shell's version; the frame adds no dashboard file by a name of its own " + (ppSheets && ppSheets[1]));
       viPages["/public/pages/stranger/tool"] = plain;
       await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
       const h3 = viView().querySelector("section.phero");

@@ -5783,13 +5783,18 @@ across the page (`nav.ptabs`), and the view itself stands under it in the stored
   (from the slug), the slug, "Try it" and Report; the Overview's parts are not read a second
   time for it. "Try it" and Report stay on every view: the README (point 10) puts every tab under
   the same project hero, and Report stands under the title of every public page (§16.8).
-- The about text's Markdown can use the dashboard's own tokens (`--surface-2` under a code
-  block, `--ok`), which the dark zone does not set; the hero maps them to dark values.
+- The about text's Markdown can use the dashboard's own tokens, which the dark zone does not set:
+  `--surface-2` under a fenced code block (`.md-code`) and its Copy button, `--ok` for "Copied".
+  The hero maps them to dark values. Inline code gets no ground there (the about text is
+  `.sub.about`, not `.md`, so `.md code` does not apply): it stays on the hero's ground in the
+  text's muted colour, which passes on the dark zone.
 
 The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
 are `web/css/public-sections.css`, one file for the project, person and agent pages.
-`js/site-chrome.js` loads it as the third of the frame's stylesheets, after `landing.css` and
-`public-pages.css`, and switches it on and off with them. A name the dashboard's `app.css` also
+`index.html` names it as a disabled `<link>`, so the shell gives it its version as every file
+of the dashboard (§16.11, the warm load asks for none again); `js/site-chrome.js` moves it behind
+`landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
+with them. A name the dashboard's `app.css` also
 uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
 
 **Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,
@@ -5803,7 +5808,10 @@ file keeps the person and agent pages that follow on the same rules instead of c
 - The rules in the hub's `public-pages.css`: the hub's stored pages do not draw these parts yet,
   and the lead asked for them in `web/css`; the shared `.sec` and `.pmark` stay there, used by
   `/explore`.
-- A link in `index.html`: always on, and before the frame's stylesheets in the cascade.
+- A link in `index.html` that stays where it is and always on: before the frame's stylesheets in
+  the cascade, and on in the signed-in app.
+- A `<link>` the frame adds by its own name: the shell versions only the files `index.html` names
+  (and lists `brand/`, `js/i18n/`, `vendor/` for scripts), so it would be named without a version.
 
 **Revisit when:** the hub's stored pages (`?as=public`) draw the same hero and band, so the rules
 belong with `public-pages.css`; or the signed-in frame gets the same look.
