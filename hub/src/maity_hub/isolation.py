@@ -158,6 +158,7 @@ def isolate(
         cross_chats.isolation_settled(conn, target.agent_id, human_id)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
+    cards.drop_signatures(conn, project.id, target.agent_id or target.human_id, actor)  # §6.4
     tell_released(conn, released, actor, project)
     _tell_owner(
         conn,

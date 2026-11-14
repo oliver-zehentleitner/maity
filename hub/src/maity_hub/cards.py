@@ -9,12 +9,12 @@ from __future__ import annotations
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import ColumnElement, Connection, and_, delete, insert, select
+from sqlalchemy import ColumnElement, Connection, and_, delete, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, forbidden, invalid
-from maity_hub.scopes import ROLES
+from maity_hub.scopes import ROLES, has_scope
 
 if TYPE_CHECKING:  # access imports the caller, which reads the claims below: cards stays a leaf
     from maity_hub.access import Membership
@@ -126,14 +126,16 @@ def two_signatures(project: Any) -> bool:
     return bool(project.done_authority == "reviewer_and_tester")
 
 
-def sign(mine: Membership, card: Any, approve: str | None, revision: int | None) -> dict[str, Any]:
+def sign(
+    conn: Connection, mine: Membership, card: Any, approve: str | None, revision: int | None
+) -> dict[str, Any]:
     """The card's `approvals` with the caller's signature on `revision` (§6.4): the one its
     scope gives, or under both the one it names. One member never fills both; a place
-    already filled keeps its signature."""
+    already filled keeps its signature while its signer still stands (`standing`)."""
     slot = approve or _only_slot(mine)
     if not mine.may(SIGNATURES[slot]):
         raise forbidden(SIGNATURES[slot], "this signature needs another scope")
-    current = card.approvals or {"review": None, "test": None}
+    current = standing(conn, mine.project.id, card.approvals)
     other = current["test" if slot == "review" else "review"]
     if other is not None and other["by"] == mine.principal_id:
         raise invalid({"approve": "same_member"})
@@ -141,6 +143,80 @@ def sign(mine: Membership, card: Any, approve: str | None, revision: int | None)
         return dict(current)
     mark = {"by": mine.principal_id, "at": clock.rfc3339(clock.now()), "revision": revision}
     return {**current, slot: mark}
+
+
+def _stands(conn: Connection, project_id: str, signer: str, scope: str) -> bool:
+    """Whether `signer` is still an active member of the project, not isolated, whose
+    trust and role give `scope` (§6.4)."""
+    m = t.membership.c
+    row = conn.execute(
+        select(m.trust, m.role_base, m.human_id, m.isolated_since).where(
+            m.project_id == project_id,
+            (m.human_id == signer) | (m.agent_id == signer),
+            m.active.is_(True),
+        )
+    ).first()
+    if row is None or row.isolated_since is not None:
+        return False
+    kind = "human" if row.human_id is not None else "agent"
+    return has_scope(row.trust, row.role_base, kind, scope)
+
+
+def standing(conn: Connection, project_id: str, approvals: Any) -> dict[str, Any]:
+    """`approvals` with only the signatures whose signer still stands (`_stands`): a
+    signature counts while the member who gave it may give it, not after a demotion, a
+    removal or an isolation (§6.4)."""
+    current = dict(approvals or {"review": None, "test": None})
+    for slot, scope in SIGNATURES.items():
+        mark = current.get(slot)
+        if mark is not None and not _stands(conn, project_id, mark["by"], scope):
+            current[slot] = None
+    return current
+
+
+def drop_signatures(conn: Connection, project_id: str, signer: str, actor: Any) -> None:
+    """Clears the signatures `signer` gave on the project's cards in review that it no
+    longer stands for (§6.4), after its trust or role went down, its removal or its
+    isolation, so a later return does not bring them back. Each card emits
+    `task_updated` with `fields: ["approvals"]`."""
+    from maity_hub.events import emit
+    from maity_hub.routes.tasks import audience
+
+    rows = conn.execute(
+        select(t.card).where(
+            t.card.c.project_id == project_id,
+            t.card.c.status == "review",
+            t.card.c.approvals.is_not(None),
+        )
+    ).all()
+    state = None
+    for card in rows:
+        approvals = card.approvals or {}
+        if not any((approvals.get(s) or {}).get("by") == signer for s in SIGNATURES):
+            continue
+        kept = standing(conn, project_id, approvals)
+        if kept == approvals:
+            continue
+        conn.execute(update(t.card).where(t.card.c.id == card.id).values(approvals=kept))
+        if state is None:
+            state = conn.execute(
+                select(t.project.c.state).where(t.project.c.id == project_id)
+            ).scalar_one()
+        emit(
+            conn,
+            project_id,
+            "task_updated",
+            audience(conn, card),
+            {
+                "id": card.id,
+                "fields": ["approvals"],
+                "approvals": kept,
+                "history": [],
+                "project_state": state,
+            },
+            actor=actor,
+            subject=("task", card.id),
+        )
 
 
 def new_signature(before: dict[str, Any] | None, after: dict[str, Any]) -> dict[str, Any] | None:

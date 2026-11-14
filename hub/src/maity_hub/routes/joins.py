@@ -37,6 +37,7 @@ from maity_hub import (
     handover,
     idempotency,
     instances,
+    invitations,
     join_line,
     landing,
     landing_stats,
@@ -1273,6 +1274,8 @@ def _require_pickup_holds(conn: Connection, row: Any) -> None:
         or runner is None
         or runner.removed_at is not None
         or live is None
+        # A profile the exchange creates: its creator still may give it (§3.4, §15.9).
+        or (row.agent_id is None and not invitations.issuer_holds(conn, row))
     ):
         raise not_found()
 

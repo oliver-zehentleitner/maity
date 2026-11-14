@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -231,3 +232,44 @@ def test_a_report_reaches_the_testers_only_where_they_decide(
     assert "role:reviewer" in event.audience
     assert ("role:tester" in event.audience) == tester_reached
     assert ("role:red-team" in event.audience) == tester_reached
+
+
+@pytest.mark.parametrize("change", ["demoted", "removed", "isolated"])
+def test_a_signature_counts_only_while_its_signer_stands(
+    owner: flow.Human, team: dict[str, Any], migrated: Engine, change: str
+) -> None:
+    # §6.4: the reviewer signs, then loses the standing the signature needs; the tester's
+    # signature is then the only one, and the card stays in review. A demotion or a removal
+    # clears the signature at once; an isolation the hub's check drops when it is counted.
+    card = _in_review(owner, team["worker"])
+    reviewer = team["reviewer"]
+    assert _sign(reviewer, card).status_code == 200
+    member = f"{BASE}/members/{reviewer.id}"
+    if change == "demoted":
+        done = owner.patch(member, {"role": "coder"})
+        assert done.status_code == 200, done.text
+    elif change == "removed":
+        done = owner.delete(member)
+        assert done.status_code in (200, 204), done.text
+    else:
+        with migrated.begin() as conn:
+            conn.execute(
+                t.membership.update()
+                .where(t.membership.c.human_id == reviewer.id)
+                .values(isolated_since=clock.now(), isolated_reason="test")
+            )
+    if change != "isolated":
+        cleared = owner.get(f"{BASE}/tasks/{card['id']}").json()
+        assert cleared["approvals"] == {"review": None, "test": None}
+        with migrated.connect() as conn:
+            event = conn.execute(
+                select(t.event)
+                .where(t.event.c.kind == "task_updated")
+                .order_by(t.event.c.seq.desc())
+            ).first()
+        assert event is not None and event.payload["fields"] == ["approvals"]
+    second = _sign(team["tester"], card)
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "review"
+    assert second.json()["approvals"]["review"] is None
+    assert second.json()["approvals"]["test"]["by"] == team["tester"].id
