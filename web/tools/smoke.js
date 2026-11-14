@@ -2124,7 +2124,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "placements: the form offers one's own unplaced agents or a new one, one's live runner here (not the revoked one), its targets, its installed tools, modes and models "
     + JSON.stringify([srOpts("placement-new-agent"), srOpts("placement-new-runner"), srOpts("placement-new-tool")]));
   const srHandleBy = (byId("placement-new-handle").getAttribute("aria-describedby") || "").split(" ");
-  expect(srHandleBy.includes("placement-new-handle-hint") && srHandleBy.some((x) => /^handle-explain-/.test(x) && byId(x)
+  expect(srHandleBy.some((x) => /^handle-rule-\d+$/.test(x) && byId(x) && text(byId(x)).startsWith("Lowercase letters, digits and -"))
+    && srHandleBy.some((x) => /^handle-rule-\d+-check$/.test(x)) && srHandleBy.some((x) => /^handle-explain-/.test(x) && byId(x)
     && text(byId(x)) === "The agent's handle names it among your agents and in @mentions in a project."),
     "placements: the new handle says what a handle is and its rule, as every agent handle does (#1488) " + JSON.stringify(srHandleBy));
   byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change");
@@ -6185,6 +6186,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const idFull = idBox(IDS.link("see guest/shop/tsk-0123456789ab, maintainer/maity/req-abcdefghjkmn and https://x.org/guest/shop/tsk-0123456789ab", idAt));
   expect(idHrefs(idFull) === "guest/shop/tsk-0123456789ab=#/guest/shop/tasks/tsk-0123456789ab maintainer/maity/req-abcdefghjkmn=#/maintainer/maity/inbox/req-abcdefghjkmn",
     "ids: a card or request with a project's full name before it links into that project, as written; inside a URL nothing links " + idHrefs(idFull));
+  // A full reference wraps in the project's name or before the id, never inside the id (tsk-e9d52pfhvk3v).
+  const idFullA = idFull.querySelectorAll("a.id-ref")[1];
+  expect(idFullA.getAttribute("class") === "id-ref full" && text(idFullA.querySelector(".ref-prefix")) === "maintainer/maity/"
+    && idFullA.querySelector("wbr") && text(idFullA.querySelector(".ref-id")) === "req-abcdefghjkmn"
+    && idAll.querySelectorAll("a.id-ref").every((a) => a.getAttribute("class") === "id-ref" && !a.querySelector(".ref-prefix"))
+    && thCss.includes(".id-ref.full { white-space: normal; }") && thCss.includes(".id-ref .ref-id { white-space: nowrap; }"),
+    "ids: a full reference may break in its project's name or before the id, a bare id stays one unit");
+  const idPlainFull = IDS.plain("guest/shop/tsk-0123456789ab");
+  expect(idPlainFull.tagName === "SPAN" && idPlainFull.getAttribute("class") === "id-ref full" && text(idPlainFull) === "guest/shop/tsk-0123456789ab"
+    && text(idPlainFull.querySelector(".ref-id")) === "tsk-0123456789ab" && IDS.plain("tsk-0123456789ab").getAttribute("class") === "id-ref",
+    "ids: a reference drawn inside a link (the inbox's Card row) has the same markup, not a link of its own");
   // A first word the hub or the dashboard keeps (api, join, impressum, admin) names no project: the id is text, never a
   // broken link that would stop the view (review of #701).
   const idReserved = "api/v1/tsk-0123456789ab, join/x/req-abcdefghjkmn, impressum/ab/tsk-0123456789ab, admin/users/tsk-0123456789ab";
@@ -7469,8 +7481,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(hcState()) === "@agent-zz is free." && hcState().className.includes("ok"), "handle check: an unused handle is free");
   hcType("old-one");
   expect(text(hcState()) === "@old-one is free.", "handle check: a deleted profile does not block its handle");
-  hcType("A");
+  hcType("a_");
   expect(text(hcState()).startsWith("Not a handle yet: Lowercase letters") && hcState().className.includes("field-error"), "handle check: the pattern is said too");
+  // An upper-case letter has its own word, before anything is sent, and nothing is lower-cased (tsk-pxc5cx4hgb0y).
+  hcType("Agent-q");
+  expect(text(hcState()) === "Lowercase only: a handle has no capital letters." && byId("join-handle").value === "Agent-q",
+    "handle check: an upper-case letter is said as such, the field keeps what was typed");
+  hcType("A");
+  expect(text(hcState()).startsWith("Lowercase only: a handle has no capital letters. Lowercase letters"), "handle check: an upper-case letter that breaks more says the rule too");
   // Allowed projects (§6.3): a profile the project is not allowed for is not offered, its handle stays taken.
   const alOffer = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p.startsWith("/agents?allowed_in=")
@@ -8230,6 +8248,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // A refusal has its own line under the field (the form is a wrapping flex row): review of #950.
     && /\.handle-form \.field-error \{ flex-basis: 100%;/.test(hdCss),
     "handles: an untouched rename form shows no error box");
+  // The rule beside the field and a word while it is typed (tsk-pxc5cx4hgb0y): an upper-case letter is said
+  // before anything is sent, and the form never lower-cases it into another handle.
+  const hdInput = () => hdForm().querySelector("input");
+  const hdCheck = () => hdForm().querySelector(".handle-check");
+  expect(text(hdForm()).includes("Lowercase letters, digits and -, 2–31 characters") && hdCheck() && text(hdCheck()) === ""
+    && hdCheck().getAttribute("role") === "status" && hdInput().getAttribute("aria-describedby").includes(hdCheck().getAttribute("id"))
+    && /\.handle-check:empty \{ display: none; \}/.test(hdCss),
+    "handles: the rename shows the handle's rule, its live word empty while nothing breaks it");
+  hdInput().value = "Boss"; hdInput().dispatch("input");
+  expect(text(hdCheck()) === "Lowercase only: a handle has no capital letters." && hdCheck().className.includes("field-error"),
+    "handles: an upper-case letter is said while it is typed");
+  await hdRename("Boss");
+  expect(!hdPatches.length && text(byId(hdInput().getAttribute("id") + "-error")).includes("lower-case letters") && hdInput().value === "Boss",
+    "handles: an upper-case handle is refused locally, not lower-cased and sent");
+  hdInput().value = "boss"; hdInput().dispatch("input");
+  expect(text(hdCheck()) === "", "handles: the word goes once the handle keeps the rule");
   await hdRename("Bad_Handle");
   expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
   await hdRename("boss");
@@ -10186,6 +10220,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "javascript:alert(1)", version: "1" } }) : rgGet(p));
   await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
+  // "Register again" on the registration link's page (tsk-pxc5cx4hgb0y) hands the address over in a cookie
+  // only /register is sent: read once into the field and removed; a later visit in the same document starts
+  // empty, reads a new handover, and a sent form forgets it.
+  {
+    const agCookie = () => String(document.cookie);
+    const agVisit = async () => { await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick(); };
+    document.cookie = "maity_register_again=ada%2Bx%40example.org";
+    await agVisit();
+    expect(byId("register-address").value === "ada+x@example.org" && !agCookie().includes("example.org"),
+      "register: the address Register again handed over fills the field, and its cookie is removed " + JSON.stringify([byId("register-address").value, agCookie()]));
+    await agVisit();
+    expect(byId("register-address").value === "", "register: a later visit in the same document starts empty");
+    document.cookie = "maity_register_again=bo%40example.org";
+    await agVisit();
+    expect(byId("register-address").value === "bo@example.org", "register: a new handover in the same document is read");
+    const agPost = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => (p === "/auth/register" ? Promise.resolve({ expires_in: 86400 }) : agPost(p, b));
+    byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
+    rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.post = agPost;
+    expect(text(main).includes("Check your mail"), "register: the handed-over address is sent like a typed one");
+    await agVisit();
+    expect(byId("register-address") && byId("register-address").value === "", "register: after sending, the form starts empty again");
+    document.cookie = "";
+  }
   win.Maity.api.get = rgGet;
   // A forgotten password (docs/api.md §2.10, tsk-yksxdpd2pk0m): "Forgot password?" under the
   // password field where the hub offers it, one answer for every address; the mailed link's page.

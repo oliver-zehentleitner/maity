@@ -297,3 +297,242 @@ def test_the_override_inside_a_policy_stops_grace_revokes_at_once(
     assert bystander.get("/me").status_code == 200
     [(payload, _)] = _announced(setup)
     assert payload["credential_id"] == setup.agent.credential_id
+
+
+# --- the clones still on the machine, and a pickup racing the stop (§15.3, §15.5, §15.9) ---------
+
+
+def closed_by_delete(s: Setup) -> dict[str, Any]:
+    """A placement whose agent held a credential, closed the ordinary way: its clone stays
+    on the runner for its retention, with the credential in it."""
+    first = running(s)
+    deleted = s.owner.delete(f"/projects/maintainer/maity/placements/{first['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert placement(s, first["id"])["closed_reason"] == "removed"
+    return first
+
+
+def test_a_stop_revokes_the_credential_of_a_placement_closed_before(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    closed_by_delete(setup)
+    bystander = flow.agent(make_client, setup.owner)  # on no placement of this runner
+    answer = revoke(setup, agents="stop")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["on_runner_revoke"][0]["stopped"] == []  # nothing ran
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+    assert bystander.get("/me").status_code == 200
+    [(payload, _)] = _announced(setup)
+    assert payload == {"credential_id": setup.agent.credential_id, "reason": "runner_revoked"}
+
+
+def test_a_removal_with_stop_revokes_it_in_a_detached_project_too(setup: Setup) -> None:
+    closed_by_delete(setup)
+    detached = setup.owner.delete(f"/projects/maintainer/maity/runners/{setup.runner.id}")
+    assert detached.status_code == 200, detached.text
+    answer = remove(setup, agents="stop")
+    assert answer.status_code == 200, answer.text
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+
+
+def test_a_stop_on_a_key_revoked_already_revokes_it(setup: Setup) -> None:
+    closed_by_delete(setup)
+    assert revoke(setup).status_code == 200  # keep: the clone's credential lives on
+    assert setup.agent.get("/me").status_code == 200
+    assert revoke(setup, agents="stop").status_code == 200
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+
+
+def test_a_clone_reported_removed_took_its_credential_and_needs_no_stop(setup: Setup) -> None:
+    """Only a clone not reported removed counts as on the machine; one reported removed
+    revoked its credential when the runner said so (§15.5)."""
+    first = closed_by_delete(setup)
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == first["id"])
+            .values(workspace_state="removed")
+        )
+    assert revoke(setup, agents="stop").status_code == 200
+    assert setup.agent.get("/me").status_code == 200  # not this runner's to revoke any more
+
+
+def _picked_up(s: Setup) -> tuple[dict[str, Any], Any]:
+    """An approved placement and the join row its runner picked up, not yet exchanged."""
+    from tests.test_join_pickup import _allow_instances, pick_up
+
+    _allow_instances(s.engine, s.agent.id, 2)  # the joined clone plus the placement's
+    first = placed(s)
+    assert pick_up(s, first).status_code == 201
+    with s.engine.connect() as conn:
+        row = conn.execute(
+            select(t.join_link).where(t.join_link.c.placement_id == first["id"])
+        ).one()
+    return first, row
+
+
+def _stop(conn: Any, s: Setup) -> list[dict[str, Any]]:
+    from maity_hub import runner_revoke
+
+    return runner_revoke.apply(
+        conn, s.runner.id, agents="stop", instance_rule="keep", removing=False, by=s.owner.id
+    )
+
+
+def test_a_pickup_exchanged_while_the_stop_waits_is_revoked_by_it(setup: Setup) -> None:
+    """The exchange holds the project's lock; the stop waits for it and then reads the
+    credential the exchange wrote (PostgreSQL, MariaDB)."""
+    from maity_hub.routes import joins
+    from tests.concurrency import finished, race, waiting
+
+    first, row = _picked_up(setup)
+    with race(setup.engine) as r:
+        exchange, stop = r.first, r.second
+        minted = joins._consume(exchange, row, "maity-cli/test")[1]
+        step = r.run(stop, lambda: _stop(stop, setup))
+        assert waiting(step)  # blocked on the project's lock
+        exchange.commit()
+        assert finished(step)[0]["stopped"] == [first["id"]]
+        stop.commit()
+    with setup.engine.connect() as conn:
+        written = conn.execute(
+            select(t.credential.c.revoked_at, t.credential.c.revoked_reason).where(
+                t.credential.c.id == minted
+            )
+        ).one()
+    assert written.revoked_at is not None and written.revoked_reason == "runner_revoked"
+
+
+def test_a_pickup_exchanged_after_the_stop_is_not_found(setup: Setup) -> None:
+    """The stop holds the project's lock; the exchange waits for it and then finds its
+    placement closed: no credential is minted (PostgreSQL, MariaDB)."""
+    from maity_hub.errors import ApiError
+    from maity_hub.routes import joins
+    from tests.concurrency import finished, race, waiting
+
+    first, row = _picked_up(setup)
+    with race(setup.engine) as r:
+        stop, exchange = r.first, r.second
+        assert _stop(stop, setup)[0]["stopped"] == [first["id"]]
+        step = r.run(exchange, lambda: joins._consume(exchange, row, "maity-cli/test"))
+        assert waiting(step)  # blocked on the project's lock
+        stop.commit()
+        with pytest.raises(ApiError) as refused:
+            finished(step)
+        assert refused.value.code == "not_found"
+        exchange.rollback()
+    with setup.engine.connect() as conn:
+        assert (
+            conn.execute(
+                select(t.placement.c.credential_id).where(t.placement.c.id == first["id"])
+            ).scalar()
+            is None
+        )
+
+
+# --- a project's stop racing a pickup (§15.3, §15.9) ---------------------------------------------
+
+
+def test_a_pickup_exchanged_while_a_policy_stop_waits_gets_its_grace(setup: Setup) -> None:
+    """As for the owner's override: the policy's stop reads the credential the exchange
+    wrote under the project's lock and sets its revocation due (PostgreSQL, MariaDB)."""
+    from maity_hub import runner_revoke
+    from maity_hub.routes import joins
+    from tests.concurrency import finished, race, waiting
+
+    first, row = _picked_up(setup)
+    with race(setup.engine) as r:
+        exchange, stop = r.first, r.second
+        minted = joins._consume(exchange, row, "maity-cli/test")[1]
+        step = r.run(
+            stop,
+            lambda: runner_revoke.apply(
+                stop,
+                setup.runner.id,
+                agents="policy",
+                instance_rule="stop",
+                removing=False,
+                by=setup.owner.id,
+            ),
+        )
+        assert waiting(step)  # blocked on the project's lock
+        exchange.commit()
+        assert finished(step)[0]["stopped"] == [first["id"]]
+        stop.commit()
+    with setup.engine.connect() as conn:
+        due = conn.execute(
+            select(t.credential.c.revoke_due_at).where(t.credential.c.id == minted)
+        ).scalar()
+    assert due is not None
+
+
+# --- two account deletions, each with a retained clone in the other's namespace (§2.9) ---------
+
+
+def test_two_deletions_with_clones_in_each_others_namespace_do_not_deadlock(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """Each deletion takes its namespace's and its runners' project locks in one ordered
+    pass, so the second waits for the first instead of holding a project the first's
+    removal of its runner needs (PostgreSQL, MariaDB)."""
+    from maity_hub import account_deletion
+    from maity_hub.routes import runners as runner_routes
+    from tests.concurrency import finished, race, waiting
+
+    closed_by_delete(setup)
+    pat = flow.human(make_client, setup.engine, "pat")
+    flow.project(pat, "other", repository={"url": REPOSITORY})
+    their_runner = paired(make_client, pat)
+    assert hello(make_client(), their_runner).status_code == 200
+    attached = pat.post("/projects/pat/other/runners", {"runner_id": their_runner.id})
+    assert attached.status_code == 201, attached.text
+    their_agent = flow.agent(make_client, pat, "pat/other", role="member")
+    made = pat.post(
+        "/projects/pat/other/placements",
+        {"agent": {"id": their_agent.id}, "runner": their_runner.id, "harness": "claude-code"},
+    )
+    assert made.status_code == 201, made.text
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == made.json()["id"])
+            .values(credential_id=their_agent.credential_id)
+        )
+    assert pat.delete(f"/projects/pat/other/placements/{made.json()['id']}").status_code == 200
+    for owner, slug, runner in ((setup.owner, "maity", setup.runner), (pat, "other", their_runner)):
+        detached = owner.delete(f"/projects/{owner.handle}/{slug}/runners/{runner.id}")
+        assert detached.status_code == 200, detached.text
+    with setup.engine.begin() as conn:  # each namespace now holds the other's clone
+        ours = conn.execute(select(t.project.c.id).where(t.project.c.slug == "maity")).scalar()
+        theirs = conn.execute(select(t.project.c.id).where(t.project.c.slug == "other")).scalar()
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == ours)
+            .values(owner_id=pat.id, owner_human_id=pat.id)
+        )
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == theirs)
+            .values(owner_id=setup.owner.id, owner_human_id=setup.owner.id)
+        )
+
+    def deletion(conn: Any, human_id: str, runner_id: str) -> None:
+        conn.execute(select(t.runner.c.id).where(t.runner.c.id == runner_id).with_for_update())
+        runner_routes.remove(conn, runner_id, agents="stop", instance_rule="keep", by=human_id)
+
+    with race(setup.engine) as r:
+        first, second = r.first, r.second
+        account_deletion._lock_namespace(first, setup.owner.id)
+
+        def other_deletion() -> None:
+            account_deletion._lock_namespace(second, pat.id)
+            deletion(second, pat.id, their_runner.id)
+
+        step = r.run(second, other_deletion)
+        assert waiting(step)  # blocked on a project the first holds
+        deletion(first, setup.owner.id, setup.runner.id)
+        first.commit()
+        finished(step)
+        second.commit()
+    assert error(setup.agent.get("/me")) == "credential_revoked"
+    assert error(their_agent.get("/me")) == "credential_revoked"

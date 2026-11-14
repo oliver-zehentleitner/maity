@@ -54,9 +54,9 @@ class Position:
 
 
 def prepare(engine: Engine, secret_key: bytes | None) -> None:
-    """Make the stored position key at first use, in a transaction of its own; it is
-    kept when an instance key is set."""
-    secretbox.prepare_fallback(engine, secret_key, KEY_NAME, wipe_when_keyed=False)
+    """Make the stored position key at first use, in a transaction of its own; once an
+    instance key is set it is no longer used and is removed."""
+    secretbox.prepare_fallback(engine, secret_key, KEY_NAME)
 
 
 def _key(conn: Connection, secret_key: bytes | None) -> bytes:

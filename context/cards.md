@@ -493,6 +493,13 @@ note inside the `note_added` and `note_edited` events that carried it,
 which the hub shapes per reader when it serves them. The public card
 page already shows a redacted note as removed, without a reason.
 
+A redacted card history entry follows the same rule (tsk-dd14yts44h1f):
+in the history, in the redaction's answer, in the field values of the
+`task_created` or `task_updated` event of its write, and in a link the
+hub answers from the entry. A replayed `Idempotency-Key` loads the entry
+with the caller's membership as it is at the replay, so it shows what
+the caller's own read of the history shows then.
+
 **Reason:** a reason often names exactly what was sensitive ("contained
 a password"), and notes of a public project are public; one rule for
 every redaction is easier to keep right than a second, looser one.

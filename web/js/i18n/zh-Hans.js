@@ -2862,6 +2862,8 @@ window.MAITY_I18N["zh-Hans"] = {
   "mine.title": "你在 {name} 的设置",
   "mine.use_default": "使用我的默认值",
   "name_rules.handle": "小写字母、数字和 -，2–31 个字符，以字母或数字开头。",
+  "name_rules.handle_bad": "还不是有效的用户名：{rule}",
+  "name_rules.handle_lowercase": "只能用小写：用户名不能有大写字母。",
   "name_rules.slug": "小写字母、数字和 -，2–63 个字符，以字母或数字开头。",
   "names.aliases": "曾用名，仍指向此处：{names}。",
   "names.current": "此项目是 {name}。",
