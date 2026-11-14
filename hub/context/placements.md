@@ -231,9 +231,9 @@ placement must still be active, approved, `desired: running`, at the
 join's generation and on the same runner. The runner must not be
 removed and must hold a live credential. A member's pickup, or a rejoin,
 also needs the membership still active. Otherwise the answer is
-`not_found`. Stopping or closing the placement, and revoking or removing
-the runner, also revoke its unused pickup joins
-(`placements.revoke_unused_joins`). A rejoin refuses an instance that
+`not_found`. Stopping or closing the placement, and revoking,
+re-pairing or removing the runner or suspending its owner, also revoke
+its unused pickup joins (`placements.revoke_unused_joins`). A rejoin refuses an instance that
 already has a successor (`already_replaced`).
 
 **Reason:** a profile created at pickup time would exist before any agent
@@ -261,6 +261,47 @@ keep a live join code in the database.
   whoever holds the link that the human has an agent of that name. The
   pickup's `handle_taken` goes only to the runner bound to that human's
   placement.
+
+## Every runner credential revocation carries its consequences; a re-pair keeps what is closing
+
+**Id:** e0dcc15d-55a3-4503-b3bc-8707d12c1bc4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit's finding on runner credentials (tsk-mrt77xgrexx4), the lead's answers to its open questions and the review of pull request #1768, 2026-11-13
+**Revisit when:** a runner credential is revoked on a new path, the re-pair stops handing the placements over to the new credential, or the "revoke and tell" helper of the runner clean-up lands
+
+`revoke_runner_credential` calls `placements.runner_credential_gone`
+itself: the runner's unused pickups are revoked, and its closing
+placements close at once, since no live credential is left to report
+their end. A re-pair passes `replaced=True`: the pickups still end with
+the credential that fetched them, but a closing placement stays closing,
+because the new credential takes over the same placements (§15.3) and
+reports the end. A suspension of the owner also stops each of the owner's
+runners as the owner's `agents: "stop"` does, whatever the projects'
+`on_runner_revoke`, like the deletion of the account. It revokes the
+account's own agent credentials first (`suspended`), so the stop reaches
+only other humans' agents (`runner_revoked`), with no human named as
+having revoked them (`by` None): the hub acts, not the suspended person.
+
+**Reason:** before, each caller had to remember the second call. The
+revoke route and the leak path did; the suspension and the re-pair did
+not, so a closing placement stayed closing until someone deleted it, and
+a pickup fetched with the old credential stayed usable after a re-pair.
+One call in the function every path uses cannot be forgotten. A
+suspension ends everything the account holds at once, as its deletion
+does, so the runners' placements end with it, not by each project's rule.
+
+**Rejected alternatives:**
+- Keeping the separate call and adding it to the two missing callers:
+  the next new path would miss it again.
+- Closing the closing placements on a re-pair too: the new credential
+  can still report their end, and §15.3 says the re-pair hands the same
+  placements over.
+- Leaving the re-pair's pickups alive: the contract and the docstring
+  say a pickup ends with the credential that fetched it.
+- Applying each project's rule on a suspension: under `keep` the
+  placements on the suspended account's runners would run on.
 
 ## A supervised session's long-poll is not woken by what only `all` names
 
@@ -578,3 +619,39 @@ removes nothing a person might still need, and the question stays open:
   placement.** The clock runs on after the close, and a change of the
   time moves the deadline; any other change there stays
   `invalid_transition`.
+
+## Who revoked decides with the reason whether anyone but the owner may rejoin
+
+**Id:** 44fe553d-74c0-495d-80c4-e1af00a65f57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8hq77ns50kyf (the lead's security review of 2026-11-13: "a revocation by a person, or because of a leak, is never undone by anyone else"); the contract's restart row (docs/api.md §15.6)
+**Revisit when:** a new revocation reason is added that the hub sets without a person, or the member routes stop taking a free-text reason
+
+A rejoin (`restart` with `rejoin: true`) gives the agent a new credential.
+The agent profile's owner may ask for one after any revocation. Anyone else
+with the restart's right, the runner's owner or a proposing agent, may only
+after a revocation no person chose for that agent: the hub's own after the
+runner removed the clone (`workspace_removed` with `revoked_by` null) or the
+runner owner's revocation of the runner (`runner_revoked` with `revoked_by`
+that owner). Everything else is `forbidden` with `details.reason:
+"owner_only"` (`routes/placements._undone_by_anyone`). The check runs on
+every start that carries a rejoin out, not only on `rejoin: true`: a
+`rejoin` stored on the placement by the clone's removal is carried out by a
+`restart` with `{}` or a `PATCH desired: running` too
+(`routes/placements._check_rejoin`).
+
+**Reason:** a revocation is how a person stops their agent, and a leak's
+revocation ends a credential someone else may hold. Undoing either by a new
+credential is the owner's decision, as every new instance passes a human.
+
+**Rejected alternatives:** deciding by `revoked_reason` alone: a person
+revoking through the member routes writes the reason freely, so
+`"workspace_removed"` typed by a person would pass. Letting only the owner
+rejoin after any revocation: a removed clone revokes the credential on the
+runner's own report, and its placement is meant to join anew at its next
+start (§15.5) without waiting for the owner. Not storing `rejoin` on the
+removal when the credential was already revoked otherwise: the owner's
+next plain start should still join anew, and a check at the start covers
+every way a start comes.
