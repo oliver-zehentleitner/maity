@@ -282,42 +282,63 @@ def check_web_dir(settings: Settings) -> None:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
 
 
-# Whether the hub's role on PostgreSQL may do more than read and write rows: a superuser, a role
-# that owns its schema or one of its tables or is a member of such an owner (MEMBER, not USAGE: a
-# member without INHERIT can still SET ROLE to the owner), or a role that may create in the schema.
-# The schema columns are NULL when there is no current schema (an empty search_path).
+# Whether the hub's role on PostgreSQL may do more than read and write rows. "Its roles" are the
+# role itself and every role it is a member of (MEMBER, not USAGE: a member without INHERIT can
+# still SET ROLE to it). "The hub's schemas" are those holding an `alembic_version` table, where
+# the migrations put the hub's tables, and the current schema: not the current schema alone,
+# which a search_path can point anywhere or leave empty.
 _PRIVILEGED_ROLE = text("""
+    WITH mine AS (
+        SELECT r.oid, r.rolsuper FROM pg_roles r WHERE pg_has_role(current_user, r.oid, 'MEMBER')
+    ), hub AS (
+        SELECT c.relnamespace AS oid FROM pg_class c
+        WHERE c.relname = 'alembic_version' AND c.relkind IN ('r', 'p')
+        UNION
+        SELECT n.oid FROM pg_namespace n WHERE n.nspname = current_schema()
+    )
     SELECT current_user AS name,
-           r.rolsuper,
-           n.oid IS NOT NULL AS has_schema,
-           pg_has_role(current_user, n.nspowner, 'MEMBER') AS owns_schema,
+           (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS rolsuper,
+           EXISTS (SELECT 1 FROM mine WHERE rolsuper) AS reaches_superuser,
+           EXISTS (SELECT 1 FROM hub) AS has_schema,
            EXISTS (
-               SELECT 1 FROM pg_class c
-               WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
-                 AND pg_has_role(current_user, c.relowner, 'MEMBER')
+               SELECT 1 FROM hub h JOIN pg_namespace n ON n.oid = h.oid
+               WHERE n.nspowner IN (SELECT oid FROM mine)
+           ) AS owns_schema,
+           EXISTS (
+               SELECT 1 FROM hub h JOIN pg_class c ON c.relnamespace = h.oid
+               WHERE c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+                 AND c.relowner IN (SELECT oid FROM mine)
            ) AS owns_tables,
-           has_schema_privilege(current_user, n.oid, 'CREATE') AS creates
-    FROM pg_roles r LEFT JOIN pg_namespace n ON n.nspname = current_schema()
-    WHERE r.rolname = current_user
+           EXISTS (
+               SELECT 1 FROM hub h, mine m WHERE has_schema_privilege(m.oid, h.oid, 'CREATE')
+           ) AS creates
     """)
 
 
 def privileged_role(engine: Engine) -> str | None:
     """Why the database role of `engine` is more than the hub needs to serve, or None: on
-    PostgreSQL a superuser, a role that owns the schema the hub runs in or one of its tables
-    (directly or as a member of the owner, whether or not it inherits the owner's rights), or a
-    role that may create objects in that schema. Owning the schema is what migrations need, and
-    they run under their own role (`maity-hub migrate`, docs/install/README.md, "Database
-    roles"). Other databases are not checked: SQLite has no roles, and MariaDB has no owners,
-    only grants (hub/context/deploy-access.md)."""
+    PostgreSQL a role that is, or can switch to, a superuser; that owns a schema of the hub or
+    one of its tables; or that may create objects in such a schema. Each counts for the role
+    itself and for every role it is a member of, whether or not it inherits that role's rights.
+    The hub's schemas are those with an `alembic_version` table, and the current one; a
+    database with none is refused too, since the check could not say what the hub's role may do
+    there. Owning the schema is what migrations need, and they run under their own role
+    (`maity-hub migrate`, docs/install/README.md, "Database roles"). Other databases are not
+    checked: SQLite has no roles, and MariaDB has no owners, only grants
+    (hub/context/deploy-access.md)."""
     if engine.dialect.name != "postgresql":
         return None
     with engine.connect() as conn:
         row = conn.execute(_PRIVILEGED_ROLE).one()
     if row.rolsuper:
         return f"the database role {row.name!r} is a superuser"
-    if not row.has_schema:  # no current schema: nothing it could own
-        return None
+    if row.reaches_superuser:
+        return f"the database role {row.name!r} is a member of a superuser role"
+    if not row.has_schema:
+        return (
+            f"no schema of the hub to check the database role {row.name!r} against"
+            " (no alembic_version table, no current schema)"
+        )
     if row.owns_schema:
         return f"the database role {row.name!r} owns the hub's schema"
     if row.owns_tables:

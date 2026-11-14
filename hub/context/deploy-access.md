@@ -59,12 +59,14 @@ and the hub served `/api/v1/health` as `maity_app`.
 **Revisit when:** the hub needs a right beyond rows at run time, MariaDB gets the same role split, or a managed PostgreSQL makes a row-only role impossible
 
 `maity-hub serve` asks PostgreSQL once at the start, after the schema check and before it serves (in the
-one process, or in the parent of several workers): is `current_user` a superuser (`rolsuper`, read
-before anything else, so an empty `search_path` does not skip it), is it the owner of the current schema
-or of any table, view, sequence or foreign table in it, or a member of that owner
-(`pg_has_role(current_user, owner, 'MEMBER')`: a member without `INHERIT` can still `SET ROLE` to the
-owner), or may it create in the schema (`has_schema_privilege(current_user, schema, 'CREATE')`)? If so,
-the start fails with the reason and the two ways out: a role that only reads and writes rows, or
+one process, or in the parent of several workers) about `current_user` and every role it is a member of
+(`pg_has_role(current_user, role, 'MEMBER')`: a member without `INHERIT` can still `SET ROLE` to it):
+is one of them a superuser, the owner of a schema of the hub or of any table, view, sequence or foreign
+table in it, or may one create in such a schema (`has_schema_privilege(role, schema, 'CREATE')`)? The
+hub's schemas are those holding an `alembic_version` table, plus the current schema: the current schema
+alone would let a `search_path` that points elsewhere, or is empty, hide the schema the hub writes to. A
+database where neither exists is refused, since nothing could be checked. In any of these cases the
+start fails with the reason and the two ways out: a role that only reads and writes rows, or
 `MAITY_DB_ALLOW_PRIVILEGED=1`, which turns the refusal into a warning at each start. `maity-hub migrate`
 does not ask, since it runs as the owner. The app factory does not ask either: the check belongs to the
 command that starts a real hub, and the test suite builds apps on its superuser. SQLite has no roles;
@@ -83,6 +85,8 @@ environment.
 - No check: the split depends on two Secrets that are easy to swap, and nothing would notice.
 - Membership with `USAGE`: it counts only roles that inherit the owner's rights, while a member with
   `INHERIT FALSE` and `SET TRUE` can switch to the owner and change the schema just the same.
+- Checking only `current_schema()`: it follows the `search_path`, which the role's settings or the URL
+  can point at another schema or leave empty, while the hub's tables stay where the migrations put them.
 - Checking in the app factory as well: the test suite and tools that build the app directly would all
   need the opt-out; the serving command is the one way a hub starts.
 - An equivalent check on MariaDB (the `SUPER` privilege or `CREATE`/`DROP`/`ALTER` grants): the shipped

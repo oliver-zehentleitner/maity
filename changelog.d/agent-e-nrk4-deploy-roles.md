@@ -27,10 +27,11 @@
   PostgreSQL.
 - deploy: the k3s backup Job runs `pg_dump` as `maity_owner` when the Secret `maity-hub-db-migrate` exists, and as the
   superuser otherwise. The password from that Secret's URL reaches `pg_dump` through `PGPASSWORD`, never its arguments; a
-  percent-encoded password fails the Job (`deploy/scripts/test-backup-dump.sh`).
+  user or password holding `%`, `/`, `?`, `#` or `@` fails the Job (`deploy/scripts/test-backup-dump.sh`).
 - hub: `maity-hub serve` on PostgreSQL refuses to start when its database role is a superuser, owns the hub's schema
-  or one of its tables (also as a member of the owning role), or may create objects in that schema; `maity-hub migrate` is not checked. `MAITY_DB_ALLOW_PRIVILEGED=1`
-  lets such a role serve, with a warning at each start. Upgrade note: an installation whose hub still uses the
+  or one of its tables, or may create objects in that schema, each also through any role it is a member of (the hub's
+  schema being the one with `alembic_version`, wherever the `search_path` points); `maity-hub migrate` is not checked.
+  `MAITY_DB_ALLOW_PRIVILEGED=1` lets such a role serve, with a warning at each start. Upgrade note: an installation whose hub still uses the
   superuser or the owner's URL (Helm with one `database.existingSecret`, your own setup) sets
   `MAITY_DB_ALLOW_PRIVILEGED=1` for the hub (Helm: `extraEnv`) before it upgrades, or moves to the two roles first
   (docs/install/README.md, "Database roles"); otherwise the new hub does not start. SQLite and MariaDB are not checked.

@@ -78,6 +78,8 @@ def scratch(engine: Engine, database_url: str) -> Iterator[Any]:
     with engine.begin() as conn:
         conn.execute(text(f"CREATE SCHEMA {schema}"))
         conn.execute(text(f"CREATE TABLE {schema}.rows (id integer PRIMARY KEY)"))
+        # what marks a schema as the hub's
+        conn.execute(text(f"CREATE TABLE {schema}.alembic_version (version_num varchar(32))"))
     try:
         yield Scratch()
     finally:
@@ -167,6 +169,40 @@ def test_the_superuser_is_refused_without_a_current_schema(engine: Engine, scrat
     with acting.connect() as conn:
         assert conn.execute(text("SELECT current_schema()")).scalar_one() is None
     assert privileged_role(acting) == f"the database role {user!r} is a superuser"
+
+
+def test_the_owner_is_refused_with_its_search_path_elsewhere(scratch: Any) -> None:
+    """The schema with the hub's tables counts, wherever the search_path points."""
+    owner = scratch.role("owner", USE)
+    scratch.run(f"ALTER SCHEMA {{schema}} OWNER TO {owner}")
+    for search_path in ("pg_catalog", "''"):
+        assert privileged_role(scratch.as_role(owner, search_path=search_path)) == (
+            f"the database role {owner!r} owns the hub's schema"
+        )
+
+
+def test_a_member_of_a_role_that_may_create_is_refused(scratch: Any) -> None:
+    creator = scratch.role("creator", USE, "GRANT CREATE ON SCHEMA {schema} TO {role}")
+    member = scratch.role(
+        "member", USE, ROWS, "GRANT " + creator + " TO {role} WITH INHERIT FALSE, SET TRUE"
+    )
+    acting = scratch.as_role(member)
+    with acting.connect() as conn:
+        assert not conn.execute(
+            text("SELECT has_schema_privilege(current_user, current_schema(), 'CREATE')")
+        ).scalar_one()
+    assert privileged_role(acting) == (
+        f"the database role {member!r} may create objects in the hub's schema"
+    )
+
+
+def test_a_member_of_a_superuser_role_is_refused(engine: Engine, scratch: Any) -> None:
+    with engine.connect() as conn:
+        user = conn.execute(text("SELECT current_user")).scalar_one()
+    member = scratch.role("member", USE, ROWS, f'GRANT "{user}" TO {{role}} WITH INHERIT FALSE')
+    assert privileged_role(scratch.as_role(member)) == (
+        f"the database role {member!r} is a member of a superuser role"
+    )
 
 
 def test_a_row_role_without_a_current_schema_serves(scratch: Any) -> None:

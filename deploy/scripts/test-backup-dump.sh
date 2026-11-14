@@ -3,8 +3,8 @@
 # pg_dump that records its arguments and the password it got, the volumes as directories, and checks how the dump connects:
 # with the Secret maity-hub-db-migrate the dump runs as the role in its URL, the password reaches pg_dump through PGPASSWORD and
 # never through its arguments (which every user on the node can read), and the rest of the URL, a query included, is kept;
-# without the Secret it runs as the superuser, as before; a URL that is not a postgresql:// URL or whose password is
-# percent-encoded fails the Job before pg_dump starts.
+# without the Secret it runs as the superuser, as before; a URL that is not a postgresql:// URL, or whose user or password
+# holds `%`, `/`, `?`, `#` or a second `@`, fails the Job before pg_dump starts.
 # Usage: deploy/scripts/test-backup-dump.sh   (no cluster needed; gpg 2.2+, GNU tar, python3 with PyYAML)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -79,8 +79,16 @@ dumped no-password "-Fc -d postgresql://maity_owner@maity-postgres:5432/maity" s
 run superuser none
 dumped superuser "-Fc -h maity-postgres -U maity maity" superpw
 
+bad="holds %, /, ?, # or @"
 run encoded "postgresql://maity_owner:a%40b@maity-postgres:5432/maity"
-refused encoded "is percent-encoded"
+refused encoded "$bad"
+# Unencoded `/` or `@` in the password: the split cannot be certain, so nothing reaches pg_dump.
+run slash "postgresql://maity_owner:ab/cd@maity-postgres/maity"
+refused slash "$bad"
+run two-ats "postgresql://maity_owner:a@b@maity-postgres/maity"
+refused two-ats "$bad"
+run question "postgresql://maity_owner:ab?cd@maity-postgres/maity"
+refused question "$bad"
 
 run not-url "host=maity-postgres user=maity_owner password=Ownerpw123 dbname=maity"
 refused not-url "is not a postgresql:// URL"

@@ -617,8 +617,10 @@ migrations create later too. Each URL names its role:
 
 **The hub checks its role at the start.** On PostgreSQL, `maity-hub serve`
 refuses to start when its role is a superuser, owns the hub's schema or
-one of its tables (also as a member of the owning role), or may create
-objects in that schema, and names the reason. The roles script revokes
+one of its tables, or may create objects in that schema, and names the
+reason. Each counts also through any role it is a member of, and the hub's
+schema is the one with the `alembic_version` table, wherever the
+`search_path` points. The roles script revokes
 that right from `PUBLIC`, which has it by default before PostgreSQL 15.
 `maity-hub migrate` does not check: it runs as the owner. An installation
 that has not moved to the two roles yet sets `MAITY_DB_ALLOW_PRIVILEGED=1`
