@@ -136,7 +136,17 @@ def _load(conn: Connection, placement_id: str, request: Request) -> dict[str, An
     return _view(conn, membership(conn, caller, slug), placement)
 
 
-idempotency.LOADERS["placement"] = _load
+def _sees_placement(conn: Connection, mine: Membership, placement_id: str) -> bool:
+    """What `GET …/placements/{id}` shows (`_visible`): an agent its own placement only,
+    unless it holds `agents:propose`."""
+    return _visible(mine, pl.row(conn, placement_id))
+
+
+idempotency.register(
+    "placement",
+    _load,
+    idempotency.in_project(idempotency.column_of(t.placement), _sees_placement),
+)
 
 
 def _placement(conn: Connection, mine: Membership, placement_id: str) -> Any:

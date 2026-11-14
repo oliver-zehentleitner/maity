@@ -130,7 +130,22 @@ def load_join(conn: Connection, join_id: str) -> dict[str, Any]:
     return join_view(conn, row)
 
 
-idempotency.LOADERS["join"] = idempotency.plain(load_join)
+def _sees_join(conn: Connection, mine: Any, join_id: str) -> bool:
+    """As the joins list (§3.1): every join to `members:admin`, one's own to whoever may
+    bring agents."""
+    if mine.may("members:admin"):
+        return True
+    created_by = conn.execute(
+        select(t.join_link.c.created_by).where(t.join_link.c.id == join_id)
+    ).scalar()
+    return bool(may_bring(mine)) and created_by == mine.principal_id
+
+
+idempotency.register(
+    "join",
+    idempotency.plain(load_join),
+    idempotency.in_project(idempotency.column_of(t.join_link), _sees_join),
+)
 
 
 # --- the join link (human) --------------------------------------------------------
