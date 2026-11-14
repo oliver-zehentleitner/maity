@@ -293,9 +293,13 @@ def test_the_joins_a_leaving_human_created_are_revoked(
     mine = flow.join(owner, "maity")
     assert _remove(owner, migrated, friend.id).status_code == 200
     with migrated.connect() as conn:
-        revoked = {r.id: r.revoked_at for r in conn.execute(select(t.join_link))}
-    assert revoked[made["id"]] is not None  # the person who issued it is gone
-    assert revoked[mine["id"]] is None  # another's stays
+        rows = {r.id: r for r in conn.execute(select(t.join_link))}
+        told = conn.execute(select(t.event).where(t.event.c.kind == "join_revoked")).all()
+    assert rows[made["id"]].revoked_at is not None  # the person who issued it is gone
+    assert rows[mine["id"]].revoked_at is None  # another's stays
+    # On the word of whoever ended the membership, and told as a `DELETE` of it (§3.1).
+    assert rows[made["id"]].revoked_by == owner.id
+    assert [(e.subject_id, e.payload["revoked_by"]) for e in told] == [(made["id"], owner.id)]
 
 
 # --- the limits hold on every path ----------------------------------------------------------------

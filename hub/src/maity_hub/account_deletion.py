@@ -547,6 +547,8 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
             wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
+    # The day's wrong second-factor codes (§2.8.6).
+    conn.execute(delete(t.second_factor_day).where(t.second_factor_day.c.human_id == human_id))
     # Open reset links and the day's wrong codes at resets (§2.10).
     conn.execute(delete(t.password_reset).where(t.password_reset.c.human_id == human_id))
     conn.execute(

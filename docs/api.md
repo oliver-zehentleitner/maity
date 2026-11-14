@@ -148,8 +148,9 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   the line. The log never holds a
   query string or a header value, and writes the token segment of `/join/{token}`,
   `/invite/{token}` (§16.11), `/r/{token}`, `/runners/pair/{token}`,
-  `/mail/verify/{token}`, `/mail/unsubscribe/{token}` and
-  `/mail/second-factor-reset/{token}` (§18.6), and the single
+  `/mail/verify/{token}`, `/mail/unsubscribe/{token}`,
+  `/mail/second-factor-reset/{token}` and
+  `/mail/second-factor-unlock/{token}` (§18.6), and the single
 segment of a join-host path (above), as `…`. The server's default access log is off.
 - Compression. A `GET` or `HEAD` under `/api/v1/` or `/assets/` whose
   request sends `Accept-Encoding: gzip` is answered gzipped when its body
@@ -455,7 +456,7 @@ and the inbox bounded; what does not fit goes into the repository.
 |---|---|---|
 | `POST /auth/login` `{email, password, next?}` | anyone | `email` is the account's address (§18.4): verified, or `disabled` after delivery failures (§18.7), which still signs in, so a bounce never takes the password away; compared trimmed and lower-cased as §2.6.3 compares. An account with neither has no password sign-in. Sets the cookies below; 200 `{"member": …, "next": …}` (`next` checked as §2.6.5) or `unauthenticated`, with `details.reason` once the password is paused (below). An account that waits for approval gets a restricted pending session, which holds no scope and reaches only the calls §2.7.5 lists |
 | `POST /auth/logout` | human | ends the session; cookies cleared; 200 `{"member": …}` |
-| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human; 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts in a bucket of its own (below) |
+| `POST /auth/password` `{current, new}` | human | changes the password and ends every other session of this human, and writes the account record `password_changed` `{ip, browser, os}`, a `security` notification whose mail goes out at once whatever the mode (§18.1, §18.4); 200 `{"member": …}`; a wrong `current` is `invalid` with `details.fields.current: "mismatch"` and counts in a bucket of its own (below) |
 | `GET /auth/session` | human | the current session: `{member, session_id, csrf_token, expires_at, join_url}` |
 
 Cookies: `maity_session` (`HttpOnly; Secure; SameSite=Lax; Path=/`) and
@@ -2703,7 +2704,11 @@ included:
   (§2.8.4) the tenth wrong code in the window of §2.8.6, from whichever
   session, writes it too, with `method: step_up`, and the fifth and every
   further wrong code at password resets in a day writes it with `method:
-  password_reset` (§2.10).
+  password_reset` (§2.10). The wrong code that reaches the daily cap of
+  §2.8.6 writes it once with `method: daily_limit`, `day` (the UTC date),
+  `unlocks` (how often the cap was lifted that day) and
+  `password_generation`; its mail carries the link that lifts the cap
+  (§18.6), which a password change voids.
 - **What the second-factor session carries.** The first factor's
   `method`, its `approved_by` (the device-code session that approved
   it, with that session's own lineage for "End this session", §2.6.5),
@@ -2882,6 +2887,7 @@ environment winning as there:
 | Codes at the sign-in step | 5 wrong per second-factor session, then the session ends (§2.8.2) |
 | Every code of a human (sign-in, step-up, confirm, recovery codes alike) | 10 wrong per 15 minutes per human; past that, every second-factor check of that human is `rate_limited` until the window passes. A check takes its place in the count before the code is compared and gives it back when the code is right, so checks running at the same time never get past the limit together |
 | Codes at a password reset (§2.10) | 5 wrong per human in the 24 hours before each one, across all reset links; the fifth and every further one in that window voids every open reset link of the human and writes `second_factor_failed` (`method: password_reset`), the count never restarts and a right code is never refused for it; every one also counts in the per-human limit above |
+| Every TOTP or recovery code of an enrolled human, at the sign-in step, a step-up or a password reset | `MAITY_SECOND_FACTOR_WRONG_PER_DAY` wrong per human and UTC day (default 50, 10 to 10000). The first wrong code at or over it writes `second_factor_failed` (`method: daily_limit`, §2.8.2); from then on every such check of that human is `rate_limited` with `details.reason: daily_limit` and a `Retry-After` until the day ends, before the code is compared, so a right code is refused too, until the day ends or the human opens the link the alert's mail carries and presses its button (`/mail/second-factor-unlock/{token}`, §18.6): that starts the day's count again from zero, once per link. Nobody is refused before that alert is written: a count already over a cap lowered during the day lets the next code be compared, and a wrong one writes the alert. A password change voids the link and counts the alert as not written, so the next wrong code mails a new link. Codes of the mail factor (§2.8.8) and of a starting enrolment do not count |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
@@ -2896,6 +2902,12 @@ one of §2.10 after five wrong codes in a day). The same holds for the
 mail factor's hourly limit (§2.8.8): whoever holds the password can use
 up the human's ten mails and keep a human without TOTP out for an hour;
 every one of those mails tells the human that someone has the password.
+The daily cap bounds what the 15-minute window allows over a day (960
+guesses at most): it keeps a human whose first factor is known from
+being guessed at all day long, at the price that the human's own codes
+are refused for the rest of the day too. The link in the alert's mail is
+the way back for a human whose address is verified; without one the
+cap holds until the day ends.
 
 #### 2.8.7 The dashboard and the CLI
 
@@ -3594,11 +3606,22 @@ has `subagents: true`, else `null`; the dashboard's copy puts it, a blank
 line and the chosen paste line into the clipboard, and `paste_lines`
 stay commands only. `join_url`, `code`
 and `paste_lines` appear in this response only. `GET` lists `{id, agent_id, trust, role,
-created_by, created_at, expires_at, used_at, burned, revoked_at, via,
+created_by, created_at, expires_at, used_at, burned, revoked_at, revoked_by, via,
 new_instance, replaces, instance, takes_over, handover, subagents,
 subagents_language}` (`instance`: the id the exchange gave)
 and nothing that opens the join. `DELETE` revokes
-an unused join and returns it with `revoked_at` (200); a join already
+an unused join, records who did it as `revoked_by` (the human's id),
+writes `join_revoked` (§8.2), and returns it with `revoked_at` (200).
+Two cascades revoke unused joins on a person's word the same way, with
+`revoked_by` and one `join_revoked` each: deleting the agent profile
+the join names (§6.3, `revoked_by` the profile's owner) and the end of
+the creator's membership (§6.2, `revoked_by` whoever ended it, the
+creator when they left). `revoked_by` stays `null`, and no event is
+written, where the hub revokes a join on its own: a runner's unused
+pickup when its placement or runner goes or a new pickup replaces it
+(§15.9), an account's deletion with all it leaves behind (§2.9), the
+end of a membership the hub itself carries out, and joins revoked
+before it was recorded. A join already
 revoked answers 200 as it is (idempotent); a used, burned or expired join
 is `invalid_transition` with `details.from` (`used`, `burned`,
 `expired`) and `details.to: "revoked"`, and nothing changes.
@@ -12121,6 +12144,7 @@ learns its content.
 | `placement_nudged`, `placement_replaced`, `placement_flapping` | `runner:<id>` of the placement's runner, `member:<the placement's agent>`, the owner of the agent profile | `placement_id`; `nudge.id`, `by` for a nudge; `replaced_by`, `handover` for a replacement; `flapping_since`, `reasons` for flapping (§15.14) |
 | `runner_attached`, `runner_detached` | `runner:<id>`, `trust:owner` | `runner_id`, `attachment_id`, `project` |
 | `runner_credential_revoked` | `trust:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason`, `on_runner_revoke`, `stopped` (§15.10) |
+| `join_revoked` (§3.1: a `DELETE`, a profile's deletion by its owner, the end of the creator's membership) | `member:<id>` of the join's creator and of every human `members:admin` holder, as the invitation events (§3.4); no agent reads it, whatever its role or audience, and it never wakes one | `{id, agent_id, trust, role, revoked_by}`; never the URL or the code |
 | `join_picked_up` | the owner of the agent profile, `trust:owner` | `placement_id`, `runner_id`, `join_id`, `pickup`; never the URL or the code |
 | `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
@@ -16189,6 +16213,7 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/requests/{id}/claim` | a member `trust:admin` names (not a proxy), while the request is open to `trust:admin` | 7 |
 | GET, POST | `/mail/verify/{token}`, `/mail/unsubscribe/{token}` (outside the API) | — (the token) | 18.6 |
 | GET, POST | `/mail/second-factor-reset/{token}` (outside the API) | — (the token) | 18.6, 2.8.3 |
+| GET, POST | `/mail/second-factor-unlock/{token}` (outside the API) | — (the token) | 18.6, 2.8.6 |
 | GET | `/me/export` | human | 2.9 |
 | POST, DELETE | `/me/deletion` | human | 2.9 |
 | POST, GET | `/projects/{owner}/{slug}/invitations` | `members:admin`, human only | 3.4 |
@@ -20546,7 +20571,8 @@ from the hub's catalogue in `language`.
   then draws the sign-in and sign-up pages without the frame (§16.7.4).
 - **The mail link pages.** `/mail/sign-in/{token}` (§2.6.3) and the
   pages of §18.6 (`/mail/verify/…`, `/mail/unsubscribe/…`,
-  `/mail/second-factor-reset/…`, `/mail/account-deletion/…`) stand in
+  `/mail/second-factor-reset/…`, `/mail/second-factor-unlock/…`,
+  `/mail/account-deletion/…`) stand in
   the model's header and footer around the door of `public-pages.css`,
   its panel empty, the page's own content (title, text, quote, link,
   button) in the form's column. Each keeps its words, its statuses and
@@ -22726,7 +22752,7 @@ when it is read or sent, from two sources, plus a read flag per human:
   readable by that
   human alone — no other member, no instance admin, no agent, no
   runner — and kept 90 days. The types: `mail_disabled` (§18.7) and
-  `email_address_changed` (§18.4); `password_reset` (§2.10); with the sign-in contract (#169,
+  `email_address_changed` (§18.4); `password_reset` (§2.10); `password_changed` (§2.1); with the sign-in contract (#169,
   §2.6.5) also `session_created` and `session_ended`, shown in the
   account's session list; neither is a notification (§2.6.5, "A sign-in
   is no notification"); and with
@@ -22776,7 +22802,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `invitation` | the account record `personal_request_created` of the consent request an invitation by handle files (§3.4, its proposal kind `invitation`), member of that project or not | the invited person | `<inviter> asks you: <request title>`, linking to the request, as for every personal request |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`); `Forge access added: <account login> (<source>)` |
+| `security` | the account record `email_address_changed` (§18.4); `password_reset` (§2.10); `password_changed` (§2.1); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Password reset by mail: <browser> on <os>, <ip>`; `Password changed: <browser> on <os>, <ip>`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>` (`Wrong second-factor codes at a password reset: …` for `method: password_reset`, `Second-factor codes refused for today after too many wrong ones: …` for `method: daily_limit`); `Forge access added: <account login> (<source>)` |
 
 The two jour fixe items are ordinary items: read by their read flag,
 mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
@@ -23372,7 +23398,8 @@ device; the browser's own permission is per browser and is not stored.
   hours or `off` holds them: the notice to the old address after an
   address change (above); the mail of `second_factor_changed`
   (disabled, reset or changed, §2.8) and of `second_factor_failed`
-  (§2.8); the mail of `password_reset` (§2.10); the confirmation of an account deletion (§2.9); the mail
+  (§2.8), with the unlock link of §2.8.6 for `method: daily_limit`; the
+  mail of `password_reset` (§2.10) and of `password_changed` (§2.1); the confirmation of an account deletion (§2.9); the mail
   after a registration decision (§2.7.5). They are security mail
   (§16.2, own budget).
 - **Defaults and what was saved.** The hub stores only what the human
@@ -23579,6 +23606,7 @@ authority — with no cookie set or read:
 | `/mail/verify/{token}` | a page naming the address and a "Confirm" button | confirms the address; the page says so |
 | `/mail/unsubscribe/{token}` | a page naming the kind and a "Stop these mails" button | sets that kind's `mode` to `off`; also the RFC 8058 one-click `POST` with body `List-Unsubscribe=One-Click` |
 | `/mail/second-factor-reset/{token}` | a page naming the account and the admin who asked, with the reason as quoted text, and a "Reset my two-factor sign-in" button | resets it (§2.8.3); the page says so and that every session has ended |
+| `/mail/second-factor-unlock/{token}` | a page saying that too many wrong second-factor codes were entered today and the code is refused until the day ends, with a "Let me try again today" button | starts the day's count of wrong codes again from zero (§2.8.6); the page says so. The link works once, on its UTC day, and not after a password change |
 | `/mail/account-deletion/{token}` | a page naming the account, saying what deletion removes and keeps (§2.9), with a link to the export and a "Delete my account" button | deletes the account (§2.9); the page says so, or why it did not (`namespace_owner`, `last_instance_admin`) |
 
 A `GET` never changes anything: mail scanners open links before the
@@ -23590,6 +23618,9 @@ hours) and are single-use, and so does an `account_deletion` token,
 which is also bound to the pending request and dead once that is
 withdrawn or replaced (§2.9); a second-factor reset token also names
 the factor's generation and is dead once that moves (§2.8.1, §2.8.3); a
+second-factor unlock token names the human, the UTC day and how often
+the cap was lifted that day: it works on that day only, once, and only
+while the cap is reached (§2.8.6); a
 password-reset token (§2.10) carries its own expiry (30 minutes) and a
 nonce, is single-use, travels in the fragment of a dashboard route
 rather than on these paths, and is dead once the human's password

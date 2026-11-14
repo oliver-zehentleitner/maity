@@ -1327,7 +1327,10 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
         }
         joins = {
             row.id: (row.subagents, row.subagents_language)
-            for row in conn.execute(select(t.join_link))
+            # The columns of that revision only: later ones (`revoked_by`) are not there yet.
+            for row in conn.execute(
+                select(t.join_link.c.id, t.join_link.c.subagents, t.join_link.c.subagents_language)
+            )
         }
     assert members[coder.agent_id] == (True, "de", chosen)
     assert members[reviewer.agent_id] == (True, "fr", written)

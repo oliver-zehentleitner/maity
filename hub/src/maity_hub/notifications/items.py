@@ -688,7 +688,8 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
     change = f"tf_{data.get('change')}"
-    alarms = ("tf_changed", "tf_failed", "tf_failed_reset")  # not changes; other placeholders
+    # Not changes; other placeholders.
+    alarms = ("tf_changed", "tf_failed", "tf_failed_reset", "tf_failed_daily")
     if change not in catalog.section("notify", "en") or change in alarms:
         change = "tf_changed"
     return where.say(change, by=data.get("by"))
@@ -822,12 +823,12 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     title=_cut(
                         where.say(
                             # The reset's alarm says so: the mailbox, not the app, is
-                            # in other hands (§2.10, §18.1).
-                            (
-                                "tf_failed_reset"
-                                if data.get("method") == "password_reset"
-                                else "tf_failed"
-                            ),
+                            # in other hands (§2.10, §18.1); the daily cap says what
+                            # stopped (§2.8.6).
+                            {
+                                "password_reset": "tf_failed_reset",
+                                "daily_limit": "tf_failed_daily",
+                            }.get(str(data.get("method")), "tf_failed"),
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",
@@ -839,7 +840,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record_type=row.type,
                 )
             )
-        elif row.type == "password_reset":
+        elif row.type in ("password_reset", "password_changed"):
             items.append(
                 Item(
                     kind="security",
@@ -847,7 +848,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record=row.n,
                     title=_cut(
                         where.say(
-                            "password_reset",
+                            row.type,
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",

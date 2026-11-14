@@ -129,6 +129,13 @@ def test_a_lost_answer_is_recovered_and_three_pickups_is_all(
     second = pick_up(setup, placement).json()
     assert second["pickup"] == 2
     assert exchange(make_client(), first).status_code == 404  # revoked by the second
+    with setup.engine.connect() as conn:  # the hub's own revocation: nobody named or told
+        revoked = conn.execute(
+            select(t.join_link.c.revoked_by).where(t.join_link.c.revoked_at.is_not(None))
+        ).all()
+        assert len(revoked) == 1 and revoked[0].revoked_by is None
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+        assert told == []
     assert pick_up(setup, placement).json()["pickup"] == 3
     fourth = pick_up(setup, placement)
     assert (fourth.status_code, error(fourth)) == (409, "pickup_used")
@@ -546,3 +553,22 @@ def test_a_supervised_session_wakes_on_less() -> None:
         row = _row(kind, audience)
         assert events.wakes(row, me, "agt-b") is plain, kind
         assert events.wakes(row, me, "agt-b", supervised=True) is supervised, (kind, audience)
+
+
+def test_the_hub_revoking_an_unused_pickup_names_nobody_and_tells_nobody(
+    setup: Setup,
+) -> None:
+    """`revoke_unused_joins` is the hub's own revocation, whoever moved the placement (§3.1)."""
+    placement = placed(setup)
+    pick_up(setup, placement)
+    path = f"/projects/maintainer/maity/placements/{placement['id']}"
+    assert setup.owner.delete(path).status_code == 200
+    with setup.engine.connect() as conn:
+        joins = conn.execute(
+            select(t.join_link.c.revoked_at, t.join_link.c.revoked_by).where(
+                t.join_link.c.placement_id.is_not(None)
+            )
+        ).all()
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+    assert joins and all(j.revoked_at is not None and j.revoked_by is None for j in joins)
+    assert told == []

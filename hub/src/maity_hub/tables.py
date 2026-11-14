@@ -469,6 +469,22 @@ second_factor = Table(
     **MYSQL_TABLE,
 )
 
+# The wrong second-factor codes of one human on one UTC day (§2.8.6): at the cap every check of
+# that human is refused for the rest of the day, unless the link mailed then lifts it; `unlocks`
+# counts the lifts, and a link names the count it was made at, so it works once. `alerted`: the
+# alert with its link was written since the day began or the cap was last lifted; no refusal
+# comes before it, also after the cap was lowered during the day.
+second_factor_day = Table(
+    "second_factor_day",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("wrong_codes", Integer, nullable=False),
+    Column("unlocks", Integer, nullable=False, server_default="0"),
+    Column("alerted", Boolean, nullable=False, server_default=false()),
+    **MYSQL_TABLE,
+)
+
 # Ten recovery codes per enrolled human, each an HMAC-SHA-256 under MAITY_SECRET_KEY
 # (a database copy alone opens none), each usable once (§2.8.1).
 recovery_code = Table(
@@ -1031,6 +1047,13 @@ join_link = Table(
     Column("failed_attempts", Integer, nullable=False),
     Column("burned_at", UtcDateTime),
     Column("revoked_at", UtcDateTime),
+    # Who revoked it (§3.1): the principal behind a `DELETE`, a profile's deletion by its owner
+    # or the end of the creator's membership (`join_revocation`); null when the hub revoked it
+    # on its own: a runner's pickups (§15.9), an account's deletion (§2.9), and joins revoked
+    # before the column existed, and a membership end the hub carries out (an organisation
+    # owner's seat it kept, released, §6.26). No foreign key: the record stays as written, as
+    # `credential.revoked_by`.
+    Column("revoked_by", String(ID)),
     # A runner's pickup for a placement (§15.9): the placement, the runner and the
     # generation it was picked up for; null on a human's join.
     _ref("placement_id", "placement.id", index=True),

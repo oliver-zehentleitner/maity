@@ -246,6 +246,7 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
     _require_cookie(caller)
     if len(body.new) < passwords.MIN_LENGTH:
         raise invalid({"new": "too_short"}, "a password has at least 12 characters")
+    browser, system = sessions.describe(request.headers.get("user-agent"))
     with engine_of(request).begin() as conn:
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         row = conn.execute(select(t.human).where(t.human.c.id == caller.principal_id)).one()
@@ -271,6 +272,13 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
         # address (§2.10).
         password_resets.password_changed(conn, row.id)
         preferences.void_pending_address(conn, row.id)
+        # A security notice with its mail at once, as a reset's (§2.1, §18.1).
+        records.write(
+            conn,
+            row.id,
+            "password_changed",
+            {"ip": origin_of(request).address, "browser": browser, "os": system},
+        )
         url = avatars.urls(conn, [row.id])[row.id]
         return JSONResponse({"member": human_member(row, avatar_url=url)})
 
