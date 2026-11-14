@@ -55,7 +55,8 @@ GRANT USAGE, CREATE ON SCHEMA public TO maity_owner;
 GRANT USAGE ON SCHEMA public TO maity_app;
 
 -- An install from before the two roles: its objects belong to the superuser. Tables (their indexes, constraints and the
--- sequences of their columns go with them), then the remaining sequences, views and types, then functions.
+-- sequences of their columns go with them), then the remaining sequences, views and types, then functions, then large
+-- objects: the hub writes none, but one in the database would make a dump as maity_owner fail, since it cannot read it.
 DO $$
 DECLARE r record;
 BEGIN
@@ -76,6 +77,9 @@ BEGIN
   FOR r IN SELECT p.oid::regprocedure AS name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
            WHERE n.nspname = 'public' AND p.proowner <> 'maity_owner'::regrole LOOP
     EXECUTE format('ALTER ROUTINE %s OWNER TO maity_owner', r.name);
+  END LOOP;
+  FOR r IN SELECT m.oid FROM pg_largeobject_metadata m WHERE m.lomowner <> 'maity_owner'::regrole LOOP
+    EXECUTE format('ALTER LARGE OBJECT %s OWNER TO maity_owner', r.oid);
   END LOOP;
 END
 $$;

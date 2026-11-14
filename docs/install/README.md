@@ -616,8 +616,10 @@ migrations create later too. Each URL names its role:
 - **MariaDB / MySQL and SQLite:** not covered; the hub uses the one URL.
 
 **The hub checks its role at the start.** On PostgreSQL, `maity-hub serve`
-refuses to start when its role is a superuser, or owns the hub's schema or
-one of its tables (also through a role it belongs to), and names the reason.
+refuses to start when its role is a superuser, owns the hub's schema or
+one of its tables (also as a member of the owning role), or may create
+objects in that schema, and names the reason. The roles script revokes
+that right from `PUBLIC`, which has it by default before PostgreSQL 15.
 `maity-hub migrate` does not check: it runs as the owner. An installation
 that has not moved to the two roles yet sets `MAITY_DB_ALLOW_PRIVILEGED=1`
 for the hub until it has (Helm: `extraEnv`; Compose: the `hub` service's
@@ -672,7 +674,7 @@ sessions it holds in the running hub, whether you restore it or not.
 | Engine | Backup | Restore |
 |---|---|---|
 | SQLite | The hub runs SQLite in WAL mode, so copying the `.db` file alone, while the hub runs, can lose recent writes. Use the backup API: `sqlite3 maity-hub.db ".backup 'maity-$(date +%F).db'"`, or `python3 -c "import sqlite3; sqlite3.connect('maity-hub.db').backup(sqlite3.connect('backup.db'))"`. Or stop the hub, then copy the `.db` with its `-wal` and `-shm` files. | stop the hub; put the backup in place as `maity-hub.db`; delete stale `-wal` and `-shm` files; start the same hub version |
-| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then the roles again with `docker compose -f deploy/docker-compose.yml exec -T db psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql` ([Database roles](#database-roles)), then `docker compose -f deploy/docker-compose.yml start hub` |
+| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`, the password in `PGPASSWORD` or `~/.pgpass` rather than in the URL, where other users of the machine can read it in the process list. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then the roles again with `docker compose -f deploy/docker-compose.yml exec -T db psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql` ([Database roles](#database-roles)), then `docker compose -f deploy/docker-compose.yml start hub` |
 | MariaDB / MySQL | `mariadb-dump --single-transaction --default-character-set=utf8mb4 <database> > maity.sql` | stop the hub; `mariadb <database> < maity.sql`; start the same hub version |
 
 Back up before every upgrade.

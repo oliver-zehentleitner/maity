@@ -88,10 +88,28 @@ spec:
                   trap 'rm -f "$f.part"' EXIT
                   # A few tries: a dump pod that starts before its network is ready got "Connection refused" while the database was fine.
                   # pg_dump writes to the pipe, so nothing unencrypted reaches the disk; its failure leaves a mark (sh has no pipefail).
+                  # The owner's URL carries its password: pg_dump gets the URL without it and the password in PGPASSWORD, since a
+                  # command's arguments can be read by every user on the node (/proc/<pid>/cmdline) and its environment cannot.
+                  if [ -n "${DUMP_URL:-}" ]; then
+                    case "$DUMP_URL" in
+                      postgres*://*) rest=${DUMP_URL#*://} ;;
+                      *) echo "backup failed: database-url in maity-hub-db-migrate is not a postgresql:// URL" >&2; exit 1 ;;
+                    esac
+                    auth=
+                    case "${rest%%/*}" in *@*) auth=${rest%%@*}; rest=${rest#*@} ;; esac
+                    case "$auth" in
+                      *:*)
+                        PGPASSWORD=${auth#*:}; export PGPASSWORD; auth=${auth%%:*}
+                        case "$PGPASSWORD" in *%*) echo "backup failed: the password in maity-hub-db-migrate is percent-encoded: give maity_owner a password of letters and digits (docs/install/README.md, step 4)" >&2; exit 1 ;; esac
+                        ;;
+                    esac
+                    set -- -d "postgresql://${auth:+$auth@}$rest"
+                  else
+                    set -- -h maity-postgres -U maity maity
+                  fi
                   n=0
                   while :; do
                     rm -f "$g/failed"
-                    if [ -n "${DUMP_URL:-}" ]; then set -- -d "$DUMP_URL"; else set -- -h maity-postgres -U maity maity; fi
                     { pg_dump -Fc "$@" || touch "$g/failed"; } | LC_ALL=C dd bs=64k 2>"$g/count" \
                       | gpg --batch --quiet --homedir "$g" --no-autostart --trust-model always --recipient-file "$k" --compress-algo none --yes --encrypt --output "$f.part"
                     [ -e "$g/failed" ] || break

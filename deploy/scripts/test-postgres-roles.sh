@@ -3,7 +3,8 @@
 # a dump from before the two roles, restored into a database that has them, brings its objects back owned by the superuser
 # and without the app role's rights; the script run again afterwards, without passwords, hands them back and grants the rows,
 # and keeps the passwords. Also: a dump made after the split restores with the rights; `after_restore` does nothing where the
-# roles were never set up; without passwords the script refuses to create a role; passwords given again replace them.
+# roles were never set up; a large object the superuser made is handed over too, so that a dump as the owner role can read it;
+# without passwords the script refuses to create a role; passwords given again replace them.
 # The roles get names of their own (t_roles_owner, t_roles_app), made and dropped here.
 # Usage, from the checkout's root:
 #   hub/scripts/with_postgres.sh deploy/scripts/test-postgres-roles.sh     (psql, pg_dump, pg_restore; PYTHON with the hub's
@@ -71,6 +72,16 @@ pg_restore -d "$new" --clean --if-exists "$work/old.dump" 2> "$work/restore.log"
 n=$(lacking "$new"); [ "$n" -gt 0 ] && ok "--clean restore of the old dump: $n tables lose the app role's rights" || fail "--clean restore: no rights lost"
 after_restore "$new"
 n=$(lacking "$new"); [ "$n" = 0 ] && ok "--clean restore, then the script: every table again" || fail "--clean, then the script: $n tables without rights"
+
+# A large object the superuser made: a dump as the owner role cannot read it and fails; the script hands it over.
+psql -X -q -At "$new" -c "select lo_from_bytea(0, 'x')" > /dev/null
+if pg_dump -Fc -d "$(url_for "$owner" "${base}_new")" -f "$work/owner.dump" 2> "$work/dump.log"; then
+  fail "a dump as the owner role read the superuser's large object (the case this test is for did not happen)"
+elif grep -q "large object" "$work/dump.log"; then ok "a large object of the superuser: a dump as the owner role fails"
+else fail "the dump as the owner role failed for another reason"; sed 's/^/     /' "$work/dump.log"; fi
+after_restore "$new"
+pg_dump -Fc -d "$(url_for "$owner" "${base}_new")" -f "$work/owner.dump" 2> "$work/dump.log" \
+  && ok "the script hands the large object over: the dump as the owner role works" || { fail "dump as the owner role after the script"; sed 's/^/     /' "$work/dump.log"; }
 
 # A dump made after the split names the owner role: it restores with the rights; the script after it is harmless.
 pg_dump -Fc -d "$new" -f "$work/new.dump"

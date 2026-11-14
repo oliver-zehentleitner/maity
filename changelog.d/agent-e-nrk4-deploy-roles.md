@@ -20,14 +20,16 @@
   `maity-hub-db-migrate`, the app's URL in `maity-hub-db`, `postgres-netpol.yaml` again, then `helm-upgrade.sh` with the
   new `hub-values.yaml`). Compose refuses to start without the two new passwords.
 - deploy: `deploy/postgres-roles.sql` needs passwords only for a role it creates and otherwise keeps them; it runs again
-  after every restore (`-v after_restore=1`, a no-op where the roles were never set up), since a dump from before the two
+  after every restore (`-v after_restore=1`, a no-op where the roles were never set up), also handing large objects to
+  `maity_owner`, since a dump from before the two
   roles restores its objects to the superuser without `maity_app`'s rights. The k3s restore block and the Compose
   restore in docs/install/README.md run it after `pg_restore`; `deploy/scripts/test-postgres-roles.sh` covers it on
   PostgreSQL.
 - deploy: the k3s backup Job runs `pg_dump` as `maity_owner` when the Secret `maity-hub-db-migrate` exists, and as the
-  superuser otherwise.
-- hub: `maity-hub serve` on PostgreSQL refuses to start when its database role is a superuser or owns the hub's schema
-  or one of its tables (also through a role it belongs to); `maity-hub migrate` is not checked. `MAITY_DB_ALLOW_PRIVILEGED=1`
+  superuser otherwise. The password from that Secret's URL reaches `pg_dump` through `PGPASSWORD`, never its arguments; a
+  percent-encoded password fails the Job (`deploy/scripts/test-backup-dump.sh`).
+- hub: `maity-hub serve` on PostgreSQL refuses to start when its database role is a superuser, owns the hub's schema
+  or one of its tables (also as a member of the owning role), or may create objects in that schema; `maity-hub migrate` is not checked. `MAITY_DB_ALLOW_PRIVILEGED=1`
   lets such a role serve, with a warning at each start. Upgrade note: an installation whose hub still uses the
   superuser or the owner's URL (Helm with one `database.existingSecret`, your own setup) sets
   `MAITY_DB_ALLOW_PRIVILEGED=1` for the hub (Helm: `extraEnv`) before it upgrades, or moves to the two roles first

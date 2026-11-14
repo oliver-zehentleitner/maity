@@ -282,41 +282,48 @@ def check_web_dir(settings: Settings) -> None:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
 
 
-# Whether the hub's role on PostgreSQL may do more than read and write rows: a superuser, or a
-# role that owns (or inherits the rights of the owner of) its schema or one of its tables.
+# Whether the hub's role on PostgreSQL may do more than read and write rows: a superuser, a role
+# that owns its schema or one of its tables or is a member of such an owner (MEMBER, not USAGE: a
+# member without INHERIT can still SET ROLE to the owner), or a role that may create in the schema.
+# The schema columns are NULL when there is no current schema (an empty search_path).
 _PRIVILEGED_ROLE = text("""
-    SELECT r.rolsuper,
-           pg_has_role(current_user, n.nspowner, 'USAGE') AS owns_schema,
+    SELECT current_user AS name,
+           r.rolsuper,
+           n.oid IS NOT NULL AS has_schema,
+           pg_has_role(current_user, n.nspowner, 'MEMBER') AS owns_schema,
            EXISTS (
                SELECT 1 FROM pg_class c
                WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
-                 AND pg_has_role(current_user, c.relowner, 'USAGE')
-           ) AS owns_tables
-    FROM pg_roles r, pg_namespace n
-    WHERE r.rolname = current_user AND n.nspname = current_schema()
+                 AND pg_has_role(current_user, c.relowner, 'MEMBER')
+           ) AS owns_tables,
+           has_schema_privilege(current_user, n.oid, 'CREATE') AS creates
+    FROM pg_roles r LEFT JOIN pg_namespace n ON n.nspname = current_schema()
+    WHERE r.rolname = current_user
     """)
 
 
 def privileged_role(engine: Engine) -> str | None:
     """Why the database role of `engine` is more than the hub needs to serve, or None: on
-    PostgreSQL a superuser, or a role that owns the schema the hub runs in or one of its tables
-    (directly or through a role it belongs to). Owning the schema is what migrations need, and
+    PostgreSQL a superuser, a role that owns the schema the hub runs in or one of its tables
+    (directly or as a member of the owner, whether or not it inherits the owner's rights), or a
+    role that may create objects in that schema. Owning the schema is what migrations need, and
     they run under their own role (`maity-hub migrate`, docs/install/README.md, "Database
     roles"). Other databases are not checked: SQLite has no roles, and MariaDB has no owners,
     only grants (hub/context/deploy-access.md)."""
     if engine.dialect.name != "postgresql":
         return None
     with engine.connect() as conn:
-        row = conn.execute(_PRIVILEGED_ROLE).one_or_none()
-        user = conn.execute(text("SELECT current_user")).scalar_one()
-    if row is None:  # no current schema: nothing it could own
-        return None
+        row = conn.execute(_PRIVILEGED_ROLE).one()
     if row.rolsuper:
-        return f"the database role {user!r} is a superuser"
+        return f"the database role {row.name!r} is a superuser"
+    if not row.has_schema:  # no current schema: nothing it could own
+        return None
     if row.owns_schema:
-        return f"the database role {user!r} owns the hub's schema"
+        return f"the database role {row.name!r} owns the hub's schema"
     if row.owns_tables:
-        return f"the database role {user!r} owns tables of the hub's schema"
+        return f"the database role {row.name!r} owns tables of the hub's schema"
+    if row.creates:
+        return f"the database role {row.name!r} may create objects in the hub's schema"
     return None
 
 

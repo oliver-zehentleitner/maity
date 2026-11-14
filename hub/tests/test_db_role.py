@@ -1,7 +1,7 @@
-"""`maity-hub serve` refuses a PostgreSQL role that can change the schema (a superuser, or the
-owner of the schema or of one of its tables, also through a role it belongs to), unless
-MAITY_DB_ALLOW_PRIVILEGED is set; a role that only reads and writes rows serves
-(hub/context/deploy-access.md, docs/install/README.md "Database roles").
+"""`maity-hub serve` refuses a PostgreSQL role that can change the schema (a superuser, the
+owner of the schema or of one of its tables, also as a member of the owner, or a role that may
+create in the schema), unless MAITY_DB_ALLOW_PRIVILEGED is set; a role that only reads and
+writes rows serves (hub/context/deploy-access.md, docs/install/README.md "Database roles").
 
 The roles are made per test with unique names and dropped again; each test connects as the
 suite's role and switches with `SET ROLE` on every connection, so no password is needed. The
@@ -135,6 +135,43 @@ def test_a_member_of_the_owner_is_refused(scratch: Any) -> None:
     assert privileged_role(scratch.as_role(member)) == (
         f"the database role {member!r} owns the hub's schema"
     )
+
+
+def test_a_member_that_does_not_inherit_but_may_switch_is_refused(scratch: Any) -> None:
+    """Without INHERIT the member has none of the owner's rights as itself, but SET ROLE gives
+    it all of them."""
+    owner = scratch.role("owner", USE)
+    scratch.run(f"ALTER SCHEMA {{schema}} OWNER TO {owner}")
+    member = scratch.role(
+        "member", USE, ROWS, "GRANT " + owner + " TO {role} WITH INHERIT FALSE, SET TRUE"
+    )
+    acting = scratch.as_role(member)
+    with acting.connect() as conn:
+        assert not conn.execute(
+            text("SELECT pg_has_role(current_user, :owner, 'USAGE')"), {"owner": owner}
+        ).scalar_one()
+    assert privileged_role(acting) == f"the database role {member!r} owns the hub's schema"
+
+
+def test_a_role_that_may_create_in_the_schema_is_refused(scratch: Any) -> None:
+    creator = scratch.role("creator", USE, ROWS, "GRANT CREATE ON SCHEMA {schema} TO {role}")
+    assert privileged_role(scratch.as_role(creator)) == (
+        f"the database role {creator!r} may create objects in the hub's schema"
+    )
+
+
+def test_the_superuser_is_refused_without_a_current_schema(engine: Engine, scratch: Any) -> None:
+    with engine.connect() as conn:
+        user = conn.execute(text("SELECT current_user")).scalar_one()
+    acting = scratch.as_role(user, search_path="''")
+    with acting.connect() as conn:
+        assert conn.execute(text("SELECT current_schema()")).scalar_one() is None
+    assert privileged_role(acting) == f"the database role {user!r} is a superuser"
+
+
+def test_a_row_role_without_a_current_schema_serves(scratch: Any) -> None:
+    app = scratch.role("app", USE, ROWS)
+    assert privileged_role(scratch.as_role(app, search_path="''")) is None
 
 
 def _settings(**env: str) -> Settings:
