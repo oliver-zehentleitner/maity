@@ -10,6 +10,7 @@ a runner comes to read anything of the project. The routes are in
 
 from __future__ import annotations
 
+import fnmatch
 from typing import Any
 
 from sqlalchemy import Connection, func, insert, select, update
@@ -126,8 +127,13 @@ def live_credential_id(conn: Connection, runner_id: str) -> str | None:
 
 
 def _project_slugs(conn: Connection, runner_id: str, viewer_id: str | None) -> list[str]:
-    """The runner's projects by full name (§6.25); for a human only those they are a
+    """The runner's projects by full name (§6.25); for a viewer only those they are a
     member of (§15.3)."""
+    ids = _project_ids(conn, runner_id, viewer_id)
+    return sorted(namespace.full_names(conn, ids).values())
+
+
+def _project_ids(conn: Connection, runner_id: str, viewer_id: str | None) -> list[str]:
     query = (
         select(t.project.c.id)
         .join(t.runner_attachment, t.runner_attachment.c.project_id == t.project.c.id)
@@ -138,13 +144,54 @@ def _project_slugs(conn: Connection, runner_id: str, viewer_id: str | None) -> l
         .order_by(t.project.c.slug)
     )
     if viewer_id is not None:
+        # A human's membership or an agent's: a proposing agent reads its project's part.
         query = query.join(
             t.membership,
             (t.membership.c.project_id == t.project.c.id)
-            & (t.membership.c.human_id == viewer_id)
+            & ((t.membership.c.human_id == viewer_id) | (t.membership.c.agent_id == viewer_id))
             & t.membership.c.active.is_(True),
         )
-    return sorted(namespace.full_names(conn, conn.execute(query).scalars()).values())
+    return list(conn.execute(query).scalars())
+
+
+def _capabilities_for(conn: Connection, row: Any, viewer_id: str | None) -> Any:
+    """`capabilities` as a viewer who is not the runner's owner reads it (§15.3): what the
+    runner's configuration says about its other projects stays its owner's. `projects` keeps
+    the viewer's own projects of the runner, `repositories` the patterns that match one of
+    their repositories, and a target's `isolation` loses the OS `user`. The runner itself
+    (`viewer_id` None) and its owner read it whole."""
+    capabilities = row.capabilities
+    if viewer_id is None or viewer_id == row.owner_id or not isinstance(capabilities, dict):
+        return capabilities
+    ids = _project_ids(conn, row.id, viewer_id)
+    names = set(namespace.full_names(conn, ids).values())
+    repositories = [
+        url.removeprefix("https://").rstrip("/")
+        for url in conn.execute(
+            select(t.project.c.repository_url).where(t.project.c.id.in_(ids))
+        ).scalars()
+        if url
+    ]
+    shown = dict(capabilities)
+    if isinstance(shown.get("projects"), list):
+        shown["projects"] = [p for p in shown["projects"] if p in names]
+    if isinstance(shown.get("repositories"), list):
+        shown["repositories"] = [
+            p
+            for p in shown["repositories"]
+            if isinstance(p, str) and any(fnmatch.fnmatchcase(r, p) for r in repositories)
+        ]
+    if isinstance(shown.get("targets"), list):
+        shown["targets"] = [without_user(target) for target in shown["targets"]]
+    return shown
+
+
+def without_user(target: Any) -> Any:
+    """A target with its `isolation` but not the OS user the agents run as."""
+    if not isinstance(target, dict) or not isinstance(target.get("isolation"), dict):
+        return target
+    isolation = {k: v for k, v in target["isolation"].items() if k != "user"}
+    return {**target, "isolation": isolation}
 
 
 def runner_view(
@@ -168,7 +215,7 @@ def runner_view(
         "last_seen_at": ts(row.last_seen_at),
         "credential_state": state,
         "version": row.version,
-        "capabilities": row.capabilities,
+        "capabilities": _capabilities_for(conn, row, viewer_id),
         "projects": _project_slugs(conn, row.id, viewer_id),
         "created_at": ts(row.created_at),
         "updated_at": ts(row.updated_at),
