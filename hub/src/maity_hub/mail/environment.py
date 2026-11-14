@@ -151,9 +151,7 @@ def parse(env: dict[str, str]) -> MailEnvironment:
         verification_max_per_hour=_number(
             env, "MAITY_MAIL_VERIFICATION_MAX_PER_HOUR", 1, MAX_PER_HOUR
         ),
-        invitation_max_per_hour=_number(
-            env, "MAITY_MAIL_INVITATION_MAX_PER_HOUR", 1, MAX_PER_HOUR
-        ),
+        invitation_max_per_hour=_number(env, "MAITY_MAIL_INVITATION_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         sign_in_max_per_hour=_number(env, "MAITY_MAIL_SIGN_IN_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         second_factor_max_per_hour=_number(
             env, "MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR", 1, MAX_PER_HOUR
