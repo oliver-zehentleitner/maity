@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, insert, or_, select, update
 
-from maity_hub import clock, inbox, namespace, preferences, ticker
+from maity_hub import chat_gate, clock, inbox, namespace, preferences, ticker
 from maity_hub import tables as t
 from maity_hub.board import history
 from maity_hub.errors import ApiError, invalid
@@ -110,8 +110,10 @@ def submit_report(
     """The moderator's report, made final with what it files and opens."""
     lock_project(conn, round_row.project_id)
     round_row = _reload(conn, round_row.id)
-    if mine.principal_id != round_row.moderator["member_id"]:
+    if not circle.moderates(conn, round_row, mine):
         raise refused("not_moderator", "only the round's moderator writes the report")
+    if chat_gate.moderator_held(conn, round_row.conversation_id, mine.id):
+        raise refused("waiting", "the moderator waits for its owner's yes (§9.6)")
     if round_row.status != "reporting":
         raise _state(round_row, "the report is due once the exchange has closed, and only once")
     from maity_hub.jourfixe.exchange import too_long

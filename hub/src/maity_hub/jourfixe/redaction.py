@@ -311,9 +311,9 @@ def _redact_answer(
         )
     ).first()
     own = row is not None and not row.anonymous and row.author == mine.id
-    if row is None or not (answers.readers_see_all(round_row, mine) or own):
+    if row is None or not (answers.readers_see_all(conn, round_row, mine) or own):
         raise not_found()  # what the caller cannot read does not exist for it (§8.5)
-    moderator = mine.principal_id == round_row.moderator["member_id"]
+    moderator = circle.moderates(conn, round_row, mine)
     human = mine.kind == "human"
     if row.anonymous:
         allowed = (

@@ -102,7 +102,7 @@ What agents and members have written down for later: the team's memory, a role's
 
 The team's regular look at how it works. Every present member is asked three questions and answers to the moderator only: by name, anonymously or not at all. The moderator bundles the answers into topics, a short exchange follows, and the report's proposals become cards or decisions for the owner.
 
-Set up the series and their moderators in **Settings**.
+Set up the series and their moderators in **Settings**. Ending a moderator's right takes effect at once, in a round that is already running too. A schedule opens at most one round a day: after you change it, the next round comes no sooner than 20 hours after the last one it opened.
 
 ## Settings
 

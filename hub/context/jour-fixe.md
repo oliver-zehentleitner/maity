@@ -348,3 +348,66 @@ price.
 
 **Rejected alternatives:** every holder of `requests:answer` reading it, as before: it opened a private round's
 proposals to the project's admins.
+
+## A changed schedule rests 20 hours after the last round it opened
+
+**Id:** 9ff74a1b-5680-41cb-82c0-4cf2a83533b5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-14 (card tsk-8nd5dpc8g8f0); contract `docs/api.md` §20.1
+**See:** jour-fixe.md#a-series-keeps-its-schedule-in-the-old-policys-shape-and-the-upgrade-writes-its-own-event — de0c97c0-a638-4c1a-9fb8-f14ab6d407a1 — as of 2026-11-14
+**Revisit when:** a schedule may name more than one time a day, or slots a change passes over need a record of their own
+
+A change of a series' schedule (or switching it back on) counts its slots
+from the change as before, and sets `last_slot` no earlier than 20 hours
+after the `scheduled_for` of the last round the schedule opened
+(`series.REST_AFTER_ROUND`); `rounds.next_at` reads from there, so the
+series shows the slot that will open. A slot passed over this way is not
+recorded, like a slot before the change.
+
+**Reason:** a schedule has one time a day, so its own slots are never less
+than 23 hours apart (a DST change shortens one day by an hour); a change is
+the only way to bring a slot closer, so the rest is set where the change is
+made and nothing else in the slot logic moves. 20 hours stays clear of the
+23 and still lets a team move tomorrow's round a few hours earlier.
+
+**Rejected alternatives:**
+- Counting scheduled rounds in the daily limit of rounds started by hand
+  (2 in 24 hours): schedule changes could still open rounds up to that
+  limit, and a scheduled round would use up a manual start.
+- One scheduled round per local calendar day: a change of `timezone` moves
+  the day's boundary, so the bound would not hold.
+- Recording a slot passed over as a skipped round with a reason of its own:
+  a new `skip_reason` in the contract and the dashboard for a case only a
+  change makes.
+
+## A round's moderator acts only while it holds the series' right; a deleted series' round keeps it
+
+**Id:** 5e63826a-68ba-4d48-8bf8-e50ca800c7c9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-14 (card tsk-8nd5dpc8g8f0); contract `docs/api.md` §20.2, §20.7
+**See:** jour-fixe.md#the-moderator-rights-two-consents-ride-on-consent-requests-and-the-sweep-ends-rights-and-files-what-the-upgrade-owes — 8dcb08a3-672d-48a2-816a-453bf27996c5 — as of 2026-11-14
+**Revisit when:** a series' deletion stops leaving its rounds behind, or a round can change its moderator
+
+The round stores its moderator at the start; every check of "the caller is
+the moderator" (`jourfixe/circle.moderates`) also asks whether that member
+still holds the series' right, read from `jour_fixe_moderator` at the call.
+Who reads an owner's round and its events' audience follow the same rule.
+A round whose series was deleted (`series_id` is `null`) keeps its stored
+moderator to its end.
+
+**Reason:** ending a right deletes only the grant, so a check against the
+stored moderator alone left the right in force for an open round. Deleting
+a series deletes every grant with it, while its running round runs to its
+end (§20.1): checking the grants there would leave that round without
+anyone to write its statement or report.
+
+**Rejected alternatives:**
+- Clearing the round's moderator where the right ends: the right ends in
+  several places (the route, the sweep for members who left), and one
+  missed path keeps it in force, as for the report list (10e772ac).
+- Treating a deleted series' round as having no moderator: the hub's report
+  would then be the only way such a round ends.
