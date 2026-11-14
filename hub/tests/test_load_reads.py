@@ -7,9 +7,9 @@ a pause, while one writer changes a card `WRITES` times. The writes must all com
 median under `WRITE_LIMIT`. Every read must answer 200, an exception in a reader thread is
 kept and fails the test in the main thread, every reader must have ended, and at least one
 read must have run beside the writes. The write maximum is printed, not checked, since on a
-shared machine it is noise. The numbers are printed (`pytest -m load -s`) for the pull request's before and
-after. On SQLite a read used to take the write lock for as long as it read; on PostgreSQL a
-read never locked, and the test guards that it stays so."""
+shared machine it is noise. The numbers are printed (`pytest -m load -s`) for the pull
+request's before and after. On SQLite a read used to take the write lock for as long as it
+read; on PostgreSQL a read never locked, and the test guards that it stays so."""
 
 from __future__ import annotations
 
