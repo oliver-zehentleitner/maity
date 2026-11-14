@@ -928,3 +928,29 @@ def test_an_existing_member_of_another_owner_is_not_yours(
     assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
     with setup.engine.connect() as conn:
         assert conn.execute(select(t.placement.c.id)).first() is None
+
+
+def test_a_replay_shows_a_placement_only_while_the_agent_still_sees_it(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    admin = admin_agent(make_client, setup)
+    setup.owner.patch(
+        "/projects/maintainer/maity", {"policy": {"spawn_requests": "direct"}, "reason": "go"}
+    )
+    other_agent = flow.agent(make_client, setup.owner)
+    path = "/api/v1/projects/maintainer/maity/placements"
+    body = {"agent": {"id": other_agent.id}, "runner": setup.runner.id, "harness": "claude-code"}
+    headers = admin.auth | {"Idempotency-Key": "placement-replay-0001"}
+    first = admin.client.post(path, json={**body, "reason": "go"}, headers=headers)
+    assert first.status_code == 201, first.text
+    trust, role = factory.trust_and_role("member")
+    with setup.engine.begin() as conn:  # no longer `agents:propose`: the GET refuses it
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == admin.id)
+            .values(trust=trust, role=role, role_base=role)
+        )
+    placement = first.json()["id"]
+    assert admin.get(f"/projects/maintainer/maity/placements/{placement}").status_code == 404
+    again = admin.client.post(path, json={**body, "reason": "go"}, headers=headers)
+    assert again.status_code == 404, again.text

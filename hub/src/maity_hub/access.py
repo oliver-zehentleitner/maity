@@ -159,3 +159,13 @@ def member_row(conn: Connection, project_id: str, principal_id: str) -> Any:
     if row is None:
         raise not_found()
     return row
+
+
+def owns_agent(conn: Connection, caller: Caller, agent_id: str) -> bool:
+    """The caller is the human who owns the agent profile, a deleted one included (§6.3)."""
+    if caller.kind != "human":
+        return False
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
+    ).scalar()
+    return owner is not None and owner == caller.human_id

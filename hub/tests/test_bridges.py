@@ -410,6 +410,23 @@ def test_the_bridges_owner_outside_the_project_ends_the_connection(
     assert friend.get(f"{PROJECT}/members/{served}").status_code == 404  # nothing else
 
 
+def test_the_outside_owners_retried_end_replays_the_ended_connection(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    friend, served, bridge = _cross(owner, make_client, migrated)
+    answer(friend, connect(owner, served, bridge).json()["id"], "go")
+    [row] = _bridges(migrated)
+    path = f"/api/v1{PROJECT}/members/{served}/bridges/{row.id}"
+    headers = {"X-CSRF-Token": friend.csrf, "Idempotency-Key": "bridge-end-outside-0001"}
+    ended = friend.client.delete(path, headers=headers)
+    assert ended.status_code == 200, ended.text
+    again = friend.client.delete(path, headers=headers)
+    assert again.status_code == 200, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json()["id"] == row.id
+    assert again.json()["ended_by"] == friend.id
+
+
 @pytest.mark.parametrize(
     ("side", "values", "expected"),
     [

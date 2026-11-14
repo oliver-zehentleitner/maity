@@ -5001,6 +5001,14 @@ def report_pages_round(run: Run, browser) -> None:
     agent.click()
     expect(page).to_have_url(re.compile(r"/owner/agents/e2e-agent$"))
     expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
+    # A project the reader is no member of shows its public page under the reader's own header
+    # (§16.9), which is none of "All projects": neither that link nor its Inbox tab is current
+    # (tsk-c9xzrzdcw8sb, the Inbox tab was marked).
+    page.goto(run.base + "/owner/e2e-alpha")
+    expect(page.locator("section.view-visitor")).to_be_visible()
+    expect(page.locator("header nav.switcher a[href='/all']")).to_be_visible()
+    expect(page.locator("header nav.switcher [aria-current], header nav.views [aria-current]")).to_have_count(0)
+    run.shot(page, "visitor-project-signed-in")
     no_problems(run, "report pages")
     context.close()
 
@@ -5219,7 +5227,8 @@ def explore_layout(run: Run, browser) -> None:
 def stored_page_layout(run: Run, browser) -> None:
     """A stored public page on its own (`?as=public`) in the frame of §16.7.5, put around it when it
     is served (tsk-tp97v64vpy5z): the landing page's header and footer around the page as stored,
-    the stylesheets loaded, nothing wider than the window, no policy refusal, axe clean."""
+    the stylesheets loaded, the landing page's theme switch and language row (req-q34v0gr2rbw2),
+    nothing wider than the window, no policy refusal, axe clean."""
     for width, height in ((1280, 900), (390, 844)):
         for scheme in ("light", "dark"):
             where = f"/owner/e2e-alpha?as=public at {width}x{height} {scheme}"
@@ -5232,7 +5241,34 @@ def stored_page_layout(run: Run, browser) -> None:
             expect(seen.locator("header.site-header")).to_be_visible()
             expect(seen.locator("footer.site-footer")).to_be_visible()
             expect(seen.locator("main .stored-page h1")).to_be_visible()
-            assert seen.locator("script").count() == 0, f"{where}: a script on the page"
+            # The landing page's controls (req-q34v0gr2rbw2): its one script, the theme switch, the
+            # language row keeping `as=public`.
+            scripts = seen.evaluate("[...document.scripts].map(s => (s.src || 'inline').split('/').pop().split('?')[0])")
+            assert scripts == ["landing.js"], f"{where}: scripts {scripts}"
+            toggle = seen.locator("header.site-header button[data-lp-theme]")
+            expect(toggle).to_have_count(1)
+            # The script shows it (it is `hidden` without one); the landing page's stylesheet keeps
+            # it out of a phone's header, as on the landing page.
+            expect(toggle).not_to_have_attribute("hidden", "")
+            # The language row is the landing page's: the same languages (none on a hub whose
+            # landing page has one), each link keeping `as=public`.
+            hrefs = seen.locator("footer.site-footer p.langs a").evaluate_all(
+                "as => as.map(a => a.getAttribute('href'))"
+            )
+            landing = seen.request.get(f"{run.base}/", headers={"Cookie": ""}).text()
+            tags = re.findall(r'<a href="\?lang=([a-z-]+)" lang="', landing)
+            assert hrefs == [f"?as=public&lang={tag}" for tag in tags], f"{where}: {hrefs}, landing {tags}"
+            if width > 760:
+                expect(toggle).to_be_visible()
+                before = seen.evaluate("getComputedStyle(document.body).backgroundColor")
+                toggle.click()
+                flipped = "dark" if scheme == "light" else "light"
+                expect(seen.locator("html")).to_have_attribute("data-theme", flipped)
+                after = seen.evaluate("getComputedStyle(document.body).backgroundColor")
+                assert after != before, f"{where}: the switch changed nothing ({before})"
+                toggle.click()
+            else:
+                expect(toggle).to_be_hidden()
             sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
             assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
             wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
