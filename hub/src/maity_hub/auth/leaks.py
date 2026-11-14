@@ -119,6 +119,12 @@ def revoke(
         ).one()
         environment.refresh(conn, member.project_id, member.id)
     _lead_revoked(conn, credential_id, announce=not member_goes)
+    if won == 1:
+        # Its open wait ends at once in this process; another replica's ends at its next
+        # pass, which reads `revoked_at` (`routes/events`).
+        from maity_hub import longpoll
+
+        longpoll.registry.end_keys_after(conn, {credential_id})
     if won == 1 and not holder_moves:  # a holder that stops (§6.5)
         from maity_hub import holder_stalled
 

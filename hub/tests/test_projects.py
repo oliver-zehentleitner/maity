@@ -130,6 +130,17 @@ def test_probe_configured_says_whether_the_hub_holds_a_token(
         "http://github.com/a/b",
         "https://github.com/a",
         "https://evil.example/a/b",
+        "https://github.com/a/..",
+        "https://github.com/./b",
+        "https://github.com/a/b%2F..",
+        "https://github.com/a/b?ref=x",
+        "https://github.com/a/b#x",
+        "https://github.com/a b/c",
+        "https://github.com/a/.git",
+        "https://github.com/a/b.atom",
+        "https://github.com/a/b.GIT",
+        "https://github.com/a/b.git.git",
+        "https://github.com/a/b//",
     ],
 )
 def test_a_repository_must_be_on_a_configured_forge(owner: flow.Human, url: str) -> None:
@@ -434,3 +445,16 @@ def test_an_empty_or_long_required_check_is_invalid(owner: flow.Human, name: str
     assert created.status_code == 400
     assert "repository.required_check" in created.json()["error"]["details"]["fields"]
     assert _required(owner) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/Some-Org/re_po.js",
+        "https://github.com/a/b.git",
+        "https://github.com/a/b/",
+    ],
+)
+def test_a_repository_of_the_contracts_shape_is_taken(owner: flow.Human, url: str) -> None:
+    response = owner.post("/projects", {"slug": "x1", "name": "X", "repository": {"url": url}})
+    assert response.status_code == 201, response.text
