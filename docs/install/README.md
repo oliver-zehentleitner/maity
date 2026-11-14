@@ -273,10 +273,23 @@ not changed since. Its private key goes into the cluster (the Job signs with
 it), so it has no passphrase and does nothing else; only its fingerprint is
 kept on the restore machine. It must be a key of its own: the Job refuses a
 signing key that can also decrypt, and one that is the key in
-`maity-backup-key`, and one Secret that holds more than one key. Make it on
-that machine too, where gpg then also has its public key for checking. The
-block picks the new key by the fingerprint gpg reports when it makes it, so
-the same block also replaces an earlier signing key (below):
+`maity-backup-key`, and one Secret that holds more than one key.
+
+You keep this key; nobody else makes, reads or stores it:
+
+1. On your own machine, the one you restore from (where the decryption key
+   is), not on the instance, with `kubectl` pointed at the instance's
+   cluster, run the block below. It makes the key without a passphrase,
+   writes its private half to a file only readable by you, puts that file
+   into the Secret `maity-backup-signing-key`, and deletes the file. gpg on
+   your machine keeps the public half for checking.
+2. Note the fingerprint it prints: it is `MAITY_BACKUP_SIGNER` in the
+   shell where you restore (below). Keep it with your restore notes.
+3. After the next night's Job, its log says `signed by <fingerprint>` in
+   the `dump ok:` line (Backups on this setup, below).
+
+The block picks the new key by the fingerprint gpg reports when it makes
+it, so the same block also replaces an earlier signing key (below):
 
 ```sh
 fpr=$(gpg --batch --yes --status-fd 1 --passphrase "" --quick-gen-key "maity backup signing <you@example.org>" ed25519 sign never \
@@ -288,9 +301,10 @@ rm backup-signing.key
 echo "$fpr"   # the fingerprint: MAITY_BACKUP_SIGNER where you restore
 ```
 
-Without that Secret the Job still writes encrypted backups, unsigned, and says
-so in its log every night. With it, a restore checks the signature when
-`MAITY_BACKUP_SIGNER` holds that fingerprint (below).
+Without that Secret the Job still writes encrypted backups, unsigned, and its
+log says so first thing every night. A restore refuses an unsigned backup,
+and one whose signature does not check out against `MAITY_BACKUP_SIGNER`,
+unless you set `MAITY_RESTORE_UNSIGNED=1` for an emergency restore (below).
 
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml`,
 `uploads.yaml` and `hub-values.yaml` first (and drop the join host from
@@ -357,7 +371,7 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   the Secret, then set `MAITY_BACKUP_SIGNER` to the new fingerprint and delete the old key on this machine, so nothing
   can sign with it there: `gpg --batch --yes --delete-secret-and-public-keys "<old fingerprint>!"`. The next night's
   backups are signed with the new key. Older backups no longer pass the check; restore one only knowingly, with
-  `MAITY_BACKUP_SIGNER` unset (its signature is then not checked).
+  `MAITY_RESTORE_UNSIGNED=1` (its signature is then not checked).
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
   you need, then delete them from the volume.
@@ -384,8 +398,9 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   keep the `.sig` file next to each backup: both blocks then check the signature before they decrypt anything, and stop
   when it is missing, holds more than one signature, does not verify, is by another key, or was made for another file
   name (the name holds the backup's time stamp). The Job writes exactly one signature per file, so the key and the name
-  checked are always those of the same signature. Without `MAITY_BACKUP_SIGNER` they say so and go on
-  unchecked, which is what a backup from before the signing key needs:
+  checked are always those of the same signature. Without `MAITY_BACKUP_SIGNER` they refuse too. A backup from
+  before the signing key, or one that no longer checks out, restores only with `MAITY_RESTORE_UNSIGNED=1` in that
+  shell: an emergency switch, which skips the check and says so in the block's output:
   Every `kubectl` below names the instance's kube context (`kubectl config get-contexts` lists them; `<kube context>` is
   that name), so a shell whose current context points at another cluster restores nothing there:
   1. Scale the hub to 0 (`kubectl --context <kube context> -n maity scale deploy/maity-maity-hub --replicas=0`).
@@ -404,8 +419,10 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
        pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
        [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
        [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
-       signer=$(printf "%s" "${MAITY_BACKUP_SIGNER:-}" | tr -d " " | tr abcdef ABCDEF)   # the signing key's fingerprint, if set
-       if [ -n "$signer" ]; then
+       signer=$(printf "%s" "${MAITY_BACKUP_SIGNER:-}" | tr -d " " | tr abcdef ABCDEF)   # the fingerprint of the signing key, if set
+       if [ "${MAITY_RESTORE_UNSIGNED:-}" = 1 ]; then   # the emergency switch: no check, and a line that says so
+         echo "MAITY_RESTORE_UNSIGNED=1: $2 is restored WITHOUT checking its signature (emergency restore)" >&2
+       elif [ -n "$signer" ]; then
          printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
          st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
          [ "$(printf "%s\n" "$st" | grep -c "^\[GNUPG:\] NEWSIG")" = 1 ] || { echo "$2.sig holds more than one signature: the backup Job writes one" >&2; exit 1; }
@@ -414,7 +431,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
          printf "%s\n" "$st" | grep -A2 -xF "[GNUPG:] NOTATION_NAME backup-file@maity" | grep -qxF "[GNUPG:] NOTATION_DATA ${2##*/}" \
            || { echo "$2 was signed under another name: give it the name the backup Job wrote" >&2; exit 1; }   # the time stamp is signed too
        else
-         echo "MAITY_BACKUP_SIGNER is not set: the signature is not checked" >&2
+         echo "MAITY_BACKUP_SIGNER is not set: set it to the fingerprint of the signing key, or MAITY_RESTORE_UNSIGNED=1 to restore an unsigned backup in an emergency" >&2
+         exit 1
        fi
        gpg -d "$2" > maity.dump
        pg_restore -f /dev/null maity.dump
@@ -531,7 +549,9 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   `maity-backup-key` first (step 4) and applies the new `backup.yaml`
   after it: without the key every night's Job fails. One whose backups are
   not yet signed creates `maity-backup-signing-key` (step 4) and applies the
-  new `backup.yaml`; until it does, the backups stay unsigned with a warning.
+  new `backup.yaml`; until it does, the backups stay unsigned with a warning,
+  and restoring one needs `MAITY_RESTORE_UNSIGNED=1`. Restores of backups
+  from before the signing key need it too.
 - **The request limit** (`request-limit.yaml`) is one limit per client
   address for every request, in Traefik: 50 a second, bursts of 200, 100
   open at a time, and for uploads 4 at a time per address and 10 in all on

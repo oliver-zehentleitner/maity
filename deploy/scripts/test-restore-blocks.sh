@@ -7,9 +7,10 @@
 # It also runs the two blocks that close the hub's NetworkPolicy after a restore and open it again (docs/install/README.md,
 # steps 4 and 6): the hub starts only once the policy admits nobody, the kept rules are never overwritten, and they are
 # removed only once the policy has them again.
-# The two restore blocks also check the backup's signature when MAITY_BACKUP_SIGNER names a fingerprint (the signing key's or
-# its primary key's), and stop before anything is decrypted when the signature is missing, bad, by another key, or made
-# under another file name (the name carries the backup's time stamp), or by a key that is revoked or expired. The same
+# The two restore blocks also check the backup's signature against the fingerprint in MAITY_BACKUP_SIGNER (the signing key's
+# or its primary key's), and stop before anything is decrypted when it is not set, or the signature is missing, bad, by
+# another key, or made under another file name (the name carries the backup's time stamp), or by a key that is revoked or
+# expired; only MAITY_RESTORE_UNSIGNED=1 restores without the check, and says so. Neither block may hold a single quote. The same
 # blocks run against a real gpg in deploy/scripts/test-backup-signing.sh.
 # Usage: deploy/scripts/test-restore-blocks.sh   (no cluster needed; GNU tar, python3)
 set -u
@@ -44,6 +45,8 @@ for b in db-block att-block close-block open-block; do
 done
 for b in db-block att-block; do
   grep -q 'k get pods' "$work/$b" || { echo "FAIL the $b has no pod check"; exit 1; }
+  # The block is pasted inside sh -eu -c '...': a single quote in it, even in a comment, would end the script there.
+  ! grep -q "'" "$work/$b" || { echo "FAIL the $b holds a single quote: $(grep -n "'" "$work/$b" | head -1)"; exit 1; }
 done
 
 cat > "$work/bin/kubectl" <<'STUB'
@@ -126,7 +129,8 @@ failures=0
 run() { # block, FAIL value, expected: restores | stops
   local block=$1 fail=$2 want=$3 name="$1/$2"
   export S="$work/run-$block-$fail" FAIL=$fail; mkdir -p "$S"; : > "$S/log"; cp "$work/plain.tar" "$S/plain"
-  ( cd "$S" && PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
+  # these cases are about the hub's state: the signature check is switched off (it has cases of its own below)
+  ( cd "$S" && MAITY_RESTORE_UNSIGNED=1 PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
   local got=$? reached=stops
   grep -q " exec " "$S/log" && reached=restores
   local status_ok=no
@@ -146,13 +150,13 @@ for b in db-block att-block; do
   run $b replica stops
   run $b pod_left stops
 done
-# The signature, checked only when MAITY_BACKUP_SIGNER is set; a stop must come before any decryption.
+# The signature; a stop must come before any decryption.
 export SUBKEY=B1B2B3B4B5B6B7B8B9B0B1B2B3B4B5B6B7B8B9B0 PRIMARY=A1A2A3A4A5A6A7A8A9A0A1A2A3A4A5A6A7A8A9A0 OTHER=C1C2C3C4C5C6C7C8C9C0C1C2C3C4C5C6C7C8C9C0
-sig_run() { # block, name, MAITY_BACKUP_SIGNER, SIG (good, other, bad, missing), want: restores | stops
+sig_run() { # block, name, MAITY_BACKUP_SIGNER, SIG (good, other, bad, missing), want: restores | stops; $UNSIGNED: MAITY_RESTORE_UNSIGNED
   local block=$1 name="$1/sig_$2" signer=$3 sig=$4 want=$5
   export S="$work/sig-$block-$2" FAIL=none SIG=$sig; mkdir -p "$S"; : > "$S/log"; cp "$work/plain.tar" "$S/plain"
   [ "$sig" = missing ] || : > "$S/backup.gpg.sig"
-  ( cd "$S" && MAITY_BACKUP_SIGNER=$signer PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
+  ( cd "$S" && MAITY_RESTORE_UNSIGNED=${UNSIGNED:-} MAITY_BACKUP_SIGNER=$signer PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
   local got=$? reached=stops
   grep -q " exec " "$S/log" && reached=restores
   if [ "$want" = restores ] && [ "$reached" = restores ] && [ "$got" = 0 ]; then echo "ok   $name (restores)"
@@ -161,9 +165,17 @@ sig_run() { # block, name, MAITY_BACKUP_SIGNER, SIG (good, other, bad, missing),
 }
 lower=$(printf '%s' "$SUBKEY" | tr A-F a-f)
 for b in db-block att-block; do
-  sig_run $b unset "" missing restores
-  grep -q "signature is not checked" "$work/sig-$b-unset/out" && echo "ok   $b/sig_unset: says the signature is not checked" \
-    || { echo "FAIL $b/sig_unset: no note"; failures=$((failures + 1)); }
+  # Without a fingerprint the block refuses, and names both ways on; MAITY_RESTORE_UNSIGNED=1 restores and says so,
+  # even past a signature that would not check out; any other value of it changes nothing.
+  sig_run $b unset "" missing stops
+  grep -q "MAITY_RESTORE_UNSIGNED=1 to restore an unsigned backup" "$work/sig-$b-unset/out" && echo "ok   $b/sig_unset: names the switch" \
+    || { echo "FAIL $b/sig_unset: does not name the switch"; failures=$((failures + 1)); }
+  sig_run $b unset_signed "" good stops
+  UNSIGNED=1 sig_run $b emergency "" missing restores
+  grep -q "WITHOUT checking its signature" "$work/sig-$b-emergency/out" && echo "ok   $b/sig_emergency: says the signature is not checked" \
+    || { echo "FAIL $b/sig_emergency: no line"; failures=$((failures + 1)); }
+  UNSIGNED=1 sig_run $b emergency_other_key "$SUBKEY" other restores
+  UNSIGNED=yes sig_run $b switch_not_1 "" missing stops
   sig_run $b subkey "$SUBKEY" good restores
   sig_run $b primary "$PRIMARY" good restores
   sig_run $b spaced_lower "$(printf '%s' "$lower" | sed 's/..../& /g')" good restores

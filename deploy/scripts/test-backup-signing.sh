@@ -1,13 +1,13 @@
 #!/bin/bash
 # Runs the two container scripts of deploy/k3s-single/backup.yaml (the attachment tar, then the dump) with a real gpg and a stub
 # pg_dump, the volumes as directories, and checks the signatures: without the Secret maity-backup-signing-key the backups are
-# written unsigned with a warning; with a signing key each encrypted file gets a detached <file>.sig that verifies with that key's
+# written unsigned with a warning at the start; with a signing key each encrypted file gets a detached <file>.sig that verifies with that key's
 # fingerprint and carries the file's name as a signed notation; a key that cannot sign (a passphrase, a public key only), that can
 # also decrypt, or that is the encryption key fails the Job before anything is written; a signature whose file is gone is removed
 # with the rotation. Then it runs the two documented restore blocks (docs/install/README.md, restore-attachments.yaml) with that
 # gpg against the files the Job wrote, kubectl and pg_restore stubbed: a backup under its own name restores, an older backup with
 # its signature renamed to a newer time stamp stops before it is decrypted, and so does one whose .sig adds a second signature,
-# by another key, carrying the newer name.
+# by another key, carrying the newer name; an unsigned backup stops too, and restores only with MAITY_RESTORE_UNSIGNED=1.
 # Usage: deploy/scripts/test-backup-signing.sh   (no cluster needed; gpg 2.2+, GNU tar, python3 with PyYAML)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -75,6 +75,7 @@ else
   [ "$(written | wc -l)" = 2 ] && echo "ok   unsigned: dump and tar written" || fail "unsigned: not both files written" "$W/out"
   ls "$W/backups" | grep -q '^maity-2[1-9].*\.sig$' && fail "unsigned: a signature was written" || echo "ok   unsigned: no signature"
   grep -q "warning: the backups are not signed" "$W/out" && echo "ok   unsigned: the log warns" || fail "unsigned: no warning" "$W/out"
+  head -1 "$W/init.out" | grep -q "^warning: no signing key" && echo "ok   unsigned: the Job says so first thing" || fail "unsigned: no warning at the start" "$W/init.out"
   grep -q "^dump ok: .*(encrypted, unsigned;" "$W/out" && echo "ok   unsigned: the dump ok line says unsigned" || fail "unsigned: dump ok line" "$W/out"
 fi
 
@@ -163,7 +164,9 @@ for kind in dump attachments.tar; do
 done
 restore() { # name, block, file in $W/backups, want: restores | stops
   export R="$work/r-$1"; mkdir -p "$R"; : > "$R/log"
-  ( cd "$W/backups" && GNUPGHOME="$K" MAITY_BACKUP_SIGNER=$signer PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$2")" restore test-context "$3" ) > "$R/out" 2>&1
+  # $FPR replaces the fingerprint (empty: unset), $UNSIGNED is MAITY_RESTORE_UNSIGNED
+  ( cd "$W/backups" && GNUPGHOME="$K" MAITY_BACKUP_SIGNER=${FPR-$signer} MAITY_RESTORE_UNSIGNED=${UNSIGNED:-} PATH="$work/bin:$PATH" \
+      sh -eu -c "$(cat "$work/$2")" restore test-context "$3" ) > "$R/out" 2>&1
   local got=$? reached=stops
   grep -q " exec " "$R/log" && reached=restores
   local status_ok=no
@@ -179,6 +182,19 @@ for kind in dump attachments.tar; do
   grep -q "more than one signature" "$work/r-$kind-second-signature/out" && echo "ok   restore/$kind-second-signature: names the reason" \
     || fail "restore/$kind-second-signature: no reason" "$work/r-$kind-second-signature/out"
   grep -q "signed under another name" "$work/r-$kind-renamed/out" && echo "ok   restore/$kind-renamed: names the reason" || fail "restore/$kind-renamed: no reason" "$work/r-$kind-renamed/out"
+done
+# An unsigned backup (the first run's, without a signing key): refused with or without the fingerprint, restored only with
+# MAITY_RESTORE_UNSIGNED=1, which says so.
+for kind in dump attachments.tar; do
+  b=db-block; [ "$kind" = dump ] || b=att-block
+  cp "$(ls "$work"/run-unsigned/backups/maity-2*Z.$kind.gpg | head -1)" "$W/backups/maity-29991229T000000Z.$kind.gpg"
+  restore "$kind-unsigned" $b "maity-29991229T000000Z.$kind.gpg" stops
+  FPR= restore "$kind-unsigned-no-fingerprint" $b "maity-29991229T000000Z.$kind.gpg" stops
+  grep -q "MAITY_RESTORE_UNSIGNED=1 to restore an unsigned backup" "$work/r-$kind-unsigned-no-fingerprint/out" \
+    && echo "ok   restore/$kind-unsigned-no-fingerprint: names the switch" || fail "restore/$kind-unsigned-no-fingerprint: no switch named" "$work/r-$kind-unsigned-no-fingerprint/out"
+  FPR= UNSIGNED=1 restore "$kind-unsigned-emergency" $b "maity-29991229T000000Z.$kind.gpg" restores
+  grep -q "WITHOUT checking its signature" "$work/r-$kind-unsigned-emergency/out" && echo "ok   restore/$kind-unsigned-emergency: says so" \
+    || fail "restore/$kind-unsigned-emergency: no line" "$work/r-$kind-unsigned-emergency/out"
 done
 
 # 5. A revoked signing key: the same backups no longer restore. The revocation certificate gpg made with the key.
