@@ -103,7 +103,11 @@ def routed_arbiter(conn: Connection, project: Any, seat: str | None = None) -> s
     ).first()
     if held is None:
         return seat
-    if seat != project.contract_arbiter:  # a card's arbiter falls back to the policy's first
+    if seat != project.contract_arbiter:
+        # A card's seat as at a removal (§6.2): a human's to the owner, never on to the
+        # policy's arbiter, which may be an agent; an agent's to the policy's first.
+        if held.human_id is not None:
+            return _owner(conn, project.id)
         return routed_arbiter(conn, project)
     return _arbiter_fallback(conn, project.id, held)
 

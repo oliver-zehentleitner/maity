@@ -6286,7 +6286,8 @@ no longer an admin agent loses `policy.coordinator_substitute`. The
 fallbacks and events are those of the table above, with
 `reason: "member_demoted"` on the `policy_changed`. A guest or an isolated
 agent still named in an arbiter seat is routed past as if the seat held
-its default: it moves no contract's state, and a new contract card and a
+what the table above resets it to (a card a human arbitrates to the
+owner, never to the policy's arbiter): it moves no contract's state, and a new contract card and a
 contract request go to the default.
 
 **Leaving a project.** Every human member, any trust, a guest included,

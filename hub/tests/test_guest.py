@@ -221,6 +221,34 @@ def test_a_guest_left_in_an_arbiter_seat_is_routed_past(
     assert asked.json()["to"] == owner.id
 
 
+def test_a_human_guest_left_on_a_card_falls_to_the_owner_not_the_policy_agent(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A card a human arbitrates, the human a guest from before the reset existed, the policy's
+    arbiter an agent: the card's seat falls to the owner, as at a removal, never to the
+    agent (§6.2 "a card a human arbitrated never passes to an agent")."""
+    from sqlalchemy import update
+
+    human = flow.human(make_client, migrated, "a-reviewer")
+    factory.membership(migrated, _policy(migrated).id, "member", human_id=human.id)
+    made = owner.post(
+        f"{PROJECT}/tasks",
+        {"title": "A contract", "kind": "contract", "contract": {"arbiter": human.id}},
+    )
+    assert made.status_code == 201, made.text
+    card = made.json()["id"]
+    agent = flow.agent(make_client, owner, role="reviewer")
+    _set_arbiter(owner, agent.id)
+    with migrated.begin() as conn:  # demoted behind the reset's back
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == human.id).values(trust="guest")
+        )
+    refused = agent.patch(f"{PROJECT}/tasks/{card}", {"contract": {"state": "final"}})
+    assert refused.status_code == 403, refused.text
+    decided = owner.patch(f"{PROJECT}/tasks/{card}", {"contract": {"state": "final"}})
+    assert decided.status_code == 200, decided.text
+
+
 def test_a_demotion_to_member_keeps_the_arbiter_seat(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
