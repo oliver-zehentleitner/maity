@@ -16,7 +16,7 @@ from datetime import datetime
 from email.message import Message
 from typing import Any
 
-from maity import __version__, sign
+from maity import __version__, onboarding, sign
 from maity.state import Secret
 
 API = "/api/v1"
@@ -256,7 +256,10 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
     except (ValueError, OSError):
         pass
     details = details if isinstance(details, dict) else {}
-    text = f"{what}: {code or 'error'}: {message}"
+    # The hub's words reach a terminal: one line each, every escape shown, never acted on.
+    if isinstance(code, str):
+        code = onboarding.inline(code)
+    text = f"{what}: {onboarding.inline(code or 'error')}: {onboarding.inline(message)}"
     if code == "invalid":
         text += _field_reasons(details.get("fields"))
         text += _ambiguous(details.get("mentions"))
@@ -320,13 +323,43 @@ def _field_reasons(fields: Any) -> str:
     return "".join(lines)
 
 
+def _json_strings(body: bytes) -> list[str]:
+    """The keys and string values of `body` read as JSON; none when it is no JSON.
+
+    Decoded as the hub's parser decodes a body (`json.loads` on bytes: a UTF-8 BOM, UTF-16
+    and UTF-32 in either byte order), so no body the hub reads as JSON skips this check."""
+    try:
+        text = body.decode(json.detect_encoding(body))
+    except (UnicodeDecodeError, LookupError):
+        return []
+    if text.lstrip()[:1] not in ("{", "[", '"'):
+        return []
+    try:
+        stack: list[Any] = [json.loads(text)]
+    except (ValueError, RecursionError):
+        return []
+    strings: list[str] = []
+    while stack:
+        value = stack.pop()
+        if isinstance(value, str):
+            strings.append(value)
+        elif isinstance(value, dict):
+            stack.extend(value.keys())
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return strings
+
+
 def _guard_payload(body: bytes, query: str, path: str = "") -> None:
     """Refuse locally what the hub would refuse and, for a real credential, revoke it for.
 
     The path counts too: an id typed by the agent lands there, and the hub logs it and echoes
     it back in its errors.
     """
-    parts = (body.decode("utf-8", errors="replace"), urllib.parse.unquote(query))
+    text = body.decode("utf-8", errors="replace")
+    # The strings a JSON body decodes to as well, as the hub reads them: no escape hides one.
+    parts = (text, *_json_strings(body), urllib.parse.unquote(query))
     if any(sign.contains_credential(p) for p in (*parts, urllib.parse.unquote(path))):
         raise HubError(
             "refusing to send: the request contains a string in the credential format "

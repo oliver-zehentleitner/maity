@@ -920,6 +920,7 @@ def main() -> int:
                     form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
+                    stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -4061,6 +4062,26 @@ TABS_MEASURE = """() => {
     tabs: rows.map((nav) => Array.from(nav.children).map((t) => (t.getAttribute("aria-current") ? "*" : "") + t.textContent.trim())) };
 }"""
 
+# The header's rows with a current entry (the project's views, the pages outside a project): that
+# entry within its row, and the fade on exactly the rows that scroll (review of #1767).
+HEADER_ROWS_MEASURE = """() => {
+  const problems = [], eps = 0.5;
+  for (const nav of document.querySelectorAll("#header nav")) {
+    const cur = nav.querySelector('[aria-current="page"]');
+    if (!cur || !nav.clientWidth) continue;
+    const n = nav.getBoundingClientRect(), c = cur.getBoundingClientRect();
+    const name = "nav." + String(nav.className).trim().split(/\\s+/).join(".") + " '" + cur.textContent.trim().slice(0, 30) + "'";
+    if (c.left < n.left - eps || c.right > n.right + eps) problems.push(name + " is out of sight in its row: " + Math.round(c.left) + ".." + Math.round(c.right) + " in " + Math.round(n.left) + ".." + Math.round(n.right));
+    const scrolls = nav.scrollWidth > nav.clientWidth + 1;
+    const faded = nav.classList.contains("more-after") || nav.classList.contains("more-before");
+    if (scrolls !== faded) problems.push(name + (scrolls ? " scrolls without the fade" : " fades without scrolling"));
+  }
+  return problems;
+}"""
+
+# A project view whose tab stands at the end of the header's row, so that row scrolls to it.
+LATE_FONTS_PROJECT_VIEW = "/maintainer/maity/settings"
+
 ACCOUNT_TABS = (
     ("/account", "Profile", None, "Your picture"),
     ("/account/settings", "Settings", None, "Theme"),
@@ -4526,6 +4547,37 @@ def account_tabs_layout(run: Run, browser) -> None:
                 page.wait_for_function("() => location.href === 'about:blank'")
         finally:
             context.close()
+    # The fonts arriving after the view is drawn (font-display: swap, a slow phone or a busy
+    # machine): Inter widens the tabs, and the current tab, brought into sight in a narrower
+    # face, still is once Inter is in (tsk-1cs7h9jhww36: Security ended 1 px outside its row at
+    # 390 px; review of #1767: a project's Settings 16 px outside the header's row). Until the
+    # style is taken out no element uses Inter, so the face is only loaded then.
+    run.step("fixtures: the account's tabs and a project's view row at 390 and 360 px when the fonts arrive after the view is drawn")
+    late = [(path, part) for path, tab, sub, part in ACCOUNT_TABS] + [(LATE_FONTS_PROJECT_VIEW, None)]
+    for width, height in ((390, 844), (360, 780)):
+        for path, part in late:
+            context = browser.new_context(viewport={"width": width, "height": height})
+            context.add_init_script("""document.addEventListener("DOMContentLoaded", () => {
+              const s = document.createElement("style"); s.id = "e2e-no-fonts";
+              s.textContent = "* { font-family: serif !important; }"; document.head.appendChild(s); });""")
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                page.goto(f"{index}?lang=en#{path}")
+                if part:
+                    expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                else:
+                    expect(page.locator("#header nav.views a[aria-current='page']")).to_have_text(re.compile(r"^Settings"))
+                page.evaluate("""async () => { document.getElementById("e2e-no-fonts").remove();
+                  await document.fonts.ready; await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))); }""")
+                assert page.evaluate("() => document.fonts.check('600 16px Inter')"), f"{path} at {width}: Inter is not loaded"
+                problems = page.evaluate(HEADER_ROWS_MEASURE)
+                if part:
+                    problems += page.evaluate(TABS_MEASURE)["problems"]
+                assert not problems and not errors, f"{path} at {width}, the fonts late: {problems + errors}"
+            finally:
+                context.close()
 
 
 PROFILE_LINK_MEASURE = """() => {
@@ -4912,14 +4964,55 @@ def report_pages_round(run: Run, browser) -> None:
     agent.click()
     expect(page).to_have_url(re.compile(r"/owner/agents/e2e-agent$"))
     expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
-    # Known on main, fixed by tsk-8fk897a9tan8 (whose PR removes this filter): the stored pages' inline
-    # styles, refused by the hub's own CSP: the per-day bars of a project's page
-    # (public_projects._per_day_html) and the 128 px placeholder of a person without a picture
-    # (public_people.picture_html). Only these two, by their hashes; any other refusal still fails.
-    known = ("'sha256-8xVPQegQ3n2TD8Ru9x9C/G9ctgSmSqDhi6CQln9gM7o='", "'sha256-uX/JLK1ra8Fz6XKAN8nPKzpDkutTzzz574XTranjWJU='")
-    run.problems = [p for p in run.problems if not ("Applying inline style violates" in p and any(k in p for k in known))]
     no_problems(run, "report pages")
     context.close()
+
+
+def stored_pages_policy_round(run: Run, browser) -> None:
+    """Every stored public page the sitemap lists, plus a person's agents page, as a visitor
+    without a session: once at its address, where the page stands inside the app shell under
+    the shell's policy (`default-src 'self'`, no inline style), and once at `?as=public` under the
+    page's own. Not one refusal by the policy (tsk-8fk897a9tan8): the per-day bars of a project's
+    page and the placeholder of a person without a picture were inline styles the shell refused,
+    which no check saw while only `/explore` and `?as=public` were listened to."""
+    run.step("stored pages: no policy refusal on any of them, inside the shell and on their own")
+    with urllib.request.urlopen(run.base + "/sitemap.xml", timeout=10) as answer:
+        sitemap = answer.read().decode()
+    # One page of each shape: every page of the first project, one card of each kind (task,
+    # release, contract), the person's pages and their agents'. The page bucket spends 60 reads a
+    # minute per address (§16.9), and pages of one shape share one render.
+    paths: list[str] = []
+    shapes: set[str] = set()
+    for loc in re.findall(r"<loc>([^<]+)</loc>", sitemap):
+        path = urllib.parse.urlsplit(loc).path or "/"
+        parts = path.strip("/").split("/")
+        if parts[0] != "owner":
+            continue  # the start page, the legal pages, /explore: the hub's own, not stored pages
+        if len(parts) >= 2 and parts[1] != "agents" and parts[:2] != ["owner", "e2e-alpha"]:
+            continue  # another project: the same shapes as the first
+        shape = path if "/tasks/" not in path else "card " + parts[-1].split("-", 1)[0]
+        if shape in shapes:
+            continue
+        shapes.add(shape)
+        paths.append(path)
+    # Pages a sitemap leaves out (`noindex` ones among them) but a visitor reaches all the same.
+    paths += [p for p in ("/owner", "/owner/agents", "/owner/agents/e2e-agent") if p not in paths]
+    assert "/owner/e2e-alpha" in paths and any("/tasks/" in p for p in paths), paths
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    refused: list[str] = []
+    page.on("console", lambda m: refused.append(f"{page.url}: {m.text[:160]}") if "Content Security Policy" in m.text else None)
+    for path in paths:
+        for address in (path, path + "?as=public"):
+            answer = page.goto(run.base + address, wait_until="load")
+            if answer is not None and answer.status == 429:
+                # The bucket of earlier steps: wait as the hub says, once.
+                time.sleep(int(answer.headers.get("retry-after", "60")) + 1)
+                answer = page.goto(run.base + address, wait_until="load")
+            assert answer is not None and answer.status == 200, f"{address}: {answer.status if answer else None}"
+    context.close()
+    assert not refused, "\n".join(refused)
 
 
 def request_action_step(run: Run, page: Page) -> None:

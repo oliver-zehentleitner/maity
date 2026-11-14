@@ -551,6 +551,16 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
         raise not_found()
 
 
+def _recheck_creator(conn: Connection, row: Any) -> None:
+    """A join made with `members:admin` at the exchange, under the project lock (§3.3):
+    its creator still an active member who may give what it carries, as an invitation's
+    issuer (§3.4): `members:admin`, and trust `owner` for trust `admin` or the role
+    `proxy`. Areas and capabilities need no more than `members:admin`. Otherwise it
+    answers as a revoked join. A runner's pickup has its own check."""
+    if not invitations.issuer_holds(conn, row):
+        raise not_found()
+
+
 def live_profile(conn: Connection, agent_id: str) -> None:
     """Lock the agent's profile, and refuse a deleted one: a deleted profile never joins
     again (§6.3). Join creation, the exchange and the profile's deletion all take this
@@ -1073,6 +1083,8 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         raise not_found()  # the list changed since the join was handed out (§6.3)
     if row.member_rule:
         _recheck_member_rule(conn, row, project, _active_member(conn, row))
+    elif row.placement_id is None:
+        _recheck_creator(conn, row)
     agent_id = row.agent_id or _create_for_join(conn, row)
     member = conn.execute(
         select(t.membership).where(

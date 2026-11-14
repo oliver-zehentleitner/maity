@@ -2251,7 +2251,13 @@ def tick_checklist(
             mine.project.id,
             "task_updated",
             audience(conn, card),
-            {"id": card.id, "release": view["release"], "project_state": mine.project.state},
+            {
+                "id": card.id,
+                "fields": ["release"],
+                "release": view["release"],
+                "history": [],  # a tick writes no history entry (§6.15)
+                "project_state": mine.project.state,
+            },
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
