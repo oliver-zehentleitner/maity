@@ -9,6 +9,7 @@ import io
 import json
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -443,7 +444,7 @@ def served(fake: fakehub.FakeHub) -> fakehub.FakeHub:
 
 
 @posix
-def test_files_get_saves_into_maity_files_under_the_name_mode_0644(
+def test_files_get_saves_into_the_state_directory_under_the_name_mode_0644(
     joined: Path, served: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     old = os.umask(0o022)
@@ -451,21 +452,38 @@ def test_files_get_saves_into_maity_files_under_the_name_mode_0644(
         assert cli.main(["files", "get", "att-0042"]) == cli.EXIT_OK
     finally:
         os.umask(old)
-    folder = Path.cwd() / "maity-files"
+    folder = joined / "files"  # <git common dir>/maity/files
     saved = folder / "build-log.txt"
     assert saved.read_bytes() == b"hello"
     assert stat.S_IMODE(saved.stat().st_mode) == 0o644
     assert stat.S_IMODE(folder.stat().st_mode) == 0o700
     assert not (Path.cwd() / "build-log.txt").exists()  # never into the working directory
-    assert "saved " in capsys.readouterr().out
+    assert str(saved) in capsys.readouterr().out
     assert [p.name for p in folder.iterdir() if p.name.endswith(".part")] == []
+
+
+def test_files_get_leaves_the_work_tree_alone(
+    joined: Path, served: fakehub.FakeHub, clone: Path
+) -> None:
+    # A file a test runner collects (and `git add -A` would commit) lands outside the work
+    # tree: `git status` stays clean, and no conftest.py appears anywhere in the clone.
+    served.routes[("GET", f"{P}/attachments/att-0042")] = lambda s: (
+        200, attachment(name="conftest.py"))  # fmt: skip
+    assert cli.main(["files", "get", "att-0042"]) == cli.EXIT_OK
+    assert (joined / "files" / "conftest.py").read_bytes() == b"hello"
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all", "--ignored"],
+        cwd=clone, capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    assert status.stdout == ""
+    assert not [p for p in clone.rglob("conftest.py") if ".git" not in p.parts]
 
 
 @posix
 def test_files_get_keeps_an_existing_folder_and_refuses_a_link_in_its_place(
     joined: Path, served: fakehub.FakeHub, tmp_path: Path
 ) -> None:
-    folder = Path.cwd() / "maity-files"
+    folder = joined / "files"
     folder.mkdir(mode=0o750)
     assert cli.main(["files", "get", "att-0042"]) == cli.EXIT_OK
     assert stat.S_IMODE(folder.stat().st_mode) == 0o750  # only a new one is made 0700
@@ -527,7 +545,7 @@ def test_files_get_hostile_name_stays_in_the_directory(
     served.routes[("GET", f"{P}/attachments/att-0042")] = lambda s: (
         200, attachment(name="../../‮evil:.sh"))  # fmt: skip
     assert cli.main(["files", "get", "att-0042"]) == cli.EXIT_OK
-    assert (Path.cwd() / "maity-files" / "_.._evil.sh").read_bytes() == b"hello"
+    assert (joined / "files" / "_.._evil.sh").read_bytes() == b"hello"
 
 
 def test_files_get_to_stdout_keeps_stdout_for_the_bytes(

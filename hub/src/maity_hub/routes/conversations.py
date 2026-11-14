@@ -686,7 +686,9 @@ def _load_for_caller(conn: Connection, conversation_id: str, request: Request) -
     }
 
 
-idempotency.LOADERS["conversation"] = _load_for_caller
+idempotency.register(
+    "conversation", _load_for_caller, idempotency.in_project(idempotency.column_of(t.conversation))
+)
 
 
 @router.get("/projects/{owner}/{slug}/conversations/{conversation_id}")
@@ -803,7 +805,23 @@ def _load_participation(conn: Connection, stay_id: str) -> dict[str, Any]:
     return group_chats.participation(conn, row)
 
 
-idempotency.LOADERS["participation"] = idempotency.plain(_load_participation)
+def _stay_project(conn: Connection, stay_id: str) -> str | None:
+    found: str | None = conn.execute(
+        select(t.conversation.c.project_id)
+        .join(
+            t.conversation_participant,
+            t.conversation_participant.c.conversation_id == t.conversation.c.id,
+        )
+        .where(t.conversation_participant.c.id == int(stay_id))
+    ).scalar()
+    return found
+
+
+# A stay ended by the call itself (leaving) is still the caller's to see: the project, not the
+# chat, is what a replay of it re-checks.
+idempotency.register(
+    "participation", idempotency.plain(_load_participation), idempotency.in_project(_stay_project)
+)
 
 
 # --- messages (§9.1, §9.2) ---------------------------------------------------------------
@@ -915,7 +933,19 @@ def load_message(conn: Connection, seq: str) -> dict[str, Any]:
     return message_view(conn, row)
 
 
-idempotency.LOADERS["message"] = idempotency.plain(load_message)
+def _reads_message(conn: Connection, mine: Membership, seq: str) -> bool:
+    """As the conversation's messages read (§9.1, §9.2)."""
+    conversation_id = conn.execute(
+        select(t.event.c.conversation_id).where(t.event.c.seq == int(seq))
+    ).scalar()
+    return conversation_id is None or reads_messages(conn, mine, conversation_id)
+
+
+idempotency.register(
+    "message",
+    idempotency.plain(load_message),
+    idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int), _reads_message),
+)
 
 
 @router.post("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")
