@@ -29,7 +29,7 @@ window.Maity = window.Maity || {};
     try {
       const pair = document.cookie.split("; ").find((c) => c.startsWith(AGAIN + "="));
       if (!pair) return "";
-      found = decodeURIComponent(pair.slice(AGAIN.length + 1));
+      found = decodeURIComponent(pair.slice(AGAIN.length + 1).split(";")[0]);
       document.cookie = AGAIN + "=;max-age=0;path=/register;samesite=strict";
     } catch (e) { return ""; }
     handed = found;
