@@ -12,6 +12,10 @@
 # end-of-archive block (cut off, even between two files) never reaches the cluster. tar's listing goes to a file, not a pipe, since sh
 # has no pipefail. The exec passes the tar's SHA-256; the pod keeps the stream in a scratch volume first and empties the attachment
 # volume only when what arrived has that digest, so a stream cut off on the way leaves the volume as it is.
+# With MAITY_BACKUP_SIGNER set to the backup signing key's fingerprint (docs/install/README.md, "Backups on this setup"), the block first
+# checks <file>.sig and stops before decrypting when it is missing, holds more than one signature, does not verify, is by another key or
+# a revoked or expired one, or was made for another file name (the signed notation backup-file@maity, which holds the time stamp); unset,
+# it says so and goes on.
 #   sh -eu -c '
 #     ctx=$1
 #     k() { kubectl --context "$ctx" -n maity "$@"; }
@@ -19,6 +23,18 @@
 #     pods=$(k get pods -l app.kubernetes.io/instance=maity,app.kubernetes.io/component=hub -o name)
 #     [ "$want" = 0 ] || { echo "scale the hub to 0 first" >&2; exit 1; }
 #     [ -z "$pods" ] || { echo "the hub still has pods: $pods" >&2; exit 1; }
+#     signer=$(printf "%s" "${MAITY_BACKUP_SIGNER:-}" | tr -d " " | tr abcdef ABCDEF)   # the signing key's fingerprint, if set
+#     if [ -n "$signer" ]; then
+#       printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
+#       st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
+#       [ "$(printf "%s\n" "$st" | grep -c "^\[GNUPG:\] NEWSIG")" = 1 ] || { echo "$2.sig holds more than one signature: the backup Job writes one" >&2; exit 1; }
+#       printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] VALIDSIG ($signer .*|.* $signer)$" || { echo "$2 is not signed by $signer" >&2; exit 1; }
+#       ! printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] (REVKEYSIG|KEYREVOKED|EXPKEYSIG)( |$)" || { echo "$2: the signing key is revoked or expired" >&2; exit 1; }
+#       printf "%s\n" "$st" | grep -A2 -xF "[GNUPG:] NOTATION_NAME backup-file@maity" | grep -qxF "[GNUPG:] NOTATION_DATA ${2##*/}" \
+#         || { echo "$2 was signed under another name: give it the name the backup Job wrote" >&2; exit 1; }   # the time stamp is signed too
+#     else
+#       echo "MAITY_BACKUP_SIGNER is not set: the signature is not checked" >&2
+#     fi
 #     gpg -d "$2" > attachments.tar
 #     LC_ALL=C tar -tRf attachments.tar > attachments.list   # read the whole tar: any error stops here
 #     tail -n 1 attachments.list | grep -q "Block of NULs"   # and it reached the end-of-archive block

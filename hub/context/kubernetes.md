@@ -577,3 +577,80 @@ files and a restored database must not be written by a running hub at the same m
 - The postgres image the Job used before: it has no HTTP client to ask the API.
 - A kubectl image: another image to pin and trust in the restore path; the hub's image is already pinned
   in the operator's values.
+
+## The k3s backups are signed with a key of their own in a Secret; a restore checks the signature when a fingerprint is set
+
+**Id:** 04eacdd6-b911-4c48-974e-889a94b29de2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** deploy hardening card tsk-xesvyydh2yd3 (item 6), from the security rounds of card tsk-v9kheekgq115; option A (a signing key in the Job, the restore checking the fingerprint, safe for existing installations) chosen by the team lead, 2026-11-13; the file name in the signature and the refusal of a shared key from the review of the pull request, 2026-11-14; follow-up card tsk-4eyae1smgdj5; `deploy/k3s-single/backup.yaml`, `deploy/k3s-single/restore-attachments.yaml`, docs/install/README.md, `deploy/scripts/test-backup-signing.sh`, `deploy/scripts/test-restore-blocks.sh`
+**See:** kubernetes.md#the-k3s-backups-are-encrypted-with-gpg-to-a-public-key-in-a-secret-and-the-job-fails-without-it — f6cd5dc1-f718-4490-92fc-285f88085514 — as of 2026-11-14
+**Revisit when:** the backups move to an object store with its own integrity checks (object lock, signed manifests), or the Job gets a way to sign without a key on the cluster
+
+Both containers of the backup Job sign the file they wrote with `gpg --detach-sign`
+after encryption, so each night has `<file>.sig` next to `maity-<ts>.dump.gpg`
+and `maity-<ts>.attachments.tar.gpg`. The key is an OpenPGP private key without
+a passphrase in the Secret `maity-backup-signing-key` (`backup-signing.key`),
+mounted as optional with mode 0440 for the pod's fsGroup. Without the Secret the
+Job writes the encrypted backups unsigned and warns in its log and in the
+`dump ok:` line. A key that is there but cannot sign (a passphrase, a public
+key only) fails the Job before anything is written, checked by a test
+signature. The restore blocks check the signature before they decrypt, only
+when `MAITY_BACKUP_SIGNER` holds a fingerprint: the signing key's or its
+primary key's, matched in gpg's `VALIDSIG` status line. Each signature also
+carries the file's name, time stamp included, as the signed notation
+`backup-file@maity`, and the blocks compare it with the name they are given.
+They accept a `.sig` with exactly one signature (one `NEWSIG` in gpg's status),
+as the Job writes it, so the fingerprint and the name checked belong to the same
+signature: a second signature by another key could otherwise carry a newer name
+beside an older night's genuine one. A missing `.sig`, a bad signature, another
+key or another name then stops the block, and so does a signature by a key that is revoked or expired
+(`REVKEYSIG`, `KEYREVOKED`, `EXPKEYSIG` beside `VALIDSIG`). The Job refuses a
+signing key that can also decrypt (an `e` capability on any of its keys), one
+whose fingerprint is in `maity-backup-key`, and a Secret with more than one
+key. The documented key setup picks the new key by the fingerprint gpg reports
+when it makes it and applies the Secret, so running it again replaces the key;
+the old one is deleted where the restores run. Signatures whose file the
+rotation removed are removed with it.
+
+**Reason:** a backup is copied off the instance and kept elsewhere, and a
+restore runs it into the database with `--clean`: a changed or swapped file
+must be refused before that. The decryption key is off the cluster, but
+encryption to a public key proves nothing about who wrote a file, since
+anyone with the public key can make one. Signing the encrypted file lets a
+copy be checked where it is kept, without the private decryption key. The
+signature does not hold against someone who can read the cluster's Secrets;
+it covers the copies and the way to them. Existing installations have no
+signing key and older backups have no `.sig`: so the Job goes on unsigned
+with a warning, and a restore refuses only when the operator set a
+fingerprint, as the team lead asked. A signature over the content alone would
+let an older night's file, with its own valid signature, pass under a newer
+name; the name in the signature ties the file to its night. Separate keys keep
+the signing key, which is on the cluster, from ever being able to read a
+backup. A second key left in the Secret would make the signer gpg's choice,
+and a key picked by its user ID would export every earlier key of that name
+too, so a replaced key would go on signing. gpg reports a good signature by a
+revoked key as valid; the revocation is a separate status line, so it is
+checked on its own.
+
+**Rejected alternatives:**
+- Checksums kept off the instance (the card's other option): the Job would
+  need a second place to write to, outside the cluster, and the operator a
+  second copy job; a signature travels with the file.
+- Signing inside the encryption (`gpg --sign --encrypt`): it can be checked
+  only by decrypting, so only where the private key is, and it changes the
+  format of every backup, older restores included.
+- Signing with the decryption key pair: its private key would then be on the
+  cluster, which the encryption exists to avoid. The Job refuses it rather than
+  relying on the documented key setup alone.
+- A signed manifest per night (names, time, hashes) next to the files: one more
+  file to copy, keep and match; the notation puts the name into the signature
+  each file already has.
+- Putting the time into the encrypted payload: it is checked only after
+  decryption, where the private key is, and changes the backup format.
+- Failing the Job without a signing key: every existing installation would
+  lose its nightly backups at the next apply of `backup.yaml` until the key
+  is made.
+- Always refusing a backup without a valid signature on restore: backups
+  from before the signing key could no longer be restored.
