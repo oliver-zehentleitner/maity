@@ -8,7 +8,6 @@ import asyncio
 import getpass
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 from types import FrameType
@@ -293,9 +292,6 @@ def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
     return 0
 
 
-HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
-
-
 def _read_password() -> str | None:
     """From the terminal, asked twice; or the first line of standard input. Never argv."""
     if sys.stdin.isatty():
@@ -311,9 +307,9 @@ def _owner_create(
 ) -> int:
     """The account with its address as verified (docs/api.md §2.1): the password signs in
     by it, with no mail sent, on an instance that has none set up yet."""
-    if not HANDLE.fullmatch(handle):
+    if not handles.FORMAT.fullmatch(handle):  # the hub's one rule, 2 to 31 (§6.24)
         return _fail(
-            "--handle: lower-case letters, digits and '-', 2 to 63 characters", EXIT_CONFIG
+            "--handle: lower-case letters, digits and '-', 2 to 31 characters", EXIT_CONFIG
         )
     if paths.handle_reserved(handle):  # a first segment of the hub (§16.11), the first account too
         return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
@@ -514,7 +510,9 @@ def _default_handle() -> str:
         login = getpass.getuser().lower()
     except (KeyError, OSError):  # no passwd entry, no LOGNAME
         return "owner"
-    return login if HANDLE.fullmatch(login) and not paths.handle_reserved(login) else "owner"
+    return (
+        login if handles.FORMAT.fullmatch(login) and not paths.handle_reserved(login) else "owner"
+    )
 
 
 def _read_email() -> str | None:
