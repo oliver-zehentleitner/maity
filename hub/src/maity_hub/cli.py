@@ -50,7 +50,7 @@ from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
-from maity_hub.errors import ApiError
+from maity_hub.errors import ApiError, driver_fields, driver_reason
 from maity_hub.ids import new_id
 from maity_hub.mail import address as addresses
 from maity_hub.notifications import preferences
@@ -201,9 +201,13 @@ def _clean_bucket(engine: Any, target: attachment_store.S3Store, *, apply: bool)
     try:
         done = attachments.sweep(engine, target, expiring=False, apply=apply)
     except (attachment_store.StoreError, SQLAlchemyError) as error:
-        # The driver's first line only, as in `_database_error`: no SQL, no parameters.
-        original = getattr(error, "orig", None) or error
-        reason = (str(original).strip().splitlines() or [type(original).__name__])[0]
+        # A database error as `_database_error` gives it, never the driver's text; the store's
+        # own errors are the hub's words.
+        reason = (
+            _database_reason(error)
+            if isinstance(error, SQLAlchemyError)
+            else (str(error).strip().splitlines() or [type(error).__name__])[0]
+        )
         logging.getLogger(__name__).error("cleaning the bucket: %s", reason)
         return {"tombstoned": 0, "orphans": 0, "failed": 1}
     return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
@@ -459,12 +463,23 @@ def _fail(message: str, code: int) -> int:
     return code
 
 
+def _database_reason(error: Exception) -> str:
+    """What a command says of a database error: the classes, the driver's codes and one cause
+    from a fixed list, as the hub's log does (`errors.driver_fields`, `errors.driver_reason`).
+    Never the driver's text: a malformed URL makes the driver quote the whole connection
+    string, the password included, and `migrate` runs as a job whose output is kept in logs."""
+    reason = driver_reason(error)
+    if not reason:  # no driver behind it: SQLAlchemy's own error, or a missing driver
+        reason = f"{type(error).__module__}.{type(error).__qualname__}"
+    return f"{reason} {driver_fields(error)}"
+
+
 def _database_error(settings: Settings, error: Exception) -> int:
-    # The driver's own message, first line only: SQLAlchemy appends the SQL and
-    # its parameters. The URL is printed only in its redacted form.
-    original = getattr(error, "orig", None) or error
-    reason = (str(original).strip().splitlines() or [type(original).__name__])[0]
-    return _fail(f"database {redact_database_url(settings.database_url)}: {reason}", EXIT_FAILURE)
+    # The URL only in its redacted form, the error only as `_database_reason` gives it.
+    return _fail(
+        f"database {redact_database_url(settings.database_url)}: {_database_reason(error)}",
+        EXIT_FAILURE,
+    )
 
 
 def _migrate(settings: Settings) -> int:
