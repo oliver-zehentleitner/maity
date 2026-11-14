@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, select, true, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
@@ -187,21 +187,69 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         # A bridge's read for an agent (`for`); without it, `head_body` above (§8.3).
         return answer([], after, superseded=False)
 
+    def live_column() -> Any:
+        """True while the caller's credential is not revoked and its dashboard session not
+        ended, as one scalar for the look (`quiet`); `gone` reads the same for the read."""
+        held = []
+        if caller.credential_id is not None:
+            held.append(
+                select(t.credential.c.id)
+                .where(
+                    t.credential.c.id == caller.credential_id,
+                    t.credential.c.revoked_at.is_(None),
+                )
+                .exists()
+            )
+        if caller.human_session is not None:
+            held.append(
+                select(t.human_session.c.id_hash)
+                .where(
+                    t.human_session.c.id_hash == caller.human_session,
+                    t.human_session.c.ended_at.is_(None),
+                )
+                .exists()
+            )
+        return and_(true(), *held)
+
+    def gone(conn: Connection) -> bool:
+        """The caller's credential was revoked or replaced, or its dashboard session ended
+        (a sign-out, a suspension), since the call began: the wait reads nothing more,
+        on every replica, not only the one whose registry ended it (§8.3)."""
+        if caller.credential_id is not None:
+            revoked = conn.execute(
+                select(t.credential.c.revoked_at).where(t.credential.c.id == caller.credential_id)
+            ).scalar()
+            if revoked is not None:
+                return True
+        if caller.human_session is not None:
+            ended = conn.execute(
+                select(t.human_session.c.ended_at).where(
+                    t.human_session.c.id_hash == caller.human_session
+                )
+            ).first()
+            if ended is None or ended.ended_at is not None:
+                return True
+        return False
+
     def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int] | None:
         """The events after `since` and the new cursor; None when a bridge's connection
         ended or the bridge was isolated or removed since the call began (§2.3)."""
         with engine.begin() as conn:
             if carried and not _still_carried(conn, reader):
                 return None
-            row = mine.row
-            if caller.kind == "agent":
-                # As of now, not as of the call's start: an isolation that committed since
-                # reads nothing more (§6.2, "Isolation").
-                row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
-                if waking and events.is_isolated(row):
-                    # Ended here too, not only by the process that isolated it: that one's
-                    # registry holds only its own waits (hub/context/replicas.md).
-                    return None
+            # As of now, not as of the call's start: an isolation, a revoked credential, an
+            # ended session or a human's removal that committed since reads nothing more
+            # (§6.2, "Isolation", §8.3). An agent's removal revokes its credentials; `active`
+            # off alone is no end of an agent's own wait. Ended here too, not only by the
+            # process that made the change: that one's registry holds only its own waits
+            # (hub/context/replicas.md).
+            now_row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).first()
+            row = mine.row if now_row is None else now_row
+            left = caller.kind != "agent" and row.active is not True
+            if waking and (left or gone(conn)):
+                return None
+            if caller.kind == "agent" and waking and events.is_isolated(row):
+                return None
             if waking:
                 rows, examined = events.read_waking(
                     conn,
@@ -244,15 +292,26 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 .where(t.event.c.project_id == mine.project.id)
                 .scalar_subquery()
             )
+            # In the same statement, so the look stays one: the caller's credential or
+            # session still holds (`gone`), not null where it does.
+            live = live_column()
             if caller.kind == "agent":
                 found = conn.execute(
-                    select(t.membership, head.label("head")).where(t.membership.c.id == mine.id)
+                    select(t.membership, head.label("head"), live.label("live")).where(
+                        t.membership.c.id == mine.id
+                    )
                 ).first()
-                if found is None or events.is_isolated(found):
+                if found is None or not found.live or events.is_isolated(found):
                     return False
-                top = found.head
             else:
-                top = conn.execute(select(head)).scalar()
+                found = conn.execute(
+                    select(t.membership.c.active, head.label("head"), live.label("live")).where(
+                        t.membership.c.id == mine.id
+                    )
+                ).first()
+                if found is None or not found.live or found.active is not True:
+                    return False
+            top = found.head
             return top is None or top <= since
 
     if wait == 0:

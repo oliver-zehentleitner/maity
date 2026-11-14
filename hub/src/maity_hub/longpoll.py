@@ -10,9 +10,11 @@ goes through `call_soon_threadsafe`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import random
 import threading
 from dataclasses import dataclass, field
+from typing import Any
 
 from maity_hub import events, listening
 
@@ -106,6 +108,23 @@ class Registry:
                 if membership_id in (w.membership_id, w.bridge_membership_id)
             ]
         self._end(waiting)
+
+    def end_keys(self, keys: set[str]) -> None:
+        """End every open wait of these credentials or dashboard sessions (`session:<hash>`),
+        a bridge's waits for a served agent under its credential included: the credential or
+        the session is gone, revoked, replaced or ended (§8.3)."""
+        with self._lock:
+            waiting = [w for w in self._by_key.values() if w.key.split("|", 1)[0] in keys]
+        self._end(waiting)
+
+    def end_keys_after(self, conn: Any, keys: set[str]) -> None:
+        """`end_keys` once the caller's transaction commits. Outside `events.transaction`
+        nothing is queued: the wait's next pass reads the credential or session and ends
+        (`routes/events`), within the fallback re-read."""
+        from maity_hub.events import on_commit
+
+        with contextlib.suppress(RuntimeError):
+            on_commit(conn, lambda: self.end_keys(keys))
 
     def end_bridge(self, bridge_id: str) -> None:
         """End every wait a bridge holds through a connection that ended (§2.3)."""

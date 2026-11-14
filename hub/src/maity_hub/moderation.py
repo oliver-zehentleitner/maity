@@ -16,6 +16,7 @@ from maity_hub import (
     account_deletion,
     attachment_store,
     clock,
+    events,
     public_pages,
     public_projects,
     write_guard,
@@ -182,13 +183,24 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     m, c = t.membership.c, t.credential.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     credentials = conn.execute(
-        select(c.id)
+        select(c.id, m.project_id, m.agent_id)
         .join(t.membership, m.id == c.membership_id)
         .where(c.revoked_at.is_(None), (m.human_id == human_id) | m.agent_id.in_(agents))
         .order_by(c.id)
-    ).scalars()
-    for credential_id in list(credentials):
-        leaks.revoke(conn, credential_id, REVOKED_REASON, None)
+    ).all()
+    for credential in credentials:
+        # Said as a revocation by hand says it (§6.17), so the agent's owner sees why its
+        # instances stopped; only the revocation that wins says it.
+        if leaks.revoke(conn, credential.id, REVOKED_REASON, None) and credential.agent_id:
+            events.emit(
+                conn,
+                credential.project_id,
+                "credential_revoked",
+                [f"member:{credential.agent_id}", "trust:owner"],
+                {"credential_id": credential.id, "reason": REVOKED_REASON},
+                actor=actor(report_id),
+                subject=("credential", credential.id),
+            )
     r = t.runner_credential.c
     runner_credentials = conn.execute(
         select(r.id)
