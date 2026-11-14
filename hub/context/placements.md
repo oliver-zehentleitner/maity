@@ -566,9 +566,10 @@ signature on a card follows the same idea (`cards.standing`): it counts
 while its signer may give it, and `cards.drop_signatures` clears it on
 every path that lowers a member's standing: a trust or role change, a
 project role's new base, the end of an organisation's raised trust, a
-removal or an isolation. A trust or role change also clears before it
-writes, so a raise never counts a signature some other path left
-behind.
+removal or an isolation. Every path that gives standing back also
+clears before it writes (the members PATCH, a role's new base, the
+trust an organisation's ownership raises, the lift of an isolation),
+so a raise never counts a signature some other path left behind.
 
 **Reason:** a grant should not outlive the authority that made it; the
 invitation already behaves this way, and one predicate keeps the two

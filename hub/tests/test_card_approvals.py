@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -318,20 +319,64 @@ def test_a_signature_counts_only_while_its_signer_stands(
     assert second.json()["approvals"]["test"]["by"] == team["tester"].id
 
 
+@pytest.mark.parametrize("raise_by", ["patch", "rebase", "organisation", "lifted"])
 def test_a_signature_left_from_before_does_not_return_with_a_raise(
-    owner: flow.Human, team: dict[str, Any], migrated: Engine
+    owner: flow.Human,
+    team: dict[str, Any],
+    make_client: ClientFactory,
+    migrated: Engine,
+    raise_by: str,
 ) -> None:
     # A signature whose signer no longer stands, however it was left on the card, is
-    # cleared before a trust or role change, so the raise does not count it again (§6.4).
+    # cleared before a trust or role change, so the raise does not count it again (§6.4):
+    # the members PATCH, a role's base given back by `PUT …/roles`, and the trust an
+    # organisation's ownership raises (§6.26).
     card = _in_review(owner, team["worker"])
-    reviewer = team["reviewer"]
+    reviewer: Any = team["reviewer"]
+    if raise_by == "lifted":  # only an agent is isolated (§6.2)
+        reviewer = flow.agent(make_client, owner, role="reviewer")
+    if raise_by == "rebase":
+        _roles(owner, "reviewer")
+        reviewer = _person(make_client, migrated, "chk", "coder")
+        assert owner.patch(f"{BASE}/members/{reviewer.id}", {"role": "checker"}).status_code == 200
     assert _sign(reviewer, card).status_code == 200
     with migrated.begin() as conn:  # lowered beside every route, the signature still stored
-        conn.execute(
-            t.membership.update()
-            .where(t.membership.c.human_id == reviewer.id)
-            .values(role="coder", role_base="coder")
-        )
-    member = f"{BASE}/members/{reviewer.id}"
-    assert owner.patch(member, {"role": "reviewer"}).status_code == 200
+        if raise_by == "rebase":
+            project = conn.execute(select(t.project)).one()
+            conn.execute(
+                t.project.update()
+                .where(t.project.c.id == project.id)
+                .values(roles=[{**r, "base": "coder"} for r in project.roles])
+            )
+            conn.execute(
+                t.membership.update()
+                .where(t.membership.c.human_id == reviewer.id)
+                .values(role_base="coder")
+            )
+        elif raise_by == "lifted":  # isolated beside the route that drops it
+            conn.execute(
+                t.membership.update()
+                .where(t.membership.c.agent_id == reviewer.id)
+                .values(isolated_since=clock.now(), isolated_reason="x", isolated_by="x")
+            )
+        else:
+            conn.execute(
+                t.membership.update()
+                .where(t.membership.c.human_id == reviewer.id)
+                .values(role="coder", role_base="coder")
+            )
+    if raise_by == "patch":
+        member = f"{BASE}/members/{reviewer.id}"
+        assert owner.patch(member, {"role": "reviewer"}).status_code == 200
+    elif raise_by == "rebase":
+        _roles(owner, "reviewer")
+    elif raise_by == "lifted":
+        assert owner.delete(f"{BASE}/members/{reviewer.id}/isolate").status_code == 200
+    else:
+        from maity_hub import events, org_projects
+
+        with migrated.connect() as conn:
+            project = conn.execute(select(t.project)).one()
+        with events.transaction(migrated) as conn:
+            org_projects.keep_owner(conn, project, reviewer.id)
     assert owner.get(f"{BASE}/tasks/{card['id']}").json()["approvals"]["review"] is None

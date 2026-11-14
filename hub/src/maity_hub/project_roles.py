@@ -195,6 +195,11 @@ def rebase(conn: Connection, project: Any, new: list[dict[str, Any]], actor: Any
     moved = [r for r in new if r["name"] in old and old[r["name"]] != r["base"]]
     if not moved:
         return
+    from maity_hub import cards
+
+    # A signature that stopped counting before this change goes first, so that a base
+    # given back never brings it back (§6.4); the one the new base ends goes below.
+    cards.drop_signatures(conn, project.id, None, actor)
     conn.execute(
         update(t.membership)
         .where(
@@ -203,8 +208,6 @@ def rebase(conn: Connection, project: Any, new: list[dict[str, Any]], actor: Any
         )
         .values(role_base=_case(moved))
     )
-    from maity_hub import cards
-
     cards.drop_signatures(conn, project.id, None, actor)
 
 

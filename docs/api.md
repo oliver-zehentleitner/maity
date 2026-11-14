@@ -7115,8 +7115,10 @@ that scope away clears the signatures it gave on the project's cards in
 or role change, a new base of its project role (`PUT …/roles`, for every
 member of that role), the end of the trust an organisation's ownership
 raised (§6.26), and the signer's removal or isolation. A later return
-does not bring them back, and a trust or role change first clears what
-no longer counted before it; a signature whose signer no longer stands is
+does not bring them back: every change that gives standing back (a trust
+or role change, a project role's new base, a trust an organisation's
+ownership raises, the lift of an isolation) first clears what no longer
+counted before it; a signature whose signer no longer stands is
 not counted when the next one is given.
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
