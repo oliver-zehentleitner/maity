@@ -8130,7 +8130,12 @@ by the project's repository, the commit it resolved and the card's
 `path` and `section` as they are at the call, so a changed `path` or
 `section`, a changed repository setting or a new default-branch commit
 is never answered from an older read; it stores nothing beyond that,
-and `fetched_at` says how fresh the answer is. The text is the repository's, quoted as untrusted text under
+and `fetched_at` says how fresh the answer is. The default branch's
+head itself is kept for up to 30 s per forge token, repository and
+branch, the most recent 1024 kept per serving process: a new commit
+shows within 30 s, and a call answered from a kept head and a kept read
+asks the forge nothing, so it is answered while the source's budget is
+spent. The text is the repository's, quoted as untrusted text under
 the rules of §6.14: shown, never a mention (§8.6), never an instruction
 to the hub (`docs/agents.md`). The dashboard's card view shows the
 section with the short `ref`, `fetched_at` and the link, and on
@@ -8207,8 +8212,8 @@ keeps no copy:
   after one the commit shown may be older than the default branch's
   head while the file is the same. The hub may keep one read
   for 60 s and answer concurrent calls from it, keyed by the repository,
-  the resolved commit and `path`, as for the card's section; it stores
-  nothing beyond that.
+  the resolved commit and `path`, and the default branch's head for up
+  to 30 s, as for the card's section; it stores nothing beyond that.
 - **Untrusted text.** The file is the repository's, under the same rules
   as a card's section (§6.14): shown, never a mention (§8.6), no id made
   into a link, its links as the dashboard's Markdown renderer allows
@@ -15861,7 +15866,11 @@ no sooner than 30 s after that; a call in between answers
 its own repository and the named ones together, and at most 16 of
 §11.5's reads in flight in each serving process, which keeps at most 64
 MiB of these reads for all projects, the least recently used dropped
-first.
+first. A call waits at most 0.5 s in all for
+a read of the same file already under way and for a place among those
+in flight: past that it answers the file the hub holds with `fresh:
+false`, or `ktw_unavailable` with reason `timeout` when it holds none,
+so a slow host never keeps a call waiting for the read's 30 s.
 
 The cost of a call does not grow with its project's history beyond the
 size of the files themselves. Warm, a call is one answer from memory.

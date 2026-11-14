@@ -15,11 +15,12 @@ import re
 import threading
 import time
 import urllib.parse
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from maity_hub import clock, forge
+from maity_hub import bounded, clock, forge
 
 DEFAULT_PATH = "docs/api.md"
 FILE_CAP = 4 * 1024 * 1024  # bytes of the file read at all, for a section and the whole file
@@ -33,6 +34,8 @@ FILE_MODES = ("100644", "100755")
 NUMBER = re.compile(r"\d+(?:\.\d+)*")
 TEXT_CAP = 64 * 1024  # bytes of the section shown
 MAX_AGE = 60  # seconds one read answers (§6.8, as the observation cache of §11)
+HEAD_AGE = 30.0  # seconds a default branch's head answers, per reader, repository and branch
+HEADS_KEPT = 1024  # branch heads kept, the oldest written dropped first
 PATH_MAX = 255
 SECTION_MAX = 32
 
@@ -255,12 +258,39 @@ def _once(key: Key, read: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     return kept
 
 
+# --- the default branch's head -------------------------------------------------------------
+
+HeadKey = tuple[str, str, str]  # digest of the reader's token, repository, branch
+_heads: OrderedDict[HeadKey, tuple[float, dict[str, Any]]] = OrderedDict()
+
+
+def _head(fg: forge.Forge, repository: str, branch: str) -> dict[str, Any]:
+    """`fg.branch(repository, branch)`, kept for HEAD_AGE seconds: within it a call asks the
+    forge nothing, so the calls of many viewers cost one read of the branch, and a read that
+    a kept head and a kept text answer goes on while the source's budget is spent. Keyed by
+    the reader's token too, so a head is answered only to a reader that read it itself (a
+    token that cannot see a repository never gets its head from another's read). A forge
+    that did not answer is not kept."""
+    token = hashlib.sha256((fg.token or "").encode()).hexdigest()
+    key = (token, repository, branch)
+    now = time.monotonic()
+    with _lock:
+        kept = _heads.get(key)
+        if kept is not None and now - kept[0] < HEAD_AGE:
+            return kept[1]
+    found = fg.branch(repository, branch)
+    with _lock:
+        bounded.put(_heads, key, (time.monotonic(), found), HEADS_KEPT)
+    return found
+
+
 def forget() -> None:
     """Drop every kept read and tree (tests)."""
     with _lock:
         _reads.clear()
         _pending.clear()
         _trees.clear()
+        _heads.clear()
 
 
 # --- what the setting's name points to ----------------------------------------------------
@@ -312,7 +342,7 @@ def read(fg: forge.Forge, repository: str, branch: str, path: str, section: str)
     """The section at the default branch's commit: `{path, section, ref, heading, text,
     url, truncated, fetched_at}`. `forge.ForgeUnavailableError` when the forge does not
     answer; `ContractTextError` when there is nothing to show."""
-    head = fg.branch(repository, branch)
+    head = _head(fg, repository, branch)
     if not head["found"]:
         raise ContractTextError("contract.path", "not_found_on_forge")
     ref: str = head["head_sha"]
@@ -357,7 +387,7 @@ def read_whole(fg: forge.Forge, repository: str, branch: str, path: str) -> dict
     reason = setting_error(path)
     if reason is not None:  # a setting stored before the rule: the read checks it too
         raise ContractTextError(SETTING, reason)
-    head = fg.branch(repository, branch)
+    head = _head(fg, repository, branch)
     if not head["found"]:
         raise ContractTextError(SETTING, "not_found_on_forge")
     ref: str = head["head_sha"]

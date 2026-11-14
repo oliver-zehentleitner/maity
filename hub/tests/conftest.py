@@ -455,6 +455,9 @@ def _fresh_process_state() -> Iterator[None]:
     ktw_reads._slots.clear()
     ktw_reads._flights.clear()
     ktw_reads._failed.clear()
+    from maity_hub import contract_text
+
+    contract_text.forget()  # a kept branch head must not answer the next test's reads
     from maity_hub import maintenance
 
     maintenance.forget()  # one test's window must not refuse the next test's requests

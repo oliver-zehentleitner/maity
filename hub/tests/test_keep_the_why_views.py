@@ -1143,7 +1143,6 @@ def test_a_named_familys_reads_wait_for_the_permits(
     other_repository(fake)
     project(owner)
     assert owner.get(f"{PATH}/export").status_code == 200  # the project's own family, warm
-    monkeypatch.setattr(ktw, "FAMILY_DEADLINE", 0.05)
     taken = [ktw_reads._all.acquire(blocking=False) for _ in range(ktw_reads.IN_FLIGHT_ALL)]
     assert all(taken)
     try:
@@ -1182,13 +1181,114 @@ def test_two_calls_for_one_file_make_one_read(monkeypatch: pytest.MonkeyPatch) -
     threads = [threading.Thread(target=call) for _ in range(2)]
     for thread in threads:
         thread.start()
-    time.sleep(0.2)  # both have checked the store and wait
+    time.sleep(0.1)  # both wait, inside ktw.LOCK_WAIT
     for _ in held:
         slot.release()
     for thread in threads:
         thread.join(timeout=10)
     assert len(answers) == 2 and reads == [url]
     assert answers[0][0] is answers[1][0]
+
+
+def test_a_held_permit_answers_within_the_lock_wait(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every permit taken and the file not held: `timeout` after ktw.LOCK_WAIT, not after
+    the read's 30 s."""
+    import time
+
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    fake.family()
+    project(owner)
+    owner.get(PATH)  # §11.3 reads every member's export into the store
+    ktw.RAW.files.pop(("state", f"{BASE}/cli/state.json"))  # dropped for room
+    now[0] += ktw.FORCE_INTERVAL + 1  # past the hold, inside the family's max_age
+    reads = len(fake.state_reads)
+    taken = [ktw_reads._all.acquire(blocking=False) for _ in range(ktw_reads.IN_FLIGHT_ALL)]
+    assert all(taken)
+    try:
+        began = time.monotonic()
+        answer = owner.get(f"{PATH}/export", params={"root": "cli"})
+        took = time.monotonic() - began
+    finally:
+        for _ in taken:
+            ktw_reads._all.release()
+    assert answer.status_code == 503
+    assert answer.json()["error"]["details"]["reason"] == "timeout"
+    assert ktw.LOCK_WAIT <= took < ktw.LOCK_WAIT + 1.0, took
+    assert len(fake.state_reads) == reads, "nothing read without a permit"
+    assert owner.get(f"{PATH}/export", params={"root": "cli"}).status_code == 200, "permits free"
+
+
+def test_a_call_past_the_wait_answers_the_file_it_holds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A held file older than `max_age` with every permit taken: the held file with
+    `fresh: false` after ktw.LOCK_WAIT, and nothing read."""
+    import time
+
+    url = "https://pages.example/ktw/state.body.json"
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    kept = ktw.RAW.put("bodies", url, {"a": {"text": "t"}})
+    now[0] += 700  # past max_age and the hold
+    reads: list[str] = []
+    monkeypatch.setattr(ktw_reads, "_read", lambda kind, at, cap: reads.append(at))
+    slot = ktw_reads._slot("p1")
+    held = [slot.acquire(blocking=False) for _ in range(ktw.IN_FLIGHT)]
+    assert all(held)
+    try:
+        began = time.monotonic()
+        answer = ktw_reads._file("p1", "bodies", url, 1024, 600, ktw._now())
+        took = time.monotonic() - began
+    finally:
+        for _ in held:
+            slot.release()
+    assert answer == (kept, False) and reads == []
+    assert took < ktw.LOCK_WAIT + 1.0, took
+
+
+@pytest.mark.parametrize("held", [False, True])
+def test_a_read_under_way_keeps_a_second_call_waiting_at_most_the_lock_wait(
+    monkeypatch: pytest.MonkeyPatch, held: bool
+) -> None:
+    """A slow read of a file: a second call for it answers after ktw.LOCK_WAIT, from the
+    store when it holds the file, else `timeout`, and reads nothing itself."""
+    import threading
+    import time
+
+    url = "https://pages.example/ktw/state.body.json"
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    kept = ktw.RAW.put("bodies", url, {"a": {"text": "old"}}) if held else None
+    now[0] += 700
+    started, release = threading.Event(), threading.Event()
+    reads: list[str] = []
+
+    def read(kind: str, at: str, cap: int) -> ktw.Raw:
+        reads.append(at)
+        started.set()
+        release.wait(10)
+        return ktw.RAW.put(kind, at, {"a": {"text": "new"}})
+
+    monkeypatch.setattr(ktw_reads, "_read", read)
+    first = threading.Thread(target=lambda: ktw_reads._file("p1", "bodies", url, 1024, 600, 0.0))
+    first.start()
+    try:
+        assert started.wait(5)
+        began = time.monotonic()
+        if held:
+            assert ktw_reads._file("p1", "bodies", url, 1024, 600, ktw._now()) == (kept, False)
+        else:
+            with pytest.raises(ktw.MemberError) as failed:
+                ktw_reads._file("p1", "bodies", url, 1024, 600, ktw._now())
+            assert failed.value.reason == "timeout"
+        took = time.monotonic() - began
+    finally:
+        release.set()
+        first.join(10)
+    assert reads == [url], "the second call read nothing"
+    assert ktw.LOCK_WAIT <= took < ktw.LOCK_WAIT + 1.0, took
+    assert ktw_reads._flights == {}
 
 
 def test_an_export_the_summary_read_is_held_after_a_drop(
