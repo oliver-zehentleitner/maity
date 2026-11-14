@@ -17,12 +17,13 @@ from maity_hub import clock, events, longpoll, moderation
 from maity_hub import tables as t
 from maity_hub.auth import leaks, sessions
 from maity_hub.routes import events as events_route
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_bridge_reads import PROJECT, _get
 from tests.test_event_quiet_passes import _agent, _latest, _until_waiting
 
 FAST = 0.05
+SLOW = 60.0  # past `_ended_soon`'s bound: a wait that ends was ended by the registry
 
 
 @pytest.fixture
@@ -52,8 +53,10 @@ def test_a_revoked_credential_ends_its_open_wait_at_once(
     make_client: ClientFactory,
     migrated: Engine,
     pool: ThreadPoolExecutor,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The fallback between passes is left at its default: only the registry ends it."""
+    """The fallback between passes is set past the bound: only the registry ends it."""
+    monkeypatch.setattr(events_route, "FALLBACK_SECONDS", SLOW)
     reader = _agent(migrated, owner)
     after = _latest(make_client(), reader, f"{PROJECT}/events?")
     began = time.monotonic()
@@ -67,15 +70,38 @@ def test_a_revoked_credential_ends_its_open_wait_at_once(
     _ended_soon(waiting, began)
 
 
+@pytest.mark.parametrize("how", ["sign-out", "ended from another session", "hub"])
 def test_a_dashboard_sign_out_ends_the_sessions_open_wait_at_once(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, pool: ThreadPoolExecutor
+    how: str,
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    pool: ThreadPoolExecutor,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    after = owner.get(f"{PROJECT}/events?after=latest").json()["cursor"]
+    """The sign-out route commits on a plain transaction, the hub's own ends (a suspension)
+    in `events.transaction`: both end the wait at commit, not at the fallback's pass."""
+    monkeypatch.setattr(events_route, "FALLBACK_SECONDS", SLOW)
+    waiter = make_client()
+    signed = factory.login_handle(waiter, owner.handle)
+    assert signed.status_code == 200, signed.text
+    mine = waiter.get("/api/v1/auth/session").json()
+    after = waiter.get(f"/api/v1{PROJECT}/events?after=latest").json()["cursor"]
     began = time.monotonic()
-    waiting = pool.submit(owner.get, f"{PROJECT}/events?after={after}&wait=20")
+    waiting = pool.submit(waiter.get, f"/api/v1{PROJECT}/events?after={after}&wait=20")
     _until_waiting("session:")
-    with events.transaction(migrated) as conn:
-        sessions.end_where(conn, t.human_session.c.human_id == owner.id, "test")
+    if how == "sign-out":
+        out = waiter.post("/api/v1/auth/logout", headers={"X-CSRF-Token": mine["csrf_token"]})
+        assert out.status_code in (200, 204), out.text
+    elif how == "ended from another session":
+        out = owner.client.delete(
+            f"/api/v1/auth/sessions/{mine['session_id']}",
+            headers={"X-CSRF-Token": owner.csrf},
+        )
+        assert out.status_code in (200, 204), out.text
+    else:
+        with events.transaction(migrated) as conn:
+            sessions.end_where(conn, t.human_session.c.human_id == owner.id, "test")
     _ended_soon(waiting, began)
 
 

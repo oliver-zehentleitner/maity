@@ -871,8 +871,9 @@ or stopped), never one less for the entry's own change.
 
 A revocation (`leaks.revoke`, so a replacement and a suspension too) and the end of a
 dashboard session (`sessions.end_where`) end the open waits of that credential or session
-through `longpoll.registry.end_keys_after`, once the transaction commits; outside
-`events.transaction` nothing is queued. Every pass also reads the row: the read re-reads the
+through `longpoll.registry.end_keys_after`, once the transaction commits: through
+`events.on_commit`, and on a plain `engine.begin()` (the sign-out, password and session
+routes) through the connection's `commit` event. Every pass also reads the row: the read re-reads the
 credential and the session (`gone`), and the look of a skipped pass takes the same as one
 scalar (`live_column`) in its one statement. A human's wait also ends with the membership's
 `active`; an agent's does not, as before: removing an agent revokes its credentials.
@@ -883,6 +884,9 @@ the wait within one pass, and reading it inside the look keeps the cost the look
 
 **Rejected alternatives:**
 - The registry end alone: a wait on another replica would keep delivering until its deadline.
+- Moving every session-ending route into `events.transaction`: nine routes and helpers
+  across auth, password reset and second factor for one hook; the connection's `commit`
+  event reaches them all from the one place that ends sessions.
 - A separate query per pass for the credential or session: one more statement on every pass
   of every held wait, against the one look a pass the earlier entry above settled.
 - Ending an agent's own wait on `active` off: changes a behaviour a test pins on purpose,

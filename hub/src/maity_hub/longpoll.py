@@ -10,11 +10,12 @@ goes through `call_soon_threadsafe`.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import random
 import threading
 from dataclasses import dataclass, field
 from typing import Any
+
+import sqlalchemy.event
 
 from maity_hub import events, listening
 
@@ -118,13 +119,16 @@ class Registry:
         self._end(waiting)
 
     def end_keys_after(self, conn: Any, keys: set[str]) -> None:
-        """`end_keys` once the caller's transaction commits. Outside `events.transaction`
-        nothing is queued: the wait's next pass reads the credential or session and ends
-        (`routes/events`), within the fallback re-read."""
+        """`end_keys` once the caller's transaction commits: through `events.on_commit`, and
+        on a plain `engine.begin()` (a sign-out, a password change) at the connection's
+        commit. The wait's next pass reads the credential or session too (`routes/events`),
+        on any replica."""
         from maity_hub.events import on_commit
 
-        with contextlib.suppress(RuntimeError):
+        try:
             on_commit(conn, lambda: self.end_keys(keys))
+        except RuntimeError:
+            sqlalchemy.event.listen(conn, "commit", lambda _conn: self.end_keys(keys), once=True)
 
     def end_bridge(self, bridge_id: str) -> None:
         """End every wait a bridge holds through a connection that ended (§2.3)."""
