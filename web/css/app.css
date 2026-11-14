@@ -2126,6 +2126,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .person-picture-none.size-20 { width: 20px; height: 20px; }
 .person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+/* A person's agents (§16.9, "A person's agents"), in the person view and on the visitor's page: each
+   with its picture at 64 px beside its name, handle, roles, model and harness. */
+.person-agents { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s2); overflow-wrap: anywhere; }
+.person-agents li { display: flex; align-items: flex-start; gap: var(--s3); min-width: 0; }
+.person-agents li > div { min-width: 0; }
+.person-agents li p { margin: 2px 0 0; }
+.person-agents .avatar-img, .person-agents .person-picture-none { flex: none; width: 64px; height: 64px; border-radius: 50%; }
 
 /* The person or organisation view in the refreshed look (design refresh step 4): the head as a
    panel with a round picture, the name in the display face, links and the public page as pills,
@@ -2186,6 +2193,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    while it runs, the admin's form and changes, the owner's choice on /agents. */
 .maintenance-banner { margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
 .maintenance-banner.running { font-weight: 600; }
+/* The experiment notice (docs/api.md §5.1, js/experiment-notice.js): where an agent is connected, until "Understood". */
+.experiment-notice { margin: 12px 0; padding: 12px 14px; border: 1px solid var(--warn); border-radius: var(--r-field); background: var(--flag-bg); color: var(--text); }
+.experiment-notice p { margin: 0; overflow-wrap: anywhere; }
+.experiment-notice .actions { margin-top: 10px; }
 .maintenance-page { display: grid; gap: 12px; max-width: 36rem; width: 100%; margin: 24px auto; box-sizing: border-box; }
 .maintenance-page h2 { margin: 0; }
 .maintenance-page p { margin: 0; }

@@ -6,6 +6,7 @@ Needs `markdown` and `PyYAML` (skipped without them):
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -68,6 +69,23 @@ class SiteDocsTest(unittest.TestCase):
             self.assertTrue((site / "docs/api/1-first/index.html").is_file())
             self.assertIn('href="/docs/api/1-first/"', (site / "docs/api/index.html").read_text())
             self.assertTrue((site / "docs/_assets/search.json").is_file())
+            # The sitemap dates each page by its source (tools/site_sitemap.py).
+            sources = json.loads((site / "docs/_assets/sources.json").read_text())
+            self.assertEqual(sources["docs/a/index.html"], "docs/a.md")
+            self.assertEqual(sources["docs/api/1-first/index.html"], "docs/api.md")
+            self.assertEqual(len(sources), 5)
+            self.assertIn('<link rel="canonical" href="https://maity.dev/docs/a/">', page)
+
+    def test_the_canonical_link_takes_the_sitemaps_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, site = Path(tmp) / "repo", Path(tmp) / "site"
+            (repo / "docs").mkdir(parents=True)
+            (repo / "docs/a.md").write_text("# A\n")
+            (repo / "docs/nav.yml").write_text("- group: G\n  pages:\n    - {src: docs/a.md, title: A}\n")
+            args = [str(site), "--repo", str(repo), "--base", "https://docs.example.org/"]
+            self.assertEqual(site_docs.main(args), 0)
+            page = (site / "docs/a/index.html").read_text()
+            self.assertIn('<link rel="canonical" href="https://docs.example.org/docs/a/">', page)
 
     def test_images_point_at_the_deployed_file(self):
         with tempfile.TemporaryDirectory() as tmp:
