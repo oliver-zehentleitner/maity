@@ -1588,6 +1588,10 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", title + "\n" + text, "--to", "human", "--class", "info")).group(0)
         for title in ("A request with a long line", "A short one below it")
     ]
+    # A request on a card: across projects its Card row names the card with the project's full
+    # name, drawn as every reference (tsk-e9d52pfhvk3v): it may wrap in the name, never in the id.
+    on_card = re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", "Which card first?", "--to", "human", "--class", "info", "--task", card_id)).group(0)
+    asked.append(on_card)
     run.maity(alpha, "note", "add", card_id, text)
     run.maity(alpha, "say", "all", text, "--type", "notice")
     # A link without a label shows its URL: 300 characters with no place to break.
@@ -1621,6 +1625,18 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
             assert not wider, f"the inbox at {where}: text wider than its box {wider}"
             if width < 1280:
                 run.shot(page, f"inbox-long-line-{scheme}" + ("" if width == 390 else f"-{width}"))
+            carded = page.locator(f"li.entry[data-request='{on_card}']")
+            carded.locator(".entry-head").first.click()
+            row = carded.locator("dd").filter(has=page.locator(f"a[href$='/tasks/{card_id}']"))
+            ref = row.locator(".id-ref.full")
+            expect(ref).to_have_text(f"owner/e2e-alpha/{card_id}")
+            placed = ref.evaluate(
+                "(r) => { const dd = r.closest('dd').getBoundingClientRect(), id = r.querySelector('.ref-id');"
+                " return [id.textContent, id.getClientRects().length, id.getBoundingClientRect().right, dd.right]; }"
+            )
+            assert placed[0] == card_id and placed[1] == 1, f"the Card row at {where}: the card's id is drawn as {placed}"
+            assert placed[2] <= placed[3] + 0.5, f"the Card row at {where}: the id ends at {placed[2]} px, its row at {placed[3]} px"
+            inside(f"the inbox's Card row at {where}")
 
             page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
             note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
