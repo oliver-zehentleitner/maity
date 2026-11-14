@@ -955,3 +955,27 @@ def test_a_covered_claim_does_not_go_back_to_a_member_that_became_an_expert(
     [ended] = events(migrated, "cover_ended")
     assert ended.payload["kept"] == [card["id"]] and ended.payload["returned"] == []
     assert card_of(owner, card["id"])["claim"]["holder"] == sub.id
+
+
+def test_a_covered_claim_does_not_go_back_to_a_member_that_became_a_guest(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§2.3: as for an expert, the return checks the member when it writes; the trust is
+    written past the API, as its own route would release the claim first."""
+    covered = flow.agent(make_client, owner)
+    sub = flow.agent(make_client, owner)
+    for agent in (covered, sub):
+        agent.resume()
+    card = task(owner)
+    covered.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    policy(owner, covered.id, on_unavailable="substitute", substitutes=[sub.id], grace_minutes=0)
+    limit(covered, now[0] + timedelta(hours=2))
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.agent_id == covered.id).values(trust="guest")
+        )
+    now[0] += timedelta(minutes=30)
+    covered.resume()
+    [ended] = events(migrated, "cover_ended")
+    assert ended.payload["kept"] == [card["id"]] and ended.payload["returned"] == []
+    assert card_of(owner, card["id"])["claim"]["holder"] == sub.id
