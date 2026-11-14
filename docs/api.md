@@ -7987,7 +7987,9 @@ with `releases:write` and:
   unknown `id` is `invalid`. Ticking an item of a closed release is
   `invalid_transition`; the checklist endpoint on a card that is not a
   release is `not_found`. `version_exists` carries `details.release` (the
-  existing card's id).
+  existing card's id). A tick (`POST …/checklist/{item_id}`) writes no
+  history entry; it emits `task_updated` with `fields: ["release"]`, the
+  new `release` and `history: []` (§6.15).
 
 The `release` object on the card:
 
@@ -9430,7 +9432,8 @@ change a member makes to a card's fields is one entry per field:
   the history, is refused (`credential_in_payload`) and stores neither.
 - `task_updated` carries `fields`: the names of the fields that changed
   (`["title", "body"]`, `["links"]`, `["rank"]`), with `history` — the
-  ids of the entries this write recorded, empty for `rank` — and the new
+  ids of the entries this write recorded, empty for `rank`, a checklist
+  tick (§6.7) and a merge's auto-close (§6.6) — and the new
   values of every changed field except `body`, which the reader fetches
   from the card or the history. For `links` the value is the change,
   `{"added": <link>}` or `{"removed": <link>}`, not the whole list.
