@@ -5965,7 +5965,7 @@ stay; `state_changed` is not emitted for the mapping.
 |---|---|---|
 | `preset` | `hierarchical`, `solo`, `pool`, `decentral`, `hybrid` | fills the fields below; `pool`, `decentral`, `hybrid` are named shells with the `hierarchical` filling until an experiment defines them |
 | `claim_policy` | `self-claim`, `assign-only` | may a member claim an open card itself |
-| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
+| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, never a release card (§6.7), and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
@@ -7909,7 +7909,11 @@ the card's `approvals` stay. Every replacement clears `approvals`
   merge is not (the holder can merge on the forge themself), so there
   `auto` acts as `notify`. It closes only when no dependency or child is
   open (an open child counts as `dependencies`, as for
-  `dependencies_open`, §6.4) and no objection hold is on it (§6.19).
+  `dependencies_open`, §6.4), no objection hold is on it (§6.19) and the
+  card is not a release. A release card is never closed by a merge, ready
+  or not: it closes through its readiness gate (§6.7), which the releaser
+  passes with `PATCH {status: "done"}` after the checklist, so
+  `task_merged` only tells the done authority.
   The move is a change the hub makes on its own (§6.15): no history
   entry; its record is `task_merged` with `closed: true` and the
   `task_updated` event with `fields: ["status"]` that every status
@@ -7928,7 +7932,7 @@ the card's `approvals` stay. Every replacement clears `approvals`
   like the case below and told when the answer returns it to `review`.
   When a condition fails the card stays where it is and `task_merged`
   says `closed: false` with `blocked_by` (`dependencies`,
-  `objection`). A merge first observed while the card is neither
+  `objection`, `release`). A merge first observed while the card is neither
   (`in_progress` after a rework, or `blocked` from there, or `blocked`
   from `review` under `reviewer_and_tester`) is remembered with the
   report it was observed on; when the card returns to `review` the hub
@@ -8030,7 +8034,10 @@ The `release` object on the card:
   `group_incomplete` (`tasks`), `checklist_open` (`item`). When `ready`
   flips to true the hub emits `release_ready` to everyone.
 - `done` on a release additionally requires `ready`
-  (`release_not_ready`), computed on the card as it will be stored: a
+  (`release_not_ready`), computed on the card as it will be stored; a
+  merge of its reported pull request never closes it, also under
+  `merged_closes: auto` (§6.6): the releaser closes it after the
+  checklist. A
   `PATCH` that changes `release` and `status` together is judged on the
   new data. A closed release is a record of what shipped: `release.*`
   and `depends_on` on it are `invalid_transition`, and when it closes its
