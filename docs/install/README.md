@@ -382,8 +382,9 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
 - **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk.
   Set `MAITY_BACKUP_SIGNER` to the signing key's fingerprint (step 4) in the shell that runs the blocks below, and
   keep the `.sig` file next to each backup: both blocks then check the signature before they decrypt anything, and stop
-  when it is missing, does not verify, is by another key, or was made for another file name (the name holds the
-  backup's time stamp). Without `MAITY_BACKUP_SIGNER` they say so and go on
+  when it is missing, holds more than one signature, does not verify, is by another key, or was made for another file
+  name (the name holds the backup's time stamp). The Job writes exactly one signature per file, so the key and the name
+  checked are always those of the same signature. Without `MAITY_BACKUP_SIGNER` they say so and go on
   unchecked, which is what a backup from before the signing key needs:
   Every `kubectl` below names the instance's kube context (`kubectl config get-contexts` lists them; `<kube context>` is
   that name), so a shell whose current context points at another cluster restores nothing there:
@@ -407,6 +408,7 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
        if [ -n "$signer" ]; then
          printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
          st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
+         [ "$(printf "%s\n" "$st" | grep -c "^\[GNUPG:\] NEWSIG")" = 1 ] || { echo "$2.sig holds more than one signature: the backup Job writes one" >&2; exit 1; }
          printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] VALIDSIG ($signer .*|.* $signer)$" || { echo "$2 is not signed by $signer" >&2; exit 1; }
          ! printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] (REVKEYSIG|KEYREVOKED|EXPKEYSIG)( |$)" || { echo "$2: the signing key is revoked or expired" >&2; exit 1; }
          printf "%s\n" "$st" | grep -A2 -xF "[GNUPG:] NOTATION_NAME backup-file@maity" | grep -qxF "[GNUPG:] NOTATION_DATA ${2##*/}" \

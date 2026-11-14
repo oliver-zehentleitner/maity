@@ -6,7 +6,8 @@
 # also decrypt, or that is the encryption key fails the Job before anything is written; a signature whose file is gone is removed
 # with the rotation. Then it runs the two documented restore blocks (docs/install/README.md, restore-attachments.yaml) with that
 # gpg against the files the Job wrote, kubectl and pg_restore stubbed: a backup under its own name restores, an older backup with
-# its signature renamed to a newer time stamp stops before it is decrypted.
+# its signature renamed to a newer time stamp stops before it is decrypted, and so does one whose .sig adds a second signature,
+# by another key, carrying the newer name.
 # Usage: deploy/scripts/test-backup-signing.sh   (no cluster needed; gpg 2.2+, GNU tar, python3 with PyYAML)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -129,6 +130,8 @@ extract() { # file, the line that ends the block, prefix to strip (as in test-re
 }
 extract "$root/docs/install/README.md" "' restore <kube context> maity-<UTC time>.dump.gpg" "" > "$work/db-block"
 extract "$root/deploy/k3s-single/restore-attachments.yaml" "' restore <kube context>" "#   " > "$work/att-block"
+# A block that reads deploy/postgres-roles.sql from the checkout's root gets its absolute path (no change while it reads none).
+sed -i "s#< deploy/postgres-roles.sql#< $root/deploy/postgres-roles.sql#" "$work/db-block"
 for b in db-block att-block; do grep -q "NOTATION_DATA" "$work/$b" || { echo "FAIL the $b has no name check"; exit 1; }; done
 cat > "$work/bin/kubectl" <<'STUB'
 #!/bin/bash
@@ -150,6 +153,14 @@ new=$(written | grep 'dump\.gpg$' | sed 's/maity-\(.*\)Z\.dump\.gpg/\1/')
 for kind in dump attachments.tar; do
   for x in "" .sig; do cp "$W/backups/maity-${new}Z.$kind.gpg$x" "$W/backups/maity-29991231T000000Z.$kind.gpg$x"; done
 done
+# the same, but its .sig also holds a second signature, by another key in the keyring, carrying the later name
+for kind in dump attachments.tar; do
+  later="maity-29991230T000000Z.$kind.gpg"
+  cp "$W/backups/maity-${new}Z.$kind.gpg" "$W/backups/$later"
+  gk --local-user "sign2 <s2@example.org>" --sig-notation "backup-file@maity=$later" --detach-sign \
+    --output "$work/second-$kind.sig" "$W/backups/$later"
+  cat "$W/backups/maity-${new}Z.$kind.gpg.sig" "$work/second-$kind.sig" > "$W/backups/$later.sig"
+done
 restore() { # name, block, file in $W/backups, want: restores | stops
   export R="$work/r-$1"; mkdir -p "$R"; : > "$R/log"
   ( cd "$W/backups" && GNUPGHOME="$K" MAITY_BACKUP_SIGNER=$signer PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$2")" restore test-context "$3" ) > "$R/out" 2>&1
@@ -164,6 +175,9 @@ for kind in dump attachments.tar; do
   b=db-block; [ "$kind" = dump ] || b=att-block
   restore "$kind-own-name" $b "maity-${new}Z.$kind.gpg" restores
   restore "$kind-renamed" $b "maity-29991231T000000Z.$kind.gpg" stops
+  restore "$kind-second-signature" $b "maity-29991230T000000Z.$kind.gpg" stops
+  grep -q "more than one signature" "$work/r-$kind-second-signature/out" && echo "ok   restore/$kind-second-signature: names the reason" \
+    || fail "restore/$kind-second-signature: no reason" "$work/r-$kind-second-signature/out"
   grep -q "signed under another name" "$work/r-$kind-renamed/out" && echo "ok   restore/$kind-renamed: names the reason" || fail "restore/$kind-renamed: no reason" "$work/r-$kind-renamed/out"
 done
 

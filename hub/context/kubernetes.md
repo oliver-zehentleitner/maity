@@ -600,9 +600,12 @@ signature. The restore blocks check the signature before they decrypt, only
 when `MAITY_BACKUP_SIGNER` holds a fingerprint: the signing key's or its
 primary key's, matched in gpg's `VALIDSIG` status line. Each signature also
 carries the file's name, time stamp included, as the signed notation
-`backup-file@maity`, and the blocks compare it with the name they are given. A
-missing `.sig`, a bad signature, another key or another name then stops the
-block, and so does a signature by a key that is revoked or expired
+`backup-file@maity`, and the blocks compare it with the name they are given.
+They accept a `.sig` with exactly one signature (one `NEWSIG` in gpg's status),
+as the Job writes it, so the fingerprint and the name checked belong to the same
+signature: a second signature by another key could otherwise carry a newer name
+beside an older night's genuine one. A missing `.sig`, a bad signature, another
+key or another name then stops the block, and so does a signature by a key that is revoked or expired
 (`REVKEYSIG`, `KEYREVOKED`, `EXPKEYSIG` beside `VALIDSIG`). The Job refuses a
 signing key that can also decrypt (an `e` capability on any of its keys), one
 whose fingerprint is in `maity-backup-key`, and a Secret with more than one

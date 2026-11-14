@@ -4,7 +4,8 @@
   `maity-backup-signing-key` and writes `<file>.sig` next to it; the signature carries the file's name with its time
   stamp. The documented restore blocks (docs/install/README.md, `restore-attachments.yaml`) check the signature before
   they decrypt when `MAITY_BACKUP_SIGNER` holds the signing key's fingerprint, and stop when it is missing, does not
-  verify, is by another key, by a revoked or expired key, or was made for another file name. The guide's key setup
+  verify, is by another key, by a revoked or expired key, was made for another file name, or holds more than one
+  signature. The guide's key setup
   replaces the signing key when run again.
   `deploy/scripts/test-backup-signing.sh` runs the Job's scripts with a real gpg.
 
