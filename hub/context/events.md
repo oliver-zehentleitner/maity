@@ -859,3 +859,25 @@ or stopped), never one less for the entry's own change.
   entry"; it fills the packet with entries that say nothing, and §5.2 calls the field "the
   rules its owner set". The contract now says so (an open point of the PR for the
   maintainer).
+
+## A chat message's current verdicts are rows of their own, not read from the `chat_verdict` events
+
+**Id:** 82dc9315-5185-4996-881d-437c7cbbeddd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §9.7 ("Redaction": the verdict an event set stays until a `PUT` or `DELETE` changes it, and reads its `value` with `sentence: null`), card tsk-55x4f398dttv
+**Revisit when:** a redaction comes to keep the fields of an event it does not take out, or a verdict comes to be removed with the redaction of its event
+
+A human's current verdict on a message is a `chat_verdict` row (one per message and human,
+`set_seq` naming the event that set it), written in the same transaction as each
+`chat_verdict` event, replaced by the next and deleted when taken back. A message's
+`verdicts` reads these rows, and the `sentence` of one whose event is redacted as null.
+
+**Reason:** a redaction replaces an event's whole payload with the tombstone, so the
+`value` the contract says survives it would be gone from the log. The row keeps it, and
+the event's `redacted` flag says whether its sentence may still be shown.
+
+**Rejected alternative:** deriving the current verdict from the latest `chat_verdict` per
+human and message: a redacted latest event has no `value` left, and reading the one before
+it would show an older verdict than the one that stands.

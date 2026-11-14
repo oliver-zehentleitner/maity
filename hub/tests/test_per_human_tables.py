@@ -127,6 +127,7 @@ DELETION_KEEPS = {
     "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
     "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
+    "chat_verdict": f"a verdict on a chat message, as the message itself: {_RECORD}",
     "bridge": f"who asked for or ended a connection: {_RECORD}; a removed agent's end with it",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
@@ -184,6 +185,7 @@ EXPORT_LEAVES_OUT = {
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
     "avatar_size": "smaller copies of the picture, which the export names by its URL only",
     "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
+    "chat_verdict": _UNLISTED,
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
     "device_code": _SECRET,

@@ -21,6 +21,7 @@ from maity_hub import (
     attachments,
     chat_gate,
     chat_request,
+    chat_verdicts,
     clock,
     events,
     group_chats,
@@ -870,7 +871,7 @@ def writer(
                 select(t.event.c.conversation_id).where(
                     t.event.c.seq == seq,
                     t.event.c.project_id == found.project.id,
-                    t.event.c.kind == "message",
+                    t.event.c.kind.in_(CHAT_TEXTS),
                 )
             ).scalar()
         if (
@@ -926,7 +927,10 @@ def redact(
         if row is not None and group_chats.is_group(row.conversation_id):
             # A group chat's own rule: a place in the chat, no scope (§8.5).
             return _redact_in_group(conn, mine, caller, row, body, store)
-        mine.require("events:admin")
+        if row is None or row.kind != chat_verdicts.KIND or row.conversation_id is None:
+            # A direct chat's verdict is redacted as its message, by the human party, which
+            # needs no scope for it (§9.7); its rule follows below.
+            mine.require("events:admin")
         if row is None:
             raise not_found()
         # What the caller cannot read does not exist for it; no later refusal may say
@@ -935,6 +939,8 @@ def redact(
             row, mine.row, mine.principal_id, events.hidden_redactions(conn, [row], mine.row)
         ):
             raise not_found()
+        if row.kind == chat_verdicts.KIND and mine.kind != "human":
+            raise humans_only("an agent never redacts; it asks a human in the chat")
         # The tombstone's event reaches whoever could read the event, never more (§8.5).
         audience = list(row.audience or [])
         if row.conversation_id is not None:
@@ -1035,6 +1041,11 @@ def tombstone(
     )
 
 
+# What a chat's redaction takes out: a message, and a verdict on one, redacted as a message of
+# its conversation (§8.5, §9.7).
+CHAT_TEXTS = ("message", chat_verdicts.KIND)
+
+
 def _not_a_participant() -> ApiError:
     return ApiError(
         403, "forbidden", "only a human in the chat redacts here", {"reason": "not_a_participant"}
@@ -1068,14 +1079,14 @@ def _redact_in_group(
     if not readable:
         if not (closed and mine.kind == "human" and mine.may("members:admin")):
             raise not_found()
-        if row.kind != "message":  # only a message is redacted blind
+        if row.kind not in CHAT_TEXTS:  # only a message or a verdict is redacted blind
             raise not_found()
         blind = True
     if row.kind == "event_redacted":
         raise ApiError(
             400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}
         )
-    if row.kind != "message":  # a chat's own record (created, updated) holds no text
+    if row.kind not in CHAT_TEXTS:  # a chat's own record (created, updated) holds no text
         raise ApiError(400, "invalid", "only a message is redacted", {"reason": "not_a_message"})
     if not blind:
         if mine.kind != "human":
@@ -1085,7 +1096,7 @@ def _redact_in_group(
         former = group_chats.last_stay(conn, group.id, mine.id) is not None
         if closed and not former and not mine.may("members:admin"):
             raise _not_a_participant()
-    if "expect" in body.model_fields_set and not (closed and row.kind == "message"):
+    if "expect" in body.model_fields_set and not (closed and row.kind in CHAT_TEXTS):
         raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
     current = group_chats.stays(conn, group.id)
     audience = group_chats.audience(current)
