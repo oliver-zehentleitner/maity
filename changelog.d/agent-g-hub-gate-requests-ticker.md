@@ -7,3 +7,5 @@
   `to: all` holds such an agent the same way, while computed reasons and
   the agent's own follows still reach it. An `update` passes the gate
   for a card's watcher only by a watch the watcher set itself.
+  A forward of a request to an agent the gate holds it for is refused
+  with `forbidden` (`details.reason: held_by_gate`).

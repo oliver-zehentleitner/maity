@@ -1666,6 +1666,34 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     return row
 
 
+def _refuse_held(conn: Connection, mine: Membership, row: Any, target: Any) -> None:
+    """`forbidden` (`held_by_gate`) for a forward to an agent the request is held for, or
+    that the gate of §9.6 would hold it for were the asker to file it to that agent now: the
+    text is the asker's, so the asker's side is judged, whoever forwards it. The forward would
+    otherwise hand the request to a holder that may not read it."""
+    if target.agent_id is None:
+        return
+    held = target.agent_id in (row.held or [])
+    if not held and row.asked_by is not None:
+        asker = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
+        kind = "agent" if asker.agent_id is not None else "human"
+        _, held_now = chat_gate.gate(
+            conn,
+            mine.project.id,
+            Membership(mine.project, asker, kind),
+            [f"member:{target.agent_id}"],
+        )
+        held = target.agent_id in held_now
+    if held:
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 holds this request for that agent: its owner has not said yes"
+            " to the asker's side",
+            {"reason": "held_by_gate"},
+        )
+
+
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/forward")
 def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
@@ -1710,6 +1738,8 @@ def forward(
                 raise invalid({"to": "owners_round"}, "this goes to one human, the owner's choice")
             # Nor to someone the proposal's kind would not let answer it (§6.19).
             _refuse_by_kind(conn, row, target)
+            # Nor to an agent the gate holds the request for (§9.6): refused, never dropped.
+            _refuse_held(conn, mine, row, target)
             target_id = target.id
             values = {"holder_member": target.id, "holder_pool": None}
         action_name = "opened" if target_id is None else "forwarded"

@@ -532,8 +532,9 @@ Two limits:
   pass. A request addressed to your agent (by id, instance, role or
   trust) and a ticker note's `to` or `to: all` are held the same way:
   the request stays out of the agent's inbox and resume packet and the
-  asker sees `held`; a ticker note's computed reasons and the agent's
-  own follows still reach it. Whatever was held stays held after your
+  asker sees `held`, and a forward of a request to such an agent is
+  refused (`forbidden`, `held_by_gate`); a ticker note's computed
+  reasons and the agent's own follows still reach it. Whatever was held stays held after your
   yes; the sender asks or posts again. Cards, reviews and a lead's
   message are not gated. The hub asks you
   in your inbox, one request per side, with replies to allow for a time,

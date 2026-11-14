@@ -168,6 +168,44 @@ def test_a_held_request_stays_held_when_forwarded_on(
         assert f"held:{theirs.id}" in audience
 
 
+def test_a_forward_to_an_agent_the_gate_holds_it_for_is_refused(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """Refused with the gate named, never dropped: the request stays with its holder."""
+    theirs, other, writer = sides["theirs"], sides["other"], sides["writer"]
+    admin_and_role(migrated, theirs.id)
+    request = ask(writer, owner.id)
+    assert request["held"] == []
+    path = f"{PROJECT}/requests/{request['id']}"
+    refused = owner.post(f"{path}/forward", {"to": theirs.id})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "held_by_gate"}
+    with migrated.connect() as conn:
+        holder = conn.execute(
+            select(t.request.c.holder_member).where(t.request.c.id == request["id"])
+        ).scalar_one()
+    assert holder is None  # it stays with its holder
+    # One held for that agent when filed is refused to it even after its owner's later yes.
+    pooled = ask(writer, "trust:admin")
+    assert theirs.id in pooled["held"]
+    allow(other, agents=[theirs.id], owner_id=writer.id, their_human=True)
+    again = other.post(f"{PROJECT}/requests/{pooled['id']}/forward", {"to": theirs.id})
+    assert again.status_code == 403, again.text
+    assert again.json()["error"]["details"]["reason"] == "held_by_gate"
+
+
+def test_a_forward_to_an_admitted_agent_goes_through(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    theirs, other, writer = sides["theirs"], sides["other"], sides["writer"]
+    admin_and_role(migrated, theirs.id)
+    allow(other, agents=[theirs.id], owner_id=writer.id, their_human=True)
+    request = ask(writer, owner.id)
+    moved = owner.post(f"{PROJECT}/requests/{request['id']}/forward", {"to": theirs.id})
+    assert moved.status_code == 200, moved.text
+    assert finds(theirs, request["id"])["read"]
+
+
 # --- ticker items (§17.6) --------------------------------------------------------------
 
 
