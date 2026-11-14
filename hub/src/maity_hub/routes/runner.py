@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import time
 from datetime import datetime, timedelta
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -46,6 +46,7 @@ from maity_hub.runners import (
     event_project_ids,
     listening_key,
     load_runner,
+    open_requests,
 )
 from maity_hub.views import event_views
 
@@ -82,7 +83,7 @@ class HarnessOffer(Strict):
     id: Harness
     version: Text | None = None
     available: bool
-    reason: Literal["binary_not_found", "version_failed"] | None = None
+    reason: Literal["binary_not_found", "version_failed", "login_needed"] | None = None
     modes: list[Mode] = Field(max_length=2)
     default_mode: Mode
     models: list[Name] = Field(max_length=50)
@@ -98,6 +99,55 @@ class HarnessOffer(Strict):
         return self
 
 
+ToolId = Literal[
+    "claude-code",
+    "codex",
+    "opencode",
+    "antigravity",
+    "pi",
+    "hermes",
+    "kimi",
+    "cline",
+    "omp",
+    "stub",
+    "maity",
+]
+# What a tool's version check may end in (§15.16); the lists are closed, as in §15.7.
+ToolState = Literal[
+    "current", "rolled_back", "missing", "installing", "updating", "login_needed", "failed"
+]
+ToolReason = Literal["installer_failed", "version_failed", "network", "no_space"]
+BUSY = ("installing", "updating")  # an `Update now` attempt that has not ended yet
+
+
+class Tool(Strict):
+    """One harness tool, or `maity`, as the runner manages it (§15.16)."""
+
+    id: ToolId
+    install: bool
+    update: Literal["daily", "never"]
+    version: Text | None = None
+    previous_version: Text | None = None
+    latest: Text | None = None
+    state: ToolState
+    reason: ToolReason | None = None
+    checked_at: AwareDatetime | None = None
+    updated_at: AwareDatetime | None = None
+    sessions_on_older: int = Field(ge=0, le=10_000)
+    # The request's `requested_at` exactly as the runner read it: a string, never parsed,
+    # so no clock of the runner's is compared with the hub's.
+    update_requested_at: Text | None = None
+
+    @model_validator(mode="after")
+    def _reason_with_failed(self) -> Tool:
+        """`reason` with `failed` only, and always with it; `maity` is never installed."""
+        if (self.reason is None) != (self.state != "failed"):
+            raise ValueError("reason goes with state failed, and only with it")
+        if self.id == "maity" and self.install:
+            raise ValueError("maity is never installed by the runner")
+        return self
+
+
 class Capabilities(Strict):
     backend: Name
     max_agents: int = Field(ge=0, le=10_000)
@@ -107,6 +157,9 @@ class Capabilities(Strict):
     projects: list[Name] = Field(max_length=200)
     repositories: list[Name] = Field(max_length=200)
     require_local_approval: bool
+    # Absent from a runner that does not manage its tools (§15.16).
+    # One entry per tool id at most (duplicates are refused below).
+    tools: list[Tool] | None = Field(default=None, max_length=len(get_args(ToolId)))
     # Set by the hub (§15.8); a value the runner sends is replaced.
     reported_at: datetime | None = None
 
@@ -115,6 +168,9 @@ class Capabilities(Strict):
         ids = [h.id for h in self.harnesses]
         if len(ids) != len(set(ids)):
             raise ValueError("each harness is offered once")
+        tools = [tool.id for tool in self.tools or []]
+        if len(tools) != len(set(tools)):
+            raise ValueError("each tool is listed once")
         return self
 
 
@@ -138,8 +194,46 @@ class Advertise(Strict):
 
 def _stored(capabilities: Capabilities) -> dict[str, Any]:
     data = capabilities.model_dump(mode="json")
+    if data["tools"] is None:  # a runner that does not report them (§15.3)
+        del data["tools"]
     data["reported_at"] = clock.rfc3339(clock.now())
     return data
+
+
+def _settle_requests(conn: Connection, runner_id: str, capabilities: Capabilities) -> None:
+    """Drop each `Update now` request the report says was carried out: the tool names that
+    request's `requested_at`, exactly as stored, and is no longer installing or updating;
+    and each request for a tool the report no longer lists as updated.
+    A report decided before the runner read a newer request names the older one and leaves
+    the newer standing (§15.16). Called under the runner's row lock."""
+    stored = conn.execute(
+        select(t.runner.c.update_requests).where(t.runner.c.id == runner_id)
+    ).scalar()
+    if not stored:
+        return
+    done = {
+        (tool.id, tool.update_requested_at)
+        for tool in capabilities.tools or []
+        if tool.update_requested_at is not None and tool.state not in BUSY
+    }
+    # A tool the runner no longer updates (`update: "never"`, gone, or no `tools` at all)
+    # will never carry its request out: dropped, so the owner sees none standing.
+    updated = {tool.id for tool in capabilities.tools or [] if tool.update != "never"}
+    # Settled or dropped, an entry stays marked `done`: the hub's own floor for the tool's
+    # next request (runners.open_requests), never shown as standing.
+    kept = [
+        (
+            r
+            if r.get("done")
+            or ((r["tool"], r["requested_at"]) not in done and r["tool"] in updated)
+            else {**r, "done": True}
+        )
+        for r in stored
+    ]
+    if kept != stored:
+        conn.execute(
+            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=kept)
+        )
 
 
 def _projects(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
@@ -210,6 +304,7 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
                 capabilities_at=now,
             )
         )
+        _settle_requests(conn, runner_id, body.capabilities)
         conn.execute(
             update(t.runner_session)
             .where(
@@ -253,9 +348,22 @@ def advertise(body: Advertise, request: Request, caller: RunnerCaller) -> JSONRe
             .where(t.runner.c.id == runner_id)
             .values(capabilities=_stored(body.capabilities), capabilities_at=clock.now())
         )
+        _settle_requests(conn, runner_id, body.capabilities)
         return idempotency.Outcome(200, "runner", runner_id, load_runner(conn, runner_id, None))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.get("/runner")
+def runner_requests(request: Request, caller: RunnerCaller) -> JSONResponse:
+    """The owner's open `Update now` requests (§15.16), read after every wake."""
+    runner_id = caller.runner_id
+    assert runner_id is not None
+    with engine_of(request).connect() as conn:
+        stored = conn.execute(
+            select(t.runner.c.update_requests).where(t.runner.c.id == runner_id)
+        ).scalar()
+    return JSONResponse({"update_requests": open_requests(stored)})
 
 
 @router.get("/runner/events")

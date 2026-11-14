@@ -1301,6 +1301,8 @@ runner = Table(
     Column("version", Text),  # the `client` of its last hello
     Column("capabilities", JSON_VALUE),  # what it last advertised (§15.3), never a grant
     Column("capabilities_at", UtcDateTime),
+    # The owner's open `Update now` requests, `[{tool, requested_at}]` (§15.16); null: none.
+    Column("update_requests", JSON_VALUE),
     # True until the runner is removed, NULL afterwards: a name is unique among
     # one owner's runners, and a removed runner's name is free again.
     Column("active", Boolean, default=True),

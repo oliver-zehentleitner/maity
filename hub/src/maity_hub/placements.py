@@ -64,6 +64,8 @@ REASONS: dict[str, tuple[str, ...]] = {
     "image_pull": ("failed", "exited"),
     "stopped_by_hub": ("stopped",),
     "adopted": ("running",),
+    # §15.16: a session an older `maity` started, ended at its idle point and resumed
+    "updated": ("exited",),
     "orphaned": ("stopped",),
 }
 # `join_failed`'s detail is the hub's own error code (§15.7): any code in this form, matched

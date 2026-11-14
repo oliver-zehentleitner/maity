@@ -16075,7 +16075,7 @@ and `resolveEntry`, and any write.
 | GET | `/runners` | human | 15.3 |
 | GET, PATCH, DELETE | `/runners/{id}` | owner, `members:admin` in an attached project (GET) / owner | 15.3 |
 | POST | `/runners/{id}/revoke` | owner | 15.3 |
-| POST | `/runners/{id}/updates` | owner (not built yet, tsk-29nmydbzrg5z) | 15.3, 15.16 |
+| POST | `/runners/{id}/updates` | owner | 15.3, 15.16 |
 | GET, POST | `/projects/{owner}/{slug}/runners` | `project:read` (agents: `agents:propose`) / `members:admin` + runner owner | 15.4 |
 | DELETE | `/projects/{owner}/{slug}/runners/{runner_id}` | `members:admin` / runner owner | 15.4 |
 | GET, POST | `/projects/{owner}/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner, `agents:propose` | 15.6 |
@@ -16095,7 +16095,7 @@ and `resolveEntry`, and any write.
 | PUT, GET, DELETE | `/runner/placements/{id}/handover` | runner | 15.8, 15.14 |
 | POST | `/runner/placements/{id}/usage` | runner | 15.8, 15.15 |
 | PATCH | `/runner` | runner | 15.8 |
-| GET | `/runner` | runner (not built yet, tsk-29nmydbzrg5z) | 15.8, 15.16 |
+| GET | `/runner` | runner | 15.8, 15.16 |
 | GET | `/projects/{owner}/{slug}/tasks/{id}/usage` | a human member; an agent member whose runs counted for the card | 15.15 |
 | GET | `/projects/{owner}/{slug}/members/{id}/usage` | the agent's owner; the owner's own agents with trust `admin` | 15.15 |
 | GET | `/agents/{id}/usage` | the agent's owner; the owner's own agents with trust `admin`, for their project | 15.15 |
@@ -16360,7 +16360,7 @@ Outside a placement every path is read as before.
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` after every wake (§15.16; not built yet, tsk-29nmydbzrg5z), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers both, the runner does not call them yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` after every wake (§15.16; the hub answers it, the runner does not call it yet, tsk-29nmydbzrg5z), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers both, the runner does not call them yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local, the free space of the file system holding the workspaces included (§15.5; not built yet, tsk-34gb7frfbsk7) |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16; not built yet, tsk-29nmydbzrg5z). `status` also prints the fingerprint of the runner's handover key (§15.14) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7). |
@@ -16608,7 +16608,7 @@ rule of §13 before it writes anything.
 | `GET /runners` | human | the runners the caller owns, and the runners attached to projects where the caller has `members:admin`; ordered by `name`; `{items}` |
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
-| `POST /runners/{id}/updates` | the owner | `{tool}`; `202` with the runner view: asks the runner to look for a newer version of that tool now (`Update now`, §15.16); `conflict` (`details.reason: "updates_off"`) for a tool the runner does not update. Not built yet, tsk-29nmydbzrg5z |
+| `POST /runners/{id}/updates` | the owner | `{tool}`; `202` with the runner view: asks the runner to look for a newer version of that tool now (`Update now`, §15.16); `conflict` (`details.reason: "updates_off"`) for a tool the runner does not update |
 | `POST /runners/{id}/revoke` | the owner | `{"reason"?, "agents"?}`; revokes the live credential, ends its long-poll; returns the runner view with `on_runner_revoke` (below). What happens to its agents follows `on_runner_revoke` per attached project, or `agents` (below) |
 | `DELETE /runners/{id}` | the owner | `{"agents"?}`; revokes the credential, applies `on_runner_revoke` to its agents (below) per attached project, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the ids of the placements whose last report was `starting`, `running` or `stopping`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
 
@@ -16748,8 +16748,8 @@ owner choose):
   `sandbox`: `on`, `off`, `n/a` — the harness's own OS sandbox.
   `available: false` comes with `reason` (`binary_not_found`,
   `version_failed`, or `login_needed` for a tool the runner installed
-  that waits for its owner's login, §15.16; not built yet,
-  tsk-29nmydbzrg5z).
+  that waits for its owner's login, §15.16; the hub accepts it, the
+  runner does not report it yet, tsk-29nmydbzrg5z).
 - `harnesses[].default_mode` is the mode a placement gets when it names
   none. Which mode each adapter defaults to is the runner's (open: §12 5
   of the design).
@@ -16814,8 +16814,9 @@ owner choose):
   limited to those the caller is a member of.
 - `tools` is what the runner manages of its harness tools and of `maity`
   itself, and `update_requests` (top level of the runner view) the
-  owner's open `Update now` requests (§15.16; not built yet,
-  tsk-29nmydbzrg5z). Absent from a runner that does not report them.
+  owner's open `Update now` requests (§15.16; the hub stores and shows
+  them, the runner does not report them yet, tsk-29nmydbzrg5z). Absent
+  from a runner that does not report them.
 - `handover_key` is the runner's public X25519 key for a `full`
   replacement (§15.14), `public` base64url without padding, 32 bytes;
   `fingerprint` is computed by the hub, never taken from the runner.
@@ -17243,7 +17244,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `oom_killed`, `evicted`, `image_pull` | `failed`, `exited` | Kubernetes only |
 | `stopped_by_hub` | `stopped` | `desired: stopped` was carried out |
 | `adopted` | `running` | the runner found the session after its own restart and took it over |
-| `updated` | `exited` | the runner ended a session that an older `maity` started, at its idle point, to start it again on the newer one; it resumes the session, outside the crash cap (§15.16; not built yet, tsk-29nmydbzrg5z) |
+| `updated` | `exited` | the runner ended a session that an older `maity` started, at its idle point, to start it again on the newer one; it resumes the session, outside the crash cap (§15.16; the hub accepts it, the runner does not report it yet, tsk-29nmydbzrg5z) |
 | `orphaned` | `stopped` | the runner found a session it has no placement for and ended it |
 
 | `detail` | With |
@@ -17410,7 +17411,7 @@ Runner credential, signed (§15.1).
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
 | POST | `/runner/placements/{id}/usage` | `{run, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same body; supervised placements only, for the placement's open `run` (`run_closed` otherwise); no `Idempotency-Key`: the `run` is its key; §15.15 |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable, a tool's version or state, §15.16). `Idempotency-Key` required |
-| GET | `/runner` | — | `200`, `{update_requests: [{tool, requested_at}]}`: the owner's open `Update now` requests (§15.16). Read after every wake of the event wait. Not built yet, tsk-29nmydbzrg5z |
+| GET | `/runner` | — | `200`, `{update_requests: [{tool, requested_at}]}`: the owner's open `Update now` requests (§15.16). Read after every wake of the event wait. The hub answers it; the runner does not call it yet, tsk-29nmydbzrg5z |
 
 ```json
 {
@@ -19036,7 +19037,8 @@ or limit: the hub stays out of pricing and billing.
 
 ### 15.16 Harness tools and maity on the runner
 
-Not built yet, tsk-29nmydbzrg5z. A runner can install and update the
+The hub's part is built; the runner's and the dashboard's are not yet,
+tsk-29nmydbzrg5z. A runner can install and update the
 harness tools its placements need, and `maity` itself, each only when its
 owner allows it for that tool (the owner's decision of 2026-11-12). Without
 that, nothing changes from today: the runner uses what it finds and
@@ -19155,7 +19157,11 @@ runner's owner only: the hub stores the request on the runner
 runner does not list in `capabilities.tools`, or lists with `update:
 "never"`, is `conflict` (`details.reason: "updates_off"`): the runner's
 configuration decides, and the runner checks again. A second request for
-the same tool replaces the first. The runner reads its requests with
+the same tool replaces the first. A request's `requested_at` is the hub's
+time in milliseconds, made strictly later than the last request the hub
+issued for that tool on that runner, settled or dropped ones included, so
+no two requests for a tool are the same string; nothing a runner reports
+moves that floor. The runner reads its requests with
 `GET /runner` (§15.8) after every wake of its event wait, so a request
 reaches it within a minute; a runner that is offline reads it when it is
 back. It carries out a request with the same rules as the daily check.
@@ -19163,9 +19169,12 @@ The attempt is done when the tool's `state` is no longer `installing`
 or `updating`, whatever the outcome; the runner sends that report with
 `update_requested_at` naming the request, its `requested_at` exactly as
 it read it. The hub drops the stored request for that tool only when
-the two are equal, so a report decided before the runner saw a newer
+the two are equal and the report's `state` is neither `installing` nor
+`updating`, so a report decided before the runner saw a newer
 request leaves that one standing; no clock of the runner's is compared
-with the hub's. A request does not restart a session: a newer version
+with the hub's. A report that lists the tool with `update: "never"`,
+leaves it out, or carries no `tools` drops its request: it would never
+be carried out. A request does not restart a session: a newer version
 is used from the next start on.
 
 **Seen by people.** The runner view (§15.3) carries `capabilities.tools`

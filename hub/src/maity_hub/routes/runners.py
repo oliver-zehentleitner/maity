@@ -10,7 +10,7 @@ the credential is the response body and nothing else.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -81,6 +81,10 @@ class Pair(Strict):
 
 class RunnerUpdate(Strict):
     name: str = Field(pattern=HANDLE_PATTERN)
+
+
+class UpdateNow(Strict):
+    tool: str = Field(min_length=1, max_length=200, pattern=r"^[\x20-\x7e]+$")
 
 
 class RunnerRevoke(Strict):
@@ -607,6 +611,60 @@ def update_runner(
                 raise taken from None
         return idempotency.Outcome(
             200, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _request_time(stored: list[Any], tool_id: str) -> str:
+    """A request's identity (§15.16): the hub's time in milliseconds, made strictly later
+    than the last request the hub issued for the tool, standing or `done`. The floor is the
+    hub's own; nothing a runner reports moves it, so no two requests for a tool on a runner
+    are ever the same string."""
+    moment = clock.now().astimezone(UTC)
+    moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    for entry in stored:
+        if entry.get("tool") != tool_id:
+            continue
+        try:
+            before = datetime.fromisoformat(str(entry.get("requested_at")))
+        except ValueError:
+            continue
+        if before.tzinfo is not None and moment <= before:
+            moment = before.astimezone(UTC) + timedelta(milliseconds=1)
+            moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    return clock.rfc3339(moment, millis=True)
+
+
+@router.post("/runners/{runner_id}/updates")
+def update_now(
+    runner_id: str, body: UpdateNow, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    """`Update now` (§15.16): the owner asks the runner to look for a newer version of one
+    tool. Only a tool the runner reports with `update: "daily"`; the runner's configuration
+    decides and the runner checks again. A second request for the tool replaces the first;
+    the runner reads them with `GET /runner` and nothing else wakes it."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        row = _own_runner(conn, caller, runner_id, lock=True)
+        _refuse_removed(row)
+        tools = (row.capabilities or {}).get("tools") or []
+        if not any(tool["id"] == body.tool and tool["update"] != "never" for tool in tools):
+            raise ApiError(
+                409,
+                "conflict",
+                "the runner does not update this tool",
+                {"reason": "updates_off"},
+            )
+        stored = row.update_requests or []
+        at = _request_time(stored, body.tool)
+        requests = [r for r in stored if r["tool"] != body.tool]
+        requests.append({"tool": body.tool, "requested_at": at})
+        conn.execute(
+            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=requests)
+        )
+        return idempotency.Outcome(
+            202, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
