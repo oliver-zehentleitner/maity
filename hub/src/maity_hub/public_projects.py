@@ -121,6 +121,31 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
     return humans, shown
 
 
+def team_details(
+    conn: Connection, project_id: str, humans: list[Any], agents: list[Any]
+) -> tuple[dict[str, str | None], dict[str, str], dict[str, str | None]]:
+    """What the page's data adds to each one it names (§16.9, `project`): the picture a person's
+    own page shows (none while their `public_profile` is off; an agent always has one), the role
+    of the membership in this project, as the Team tab shows it, and an agent's harness, as its
+    own page shows it."""
+    from maity_hub import avatars, public_agents
+
+    shown_people = [h.id for h in humans if h.public_profile]
+    pictures: dict[str, str | None] = dict.fromkeys(h.id for h in humans)
+    pictures |= avatars.public_urls(conn, [*shown_people, *(a.id for a in agents)])
+    m = t.membership.c
+    roles: dict[str, str] = {}
+    for human_id, agent_id, role in conn.execute(
+        select(m.human_id, m.agent_id, m.role).where(m.project_id == project_id, m.active.is_(True))
+    ).all():
+        roles[human_id or agent_id] = role
+    harnesses: dict[str, str | None] = {}
+    for a in agents:
+        found = public_agents.memberships(conn, a.id)
+        harnesses[a.id] = public_agents.latest_session(conn, found)[1] if found else None
+    return pictures, roles, harnesses
+
+
 STAT_DAYS = 30
 STAT_LABELS = (
     ("cards_done", "Cards done"),
@@ -223,6 +248,24 @@ def _statistics_html(stats: dict[str, Any]) -> str:
         )
         html += f"<h3>Per agent</h3><table><tr><th>Agent</th>{head}</tr>{body}</table>"
     return html
+
+
+def pages_with_picture(conn: Connection, owner_id: str) -> list[tuple[str, str]]:
+    """The project pages that show a member's picture (§16.9, `project`): those of the public
+    projects where the person or the agent is an active member, in its team and in `online`."""
+    m = t.membership.c
+    ids = conn.execute(
+        select(t.project.c.id)
+        .join(t.membership, m.project_id == t.project.c.id)
+        .where(
+            t.project.c.public_page == "on",
+            m.active.is_(True),
+            (m.human_id == owner_id) | (m.agent_id == owner_id),
+        )
+        .distinct()
+        .order_by(t.project.c.id)
+    ).scalars()
+    return [(KIND, project_id) for project_id in ids]
 
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
@@ -361,6 +404,11 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             )
         ).all()
     )
+    pictures, roles, harnesses = team_details(conn, project.id, humans, agents)
+    from maity_hub.public_project_views import members as team_members
+
+    # The Members figure: the Team tab's list, those it names and those it only counts.
+    members_count = len(team_members(conn, project.id))
     data = {
         "name": project.name,
         "full_name": full,
@@ -369,16 +417,27 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         "repository_url": shown_url if shown_url and landing.safe_target(shown_url) else None,
         "links": [u for u in shown_links if landing.safe_target(u)],
         "people": [
-            {"name": h.display_name, "handle": h.handle, "page": f"/{h.handle}"} for h in humans
+            {
+                "name": h.display_name,
+                "handle": h.handle,
+                "page": f"/{h.handle}",
+                "picture": pictures.get(h.id),
+                "role": roles.get(h.id),
+            }
+            for h in humans
         ],
         "agents": [
             {
                 "name": a.display_name,
                 "handle": a.handle,
                 "page": f"/{owners[a.owner_id]}/agents/{a.handle}",
+                "picture": pictures.get(a.id),
+                "role": roles.get(a.id),
+                "harness": harnesses.get(a.id),
             }
             for a in agents
         ],
+        "members": members_count,
         "statistics": statistics,
         "ticker": entries,
         # The snapshot's time: `data` is stored on every render, the HTML and the sitemap's
