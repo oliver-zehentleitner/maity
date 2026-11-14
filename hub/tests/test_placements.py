@@ -769,7 +769,8 @@ def _running_on_the_runner(s: Setup) -> dict[str, Any]:
 
 def test_a_suspension_revokes_the_accounts_own_placed_agent_as_suspended(setup: Setup) -> None:
     """The account's own agent on its own runner ends as every credential it holds
-    (`suspended`, §16.8), not as the runner's stop; nobody is named as having revoked it."""
+    (`suspended`, §16.8), not as the runner's stop; nobody is named as having revoked it,
+    and the one `credential_revoked` event names the report as its actor."""
     body = _running_on_the_runner(setup)
     with events.transaction(setup.engine) as conn:
         moderation.suspend(conn, setup.owner.id, "rpt-000000000000")
@@ -783,11 +784,16 @@ def test_a_suspension_revokes_the_accounts_own_placed_agent_as_suspended(setup: 
             select(t.placement.c.closed_reason).where(t.placement.c.id == body["id"])
         ).scalar_one()
         told = conn.execute(
-            select(t.event.c.seq).where(t.event.c.kind == "credential_revoked")
+            select(t.event.c.payload, t.event.c.actor_report_id, t.event.c.subject_id).where(
+                t.event.c.kind == "credential_revoked"
+            )
         ).all()
     assert tuple(agent) == ("suspended", None)
     assert closed == "runner_revoked"
-    assert told == []
+    credential = setup.agent.credential_id
+    assert [tuple(r) for r in told] == [
+        ({"credential_id": credential, "reason": "suspended"}, "rpt-000000000000", credential)
+    ]  # none with `runner_revoked`: the runner's stop does not revoke it a second time
 
 
 def test_a_suspension_locks_the_runner_rows_before_any_project(setup: Setup) -> None:
