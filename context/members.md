@@ -1370,39 +1370,78 @@ wrong, the same reasoning as the overview's "no member view repeated".
 in its `PATCH` answer, which its `GET` never showed it either (§6.2 gives
 the briefing to the member itself and to `members:admin` only).
 
-## Open contribution by outsiders: a draft that lets an outsider's agent join itself, gated at the claim
+## Open contribution by outsiders: a stranger's agent works on marked cards, gated by a human's confirmation of its claim
 
 **Id:** dab6ae4a-3f6b-4431-8945-80e5956a38a8
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; contract draft `docs/api.md` §6.30
-**Revisit when:** the maintainer answers the questions of §6.30, or its parts A, B or C are contracted
-**See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-13
-**See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-13
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; contract draft `docs/api.md` §6.30
+**Revisit when:** the trust of an outsider's agent (§6.30 Q28) is answered, or parts A, B or C of §6.30 are contracted into the sections they change; then the outside-roles part of 68b4deba is superseded
+**See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
+**See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
 
-The maintainer wants a person who is no member of a public project to
-keep it as a dashed tab with a star, add their own coder agent and have
-it work, with the project's lead confirming the agent's claim through a
-checked call, and with every safeguard a project setting with a
-default. The draft in §6.30 puts the gate on the claim: the outsider's
-agent joins on its owner's own join and holds nothing until a confirmer
-says yes.
+A person who is no member of a public project keeps it as a dashed tab
+with a star and lets their own agents work in it. The person does not
+join: their agent works as a stranger, at a trust of its own, and the
+gate is the claim. By default a human of the project (the coordinator
+or a holder of `tasks:admin`) confirms each claim of an outsider's
+agent through a checked call; letting agents confirm, or dropping the
+confirmation, is the project owner's explicit choice. An outsider's
+agent claims only cards marked for outsiders, or every card where the
+project says so. Every safeguard is a project setting with a default.
 
-Two earlier entries stand against parts of it, and the draft does not
-settle them; it asks:
-- The agreement on public projects (54e1a38b) says a join request
-  always needs the owner's approval, never a self-join, because a
-  foreign agent in a repository is a supply-chain question. The draft
-  asks whether the claim confirmation replaces that approval (Q5).
-- Outsiders only do the work (68b4deba): outside reviewers and testers
-  were rejected because the people whose work is checked would check
-  it. The maintainer's new direction (tsk-jf0m1t0fa6a9) opens those
-  roles with a minimum of approvals from the project's own agents as
-  the safeguard instead (Q10, Q11).
+**Reason:** the maintainer's principle is that Maity offers the tools
+and each team sets its own strategy. Public is public: a public project
+has no private areas, so the tab shows the project as a member reads
+it, read-only; group chats stay internal to their participants. The
+supply-chain concern of 54e1a38b (a foreign agent in a repository) is
+met at the point where the agent would start work, by a person deciding
+on the claim, not at its arrival: the outsider never becomes a member,
+so the join approval of 54e1a38b, which is about membership, does not
+apply. Whoever decides on a claim sees the applicant's record whatever
+their `public_stats` says, since that is what the decision rests on.
 
-**Rejected alternatives:** none decided yet. The draft recommends a
-star stored per account over one kept only in the browser, so a
-starred project opens on every device as the start set does
-(6e21a45a), and no membership from a star, so a public project does
-not fill up with silent members; both are questions (Q1, Q4).
+Further rulings of 2026-11-14: the star is kept per account and
+private, with no count, bounded per account by an instance limit
+(default 100); an unstarred tab lasts as long as the browser session;
+contributing as a non-member makes one a contributor, listed as an
+external contributor on the project's Team; agents an outsider brings
+count against `member_agents_max`, which a project may raise for one
+outsider; outside roles are every role but `manager`, `ops`, `proxy`
+and trust `admin`; the project owner chooses whose agents count as the
+project's own reviewers (only the owner's, every member's, or chosen
+owners'); removal of an outsider also blocks them until lifted; the
+only optional limit is on claims; reputation is per instance, from
+public projects only, counting merges and approvals, shown on the
+owner's page and as the agent's share on its page, behind
+`public_stats`; external reviewers qualify by n merges in m projects;
+a declined or lapsed claim reaches the outside owner as a personal
+notice showing the card as it is now.
+
+**Rejected alternatives:**
+- Stars kept only in the browser, or with a public count as on a
+  forge: a starred project should open on every device as the start set
+  does (6e21a45a); the maintainer chose stars that stay private.
+- Switches for what an outsider reads (messages, jour fixe, inbox, off
+  by default): a public project has no private areas; only group chats
+  stay with their participants.
+- Membership from a star, or an "Ask to join" button: a public project
+  must not fill with silent members; membership stays an invitation.
+- An approval of the agent's arrival as well as of its claim: the
+  outsider does not join, and the claim is the gate.
+- A manager confirming claims for its line; a confirmation that is
+  always by a human with no way to change it.
+- Unmarked cards claimable with confirmation; a limit on open pull
+  requests, which the hub knows only from reports and the probe.
+- "Own" reviewers fixed as any member's agents, or as members with
+  trust `member` and above: the project owner decides.
+- Reputation per project or across instances; private projects counted
+  without names; revert detection or a ratio before counting; a trust
+  level for external contributors; a record always public.
+- Freezing or hiding the card title in the decline notice: the card is
+  public while the project is.
+
+A later decision model that screens what reaches agents for dangerous
+prompts and instructions (an "Agent Guard") is planned and not part of
+this decision.
