@@ -211,6 +211,8 @@ def hub(database_url: str, migrated: Engine, tmp_path: Path) -> Iterator[Hub]:
         "MAITY_ALLOW_PLAIN_HTTP": "1",
         "MAITY_WEB_DIR": "",
         "MAITY_WORKERS": "2",
+        # The suite's role is a superuser; the role check has its own tests (test_db_role.py).
+        "MAITY_DB_ALLOW_PRIVILEGED": "1",
     }
     with log.open("wb") as out:
         process = subprocess.Popen(

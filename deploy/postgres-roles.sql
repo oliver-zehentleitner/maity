@@ -3,35 +3,45 @@
 --                create databases or roles.
 --   maity_app    the running hub: reads and writes rows (SELECT, INSERT, UPDATE, DELETE, sequences), and nothing else. It cannot
 --                create, alter or drop a table.
--- The superuser stays for admin work and the dumps. Run with psql, with ON_ERROR_STOP, the two passwords set first and the script
+-- The superuser stays for admin work and restores. Run with psql, with ON_ERROR_STOP, the two passwords set first and the script
 -- on standard input, so that no password is on a command line:
 --   { printf "%s '%s'\n" '\set owner_password' "$(cat owner-password)" '\set app_password' "$(cat app-password)"
 --     cat deploy/postgres-roles.sql; } | psql -X -v ON_ERROR_STOP=1 -U maity -d maity
--- It can run again: an existing role gets the attributes and the password given now. On a database the hub already used with
--- one role, it hands every object of the hub to maity_owner and grants maity_app its rows (the upgrade path in the same section).
+-- It can run again: an existing role gets the attributes again, and the password given now. Without passwords it runs only
+-- when both roles exist, and keeps their passwords: that is the run after a restore, which hands to maity_owner whatever the
+-- dump brought back owned by the superuser and grants maity_app its rows again
+--   psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql
+-- With after_restore set it does nothing where neither role exists (an installation that has not moved to the two roles).
+-- On a database the hub already used with one role, it hands every object of the hub to maity_owner and grants maity_app its
+-- rows (the upgrade path in the same section).
 \set ON_ERROR_STOP on
-\if :{?owner_password}
-\else
-\echo 'set owner_password and app_password first (\\set owner_password ...)'
-\quit
-\endif
-\if :{?app_password}
-\else
-\echo 'set owner_password and app_password first (\\set app_password ...)'
-\quit
-\endif
-
 SELECT NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maity_owner') AS create_owner,
        NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maity_app') AS create_app \gset
+SELECT :'create_owner'::boolean AND :'create_app'::boolean AND :{?after_restore} AS nothing_to_do \gset
+\if :nothing_to_do
+\echo 'neither maity_owner nor maity_app exists: nothing to hand over after the restore'
+\quit
+\endif
+-- A role to create needs its password; a missing one stops the script with an error, before anything changes.
+SELECT (:'create_owner'::boolean AND NOT :{?owner_password}) OR (:'create_app'::boolean AND NOT :{?app_password}) AS missing_password \gset
+\if :missing_password
+DO $$ BEGIN RAISE EXCEPTION 'set owner_password and app_password first (\set owner_password ...): a role to create needs one'; END $$;
+\endif
 \if :create_owner
 CREATE ROLE maity_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'owner_password';
 \else
-ALTER ROLE maity_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'owner_password';
+ALTER ROLE maity_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+\if :{?owner_password}
+ALTER ROLE maity_owner PASSWORD :'owner_password';
+\endif
 \endif
 \if :create_app
 CREATE ROLE maity_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'app_password';
 \else
-ALTER ROLE maity_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'app_password';
+ALTER ROLE maity_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+\if :{?app_password}
+ALTER ROLE maity_app PASSWORD :'app_password';
+\endif
 \endif
 
 BEGIN;

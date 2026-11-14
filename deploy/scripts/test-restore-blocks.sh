@@ -24,6 +24,8 @@ extract() { # file, the line that ends the block, prefix to strip
   ' "$1"
 }
 extract "$root/docs/install/README.md" "' restore <kube context> maity-<UTC time>.dump.gpg" "" > "$work/db-block"
+# The block runs from the checkout's root and reads deploy/postgres-roles.sql there; here it runs in a directory of its own.
+sed -i "s#< deploy/postgres-roles.sql#< $root/deploy/postgres-roles.sql#" "$work/db-block"
 extract "$root/deploy/k3s-single/restore-attachments.yaml" "' restore <kube context>" "#   " > "$work/att-block"
 # The close and open blocks (steps 4 and 6): the `sh -eu -c '` block that ends in `' close` and the one in `' open`.
 python3 - "$root/docs/install/README.md" "$work" <<'PY'
@@ -53,7 +55,7 @@ case "$*" in
                    [ "$FAIL" = replica ] && { printf 1; exit 0; }; printf 0; exit 0;;
   *"get pods"*)    [ "$FAIL" = pods_fail ] && { echo "error: the server is unreachable" >&2; exit 1; }
                    [ "$FAIL" = pod_left ] && echo pod/maity-maity-hub-1; exit 0;;
-  *" exec "*)      cat > /dev/null; exit 0;;
+  *" exec "*)      cat >> "$S/exec-in"; exit 0;;   # what reached the pods, in order
   *"get networkpolicy maity-maity-hub"*)
                    [ "$FAIL" = np_get_fails ] && { echo "error: forbidden" >&2; exit 1; }
                    cat "$S/np.json"; exit 0;;
@@ -94,6 +96,17 @@ STUB
 chmod +x "$work/bin/"*
 mkdir -p "$work/src"; echo file > "$work/src/f"; tar -cf "$work/plain.tar" -C "$work/src" .
 
+# The database block runs deploy/postgres-roles.sql again after pg_restore (a dump from before the two roles restores its
+# objects to the superuser, docs/install/README.md "Database roles"): the script itself, in the postgres pod, after the restore.
+roles_after_restore() {
+  local S="$work/run-db-block-none" name="db-block/roles after the restore"
+  local restore script
+  restore=$(grep -n "exec -i maity-postgres-0 -- pg_restore" "$S/log" | cut -d: -f1)
+  script=$(grep -n "exec -i maity-postgres-0 -- psql .*-v after_restore=1" "$S/log" | cut -d: -f1)
+  if [ -n "$restore" ] && [ -n "$script" ] && [ "$script" -gt "$restore" ] && grep -q "ALTER DEFAULT PRIVILEGES" "$S/exec-in"; then
+    echo "ok   $name"
+  else echo "FAIL $name: pg_restore at '${restore}', the script at '${script}'"; failures=$((failures + 1)); fi
+}
 failures=0
 run() { # block, FAIL value, expected: restores | stops
   local block=$1 fail=$2 want=$3 name="$1/$2"
@@ -113,6 +126,7 @@ run() { # block, FAIL value, expected: restores | stops
 }
 for b in db-block att-block; do
   run $b none restores
+  [ $b = att-block ] || roles_after_restore
   run $b deploy_fails stops
   run $b pods_fail stops
   run $b replica stops

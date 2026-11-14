@@ -282,6 +282,60 @@ def check_web_dir(settings: Settings) -> None:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
 
 
+# Whether the hub's role on PostgreSQL may do more than read and write rows: a superuser, or a
+# role that owns (or inherits the rights of the owner of) its schema or one of its tables.
+_PRIVILEGED_ROLE = text("""
+    SELECT r.rolsuper,
+           pg_has_role(current_user, n.nspowner, 'USAGE') AS owns_schema,
+           EXISTS (
+               SELECT 1 FROM pg_class c
+               WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+                 AND pg_has_role(current_user, c.relowner, 'USAGE')
+           ) AS owns_tables
+    FROM pg_roles r, pg_namespace n
+    WHERE r.rolname = current_user AND n.nspname = current_schema()
+    """)
+
+
+def privileged_role(engine: Engine) -> str | None:
+    """Why the database role of `engine` is more than the hub needs to serve, or None: on
+    PostgreSQL a superuser, or a role that owns the schema the hub runs in or one of its tables
+    (directly or through a role it belongs to). Owning the schema is what migrations need, and
+    they run under their own role (`maity-hub migrate`, docs/install/README.md, "Database
+    roles"). Other databases are not checked: SQLite has no roles, and MariaDB has no owners,
+    only grants (hub/context/deploy-access.md)."""
+    if engine.dialect.name != "postgresql":
+        return None
+    with engine.connect() as conn:
+        row = conn.execute(_PRIVILEGED_ROLE).one_or_none()
+        user = conn.execute(text("SELECT current_user")).scalar_one()
+    if row is None:  # no current schema: nothing it could own
+        return None
+    if row.rolsuper:
+        return f"the database role {user!r} is a superuser"
+    if row.owns_schema:
+        return f"the database role {user!r} owns the hub's schema"
+    if row.owns_tables:
+        return f"the database role {user!r} owns tables of the hub's schema"
+    return None
+
+
+def require_unprivileged_role(engine: Engine, settings: Settings) -> None:
+    """`ConfigError` when `maity-hub serve` would run on a role that can change the schema
+    (`privileged_role`), unless MAITY_DB_ALLOW_PRIVILEGED is set; then a warning. Checked by the
+    serving command, once, before the hub serves; `maity-hub migrate` does not ask."""
+    reason = privileged_role(engine)
+    if reason is None:
+        return
+    if settings.db_allow_privileged:
+        log.warning("%s; MAITY_DB_ALLOW_PRIVILEGED is set, so the hub serves with it", reason)
+        return
+    raise ConfigError(
+        f"{reason}: serve with a role that only reads and writes rows (docs/install/README.md, "
+        '"Database roles"), or set MAITY_DB_ALLOW_PRIVILEGED=1 until the roles are set up'
+    )
+
+
 def warn_on_connection_budget(engine: Engine, settings: Settings) -> None:
     """Say at the start when the deployment may ask more connections than PostgreSQL gives
     ordinary roles (hub/context/replicas.md, "Several pods"). Not a refusal: behind a pooler the

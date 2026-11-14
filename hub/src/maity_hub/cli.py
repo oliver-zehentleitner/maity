@@ -42,6 +42,7 @@ from maity_hub.app import (
     check_web_dir,
     create_app,
     require_current_schema,
+    require_unprivileged_role,
     serving_engine,
     start_once,
     warn_on_connection_budget,
@@ -588,6 +589,7 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
     try:
         engine = serving_engine(settings)
         require_current_schema(engine)
+        require_unprivileged_role(engine, settings)
         warn_on_connection_budget(engine, settings)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:
@@ -624,6 +626,7 @@ def _serve_workers(settings: Settings, banner: list[str] | None) -> int:
         engine = serving_engine(serving.per_worker(settings))
         try:
             check_startup(engine, settings)
+            require_unprivileged_role(engine, settings)
             warn_on_connection_budget(engine, settings)
             start_once(engine, settings)
         finally:

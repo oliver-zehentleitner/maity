@@ -91,9 +91,19 @@ spec:
   ports: [{port: 5432}]
 EOF
 kubectl -n "$ns" rollout status deploy/postgres --timeout=180s
-# The URL goes into the Secret from a file, never through the command line.
-(umask 077; printf 'postgresql://maity:%s@postgres:5432/maity' "$db_password" >"$work/database-url")
+# The two roles of deploy/postgres-roles.sql (docs/install/README.md, "Database roles"): the migrate Job logs in as
+# maity_owner, the hub as maity_app, which `maity-hub serve` requires (it refuses the superuser). The passwords reach
+# psql on standard input.
+db_owner_password="$(secret)"
+db_app_password="$(secret)"
+{ printf "%s '%s'\n" '\set owner_password' "$db_owner_password" '\set app_password' "$db_app_password"
+  cat "$root/deploy/postgres-roles.sql"; } \
+    | kubectl -n "$ns" exec -i deploy/postgres -- psql -X -q -v ON_ERROR_STOP=1 -U maity -d maity
+# The URLs go into the Secrets from files, never through the command line.
+(umask 077; printf 'postgresql://maity_app:%s@postgres:5432/maity' "$db_app_password" >"$work/database-url")
+(umask 077; printf 'postgresql://maity_owner:%s@postgres:5432/maity' "$db_owner_password" >"$work/migrate-url")
 kubectl -n "$ns" create secret generic maity-hub-database --from-file=database-url="$work/database-url"
+kubectl -n "$ns" create secret generic maity-hub-migrate --from-file=database-url="$work/migrate-url"
 
 # The mail settings go through the chart as well: the signing key from a Secret, a loopback SMTP host (no server answers there;
 # nothing is sent in this run, the settings only have to reach the hub as its environment and be accepted by it).
@@ -104,12 +114,20 @@ values=(--set image.repository=maity-hub --set image.tag=kind-smoke --set image.
     --set database.existingSecret=maity-hub-database --set config.publicUrl=https://maity.test
     --set mail.signingKeySecret.existingSecret=maity-hub-mail --set mail.host=127.0.0.1 --set mail.port=2525
     --set mail.tls=none --set mail.from=maity@maity.test)
+# The migrate Job logs in as the schema's owner (the roles above).
+values+=(--set database.migrate.existingSecret=maity-hub-migrate)
 
 step "install: the migrate Job runs first, then the hub turns ready"
 helm install hub "$chart" -n "$ns" "${values[@]}" --wait --timeout 10m
 kubectl -n "$ns" logs job/hub-maity-hub-migrate | tee "$work/migrate.log"
 grep -q "schema empty -> " "$work/migrate.log"
 helm test hub -n "$ns" --logs
+
+step "roles: the hub serves as maity_app, the migrate Job ran as maity_owner"
+kubectl -n "$ns" exec deploy/postgres -- psql -X -At -U maity -d maity \
+    -c "select distinct usename from pg_stat_activity where datname = 'maity' and application_name <> 'psql'" | tee "$work/roles"
+grep -qx maity_app "$work/roles" && ! grep -qx maity "$work/roles"
+[ "$(kubectl -n "$ns" exec deploy/postgres -- psql -X -At -U maity -d maity -c "select tableowner from pg_tables where tablename = 'alembic_version'")" = maity_owner ]
 
 step "mail: the chart's settings reach the hub as its environment"
 [ "$(kubectl -n "$ns" exec deploy/hub-maity-hub -- sh -c 'printf %s "$MAITY_SMTP_HOST"')" = 127.0.0.1 ]
@@ -150,7 +168,7 @@ helm test hub -n "$ns"
 step "a migration that fails stops the upgrade; the running hub stays"
 printf 'postgresql://maity:wrong@postgres:5432/maity' >"$work/broken-url"
 kubectl -n "$ns" create secret generic maity-hub-broken --from-file=database-url="$work/broken-url"
-if helm upgrade hub "$chart" -n "$ns" "${values[@]}" --set database.existingSecret=maity-hub-broken \
+if helm upgrade hub "$chart" -n "$ns" "${values[@]}" --set database.migrate.existingSecret=maity-hub-broken \
     --set migrate.backoffLimit=0 --wait --timeout 10m; then
     echo "kind smoke: an upgrade with a failing migration went through" >&2
     exit 1

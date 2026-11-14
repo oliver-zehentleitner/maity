@@ -96,6 +96,14 @@ example; any cluster with the same pieces works.
    rm database-url
    ```
 
+   That URL is the hub's, and on PostgreSQL its role may only read and
+   write rows: the hub refuses to start as a superuser or as the owner of
+   its schema or tables. Give the migrate Job the owner's URL in a Secret of
+   its own (`database.migrate.existingSecret`); the roles are in
+   [Database roles](../../../docs/install/README.md#database-roles). Until
+   they are set up, `extraEnv: [{name: MAITY_DB_ALLOW_PRIVILEGED, value: "1"}]`
+   lets the hub start on one URL, with a warning.
+
    `sslmode=require` encrypts but does not check the server's certificate.
    To check it, put the provider's CA into a Secret, mount it with
    `extraVolumes` and `extraVolumeMounts` (the hub and the migrate Job both

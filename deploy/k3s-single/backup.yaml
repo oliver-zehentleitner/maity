@@ -70,6 +70,10 @@ spec:
               env:
                 - name: PGPASSWORD
                   valueFrom: {secretKeyRef: {name: maity-postgres, key: password}}
+                # The schema owner's URL (docs/install/README.md, "Database roles"): with it the dump runs as maity_owner, which
+                # owns everything it reads; an installation without the Secret dumps as the superuser, as before.
+                - name: DUMP_URL
+                  valueFrom: {secretKeyRef: {name: maity-hub-db-migrate, key: database-url, optional: true}}
               command: ["/bin/sh", "-ec"]
               args:
                 - |
@@ -87,7 +91,8 @@ spec:
                   n=0
                   while :; do
                     rm -f "$g/failed"
-                    { pg_dump -h maity-postgres -U maity -Fc maity || touch "$g/failed"; } | LC_ALL=C dd bs=64k 2>"$g/count" \
+                    if [ -n "${DUMP_URL:-}" ]; then set -- -d "$DUMP_URL"; else set -- -h maity-postgres -U maity maity; fi
+                    { pg_dump -Fc "$@" || touch "$g/failed"; } | LC_ALL=C dd bs=64k 2>"$g/count" \
                       | gpg --batch --quiet --homedir "$g" --no-autostart --trust-model always --recipient-file "$k" --compress-algo none --yes --encrypt --output "$f.part"
                     [ -e "$g/failed" ] || break
                     n=$((n + 1))

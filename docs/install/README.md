@@ -361,7 +361,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      at the first failure and keeps the decrypted file for a second try; it also stops before anything is restored while
      the hub's Deployment wants a replica, one of its pods is still there, or either could not be read (each `kubectl` is
      an assignment of its own, since `sh -e` does not stop on a command substitution that fails inside a test).
-     `pg_restore` here must be 17 or later:
+     After the restore it runs `deploy/postgres-roles.sql` again ([Database roles](#database-roles)), so run it from the
+     checkout's root. `pg_restore` here must be 17 or later:
      ```sh
      sh -eu -c '
        ctx=$1
@@ -373,6 +374,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
        gpg -d "$2" > maity.dump
        pg_restore -f /dev/null maity.dump
        k exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
+       # the two roles again: a dump from before them restores its objects to the superuser ("Database roles")
+       k exec -i maity-postgres-0 -- psql -X -q -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql
        rm maity.dump
      ' restore <kube context> maity-<UTC time>.dump.gpg
      ```
@@ -580,8 +583,8 @@ with every right on the server:
 
 | Role | Who logs in with it | What it may do |
 |---|---|---|
-| `maity` (the superuser) | you, for admin work, the dumps and restores | everything |
-| `maity_owner` | `maity-hub migrate` (Compose's `migrate` service, the chart's migrate Job via `database.migrate.existingSecret`) | owns the database and every object of the hub in it; no superuser, cannot create databases or roles |
+| `maity` (the superuser) | you, for admin work and restores | everything |
+| `maity_owner` | `maity-hub migrate` (Compose's `migrate` service, the chart's migrate Job via `database.migrate.existingSecret`), and the k3s backup Job once the Secret `maity-hub-db-migrate` exists | owns the database and every object of the hub in it; no superuser, cannot create databases or roles |
 | `maity_app` | the running hub | reads and writes rows (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, sequences), nothing else |
 
 [`deploy/postgres-roles.sql`](../../deploy/postgres-roles.sql) sets them up
@@ -597,13 +600,33 @@ migrations create later too. Each URL names its role:
   with your own PostgreSQL, run it as shown at the top of the file, then
   give `maity-hub migrate` the owner's URL and `maity-hub serve` the app's
   (Helm: `database.existingSecret` and `database.migrate.existingSecret`).
-- **A restore into a new PostgreSQL:** roles are not in a dump. Run the
-  script first, then restore as the superuser; the objects come back owned
-  by `maity_owner`.
+- **A restore, and the roles.** Roles are not in a dump, and a dump from
+  before the two roles brings the hub's objects back owned by the superuser,
+  without `maity_app`'s rights: the hub then cannot read its tables. So run
+  the script again after every restore, without passwords (it keeps them):
+  `psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql`.
+  It hands everything back to `maity_owner` and grants `maity_app` its rows;
+  for a dump that already names `maity_owner` it changes nothing, and with
+  `after_restore` it does nothing where the roles were never set up. The k3s
+  restore block below does this itself. Into a new PostgreSQL: run the script
+  with the passwords first (the roles must exist for a dump that names
+  them), restore as the superuser, then run it again as above.
+  `deploy/scripts/test-postgres-roles.sh` runs these cases on a real
+  PostgreSQL (`hub/scripts/with_postgres.sh deploy/scripts/test-postgres-roles.sh`).
 - **MariaDB / MySQL and SQLite:** not covered; the hub uses the one URL.
 
+**The hub checks its role at the start.** On PostgreSQL, `maity-hub serve`
+refuses to start when its role is a superuser, or owns the hub's schema or
+one of its tables (also through a role it belongs to), and names the reason.
+`maity-hub migrate` does not check: it runs as the owner. An installation
+that has not moved to the two roles yet sets `MAITY_DB_ALLOW_PRIVILEGED=1`
+for the hub until it has (Helm: `extraEnv`; Compose: the `hub` service's
+`environment`), and gets a warning at each start instead; remove it after
+step 4 below.
+
 **Moving an existing installation to the two roles.** Until now the hub and
-its migrations used the superuser. The script hands every object of the
+its migrations used the superuser, which the hub now refuses at the start
+unless `MAITY_DB_ALLOW_PRIVILEGED=1` is set (above). The script hands every object of the
 hub to `maity_owner` and grants `maity_app` its rows; the hub keeps running
 until its URL changes. In this order:
 
@@ -649,7 +672,7 @@ sessions it holds in the running hub, whether you restore it or not.
 | Engine | Backup | Restore |
 |---|---|---|
 | SQLite | The hub runs SQLite in WAL mode, so copying the `.db` file alone, while the hub runs, can lose recent writes. Use the backup API: `sqlite3 maity-hub.db ".backup 'maity-$(date +%F).db'"`, or `python3 -c "import sqlite3; sqlite3.connect('maity-hub.db').backup(sqlite3.connect('backup.db'))"`. Or stop the hub, then copy the `.db` with its `-wal` and `-shm` files. | stop the hub; put the backup in place as `maity-hub.db`; delete stale `-wal` and `-shm` files; start the same hub version |
-| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then `docker compose -f deploy/docker-compose.yml start hub` |
+| PostgreSQL | `pg_dump -Fc -d <url> -f maity-$(date +%F).dump`. Compose: `docker compose -f deploy/docker-compose.yml exec -T db pg_dump -U maity -Fc maity > maity.dump`. A managed database adds its own snapshots. | stop the hub; `pg_restore --clean --if-exists -d <url> maity.dump`; start the same hub version. Compose: `docker compose -f deploy/docker-compose.yml stop hub`, then `docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U maity -d maity --clean --if-exists < maity.dump`, then the roles again with `docker compose -f deploy/docker-compose.yml exec -T db psql -X -v ON_ERROR_STOP=1 -v after_restore=1 -U maity -d maity < deploy/postgres-roles.sql` ([Database roles](#database-roles)), then `docker compose -f deploy/docker-compose.yml start hub` |
 | MariaDB / MySQL | `mariadb-dump --single-transaction --default-character-set=utf8mb4 <database> > maity.sql` | stop the hub; `mariadb <database> < maity.sql`; start the same hub version |
 
 Back up before every upgrade.
