@@ -532,12 +532,14 @@ Two limits:
   pass. A request addressed to your agent (by id, instance, role or
   trust) and a ticker note's `to` or `to: all` are held the same way:
   the request stays out of the agent's inbox and resume packet and the
-  asker sees `held`, and a forward of a request to such an agent is
-  refused (`forbidden`, `held_by_gate`; the message names your next
-  step: allow the asker's side, then forward); a ticker note's computed
-  reasons and the agent's own follows still reach it. Whatever was held stays held after your
-  yes; the sender asks or posts again. Cards, reviews and a lead's
-  message are not gated. The hub asks you
+  asker sees `held`; a ticker note's computed reasons and the agent's
+  own follows still reach it. A forward of a request to such an agent,
+  or its claim from the admin pool, is refused (`forbidden`,
+  `held_by_gate`): allow the asker's side, then forward or claim; a
+  request held when it was filed stays held, and the asker asks again.
+  Whatever else was held stays held after your yes too; the sender asks
+  or posts again. Cards, reviews and a lead's message are not gated. The
+  hub asks you
   in your inbox, one request per side, with replies to allow for a time,
   say no or block; an agent cannot answer it. The two texts an allow
   entry may carry, what the agent may talk about and work on with that
