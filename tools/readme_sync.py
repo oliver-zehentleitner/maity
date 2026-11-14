@@ -7,14 +7,16 @@ Every language of the web client (`web/js/i18n/languages.js`) but English has a
 `README.<lang>.md` next to `README.md`. Each one:
 
 - starts with `<!-- translated-from: README.md@<commit> -->`, the full hash of the
-  `README.md` commit it was translated from;
+  `README.md` commit it was translated from (only its form is checked: CI's shallow
+  checkout has no history to look the commit up in);
 - has the language line, the same in every version, with its own language in bold;
-- has a counterpart for every heading of `README.md`: the same headings, at the
-  same levels, in the same order;
+- has as many headings as `README.md`, at the same levels in the same sequence;
 - links the same targets and shows the same images as `README.md`.
 
-`README.md` has the language line too. A section added to `README.md` without its
-translations fails here rather than going stale unnoticed; the comment names the
+`README.md` has the language line too. A section added to or dropped from `README.md`
+without its translations, or a heading moved to another level, fails here rather than
+going stale unnoticed. Heading text is not compared, so two sections of the same level
+swapped, or one replaced by another, pass unless their links differ; the comment names the
 commit to diff against when translating it (context/process.md, the entry on the
 README's translations).
 

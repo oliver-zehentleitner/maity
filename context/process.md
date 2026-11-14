@@ -2624,11 +2624,13 @@ a tool that only sends what it is given is the place to refuse one before it is 
 `README.md` is translated into every language of the web client but English (`web/js/i18n/languages.js`),
 one `README.<lang>.md` next to it, and every version carries the same language line. `tools/readme_sync.py`,
 run in CI's changelog job, fails when a translation is missing, when it lacks the line or its first-line
-comment `<!-- translated-from: README.md@<commit> -->`, when its headings are not the same headings at the
-same levels in the same order, or when its link and image targets differ.
+comment `<!-- translated-from: README.md@<commit> -->` (whose hash is checked for its form only), when it
+has another number of headings or other levels in sequence, or when its link and image targets differ.
+Heading text is not compared: two sections of the same level swapped, or one replaced by another, pass
+unless their links differ.
 
 **Reason:** a translated README goes stale silently: a section added in English is invisible in the
-others until a reader notices. A section added or moved now fails CI in the pull request that makes it, and
+others until a reader notices. A section added or dropped now fails CI in the pull request that makes it, and
 the comment names the commit to diff against (`git diff <commit> -- README.md`) when the translations
 follow. The language names are each language's own, as in the web client's language menu.
 
