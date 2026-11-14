@@ -671,3 +671,69 @@ def test_another_owners_admin_agent_does_not_decide_an_escalation(
     assert refused.json()["error"]["details"]["reason"] == "admin_team_only"
     assert owner.get(path).json()["status"] == "escalated"
     assert _card(owner, card_id)["claim"]["holder"] == holder.id
+
+
+def test_an_escalation_is_forwarded_to_an_admin_who_may_decide_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    # The forward asks whether its target may answer; the target is a membership row there.
+    holder, _, _, takeover_id = _disputed(owner, make_client)
+    request_id = holder.post(
+        f"/projects/maintainer/maity/takeovers/{takeover_id}/escalate", {}
+    ).json()["request_id"]
+    forward = f"/projects/maintainer/maity/requests/{request_id}/forward"
+    same = flow.agent(make_client, owner, role="admin")
+    human = flow.human(make_client, migrated, "an-admin")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=human.id)
+    colleague = _colleague(make_client, migrated, "owner")
+    other = flow.agent(
+        make_client, colleague, role="admin", agent={"handle": "other", "display_name": "O"}
+    )
+    judge = flow.agent(make_client, owner, role="admin")  # holds it as an admin
+    refused = judge.post(forward, {"to": other.id})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "admin_team_only"
+    moved = judge.post(forward, {"to": same.id})  # a same-owner admin agent
+    assert moved.status_code == 200, moved.text
+    moved = same.post(forward, {"to": human.id})  # and on to a human admin
+    assert moved.status_code == 200, moved.text
+
+
+def test_a_paused_caller_opens_no_takeover_for_itself(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    holder = flow.agent(make_client, owner)
+    asker = flow.agent(make_client, owner)
+    card_id = _held(owner, holder)
+    member = f"/projects/maintainer/maity/members/{asker.id}"
+    assert owner.patch(member, {"paused": {"reason": "quota"}}).status_code == 200
+    refused = _open(asker, card_id)  # `to` left out: the caller's own instance
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "paused"
+
+
+def test_an_organisations_raised_guest_lowered_back_gives_its_cards_back(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    # §2.3, §6.26: a guest the organisation's ownership raised returns to guest, which holds
+    # no cards, as a `PATCH` to guest gives them back.
+    from maity_hub import events, org_projects
+
+    guest = flow.human(make_client, migrated, "raised")
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project)).one()
+    factory.membership(migrated, project.id, "owner", human_id=guest.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == guest.id)
+            .values(org_keep="raised", org_keep_trust="guest")
+        )
+    card_id = owner.post("/projects/maintainer/maity/tasks", {"title": "Theirs"}).json()["id"]
+    claimed = guest.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    with events.transaction(migrated) as conn:
+        org_projects.release_owner(conn, project, guest.id)
+    assert _card(owner, card_id)["claim"] is None

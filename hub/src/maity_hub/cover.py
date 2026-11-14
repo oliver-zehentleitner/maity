@@ -434,8 +434,12 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
             continue
-        if not gives_back(card, members_by_principal.get(cover["by"])) or row.role == "expert":
-            # An expert takes no cards back (§2.3 "The expert"): the substitute keeps it.
+        takes_no_cards = (
+            row.role == "expert" or row.trust == "guest" or row.isolated_since is not None
+        )
+        if not gives_back(card, members_by_principal.get(cover["by"])) or takes_no_cards:
+            # An expert, a guest or an isolated member takes no cards back (§2.3, §6.2):
+            # the substitute keeps it.
             kept.append(card.id)
         else:
             returned.append(card.id)

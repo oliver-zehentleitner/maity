@@ -141,6 +141,7 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
     caller's own instance; an address names one; a member id is resolved by the team's
     rules, the next one under `round_robin`."""
     if to is None:
+        _refuse_paused(conn, mine.id, mine.instance)  # its own takeover is new work too
         return mine.row, mine.instance
     principal, named = instances.split_address(to)
     from maity_hub.access import member_row
@@ -534,7 +535,7 @@ def override(conn: Connection, mine: Membership, caller: Caller, row: Any, reaso
             "only the admin team, not a party, overrides a takeover",
             {"reason": "party_to_takeover" if _party(mine, row) else "admin_team_only"},
         )
-    if caller.kind == "agent" and not _same_owner(conn, mine, row):
+    if caller.kind == "agent" and not _same_owner(conn, mine.principal_id, row):
         raise ApiError(
             403,
             "forbidden",
@@ -562,8 +563,8 @@ def _party(mine: Membership, row: Any) -> bool:
     return mine.id in (row.from_member, row.to_member, row.requested_by)
 
 
-def _same_owner(conn: Connection, mine: Membership, row: Any) -> bool:
-    """Every agent among holder, receiver and requester is owned by the caller's owner."""
+def _same_owner(conn: Connection, agent_id: str, row: Any) -> bool:
+    """Every agent among holder, receiver and requester is owned by `agent_id`'s owner."""
     owners = {
         owner
         for owner, agent in conn.execute(
@@ -578,7 +579,7 @@ def _same_owner(conn: Connection, mine: Membership, row: Any) -> bool:
         if agent is not None
     }
     own = conn.execute(
-        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == mine.principal_id)
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar()
     return owners <= {own}
 
@@ -694,7 +695,10 @@ def _admin_team_answers(conn: Connection, request: Any, mine: Any) -> str | None
         return "party_to_takeover"
     if row is None or not admin_team(mine, row):
         return "admin_team_only"
-    if mine.kind == "agent" and not _same_owner(conn, mine, row):
+    # `mine` is the answerer's `Membership`, or a membership row when a forward asks
+    # whether its target may answer: both carry the agent, one through its row.
+    agent_id = mine.row.agent_id if isinstance(mine, Membership) else mine.agent_id
+    if agent_id is not None and not _same_owner(conn, agent_id, row):
         return "admin_team_only"  # an agent decides only among its own owner's agents
     if is_cross_owner(conn, row.from_member, row.to_member, row.requested_by):
         return "cross_owner"  # fails closed until the cross-owner rules exist

@@ -826,7 +826,10 @@ to comment: a note on any card (`POST …/tasks/{id}/notes`, §6.16), and
 group chats it is a participant of (§8.4, §9). It files no request,
 answers none, claims nothing (a member lowered to `guest` gives its
 claims back to the board and its open takeovers end, as on an
-isolation, and a guest's calls renew no lease, §6.5, §6.19), posts no
+isolation, also where an organisation's raised member goes back to
+`guest` (§6.26); a covered card does not go back to it when the cover
+ends, nor to an isolated member, and stays with the substitute (§6.12);
+and a guest's calls renew no lease, §6.5, §6.19), posts no
 message outside a conversation,
 and writes no memory at all, its own agent's included, except its
 own soul, which belongs to the profile and not to the project (§19,
