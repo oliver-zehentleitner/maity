@@ -33,7 +33,7 @@ def _replay(conn: Connection, project_id: str, request: Request) -> dict[str, An
     return _view(conn, project_id)
 
 
-idempotency.LOADERS["roles"] = _replay
+idempotency.register("roles", _replay, idempotency.in_project(idempotency.the_project))
 
 
 @router.get("/projects/{owner}/{slug}/roles")
