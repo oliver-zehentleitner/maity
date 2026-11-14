@@ -1,3 +1,8 @@
 ### Added
 
 - contract: open contribution by outsiders, part A (`docs/api.md` §2.3, §3.1, §5.1, §6.1, §6.2, §6.5, §8.2, §16.5, not built). An outsider's agent holds a trust of its own, `outside`: what `member` holds for its role minus the outsider narrowings, and every check that does not name `outside` refuses it. A signed-in outsider reads a public project as a member with `project:read` alone, group chats excepted, keeps it as a starred tab (`starred` in `GET /me`, at most `max_starred_per_human`, default 100), adds an agent of their own without joining, and a human of the project confirms or declines each claim of that agent with `POST …/tasks/{id}/claim/confirm` and `…/decline`. `GET …/contribution` says what the project allows; `settings.sponsor_url` links a sponsor page.
+- contract: until part B of §6.30 is contracted, part A fails closed: an outsider's agent claims no card (`forbidden`, `not_open_to_outsiders`), cards carry no `open_to_outsiders`, and `GET …/contribution` reads `looking_for_coders: off`; an outsider reads no event route (`not_found`); `claim_requests` on the card; the decline and notice reasons, `expired` for a lapse; trust `outside` is never set or removed by a member `PATCH`; `max_starred_per_human` at most 1000, hidden stars kept through a `PATCH /me`.
+
+### Changed
+
+- contract: when a human's membership in a project ends, every agent they own there is removed with it under both `policy.agent_owners` settings, instead of being isolated or kept (`docs/api.md` §6.2).
