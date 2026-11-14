@@ -812,3 +812,89 @@ def test_codex_under_its_sandbox_gets_the_git_line_and_not_the_maity_line(tmp_pa
     assert adapters.GIT_PROMPT in prompt and adapters.CLAUDE_MAITY_PROMPT not in prompt
     bare = context(tmp_path / "b", harness_id="codex", binary="/usr/bin/codex")
     assert adapters.launch(bare).argv[-1] == adapters.START_PROMPT
+
+
+# --- settings that switch the runner's hook off (capabilities.claude_hooks_off) --------------
+
+
+def _managed(capabilities: Any) -> Path:
+    path: Path = capabilities.CLAUDE_MANAGED["linux"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+@pytest.mark.parametrize(
+    ("text", "off"),
+    [('{"disableAllHooks": true}', "sets disableAllHooks"),
+     ('{"allowManagedHooksOnly": true}', "sets allowManagedHooksOnly"),
+     ('{"allowManagedHooksOnly": "yes"}', "sets allowManagedHooksOnly"),
+     ('{"disableAllHooks": false, "allowManagedHooksOnly": false}', None),
+     ('{"permissions": {}}', None), ("{not json", "cannot be read as JSON"),
+     ("[]", "is not a JSON object")],
+)  # fmt: skip
+def test_managed_settings_that_switch_hooks_off_are_named(text: str, off: str | None) -> None:
+    from maity.runner import capabilities
+
+    _managed(capabilities).write_text(text)
+    why = capabilities.claude_hooks_off(AsUser(), "linux")
+    assert (why is None) if off is None else (why is not None and off in why)
+
+
+def test_no_managed_settings_switch_no_hook_off() -> None:
+    from maity.runner import capabilities
+
+    assert capabilities.claude_hooks_off(AsUser(), "linux") is None
+    assert capabilities.claude_hooks_off(AsUser(), "win32") is None  # no managed path known
+
+
+def test_a_managed_drop_in_counts_like_the_file() -> None:
+    from maity.runner import capabilities
+
+    drop_ins = _managed(capabilities).parent / "managed-settings.d"
+    drop_ins.mkdir()
+    (drop_ins / "10-team.json").write_text('{"permissions": {}}')
+    assert capabilities.claude_hooks_off(AsUser(), "linux") is None
+    (drop_ins / "20-hooks.json").write_text('{"disableAllHooks": true}')
+    why = capabilities.claude_hooks_off(AsUser(), "linux")
+    assert why is not None and "20-hooks.json sets disableAllHooks" in why
+
+
+def test_the_agents_user_settings_count_only_for_managed_hooks_only() -> None:
+    """The runner's settings file sets `disableAllHooks` back to false over the user's;
+    `allowManagedHooksOnly` it cannot."""
+    from maity.runner import capabilities
+
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text('{"disableAllHooks": true}')
+    assert capabilities.claude_hooks_off(AsUser(), "linux") is None
+    user.write_text('{"allowManagedHooksOnly": true}')
+    why = capabilities.claude_hooks_off(AsUser(), "linux")
+    assert why is not None and str(user) in why
+
+
+@pytest.mark.parametrize(
+    ("require", "on", "held", "refused"),
+    [(None, True, False, False), (None, False, True, True), (None, False, False, False),
+     (True, False, False, True), (True, True, False, False), (False, False, True, False)],
+)  # fmt: skip
+def test_the_sandbox_refusal(require: bool | None, on: bool, held: bool, refused: bool) -> None:
+    """Unset: refused when only the version keeps the sandbox off; `false` is the opt-out."""
+    from maity.runner import capabilities
+
+    harness = config.Harness("claude-code", ("supervised",), "supervised", require_sandbox=require)
+    assert capabilities.sandbox_refused(harness, on, held) is refused
+
+
+@pytest.mark.parametrize(
+    ("printed", "version"),
+    [("2.1.295 (Claude Code)", "2.1.295"), ("v2.1.296", "2.1.296"),
+     ("codex-cli 0.40.0", "0.40.0"), ("2.1.295--rc (Claude Code)", "2.1.295--rc"),
+     ("2.1.295+ (Claude Code)", None), ("2.1.295-_dev", None), ("x2.1.295", None),
+     ("2.1.295.", None)],
+)  # fmt: skip
+def test_a_version_is_a_token_of_its_own(printed: str, version: str | None) -> None:
+    from maity.runner import capabilities
+
+    found = capabilities.VERSION.search(printed)
+    assert (found.group(0) if found else None) == version
