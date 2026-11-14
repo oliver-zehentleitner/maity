@@ -10,6 +10,7 @@ from sqlalchemy import Engine, select
 
 from maity_hub import events
 from maity_hub import tables as t
+from maity_hub.routes import me
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_bridge_calls import Calls, _pair
@@ -493,3 +494,79 @@ def test_every_message_carries_verdicts_and_the_list_preview_none(
     assert set(v) == {"by", "value", "sentence", "at", "seq"} and v["by"] == owner.id
     [item] = [i for i in owner.get(BASE).json()["items"] if i["id"] == agent.id]
     assert "verdicts" not in item["last_message"]
+
+
+# --- export and retries --------------------------------------------------------------------
+
+
+def _export(who: flow.Human) -> Any:
+    me.EXPORTS.reset()  # two exports in one test; the limit has its own test
+    got = who.get("/me/export")
+    assert got.status_code == 200, got.text
+    return got
+
+
+def test_every_verdict_given_is_in_the_export_a_redacted_one_as_redacted(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    seq = say(agent, agent.id, "Ship the lime release?").json()["seq"]
+    assert put(owner, agent.id, seq, "agree").status_code == 200
+    assert put(owner, agent.id, seq, "disagree", "Not before the walrus audit.").status_code == 200
+    first, second = verdict_events(migrated)
+    exported = _export(owner).json()["chat_verdicts"]
+    assert [(v["seq"], v["value"], v["sentence"], v["redacted"]) for v in exported] == [
+        (first.seq, "agree", None, False),
+        (second.seq, "disagree", "Not before the walrus audit.", False),
+    ]
+    assert {v["message_seq"] for v in exported} == {seq}
+    assert exported[0]["conversation"] == {"id": agent.id, "title": None}
+    assert "Ship the lime release?" not in _export(owner).text  # the agent's text stays out
+    assert redact(owner, second.seq).status_code == 200
+    response = _export(owner)
+    gone = response.json()["chat_verdicts"][1]
+    assert gone["redacted"] is True and "sentence" not in gone and "value" not in gone
+    assert gone["redaction"]["by"] == owner.id
+    assert "walrus" not in response.text
+
+
+def test_an_outside_owners_verdict_is_in_their_export(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    outside, agent = outside_owner(make_client, migrated)
+    chat = create(owner, agent.id).json()
+    seq = say(owner, chat["id"], "hello").json()["seq"]
+    assert put(outside, chat["id"], seq, "disagree", "An outsider's otter.").status_code == 200
+    [given] = _export(outside).json()["chat_verdicts"]
+    assert (given["project"], given["message_seq"], given["sentence"]) == (
+        "maintainer/maity",
+        seq,
+        "An outsider's otter.",
+    )
+
+
+def test_an_outside_owner_retries_put_and_delete_with_the_same_key(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The retry is read as its first call was: an owner reading the chat along from outside
+    the project gets the same answer, not `not_found` (§2.5, §9.7)."""
+    outside, agent = outside_owner(make_client, migrated)
+    chat = create(owner, agent.id).json()
+    seq = say(owner, chat["id"], "hello").json()["seq"]
+    url = f"/api/v1{path(chat['id'], seq)}"
+    for method, key, body in (
+        ("PUT", "outsider-verdict-put", {"value": "agree"}),
+        ("DELETE", "outsider-verdict-delete", None),
+    ):
+        headers = {"X-CSRF-Token": outside.csrf, "Idempotency-Key": key}
+        first = outside.client.request(method, url, json=body, headers=headers)
+        again = outside.client.request(method, url, json=body, headers=headers)
+        assert (first.status_code, again.status_code) == (200, 200), (method, again.text)
+        assert again.json() == first.json(), method
+        assert again.headers.get("Idempotent-Replayed") == "true", method
+    assert len(verdict_events(migrated)) == 2  # one write each, the retries wrote none
+    # A human who no longer reads the chat gets no replay of it either.
+    stranger = other_human(make_client, migrated, "stranger")
+    headers = {"X-CSRF-Token": stranger.csrf, "Idempotency-Key": "outsider-verdict-put"}
+    refused = stranger.client.put(url, json={"value": "agree"}, headers=headers)
+    assert refused.status_code in (403, 404), refused.text

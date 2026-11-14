@@ -185,7 +185,8 @@ EXPORT_LEAVES_OUT = {
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
     "avatar_size": "smaller copies of the picture, which the export names by its URL only",
     "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
-    "chat_verdict": _UNLISTED,
+    "chat_verdict": "the current verdict, read from the events: the export holds every "
+    "`chat_verdict` event the person gave, the whole history (§2.9, §9.7)",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
     "device_code": _SECRET,

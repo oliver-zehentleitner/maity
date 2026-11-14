@@ -3113,7 +3113,10 @@ handle, `since`; §6.29), the start tabs
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
 messages and chat messages they wrote (a review result with its
-`review`, §8.4), the requests they asked and the
+`review`, §8.4), the verdicts they gave on chat messages
+(`chat_verdicts`: each `chat_verdict` they wrote, with its chat, the
+message's seq, value and sentence, never the message's text; §9.7),
+also in a chat they read along from outside the project, the requests they asked and the
 answers they gave, the cards they created, the card reports, approvals
 and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title

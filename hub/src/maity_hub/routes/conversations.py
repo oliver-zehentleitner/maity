@@ -945,11 +945,28 @@ def _reads_message(conn: Connection, mine: Membership, seq: str) -> bool:
     return conversation_id is None or reads_messages(conn, mine, conversation_id)
 
 
-idempotency.register(
-    "message",
-    idempotency.plain(load_message),
-    idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int), _reads_message),
+_MESSAGE_IN_PROJECT = idempotency.in_project(
+    idempotency.column_of(t.event, by="seq", key=int), _reads_message
 )
+
+
+def _sees_message(conn: Connection, seq: str, caller: Any) -> bool:
+    """A member who reads the conversation, or an owner outside the project who reads its
+    group chat along: a verdict's retry by them finds the message, as its first call did
+    (§9.2, §9.7)."""
+    if _MESSAGE_IN_PROJECT(conn, seq, caller):
+        return True
+    row = conn.execute(
+        select(t.event.c.project_id, t.event.c.conversation_id).where(t.event.c.seq == int(seq))
+    ).first()
+    if row is None or row.conversation_id is None or not group_chats.is_group(row.conversation_id):
+        return False  # an outsider reads group chats only
+    # An outsider passes where a member does, as `_reader` hands one to the read routes.
+    mine: Any = outsider(conn, caller, namespace.name_of(conn, row.project_id))
+    return mine is not None and reads_messages(conn, mine, row.conversation_id)
+
+
+idempotency.register("message", idempotency.plain(load_message), _sees_message)
 
 
 @router.post("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")

@@ -10,3 +10,6 @@
   the verdict it set stays and then reads its value without the sentence.
 - hub: every chat message carries `verdicts`, the current verdict of each human, oldest first
   (§9.1); a redacted message carries none.
+- hub: the account export (`GET /me/export`, §2.9) lists every verdict the person gave as
+  `chat_verdicts`, a redacted one as redacted; a deleted account's verdicts stay in the project
+  like its messages.
