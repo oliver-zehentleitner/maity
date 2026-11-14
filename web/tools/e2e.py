@@ -790,6 +790,14 @@ def join_line(
     if not panel.is_visible():
         join_any(page)
     expect(panel).to_be_visible()
+    # The experiment notice (docs/api.md §5.1): until the person confirms it, once per account;
+    # it holds the form back in nothing.
+    notice = panel.locator(".experiment-notice")
+    if notice.count():
+        expect(notice).to_contain_text("Maity is a public experiment at an early stage.")
+        run.a11y(page, "join panel with the experiment notice")
+        notice.get_by_role("button", name="Understood", exact=True).click()
+        expect(notice).to_have_count(0)
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
         expect(page.locator("#join-handle")).to_be_visible()
@@ -4053,6 +4061,26 @@ TABS_MEASURE = """() => {
     tabs: rows.map((nav) => Array.from(nav.children).map((t) => (t.getAttribute("aria-current") ? "*" : "") + t.textContent.trim())) };
 }"""
 
+# The header's rows with a current entry (the project's views, the pages outside a project): that
+# entry within its row, and the fade on exactly the rows that scroll (review of #1767).
+HEADER_ROWS_MEASURE = """() => {
+  const problems = [], eps = 0.5;
+  for (const nav of document.querySelectorAll("#header nav")) {
+    const cur = nav.querySelector('[aria-current="page"]');
+    if (!cur || !nav.clientWidth) continue;
+    const n = nav.getBoundingClientRect(), c = cur.getBoundingClientRect();
+    const name = "nav." + String(nav.className).trim().split(/\\s+/).join(".") + " '" + cur.textContent.trim().slice(0, 30) + "'";
+    if (c.left < n.left - eps || c.right > n.right + eps) problems.push(name + " is out of sight in its row: " + Math.round(c.left) + ".." + Math.round(c.right) + " in " + Math.round(n.left) + ".." + Math.round(n.right));
+    const scrolls = nav.scrollWidth > nav.clientWidth + 1;
+    const faded = nav.classList.contains("more-after") || nav.classList.contains("more-before");
+    if (scrolls !== faded) problems.push(name + (scrolls ? " scrolls without the fade" : " fades without scrolling"));
+  }
+  return problems;
+}"""
+
+# A project view whose tab stands at the end of the header's row, so that row scrolls to it.
+LATE_FONTS_PROJECT_VIEW = "/maintainer/maity/settings"
+
 ACCOUNT_TABS = (
     ("/account", "Profile", None, "Your picture"),
     ("/account/settings", "Settings", None, "Theme"),
@@ -4518,6 +4546,37 @@ def account_tabs_layout(run: Run, browser) -> None:
                 page.wait_for_function("() => location.href === 'about:blank'")
         finally:
             context.close()
+    # The fonts arriving after the view is drawn (font-display: swap, a slow phone or a busy
+    # machine): Inter widens the tabs, and the current tab, brought into sight in a narrower
+    # face, still is once Inter is in (tsk-1cs7h9jhww36: Security ended 1 px outside its row at
+    # 390 px; review of #1767: a project's Settings 16 px outside the header's row). Until the
+    # style is taken out no element uses Inter, so the face is only loaded then.
+    run.step("fixtures: the account's tabs and a project's view row at 390 and 360 px when the fonts arrive after the view is drawn")
+    late = [(path, part) for path, tab, sub, part in ACCOUNT_TABS] + [(LATE_FONTS_PROJECT_VIEW, None)]
+    for width, height in ((390, 844), (360, 780)):
+        for path, part in late:
+            context = browser.new_context(viewport={"width": width, "height": height})
+            context.add_init_script("""document.addEventListener("DOMContentLoaded", () => {
+              const s = document.createElement("style"); s.id = "e2e-no-fonts";
+              s.textContent = "* { font-family: serif !important; }"; document.head.appendChild(s); });""")
+            page = context.new_page()
+            errors = []
+            page.on("pageerror", lambda err: errors.append(str(err)))
+            try:
+                page.goto(f"{index}?lang=en#{path}")
+                if part:
+                    expect(page.locator("main h3", has_text=part).first).to_be_visible()
+                else:
+                    expect(page.locator("#header nav.views a[aria-current='page']")).to_have_text(re.compile(r"^Settings"))
+                page.evaluate("""async () => { document.getElementById("e2e-no-fonts").remove();
+                  await document.fonts.ready; await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))); }""")
+                assert page.evaluate("() => document.fonts.check('600 16px Inter')"), f"{path} at {width}: Inter is not loaded"
+                problems = page.evaluate(HEADER_ROWS_MEASURE)
+                if part:
+                    problems += page.evaluate(TABS_MEASURE)["problems"]
+                assert not problems and not errors, f"{path} at {width}, the fonts late: {problems + errors}"
+            finally:
+                context.close()
 
 
 PROFILE_LINK_MEASURE = """() => {

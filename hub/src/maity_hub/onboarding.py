@@ -60,6 +60,11 @@ def name(row: Any) -> dict[str, str]:
     return {"name": global_name(row.owner_handle, row.handle)} if row.agent_id else {}
 
 
+# The setting's `by` when the hub itself changed it (§6.1), in the `{id, handle, kind}` shape
+# every other writer has.
+HUB_WRITER = {"id": "hub", "handle": "hub", "kind": "hub"}
+
+
 def identity(row: Any) -> dict[str, Any]:
     """`{id, handle, kind}`: stored as the setting's `by` (§6.1), so never the computed
     global name (§6.3)."""
@@ -254,7 +259,11 @@ def member_removed(conn: Connection, project_id: str, removed: str, actor: Any) 
         return
     body = OnboardingIn(briefing=current.get("briefing"), check_in_with="coordinator")
     by = None
-    if actor.membership_id is None:  # an owner deleting a profile, no member here (§6.3)
+    if actor.membership_id is None and actor.human_id is None:
+        # The hub's own removal (`Actor(None)`): an account deleted, an organisation's owners
+        # changed (§2.9, §6.26). No person wrote this; `hub` is a reserved handle (§6.25).
+        by = HUB_WRITER
+    elif actor.membership_id is None:  # an owner deleting a profile, no member here (§6.3)
         handle = conn.execute(
             select(t.human.c.handle).where(t.human.c.id == actor.human_id)
         ).scalar_one()
