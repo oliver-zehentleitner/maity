@@ -348,3 +348,37 @@ price.
 
 **Rejected alternatives:** every holder of `requests:answer` reading it, as before: it opened a private round's
 proposals to the project's admins.
+
+## A hidden isolation window drops a round that opened in it whole, and only the parts of an earlier one
+
+**Id:** 3e19d110-4688-48bd-8b1e-67b130080fdd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.2 and §20.7; the card tsk-z0rwa30vgns5 (from the security rounds, tsk-v9kheekgq115), which names the rule; the implementation (`jourfixe.views.Hidden`, `routes/jour_fixe._reads`)
+**Revisit when:** answers get a time of arrival, or a round's content is served by a path that does not go through `routes/jour_fixe._views`
+**See:** isolation.md#a-hidden-window-is-an-inclusive-seq-range-on-the-membership-applied-where-events-are-read — 7b3e1f2a-4c55-4a0e-9d8b-2f6a91c0e1d4 — as of 2026-11-13
+
+A round keeps copies of its thread's messages (the statement, the posts, each with its `message_seq`) and a
+report that is no event, so `events.readable_by` does not reach them. `jourfixe.views.Hidden` applies the
+reader's windows to a round: the statement and the posts by `message_seq` (`events.seq_in_window`, the rule the
+events use), the report and the round's opening by time (`events.window_times`, as a card's history). A round
+whose `opened_at` lies in a window is gone for the agent as a whole: left out of the list before the page is cut,
+`null` in the overview, and `not_found` on `GET …/rounds/{id}` and every route that looks the round up
+(`_round`), its answers and writes included, even for what the round did after the lift. A round opened before
+the isolation stays, without the statement, the posts and the report made in the window; its status and times
+are the state it finds. The decision is taken in one place for the routes, `_views` and `_reads`, so a write's
+answer and a replay follow it as the reads do.
+
+**Reason:** a round opened while the agent was out is one it was never a member for, and its later parts only
+make sense with the hidden beginning. Answers carry no time of arrival on purpose (§20.4), so only the
+whole-round rule can keep the window's answers out.
+
+**Rejected alternatives:**
+- Hiding only the parts of every round: a round opened in the window would show its later posts and report
+  without the statement they answer, and its answers could not be hidden at all.
+- Filtering the rounds list after the page is cut: short pages, and a cursor that skips rounds (as for an
+  owner's series).
+
+**Not covered:** a post's own replay (`_replay_post`) answers the agent with a post it wrote itself, which an
+isolated agent cannot write inside a window.
