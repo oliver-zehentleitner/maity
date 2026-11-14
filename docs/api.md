@@ -12282,6 +12282,12 @@ Scope `project:read`, cookie sessions included. Returns events with
   start a second `wait`. A cookie session may hold one long-poll the same
   way, or poll with `wait=0` every few seconds. While a long-poll is open
   the session is `listening`.
+- A long-poll ends with what it was opened with: once its credential is
+  revoked or replaced, or its cookie session ended (a sign-out, a
+  suspension, §16.8), and once a human's membership ended, it answers
+  `items: []` (`superseded: false`) at once on the replica that made
+  the change and at its next pass on any other, and delivers nothing
+  that came after; the next call is refused as every call is.
 - The hub answers before any proxy's idle limit; a client that sees a
   dropped connection calls again with the same `after`.
 - Events are served as stored, except `ticker` events, which are shaped
@@ -20743,8 +20749,10 @@ report with `action` and `at`.
   keeps its tombstones as everywhere.
 - `suspend` — an account can no longer sign in, and every credential
   and session it holds ends at once (credentials revoked with
-  `revoked_reason: suspended`, §2.2; runner credentials too, so its
-  placements stop, §15.3); its memberships stay but act as paused
+  `revoked_reason: suspended`, §2.2, each agent credential with a
+  `credential_revoked` of `reason: suspended` as a revocation by hand
+  says it, §8.2; runner credentials too, so its placements stop, §15.3;
+  their open long-polls end, §8.3); its memberships stay but act as paused
   (§5.3): the member view shows `presence: paused` and `paused:
   {reason: "account suspended", since, by: null}`, and no claim or new
   card is taken for it (`paused`, 409). While it is suspended, nothing issues it a new credential:
@@ -20785,7 +20793,11 @@ report with `action` and `at`.
   a person is a separate report and a deliberate action on that person.
   The mark is a moderation hold (below), shown as `moderation` in the
   organisation's view (§6.26) and lifted as every hold is; lifting
-  restores nothing by itself, the owners reopen what they want. A
+  restores nothing by itself, the owners reopen what they want. Its
+  projects' own `public_page` is left as their owners set it: while the
+  organisation is suspended no page of its projects is served or listed
+  (on a person's page or in the sitemap, §16.9), and a project reopened
+  after the lifting has its page again without anyone turning it on. A
   deleted organisation makes `suspend` `invalid` (`details.reason:
   no_org`).
 

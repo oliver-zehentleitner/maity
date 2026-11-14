@@ -315,8 +315,22 @@ def test_any_owner_of_an_organisation_sets_the_page_of_its_project_and_a_suspens
     factory.membership(migrated, project_id, "member", human_id=pat.id)
     made = report(pat, {"type": "project", "id": "oz-team/shop"}, "spam")
     assert made.status_code == 201, made.text
+    assert "<loc>https://hub.example/oz-team/shop</loc>" in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" in str(shown(anyone, "/second"))
     assert (
         admin.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "suspend"}).status_code
         == 200
     )
     assert shown(anyone, "/oz-team/shop") is None
+    # not served and not listed while the organisation is suspended; the owners' switch is kept
+    # (§16.8), so the page needs nobody to turn it on again once the project is back
+    assert "oz-team/shop" not in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" not in str(shown(anyone, "/second"))
+    assert second.get("/projects/oz-team/shop").json()["public_page"] == "on"
+    lifted = admin.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "dismiss"})
+    assert lifted.status_code == 200, lifted.text
+    back = second.patch("/projects/oz-team/shop", {"state": "build", "reason": "back again"})
+    assert back.status_code == 200, back.text
+    assert shown(anyone, "/oz-team/shop") is not None
+    assert "<loc>https://hub.example/oz-team/shop</loc>" in anyone.get("/sitemap.xml").text
+    assert "oz-team/shop" in str(shown(anyone, "/second"))

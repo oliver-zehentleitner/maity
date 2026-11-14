@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, landing_stats, moderation
+from maity_hub import clock, events, landing_stats, moderation
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -196,7 +196,7 @@ def test_the_resume_packet_carries_the_agents_own_manages(
 def hold(engine: Engine, agent: factory.Agent, how: str) -> None:
     """Hold the agent's membership or instances the way `how` names (§6.2, §6.17, §16.8)."""
     now = clock.now()
-    with engine.begin() as conn:
+    with events.transaction(engine) as conn:  # a suspension says its revocations
         if how in ("isolated", "paused"):
             column = "isolated_since" if how == "isolated" else "paused_since"
             conn.execute(
