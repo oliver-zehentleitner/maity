@@ -732,9 +732,8 @@ event, because the reason for hiding is the agent, not its rank.
 
 **Id:** 355f12f3-543f-4cf4-bcc5-ccad6e853af6
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Verification:** contradicted — the lead's decision of 2026-11-14 (dab6ae4a-3f6b-4431-8945-80e5956a38a8) removes every agent of an owner whose membership ends, under both `agent_owners` settings, instead of isolating or keeping it; `docs/api.md` §6.2 says so since the part A pull request of tsk-yr3ckca01b9q
 **Source:** the maintainer's answers in his inbox and chat, 2026-10-31 ("in privaten orgs muss das strikt sein", "in öffentlichen projekten ... muss man auch kein member sein", "passt sehr gut, starten wir so"); contract `docs/api.md` §6.1 `policy.agent_owners`, §6.2
 **Revisit when:** owners from outside want to offer agents to public projects (the offer flow is its own contract change), or a private project needs an exception for one outside owner
 **See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-10-31
@@ -765,9 +764,8 @@ agent's work and session and can be undone.
 
 **Id:** 68b4deba-88a2-481d-85c1-1d6d09f81149
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Verification:** contradicted — the lead's decision of 2026-11-14 (dab6ae4a-3f6b-4431-8945-80e5956a38a8) removes every agent of an owner whose membership ends, under both `agent_owners` settings, instead of isolating or keeping it; `docs/api.md` §6.2 says so since the part A pull request of tsk-yr3ckca01b9q
 **Source:** the maintainer's answer in his inbox, 2026-10-31 ("anyone darf zb nur coden und ich (+die member) habe die reviewer ... wenn fremde coden schenken sie den code und ich bzw core team kann immer noch kontrollieren was ins repo kommt"), then "ja ist sehr gut so"; contract `docs/api.md` §6.1 `policy.outside_roles`, §6.2
 **Revisit when:** a minimum reputation for roles such as reviewer is designed (the maintainer's second idea), or a public project needs outside testers whose results count
 **See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-10-31
@@ -1198,9 +1196,8 @@ maintainer's choice on req-x0va57a71221; the API says `contacts`.
 
 **Id:** 04bb56da-91d5-424f-ab26-5db6c816d82d
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Verification:** contradicted — the lead's decision of 2026-11-14 (dab6ae4a-3f6b-4431-8945-80e5956a38a8) removes every agent of an owner whose membership ends, under both `agent_owners` settings, instead of isolating or keeping it; `docs/api.md` §6.2 says so since the part A pull request of tsk-yr3ckca01b9q
 **Source:** the maintainer's request of 2026-11-06 (chat seq 81987), card tsk-z1khn7tkpyqk; the contract's shape (the same route, no step-up, agents do not leave, the actor instead of a field) proposed in the plan (seq 114169) and agreed by the lead, lotse#wtwy (seq 114178); the cover case raised in the review by maity-review-team-grok#spq4 (seq 115820) and asked for by the review lead, maity-review-team-lead#vuur (seq 115826)
 **Revisit when:** an agent should end its own membership, or leaving a project should ask for a step-up
 **See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-11-11
@@ -1379,7 +1376,7 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q
 **Revisit when:** part B or C of §6.30 is contracted into the sections it changes (with B the outside-roles part of 68b4deba is superseded), or the build of part A shows a check that would reach trust `outside` without naming it
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
@@ -1427,12 +1424,8 @@ its own, `outside`. It holds exactly what `member` holds for its role
 minus the narrowings of §6.30, never more, and every check that does
 not name `outside` refuses it (fail closed).
 
-Lead decision 2026-11-14, on the points the draft left open: when an
-owner's membership ends, every agent they own in the project is
-removed with it, always and under both `agent_owners` settings; the
-owner may bring one back through the outsider path where the project
-takes outsiders' agents. The trust `outside` comes only from that path:
-a member `PATCH` neither sets nor removes it (`invalid`), so an
+Lead decision 2026-11-14, on the points the draft left open: the
+trust `outside` comes only from that path: a member `PATCH` neither sets nor removes it (`invalid`), so an
 outsider's agent keeps it when its owner later becomes a member. A
 lapsed claim request reaches the outside owner with the reason
 `expired`. `max_starred_per_human` is at most 1000; lowering it keeps
@@ -1440,10 +1433,12 @@ the stars a human holds and refuses new ones. Part A is built only
 after part B is contracted; until then the contract applies part A with
 fail-closed values (no claim by an outsider's agent, no card open to
 outsiders, no own quota, no block list), so nothing undefined widens
-what an outsider's agent gets. This reverses, for the owner-leaves
-case, the isolation of 355f12f3 (a maintainer's decision of
-2026-10-31, which had rejected removal as not undoable); that entry is
-marked for review.
+what an outsider's agent gets. A fourth point of that decision, that
+an owner's leaving removes every agent they own in the project, was
+withdrawn by the lead the same day (chat seq 133858 on
+tsk-yr3ckca01b9q) in favour of the maintainer's rule of 2026-10-31
+(355f12f3): when an owner leaves, their agents are isolated or kept as
+§6.2 says, never removed and never converted to trust `outside`.
 
 **Rejected alternatives:**
 - Stars kept only in the browser, or with a public count as on a
@@ -1471,12 +1466,13 @@ marked for review.
   the outsider status (Q28): every check would also have to test that
   status, and one check that missed it would grant a member's rights;
   a trust of its own fails closed instead.
+- Removing a leaver's agents (the lead's first answer, withdrawn): it
+  cannot be undone, and loses the agents' history, claims and session
+  for a step an admin may want to reverse when the owner returns; the
+  isolation of 355f12f3 keeps them and can be lifted.
 - Moving an agent to trust `outside` when its owner leaves a public
   project that takes outsiders (proposed in the PR): it changes the
-  agent's status silently, behind its owner's back; removal fails
-  closed and the owner decides whether to bring it back. Keeping it at
-  its trust `member` or `guest` (the rule before) or isolating it: an
-  agent stays in a project its owner no longer belongs to.
+  agent's status silently, behind its owner's back.
 - A member `PATCH` that sets or lifts trust `outside`: the trust would
   then no longer say how the agent came in, and lifting it would hand a
   stranger's agent a member's rights without the join's checks.

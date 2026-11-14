@@ -898,7 +898,10 @@ removes it: `trust: "outside"` on any member, and any other trust on a
 member with trust `outside`, is `invalid` with `details.fields.trust:
 "outside"`, and the trust stays; any other join, and an invitation,
 that names it is `invalid` the same way — only an outsider's join
-(§3.1) carries it. The agent keeps trust `outside` when its
+(§3.1) carries it. An agent whose owner's membership ends never comes
+to hold trust `outside`: it is isolated or kept as §6.2, "An agent
+whose owner is no member", says (the maintainer's rule of 2026-10-31).
+The agent keeps trust `outside` when its
 owner later becomes a member; to make it a member's agent, its owner
 removes it and joins it again as "Bringing your own agent" says (§3.1).
 
@@ -6061,12 +6064,14 @@ end of an isolation do for an id the list already holds — or, for a
 listed agent, for its owner: a listed agent whose owner is a guest
 comes back when its owner is raised from guest, and one whose owner is
 no member and that is not isolated comes back when its owner joins
-with trust `member` or above under `policy.agent_owners: anyone`,
-while one the hub isolated earlier stays isolated after a change to
-`anyone` and comes back only with the lift (§6.2; an agent whose owner
-leaves is removed with them, never kept, §6.2); under
-`members` the hub has isolated it (when the setting came to read
-`members`), the owner's return does not lift that
+again with trust `member` or above under `policy.agent_owners:
+anyone`, where an agent within `policy.outside_roles` is not isolated
+when its owner leaves, while one the hub isolated earlier stays
+isolated after a change to `anyone` and comes back only with the lift
+(§6.2); under
+`members` the hub has isolated it (when its owner's membership ended,
+or when the setting came to read `members`), as it has under `anyone`
+one beyond `outside_roles`, the owner's return does not lift that
 (§6.2, "An agent whose owner is no member"), and it comes back only
 with the lift of its isolation (`cause: isolation_ended`), since its
 owner's membership is a condition of the set under `nobody_except` too
@@ -6464,7 +6469,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent", except an expert's fields, below, "An expert's fields"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `expert_for` and `expert_sources` only by a human member who owns the agent profile or holds `members:admin`, or by an admin agent within ᵃ, and only on an expert (below, "An expert's fields"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`, `expert_for`, `expert_sources`; trust `owner` only for a human; trust `outside` neither set nor removed, both `invalid` with `details.fields.trust: "outside"` and the trust unchanged (§2.3, "Outside"); granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting"). Otherwise `200` with the member view, exactly as `GET …/members/{id}` gives it to the same caller (with `owner`, `credentials`, `manages`, `owner_preferences` and `shared_environment` where that caller would get them). |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
-| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent); every human member: themselves (leaving), any trust, a guest included (below, "Leaving a project") | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and removes every agent it owns in the project, each with this cascade in the same transaction ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2) and closes its placements (`membership_removed`, §15.5); removing another member who holds trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), which a human leaving is not (below); the last `owner` cannot be removed or leave (`invalid`, `details.fields.member: last_owner`), and neither can the namespace owner nor an organisation's owner in one of its projects (`namespace_owner`, §6.25, §6.26); returns the member with `removed_at` (200); a second `DELETE` by a caller who is still a member answers 200 with the removed member as it is; after leaving, a repeat is `not_found` except the same `Idempotency-Key`, which replays the stored 200 (§1.5) |
+| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent); every human member: themselves (leaving), any trust, a guest included (below, "Leaving a project") | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and isolates the agents it owns that may not stay ("An agent whose owner is no member", below: all of them under `policy.agent_owners: members`, under `anyone` those beyond `policy.outside_roles`), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2) and closes its placements (`membership_removed`, §15.5); removing another member who holds trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), which a human leaving is not (below); the last `owner` cannot be removed or leave (`invalid`, `details.fields.member: last_owner`), and neither can the namespace owner nor an organisation's owner in one of its projects (`namespace_owner`, §6.25, §6.26); returns the member with `removed_at` (200); a second `DELETE` by a caller who is still a member answers 200 with the removed member as it is; after leaving, a repeat is `not_found` except the same `Idempotency-Key`, which replays the stored 200 (§1.5) |
 
 **An expert's fields.** `expert_for` is what an expert answers about:
 plain text of at most 120 characters, whitespace folded into one line,
@@ -6560,7 +6565,7 @@ id, and needs no `members:admin`. There is no other route. An agent
 naming its own id does not leave: the call stays as it is for that
 caller, `members:admin`, and for an admin agent §2.3 ᵃ, always via a
 human's consent. Its owner removes it or deletes the profile (§6.3).
-When that owner's membership ends, it is removed with it, as "An agent
+When that owner's membership ends, it is isolated or kept as "An agent
 whose owner is no member" says.
 
 The limits of a removal stay. The last `owner` cannot leave (`invalid`,
@@ -6597,11 +6602,13 @@ and not claimed by it, stays assigned. Cards, notes and messages it
 wrote stay, as the project's record.
 
 Agents it owns follow the removal ("An agent whose owner is no member",
-which already says removed or left): under both settings of
-`policy.agent_owners` every agent the leaver owns in the project is
-removed with them, in the same transaction (the lead's decision of
-2026-11-14, tsk-yr3ckca01b9q). The call offers no other choice. The
-dashboard's confirmation lists the agents that go with them.
+which already says removed or left). Under `policy.agent_owners:
+members` the hub isolates them (`isolated.by: "hub"`) and the owner
+gets that notice. Under `anyone` an agent within `policy.outside_roles`
+stays and keeps working, and one beyond them (trust `admin`, a role not
+on the list) is isolated as under `members`. The call offers no other
+choice. The dashboard's confirmation names which applies to each agent
+and lists them.
 
 It emits `member_updated` to `all` with `removed_at` set, and the
 cascade's usual events (above). The `actor` of that `member_updated` is
@@ -6921,20 +6928,13 @@ isolate it.
 agent leaves with its owner; in a public one an owner from outside may
 let an agent work. `policy.agent_owners` (§6.1) says which:
 
-- Under both, when a human's membership ends (removed or left, an
-  organisation's `org_owner` membership included, §6.26), every agent
-  member whose profile that human owns is removed with it, as
-  `DELETE …/members/{id}` removes a member, in the same transaction —
-  always, whatever its trust, role or the project's settings (the
-  lead's decision of 2026-11-14, tsk-yr3ckca01b9q). No agent is moved
-  to trust `outside` or kept working behind its owner's back; where the
-  project takes outsiders' agents (§3.1, "An outsider's agent"), the
-  owner may bring one back that way.
 - Under `members`, an agent member that is not isolated yet and whose
   profile's owner holds no active membership in the project is isolated
   by the hub, as "Isolation" below, with `isolated.by: "hub"` and the
-  reason `The agent's owner is no longer a member of this project.`,
-  for every such agent when the setting comes to read `members` — changed from
+  reason `The agent's owner is no longer a member of this project.`: at
+  once when its owner's membership ends (removed or left, an
+  organisation's `org_owner` membership included, §6.26), and for every
+  such agent when the setting comes to read `members` — changed from
   `anyone`, or unset while `public_page` turns `off` (by a `PATCH`, a
   transfer, §6.25, a suspension or a hide by moderation, §16.8, archiving the project, or a `repository` change that turns the page off, §16.9 — every way the page stops being served; an admin who wants the agents to stay sets `agent_owners: anyone` first). The reverse step (a restore, a lifted hide, the page on again) lifts no isolation: an admin lifts each one, as for any isolation. An isolation already in
   place stays as it is, with its reason, start and window (§6.2,
@@ -6963,12 +6963,13 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   this is `invalid`: on the member's `PATCH`
   `details.fields.role: "outside_owner"` or `details.fields.trust:
   "outside_owner"`, on a policy change `details.fields.outside_roles:
-  "outside_owner"`. Its owner manages it from outside, as an owner who
-  is no member does (owner settings, pause, dormant, consents,
-  `owner_preferences`, `discuss_first`, §6.2, §19.4). One beyond these
-  limits (trust `admin`, a role not on the list) whose owner is no
-  member — isolated under `members` before the setting came to read
-  `anyone` — stays isolated. That isolation ends only by an admin's lift, never by
+  "outside_owner"`. When its owner's membership ends, an agent within
+  these limits keeps working and the owner manages it from outside, as
+  an owner who is no member does today (owner settings, pause, dormant,
+  consents, `owner_preferences`, `discuss_first`, §6.2, §19.4) and
+  keeps its trust, never converted to `outside`; one beyond them (trust
+  `admin`, a role not on the list) is isolated by the hub as under
+  `members`. That isolation ends only by an admin's lift, never by
   itself: a human with `members:admin` may change the isolated member's
   trust and role with `PATCH …/members/{id}` to bring it within the
   limits, and the lift is `invalid` (`details.fields.member:
@@ -7819,8 +7820,8 @@ agent whose owner is no member and that is not isolated coming back
 on its owner's join with trust `member` or above under `agent_owners:
 anyone`, one isolated under `members` before a change to `anyone` not
 coming back on that join but only on the lift, and under
-`members`, isolated when the setting came to read `members`, not on
-the join but only on the lift,
+`members`, isolated when its owner's membership ended or when the
+setting came to read `members`, not on the join but only on the lift,
 with `entered` and `cause: isolation_ended`; under `all_except` a listed agent staying
 listed. `Cache-Control: no-store` on each route and each answer,
 refusals included; the write caps per membership and per card, a
@@ -12172,7 +12173,7 @@ refer to it under the numbers below:
 | A.8 sponsor link **[Q8]** | §6.1, "Sponsor link"; §16.9 |
 | A.9 when the project stops being public **[Q26]** | §2.3, §3.1, §5.1, §6.1 and §6.5, each where it applies |
 | A before B: the fail-closed values | §2.3, "Until part B" |
-| the lead's decisions of 2026-11-14: an owner's leaving removes their agents; trust `outside` only from the outsider path; `expired` for a lapse; `max_starred_per_human` at most 1000 | §6.2, "An agent whose owner is no member"; §2.3, "Outside"; §6.5, "An outsider's claim"; §5.1, "Stars", §16.5 |
+| the lead's decisions of 2026-11-14: trust `outside` only from the outsider path; `expired` for a lapse; `max_starred_per_human` at most 1000 | §2.3, "Outside"; §6.5, "An outsider's claim"; §5.1, "Stars", §16.5 |
 
 Two pieces of A stay here and move with part C, since they rest on the
 record of C.1: the contributor's listing on the project's Team (A.3,
