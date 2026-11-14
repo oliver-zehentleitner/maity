@@ -46,6 +46,7 @@ from maity_hub.runners import (
     event_project_ids,
     listening_key,
     load_runner,
+    open_requests,
 )
 from maity_hub.views import event_views
 
@@ -218,12 +219,20 @@ def _settle_requests(conn: Connection, runner_id: str, capabilities: Capabilitie
     # A tool the runner no longer updates (`update: "never"`, gone, or no `tools` at all)
     # will never carry its request out: dropped, so the owner sees none standing.
     updated = {tool.id for tool in capabilities.tools or [] if tool.update != "never"}
-    left = [
-        r for r in stored if (r["tool"], r["requested_at"]) not in done and r["tool"] in updated
+    # Settled or dropped, an entry stays marked `done`: the hub's own floor for the tool's
+    # next request (runners.open_requests), never shown as standing.
+    kept = [
+        (
+            r
+            if r.get("done")
+            or ((r["tool"], r["requested_at"]) not in done and r["tool"] in updated)
+            else {**r, "done": True}
+        )
+        for r in stored
     ]
-    if len(left) != len(stored):
+    if kept != stored:
         conn.execute(
-            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=left or None)
+            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=kept)
         )
 
 
@@ -354,7 +363,7 @@ def runner_requests(request: Request, caller: RunnerCaller) -> JSONResponse:
         stored = conn.execute(
             select(t.runner.c.update_requests).where(t.runner.c.id == runner_id)
         ).scalar()
-    return JSONResponse({"update_requests": stored or []})
+    return JSONResponse({"update_requests": open_requests(stored)})
 
 
 @router.get("/runner/events")

@@ -227,6 +227,47 @@ def test_two_requests_in_one_clock_reading_are_distinct(
         clock.reset()
 
 
+def test_a_late_report_never_gives_a_new_request_an_old_time(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """The floor is the hub's own (A353): A and B issued in one clock reading, B carried
+    out, then a late report naming A. A new request C must not take B's time, or B's
+    report would settle C before the runner ever read it. Also after an update-never drop,
+    and whatever far-future time a runner reports."""
+    runner = paired(make_client, owner)
+    client = make_client()
+    hello(client, runner, capabilities=with_tools(tool()))
+    frozen = datetime.now(UTC).replace(microsecond=500000)
+    stamp = frozen.strftime("%Y-%m-%dT%H:%M:%S")
+    clock.set_source(lambda: frozen)
+    try:
+        update_now(owner, runner, "claude-code")
+        [a] = requests_of(client, runner)
+        update_now(owner, runner, "claude-code")
+        [b] = requests_of(client, runner)
+        advertise(client, runner, with_tools(tool(update_requested_at=b["requested_at"])))
+        advertise(client, runner, with_tools(tool(update_requested_at=a["requested_at"])))
+        update_now(owner, runner, "claude-code")
+        [c] = requests_of(client, runner)
+        assert c["requested_at"] == f"{stamp}.502Z"
+        assert c["requested_at"] not in (a["requested_at"], b["requested_at"])
+        advertise(client, runner, with_tools(tool(update_requested_at=b["requested_at"])))
+        assert requests_of(client, runner) == [c]
+        # Dropped because the tool stopped updating: the floor stays.
+        advertise(client, runner, with_tools(tool(update="never")))
+        assert requests_of(client, runner) == []
+        advertise(client, runner, with_tools(tool(update_requested_at="9999-12-31T23:59:59.999Z")))
+        answer = update_now(owner, runner, "claude-code")
+        assert answer.status_code == 202, answer.text
+        [d] = requests_of(client, runner)
+        assert d["requested_at"] == f"{stamp}.503Z"  # the runner's value moved nothing
+        # The standing view never shows the marks the hub keeps.
+        view = owner.get(f"/runners/{runner.id}").json()
+        assert view["update_requests"] == [d]
+    finally:
+        clock.reset()
+
+
 def test_a_request_for_a_tool_no_longer_updated_is_dropped(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:

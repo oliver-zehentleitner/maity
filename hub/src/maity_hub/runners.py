@@ -176,7 +176,7 @@ def runner_view(
     }
     if row.capabilities and "tools" in row.capabilities:
         # Beside the tools the runner reports, and absent like them (§15.3, §15.16).
-        view["update_requests"] = row.update_requests or []
+        view["update_requests"] = open_requests(row.update_requests)
     if not capabilities:
         del view["capabilities"]
     if viewer_id == row.owner_id:  # the record, never the value; the owner's only
@@ -192,6 +192,17 @@ def runner_view(
             }
         )
     return view
+
+
+def open_requests(stored: Any) -> list[dict[str, str]]:
+    """The `Update now` requests still standing (§15.16). The stored list also keeps, per
+    tool, the last request the hub issued once it was settled or dropped (`done`): the
+    hub-owned floor that keeps a later request from ever taking its time again."""
+    return [
+        {"tool": r["tool"], "requested_at": r["requested_at"]}
+        for r in stored or []
+        if not r.get("done")
+    ]
 
 
 def load_runner(conn: Connection, runner_id: str, viewer_id: str | None) -> dict[str, Any]:

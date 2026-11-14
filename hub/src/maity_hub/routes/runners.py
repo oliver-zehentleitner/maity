@@ -616,23 +616,23 @@ def update_runner(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def _request_time(stored: list[Any], tools: list[Any], tool_id: str) -> str:
+def _request_time(stored: list[Any], tool_id: str) -> str:
     """A request's identity (§15.16): the hub's time in milliseconds, made strictly later
-    than the tool's standing request and than the last one the runner reported carrying
-    out, so two requests are never the same string, even within one clock reading."""
+    than the last request the hub issued for the tool, standing or `done`. The floor is the
+    hub's own; nothing a runner reports moves it, so no two requests for a tool on a runner
+    are ever the same string."""
     moment = clock.now().astimezone(UTC)
     moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
-    seen = [r.get("requested_at") for r in stored if r.get("tool") == tool_id]
-    seen += [tool.get("update_requested_at") for tool in tools if tool.get("id") == tool_id]
-    for text in seen:
+    for entry in stored:
+        if entry.get("tool") != tool_id:
+            continue
         try:
-            before = datetime.fromisoformat(str(text))
+            before = datetime.fromisoformat(str(entry.get("requested_at")))
         except ValueError:
             continue
         if before.tzinfo is not None and moment <= before:
-            moment = before.astimezone(UTC).replace(
-                microsecond=before.microsecond // 1000 * 1000
-            ) + timedelta(milliseconds=1)
+            moment = before.astimezone(UTC) + timedelta(milliseconds=1)
+            moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
     return clock.rfc3339(moment, millis=True)
 
 
@@ -657,7 +657,7 @@ def update_now(
                 {"reason": "updates_off"},
             )
         stored = row.update_requests or []
-        at = _request_time(stored, tools, body.tool)
+        at = _request_time(stored, body.tool)
         requests = [r for r in stored if r["tool"] != body.tool]
         requests.append({"tool": body.tool, "requested_at": at})
         conn.execute(

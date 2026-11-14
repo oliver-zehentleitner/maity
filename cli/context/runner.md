@@ -3006,7 +3006,17 @@ in his words are this design's (inferred).
   closed (161d5507). Rejected: dropping it once a report shows a check at
   or after it, which compares the runner's clock with the hub's, and the
   signing window allows minutes of skew: a check decided before the
-  request could erase it (v5vp's review).
+  request could erase it (v5vp's review). One exception, without the
+  token: a report that lists the tool with `update: "never"`, leaves it
+  out or carries no `tools` drops its request, since that runner will
+  never carry it out and the owner would see it standing for nothing
+  (vhqe's review). Because equality decides, no two requests for a tool
+  may share a time: the hub makes each one strictly later than the last
+  it issued for that tool, a mark it keeps after the request is settled
+  or dropped. Rejected: taking that floor from the standing request and
+  the runner's last report, since a late or missing report moves it back
+  and a reissued time is settled by an old report (hcrb's review), and a
+  runner's far-future value would push it (47me's review).
 - **A rollback is a state of its own.** After `maity runner tools
   rollback`, the tool reports `rolled_back` while the version in use is
   older than `latest` (a second rollback back to `latest` reports
