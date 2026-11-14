@@ -1147,6 +1147,7 @@ window.MAITY_I18N["en"] = {
   "error.assign_only": "Cards in this project are assigned; they cannot be claimed.",
   "error.attachment_quota": "There is not enough room left for this attachment.",
   "error.attachments_not_configured": "This hub does not store attachments.",
+  "error.claim_limit": "Whoever would hold this card already holds as many cards as this project allows.",
   "error.code_invalid": "That code is wrong or was already used.",
   "error.conflict": "This changed in the meantime. Reload and try again.",
   "error.conversation_closed": "This group chat is closed.",

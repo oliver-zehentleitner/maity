@@ -100,6 +100,14 @@ def quoted(text: str) -> str:
     return '"' + defang(" ".join(text.split())) + '"'
 
 
+def subject_line(text: str) -> str:
+    """A subject with text the hub did not write in it: on one line with every control
+    character gone, defanged as the body is, and cut at `SUBJECT_MAX` (§18.5). A subject is
+    shown before the mail is opened, so it is no place for a link either."""
+    flat = defang(" ".join(headers.clean(text).split()))
+    return flat if len(flat) <= SUBJECT_MAX else flat[: SUBJECT_MAX - 1] + "…"
+
+
 def key(item: Item) -> str:
     return f"e:{item.seq}" if item.seq is not None else f"r:{item.record}"
 
@@ -281,7 +289,7 @@ def for_human(
             )
             return queued
         unique = list({key(i): i for i in due}.values())
-        queued += _send(conn, row, unique, prefs, signing_key, public_url, zone)
+        queued += _send(conn, row, where, unique, prefs, signing_key, public_url, zone)
         clocks["held_since"] = None
         mailed = {key(i) for i in unique}
         mailable = [i for i in mailable if key(i) not in mailed]
@@ -399,6 +407,7 @@ def _mark(conn: Connection, human_id: str, chosen: list[Item]) -> None:
 def _send(
     conn: Connection,
     row: Any,
+    where: items.Scope,
     chosen: list[Item],
     prefs: dict[str, Any],
     signing_key: bytes,
@@ -426,10 +435,26 @@ def _send(
         extra_headers={
             "List-Unsubscribe": f"<{links[kinds[0]]}>",
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            outbox.MEMBERSHIPS_MARK: _memberships_of(where, chosen),
         },
     )
     _mark(conn, row.human_id, chosen)
     return 1
+
+
+def _memberships_of(where: items.Scope, chosen: list[Item]) -> str:
+    """The membership rows the mail's items were read through, as the scope that derived
+    them loaded them: the outbox drops the mail if one of these rows is no longer active when
+    it leaves (§18.5, context/notifications.md 64c0fbdf). The rows themselves, not their
+    projects, so a removal after the scope was read and a later join with a new row both
+    count as ended. An item of a project they are no member of (an invitation) or of no
+    project is not tied to a membership."""
+    ids = set()
+    for item in chosen:
+        mine = where.membership(item.project_id) if item.project_id and item.member else None
+        if mine is not None:
+            ids.add(mine.id)
+    return " ".join(str(i) for i in sorted(ids))
 
 
 def compose(
@@ -441,12 +466,10 @@ def compose(
     if len(chosen) == 1:
         only = chosen[0]
         name = projects.get(only.project_id or "", "Maity")
-        # A project's name and a title are text the hub did not write: one line (§18.5).
-        subject = headers.clean(f"[Maity] {name}: {only.title or ''}")
+        # A project's name and a title are text the hub did not write (§18.5).
+        line = subject_line(f"[Maity] {name}: {only.title or ''}")
     else:
-        subject = "[Maity] " + words["updates"].format(n=len(chosen))
-    if len(subject) > SUBJECT_MAX:
-        subject = subject[: SUBJECT_MAX - 1] + "…"
+        line = "[Maity] " + words["updates"].format(n=len(chosen))
     lines: list[str] = []
     shown = chosen[:DIGEST_MAX]
     for project_id in dict.fromkeys(i.project_id for i in shown):
@@ -465,7 +488,7 @@ def compose(
     if len(chosen) > DIGEST_MAX:
         lines.append(words["more"].format(n=len(chosen) - DIGEST_MAX, url=f"{public_url}/"))
     kinds = list(dict.fromkeys(i.kind for i in chosen))
-    return subject, "\n".join(lines), kinds
+    return line, "\n".join(lines), kinds
 
 
 def _message_text(conn: Connection, item: Item) -> str | None:
@@ -556,7 +579,7 @@ def _two_factor_mail(
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=headers.clean(f"[Maity] {item.title}"),
+        subject=subject_line(f"[Maity] {item.title}"),
         body=body,
     )
 
