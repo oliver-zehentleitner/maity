@@ -602,8 +602,13 @@ primary key's, matched in gpg's `VALIDSIG` status line. Each signature also
 carries the file's name, time stamp included, as the signed notation
 `backup-file@maity`, and the blocks compare it with the name they are given. A
 missing `.sig`, a bad signature, another key or another name then stops the
-block. The Job refuses a signing key that can also decrypt (an `e` capability
-on any of its keys) and one whose fingerprint is in `maity-backup-key`. Signatures whose file the
+block, and so does a signature by a key that is revoked or expired
+(`REVKEYSIG`, `KEYREVOKED`, `EXPKEYSIG` beside `VALIDSIG`). The Job refuses a
+signing key that can also decrypt (an `e` capability on any of its keys), one
+whose fingerprint is in `maity-backup-key`, and a Secret with more than one
+key. The documented key setup picks the new key by the fingerprint gpg reports
+when it makes it and applies the Secret, so running it again replaces the key;
+the old one is deleted where the restores run. Signatures whose file the
 rotation removed are removed with it.
 
 **Reason:** a backup is copied off the instance and kept elsewhere, and a
@@ -620,7 +625,11 @@ fingerprint, as the team lead asked. A signature over the content alone would
 let an older night's file, with its own valid signature, pass under a newer
 name; the name in the signature ties the file to its night. Separate keys keep
 the signing key, which is on the cluster, from ever being able to read a
-backup.
+backup. A second key left in the Secret would make the signer gpg's choice,
+and a key picked by its user ID would export every earlier key of that name
+too, so a replaced key would go on signing. gpg reports a good signature by a
+revoked key as valid; the revocation is a separate status line, so it is
+checked on its own.
 
 **Rejected alternatives:**
 - Checksums kept off the instance (the card's other option): the Job would

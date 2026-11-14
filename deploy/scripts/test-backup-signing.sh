@@ -111,6 +111,11 @@ refused decrypting "$work/other.key" "can also decrypt"
 refused encryption-key "$work/enc.key" "can also decrypt"
 # the signing key itself as maity-backup-key: same fingerprint, though it cannot decrypt
 refused same-key "$work/signing.key" "is the key in maity-backup-key" "$work/signing.pub"
+# two signing keys in one Secret (an old one left in): which one signs would be gpg's choice
+gk --passphrase "" --quick-gen-key "sign2 <s2@example.org>" ed25519 sign never
+gk --armor --export-secret-keys "sign2 <s2@example.org>" > "$work/sign2.key"
+cat "$work/signing.key" "$work/sign2.key" > "$work/two.key"
+refused two-keys "$work/two.key" "holds more than one key"
 
 # 4. The documented restore blocks with the real gpg, against the files of a fresh Job run. The fingerprint is set; GNUPGHOME
 # has the decryption key and the signing key's public half.
@@ -131,6 +136,8 @@ echo "kubectl $*" >> "$R/log"
 case "$*" in
   *"get deploy"*) printf 0;;
   *" exec "*)     cat > /dev/null;;
+  *"create secret generic maity-backup-signing-key"*)   # the key file the Secret would get
+                  for a in "$@"; do case "$a" in --from-file=*) cp "${a##*=}" "$R/exported.key";; esac; done;;
 esac
 exit 0
 STUB
@@ -159,5 +166,33 @@ for kind in dump attachments.tar; do
   restore "$kind-renamed" $b "maity-29991231T000000Z.$kind.gpg" stops
   grep -q "signed under another name" "$work/r-$kind-renamed/out" && echo "ok   restore/$kind-renamed: names the reason" || fail "restore/$kind-renamed: no reason" "$work/r-$kind-renamed/out"
 done
+
+# 5. A revoked signing key: the same backups no longer restore. The revocation certificate gpg made with the key.
+sed 's/^:-----BEGIN/-----BEGIN/' "$K/openpgp-revocs.d/$signer.rev" | gk --import 2>/dev/null
+for kind in dump attachments.tar; do
+  b=db-block; [ "$kind" = dump ] || b=att-block
+  restore "$kind-revoked-key" $b "maity-${new}Z.$kind.gpg" stops
+  grep -q "revoked or expired" "$work/r-$kind-revoked-key/out" && echo "ok   restore/$kind-revoked-key: names the reason" \
+    || fail "restore/$kind-revoked-key: no reason" "$work/r-$kind-revoked-key/out"
+done
+
+# 6. The key setup of docs/install/README.md, step 4, run twice as a rotation is: each run hands the Secret only the key it
+# made, picked by its fingerprint, though both keys have the same user ID.
+setup="$work/setup.sh"
+awk '/^fpr=\$\(gpg --batch --yes --status-fd 1/ {on = 1} on {print} on && /^echo "\$fpr"/ {exit}' "$root/docs/install/README.md" > "$setup"
+grep -q 'export-secret-keys "$fpr!"' "$setup" || { echo "FAIL could not read the key setup from the install guide"; exit 1; }
+H=$(gh setup)
+for n in 1 2; do
+  export R="$work/setup-$n"; mkdir -p "$R"; : > "$R/log"
+  printed=$(cd "$R" && GNUPGHOME="$H" PATH="$work/bin:$PATH" sh -e "$setup" 2>"$R/err")
+  keys=$(gpg --batch --homedir "$(gh "count-$n")" --with-colons --show-keys "$R/exported.key" 2>/dev/null)
+  secs=$(printf '%s\n' "$keys" | grep -c '^sec:')
+  got=$(printf '%s\n' "$keys" | awk -F: '$1 == "fpr" {print $10; exit}')
+  if [ "$secs" = 1 ] && [ "$got" = "$printed" ] && printf '%s' "$printed" | grep -qxE '[0-9A-F]{40}' && [ ! -e "$R/backup-signing.key" ]; then
+    echo "ok   setup run $n: the Secret gets only the new key ($printed)"
+  else fail "setup run $n: $secs keys, exported $got, printed '$printed'" "$R/err"; fi
+  eval "fpr_$n=$printed"
+done
+[ -n "$fpr_1" ] && [ -n "$fpr_2" ] && [ "$fpr_1" != "$fpr_2" ] && echo "ok   setup: the second run made a new key" || fail "setup: the same key twice"
 
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures failure(s)"; exit 1; }

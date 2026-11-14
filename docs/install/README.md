@@ -273,15 +273,19 @@ not changed since. Its private key goes into the cluster (the Job signs with
 it), so it has no passphrase and does nothing else; only its fingerprint is
 kept on the restore machine. It must be a key of its own: the Job refuses a
 signing key that can also decrypt, and one that is the key in
-`maity-backup-key`. Make it on that machine too, where gpg then also
-has its public key for checking:
+`maity-backup-key`, and one Secret that holds more than one key. Make it on
+that machine too, where gpg then also has its public key for checking. The
+block picks the new key by the fingerprint gpg reports when it makes it, so
+the same block also replaces an earlier signing key (below):
 
 ```sh
-gpg --batch --passphrase "" --quick-gen-key "maity backup signing <you@example.org>" ed25519 sign never
-gpg --armor --export-secret-keys "maity backup signing" > backup-signing.key
-kubectl -n maity create secret generic maity-backup-signing-key --from-file=backup-signing.key=./backup-signing.key
+fpr=$(gpg --batch --yes --status-fd 1 --passphrase "" --quick-gen-key "maity backup signing <you@example.org>" ed25519 sign never \
+  | awk '$2 == "KEY_CREATED" {print $4}')
+(umask 077; gpg --armor --export-secret-keys "$fpr!" > backup-signing.key)
+kubectl -n maity create secret generic maity-backup-signing-key --from-file=backup-signing.key=./backup-signing.key \
+  --dry-run=client -o yaml | kubectl apply -f -
 rm backup-signing.key
-gpg --with-colons --list-keys "maity backup signing" | awk -F: '$1 == "fpr" {print $10; exit}'   # the fingerprint
+echo "$fpr"   # the fingerprint: MAITY_BACKUP_SIGNER where you restore
 ```
 
 Without that Secret the Job still writes encrypted backups, unsigned, and says
@@ -340,13 +344,20 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   with them.
 - **Signed backups.** With the Secret `maity-backup-signing-key` (step 4) each file has a detached signature next to
   it, `<file>.sig`, made over the encrypted file, so a copy can be checked without the private decryption key:
-  `gpg --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg`. The signature also carries the file's name,
-  time stamp included, as the notation `backup-file@maity` (`gpg --verify` prints it): keep the files under the names the
-  Job gave them, since a restore compares that name with the one it is given. The signing key is on the cluster, so the
+  `gpg --status-fd 1 --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg | grep -E "^\[GNUPG:\] VALIDSIG ($MAITY_BACKUP_SIGNER .*|.* $MAITY_BACKUP_SIGNER)$"`
+  prints a line only for a good signature by that key (a plain `gpg --verify` accepts any key in your keyring). The
+  signature also carries the file's name, time stamp included, as the notation `backup-file@maity` (`gpg --verify`
+  prints it): keep the files under the names the Job gave them, since a restore compares that name with the one it is
+  given. The restore blocks below check all of it, and refuse a signing key that is revoked or expired. The signing key is on the cluster, so the
   signature shows that a file came from the Job and was not changed on the copy's way or where it is kept; it
   does not hold against someone who can read the cluster's Secrets. A key there that cannot sign (one with a
   passphrase, or a public key only), that can also decrypt, or that is the key in `maity-backup-key` fails the Job
-  with `backup failed: maity-backup-signing-key …` before anything is written. If the signing key was exposed, make a new one, replace the Secret, and set the new fingerprint.
+  with `backup failed: maity-backup-signing-key …` before anything is written.
+- **A new signing key** (it was exposed, or is due): run the block of step 4 again, which makes a new key and replaces
+  the Secret, then set `MAITY_BACKUP_SIGNER` to the new fingerprint and delete the old key on this machine, so nothing
+  can sign with it there: `gpg --batch --yes --delete-secret-and-public-keys "<old fingerprint>!"`. The next night's
+  backups are signed with the new key. Older backups no longer pass the check; restore one only knowingly, with
+  `MAITY_BACKUP_SIGNER` unset (its signature is then not checked).
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
   you need, then delete them from the volume.
@@ -397,6 +408,7 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
          printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
          st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
          printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] VALIDSIG ($signer .*|.* $signer)$" || { echo "$2 is not signed by $signer" >&2; exit 1; }
+         ! printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] (REVKEYSIG|KEYREVOKED|EXPKEYSIG)( |$)" || { echo "$2: the signing key is revoked or expired" >&2; exit 1; }
          printf "%s\n" "$st" | grep -A2 -xF "[GNUPG:] NOTATION_NAME backup-file@maity" | grep -qxF "[GNUPG:] NOTATION_DATA ${2##*/}" \
            || { echo "$2 was signed under another name: give it the name the backup Job wrote" >&2; exit 1; }   # the time stamp is signed too
        else
@@ -503,8 +515,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      ' open <kube context>
      ```
      Then check that the public address answers. The next `helm upgrade` writes the chart's rules anyway.
-- **Test a restore** once after setting up the key, and after every new key: check the signature
-  (`gpg --verify maity-<UTC time>.dump.gpg.sig maity-<UTC time>.dump.gpg`), then decrypt the newest dump and read all of it,
+- **Test a restore** once after setting up the key, and after every new key: check the signature by its fingerprint
+  (the `gpg --status-fd 1 --verify … | grep … VALIDSIG …` line under "Signed backups"), then decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
   attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`
   (GNU tar). That proves the key and the whole file together; a listing alone (`pg_restore --list`, `tar -tf`) passes a

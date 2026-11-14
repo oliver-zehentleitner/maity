@@ -13,8 +13,8 @@
 # has no pipefail. The exec passes the tar's SHA-256; the pod keeps the stream in a scratch volume first and empties the attachment
 # volume only when what arrived has that digest, so a stream cut off on the way leaves the volume as it is.
 # With MAITY_BACKUP_SIGNER set to the backup signing key's fingerprint (docs/install/README.md, "Backups on this setup"), the block first
-# checks <file>.sig and stops before decrypting when it is missing, does not verify, is by another key, or was made for another file
-# name (the signed notation backup-file@maity, which holds the time stamp); unset, it says so and goes on.
+# checks <file>.sig and stops before decrypting when it is missing, does not verify, is by another key or a revoked or expired one, or
+# was made for another file name (the signed notation backup-file@maity, which holds the time stamp); unset, it says so and goes on.
 #   sh -eu -c '
 #     ctx=$1
 #     k() { kubectl --context "$ctx" -n maity "$@"; }
@@ -27,6 +27,7 @@
 #       printf "%s\n" "$signer" | grep -qxE "[0-9A-F]{40}|[0-9A-F]{64}" || { echo "MAITY_BACKUP_SIGNER is not a fingerprint" >&2; exit 1; }
 #       st=$(gpg --batch --status-fd 1 --verify "$2.sig" "$2")   # an assignment: a missing or bad signature stops here
 #       printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] VALIDSIG ($signer .*|.* $signer)$" || { echo "$2 is not signed by $signer" >&2; exit 1; }
+#       ! printf "%s\n" "$st" | grep -qE "^\[GNUPG:\] (REVKEYSIG|KEYREVOKED|EXPKEYSIG)( |$)" || { echo "$2: the signing key is revoked or expired" >&2; exit 1; }
 #       printf "%s\n" "$st" | grep -A2 -xF "[GNUPG:] NOTATION_NAME backup-file@maity" | grep -qxF "[GNUPG:] NOTATION_DATA ${2##*/}" \
 #         || { echo "$2 was signed under another name: give it the name the backup Job wrote" >&2; exit 1; }   # the time stamp is signed too
 #     else

@@ -9,7 +9,8 @@
 # removed only once the policy has them again.
 # The two restore blocks also check the backup's signature when MAITY_BACKUP_SIGNER names a fingerprint (the signing key's or
 # its primary key's), and stop before anything is decrypted when the signature is missing, bad, by another key, or made
-# under another file name (the name carries the backup's time stamp).
+# under another file name (the name carries the backup's time stamp), or by a key that is revoked or expired. The same
+# blocks run against a real gpg in deploy/scripts/test-backup-signing.sh.
 # Usage: deploy/scripts/test-restore-blocks.sh   (no cluster needed; GNU tar, python3)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -89,7 +90,7 @@ STUB
 cat > "$work/bin/gpg" <<'STUB'
 #!/bin/bash
 # --verify: $SIG good (by $SUBKEY, primary $PRIMARY, signed under the file's name), renamed (signed under an older name),
-# noname (no signed name), other (by another key) or bad; a missing .sig fails like gpg. Else decrypt.
+# noname (no signed name), revoked or expired (a good signature by a revoked or expired key), other (by another key) or bad; a missing .sig fails like gpg. Else decrypt.
 echo "gpg $*" >> "$S/log"
 args=("$@")
 for i in "${!args[@]}"; do
@@ -102,6 +103,8 @@ for i in "${!args[@]}"; do
     good)    echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; note "$name"; echo "$valid"; exit 0;;
     renamed) echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; note "maity-20000101T000000Z.dump.gpg"; echo "$valid"; exit 0;;
     noname)  echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; echo "$valid"; exit 0;;
+    revoked) echo "[GNUPG:] KEYREVOKED"; echo "[GNUPG:] REVKEYSIG ${SUBKEY: -16} sign"; note "$name"; echo "$valid"; exit 0;;
+    expired) echo "[GNUPG:] EXPKEYSIG ${SUBKEY: -16} sign"; note "$name"; echo "$valid"; exit 0;;
     other) echo "[GNUPG:] GOODSIG ${OTHER: -16} other"; echo "[GNUPG:] VALIDSIG $OTHER 2026-11-14 1794614400 0 4 0 22 10 00 $OTHER"; exit 0;;
     bad)   echo "[GNUPG:] BADSIG ${SUBKEY: -16} sign"; exit 1;;
   esac
@@ -164,6 +167,8 @@ for b in db-block att-block; do
   sig_run $b bad "$SUBKEY" bad stops
   sig_run $b renamed "$SUBKEY" renamed stops
   sig_run $b no_name "$SUBKEY" noname stops
+  sig_run $b revoked_key "$SUBKEY" revoked stops
+  sig_run $b expired_key "$SUBKEY" expired stops
   sig_run $b missing "$SUBKEY" missing stops
   sig_run $b partial "${SUBKEY:0:16}" good stops
   sig_run $b not_hex "not a fingerprint" good stops
