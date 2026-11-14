@@ -208,7 +208,12 @@ def _cover_set(conn: Connection, project: Any, row: Any) -> tuple[list[Any], lis
     ).all()
     # A substitute would read it: what an owner's round filed stays with that owner (§20.7).
     alone = inbox.owners_alone(conn, requests)
-    return list(cards), [r for r in requests if r.id not in alone]
+    # One the gate held for the covered agent (§9.6) is not its work to hand on: the
+    # substitute would read and answer what the agent may not, and a later yes releases
+    # nothing. It is neither moved nor named in `left`, as it is in no inbox of the agent's.
+    return list(cards), [
+        r for r in requests if r.id not in alone and not inbox.held_back(r, _principal(row))
+    ]
 
 
 def _instance(conn: Connection, sub: Any) -> str | None:

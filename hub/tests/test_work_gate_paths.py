@@ -5,6 +5,7 @@ watch that watcher set itself (§6.4) (tsk-yy88szfa7sfh)."""
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -13,6 +14,9 @@ from sqlalchemy import Engine, select, update
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.test_cover import events as cover_events
+from tests.test_cover import limit, policy
+from tests.test_cover import now as now  # noqa: F401  (the clock fixture)
 from tests.test_work_gate import PROJECT, allow, card, human, seqs, woken
 
 
@@ -213,6 +217,65 @@ def test_a_forward_to_an_admitted_agent_goes_through(
     moved = owner.post(f"{PROJECT}/requests/{request['id']}/forward", {"to": theirs.id})
     assert moved.status_code == 200, moved.text
     assert finds(theirs, request["id"])["read"]
+
+
+def test_a_pool_claim_by_an_agent_the_gate_would_hold_it_for_is_refused(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """Judged as a forward to the claiming agent: the request stays in the pool."""
+    theirs, other, writer = sides["theirs"], sides["other"], sides["writer"]
+    request = ask(writer, owner.id)
+    path = f"{PROJECT}/requests/{request['id']}"
+    opened = owner.post(f"{path}/forward", {"to": "trust:admin"})
+    assert opened.status_code == 200, opened.text
+    admin_and_role(migrated, theirs.id)  # an admin agent now, of another side
+    refused = theirs.post(f"{path}/claim", {})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "held_by_gate"}
+    assert refused.json()["error"]["message"] == (
+        "the gate of §9.6 holds this request for that agent: its owner has not said yes"
+        " to the asker's side. The owner can allow the asker's side and then claim"
+    )
+    with migrated.connect() as conn:
+        pool = conn.execute(
+            select(t.request.c.holder_member, t.request.c.holder_pool).where(
+                t.request.c.id == request["id"]
+            )
+        ).one()
+    assert tuple(pool) == (None, True)  # still the admins'
+    allow(other, agents=[theirs.id], owner_id=writer.id, their_human=True)
+    claimed = theirs.post(f"{path}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+
+
+def test_a_cover_leaves_a_request_held_for_the_covered_agent_out(
+    make_client: ClientFactory,
+    sides: dict[str, Any],
+    migrated: Engine,
+    now: list[datetime],
+) -> None:
+    """§6.12: the substitute gets neither `to=me` nor the resume packet nor an answer of a
+    request the gate held for the covered agent; one from the agent's own side still moves."""
+    theirs, other, writer = sides["theirs"], sides["other"], sides["writer"]
+    deputy = flow.agent(make_client, other)  # the same side as `theirs`, no yes for `writer`
+    for agent in (theirs, deputy):
+        agent.resume()
+    held = ask(writer, theirs.id)
+    assert held["held"] == [theirs.id]
+    own = ask(other, theirs.id, "Ours?")
+    assert own["held"] == []
+    policy(other, theirs.id, on_unavailable="substitute", substitutes=[deputy.id], grace_minutes=0)
+    limit(theirs, now[0] + timedelta(hours=2))
+    [started] = cover_events(migrated, "cover_started")
+    assert started.payload["requests"] == [own["id"]]
+    assert held["id"] not in started.payload["left"]
+    assert finds(deputy, held["id"]) == {"inbox": False, "packet": False, "read": False}
+    assert finds(deputy, own["id"])["inbox"]
+    answered = deputy.post(f"{PROJECT}/requests/{held['id']}/answer", {"text": "yes"})
+    assert answered.status_code in (403, 404), answered.text
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == held["id"])).one()
+    assert row.status == "open" and row.cover is None
 
 
 # --- ticker items (§17.6) --------------------------------------------------------------

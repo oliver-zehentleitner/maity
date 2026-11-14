@@ -214,9 +214,14 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
 
 def covers(request: Any, mine: Membership) -> bool:
     """The caller is the substitute answering for the addressee (§6.12): it reads the
-    request, finds it under `to=me` and answers as the addressee would."""
+    request, finds it under `to=me` and answers as the addressee would. Never for a request
+    held for that addressee (§9.6): what the gate keeps from it the substitute does not get."""
     cover: dict[str, Any] | None = getattr(request, "cover", None)
-    return cover is not None and cover.get("by") == mine.principal_id
+    return (
+        cover is not None
+        and cover.get("by") == mine.principal_id
+        and not held_back(request, cover.get("for"))
+    )
 
 
 def answered_in_own_right(conn: Connection, request: Any, mine: Membership) -> bool:

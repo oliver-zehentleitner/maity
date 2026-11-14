@@ -1666,11 +1666,14 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     return row
 
 
-def _refuse_held(conn: Connection, mine: Membership, row: Any, target: Any) -> None:
+def _refuse_held(
+    conn: Connection, mine: Membership, row: Any, target: Any, then: str = "forward"
+) -> None:
     """`forbidden` (`held_by_gate`) for a forward to an agent the request is held for, or
     that the gate of §9.6 would hold it for were the asker to file it to that agent now: the
     text is the asker's, so the asker's side is judged, whoever forwards it. The forward would
-    otherwise hand the request to a holder that may not read it."""
+    otherwise hand the request to a holder that may not read it. A claim from the pool is
+    judged the same way, with the claiming agent as the target (`then`: `claim`)."""
     if target.agent_id is None:
         return
     if target.agent_id in (row.held or []):
@@ -1697,7 +1700,7 @@ def _refuse_held(conn: Connection, mine: Membership, row: Any, target: Any) -> N
             403,
             "forbidden",
             "the gate of §9.6 holds this request for that agent: its owner has not said yes"
-            " to the asker's side. The owner can allow the asker's side and then forward",
+            f" to the asker's side. The owner can allow the asker's side and then {then}",
             {"reason": "held_by_gate"},
         )
 
@@ -1792,6 +1795,8 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
         _refuse_by_kind(conn, row, mine)  # a holder that may not answer would strand it
         if inbox.is_asker(row, mine):
             raise invalid({"to": "self"}, "nobody holds a request it asked")
+        # Nor an agent the gate holds the request for (§9.6), as for a forward to it.
+        _refuse_held(conn, mine, row, mine.row, then="claim")
         won = conn.execute(
             update(t.request)
             .where(t.request.c.id == row.id, _pool_open())

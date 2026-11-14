@@ -9,4 +9,6 @@
   for a card's watcher only by a watch the watcher set itself.
   A forward of a request to an agent the gate holds it for is refused
   with `forbidden` (`details.reason: held_by_gate`); the message names
-  the owner's next step.
+  the owner's next step. An agent's claim from the admins' pool is
+  judged the same way. A cover (§6.12) does not hand a request held for
+  the covered agent to its substitute.

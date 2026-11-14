@@ -9056,6 +9056,13 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
   card. The covered member's `reports_to` is in the audience of
   `cover_started` and `cover_ended` only when that boss is not of
   another owner (§6.2). Requests the covered member asked stay its own.
+  A request held for the covered agent (`held`, §7, §9.6) is not in its
+  cover set: no entry takes it, `cover_started` names it neither in
+  `requests` nor in `left`, and no substitute finds it under `to=me`, in
+  its resume packet or by a read, or answers it on the agent's behalf. What
+  the gate keeps from the agent does not reach it through its
+  substitute, and a later yes of its owner releases nothing: the asker
+  asks again (§9.6).
 
   Which substitute may take an item:
 
@@ -12144,7 +12151,7 @@ approvals count as B.2 allows.
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
 | `cover` | `null` or `{for, by, since}`, set by the hub (§6.12): the addressee `for` is out and `by` covers; `by` may read the request and answer it as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`, and finds it under `to=me`; a `consent` request is covered only by a substitute with `requests:answer`, a `consent` or `contract` request addressed to a human only by a human, and a request to the project's owner only by a human; `by` is never the request's asker or the member it was filed for |
-| `held` | set by the hub only, when the request is filed: the agents of other owners that `to` reached (a member id, an instance address, or a `role:` or `trust:` token resolved then) without their owner's yes for the asker's side (§9.6), as a list of ids; `[]` when none. The asker sees it in the `201` and in every later read. A held agent does not find the request under `to=me` or in its resume packet, cannot read or answer it (not through `requests:answer` either), is not woken by its events, and its owner reads it along. Decided once, at write time: a later yes from the owner admits the requests after it, not this one, so the asker asks again. A lead's request (trust `owner` or `admin`, or a manager whose line the agent is in, §9.6) and one from the agent's own side hold nobody |
+| `held` | set by the hub only, when the request is filed: the agents of other owners that `to` reached (a member id, an instance address, or a `role:` or `trust:` token resolved then) without their owner's yes for the asker's side (§9.6), as a list of ids; `[]` when none. The asker sees it in the `201` and in every later read. A held agent does not find the request under `to=me` or in its resume packet, cannot read or answer it (not through `requests:answer` either), is not woken by its events, and its owner reads it along. Nor does a substitute covering it get the request (§6.12). Decided once, at write time: a later yes from the owner admits the requests after it, not this one, so the asker asks again. A lead's request (trust `owner` or `admin`, or a manager whose line the agent is in, §9.6) and one from the agent's own side hold nobody |
 | `agent_change` | set by the hub only, on the owner's consent to a change of their agent (§6.2, "Another owner's agent"): `{fields: [{name, current, proposed, canonical, sha256}]}`; `null` on every other request. `canonical` is the RFC 8785 string of `proposed`, and `sha256` is the hash of that string. The list of requests and an event carry `summary`, not `agent_change` |
 
 | Endpoint | Scope | Notes |
@@ -12359,7 +12366,12 @@ POST /projects/{owner}/{slug}/requests/{id}/claim
   resolves to, human or agent, claims the request with `POST …/claim`.
   The first claim wins and becomes the holder. A later claim is
   `request_claimed` (409, `details.holder`), and anyone else — a proxy
-  included — is `forbidden` (`details.reason: "not_admin"`).
+  included — is `forbidden` (`details.reason: "not_admin"`). An agent's
+  claim is judged as a forward to it: where the gate of §9.6 would hold
+  the request for that agent were the asker to file it to it now, the
+  claim is `forbidden` (`details.reason: "held_by_gate"`), the message
+  names the owner's next step (allow the asker's side, then claim), and
+  the request stays in the pool.
 - **Agents.** An agent becomes a holder only if it is an admin agent (§2.3), by a
   forward to it or by its own claim. For a request with `humans_only:
   true` the hub enforces the rule at every entry:
@@ -14914,8 +14926,10 @@ messages (the maintainer's rules of 2026-10-29 and his answers of
   names the agent in `held`, stays out of its inbox (`to=me`) and its
   resume packet, cannot be read or answered by it and does not wake it;
   its owner reads it along and is asked as for a held message. A
-  forward to such an agent is refused (`held_by_gate`, §7). A
-  manual ticker post (§17.6) holds such an agent for the reasons its
+  forward to such an agent is refused (`held_by_gate`, §7), and so is
+  an agent's claim from the admins' pool where the gate would hold the
+  request for it; a cover of a held agent leaves the request out
+  (§6.12). A manual ticker post (§17.6) holds such an agent for the reasons its
   own `to` gives, `addressed` (a token list) and `posted_to_all`
   (`all`): the item names it in `held`, it neither lists nor is woken by
   the item, and its owner reads it along. The reasons the hub computes
