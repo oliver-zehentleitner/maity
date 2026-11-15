@@ -154,7 +154,14 @@ def binary(tools_dir: Path, tool_id: str) -> Path | None:
     except OSError:
         return None
     found = folder / relative
-    return found if relative and ".." not in Path(relative).parts and found.is_file() else None
+    if not relative or ".." in Path(relative).parts or not inside(found, folder):
+        return None
+    return found if found.is_file() else None
+
+
+def inside(path: Path, folder: Path) -> bool:
+    """`path` lies in `folder` as written and once every link is followed."""
+    return path.is_relative_to(folder) and path.resolve().is_relative_to(folder.resolve())
 
 
 def rollback(tools_dir: Path, tool_id: str) -> ToolState:
@@ -267,8 +274,9 @@ def _take(
     except Exception:  # noqa: BLE001 - never left `installing` with a half-filled staging
         shutil.rmtree(staging, ignore_errors=True)
         return _failed(tools_dir, tool_id, state, "installer_failed", now)
-    # Checked before anything runs it: a binary outside its directory is never started.
-    if not found.is_relative_to(staging):  # an installer must stay in its directory
+    # Checked before anything runs it: a binary outside its directory is never started, nor
+    # one reached through a link that leads out of it.
+    if not inside(found, staging):  # an installer must stay in its directory
         shutil.rmtree(staging, ignore_errors=True)
         return _failed(tools_dir, tool_id, state, "installer_failed", now)
     try:

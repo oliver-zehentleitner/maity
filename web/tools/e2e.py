@@ -926,6 +926,7 @@ def main() -> int:
                     form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
+                    public_first_paint_round(run, browser)
                     stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
@@ -4980,6 +4981,50 @@ def report_step(run: Run, page: Page) -> None:
 
 
 REPORTER = ("rita", "Rita", "rita@e2e.example", "e2e rita password")
+
+
+def public_first_paint_round(run: Run, browser) -> None:
+    """A public page's first paint is its final page (tsk-777vkhtzmq6f): signed out, the hub
+    sends its stored page inside the shell, in `.hub-page`, which stays invisible until the
+    dashboard replaces it with the page in its frame. The public read is held back, so the
+    moment between the two is looked at, for a project's and an agent's page; without a
+    script the hub's page shows after 3 s."""
+    run.step("public pages: the hub's stored layout never shows before the page drawn in its frame")
+    for path, kind in (("/owner/e2e-alpha", "project"), ("/owner/agents/e2e-agent", "agent")):
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        context.set_default_timeout(TIMEOUT_MS)
+        page = context.new_page()
+        watch_page(run, page)
+        held: list = []
+
+        def hold(route) -> None:
+            held.append(route)  # answered below, once the moment in between is looked at
+
+        page.route("**/api/v1/public/pages/**", hold)
+        page.goto(run.base + path)
+        waited = 0
+        while not held and waited < TIMEOUT_MS:
+            page.wait_for_timeout(50)
+            waited += 50
+        assert held, f"{path}: the dashboard never asked for the public page"
+        stored = page.evaluate(
+            "() => { const p = document.querySelector('main > .hub-page');"
+            " return p ? [getComputedStyle(p).visibility, p.textContent.trim().length > 0] : null; }"
+        )
+        assert stored == ["hidden", True], f"{path}: the hub's stored page before the redraw: {stored!r}"
+        for route in held:  # answered before the handler goes: a removed one passes them on itself
+            route.continue_()
+        page.unroute("**/api/v1/public/pages/**")
+        expect(page.locator(f"main .view-visitor[data-kind='{kind}']")).to_be_visible()
+        expect(page.locator("main .hub-page")).to_have_count(0)
+        context.close()
+    # Without a script nothing replaces it: the hub's page shows, at the latest after 3 s.
+    context = browser.new_context(viewport={"width": 1280, "height": 900}, java_script_enabled=False)
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    page.goto(run.base + "/owner/agents/e2e-agent")
+    expect(page.locator("main > .hub-page h1")).to_be_visible()
+    context.close()
 
 
 def report_pages_round(run: Run, browser) -> None:

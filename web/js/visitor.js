@@ -153,6 +153,21 @@ window.Maity = window.Maity || {};
       return letter(); // not an address the page may load (h() allows only the hub's own images)
     }
   }
+  // A person's or an agent's own picture, as the hub's stored page draws it
+  // (`picture_html`, §16.9): 128 pixels from its public address, or the neutral square of that
+  // size where the page names none or the address does not load. The name follows, so alt="".
+  function portrait(d) {
+    const none = () => h("span", { class: "pic none size-128", "aria-hidden": "true" });
+    if (typeof d.picture !== "string" || !d.picture) return none();
+    try {
+      const src = `${d.picture}${d.picture.includes("?") ? "&" : "?"}s=128`;
+      const img = h("img", { class: "pic", src, alt: "", width: "128", height: "128", decoding: "async" });
+      img.addEventListener("error", () => { if (img.parentNode) img.parentNode.replaceChild(none(), img); });
+      return img;
+    } catch (refused) {
+      return none(); // not an address the page may load (h() allows only the hub's own images)
+    }
+  }
   // Whether a member of the project's lists is an agent: by its page, which the hub builds.
   const agentPages = (d) => new Set((d.agents || []).map((a) => a.page));
 
@@ -559,7 +574,13 @@ window.Maity = window.Maity || {};
       if (reporting && reporting.open && M.report.asked()) reporting.open();
       return true;
     }
+    // Signed out, the picture where the hub's own stored page has it, so the redraw keeps the first
+    // paint's layout (tsk-777vkhtzmq6f): an agent's before its name (public_agents), a person's
+    // after the name and the tabs (public_people.render_person). Signed in the page is the
+    // members' view, which has no picture there.
+    const shownPicture = signedIn ? null : { agent: "before", person: "after" }[answer.kind] || null;
     const content = [
+      shownPicture === "before" ? portrait(d) : null,
       h("h1", null, title),
       reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
@@ -569,6 +590,7 @@ window.Maity = window.Maity || {};
         "aria-current": base + v.path === answer.path || (answer.kind === "card" && v.path === "/board") ? "page" : null,
       }, v.label))) : null,
       personTab ? M.person.tabs(answer.path.split("/").filter(Boolean)[0], personTab) : null,
+      shownPicture === "after" ? portrait(d) : null,
       draw[answer.kind] ? draw[answer.kind](d, base) : null];
     // Signed out the page stands in the landing's frame (§16.7.5), as the hub's stored pages do:
     // its header and footer around it, the content in the stored pages' look (public-pages.css,
