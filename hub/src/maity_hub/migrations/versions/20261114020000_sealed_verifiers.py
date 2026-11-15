@@ -1,17 +1,22 @@
 """Credential verifiers sealed at rest (docs/api.md §2.2, §16.2).
 
-`credential.verifier` and `runner_credential.verifier` widen from 64 to 128 characters. With
-the instance key (`MAITY_SECRET_KEY`, which `maity-hub migrate` hands over as the attribute
-`secret_key`), every plain verifier is sealed: `s1:` and the base64 of the 32 bytes sealed by
-`maity_hub.secretbox`, the table, the column and the id as associated data
-(`maity_hub.auth.verifiers`). Without the key the rows stay plain, as the hub without a key
-writes them. A row already sealed is left alone, so a run that is repeated seals nothing twice.
-
-Sealing needs a random nonce and AES-GCM per row, which SQL does not have: the rows are read and
-written in batches of `BATCH`, one `UPDATE … WHERE id = :id` executed for many rows at a time
+`credential.verifier` and `runner_credential.verifier` widen from 64 to 128 characters, room
+for a sealed verifier: `s1:` and the base64 of the 32 bytes sealed by `maity_hub.secretbox`,
+the table, the column and the id as associated data (`maity_hub.auth.verifiers`). The upgrade
+only widens; it seals nothing, with or without the instance key. Sealing is opt-in
+(`MAITY_SEAL_VERIFIERS`, default off, switched on later): with it on the hub seals what it
+writes, and `maity-hub seal-verifiers` seals the rows written before
 (hub/context/credentials.md).
 
-The downgrade opens every sealed row with the key and writes the hex back, then narrows the
+Edited in place, revision ID and down_revision kept (card tsk-47b7fwkvft30, lead lotse,
+2026-11-15). The form released in 0.1.0a6 also sealed every row when the key was given. That is
+safe to change: the deploy that was to ship 0.1.0a6 never did, so our instances go from 0.1.0a5
+to 0.1.0a7 and run this revision only in the form that widens. A database that already ran the
+0.1.0a6 form has this revision recorded and does not run it again; its sealed rows keep
+working, because the hub reads sealed rows whether sealing is on or off.
+
+The downgrade opens every sealed row with the key and writes the hex back, in batches of
+`BATCH` (one `UPDATE … WHERE id = :id` executed for many rows at a time), then narrows the
 columns again. It refuses while a sealed row exists and no key, or not the key it was sealed
 with, is given: an older hub could not read such a row.
 
@@ -75,21 +80,6 @@ def upgrade() -> None:
                 type_=sa.String(128),
                 existing_nullable=False,
             )
-    key = _key()
-    if key is None:
-        return
-    for table in TABLES:
-        values = [
-            {
-                "row_id": row_id,
-                "value": SEALED
-                + base64.b64encode(
-                    secretbox.seal(key, _field(table, row_id), bytes.fromhex(verifier))
-                ).decode("ascii"),
-            }
-            for row_id, verifier in _rows(table, sealed=False)
-        ]
-        _write(table, values)
 
 
 def downgrade() -> None:

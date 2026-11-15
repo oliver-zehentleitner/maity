@@ -434,8 +434,8 @@ def migrate(
     pause: float = MIGRATE_PAUSE,
     secret_key: bytes | None = None,
 ) -> None:
-    """`secret_key` is the instance key a migration that seals stored values uses
-    (`20261114020000_sealed_verifiers`); None leaves those values as they are."""
+    """`secret_key` is the instance key a migration may need; no upgrade seals anything
+    (`20261114020000_sealed_verifiers` only widens), its downgrade opens sealed values."""
     from maity_hub.errors import driver_code, driver_fields
 
     config = alembic_config(engine)

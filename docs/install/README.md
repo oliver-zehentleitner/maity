@@ -553,13 +553,16 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
 
 The database is the whole hub. It also holds the verifiers of every agent
 and runner credential, and a verifier is enough to sign requests as that
-agent or runner. With `MAITY_SECRET_KEY` set, the hub stores them sealed
-with that key, so a database read without the key yields no usable
-verifier; without the key they are stored as they are. Verifiers stored
-before the key was set are sealed when `maity-hub migrate` runs the
-migration that seals them with the key set; otherwise they stay unsealed
-until their agent or runner joins again, and the hub logs their number at
-startup. Keep the key apart
+agent or runner. Sealing them at rest is opt-in, default off: with
+`MAITY_SEAL_VERIFIERS=1` and `MAITY_SECRET_KEY` set, the hub stores new
+verifiers sealed with that key, so a database read without the key
+yields no usable verifier; with the setting off they are stored as they
+are. After switching the setting on, run `maity-hub seal-verifiers` once
+(with the same environment as the hub): it seals the verifiers stored
+before, leaves sealed ones alone and prints how many it sealed;
+`maity-hub migrate` seals nothing. Sealed verifiers stay readable with the setting off as long as the key is set.
+The hub logs at startup how many live verifiers are stored unsealed and
+whether sealing is on. Keep the key apart
 from the backups. Store backups like you store secrets. If a backup and
 the key, a backup made without a key, or a backup that still holds
 unsealed verifiers (the startup log counts them) were exposed, revoke the agent

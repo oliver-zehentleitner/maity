@@ -34,7 +34,7 @@ Why the hub (`hub/`, the server) is built the way it is. Family-wide decisions a
 
 ## C
 - [contract-text.md](contract-text.md) — a contract text read (§6.8) keeps the default branch's head for 30 s, keyed by the reader's token, repository and branch, at most 1024 per process
-- [credentials.md](credentials.md) — a credential's verifier sealed with the instance key when there is one, plain hex without; older rows sealed only by the migration, never at start; no previous key: a changed key means joining again
+- [credentials.md](credentials.md) — sealing a credential's verifier is opt-in (MAITY_SEAL_VERIFIERS, default off, switched on later), sealed rows read either way; older rows sealed by `maity-hub seal-verifiers`, never by a migration or at start; 20261114020000 edited in place to only widen; no previous key: a changed key means joining again
 
 ## D
 
