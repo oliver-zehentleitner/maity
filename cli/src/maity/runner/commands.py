@@ -266,10 +266,9 @@ def _check_config_file(report: Report, path: Path) -> None:
 def _check_repositories(report: Report, cfg: config.Config) -> None:
     """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
     `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). With
-    antigravity configured, an exact entry agy cannot be given exactly (adapters.agy_grants)
-    is named too, and a repository with exact entries for agy gets one line on what agy cannot
-    see: an extra argument that is empty or blank. Said, never an error, so a restart before
-    the table is edited keeps every placement running."""
+    antigravity configured, an exact entry is not applied to agy (adapters.agy_grants): it is
+    named as left out and runs in agy's sandbox like an unlisted command. Said, never an
+    error, so a restart before the table is edited keeps every placement running."""
     for name, grant in cfg.repositories.items():
         if grant.refused:
             listed = ", ".join(repr(rule) for rule in grant.refused)
@@ -279,20 +278,12 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                 "with `maity gh pr create`"
             )
         if "antigravity" in cfg.harnesses:
-            # agy matches by prefix; an exact entry it cannot make exact is left out for it.
+            # agy matches by prefix; an exact entry is not applied to it and runs sandboxed.
             plain = [rule for rule in grant.allow if config.plain_command(rule)]
-            granted = adapters.agy_grants(plain)
-            for rule, why in granted.left_out:
+            for rule, why in adapters.agy_grants(plain).left_out:
                 report.warn(
                     f"repositories.{name}: allow {rule!r} is left out for antigravity and runs "
                     f"in agy's sandbox like an unlisted command: {why}"
-                )
-            if granted.deny:
-                # agy drops a word that is empty once quotes and edge blanks are gone.
-                report.warn(
-                    f"repositories.{name}: for antigravity, an exact allow entry also allows "
-                    "the command with an extra empty or blank argument (`''`, `\" \"`): agy "
-                    "drops such an argument before it matches and cannot tell it apart"
                 )
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
