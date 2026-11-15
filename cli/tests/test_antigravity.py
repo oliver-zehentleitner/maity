@@ -1179,6 +1179,26 @@ def test_running_without_agys_sandbox_is_reported(
     assert (rec.state, rec.detail) == ("running", "sandbox_unavailable")
 
 
+@pytest.mark.parametrize("at_start", [True, False])
+def test_running_reports_the_sandbox_the_start_was_given(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, at_start: bool
+) -> None:
+    """`sandbox_unavailable` says how the session started, not how the tool in use now
+    would start: the keeper swapping it after the start changes nothing the owner is told."""
+    sup, _, _ = started(tmp_path, monkeypatch, sandbox=at_start)
+    recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    sup.update([placement()])
+    settle(sup)
+    sup.targets["local"].sandbox["antigravity"] = not at_start  # a swap after the start
+    clock[0] += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    rec = sup.records["plc-0003"]
+    assert rec.sandbox is at_start
+    assert (rec.state, rec.detail) == ("running", None if at_start else "sandbox_unavailable")
+
+
 # --- removal and claim ------------------------------------------------------------------------
 
 
