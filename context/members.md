@@ -1377,8 +1377,8 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here
-**Revisit when:** B.2 of §6.30 is contracted (then an outsider's review result may count) or part C is, or the build of part A or B shows a check that would reach trust `outside` without naming it, or no agent whose owner is no member holds `blue-team` any more anywhere (then the fallback goes)
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here; B.2 decided by the maintainer's answer o1 to req-9wpst24yyz7a (relayed by the lead, chat seq 135719 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §1.3, §2.3 ("Own approvals"), §6.1 (`own_approvals`, `own_agents`, `merged_closes`), §6.2, §6.4 and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q; `releases:write` kept for an outsider's reviewer and purple-team agent by the lead's decision of 2026-11-15 (chat seq 135801 on tsk-yr3ckca01b9q)
+**Revisit when:** part C of §6.30 is contracted (external reviewers whose approvals count as B.2 allows), or the review setting of tsk-kymz2pdrf85k is designed (`own_agents` moves into it, and an outsider's review may then count toward its requirement), or the build of part A or B shows a check that would reach trust `outside` without naming it, or no agent whose owner is no member holds `blue-team` any more anywhere (then the fallback goes)
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
 
@@ -1481,14 +1481,31 @@ agent whose owner is no member never holds trust `admin`, leads no
 line, deploys nothing and relays no decision, whatever the list says;
 one beyond the limits when its owner leaves is isolated until an admin
 brings it within them, never removed and never converted to `outside`.
-B.2 (approvals that must come from the project's own agents) stays in
-§6.30: the hub counts no review result as an approval today, and the
-review setting of tsk-kymz2pdrf85k that would say what counts is not
-designed. Until B.2 is contracted, an outsider's agent in a role that
-reviews or tests holds no done authority (it moves no card from
-`review` and signs no approval) and its review result stays a comment,
-so the project's own members keep the say over what goes into the
-repository, as 68b4deba wanted.
+Until B.2 was contracted, an outsider's agent in a role that reviews
+or tests held no done authority and its review result stayed a
+comment.
+
+B.2, contracted 2026-11-15: the maintainer answered req-9wpst24yyz7a
+with o1. `own_approvals` applies only to outsiders' work, a card an
+agent with trust `outside` or whose owner is no member holds or
+reported: it goes to `done` only with an approval from one of the
+project's own agents (an `approve` review result on exactly the
+reported head) or from a human of the project. Every other card is
+unchanged. The plan's integer stays (default 1) but cannot be 0, since
+o1 asks for one approval on every such card; `own_agents` stays as
+planned (`owners`, `members` by default, `owners_of`; trust `owner`
+only). Where o1 left room, the contract takes the narrowest choice: a
+human of the project is a human member, not isolated, with
+`tasks:review` or `tasks:test`, the standing an `approvals` signature
+needs, and that human's own move to `done` counts as an approval; an
+agent with trust `outside`, or of the owner whose agent reported, never
+counts as own; the latest review result of each member counts, on the
+reported head only. An outsider's agent still holds no done authority
+and signs no approval: o1 gates outsiders' work and does not open
+moving cards to outsiders. Its review result is no longer only a
+comment and may count toward a review requirement other than
+`own_approvals`, never as an own approval. So the project's own members
+keep the say over what outsiders deliver, as 68b4deba wanted.
 
 **Rejected alternatives:**
 - Stars kept only in the browser, or with a public count as on a
@@ -1553,7 +1570,18 @@ repository, as 68b4deba wanted.
   card, or only an outsider's; a review result's verdict, or the done
   authority's move): opening the reviewing roles to outsiders before
   their reviews are counted would let an outsider's reviewer act as
-  done authority.
+  done authority. o1 settled it: outsiders' work only, an `approve` on
+  the reported head or a human's approval.
+- `own_approvals` gating every card: o1 keeps the cards of the
+  project's own members unchanged.
+- `own_approvals: 0`, as the plan's range allowed: it would let a
+  project drop the one approval o1 requires for outsiders' work.
+- Giving an outsider's reviewer done authority once B.2 is contracted:
+  o1 says what outsiders' work needs, not that outsiders move cards;
+  keeping the limit fails closed.
+- Withholding `releases:write` from an outsider's reviewer and
+  purple-team agent: considered; not done (the lead, 2026-11-15): they
+  have no done authority, and Q10 keeps the roles' normal scopes.
 
 A later decision model that screens what reaches agents for dangerous
 prompts and instructions (an "Agent Guard") is planned and not part of
