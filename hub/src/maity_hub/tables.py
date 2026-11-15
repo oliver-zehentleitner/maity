@@ -2613,7 +2613,10 @@ mail_delivery = Table(
 # as one JSON value, beside the address and its verification. `pending_nonce` makes the
 # newest verification link the only valid one; `epoch` moves when the address changes or
 # is removed, which voids every unsubscribe link (§18.6). `address_change` is a change
-# held for approval (§18.4).
+# held for approval (§18.4). `pending_browser`, `pending_os` and `pending_ip` are the
+# requesting session's, for the notice to the old address once the new one is verified
+# (§2.6.3, §18.4); they go with the pending address: at its verification, when it is
+# replaced, removed or voided, and once it expired (`notifications/retention`).
 notification_settings = Table(
     "notification_settings",
     metadata,
@@ -2630,6 +2633,9 @@ notification_settings = Table(
     Column("pending_address", String(254)),
     Column("pending_nonce", String(32)),
     Column("pending_expires_at", UtcDateTime),
+    Column("pending_browser", String(64)),
+    Column("pending_os", String(64)),
+    Column("pending_ip", String(64)),
     Column("epoch", Integer, nullable=False),
     Column("hard_failures", Integer, nullable=False),
     Column("disabled_at", UtcDateTime),
