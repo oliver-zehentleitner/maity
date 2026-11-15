@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from maity_hub import clock, worker_runs
+from maity_hub import clock, worker_runs, write_guard
 from maity_hub import tables as t
 from maity_hub.mail import headers, settings, smtp
 from maity_hub.mail.environment import MailEnvironment
@@ -334,6 +334,11 @@ def _message(resolved: settings.Resolved, row: Any) -> Any:
 
 
 def _settle(conn: Connection, row: Any, outcome: smtp.Outcome) -> int:
+    # The human's account lock first, shared, before the mail's row: the third hard failure
+    # writes the human's record, and a deletion of the account takes the lock exclusively
+    # before anything else, so the two run one after the other (`write_guard.share`).
+    if row.human_id is not None:
+        write_guard.share(conn, row.human_id)
     if outcome.ok:
         _finish(conn, row.id, "sent")
         _count(conn, row.kind, "sent")
