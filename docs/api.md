@@ -659,8 +659,9 @@ nobody. The CLI's scheme is unchanged. Without `MAITY_SECRET_KEY` the
 verifier is stored as it is, and a copy of the database signs as every
 agent (signed and bearer calls carry the same rights): such an instance
 protects its database like the probe token. Verifiers stored before the
-key was set stay so until their credential is replaced; `maity-hub
-migrate` seals them when it runs with the key. A key that is changed or
+key was set are sealed by the migration that introduces sealing, when
+`maity-hub migrate` runs it with the key; a key added after that
+migration leaves them plain until their credential is replaced. A key that is changed or
 lost opens no sealed verifier: those credentials answer as unknown ones
 (`unauthenticated`, `signature_invalid`), and their agents and runners
 join again. Asymmetric keys remain the revisit condition

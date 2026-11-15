@@ -561,7 +561,8 @@ migration that seals them with the key set; otherwise they stay unsealed
 until their agent or runner joins again, and the hub logs their number at
 startup. Keep the key apart
 from the backups. Store backups like you store secrets. If a backup and
-the key, or a backup made without a key, were exposed, revoke the agent
+the key, a backup made without a key, or a backup that still holds
+unsealed verifiers (the startup log counts them) were exposed, revoke the agent
 sessions it holds in the running hub, whether you restore it or not.
 
 | Engine | Backup | Restore |

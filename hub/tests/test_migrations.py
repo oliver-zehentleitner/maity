@@ -1753,11 +1753,13 @@ def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Eng
 def test_sealed_verifiers_seals_with_the_key_and_the_downgrade_opens_them(engine: Engine) -> None:
     """With the instance key the upgrade seals every verifier of both tables, again only the
     plain ones, and the downgrade writes the same hex back; it refuses without the key."""
-    from sqlalchemy import insert, select
+    from alembic import command
+    from sqlalchemy import insert, select, update
 
     from maity_hub import clock
     from maity_hub import tables as t
     from maity_hub.auth import credentials
+    from maity_hub.db import alembic_config
     from tests import factory
 
     revision = "20261114020000_sealed_verifiers"
@@ -1826,5 +1828,22 @@ def test_sealed_verifiers_seals_with_the_key_and_the_downgrade_opens_them(engine
     assert stored() == plain
     migrate(engine, secret_key=key)
     resealed = stored()
-    migrate(engine, secret_key=key)  # at head, nothing runs; a repeated upgrade seals nothing twice
+    migrate(engine, secret_key=key)  # at head, nothing runs
     assert stored() == resealed
+    # The migration run again over a mix of sealed and plain rows (on MariaDB a failed run keeps
+    # its widening): the sealed row stays as it is, only the plain one is sealed.
+    downgrade(engine, revision, secret_key=key)
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == agent.credential_id)
+            .values(verifier=agent.verifier)
+        )
+    command.stamp(alembic_config(engine), before)
+    migrate(engine, revision, secret_key=key)
+    mixed = stored()
+    assert mixed["rcrd-migration"] == resealed["rcrd-migration"]
+    assert mixed[agent.credential_id].startswith("s1:")
+    assert mixed[agent.credential_id] != resealed[agent.credential_id]
+    downgrade(engine, before, secret_key=key)
+    assert stored() == plain

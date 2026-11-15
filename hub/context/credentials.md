@@ -45,5 +45,8 @@ together (replicas.md).
 - Sealing the plain rows at hub start: it writes at startup, which several pods would race on.
 - A previous-key setting for rotation: no other sealed value has one, and it is a mechanism of
   its own for every sealed field; not in this card.
+- A sealing key derived per purpose (`secretbox.derive`, as the HMAC keys and peppers use):
+  no other sealed field has one; every AES-GCM seal uses the instance key, and the associated
+  data (table, column, id) already separates the fields.
 - Sealing only `credential` and leaving runner credentials plain: a runner's verifier is an
   HMAC key with the same exposure.
