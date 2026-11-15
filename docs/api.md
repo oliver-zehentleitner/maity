@@ -651,18 +651,28 @@ string, before any normalisation); the CLI sends paths as it built them
 and never relies on a proxy to rewrite them. Signatures are compared in
 constant time.
 
-For the signed path the verifier is the signing key, so the hub stores
-it sealed with the instance key `MAITY_SECRET_KEY` (§16.2: AES-256-GCM,
-the table, column and credential id as associated data), for agent and
-runner credentials alike. A copy of the database alone then signs as
-nobody. The CLI's scheme is unchanged. Without `MAITY_SECRET_KEY` the
-verifier is stored as it is, and a copy of the database signs as every
-agent (signed and bearer calls carry the same rights): such an instance
-protects its database like the probe token. Verifiers stored before the
-key was set are sealed by the migration that introduces sealing, when
-`maity-hub migrate` runs it with the key; a key added after that
-migration leaves them plain until their credential is replaced. A key that is changed or
-lost opens no sealed verifier: those credentials answer as unknown ones
+For the signed path the verifier is the signing key. Sealing it at rest
+is opt-in, default off, switched on later: with `MAITY_SEAL_VERIFIERS=1`
+the hub stores it sealed with the instance key `MAITY_SECRET_KEY`
+(§16.2: AES-256-GCM, the table, column and credential id as associated
+data), for agent and runner credentials alike, and a copy of the
+database alone then signs as nobody. The setting needs the key; without
+it the hub does not start. With the setting off the verifier is stored
+as it is, as before sealing existed, and the instance protects its
+database like the probe token. The CLI's scheme is unchanged.
+
+A sealed verifier is read whether the setting is on or off, as long as
+the key is set, so switching the setting off again locks no one out. The
+verifiers stored before the setting was switched on are sealed by
+`maity-hub seal-verifiers`, which runs only with the setting on and the
+key set; it seals the plain ones, leaves sealed ones as they are (a
+second run seals nothing) and prints how many it sealed. No migration
+seals: `20261114020000_sealed_verifiers` only widens the column for
+sealed values. (In 0.1.0a6 it also sealed the stored verifiers when run
+with the key; a database that ran that form keeps its sealed rows, which
+are read as above.) At startup the hub logs how many live verifiers are stored plain
+and whether sealing is on. A key that is changed or lost (or unset)
+opens no sealed verifier: those credentials answer as unknown ones
 (`unauthenticated`, `signature_invalid`), and their agents and runners
 join again. Asymmetric keys remain the revisit condition
 (`docs/architecture.md` §4.6 and §13).
@@ -20428,7 +20438,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | — | **insecure**, environment only, default `false`. With `true`, a `starttls` connection to a server that offers no STARTTLS sends the mail in clear instead of failing — every mail, sign-in links included, then crosses the network readable and changeable by anyone on the path. `AUTH` is still never sent without TLS (a configured username then fails at stage `auth`). While it is `true` the admin view carries `warnings: ["smtp_plaintext_allowed"]` and the hub logs a warning at startup and at every plaintext send. Meant for a test bench only |
 | `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS. Printable ASCII, as the password (`invalid` otherwise; in the environment the hub stops at startup) |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
-| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets, the verifiers of agent and runner credentials, §2.2). Never returned; `{set}` in the answer as `secret_key` |
+| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets, the verifiers of agent and runner credentials with `MAITY_SEAL_VERIFIERS=1`, §2.2). Never returned; `{set}` in the answer as `secret_key` |
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |

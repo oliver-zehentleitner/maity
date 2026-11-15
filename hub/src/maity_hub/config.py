@@ -116,6 +116,9 @@ class Settings:
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
+    # MAITY_SEAL_VERIFIERS: 1 seals the credentials' verifiers at rest with `secret_key`
+    # (§2.2, hub/context/credentials.md); opt-in, default off. Sealed rows are read either way.
+    seal_verifiers: bool = False
     # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
     # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
@@ -253,6 +256,7 @@ class Settings:
                 env, "MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", 60.0, minimum=0, maximum=3600
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
+            seal_verifiers=parse_seal_verifiers(env),
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
@@ -717,6 +721,14 @@ def parse_second_factor(env: dict[str, str]) -> str | None:
     if value == "required_admins" and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
         raise ConfigError("MAITY_SIGN_IN_SECOND_FACTOR=required_admins needs MAITY_SECRET_KEY")
     return value
+
+
+def parse_seal_verifiers(env: dict[str, str]) -> bool:
+    """MAITY_SEAL_VERIFIERS: sealing needs the instance key it seals with."""
+    seal = parse_flag(env.get("MAITY_SEAL_VERIFIERS", ""), "MAITY_SEAL_VERIFIERS")
+    if seal and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
+        raise ConfigError("MAITY_SEAL_VERIFIERS=1 needs MAITY_SECRET_KEY")
+    return seal
 
 
 def parse_switch(env: dict[str, str], name: str) -> bool | None:
