@@ -3588,6 +3588,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "prefs.versions.reading": "正在读取…",
   "prefs.versions.title": "较早的版本",
   "product.bug": "发现了 bug？",
+  "product.discord": "在 Discord 上和我们聊天",
   "product.love": "爱",
   "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作",
   "product.security": "发现了安全漏洞？",

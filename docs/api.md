@@ -17895,12 +17895,12 @@ owner choose):
     rule still asks, which headless is a refusal (deny before ask before
     allow); the sandbox on; the workspace folder trusted,
     so an interactive start shows no trust question; the file tools
-    denied the clone's `.git/maity`; `maity` and the ` *` prefix entries
-    of the repository's `allow` list allowed: an entry ending in ` *` is
-    allowed as its leading words with any arguments, as for Claude Code; an
-    entry without `*` is not applied to agy (agy does not match it the way
-    Claude Code does), so it is left out, named by `maity runner check`, and
-    runs in the sandbox like an unlisted command. A command an allow rule matches may run outside the
+    denied the clone's `.git/maity`; `maity` allowed. The repository's
+    `allow` command list is not applied to agy — agy does not match a
+    command rule the way Claude Code does (it reads the invoked command
+    past a leading assignment or wrapper) — so each entry, exact or ` *`
+    prefix, is left out, named by `maity runner check`, and runs in the
+    sandbox like an unlisted command. A command an allow rule matches may run outside the
     sandbox. `maity` has to, for its credential and the network; outside
     the sandbox any allowed command can read the credential, as with
     Claude Code.
@@ -23076,7 +23076,7 @@ it off, and it is no part of the landing setting or of the frame of
 §16.7.5.
 
 ```
-[Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability?
+[Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability? · Chat with us on Discord
 ```
 
 **The parts**, in this order, separated by ` · ` (the credit right after
@@ -23104,13 +23104,17 @@ the year is the maintainer's order of 2026-11-05):
 - **Found a vulnerability?**, a link to
   `https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md`,
   which says how to report one privately, never as a public issue (the
-  maintainer's addition of 2026-11-04).
+  maintainer's addition of 2026-11-04);
+- **Chat with us on Discord**, a link to `https://discord.gg/VRWUe7zKzp`,
+  the project's Discord server, the address the README, the docs and the
+  issue chooser name. It is text, with no icon (the maintainer's decision
+  of 2026-11-15).
 
 **At phone width**, a viewport at most 600 CSS pixels wide, the line is
 only its first part: the icon, `Maity` and the year. The separators and
-the other three parts are not shown. The maintainer's request of
+the other four parts are not shown. The maintainer's request of
 2026-11-08 is "on every page (global), only 'maity 2026'": the full line
-wrapped over three rows on a phone. From 601 pixels on, all four parts
+wrapped over three rows on a phone. From 601 pixels on, all five parts
 show as above. This holds on every page with the line, the dashboard's
 and the hub's own.
 
@@ -23155,17 +23159,18 @@ icon is GitHub's mark from Octicons (MIT), the same path the dashboard
 already draws for a GitHub repository, in `currentColor`, so it follows
 the line's text colour on every page.
 
-**Words.** "Found a bug?", "Found a vulnerability?", the sentence "Made
-with ♥ by … on … & …" and "love" are translated as the rest of the page
+**Words.** "Found a bug?", "Found a vulnerability?", "Chat with us on
+Discord", the sentence "Made with ♥ by … on … & …" and "love" are translated as the rest of the page
 is, in every language each catalogue has, under the same keys in the
 dashboard's (`web/i18n/<lang>.json`, with its metadata) and the hub's
 (`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
-`product.security` ("Found a vulnerability?"), `product.made_by`
+`product.security` ("Found a vulnerability?"), `product.discord` ("Chat
+with us on Discord"), `product.made_by`
 ("Made with {heart} by {name} on {github} & {maity}") and `product.love`
 ("love"). The word `on` and the `&` are part of the
 translated sentence, so a language uses its natural preposition and may
-put the placeholders in its own order. `Maity`, `GitHub` and the name are
-never translated. The line is in the language of the page it ends.
+put the placeholders in its own order. `Maity`, `GitHub`, `Discord` and
+the name are never translated. The line is in the language of the page it ends.
 
 The translated sentence is always text and is escaped. Only its
 placeholders become something else: `{name}` the name as text, and
