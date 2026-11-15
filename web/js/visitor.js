@@ -18,6 +18,8 @@ window.Maity = window.Maity || {};
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
   const PROJECT_KINDS = ["project", "board", "team", "organisation", "why", "card"];
+  // The project's views that, signed out, draw sections across the page (the rest a column).
+  const ACROSS = ["project", "board", "team", "organisation", "why"];
   const COUNTERS = {
     get cards_done() { return M.t("visitor.stat.cards_done"); },
     get reviews_given() { return M.t("visitor.stat.reviews_given"); },
@@ -229,6 +231,23 @@ window.Maity = window.Maity || {};
       others.length ? h("ul", { class: "dec" }, others.map((e) => h("li", null, when(e.at), h("span", null, e.text)))) : null));
   }
 
+  // ---- the Board, Team, Organisation and Why tabs, signed out (tsk-9482zxza3gs3, part 3) ----
+  // The mockup's README, point 10: the tabs under the same hero, in the Overview's section style
+  // (a section across the page, its heading, cards and chips); what they show stays as it was.
+  // Signed in, a non-member's view keeps its lists (`framed` is false there).
+
+  // A section of a tab: its heading, a line beside it, then its parts.
+  const tabSection = (kind, title, note, parts) => h("section", { class: "sec tab-sec " + kind + "-sec" }, h("div", { class: "wrap" },
+    h("div", { class: "sec-h" }, h("h2", null, title), note ? h("p", { class: "muted" }, note) : null), parts));
+  // A member's page as the hub builds it: an agent's is `/<owner>/agents/<handle>`, a person's `/<handle>`.
+  const isAgentPage = (page) => /^\/[^/]+\/agents\/[^/]+$/.test(page || "");
+  // "3 people and 26 agents", the Overview's words, for the members a tab names.
+  function headcount(people, agents) {
+    const p = people ? M.t("visitor.now.people", { count: people }) : null;
+    const a = agents ? M.t("visitor.now.agents", { count: agents }) : null;
+    return p && a ? M.t("visitor.team.both", { people: p, agents: a }) : p || a;
+  }
+
   // The dark hero: the crumb `owner / slug`, the tile, the title and the state; on the Overview
   // the about text, the repository and the project's links as one row, and who is online beside it.
   // The other views carry only the parts their own answer has. `cta` is the slot the frame's
@@ -302,18 +321,23 @@ window.Maity = window.Maity || {};
         h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals),
       ];
     },
-    board(d, base) {
+    board(d, base, framed) {
       // The columns scroll sideways on a phone. A card's link scrolls them by keyboard; a board with
       // no card has none, so there the columns are a named region that takes the focus (WCAG 2.1.1),
       // and a board with cards gets no extra stop before them (#1720's review).
       const empty = !d.columns.some((col) => col.cards.length);
       const region = empty ? { role: "region", tabindex: "0", "aria-label": M.t("nav.board") } : {};
-      return h("div", Object.assign({ class: "columns" }, region), d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
-        h("h2", null, (COLUMNS[col.status] || col.status) + " (" + col.cards.length + ")"),
+      // Framed, under the section's own h2: a column is an h3, a card's title an h4, its label a chip.
+      const [colH, cardH] = framed ? ["h3", "h4"] : ["h2", "h3"];
+      const columns = h("div", Object.assign({ class: "columns" }, region), d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
+        h(colH, null, (COLUMNS[col.status] || col.status) + " (" + col.cards.length + ")"),
         col.cards.map((c) => h("article", { class: "card", "data-card": c.id, "aria-label": c.title },
-          h("header", null, h("a", { class: "card-id", href: base + "/tasks/" + c.id }, c.id), c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null),
-          h("h3", null, c.title),
+          h("header", null, h("a", { class: "card-id", href: base + "/tasks/" + c.id }, c.id), c.label ? h("span", { class: framed ? "chip label" : "label-tag" }, M.dom.word("label", c.label)) : null),
+          h(cardH, null, c.title),
           holderLabel(c.holder))))));
+      if (!framed) return columns;
+      const count = d.columns.reduce((n, col) => n + col.cards.length, 0);
+      return tabSection("board", M.t("nav.board"), M.t("overview.board.cards", { count }), columns);
     },
     card(d) {
       return [
@@ -329,15 +353,47 @@ window.Maity = window.Maity || {};
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,
       ];
     },
-    team(d) {
+    team(d, base, framed) {
+      if (framed) {
+        // The members it names as the Overview's cards (picture or letter, name, @handle, role chip),
+        // the people first; those it only counts as chips with their number under them.
+        const named = d.shown.filter((p) => !isAgentPage(p.page)).map((p) => [p, "hu"])
+          .concat(d.shown.filter((p) => isAgentPage(p.page)).map((p) => [p, "ag"]));
+        const people = named.filter(([, kind]) => kind === "hu").length;
+        return tabSection("team", M.t("nav.members"), headcount(people, named.length - people), [
+          named.length ? h("div", { class: "mgrid" }, named.map(([p, kind]) => memberCard(p, kind, false))) : null,
+          d.others.length ? [h("h3", null, M.t("visitor.others")),
+            h("ul", { class: "role-counts" }, d.others.map((o) => h("li", null, h("b", null, M.fmt.number(o.count)), h("span", { class: "chip role" }, M.trust.roleLabel(o.role)))))] : null,
+        ]);
+      }
       return [
         h("ul", null, d.shown.map((p) => h("li", null, who(p), " (" + p.handle + ") ", h("span", { class: "muted" }, M.trust.roleLabel(p.role))))),
         d.others.length ? [h("h2", null, M.t("visitor.others")),
           h("ul", null, d.others.map((o) => h("li", null, o.count + " × " + M.trust.roleLabel(o.role))))] : null,
       ];
     },
-    organisation(d) {
+    organisation(d, base, framed) {
       const below = (index) => d.nodes.filter((n) => n.reports_to === index);
+      if (framed) {
+        // The same tree, each node a small card: a named member's picture or letter, name, @handle
+        // and role chip, a link to their page; one the page does not name only its role chip.
+        const card = (n) => {
+          if (!n.person) return h("span", { class: "onode anon" }, h("span", { class: "chip role" }, M.trust.roleLabel(n.role)));
+          const p = n.person;
+          const inner = [face(p, isAgentPage(p.page) ? "ag" : "hu", 30),
+            h("span", { class: "mc-t" }, h("b", null, p.name), h("small", null, "@" + p.handle)),
+            h("span", { class: "chip role" }, M.trust.roleLabel(n.role))];
+          return M.route.isRoute(p.page) ? h("a", { class: "onode", href: p.page }, inner) : h("span", { class: "onode" }, inner);
+        };
+        const tree = (list, seen) => (list.length ? h("ul", null, list.map((n) => {
+          const next = new Set([...seen, n.index]);
+          return h("li", null, card(n), tree(below(n.index).filter((c) => !next.has(c.index)), next));
+        })) : null);
+        const named = d.nodes.filter((n) => n.person);
+        const people = named.filter((n) => !isAgentPage(n.person.page)).length;
+        return tabSection("organisation", M.t("nav.organisation"), headcount(people, named.length - people),
+          h("div", { class: "otree" }, tree(below(null), new Set())));
+      }
       // A line back to a node already drawn is not followed: the answer is data, not a promise.
       const node = (n, seen) => h("li", null, n.person ? who(n.person) : h("span", { class: "muted" }, M.trust.roleLabel(n.role)),
         n.person ? h("span", { class: "muted" }, " " + M.trust.roleLabel(n.role)) : null,
@@ -345,7 +401,25 @@ window.Maity = window.Maity || {};
       const branch = (list, seen) => (list.length ? h("ul", null, list.map((n) => node(n, new Set([...seen, n.index])))) : null);
       return h("div", { class: "org-box" }, branch(below(null), new Set()));
     },
-    why(d) {
+    why(d, base, framed) {
+      if (framed) {
+        // The entries' count beside the heading, the family as cards with their letter (each a link
+        // to its published dashboard where there is one), what needs attention as lines with a chip.
+        if (!d.readable) return tabSection("why", M.t("nav.why"), null, h("p", { class: "muted" }, M.t("visitor.why.unread")));
+        const kin = (m) => {
+          const label = m.name || m.path;
+          const url = m.dashboard_url ? safeUrl(m.dashboard_url) : null;
+          const inner = [h("span", { class: "pmark sm", "aria-hidden": "true" }, monogram(label, m.path)),
+            h("span", { class: "mc-t" }, h("b", null, label), m.name && m.path ? h("small", null, m.path) : null)];
+          return url ? h("a", { class: "mcard", href: url, rel: "nofollow ugc" }, inner) : h("div", { class: "mcard" }, inner);
+        };
+        return tabSection("why", M.t("nav.why"), M.t("visitor.why.entries", { count: d.summary.entries }), [
+          d.family.length ? [h("h3", null, M.t("visitor.why.family")), h("div", { class: "mgrid" }, d.family.map(kin))] : null,
+          d.attention.length ? [h("h3", null, M.t("visitor.why.attention")),
+            h("ul", { class: "dec att" }, d.attention.map((a) => h("li", null, h("span", { class: "chip status" }, M.why.statusWord(a.status)),
+              h("span", null, external(a.link, a.title) || a.title))))] : null,
+        ]);
+      }
       if (!d.readable) return h("p", { class: "muted" }, M.t("visitor.why.unread"));
       return [
         h("p", null, M.t("visitor.why.entries", { count: d.summary.entries })),
@@ -471,8 +545,9 @@ window.Maity = window.Maity || {};
         hero(answer, d, base, reporting, cta),
         answer.kind === "project" ? band(d) : null,
         tabBar(answer, base, title),
-        // The Overview's own sections run across the page; every other view in the stored pages' column.
-        answer.kind === "project" ? draw.project(d, base, true)
+        // The Overview and the Board, Team, Organisation and Why tabs draw their own sections across
+        // the page; a card's page stands in the stored pages' column.
+        ACROSS.includes(answer.kind) ? draw[answer.kind](d, base, true)
           : h("div", { class: "stored-page" }, h("div", { class: "wrap" }, draw[answer.kind] ? draw[answer.kind](d, base, true) : null))));
       document.title = title;
       // The hero's "Try it" leads where the header's call to action does (§16.7.5, the landing

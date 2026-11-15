@@ -274,24 +274,31 @@ def _other_roles(who: dict[int, Person]) -> dict[str, int]:
     return counts
 
 
-def members_data(conn: Connection, who: dict[int, Person]) -> dict[str, Any]:
-    """The Team tab's `data` (§16.9, `team`): each one shown with the picture their own page
-    shows, by the project page's rule (`public_projects.member_pictures`)."""
-    shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
-    pictures = member_pictures(
+def shown_pictures(conn: Connection, who: dict[int, Person]) -> dict[str, str | None]:
+    """The picture of each member the views name, as their own page shows it (§16.9), by human
+    or agent id: the project page's rule (`public_projects.member_pictures`). One read for the
+    Team and the Organisation tab."""
+    shown = [p for p in who.values() if p.shown]
+    return member_pictures(
         conn,
         [(p.principal, p.profile_on) for p in shown if p.human],
         [p.principal for p in shown if not p.human],
     )
+
+
+def _pictured(person: Person, pictures: dict[str, str | None]) -> dict[str, Any] | None:
+    """Someone shown with the picture their own page shows; None for one the page does not name."""
+    named = _shown(person)
+    return None if named is None else {**named, "picture": pictures.get(person.principal)}
+
+
+def members_data(who: dict[int, Person], pictures: dict[str, str | None]) -> dict[str, Any]:
+    """The Team tab's `data` (§16.9, `team`): each one shown with the picture their own page
+    shows (`pictures`)."""
+    shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
     return {
         "shown": [
-            {
-                **(_shown(p) or {}),
-                "picture": pictures.get(p.principal),
-                "trust": p.trust,
-                "role": p.role,
-            }
-            for p in shown
+            {**(_pictured(p, pictures) or {}), "trust": p.trust, "role": p.role} for p in shown
         ],
         "others": [{"role": r, "count": n} for r, n in sorted(_other_roles(who).items())],
     }
@@ -306,8 +313,9 @@ def _tree_order(p: Person) -> tuple[int, str, str, int]:
     return (0, p.handle or "", p.role, p.id) if p.shown else (1, "", p.role, p.id)
 
 
-def organisation_data(who: dict[int, Person]) -> dict[str, Any]:
-    """The nodes carry a number of this answer, so no member id leaves the hub."""
+def organisation_data(who: dict[int, Person], pictures: dict[str, str | None]) -> dict[str, Any]:
+    """The nodes carry a number of this answer, so no member id leaves the hub. A named node's
+    `person` carries the picture as the Team tab's does (`pictures`, §16.9)."""
     ordered = sorted(who.values(), key=_tree_order)
     index = {p.id: i for i, p in enumerate(ordered)}
     nodes = []
@@ -316,7 +324,7 @@ def organisation_data(who: dict[int, Person]) -> dict[str, Any]:
         nodes.append(
             {
                 "index": index[p.id],
-                "person": _shown(p),
+                "person": _pictured(p, pictures),
                 "role": p.role,
                 "reports_to": None if boss is None else index[boss],
             }
@@ -456,10 +464,11 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
         hub.forge_instance_namespaces, full.split("/", 1)[0]
     )
     why = why_data(conn, project, f"/{full}/why", by_instance)
+    faces = shown_pictures(conn, who)
     views = (
         ("board", "Board", board_html(columns, who, gone, full), board_data(columns, who, gone)),
-        ("team", "Team", members_html(who), members_data(conn, who)),
-        ("organisation", "Organisation", organisation_html(who), organisation_data(who)),
+        ("team", "Team", members_html(who), members_data(who, faces)),
+        ("organisation", "Organisation", organisation_html(who), organisation_data(who, faces)),
         ("why", "Why", why_html(why), why),
     )
     pages = []
