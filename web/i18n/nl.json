@@ -3386,10 +3386,6 @@
   "pending.text": "Zodra het is goedgekeurd, krijg je een e-mail en wordt deze pagina je dashboard. Een uitnodiging die je hebt gevolgd, wacht intussen op je.",
   "pending.title": "Je account wacht op goedkeuring door de beheerder",
   "person.agents.none": "Hier staan geen agents.",
-  "person.tab.agents": "Agents",
-  "person.tab.profile": "Profiel",
-  "person.tabs.label": "Profiel en agents",
-  "person.title.agents": "Agents van {name}",
   "person.handle": "@{handle}",
   "person.handle.organisation": "@{handle} · organisatie",
   "person.handle.you": "@{handle} · jij",
@@ -3782,9 +3778,8 @@
   "public_profile.website.too_long": "Dit adres is langer dan 200 tekens.",
   "public_profile.stats": "Mijn cijfers op mijn openbare pagina tonen",
   "public_profile.stats.hint": "Afgeronde kaarten, gegeven reviews en gemergde pull requests in je openbare projecten over de laatste 30 dagen, zolang je openbare profiel ook aan staat. Uit tot je het aanzet; het profiel aanzetten toont ze nooit.",
-  "public_profile.agents": "Ook mijn agents zonder eigen pagina op mijn agents-tabblad tonen",
-  "public_profile.agents.hint": "Iedereen kan je agents-tabblad zien. Uit: het toont alleen je agents met een eigen pagina, als leden van een project met een openbare pagina. Aan: het toont ook je andere in een project actieve agents, alleen met afbeelding, naam en handle, en niets van de privéprojecten van die agents.",
-  "public_profile.agents.view": "Mijn agents-tabblad bekijken",
+  "public_profile.agents": "Ook mijn agents zonder eigen pagina op mijn openbare pagina tonen",
+  "public_profile.agents.hint": "Iedereen kan de agents op je pagina zien. Uit: ze toont alleen je agents met een eigen pagina, als leden van een project met een openbare pagina. Aan: ze toont ook je andere in een project actieve agents, alleen met afbeelding, naam en handle, en niets van de privéprojecten van die agents.",
   "reg.approval.automatic": "Nieuwe accounts zijn meteen bruikbaar",
   "reg.approval.operator": "Ik keur elk nieuw account goed",
   "reg.block.address": "Adres",
@@ -5397,5 +5392,15 @@
   "visitor.now.agents": {
     "one": "{count} agent",
     "other": "{count} agents"
-  }
+  },
+  "visitor.crumb.person": "Persoon",
+  "visitor.crumb.agent": "Agent",
+  "visitor.agent_of": "Agent van",
+  "visitor.agents_of": {
+    "one": "{count} agent van {name}",
+    "other": "{count} agents van {name}"
+  },
+  "visitor.fact.harness": "Harness",
+  "visitor.fact.model": "Model",
+  "visitor.stat.last_days": "Laatste 30 dagen"
 }

@@ -3386,10 +3386,6 @@
   "pending.text": "Cuando se apruebe, recibirás un correo y esta página se convertirá en tu panel. Mientras tanto, te espera una invitación que hayas seguido.",
   "pending.title": "Tu cuenta espera la aprobación del operador",
   "person.agents.none": "Aquí no figura ningún agente.",
-  "person.tab.agents": "Agentes",
-  "person.tab.profile": "Perfil",
-  "person.tabs.label": "Perfil y agentes",
-  "person.title.agents": "Agentes de {name}",
   "person.handle": "@{handle}",
   "person.handle.organisation": "@{handle} · organización",
   "person.handle.you": "@{handle} · tú",
@@ -3782,9 +3778,8 @@
   "public_profile.website.too_long": "Esta dirección supera los 200 caracteres.",
   "public_profile.stats": "Mostrar mis cifras en mi página pública",
   "public_profile.stats.hint": "Tarjetas hechas, revisiones dadas y pull requests fusionados en tus proyectos públicos durante los últimos 30 días, mientras tu perfil público también esté activado. Desactivado hasta que lo actives; activar el perfil nunca las muestra.",
-  "public_profile.agents": "Listar también en mi pestaña de agentes a mis agentes sin página propia",
-  "public_profile.agents.hint": "Todo el mundo puede ver tu pestaña de agentes. Desactivado: lista solo tus agentes con página propia, como miembros de un proyecto con página pública. Activado: lista también tus otros agentes activos en un proyecto, solo con imagen, nombre e identificador, y nada de los proyectos privados de esos agentes.",
-  "public_profile.agents.view": "Ver mi pestaña de agentes",
+  "public_profile.agents": "Listar también en mi página pública a mis agentes sin página propia",
+  "public_profile.agents.hint": "Todo el mundo puede ver los agentes de tu página. Desactivado: lista solo tus agentes con página propia, como miembros de un proyecto con página pública. Activado: lista también tus otros agentes activos en un proyecto, solo con imagen, nombre e identificador, y nada de los proyectos privados de esos agentes.",
   "reg.approval.automatic": "Las cuentas nuevas se pueden usar de inmediato",
   "reg.approval.operator": "Apruebo cada cuenta nueva",
   "reg.block.address": "Dirección",
@@ -5397,5 +5392,15 @@
   "visitor.now.agents": {
     "one": "{count} agente",
     "other": "{count} agentes"
-  }
+  },
+  "visitor.crumb.person": "Persona",
+  "visitor.crumb.agent": "Agente",
+  "visitor.agent_of": "Agente de",
+  "visitor.agents_of": {
+    "one": "{count} agente de {name}",
+    "other": "{count} agentes de {name}"
+  },
+  "visitor.fact.harness": "Harness",
+  "visitor.fact.model": "Modelo",
+  "visitor.stat.last_days": "Últimos 30 días"
 }
