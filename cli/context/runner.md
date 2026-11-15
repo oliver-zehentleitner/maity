@@ -498,7 +498,10 @@ its settings switches that off; unknown keys are refused. Started one
 level above the clone, it loaded none of the clone's configuration, also
 after the agent had worked in the clone. The folder is writable for the
 agent, so a run could leave configuration there for the next one: hence
-the check at every start. The mode is set because agy 1.5.7 made `auto`
+the check at every start, and in `supervised` mode before every run of
+the loop too, which starts agy again per event and after a failed run
+without the supervisor (the loop runs the same check, through the same
+listing, as the agents' user; review of PR #1815). The mode is set because agy 1.5.7 made `auto`
 the default, also headless, and in the test its reviewer model let a
 command leave the sandbox and list `.git/maity`. The settings are merged
 with the user's own, not replacing them; the owner accepted that for
@@ -543,6 +546,87 @@ delete what the agent left there.
   in a folder of its own.
 - Leaving agy's mode as it comes: `auto` lets a model decide whether a
   command leaves the sandbox.
+
+## agy's sandbox is reported off until the runner sees agy's own sandbox start
+
+**Id:** 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; agy 1.5.7's `--help`, its changelog and its built-in documentation; docs/api.md §15.3; review of PR #1815 (fix order A449: a namespace probe is a precondition, not agy's sandbox start), 2026-11-14
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** agy gains a command, flag or dry run that starts its terminal sandbox alone without a model call or the sign-in, or a setting that fails a run when the sandbox is missing: then a bounded check of that start can report `on`
+
+The runner advertises `sandbox: off` for agy on every host, so an agy
+placement runs as `sandbox_unavailable` and `require_sandbox = true`
+refuses it. The session settings still switch agy's terminal sandbox on
+(`enableTerminalSandbox`): what the runner reports does not change what
+agy does. `maity runner check` tries, as the agents' user, whether the
+namespaces agy's sandbox needs start (`unshare --user --map-root-user
+--mount --pid --fork --net true`, on Linux, on an ssh host there) and
+prints the result as a diagnostic, "agy's sandbox start not verified";
+it never turns the capability on.
+
+**Reason:** §15.3 lets the runner say `on` only where it has seen agy's
+sandbox start, because agy runs a command without it, silently, where it
+cannot start. agy 1.5.7 has no command that starts only its sandbox, as
+`codex sandbox -- true` does for Codex. Namespaces that start are the
+precondition named in agy's changelog, not agy's sandbox start, so they
+cannot satisfy the contract; until a bounded check of agy's own start
+exists, the code follows the contract and reports `off`.
+
+**Rejected alternatives:**
+- Reporting `on` where the namespaces start (the first version of this
+  PR): a precondition probe, which the contract does not accept as having
+  seen the sandbox start.
+- A headless `agy -p` run that executes one command: it needs the
+  operator's sign-in, costs model quota at every service start, and its
+  answer is the model's text, not an exit code.
+- Turning agy's sandbox off in the session settings while it is
+  reported off: `proceed-in-sandbox` would then fall back to asking,
+  which a supervised run refuses, and a host where it does start would
+  lose it.
+
+## agy's session settings: prefixes for grants, the sign-in denied, hosts allowed
+
+**Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; the test runs of agy 1.5.7 in the notes of card tsk-e062xzrgfxxc; agy's built-in documentation of its rule forms; `agy --settings <file> agents` in a home of its own, which refuses unknown settings and values but not malformed rules
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** a real session shows a rule form not matching as assumed, or git cannot reach the forge from agy's sandbox
+
+Details of the settings §15.3 describes, chosen in the code:
+
+- A grant's `allow` entry becomes `command(<prefix>)`: the words before
+  a closing ` *`; an entry with another `*` is left out. Only the prefix
+  form was seen to work in a run; agy accepts a malformed rule at start
+  without a word, so an unverified form (`regex:`) could silently match
+  nothing. The cost: an entry without ` *` allows any arguments, and a
+  left-out entry still runs inside the sandbox, as every unlisted
+  command does.
+- The file tools are denied the private paths every sandbox hides, but
+  for `~/.gemini` only agy's sign-in file: agy's sandboxed commands use
+  their scratch and artifact directories there. Other harnesses' sandboxes
+  hide all of `~/.gemini`.
+- Writes to GIT_PROTECTED are denied to the file tools, as Claude Code's
+  `Edit` denies are. Whether such a deny also makes the path read-only in
+  agy's sandbox, as the `.git/maity` read deny masked that directory in
+  the test, is unknown, so each session gets SANDBOX_GIT_CONFIG as well;
+  the three settings do no harm where `.git/config` stays writable.
+- `read_url(<host>)` for the hub, the forge and the grant's `network`
+  hosts, agy's documented rule for a domain, so git and `maity`'s
+  traffic may get out of the sandbox's network block. Not seen in a run.
+- `command(...)` denies only for prefixes (`git -c`, `git --config-env`,
+  `git --exec-path`, `gh`); git is not allowed at all and runs in the
+  sandbox, as §15.3 lists only `maity` and the grant.
+
+**Rejected alternatives:**
+- Denying all of `~/.gemini` to agy as well: it could break agy's own
+  sandboxed scratch, unseen.
+- Mapping grants with agy's `regex:` form to keep Claude Code's exact
+  match: no run showed how agy anchors it.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 

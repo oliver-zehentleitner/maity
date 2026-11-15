@@ -21,6 +21,7 @@ collect_ignore = (
     [
         "test_adapters.py",
         "test_agent_user.py",
+        "test_antigravity.py",
         "test_availability.py",
         "test_confinement.py",
         "test_operate.py",

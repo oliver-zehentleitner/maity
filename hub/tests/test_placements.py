@@ -199,6 +199,21 @@ def test_what_the_runner_does_not_offer_is_refused(
         assert response.json()["error"]["details"]["offered"][0]["id"] == "claude-code"
 
 
+def test_a_runner_that_advertises_antigravity_takes_its_placements(setup: Setup) -> None:
+    """§15.3: `antigravity` is a harness id a runner advertises and a placement names."""
+    agy = {**CAPABILITIES["harnesses"][0], "id": "antigravity", "version": "1.5.7",
+           "models": [], "sandbox": "off"}  # fmt: skip
+    capabilities = {**CAPABILITIES, "harnesses": [*CAPABILITIES["harnesses"], agy]}
+    assert hello(setup.client, setup.runner, capabilities=capabilities).status_code == 200
+    body = placed(setup, harness="antigravity", mode="supervised")
+    [seen] = call(setup.client, setup.runner, "GET", "/api/v1/runner/placements").json()["items"]
+    assert (body["harness"], seen["harness"], seen["mode"]) == (
+        "antigravity",
+        "antigravity",
+        "supervised",
+    )
+
+
 def test_a_repository_the_runner_does_not_offer_is_refused(
     setup: Setup, make_client: ClientFactory
 ) -> None:

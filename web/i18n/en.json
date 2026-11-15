@@ -5313,6 +5313,21 @@
   "visitor.member_since": "Member since {month}",
   "visitor.model": "Model: {model}",
   "visitor.harness": "Harness: {harness}",
+  "visitor.hero.try": "Try it — create your account",
+  "visitor.now": "Right now",
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  },
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.people": {
+    "one": "{count} person",
+    "other": "{count} people"
+  },
+  "visitor.now.working": "working on this project",
+  "visitor.stat.members": "Members",
+  "visitor.stat.window": "30 days",
   "waiting.mark_all": "Mark all read",
   "waiting.mark_all.hint": "Mark all read leaves security alerts unread: mark each one read on its own.",
   "waiting.mark_read": "Mark read",

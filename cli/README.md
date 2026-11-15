@@ -1214,6 +1214,30 @@ project's own harness configuration is never loaded:
   and the repository's `allow` list; deny `webfetch` and directories
   outside the clone. `AGENTS.md` is named as
   an instruction.
+- **Antigravity** (`agy`) starts in a workspace folder the runner makes
+  per placement, `<workspaces>/<project id>/<clone>`, with the clone as
+  `repo` in it, never in the clone: agy loads its start directory's own
+  configuration, hooks and MCP servers included, and those run outside
+  its sandbox. Before every start the runner refuses a folder that holds
+  anything besides `repo` (`workspace_not_bare`), lies inside a git work
+  tree or is not at its real path (`workspace_in_repository`), and deletes
+  nothing there. Each session gets runner-written `--settings`: the
+  default agent mode (not `auto`), `proceed-in-sandbox`, the terminal
+  sandbox on, the folder trusted, the file tools denied `.git/maity`,
+  writes to `.git/config` and `.git/hooks`, the other clones'
+  credentials, the runner's state and the listed home secrets with agy's
+  sign-in; `maity`, the repository's `allow` list (as agy's command
+  prefixes) and the hub's, forge's and `network` hosts allowed. An allowed
+  command may leave agy's sandbox. agy also merges the agents' user's own
+  `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
+  continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.
+  Its sandbox is advertised `off` until the runner can see agy's own
+  sandbox start (`sandbox_unavailable`; `require_sandbox = true` refuses
+  it); `maity runner check` reports whether the namespaces it needs start
+  for the agents' user, as a diagnostic. The workspace folder is checked
+  before every start and before every run of the supervised loop.
+  [`docs/runners.md`](../docs/runners.md#antigravity-agy)
+  has the details.
 
 `stub` (no model, for tests) runs as before.
 
@@ -1253,7 +1277,8 @@ Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,
 `~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
 `~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
-configuration, and the runner's own configuration and state. Any other
+configuration, `~/.gemini` (for agy itself only its sign-in), and the
+runner's own configuration and state. Any other
 secret there, such as an `.env` file of your own, stays readable. On
 macOS the list does not cover the Keychain, where Claude Code and, by
 default, `gh` keep their logins: a sandboxed command may reach it
