@@ -3280,6 +3280,16 @@ in his words are this design's (inferred).
   An older version goes only once no running session started from it,
   and an install and a rollback hold the tool's lock across processes,
   so neither overwrites the other's `state.json` (a4xv's review).
+- **A start keeps the tool its gate looked at.** The start gate reads the
+  harness's probe, sandbox and held state once, under the supervisor's
+  lock, and the launch uses that same view (`GateView`), held through
+  the clone and join, which can take minutes. A rollback in that window
+  therefore still starts the version just left, under the sandbox
+  decision made for that version, and the session then counts as one
+  on an older version. Rejected: a fresh look under the lock right
+  before the tmux start, refusing or retrying when it changed; it would
+  add a second gate whose answer can differ from the first, for a
+  window that ends in a consistent start either way (47me's review).
 - **"Update now" is read, not pushed.** The hub stores the owner's
   request on the runner, and the runner's tool thread reads `GET /runner`
   at most once a minute while a tool is updated daily, apart from the
