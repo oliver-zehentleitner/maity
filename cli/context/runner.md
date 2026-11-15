@@ -605,8 +605,10 @@ Details of the settings §15.3 describes, chosen in the code:
   without a word, so an unverified form (`regex:`) could silently match
   nothing. The cost: an entry without ` *` allowed any arguments.
   Superseded for entries without `*` by the exact grants below
-  (f0ef544a-a531-4073-9572-af946f5475b2), 2026-11-15; the closing ` *`
-  and the left-out entry with another `*` stay as described here.
+  (f0ef544a-a531-4073-9572-af946f5475b2), 2026-11-15, and for the closing
+  ` *` entries too — no command grant is given to agy any more — by
+  f8a7b727-8c1f-4df9-98eb-8f9ef8879352; the left-out entry with another
+  `*` stays as described here.
 - The file tools are denied the private paths every sandbox hides, but
   for `~/.gemini` only agy's sign-in file: agy's sandboxed commands use
   their scratch and artifact directories there. Other harnesses' sandboxes
