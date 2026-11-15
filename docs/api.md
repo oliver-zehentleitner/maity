@@ -21120,7 +21120,9 @@ same header and footer (§16.7.5).
   `?v=<digest>` of the file and are answered with `Cache-Control:
   public, max-age=31536000, immutable`. The hero's rings and other
   pictures of the design are inline SVG in the template. The frame's
-  stylesheet `/assets/landing/public-pages.css` (§16.7.5) is served the
+  stylesheets `/assets/landing/public-pages.css` and
+  `/assets/landing/public-sections.css` (§16.7.5; the second holds the
+  public pages' design, §16.9, which the dashboard links too) are served the
   same way, and the two pictures it names under
   `/assets/landing/brand/` without a digest, answered `no-cache`. The page is
   complete without the script: all text is in the HTML, every section
@@ -22045,9 +22047,10 @@ static page is the answer to a `GET` without a valid session (§16.7's
 definition); with one, the same path is the app shell, and the
 dashboard links to the page where one exists. A visitor's `GET` answers
 the page inside the app shell: the page's title, description and canonical
-link in its head, its text in `<main>`, no `noindex`, so that a crawler reads
-it and the dashboard then draws the same view read-only from "What visitors
-read in the dashboard" below; the shell's own security policy applies and the
+link in its head, the frame's stylesheets (§16.7.5) linked there too, its text
+in `<main>`, no `noindex`, so that a crawler reads it, a reader sees it at once
+in its final design, and the dashboard then draws the same view read-only from
+"What visitors read in the dashboard" below, in the same structure; the shell's own security policy applies and the
 page's `ETag` also covers the shell. `?as=public` answers the page on its
 own, in the frame of §16.7.5, under the headers below. Wherever this section
 says a page is not served, the path answers the app shell, exactly as
@@ -22150,15 +22153,14 @@ the list answers the app shell.
 - **Team** (at `/{owner}/{slug}/team`) — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page; a
   member whose profile is under a moderation hold only in a count per
-  role. No presence, no instances, no avatar in the page's HTML (a
-  picture is on the member's own page, and in this page's and the
-  project page's `data`, by the member's own page's rule, as the table
-  of "What visitors read in the dashboard" below says).
+  role, and each shown member's picture by the member's own page's rule
+  (§6.10, as in this page's and the project page's `data`, "What visitors
+  read in the dashboard" below), their first letter where that page shows
+  none. No presence and no instances.
 - **Organisation** — the reporting lines (§6.2) between the members
   Team shows; a member who is not shown is an unnamed box with its
-  role, so the shape of the team is visible and no hidden name is. No
-  avatar in the page's HTML; a named member's picture is in this
-  page's `data`, as on Team.
+  role, so the shape of the team is visible and no hidden name is. A
+  named member's picture as on Team; an unnamed box has none.
 - **Why** — what the hub already reads of the project's Keep the Why
   (§11.3), nothing more: the export's summary counts, the family's
   members by name or path with their published dashboards' links, and the attention
@@ -22527,11 +22529,17 @@ member, agent or project on a page — and the counts; a card that leaves
 the Board's 30-day window for `done` and `cancelled`, or drops below
 the 200 of an open column, is not a removal and leaves with the next
 render. The
-hub serves the stored page (the hub keeps it in its database, one row per page): plain HTML with an inline stylesheet, no script, no
-font from anywhere, and no image but the person's or the agent's
-picture on their own page and the pictures of the agents a person's
-agents page lists ("A person's agents", above), from this hub (§6.10;
-the hub has no other public image store, §16.7).
+hub serves the stored page (the hub keeps it in its database, one row per page): HTML in the
+design the dashboard draws for a visitor ("What visitors read in the dashboard", below), in the
+same structure of elements and classes, styled by the frame's stylesheets (§16.7.5) and by no
+stylesheet or style of its own, no script, no font from anywhere, and no image but the pictures
+of this hub (§6.10; the hub has no other public image store, §16.7): the person's or the
+agent's picture on their own page, the pictures of the agents a person's agents page lists
+("A person's agents", above), and on a project's pages the pictures of the members they name,
+each by the member's own page's rule. Its fixed words are English, as its other fixed text. A
+page rendered by an earlier version of the hub never replaces one a later version rendered,
+and a page of an earlier version is rendered again, so a hub being upgraded serves the new
+design everywhere once it runs only the new version.
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
