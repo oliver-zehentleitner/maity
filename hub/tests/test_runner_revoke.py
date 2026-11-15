@@ -554,7 +554,7 @@ def test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking(
     no retry covers: a lock taken through a subquery of the runners did (`runners.lock`)."""
     from types import SimpleNamespace
 
-    from maity_hub.auth.leaks import revoke_runner_credential
+    from maity_hub.auth.revocation import revoke_runner_credential
     from maity_hub.routes import runners as runner_routes
     from maity_hub.runners import live_credential_id
     from tests.concurrency import finished, race, waiting

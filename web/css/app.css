@@ -595,6 +595,11 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 /* The request to chat with one's agents (§9.6): its boxes and two rules above the note (js/inbox.js). */
 .chat-access { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; gap: 6px; }
 .chat-access legend { font-weight: 600; padding: 0 4px; }
+/* The request's two parts (js/inbox.js chatAccessPicker): one's own agents, then with whom. */
+.chat-access fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.chat-access fieldset legend { padding: 0; }
+.chat-access fieldset p { margin: 0; }
+.chat-access fieldset + fieldset { margin-top: 6px; }
 .chat-access label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
 .chat-access label:not(.check) { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
 .chat-access .hint, .chat-access .muted { margin: 0; }

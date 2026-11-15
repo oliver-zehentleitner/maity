@@ -46,7 +46,7 @@ def due(row: Any) -> bool:
 def revoke_agent(conn: Connection, credential_id: str, by: str | None) -> None:
     """Revoke an agent credential a runner's stop names, and say so to the agent and the
     owners (`credential_revoked`, §15.10), once: only the revocation that wins says it."""
-    from maity_hub.auth.leaks import revoke
+    from maity_hub.auth.revocation import revoke
 
     if not revoke(conn, credential_id, REASON, by):
         return

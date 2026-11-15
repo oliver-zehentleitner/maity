@@ -673,7 +673,7 @@ removes nothing a person might still need, and the question stays open:
   "Revocation stops the placement" names every path; its workspace bullet
   says a start that came in meanwhile "joins anew" with `rejoin` set. A
   stop would undo that start, so this one revocation leaves `desired`
-  as it is (`leaks.revoke(stops_placements=False)`).
+  as it is (`revocation.revoke(stops_placements=False)`).
 - **`rejoin` set by a removal bumps no `generation`.** The field table
   says every `rejoin` does; the route's own rule names only `rejoin` and
   `workspace_epoch`, and a new generation would restart a running agent.

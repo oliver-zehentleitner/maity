@@ -11341,9 +11341,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const caEntry = () => main.querySelector(".current");
     const caBox = (id) => caEntry().querySelectorAll("input").find((i) => i.id === "chat-access-req-ch01-" + id);
     const caAllowBtns = () => caAllow.map(([, label]) => btn(caEntry(), label));
-    expect(caEntry().querySelector("fieldset.chat-access") && caBox("agent-agt-x").checked && caBox("agent-agt-y").checked && !caBox("human").checked,
+    expect(caEntry().querySelector(".chat-access") && caBox("agent-agt-x").checked && caBox("agent-agt-y").checked && !caBox("human").checked,
       "chat request: a box per waiting or held agent, all ticked, and the side's human not ticked");
-    expect(text(caEntry().querySelector("fieldset.chat-access")).includes("@agent-y · a message from them is held for it")
+    // Two parts (tsk-3b2znzcw4rxv): one's own agents alone, then with whom, their agents always and their person
+    // as a box of its own, so the other side never reads as one of one's agents.
+    const caMine = caEntry().querySelector("fieldset.chat-access-mine"), caWhom = caEntry().querySelector("fieldset.chat-access-whom");
+    expect(caMine && caWhom && text(caMine.querySelector("legend")) === "Which of your agents may chat"
+      && caMine.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-agent-agt-x,chat-access-req-ch01-agent-agt-y"
+      && text(caWhom.querySelector("legend")) === "With whom" && text(caWhom).includes("@guest's agents, always")
+      && caWhom.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-human"
+      && text(caWhom).includes("Also @guest in person"),
+      "chat request: your agents in one part, with whom in the next: @guest's agents always, @guest in person a tick of its own");
+    expect(text(caEntry().querySelector(".chat-access")).includes("@agent-y · a message from them is held for it")
       && text(caEntry()).includes("@guest sits in a chat where your agents wait: unticked, your agents go on waiting there."),
       "chat request: each agent says why it is on the request, and the human's box says what unticked means in a chat");
     expect(caAllowBtns().every((b) => b && !b.disabled) && !btn(caEntry(), "No").disabled && btn(caEntry(), "Talk").disabled,
