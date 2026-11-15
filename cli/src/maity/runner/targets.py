@@ -216,7 +216,9 @@ def probe_remote(
     sandbox: dict[str, bool] = {}
     held: set[str] = set()
     for harness in harnesses.values():
-        if harness.id == "codex":  # tried on the host, as the local target tries it here
+        if harness.id == "antigravity":  # off until agy's own sandbox is seen starting
+            sandbox[harness.id] = False  # (capabilities.sandbox_available)
+        elif harness.id == "codex":  # tried on the host, as the local target tries it here
             codex = found[harness.id].path
             sandbox[harness.id] = (
                 codex is not None

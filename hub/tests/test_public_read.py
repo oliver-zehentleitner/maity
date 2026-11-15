@@ -57,13 +57,19 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
         "links",
         "people",
         "agents",
+        "members",
         "statistics",
         "ticker",
         "online",
     }
     assert set(project["data"]["statistics"]) == {"totals", "members"}
     assert set(project["data"]["online"]) == {"humans", "agents", "named", "as_of"}
-    assert project["data"]["people"] and all(set(p) == PERSON for p in project["data"]["people"])
+    assert all(set(p) == PERSON | {"picture"} for p in project["data"]["online"]["named"])
+    assert all(set(e) == {"type", "text", "url", "at", "merge"} for e in project["data"]["ticker"])
+    assert isinstance(project["data"]["members"], int)
+    people, agents = project["data"]["people"], project["data"]["agents"]
+    assert people and all(set(p) == PERSON | {"picture", "role"} for p in people)
+    assert agents and all(set(a) == PERSON | {"picture", "role", "harness"} for a in agents)
 
     board = read(world, f"{BASE}/board")
     assert board["kind"] == "board" and set(board["data"]) == {"columns"}
@@ -104,7 +110,7 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
         "harness",
     }
     assert all(set(p) == {"name", "full_name", "role"} for p in agent["data"]["projects"])
-    assert set(agent["data"]["owner"]) == PERSON
+    assert set(agent["data"]["owner"]) == PERSON | {"picture"}
 
 
 def test_nothing_private_reaches_an_answer(world: World, migrated: Engine) -> None:
