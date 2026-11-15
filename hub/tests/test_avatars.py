@@ -17,7 +17,6 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
-
 KEPT = "private, max-age=31536000, immutable"  # a request under the current version (§6.10)
 REVALIDATED = "private, no-cache"  # any other request for a picture
 
