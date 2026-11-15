@@ -5232,5 +5232,31 @@
   "mine.start_tab.label": "启动时作为标签页打开",
   "mine.start_tab.hint": "适用于尚无自己标签页的浏览器，例如在新设备上首次登录时。浏览器打开了哪些标签页，只保留在该浏览器中。",
   "mine.start_tab.saved_on": "已保存：此项目启动时会作为标签页打开。",
-  "mine.start_tab.saved_off": "已保存：此项目启动时不再作为标签页打开。"
+  "mine.start_tab.saved_off": "已保存：此项目启动时不再作为标签页打开。",
+  "visitor.hero.try": "试一试 — 创建你的账户",
+  "visitor.now": "此刻",
+  "visitor.now.both": "{people} · {agents} 在线",
+  "visitor.now.one": "{who} 在线",
+  "visitor.now.working": "正在参与此项目",
+  "visitor.stat.members": "成员",
+  "visitor.stat.window": "30 天",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "other": "还有 {count} 位"
+  },
+  "visitor.team.both": "{people}，{agents}",
+  "visitor.team.all": {
+    "other": "全部 {count} 位成员 →"
+  },
+  "visitor.merged": "最近合并",
+  "visitor.merged.window": "最近 7 天的拉取请求和决定",
+  "visitor.merged.pill": "已合并",
+  "visitor.merged.by": "作者 {author}",
+  "visitor.merged.touches": "涉及 {areas}",
+  "visitor.now.people": {
+    "other": "{count} 个人"
+  },
+  "visitor.now.agents": {
+    "other": "{count} 个智能体"
+  }
 }

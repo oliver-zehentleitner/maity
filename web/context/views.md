@@ -5774,8 +5774,9 @@ across the page (`nav.ptabs`), and the view itself stands under it in the stored
 
 - The tile is the project's first letter, as the hub's `/explore` draws it (`monogram` in
   `public_projects.py`, mirrored in the dashboard): projects have no picture.
-- The members figure counts the project's own `people` and `agents`, which name every member
-  (§16.9); the other figures are `statistics.totals`. A figure that is 0 or `null` is left out.
+- The members figure is the project's `members` (§16.9, the Team tab's count, those it names and
+  those it only counts; since part 2, tsk-h822960mytm9 brought the field); the other figures are
+  `statistics.totals`. A figure that is 0 or `null` is left out.
 - "Try it" goes where the header's call to action goes (the frame model's `header.cta`, the
   landing hero's primary button), filled in once the frame is read: where the header has none,
   neither has the hero.
@@ -5815,6 +5816,54 @@ file keeps the person and agent pages that follow on the same rules instead of c
 
 **Revisit when:** the hub's stored pages (`?as=public`) draw the same hero and band, so the rules
 belong with `public-pages.css`; or the signed-in frame gets the same look.
+
+## A visitor's project page shows twelve team cards and eight faces, a letter where no picture is, merges as cards and decisions as lines
+
+**Id:** d0565716-aca3-48f1-8168-4752e733ca3a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3, part 2 (the parts that needed tsk-h822960mytm9's data, #1816); the designer's approved mockup (project.html: twelve cards, "All 29 members →", nine faces and "+12", PR cards over a decision list; README points 3, 5 and 6; the maintainer's approval in group chat seq 118113, 2026-11-12); docs/api.md §16.9 (`people`, `agents`, `members`, `ticker[].merge`, `online.named` with `picture`); `web/js/visitor.js`, 2026-11-15
+**See:** views.md#a-visitors-project-page-has-the-mockups-hero-band-and-tab-bar-their-rules-are-one-stylesheet-of-the-dashboard-loaded-with-the-frames — ceca5e16-eb8f-4936-b15d-c4e75333959c — as of 2026-11-15
+
+Signed out, a project's Overview (`js/visitor.js`) draws under the tab bar two sections across the
+page, in the mockup's section style: **Team** and **Recently merged**. The hero's **Right now**
+shows who is online as faces.
+
+- Team: the people, then the agents, in the hub's order, the first 12 as cards (picture, name,
+  `@handle`, role chip, an agent's harness, a dot while the member is in `online.named`). The line
+  beside the heading counts the listed people and agents; the link "All N members →" leads to the
+  Team tab and names `members`, so a member the page only counts is there too.
+- Right now: the first 8 of `online.named` as a stack of faces, each a link to the member's page
+  named by its `aria-label`, then "+N" for the rest of the named.
+- A picture is the public address the hub sends, asked at the size it serves (`?s=64` for the
+  stack's 30 px, `?s=128` for a card's 44 px). Where the hub sends none (a person whose profile is
+  off), the address is not the hub's own, or the image does not load, the face is the member's
+  first letter, the same rule as the project's tile. A person is round, an agent a rounded square.
+- Recently merged: the ticker's `merge` entries as pull request cards from `merge`'s fields
+  (number, "Merged", time, title, author, areas), each a link to the pull request; every other
+  entry (a decision) as a line in a list under the cards. Without a merge the heading reads
+  "Recently". All entries the hub sends are drawn: §16.9 caps them at 20 of the last 7 days, the
+  sentence under the heading says so.
+- Signed in, a non-member's view keeps its lists: `css/public-sections.css` is off there.
+
+**Reason:** the mockup shows 12 cards and a stack of 9 faces in a hero panel that must not wrap on a
+phone (8 faces + "+N" fit 390 px); a page of 30 cards would push what happened lately far down,
+and the Team tab already lists everyone. The letter keeps a card the same size whatever the
+profile says, and needs no account id, which the generated identicon would (§6.10). The hub sends
+merge facts as fields so that no client parses `text`.
+
+**Rejected alternatives:**
+- The dashboard's identicon (`M.avatar`) as the placeholder: it is built from a member id the
+  public data does not carry, and would differ from the hub's own pages.
+- Every member as a card: long for a team of agents, and the Team tab is one click away.
+- Merges and decisions mixed in one list, as before: the mockup splits them, a merge has facts a
+  decision has not.
+- Restyling the Board, Team, Organisation and Why tabs in the same PR (README point 10): the Team
+  tab's answer carries no pictures, and the lead asked for small PRs; a later part.
+
+**Revisit when:** the Team tab's answer carries pictures (it can then draw the same cards), or the
+ticker's limit of 20 changes.
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 

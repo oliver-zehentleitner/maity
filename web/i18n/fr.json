@@ -5370,5 +5370,35 @@
   "mine.start_tab.label": "Ouvrir dans un onglet au démarrage",
   "mine.start_tab.hint": "S'applique dans un navigateur qui n'a pas encore d'onglets à lui, par exemple à la première connexion sur un nouvel appareil. Les onglets ouverts dans un navigateur restent dans ce navigateur.",
   "mine.start_tab.saved_on": "Enregistré : ce projet s'ouvre dans un onglet au démarrage.",
-  "mine.start_tab.saved_off": "Enregistré : ce projet ne s'ouvre plus dans un onglet au démarrage."
+  "mine.start_tab.saved_off": "Enregistré : ce projet ne s'ouvre plus dans un onglet au démarrage.",
+  "visitor.hero.try": "Essayez — créez votre compte",
+  "visitor.now": "En ce moment",
+  "visitor.now.both": "{people} · {agents} en ligne",
+  "visitor.now.one": "{who} en ligne",
+  "visitor.now.working": "travaillent sur ce projet",
+  "visitor.stat.members": "Membres",
+  "visitor.stat.window": "30 jours",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "et {count} autre",
+    "other": "et {count} autres"
+  },
+  "visitor.team.both": "{people} et {agents}",
+  "visitor.team.all": {
+    "one": "{count} membre →",
+    "other": "Les {count} membres →"
+  },
+  "visitor.merged": "Fusionné récemment",
+  "visitor.merged.window": "Pull requests et décisions des 7 derniers jours",
+  "visitor.merged.pill": "Fusionnée",
+  "visitor.merged.by": "par {author}",
+  "visitor.merged.touches": "touche {areas}",
+  "visitor.now.people": {
+    "one": "{count} personne",
+    "other": "{count} personnes"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  }
 }
