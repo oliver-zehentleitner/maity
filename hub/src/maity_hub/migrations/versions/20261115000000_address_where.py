@@ -7,7 +7,7 @@ address and once it expired. Rows pending at the upgrade start empty: their noti
 "From:" line, as before.
 
 Revision ID: 20261115000000_address_where
-Revises: 20261113130000_experiment_notice
+Revises: 20261114200000_chat_verdict
 Create Date: 2026-11-15
 """
 
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261115000000_address_where"
-down_revision: str | None = "20261113130000_experiment_notice"
+down_revision: str | None = "20261114200000_chat_verdict"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
