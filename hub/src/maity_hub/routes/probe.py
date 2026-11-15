@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from maity_hub import clock, forge, probe
 from maity_hub.access import membership
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid, probe_not_configured
 from maity_hub.namespace import ProjectRoute
@@ -32,7 +33,7 @@ def read_probe(
     max_age: int = Query(default=probe.MAX_AGE, ge=0, le=86400),
 ) -> JSONResponse:
     engine = engine_of(request)
-    with engine.begin() as conn:
+    with read_transaction(engine) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
     project = mine.project
