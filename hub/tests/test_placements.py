@@ -199,6 +199,21 @@ def test_what_the_runner_does_not_offer_is_refused(
         assert response.json()["error"]["details"]["offered"][0]["id"] == "claude-code"
 
 
+def test_a_runner_that_advertises_antigravity_takes_its_placements(setup: Setup) -> None:
+    """§15.3: `antigravity` is a harness id a runner advertises and a placement names."""
+    agy = {**CAPABILITIES["harnesses"][0], "id": "antigravity", "version": "1.5.7",
+           "models": [], "sandbox": "off"}  # fmt: skip
+    capabilities = {**CAPABILITIES, "harnesses": [*CAPABILITIES["harnesses"], agy]}
+    assert hello(setup.client, setup.runner, capabilities=capabilities).status_code == 200
+    body = placed(setup, harness="antigravity", mode="supervised")
+    [seen] = call(setup.client, setup.runner, "GET", "/api/v1/runner/placements").json()["items"]
+    assert (body["harness"], seen["harness"], seen["mode"]) == (
+        "antigravity",
+        "antigravity",
+        "supervised",
+    )
+
+
 def test_a_repository_the_runner_does_not_offer_is_refused(
     setup: Setup, make_client: ClientFactory
 ) -> None:
@@ -568,6 +583,17 @@ def test_hung_takes_its_details(setup: Setup, state: str, detail: str) -> None:
     assert refused.json()["error"]["details"]["fields"] == {"reason": "not_with_state"}
 
 
+def test_updated_goes_with_exited(setup: Setup) -> None:
+    """§15.16: a session an older `maity` started, ended at its idle point and resumed."""
+    body = placed(setup)
+    taken = report(setup, body, 1, state="exited", reason="updated")
+    assert taken.status_code == 200, taken.text
+    assert get(setup, body["id"])["reported"]["reason"] == "updated"
+    refused = report(setup, body, 2, state="failed", reason="updated")
+    assert refused.status_code == 400
+    assert refused.json()["error"]["details"]["fields"] == {"reason": "not_with_state"}
+
+
 def test_since_is_clamped_to_hub_time(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1, since="2999-01-01T00:00:00Z")
@@ -799,7 +825,9 @@ def test_a_suspension_revokes_the_accounts_own_placed_agent_as_suspended(setup: 
 
 def test_a_suspension_locks_the_runner_rows_before_any_project(setup: Setup) -> None:
     """Runner credentials, then runner rows, as a runner's own call takes them; then the
-    projects in one pass; then the account's own credentials, then the runners' stop."""
+    projects in one pass; then the account's own credentials, then the runners' stop. The
+    runners' ids are read before, without a lock: the credentials are locked by that list,
+    not through a subquery (`runners.lock`)."""
     from tests.test_moderation import transactions
 
     _running_on_the_runner(setup)
@@ -810,12 +838,17 @@ def test_a_suspension_locks_the_runner_rows_before_any_project(setup: Setup) -> 
     def first(test: typing.Callable[[str], bool]) -> int:
         return next(i for i, x in enumerate(statements) if test(x))
 
+    ids = first(lambda x: x.startswith("SELECT runner.id \nFROM runner \nWHERE runner.owner_id"))
     keys = first(lambda x: x.startswith("SELECT runner_credential.id \nFROM runner_credential"))
-    rows = first(lambda x: x.startswith("SELECT runner.id \nFROM runner \nWHERE runner.owner_id"))
+    rows = first(
+        lambda x: x.startswith("SELECT runner.id, ")
+        and "\nFROM runner \nWHERE runner.owner_id" in x
+    )
     project = first(lambda x: x.startswith("SELECT project.id,") and "WHERE project.id =" in x)
     own = first(lambda x: x.startswith("UPDATE credential "))
     runner = first(lambda x: x.startswith("UPDATE runner_credential "))
-    assert keys < rows < project < own < runner, statements
+    assert ids < keys < rows < project < own < runner, statements
+    assert "FOR UPDATE" not in statements[ids] and "SELECT" not in statements[keys][6:]
     if setup.engine.dialect.name != "sqlite":  # SQLite renders no lock clause
         assert "FOR UPDATE" in statements[keys] and "FOR UPDATE" in statements[rows]
 
@@ -856,7 +889,7 @@ def test_restart_bumps_the_generation_and_rejoin_needs_a_revoked_credential(
     assert rejoin.json()["error"]["details"]["fields"] == {"rejoin": "credential_not_revoked"}
 
 
-# Who revoked and why, as `auth.leaks.revoke` stores it; "runner_owner" and "owner" name a
+# Who revoked and why, as `auth.revocation.revoke` stores it; "runner_owner" and "owner" name a
 # human of the setup, filled in by the test. `True`: anyone with the restart's right undoes it.
 REVOCATIONS = [
     ("revoked", "owner", False),  # a person, through the member routes

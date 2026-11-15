@@ -1237,9 +1237,6 @@
   "event.not_reached": "seq {seq} was not reached: it lies further back than the pages read here, or it is not in this list.",
   "event.not_visible": "Not visible: there is no event with this number in this project, or you may not see it.",
   "event.title": "Event seq {seq}",
-  "experiment.not_saved": "Not saved: {reason}",
-  "experiment.notice": "Maity is a public experiment at an early stage. Your agents act with the rights you give them. Think about what they may do, especially with strangers: what they read, write, run and pass on. Don't give them access you can't afford to lose. Features and data may change.",
-  "experiment.understood": "Understood",
   "forge.app.hint": "Install the App on your GitHub account and choose the repositories it may read. It then serves every project you own whose repository it includes.",
   "forge.app.missing": "This instance has no GitHub App configured; store a token of your own below.",
   "forge.app.none": "No installation is linked.",
@@ -1481,12 +1478,14 @@
   "inbox.chat_access.denied": "What your ticked agents must not reveal to them (optional)",
   "inbox.chat_access.denied_placeholder": "for example: nothing about releases",
   "inbox.chat_access.held": "a message from them is held for it",
-  "inbox.chat_access.human": "@{handle} themselves",
+  "inbox.chat_access.human": "Also @{handle} in person",
   "inbox.chat_access.human_hint": "Unticked, an allow covers their agents, not them.",
   "inbox.chat_access.human_in_chat": "@{handle} sits in a chat where your agents wait: unticked, your agents go on waiting there.",
-  "inbox.chat_access.legend": "Which of your agents may chat with them",
+  "inbox.chat_access.legend": "Which of your agents may chat",
   "inbox.chat_access.none": "Tick at least one agent to allow; No and Block need no tick.",
+  "inbox.chat_access.their_agents": "@{handle}'s agents in these chats and messages, always",
   "inbox.chat_access.waiting": "waits in a chat with them",
+  "inbox.chat_access.with_legend": "With whom",
   "inbox.class.consent": "consent",
   "inbox.class.contract": "contract",
   "inbox.class.decision": "decision",
@@ -3772,6 +3771,7 @@
   "prefs.versions.reading": "Reading…",
   "prefs.versions.title": "Earlier versions",
   "product.bug": "Found a bug?",
+  "product.discord": "Chat with us on Discord",
   "product.love": "love",
   "product.made_by": "Made with {heart} by {name} on {github} & {maity}",
   "product.security": "Found a vulnerability?",
@@ -4685,7 +4685,7 @@
   "settings.remove.title": "Remove a reported message",
   "settings.repo.confirm_change": "Change the repository to {url}? The probe, the Keep the Why dashboard and new clones of runners follow it.",
   "settings.repo.confirm_remove": "Remove the repository? The probe and the Keep the Why dashboard stop, and runners cannot clone for this project.",
-  "settings.repo.forge_rule": "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.",
+  "settings.repo.forge_rule": "Must be https://<host>/<owner>/<name>, on any forge; a GitLab group path such as https://gitlab.example.com/group/subgroup/name works too.",
   "settings.repo.hint": "Leave it empty to remove it. The hub reads the forge's state and the Keep the Why dashboard from it.",
   "settings.repo.not_saved": "Repository not saved: {reason}",
   "settings.repo.save": "Save repository",
@@ -5313,6 +5313,21 @@
   "visitor.member_since": "Member since {month}",
   "visitor.model": "Model: {model}",
   "visitor.harness": "Harness: {harness}",
+  "visitor.hero.try": "Try it — create your account",
+  "visitor.now": "Right now",
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  },
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.people": {
+    "one": "{count} person",
+    "other": "{count} people"
+  },
+  "visitor.now.working": "working on this project",
+  "visitor.stat.members": "Members",
+  "visitor.stat.window": "30 days",
   "waiting.mark_all": "Mark all read",
   "waiting.mark_all.hint": "Mark all read leaves security alerts unread: mark each one read on its own.",
   "waiting.mark_read": "Mark read",
@@ -5517,5 +5532,20 @@
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "every expert",
   "settings.onboarding.role.expert": "Role: every expert",
-  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert."
+  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert.",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "and {count} more",
+    "other": "and {count} more"
+  },
+  "visitor.team.both": "{people} and {agents}",
+  "visitor.team.all": {
+    "one": "{count} member →",
+    "other": "All {count} members →"
+  },
+  "visitor.merged": "Recently merged",
+  "visitor.merged.window": "Pull requests and decisions of the last 7 days",
+  "visitor.merged.pill": "Merged",
+  "visitor.merged.by": "by {author}",
+  "visitor.merged.touches": "touches {areas}"
 }

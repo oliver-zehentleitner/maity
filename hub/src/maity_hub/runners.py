@@ -116,6 +116,36 @@ def latest_credential(conn: Connection, runner_id: str) -> Any:
     ).first()
 
 
+def lock(conn: Connection, *where: Any) -> list[Any]:
+    """Lock the runners `where` selects, and before them their unrevoked credentials, each in
+    the order of their ids; returns the runners' rows, read under their locks.
+
+    Credential, then runner, is the order every authenticated runner call takes the two rows
+    in (`auth/caller.py`, `hello`). A change of a runner that holds its row and then revokes
+    or rewrites its credential would otherwise wait for a runner's call that holds the
+    credential and waits for the runner row: a deadlock on PostgreSQL and MariaDB.
+
+    The runners' ids are read first, without a lock, and the credentials then locked by that
+    list of ids. A locking read with the runners as a subquery reads them in a snapshot of
+    its own, and MariaDB with `innodb_snapshot_isolation` (on by default since 11.6) fails it
+    with 1020, not retried, when a runner's call it waited for committed in between. A runner
+    that `where` selects only after the first read (a first pairing that creates one) is still
+    locked and returned by the last read, without its credential first: that read repeats
+    `where` instead of the list (hub/context/placements.md d4a8c42e)."""
+    ids = list(conn.execute(select(t.runner.c.id).where(*where).order_by(t.runner.c.id)).scalars())
+    r = t.runner_credential.c
+    if ids:
+        conn.execute(
+            select(r.id)
+            .where(r.runner_id.in_(ids), r.revoked_at.is_(None))
+            .order_by(r.id)
+            .with_for_update()
+        ).all()
+    return list(
+        conn.execute(select(t.runner).where(*where).order_by(t.runner.c.id).with_for_update()).all()
+    )
+
+
 def live_credential_id(conn: Connection, runner_id: str) -> str | None:
     found: str | None = conn.execute(
         select(t.runner_credential.c.id).where(
@@ -221,6 +251,9 @@ def runner_view(
         "updated_at": ts(row.updated_at),
         "removed_at": ts(row.removed_at),
     }
+    if row.capabilities and "tools" in row.capabilities:
+        # Beside the tools the runner reports, and absent like them (§15.3, §15.16).
+        view["update_requests"] = open_requests(row.update_requests)
     if not capabilities:
         del view["capabilities"]
     if viewer_id == row.owner_id:  # the record, never the value; the owner's only
@@ -236,6 +269,17 @@ def runner_view(
             }
         )
     return view
+
+
+def open_requests(stored: Any) -> list[dict[str, str]]:
+    """The `Update now` requests still standing (§15.16). The stored list also keeps, per
+    tool, the last request the hub issued once it was settled or dropped (`done`): the
+    hub-owned floor that keeps a later request from ever taking its time again."""
+    return [
+        {"tool": r["tool"], "requested_at": r["requested_at"]}
+        for r in stored or []
+        if not r.get("done")
+    ]
 
 
 def load_runner(conn: Connection, runner_id: str, viewer_id: str | None) -> dict[str, Any]:

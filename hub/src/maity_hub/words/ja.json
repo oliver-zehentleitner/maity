@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "このメールボックスはあなたの第2要素でもあります。読める人は誰でもパスワードを再設定してサインインできます。アカウントの「セキュリティ」で認証アプリを設定すると、再設定にもそのコードが必要になります。\n\n",
   "password_reset.subject": "[Maity] パスワードの再設定",
   "product.bug": "バグを見つけましたか？",
+  "product.discord": "Discord でチャットしましょう",
   "product.love": "愛",
   "product.made_by": "{name} が {github} & {maity} で {heart} を込めて作りました",
   "product.security": "脆弱性を見つけましたか？",

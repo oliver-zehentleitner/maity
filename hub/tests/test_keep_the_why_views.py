@@ -202,7 +202,7 @@ def test_a_failed_refresh_answers_with_the_last_good_export(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     project(owner)
     good = owner.get(f"{PATH}/export", params={"root": "cli"}).json()
@@ -567,7 +567,7 @@ def test_a_repository_that_turns_private_is_dropped_on_the_next_refresh(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     other_repository(fake)
     project(owner)
@@ -594,7 +594,7 @@ def test_a_file_dropped_for_room_is_not_read_again_within_30_seconds(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     lean(fake, f"{BASE}/state.json", entry(1))
     project(owner)
@@ -686,7 +686,7 @@ def test_the_visibility_is_read_again_within_600_seconds_whatever_max_age(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     other_repository(fake)
     project(owner)
@@ -751,14 +751,11 @@ def test_the_visibility_check_passes_a_spent_budget_on() -> None:
 
 def test_the_project_slots_stay_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ktw_reads, "SLOTS_KEPT", 3)
-    busy = ktw_reads._slot("busy")
-    busy.acquire()
-    try:
+    with ktw_reads._permits("busy"):  # a read in flight: its slot is in use
+        busy = ktw_reads._slots["busy"]
         for n in range(10):
-            ktw_reads._slot(f"p{n}")
+            ktw_reads._free(ktw_reads._slot(f"p{n}"))  # each forgotten once it is idle
         assert len(ktw_reads._slots) <= 4 and ktw_reads._slots["busy"] is busy
-    finally:
-        busy.release()
 
 
 # --- be2n's review and the ruling on named repositories ---------------------------------------
@@ -886,7 +883,7 @@ def test_a_stale_file_whose_refresh_failed_is_not_read_again_within_30_seconds(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     lean(fake, f"{BASE}/state.json", entry(1))
     project(owner)
@@ -961,7 +958,7 @@ def test_a_retry_at_that_passed_is_read_again_not_repeated(
     from datetime import UTC, datetime
 
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     root = fake.files[".keep-the-why"]
     past = forge.ForgeUnavailableError(
@@ -1097,7 +1094,7 @@ def test_a_childs_retry_at_that_passed_is_read_again(
     from datetime import UTC, datetime
 
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     child = fake.files["hub/.keep-the-why"]
     fake.files["hub/.keep-the-why"] = forge.ForgeUnavailableError(
@@ -1170,12 +1167,12 @@ def test_two_calls_for_one_file_make_one_read(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(ktw_reads, "_read", read)
     slot = ktw_reads._slot("p1")
-    held = [slot.acquire(blocking=False) for _ in range(ktw.IN_FLIGHT)]  # both calls queue
+    held = [slot.permits.acquire(blocking=False) for _ in range(ktw.IN_FLIGHT)]  # both calls queue
     assert all(held)
     answers: list[Any] = []
 
     def call() -> None:
-        start = ktw._now()
+        start = ktw.now()
         answers.append(ktw_reads._file("p1", "bodies", url, 1024, 600, start))
 
     threads = [threading.Thread(target=call) for _ in range(2)]
@@ -1183,7 +1180,7 @@ def test_two_calls_for_one_file_make_one_read(monkeypatch: pytest.MonkeyPatch) -
         thread.start()
     time.sleep(0.1)  # both wait, inside ktw.LOCK_WAIT
     for _ in held:
-        slot.release()
+        slot.permits.release()
     for thread in threads:
         thread.join(timeout=10)
     assert len(answers) == 2 and reads == [url]
@@ -1198,7 +1195,7 @@ def test_a_held_permit_answers_within_the_lock_wait(
     import time
 
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     project(owner)
     owner.get(PATH)  # §11.3 reads every member's export into the store
@@ -1228,21 +1225,21 @@ def test_a_call_past_the_wait_answers_the_file_it_holds(monkeypatch: pytest.Monk
 
     url = "https://pages.example/ktw/state.body.json"
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     kept = ktw.RAW.put("bodies", url, {"a": {"text": "t"}})
     now[0] += 700  # past max_age and the hold
     reads: list[str] = []
     monkeypatch.setattr(ktw_reads, "_read", lambda kind, at, cap: reads.append(at))
     slot = ktw_reads._slot("p1")
-    held = [slot.acquire(blocking=False) for _ in range(ktw.IN_FLIGHT)]
+    held = [slot.permits.acquire(blocking=False) for _ in range(ktw.IN_FLIGHT)]
     assert all(held)
     try:
         began = time.monotonic()
-        answer = ktw_reads._file("p1", "bodies", url, 1024, 600, ktw._now())
+        answer = ktw_reads._file("p1", "bodies", url, 1024, 600, ktw.now())
         took = time.monotonic() - began
     finally:
         for _ in held:
-            slot.release()
+            slot.permits.release()
     assert answer == (kept, False) and reads == []
     assert took < ktw.LOCK_WAIT + 1.0, took
 
@@ -1258,7 +1255,7 @@ def test_a_read_under_way_keeps_a_second_call_waiting_at_most_the_lock_wait(
 
     url = "https://pages.example/ktw/state.body.json"
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     kept = ktw.RAW.put("bodies", url, {"a": {"text": "old"}}) if held else None
     now[0] += 700
     started, release = threading.Event(), threading.Event()
@@ -1277,10 +1274,10 @@ def test_a_read_under_way_keeps_a_second_call_waiting_at_most_the_lock_wait(
         assert started.wait(5)
         began = time.monotonic()
         if held:
-            assert ktw_reads._file("p1", "bodies", url, 1024, 600, ktw._now()) == (kept, False)
+            assert ktw_reads._file("p1", "bodies", url, 1024, 600, ktw.now()) == (kept, False)
         else:
             with pytest.raises(ktw.MemberError) as failed:
-                ktw_reads._file("p1", "bodies", url, 1024, 600, ktw._now())
+                ktw_reads._file("p1", "bodies", url, 1024, 600, ktw.now())
             assert failed.value.reason == "timeout"
         took = time.monotonic() - began
     finally:
@@ -1295,7 +1292,7 @@ def test_an_export_the_summary_read_is_held_after_a_drop(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     project(owner)
     owner.get(PATH)  # §11.3 reads every member's export into the store

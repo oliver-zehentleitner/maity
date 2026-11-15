@@ -25,7 +25,8 @@ from sqlalchemy import Connection, and_, or_, select, update
 from maity_hub import availability, clock, timing
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id_query
-from maity_hub.auth import credentials, nonces
+from maity_hub.auth import credentials, nonces, verifiers
+from maity_hub.auth.permitted import Calls
 from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
@@ -341,7 +342,8 @@ def _possessed(conn: Connection, facts: RequestFacts, value: str) -> Any:
     if presented is None:
         raise unauthenticated()
     row = _credential(conn, presented.credential_id)
-    if not credentials.secret_matches(presented.secret, row.verifier):
+    verifier = _verifier(row)
+    if verifier is None or not credentials.secret_matches(presented.secret, verifier):
         raise unauthenticated()
     return row
 
@@ -391,7 +393,8 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         facts.headers.get("maity-for"),
         facts.headers.get("maity-on-request"),
     )
-    if not credentials.signature_matches(row.verifier, canonical, signature):
+    verifier = _verifier(row)
+    if verifier is None or not credentials.signature_matches(verifier, canonical, signature):
         raise ApiError(401, "signature_invalid", "the signature does not verify")
     _refuse_revoked(row)  # only now: the signature proved possession (§1.3)
     # Only a verified request spends its nonce, so a forger cannot burn them.
@@ -446,6 +449,12 @@ RUNNER_CREDENTIAL_PREFIX = "rcrd-"
 def is_runner_credential(credential_id: str) -> bool:
     """Runner and agent credentials share the format and differ by the id's prefix."""
     return credential_id.startswith(RUNNER_CREDENTIAL_PREFIX)
+
+
+def _verifier(row: Any) -> str | None:
+    """The row's verifier, unsealed; None when the instance key does not open it."""
+    table: verifiers.Table = "runner_credential" if is_runner_credential(row.id) else "credential"
+    return verifiers.usable(table, row.id, row.verifier)
 
 
 def _credential(conn: Connection, credential_id: str) -> Any:
@@ -509,12 +518,12 @@ def _refuse_revoked(row: Any) -> None:
 
 # The two calls an isolated agent may still make, so that it learns why (§6.2), and
 # `GET /bootstrap`, whose parts are refused one by one as their single routes are (§5.4,
-# `refuse_isolated`).
-ISOLATED_MAY = {
-    ("GET", b"/api/v1/me"),
-    ("POST", b"/api/v1/me/resume"),
-    ("GET", b"/api/v1/bootstrap"),
-}
+# `refuse_isolated`). Read on the raw request path, so `/api/v1/m%65` is not `/me`.
+ISOLATED_MAY = Calls(
+    ("GET", "/me"),
+    ("POST", "/me/resume"),
+    ("GET", "/bootstrap"),
+)
 
 
 def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) -> None:
@@ -523,7 +532,7 @@ def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) ->
     own transaction."""
     if caller.kind != "agent" or caller.membership_id is None:
         return
-    if (method, path.encode()) in ISOLATED_MAY:
+    if ISOLATED_MAY.admits_api(method, path):
         return
     row = conn.execute(
         select(
@@ -550,7 +559,9 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
             "it uses the credential you already have",
             {"cli": cli_install, "then": "maity resume"},
         )
-    if row.isolated_since is not None and (facts.method, facts.raw_path) not in ISOLATED_MAY:
+    if row.isolated_since is not None and not ISOLATED_MAY.admits_api(
+        facts.method, facts.raw_path.decode("latin-1")  # byte for byte
+    ):
         # Before any side effect, as for a required signature (§6.2, "Isolation").
         from maity_hub import isolation
 

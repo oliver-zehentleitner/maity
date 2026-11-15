@@ -32,7 +32,10 @@ from maity_hub.runners import attached_project_ids, human_actor, live_credential
 from maity_hub.runners import audience as runner_audience
 from maity_hub.views import principal_id, ts
 
-HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
+HARNESSES = (
+    "claude-code", "codex", "opencode", "antigravity", "pi", "hermes", "kimi", "cline", "omp",
+    "stub",
+)  # fmt: skip
 MODES = ("interactive", "supervised")
 STATES = (
     "pending",
@@ -64,6 +67,8 @@ REASONS: dict[str, tuple[str, ...]] = {
     "image_pull": ("failed", "exited"),
     "stopped_by_hub": ("stopped",),
     "adopted": ("running",),
+    # §15.16: a session an older `maity` started, ended at its idle point and resumed
+    "updated": ("exited",),
     "orphaned": ("stopped",),
 }
 # `join_failed`'s detail is the hub's own error code (§15.7): any code in this form, matched
@@ -1282,7 +1287,7 @@ def _named_elsewhere(conn: Connection, placement: Any) -> bool:
 def _revoke_removed(conn: Connection, placement: Any, actor: Actor) -> None:
     """`revoked_reason: workspace_removed` (§10), told like any revocation (§15.10). The
     placement is not stopped by it: a start that came in meanwhile joins anew (`rejoin`)."""
-    from maity_hub.auth.leaks import revoke
+    from maity_hub.auth.revocation import revoke
 
     if not revoke(conn, placement.credential_id, "workspace_removed", None, stops_placements=False):
         return

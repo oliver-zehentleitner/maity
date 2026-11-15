@@ -589,10 +589,11 @@ NOTE_KINDS = frozenset({"note_added", "note_resolved", "note_edited"})
 SEE_ALL_TRUSTS = ("owner", "admin")
 # Kinds no agent reads, whatever its role or audience (§8.2): one names who shares an
 # environment, which only the humans responsible may know; invitations are a human's
-# business from issue to use, and never wake an agent (§3.4).
+# business from issue to use, and never wake an agent (§3.4); so is a join's revocation (§3.1).
 HUMANS_ONLY_KINDS = frozenset(
     {
         "shared_environment_detected",
+        "join_revoked",
         "invitation_created",
         "invitation_revoked",
         "invitation_voided",
@@ -927,6 +928,12 @@ def read(
     (`readable_by`)."""
 
     def wanted(row: Any, hidden: frozenset[str]) -> bool:
+        if (
+            chat_windows is not None
+            and row.kind == "chat_verdict"
+            and (row.payload or {}).get("author") != principal
+        ):
+            return False  # in the packet only for the member whose message it names (§5.2, §9.7)
         if chat_windows is not None and _group_chat(row) and row.kind == "message":
             window = chat_windows.get(row.conversation_id)
             mentioned = (row.payload or {}).get("mentions") or []
@@ -1137,6 +1144,19 @@ def wakes(
         # team's rule selected; `all` and the round's readers read it unwoken (§20.9).
         own = instance is not None and f"instance:{principal}#{instance}" in (row.audience or [])
         return own and row.actor_membership != membership.id
+    if row.kind == "chat_verdict":
+        # It wakes the message's author when that is an agent, as a reply would, by its
+        # team's `wake` rule (§6.18), and nobody else of the chat (§9.7). A redacted one
+        # names no author any more and wakes nobody.
+        if (
+            membership.agent_id is None
+            or (row.payload or {}).get("author") != principal
+            or f"member:{principal}" not in (row.audience or [])
+            or row.actor_membership == membership.id
+        ):
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
     if row.kind == "request_forwarded":
         # Only a forward to a member wakes, and only that member; an opening to the
         # admins wakes no agent, it would wake every admin agent at once (§7).

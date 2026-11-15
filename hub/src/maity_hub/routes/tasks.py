@@ -44,6 +44,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.board import history
 from maity_hub.board import links as card_links
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -535,13 +536,15 @@ def _revision(card: Any) -> int | None:
     return revision
 
 
-def _signatures(mine: Membership, card: Any, body: TaskPatch) -> dict[str, Any] | None:
+def _signatures(
+    conn: Connection, mine: Membership, card: Any, body: TaskPatch
+) -> dict[str, Any] | None:
     """The signatures after a `review→done` under `reviewer_and_tester`, else None."""
     if not (card.status == "review" and body.status == "done"):
         return None
     if not cards.two_signatures(mine.project):
         return None
-    return cards.sign(mine, card, body.approve, _revision(card))
+    return cards.sign(conn, mine, card, body.approve, _revision(card))
 
 
 def _check_label(label: str | None) -> None:
@@ -663,7 +666,7 @@ def list_tasks(
     cursor: str | None = None,
 ) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         query = select(t.card).where(t.card.c.project_id == mine.project.id)
@@ -793,7 +796,7 @@ def _after(
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}")
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
@@ -1156,7 +1159,7 @@ def patch_task(
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
-            signed = _signatures(mine, card, body)
+            signed = _signatures(conn, mine, card, body)
             if signed is not None:
                 values["approvals"] = signed
             if card.status == "review" and body.status == "in_progress":
@@ -2008,7 +2011,7 @@ def report(
             closing = False
             if not (mine.may("tasks:review") and mine.may("tasks:test")):
                 empty = SimpleNamespace(approvals=None)
-                signatures = cards.sign(mine, empty, None, revision)
+                signatures = cards.sign(conn, mine, empty, None, revision)
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
         now = clock.now()
         stored = {

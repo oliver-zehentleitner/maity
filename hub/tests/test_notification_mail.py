@@ -912,7 +912,9 @@ def test_the_security_mails_read_exactly_as_composed(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
     # The whole body and headers of each record mail, so that the shared closing lines and
-    # the record read (mailer._footer, mailer._record) stay byte for byte what they were.
+    # the record read (mailer._footer, mailer._record) stay byte for byte what they were;
+    # the changed password's notice and the daily cap's unlock link (#1756) among them.
+    from maity_hub.auth import second_factor
     from maity_hub.notifications import preferences, records
 
     owner, _ = setup(make_client, migrated)
@@ -921,6 +923,14 @@ def test_the_security_mails_read_exactly_as_composed(
         records.session_created(conn, owner.id, {"method": "password", **seen})
         records.write(conn, owner.id, "second_factor_changed", {"change": "enrolled", "by": "x"})
         records.write(conn, owner.id, "password_reset", {})
+        records.write(conn, owner.id, "password_changed", seen)
+        capped = {"day": "2026-10-25", "unlocks": 0, "password_generation": 0}
+        records.write(
+            conn,
+            owner.id,
+            "second_factor_failed",
+            {"method": second_factor.DAILY_LIMIT, **capped, **seen},
+        )
         epoch = conn.execute(
             select(t.notification_settings.c.epoch).where(
                 t.notification_settings.c.human_id == owner.id
@@ -971,3 +981,40 @@ def test_the_security_mails_read_exactly_as_composed(
         f"{PUBLIC}/agents\n" + settings + only
     )
     assert "List-Unsubscribe" not in reset.headers
+    changed = mails["[Maity] Your password was changed"]
+    assert changed.body == (
+        f"The password of your Maity account was changed at {stamps['password_changed']} from "
+        "Firefox on Linux, 203.0.113.9. Every other session has ended.\n\nIf this was not you, "
+        "reset your password, set up an authenticator app, and end your agents' access under "
+        f"Agents: {PUBLIC}/agents\n" + settings + only
+    )
+    unlock = f"{PUBLIC}/mail/second-factor-unlock/" + second_factor.unlock_token(
+        key, owner.id, "2026-10-25", 0, 0
+    )
+    capped_mail = mails[
+        "[Maity] Second-factor codes refused for today after too many wrong ones: Firefox on "
+        "Linux, 203.0.113.9"
+    ]
+    assert capped_mail.body == (
+        "Second-factor codes refused for today after too many wrong ones: Firefox on Linux, "
+        f"203.0.113.9.\n\nTime: {stamps['second_factor_failed']}\n\nIf this was not you, sign "
+        f"in and check your account here: {PUBLIC}/account/security\n"
+        "\nYour second factor is refused until the end of the day (UTC). If the wrong codes were "
+        f"yours, this link lets you try again today: {unlock}\nIf they were not, do not open the "
+        "link, and change your password.\n" + settings + only
+    )
+    for mail in (sign_in, factor, reset, changed, capped_mail):
+        assert mail.recipient == "me@example.org"
+    assert {r.subject for r in waiting} == {
+        sign_in.subject,
+        factor.subject,
+        reset.subject,
+        changed.subject,
+        capped_mail.subject,
+    }
+    assert sign_in.headers == {
+        "List-Unsubscribe": f"<{stop}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+    for mail in (factor, reset, changed, capped_mail):  # at once, never an unsubscribe link
+        assert mail.headers == {}, mail.headers

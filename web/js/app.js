@@ -544,7 +544,7 @@ window.Maity = window.Maity || {};
 
   // The repository (§6.1, project:admin, humans only): where the probe, the
   // Keep the Why dashboard and the runners' clones look. https only here;
-  // the hub checks the forge host. Changing or removing it asks first.
+  // the hub checks the rest of the shape. Changing or removing it asks first.
   function repositoryForm(ctx) {
     const current = ctx.project.repository && ctx.project.repository.url;
     const status = statusLine();
@@ -560,9 +560,12 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         error.textContent = "";
         input.removeAttribute("aria-invalid");
-        const url = input.value.trim().replace(/\/+$/, "");
+        // One trailing slash comes off, as the hub takes it off (§6.1 step 2); a second stays,
+        // so the shape check below refuses it, as the hub would for its empty segment.
+        const url = input.value.trim().replace(/([^/])\/$/, "$1");
         if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.repo.unchanged"))); return; }
-        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(forgeRule()); return; }
+        // The shape alone, a GitLab group path included; the hub checks the rest (§6.1).
+        if (url && !/^https:\/\/[^\s/]+(?:\/[^\s/]+){2,22}$/i.test(url)) { fail(forgeRule()); return; }
         if (current && !window.confirm(url
           ? M.t("settings.repo.confirm_change", { url })
           : M.t("settings.repo.confirm_remove"))) return;
@@ -573,7 +576,7 @@ window.Maity = window.Maity || {};
         } catch (err) {
           const fields = err.code === "invalid" && err.details && err.details.fields;
           const why = fields && (fields["repository.url"] || fields.repository);
-          if (why) { status.done(); fail(why === "not_a_configured_forge" ? forgeRule() : String(why)); }
+          if (why) { status.done(); fail(why === "not_a_repository_url" ? forgeRule() : String(why)); }
           else status.fail(M.t("settings.repo.not_saved"), err);
         }
       },
@@ -2346,6 +2349,9 @@ window.Maity = window.Maity || {};
     // page, a failed page, every signed-in drawing).
     if (M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
+    // The path `where` was parsed from: a click while this drawing waits moves the address on, and
+    // the newer drawing answers it; this one reads the page of its own address, if any (tsk-25x1t18ergxz).
+    let wherePath = null;
     let ctx;
     let keptSlug = null;
     // The invitation's token is in its path: no referrer before this drawing asks anything
@@ -2392,6 +2398,7 @@ window.Maity = window.Maity || {};
     if (seq !== renderSeq) return;
     try {
       where = parseRoute();
+      wherePath = M.route.current().path;
       const held = M.maintenance.running();
       // The reset reads no session: it ends every one and signs nobody in (§2.10).
       if (where.scope === "reset" && M.passwordReset && !held) { await M.passwordReset.page(main, document.getElementById("header")); return; }
@@ -2420,8 +2427,10 @@ window.Maity = window.Maity || {};
             return;
           }
           // A public page of this address, read-only (§16.9), in the landing's frame as the
-          // sign-in is (js/visitor.js); otherwise the login.
-          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
+          // sign-in is (js/visitor.js); otherwise the login. A drawing overtaken while it read the
+          // session asks for no page: a click during the first drawing went elsewhere.
+          if (seq !== renderSeq) return;
+          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, wherePath, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
           if (shown) return;
           // The hub's own page in <main> stands when its data could not be read. A dashboard
           // route asks for the sign-in; an address that shows a visitor nothing says so
@@ -2429,7 +2438,7 @@ window.Maity = window.Maity || {};
           // has no page: a read that failed otherwise (null) keeps the sign-in.
           if (seq === renderSeq && !hubPage) {
             if (M.notFound && shown === false && showsVisitorNothing(where)) {
-              M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
+              M.notFound.page(main, document.getElementById("header"), wherePath, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
             } else renderLogin(main);
           }
           return;
@@ -2487,7 +2496,7 @@ window.Maity = window.Maity || {};
           own.visiting = true;
           if (seq === renderSeq) renderHeader(own, null);
         };
-        if (await M.visitor.page(main, null, where, M.route.current().path, { signedIn: true, head, live: () => seq === renderSeq })) return;
+        if (await M.visitor.page(main, null, where, wherePath, { signedIn: true, head, live: () => seq === renderSeq })) return;
         if (seq !== renderSeq) return;
       }
       // An earlier address of a project (a rename, a transfer) leads to its current one.

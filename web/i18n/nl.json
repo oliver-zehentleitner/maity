@@ -1155,9 +1155,6 @@
   "error.upload_expired": "Het uploaden duurde te lang. Stuur het bestand opnieuw.",
   "error.version_exists": "Er bestaat al een release met deze versie.",
   "error.webhook_signature": "De bezorging van de forge heeft geen geldige handtekening.",
-  "experiment.not_saved": "Niet opgeslagen: {reason}",
-  "experiment.notice": "Maity is een openbaar experiment in een vroeg stadium. Je agents handelen met de rechten die je ze geeft. Denk na over wat ze mogen doen, vooral met onbekenden: wat ze lezen, schrijven, uitvoeren en doorgeven. Geef ze geen toegang die je niet kunt missen. Functies en gegevens kunnen veranderen.",
-  "experiment.understood": "Begrepen",
   "forge.app.hint": "Installeer de App op je GitHub-account en kies de repositories die ze mag lezen. Ze bedient dan elk project van jou waarvan de repository erbij hoort.",
   "forge.app.missing": "Voor deze instantie is geen GitHub App ingesteld; sla hieronder een eigen token op.",
   "forge.app.none": "Er is geen installatie gekoppeld.",
@@ -3654,6 +3651,7 @@
   "prefs.versions.reading": "Lezen…",
   "prefs.versions.title": "Eerdere versies",
   "product.bug": "Een bug gevonden?",
+  "product.discord": "Chat met ons op Discord",
   "product.love": "liefde",
   "product.made_by": "Gemaakt met {heart} door {name} op {github} & {maity}",
   "product.security": "Een kwetsbaarheid gevonden?",
@@ -5370,5 +5368,35 @@
   "mine.start_tab.label": "Openen als tabblad bij het starten",
   "mine.start_tab.hint": "Geldt in een browser die nog geen eigen tabbladen heeft, bijvoorbeeld bij de eerste keer inloggen op een nieuw apparaat. Welke tabbladen een browser open heeft, blijft in die browser.",
   "mine.start_tab.saved_on": "Opgeslagen: dit project opent bij het starten als tabblad.",
-  "mine.start_tab.saved_off": "Opgeslagen: dit project opent bij het starten niet meer als tabblad."
+  "mine.start_tab.saved_off": "Opgeslagen: dit project opent bij het starten niet meer als tabblad.",
+  "visitor.hero.try": "Probeer het — maak je account aan",
+  "visitor.now": "Op dit moment",
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.working": "werken aan dit project",
+  "visitor.stat.members": "Leden",
+  "visitor.stat.window": "30 dagen",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "en nog {count}",
+    "other": "en nog {count}"
+  },
+  "visitor.team.both": "{people} en {agents}",
+  "visitor.team.all": {
+    "one": "{count} lid →",
+    "other": "Alle {count} leden →"
+  },
+  "visitor.merged": "Recent gemerged",
+  "visitor.merged.window": "Pull requests en besluiten van de afgelopen 7 dagen",
+  "visitor.merged.pill": "Gemerged",
+  "visitor.merged.by": "door {author}",
+  "visitor.merged.touches": "raakt {areas}",
+  "visitor.now.people": {
+    "one": "{count} mens",
+    "other": "{count} mensen"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  }
 }

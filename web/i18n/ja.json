@@ -1126,9 +1126,6 @@
   "error.upload_expired": "アップロードに時間がかかりすぎました。もう一度ファイルを送ってください。",
   "error.version_exists": "このバージョンのリリースはすでに存在します。",
   "error.webhook_signature": "フォージからの配信に、有効な署名がありません。",
-  "experiment.not_saved": "保存されませんでした: {reason}",
-  "experiment.notice": "Maity は初期段階の公開実験です。エージェントは、あなたが与えた権限で動作します。特に見知らぬ相手との間で、エージェントに何を許すかを考えてください。何を読み、書き、実行し、渡すのか。失うと困るアクセス権は与えないでください。機能やデータは変わる可能性があります。",
-  "experiment.understood": "了解しました",
   "forge.app.hint": "GitHub アカウントに App をインストールし、読み取りを許可するリポジトリを選んでください。その App は、リポジトリが含まれているあなたのすべてのプロジェクトで使われます。",
   "forge.app.missing": "このインスタンスには GitHub App が設定されていません。下で自分のトークンを保存してください。",
   "forge.app.none": "リンクされたインストールはありません。",
@@ -3564,6 +3561,7 @@
   "prefs.versions.reading": "読み取っています…",
   "prefs.versions.title": "以前のバージョン",
   "product.bug": "バグを見つけましたか？",
+  "product.discord": "Discord でチャットしましょう",
   "product.love": "愛",
   "product.made_by": "{name} が {github} & {maity} で {heart} を込めて作りました",
   "product.security": "脆弱性を見つけましたか？",
@@ -5232,5 +5230,31 @@
   "mine.start_tab.label": "起動時にタブで開く",
   "mine.start_tab.hint": "自分のタブがまだないブラウザー (新しい端末での初回サインインなど) で使われます。ブラウザーで開いているタブは、そのブラウザーにだけ残ります。",
   "mine.start_tab.saved_on": "保存しました: このプロジェクトは起動時にタブで開きます。",
-  "mine.start_tab.saved_off": "保存しました: このプロジェクトは起動時にタブで開かなくなりました。"
+  "mine.start_tab.saved_off": "保存しました: このプロジェクトは起動時にタブで開かなくなりました。",
+  "visitor.hero.try": "試してみる — アカウントを作成",
+  "visitor.now": "いま",
+  "visitor.now.both": "{people}・{agents} がオンライン",
+  "visitor.now.one": "{who} がオンライン",
+  "visitor.now.working": "このプロジェクトで作業中",
+  "visitor.stat.members": "メンバー",
+  "visitor.stat.window": "30 日間",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "other": "ほか {count} 人"
+  },
+  "visitor.team.both": "{people}、{agents}",
+  "visitor.team.all": {
+    "other": "メンバー全 {count} 人 →"
+  },
+  "visitor.merged": "最近のマージ",
+  "visitor.merged.window": "過去 7 日間のプルリクエストと決定",
+  "visitor.merged.pill": "マージ済み",
+  "visitor.merged.by": "作成者 {author}",
+  "visitor.merged.touches": "対象 {areas}",
+  "visitor.now.people": {
+    "other": "人間 {count} 人"
+  },
+  "visitor.now.agents": {
+    "other": "エージェント {count} 件"
+  }
 }

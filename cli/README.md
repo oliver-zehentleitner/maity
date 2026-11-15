@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a11 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a12 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -952,6 +952,17 @@ managed Claude Code settings set `disableAllHooks` or
 `allowManagedHooksOnly`
 ([`docs/runners.md`](../docs/runners.md#git-in-an-agents-session)).
 
+`install = true` and `update = "daily"` under `[harness.claude-code]` or
+`[harness.codex]` let the runner install that tool and keep it current
+in `~/.local/share/maity-runner/tools/` (default off; local backend,
+`single` layout only; no `binary` with them). It runs no vendor install
+script: it fetches the exact release and checks Claude Code's signed
+manifest with `gpgv` (needed on the machine) or Codex's SHA-256 from
+GitHub, and refuses otherwise. `maity runner tools` lists the versions,
+`maity runner tools rollback <tool>` swaps the kept one in for new
+sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-current)).
+`[maity] update` is not carried out yet; `check` and `serve` refuse it.
+
 Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
@@ -1043,8 +1054,8 @@ Open gaps:
 - `git push` in the sandbox reads the same login, so code an allowed
   command runs can push to other repositories the account reaches
   (tsk-anek9pkb5r82).
-- Without the harness's sandbox (opencode, Claude Code off Linux or
-  without bwrap and socat) the deny rules are no boundary: repository
+- Without the harness's sandbox (opencode, Claude Code outside Linux
+  and macOS, or on Linux without bwrap and socat) the deny rules are no boundary: repository
   code can run gh or rewrite the runner's record of the repository.
 - On an ssh target, gh must be at the path the runner found on its own
   host, or `maity gh` refuses.
@@ -1062,6 +1073,8 @@ SIGTERM exits 0. In every case the agents keep running.
 ```sh
 maity runner serve            # in the foreground; as a service: `sudo maity runner install`
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
+maity runner tools [--json]   # the harness tools this runner installs and updates; no hub call
+maity runner tools rollback codex  # new sessions start with the kept version
 ```
 
 `status` shows each placement's state as the supervisor last recorded
@@ -1214,6 +1227,32 @@ project's own harness configuration is never loaded:
   and the repository's `allow` list; deny `webfetch` and directories
   outside the clone. `AGENTS.md` is named as
   an instruction.
+- **Antigravity** (`agy`) starts in a workspace folder the runner makes
+  per placement, `<workspaces>/<project id>/<clone>`, with the clone as
+  `repo` in it, never in the clone: agy loads its start directory's own
+  configuration, hooks and MCP servers included, and those run outside
+  its sandbox. Before every start the runner refuses a folder that holds
+  anything besides `repo` (`workspace_not_bare`), lies inside a git work
+  tree or is not at its real path (`workspace_in_repository`), and deletes
+  nothing there. Each session gets runner-written `--settings`: the
+  default agent mode (not `auto`), `proceed-in-sandbox`, the terminal
+  sandbox on, the folder trusted, the file tools denied `.git/maity`,
+  writes to `.git/config` and `.git/hooks`, the other clones'
+  credentials, the runner's state and the listed home secrets with agy's
+  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  repository's `allow` command list is not applied to agy — each entry,
+  exact or ` *` prefix, is left out and runs in agy's sandbox, named by
+  `maity runner check`. An allowed command may
+  leave agy's sandbox. agy also merges the agents' user's own
+  `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
+  continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.
+  Its sandbox is advertised `off` until the runner can see agy's own
+  sandbox start (`sandbox_unavailable`; `require_sandbox = true` refuses
+  it); `maity runner check` reports whether the namespaces it needs start
+  for the agents' user, as a diagnostic. The workspace folder is checked
+  before every start and before every run of the supervised loop.
+  [`docs/runners.md`](../docs/runners.md#antigravity-agy)
+  has the details.
 
 `stub` (no model, for tests) runs as before.
 
@@ -1253,7 +1292,8 @@ Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,
 `~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
 `~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
-configuration, and the runner's own configuration and state. Any other
+configuration, `~/.gemini` (for agy itself only its sign-in), and the
+runner's own configuration and state. Any other
 secret there, such as an `.env` file of your own, stays readable. On
 macOS the list does not cover the Keychain, where Claude Code and, by
 default, `gh` keep their logins: a sandboxed command may reach it

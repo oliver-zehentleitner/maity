@@ -616,7 +616,7 @@ def _undone_by_anyone(revoked: Any, runner: Any) -> bool:
     the runner and its agents' credentials with it (`runner_revoked`, by that owner). A
     revocation by a person through the member routes, a leak's or a suspension's is the
     owner's to undo alone. The reason alone decides nothing: a person revoking writes it
-    freely (`auth.leaks.revoke`), so who revoked is checked with it."""
+    freely (`auth.revocation.revoke`), so who revoked is checked with it."""
     if revoked.revoked_reason == "workspace_removed":
         return revoked.revoked_by is None
     if revoked.revoked_reason == runner_revoke.REASON:

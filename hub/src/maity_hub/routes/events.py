@@ -22,6 +22,7 @@ from maity_hub import (
     card_watches,
     chat_gate,
     chat_request,
+    chat_verdicts,
     clock,
     events,
     group_chats,
@@ -736,22 +737,33 @@ def post_message(
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
         audience = list(dict.fromkeys([*audience, *pinged]))
     # The card's own flow stays open (§9.6, "The work channel stays open"): an update's
-    # watchers, a review result's author and two leads (§8.4). `to` and a mention reach anyone
-    # else only through the gate below.
+    # watchers by a watch of their own, a review result's author and two leads (§8.4). `to`
+    # and a mention reach anyone else only through the gate below.
     passes: list[str] = []
-    # An update's watchers are read once: the gate leaves these agents be, and `events.emit`
-    # stores this same list as the event's private watcher list (§6.4), so a watch or unwatch
-    # committed meanwhile cannot leave an agent exempt but unlisted, or listed but held.
+    # An update's watchers are read once: `events.emit` stores this same list as the event's
+    # private watcher list (§6.4), and only a watcher on it passes, so a watch or unwatch
+    # committed meanwhile cannot leave an agent exempt but unlisted.
     watching: list[int] | None = None
+    # Its watchers by a watch that comes with a dependent card (§6.4): no consent of their
+    # side, so they reach it through the gate, and leave the list where it holds them.
+    derived: dict[str, int] = {}
     if review is not None:
         audience, passes = _deliver_review(conn, mine, body.task_id, review, audience)
     elif body.type == "update" and body.task_id is not None:
         watching = card_watches.at_write(conn, body.task_id)
-        passes = _watching_agents(conn, watching)
+        agents = _watching_agents(conn, watching)
+        own = card_watches.own(conn, body.task_id)
+        passes = [a for a, m in agents.items() if m in own]
+        derived = {a: m for a, m in agents.items() if m not in own}
     if body.type == "chat":  # where a chat text may cross the owner boundary (§9.6)
         chat_gate.boundary(conn, mine.project.id, me, body.body, sides)
     # A work message from another side reaches an agent only on its owner's yes (§9.6).
-    audience, held = chat_gate.hold(conn, mine.project.id, mine, body.type, audience, passes)
+    audience, held = chat_gate.hold(
+        conn, mine.project.id, mine, body.type, audience, passes, derived
+    )
+    if watching is not None and held:
+        dropped = {derived[a] for a in held if a in derived}
+        watching = [m for m in watching if m not in dropped]
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -782,27 +794,24 @@ def post_message(
     )
     attachments.attach(conn, named, seq)
     if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
-        author = (me, "agent" if mine.row.agent_id else "human")
-        side = chat_gate.owners_of(conn, [me]).get(me, me) if mine.row.agent_id else me
-        chat_request.note_held(conn, mine.project.id, seq, body.type, author, side, held)
+        chat_request.note_held_by(conn, mine, seq, body.type, held)
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
     return load_event(conn, str(seq), mine)
 
 
-def _watching_agents(conn: Connection, watching: list[int]) -> list[str]:
+def _watching_agents(conn: Connection, watching: list[int]) -> dict[str, int]:
     """The agents among an update's watchers (§6.4, `card_watches.at_write`), the list
-    `events.emit` stores for it: they read it whoever writes, so the gate leaves them be
-    (§9.6)."""
+    `events.emit` stores for it, each with its membership."""
     if not watching:
-        return []
+        return {}
     m = t.membership.c
-    return [
-        str(a)
-        for a in conn.execute(
-            select(m.agent_id).where(m.id.in_(watching), m.agent_id.is_not(None))
-        ).scalars()
-    ]
+    return {
+        str(a): int(i)
+        for a, i in conn.execute(
+            select(m.agent_id, m.id).where(m.id.in_(watching), m.agent_id.is_not(None))
+        ).all()
+    }
 
 
 def _deliver_review(
@@ -959,7 +968,7 @@ def writer(
                 select(t.event.c.conversation_id).where(
                     t.event.c.seq == seq,
                     t.event.c.project_id == found.project.id,
-                    t.event.c.kind == "message",
+                    t.event.c.kind.in_(CHAT_TEXTS),
                 )
             ).scalar()
         if (
@@ -1015,7 +1024,10 @@ def redact(
         if row is not None and group_chats.is_group(row.conversation_id):
             # A group chat's own rule: a place in the chat, no scope (§8.5).
             return _redact_in_group(conn, mine, caller, row, body, store)
-        mine.require("events:admin")
+        if row is None or row.kind != chat_verdicts.KIND or row.conversation_id is None:
+            # A direct chat's verdict is redacted as its message, by the human party, which
+            # needs no scope for it (§9.7); its rule follows below.
+            mine.require("events:admin")
         if row is None:
             raise not_found()
         # What the caller cannot read does not exist for it; no later refusal may say
@@ -1024,6 +1036,8 @@ def redact(
             row, mine.row, mine.principal_id, events.hidden_redactions(conn, [row], mine.row)
         ):
             raise not_found()
+        if row.kind == chat_verdicts.KIND and mine.kind != "human":
+            raise humans_only("an agent never redacts; it asks a human in the chat")
         # The tombstone's event reaches whoever could read the event, never more (§8.5).
         audience = list(row.audience or [])
         if row.conversation_id is not None:
@@ -1101,6 +1115,10 @@ def tombstone(
         return
     if row.kind == "message":
         attachments.redact_message(conn, row.seq, by, store)
+    if row.kind == chat_verdicts.KIND:
+        # The verdict it set stays, its sentence goes with the event's text: the row kept
+        # it apart from the payload, and a redaction leaves no copy of the text (§9.7).
+        chat_verdicts.redact_sentence(conn, row.seq)
     marker = (row.payload or {}).get("jour_fixe") if row.kind == "message" else None
     if marker:  # a round's statement or post: its copy in the round goes with it (§20.8)
         from maity_hub.jourfixe import exchange
@@ -1122,6 +1140,11 @@ def tombstone(
         # A chat's notice is the chat's, as the message was: no see-all reaches it.
         conversation_id=row.conversation_id,
     )
+
+
+# What a chat's redaction takes out: a message, and a verdict on one, redacted as a message of
+# its conversation (§8.5, §9.7).
+CHAT_TEXTS = ("message", chat_verdicts.KIND)
 
 
 def _not_a_participant() -> ApiError:
@@ -1157,14 +1180,14 @@ def _redact_in_group(
     if not readable:
         if not (closed and mine.kind == "human" and mine.may("members:admin")):
             raise not_found()
-        if row.kind != "message":  # only a message is redacted blind
+        if row.kind not in CHAT_TEXTS:  # only a message or a verdict is redacted blind
             raise not_found()
         blind = True
     if row.kind == "event_redacted":
         raise ApiError(
             400, "invalid", "a redaction cannot be redacted", {"reason": "already_redacted"}
         )
-    if row.kind != "message":  # a chat's own record (created, updated) holds no text
+    if row.kind not in CHAT_TEXTS:  # a chat's own record (created, updated) holds no text
         raise ApiError(400, "invalid", "only a message is redacted", {"reason": "not_a_message"})
     if not blind:
         if mine.kind != "human":
@@ -1174,7 +1197,7 @@ def _redact_in_group(
         former = group_chats.last_stay(conn, group.id, mine.id) is not None
         if closed and not former and not mine.may("members:admin"):
             raise _not_a_participant()
-    if "expect" in body.model_fields_set and not (closed and row.kind == "message"):
+    if "expect" in body.model_fields_set and not (closed and row.kind in CHAT_TEXTS):
         raise invalid({"expect": "mismatch"}, "the event is not a closed group chat's message")
     current = group_chats.stays(conn, group.id)
     audience = group_chats.audience(current)

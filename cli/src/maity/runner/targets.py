@@ -98,7 +98,7 @@ def local(
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
     as_user = AsUser(cfg.local.agent_user if cfg.local.layout == "agent_user" else None)
     path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
-    tools = {h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user)
+    tools = {h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user, cfg.tools_dir)
              for h in cfg.harnesses}  # fmt: skip
 
     def version(harness_id: str) -> str | None:
@@ -216,7 +216,9 @@ def probe_remote(
     sandbox: dict[str, bool] = {}
     held: set[str] = set()
     for harness in harnesses.values():
-        if harness.id == "codex":  # tried on the host, as the local target tries it here
+        if harness.id == "antigravity":  # off until agy's own sandbox is seen starting
+            sandbox[harness.id] = False  # (capabilities.sandbox_available)
+        elif harness.id == "codex":  # tried on the host, as the local target tries it here
             codex = found[harness.id].path
             sandbox[harness.id] = (
                 codex is not None

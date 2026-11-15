@@ -528,7 +528,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -599,7 +602,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -906,6 +912,9 @@
       "created_at": "string",
       "filed_by": "null",
       "forwarding": {
+       "array": null
+      },
+      "held": {
        "array": null
       },
       "holder": "string",
@@ -1347,6 +1356,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -1643,6 +1655,9 @@
    "forwarding": {
     "array": null
    },
+   "held": {
+    "array": null
+   },
    "holder": "string",
    "humans_only": "boolean",
    "id": "string",
@@ -1875,6 +1890,9 @@
    "forwarding": {
     "array": null
    },
+   "held": {
+    "array": null
+   },
    "holder": "string",
    "humans_only": "boolean",
    "id": "string",
@@ -1932,7 +1950,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/conversations/{group}/messages": {
@@ -1953,7 +1974,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/tasks": {
