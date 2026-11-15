@@ -683,8 +683,8 @@ def agy_grants(rules: Sequence[str]) -> AgyGrants:
     as one. An exact entry (no `*`) is not given to agy: it is left out and runs in agy's
     sandbox like every unlisted command, since agy does not match an exact grant the way
     Claude Code does, and `maity runner check` names it. One a ` *` prefix entry already
-    allows is left out without a word, and so is an entry with another `*`: a regex applies
-    to one word, so no rule says what it says."""
+    allows is left out without a word, and so is an entry with another `*`: a rule word is
+    matched on its own, so no rule says what it says."""
     allow: list[str] = []
     left_out: list[tuple[str, str]] = []
     split = [(rule, rule.split(" ")) for rule in dict.fromkeys(rules)]
