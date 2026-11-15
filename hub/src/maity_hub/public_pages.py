@@ -53,6 +53,26 @@ READ_CACHE = "public, max-age=60"
 BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 
 
+# The version of the pages' HTML this hub renders, stored in front of each row's `inputs` as
+# `f<FORMAT>:<digest>` (a row without it is format 1, before the dashboard's design, §16.9). A
+# row of a later format is never replaced by this process, and a row of an earlier one is
+# rendered again (`refresh`; hub/context/public-pages.md).
+FORMAT = 2
+
+
+def format_of(inputs: str | None) -> int:
+    """The format a stored row's `inputs` names: 1 where it names none."""
+    head, sep, _ = (inputs or "").partition(":")
+    if sep and head.startswith("f") and head[1:].isdigit():
+        return int(head[1:])
+    return 1
+
+
+def stamped(digest: str) -> str:
+    """The `inputs` of a row this hub writes: its format, then the digest of the page's inputs."""
+    return f"f{FORMAT}:{digest}"
+
+
 def etag_of(body: str) -> str:
     return '"' + hashlib.sha256(body.encode()).hexdigest() + '"'
 
@@ -318,7 +338,9 @@ def refresh(
 ) -> None:
     """Render the pages of one target again, in the caller's transaction. A page whose inputs
     are the digest stored is left as it is (its ETag and `lastmod` stay); one whose inputs
-    changed is replaced; one that is no longer rendered is deleted. A render that fails takes
+    changed is replaced, as is one an earlier version rendered (`FORMAT`); one that is no
+    longer rendered is deleted, and so is every page of the target when a later version
+    rendered one of them, which this process never replaces. A render that fails takes
     the target's pages off: nothing stale is served for the sake of a bug. `fresh`: also
     replaced when only the HTML differs, as after a new version rendering the same inputs
     (`startup`). Under a lock per target, so two processes rendering it together (every pod
@@ -338,6 +360,13 @@ def refresh(
             ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
     }
+    if any(format_of(row.inputs) > FORMAT for row in existing.values()):
+        # A later version of the hub rendered this target: its pages are never replaced by an
+        # earlier one's, nor kept while this one would not take a removal off them. Off, then;
+        # the later version renders the target first, as every target without a stored page.
+        log.info("the public pages of %s %s are a later version's; taken off", kind, target_id)
+        remove(conn, kind, target_id)
+        return
     started = time.monotonic()
     try:
         with conn.begin_nested():
@@ -361,7 +390,9 @@ def refresh(
         return
     for page in rendered:
         stored = existing.get(page.path)
-        same_inputs = stored is not None and stored.inputs == page.inputs
+        inputs = stamped(page.inputs)
+        # A row of an earlier format has other `inputs`, so it is rendered again.
+        same_inputs = stored is not None and stored.inputs == inputs
         if (
             stored is None
             or not same_inputs
@@ -374,7 +405,7 @@ def refresh(
                 kind=kind,
                 target_id=target_id,
                 body=page.body,
-                inputs=page.inputs,
+                inputs=inputs,
                 # `data` alone changing is nothing a crawler reads: the sitemap's date stays.
                 lastmod=stored.lastmod if stored is not None and same_inputs else page.lastmod,
                 view=page.view,

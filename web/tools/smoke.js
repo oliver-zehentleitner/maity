@@ -9826,7 +9826,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => { if (p === "/landing" || p === "/legal") lpReads.push(p); return lpGet(p); };
   await go("#/all"); await go(""); for (let k = 0; k < 6; k++) await tick();
   // The frame (§16.7.5, js/site-chrome.js): the landing page's header and footer from GET /site/chrome beside the
-  // app's header and main, the hub's two stylesheets on, the app's bar hidden; the footer names the legal pages.
+  // app's header and main, the hub's three stylesheets on, the app's bar hidden; the footer names the legal pages.
   const frHead = () => body.childNodes.find((x) => x.tagName === "HEADER" && x.className === "site-header dz") || null;
   const frFoot = () => body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
   const frSheets = () => head.childNodes.filter((x) => x.tagName === "LINK" && /^\/assets\/landing\//.test(x.getAttribute("href") || ""));
@@ -9838,10 +9838,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && frCols() === "Platform:#/login?lang=en=Sign in,#/register?lang=en=Create your account | Legal:/impressum?lang=en=Imprint | Follow:https://social.example/@example=Mastodon"
     && !main.querySelector(".legal-links"),
     "landing: the root without a session is the login page, the landing never read here; the frame's footer names the legal pages set " + (frFoot() ? frCols() : null));
-  expect(header.hidden === true && frOn() && frSheets().map((l) => l.getAttribute("href") + ":" + l.disabled).join() === "/assets/landing/landing.css:false,/assets/landing/public-pages.css:false"
+  expect(header.hidden === true && frOn() && frSheets().map((l) => l.getAttribute("href") + ":" + l.disabled).join() === "/assets/landing/landing.css:false,/assets/landing/public-pages.css:false,/assets/landing/public-sections.css:false"
     && frHead().querySelector("a.signin").getAttribute("aria-current") === "page" && frHead().querySelector("a.brand").getAttribute("href") === "/"
     && !frHead().querySelector(".btn-primary") && frHead().querySelector("button.theme-toggle"),
-    "frame: the hub's two stylesheets on, the app's bar hidden, sign in marked as this page, no call to action without a hero");
+    "frame: the hub's three stylesheets on, the app's bar hidden, sign in marked as this page, no call to action without a hero");
   // The page's one h1 is the form's heading: the lockup in the hidden bar is none.
   expect(main.all().filter((x) => x.tagName === "H1").length === 1 && main.querySelector(".door-page") && main.querySelector(".door-page").firstChild.matches("aside.door-panel") && main.querySelector(".door-form").all().some((x) => x.tagName === "H1")
     && !header.all().some((x) => x.tagName === "H1") && main.querySelector(".door-form form.login button.btn.btn-primary"),
@@ -9986,7 +9986,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = frGet;
   // Another view leaves it: stylesheets off, the class gone, the frame's elements gone.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
-  expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 2 && frSheets().every((l) => l.disabled === true) && header.hidden === false
+  expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 3 && frSheets().every((l) => l.disabled === true) && header.hidden === false
     && productLine.querySelectorAll("a").length === 4,
     "frame: an invitation's page has none, its stylesheets off, the product line back");
   // Without a session render() leaves the frame standing until the view decides, so every view that is not the
@@ -15258,19 +15258,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         + JSON.stringify([repo && text(repo), row, text(h2.querySelector("span.pmark"))]));
       // A code block in the about text stands in the always-dark hero: its ground is the dark zone's
       // (the app's --surface-2 is mapped there), not the light app's (review of #1820, A507).
-      const ppCss = fs.readFileSync(path.join(WEB, "css/public-sections.css"), "utf8");
+      const ppCss = fs.readFileSync(path.join(WEB, "../hub/src/maity_hub/landing_assets/public-sections.css"), "utf8");
       const appCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
       expect(h2.querySelector("div.sub pre.md-code") && /\.md-code \{[^}]*background: var\(--surface-2\)/.test(appCss)
         && /\.phero \{[^}]*--surface-2: var\(--surface2\)[^}]*--ok: #7ee2a0/.test(ppCss),
       "visitor: without a session, a code block in the about text stands in the hero on the dark zone's ground, the app's --surface-2 and --ok mapped there");
-      // The sections' stylesheet is named in index.html, so the shell names it with its version (§16.11; the
-      // e2e's warm load refuses a dashboard file named without one); site-chrome.js only moves and switches it.
+      // The sections' stylesheet is the hub's, one of the frame's under /assets/landing/ (§16.7.5): site-chrome.js
+      // links it with the other two, and index.html names no copy of it (tsk-zhyqdtt5v59c).
       const ppIndex = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
       const ppChrome = fs.readFileSync(path.join(WEB, "js/site-chrome.js"), "utf8");
       const ppSheets = /const SHEETS = \[([^\]]*)\]/.exec(ppChrome);
-      expect(/<link rel="stylesheet" href="css\/public-sections\.css" id="public-sections" disabled>/.test(ppIndex)
-        && ppSheets && !/"(?:brand|css|js|vendor)\//.test(ppSheets[1]) && ppChrome.includes('const OWN_SHEET = "public-sections"'),
-      "visitor: the sections' stylesheet is named in index.html, disabled, for the shell's version; the frame adds no dashboard file by a name of its own " + (ppSheets && ppSheets[1]));
+      expect(!/public-sections/.test(ppIndex) && !fs.existsSync(path.join(WEB, "css/public-sections.css"))
+        && ppSheets && ppSheets[1].includes('"/assets/landing/public-sections.css"') && !/"(?:brand|css|js|vendor)\//.test(ppSheets[1]),
+      "visitor: the sections' stylesheet is the frame's third under /assets/landing/, no dashboard copy named " + (ppSheets && ppSheets[1]));
       // Ten online: the stack shows eight and how many more; a picture from elsewhere is the letter (h() refuses it), one that
       // does not load turns into the letter; a team of people alone counts only them, past twelve only twelve cards; a ticker of
       // decisions alone is "Recently", with no cards.

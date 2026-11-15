@@ -968,7 +968,7 @@ def scenario(run: Run, page: Page) -> None:
     run.step("sign in as the owner created with maity-hub owner create")
     page.goto(run.base + "/")
     expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
-    # The landing page's header and footer around it (§16.7.5), laid out by the hub's two stylesheets.
+    # The landing page's header and footer around it (§16.7.5), laid out by the hub's frame stylesheets.
     expect(page.locator("header.site-header .signin")).to_have_text("Sign in")
     expect(page.locator("footer.site-footer nav.foot-col").first).to_be_visible()
     expect(page.locator("#header")).to_be_hidden()
@@ -977,8 +977,8 @@ def scenario(run: Run, page: Page) -> None:
     expect(page.locator(".door-page")).to_have_css("display", "grid")
     run.shot(page, "sign-in")
     run.a11y(page, "sign-in")
-    # The dashboard's sheet of the public sections (css/public-sections.css) is switched with the
-    # frame's two: on in the frame, off in the signed-in dashboard (review of #1820).
+    # The sheet of the public sections (/assets/landing/public-sections.css) is switched with the
+    # frame's other two: on in the frame, off in the signed-in dashboard (review of #1820).
     sections = "() => [...document.styleSheets].some((s) => (s.href || '').split('/').pop().split('?')[0] === 'public-sections.css' && !s.disabled)"
     assert page.evaluate(sections), "the sections' stylesheet is not on in the frame"
     page.locator("#login-email").fill(OWNER_EMAIL)

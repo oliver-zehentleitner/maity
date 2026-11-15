@@ -266,6 +266,7 @@ def test_every_mail_link_page_answers_the_pinned_policy_and_its_sheets_load_unde
     assert [s.split("?")[0] for s in sheets] == [
         "/assets/landing/landing.css",
         "/assets/landing/public-pages.css",
+        "/assets/landing/public-sections.css",
     ]
     for sheet in sheets:
         served = client.get(unescape(sheet))

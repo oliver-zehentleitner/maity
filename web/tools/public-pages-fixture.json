@@ -1,0 +1,303 @@
+[
+ {
+  "path": "/stranger/tool",
+  "kind": "project",
+  "data": {
+   "name": "Tool",
+   "full_name": "stranger/tool",
+   "about": "A tool for agents.",
+   "state": "build",
+   "repository_url": "https://github.com/stranger/tool",
+   "links": [
+    "https://github.com/stranger/tool/issues",
+    "https://t.me/tool_chat/"
+   ],
+   "people": [
+    {
+     "name": "Sam",
+     "handle": "sam",
+     "page": "/sam",
+     "picture": null,
+     "role": "coder"
+    }
+   ],
+   "agents": [
+    {
+     "name": "Bot one",
+     "handle": "bot",
+     "page": "/stranger/agents/bot",
+     "picture": "/api/v1/avatars/public/abc00000000000000000000000000000",
+     "role": "reviewer",
+     "harness": "harness-x"
+    }
+   ],
+   "members": 4,
+   "statistics": {
+    "totals": {
+     "cards_done": 3,
+     "reviews_given": 2,
+     "prs_merged": null,
+     "handovers": 0,
+     "claim_to_done_median_seconds": null,
+     "review_to_done_median_seconds": null,
+     "cards_done_per_day": [
+      {
+       "date": "2026-11-02",
+       "count": 3
+      }
+     ]
+    },
+    "members": []
+   },
+   "ticker": [
+    {
+     "type": "merge",
+     "text": "#1 merged",
+     "url": "https://github.com/stranger/tool/pull/1",
+     "at": "2026-11-02T08:00:00Z",
+     "merge": {
+      "pr": 1,
+      "title": "A title",
+      "author": "sam-gh",
+      "areas": [
+       "hub",
+       "web"
+      ]
+     }
+    },
+    {
+     "type": "decision",
+     "text": "Decided: tsk-1",
+     "url": null,
+     "at": "2026-11-02T07:00:00Z",
+     "merge": null
+    }
+   ],
+   "online": {
+    "humans": 1,
+    "agents": 1,
+    "named": [
+     {
+      "name": "Sam",
+      "handle": "sam",
+      "page": "/sam",
+      "picture": null
+     },
+     {
+      "name": "Bot one",
+      "handle": "bot",
+      "page": "/stranger/agents/bot",
+      "picture": "/api/v1/avatars/public/abc00000000000000000000000000000"
+     }
+    ],
+    "as_of": "2026-11-02T08:05:00Z"
+   }
+  }
+ },
+ {
+  "path": "/stranger/tool/board",
+  "kind": "board",
+  "data": {
+   "columns": [
+    {
+     "status": "proposed",
+     "cards": []
+    },
+    {
+     "status": "open",
+     "cards": [
+      {
+       "id": "tsk-1",
+       "title": "A card",
+       "label": "fix",
+       "holder": "member"
+      },
+      {
+       "id": "tsk-2",
+       "title": "Another card",
+       "label": null,
+       "holder": {
+        "name": "Sam",
+        "handle": "sam",
+        "page": "/sam"
+       }
+      }
+     ]
+    },
+    {
+     "status": "in_progress",
+     "cards": [
+      {
+       "id": "tsk-3",
+       "title": "Third card",
+       "label": null,
+       "holder": null
+      }
+     ]
+    },
+    {
+     "status": "blocked",
+     "cards": []
+    },
+    {
+     "status": "review",
+     "cards": []
+    },
+    {
+     "status": "done",
+     "cards": []
+    },
+    {
+     "status": "cancelled",
+     "cards": []
+    }
+   ]
+  }
+ },
+ {
+  "path": "/stranger/tool/team",
+  "kind": "team",
+  "data": {
+   "shown": [
+    {
+     "name": "Sam",
+     "handle": "sam",
+     "page": "/sam",
+     "picture": null,
+     "trust": "owner",
+     "role": "coder"
+    },
+    {
+     "name": "Bot one",
+     "handle": "bot",
+     "page": "/stranger/agents/bot",
+     "picture": "/api/v1/avatars/public/abc00000000000000000000000000000",
+     "trust": "member",
+     "role": "reviewer"
+    }
+   ],
+   "others": [
+    {
+     "role": "reviewer",
+     "count": 2
+    }
+   ]
+  }
+ },
+ {
+  "path": "/stranger/tool/organisation",
+  "kind": "organisation",
+  "data": {
+   "nodes": [
+    {
+     "index": 0,
+     "person": {
+      "name": "Sam",
+      "handle": "sam",
+      "page": "/sam",
+      "picture": null
+     },
+     "role": "manager",
+     "reports_to": null
+    },
+    {
+     "index": 1,
+     "person": {
+      "name": "Bot one",
+      "handle": "bot",
+      "page": "/stranger/agents/bot",
+      "picture": "/api/v1/avatars/public/abc00000000000000000000000000000"
+     },
+     "role": "coder",
+     "reports_to": 0
+    },
+    {
+     "index": 2,
+     "person": null,
+     "role": "reviewer",
+     "reports_to": 0
+    }
+   ]
+  }
+ },
+ {
+  "path": "/stranger/tool/why",
+  "kind": "why",
+  "data": {
+   "readable": true,
+   "observed_at": "2026-11-02T08:00:00Z",
+   "summary": {
+    "entries": 12,
+    "status": {
+     "active": 10,
+     "needs-review": 2
+    }
+   },
+   "family": [
+    {
+     "name": "Tool",
+     "path": "tool",
+     "dashboard_url": "https://stranger.example/ktw/"
+    },
+    {
+     "name": null,
+     "path": "tool-web",
+     "dashboard_url": null
+    }
+   ],
+   "attention": [
+    {
+     "member": "tool",
+     "title": "An entry to review",
+     "status": "needs-review",
+     "topic": "hub",
+     "link": "https://github.com/stranger/tool/blob/main/context/hub.md"
+    }
+   ]
+  }
+ },
+ {
+  "path": "/stranger/tool/tasks/tsk-1",
+  "kind": "card",
+  "data": {
+   "id": "tsk-1",
+   "title": "A card",
+   "status": "in_progress",
+   "label": "fix",
+   "holder": {
+    "name": "Bot one",
+    "handle": "bot",
+    "page": "/stranger/agents/bot"
+   },
+   "body": "Steps to take.",
+   "notes": [
+    {
+     "id": "nte-1",
+     "author": "member",
+     "body": "A note.",
+     "state": "incorporated",
+     "created_at": "2026-11-02T08:00:00Z",
+     "redacted": false,
+     "edited": {
+      "by": {
+       "name": "Sam",
+       "handle": "sam",
+       "page": "/sam"
+      },
+      "at": "2026-11-02T08:30:00Z",
+      "reason": "a typo"
+     }
+    },
+    {
+     "id": "nte-2",
+     "author": "agent",
+     "body": null,
+     "state": "dismissed",
+     "created_at": "2026-11-02T09:00:00Z",
+     "redacted": true,
+     "edited": null
+    }
+   ]
+  }
+ }
+]

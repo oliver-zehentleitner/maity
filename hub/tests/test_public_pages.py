@@ -91,10 +91,39 @@ def test_the_frame_is_put_around_the_stored_page_when_it_is_served(
     assert '<html lang="en">' in page and "<title>OZ Team</title>" in page
     assert '<link rel="canonical" href="https://hub.example/oz-team">' in page
     assert "/assets/landing/public-pages.css?v=" in page
+    assert "/assets/landing/public-sections.css?v=" in page  # the public pages' design (§16.9)
     # The page has one language, the content's: no hreflang links.
     assert "hreflang" not in page
     with migrated.connect() as conn:
         assert conn.execute(select(t.public_page.c.body)).scalar_one() == row.body
+
+
+def test_a_page_in_the_dashboards_design_stands_in_main_as_the_dashboard_draws_it(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§16.9: a page in the dashboard's design draws its own sections across the page, so the frame
+    puts it into `<main>` as it is, where the dashboard puts its view, not into the stored pages'
+    column; and it carries no stylesheet of its own."""
+    client = visitor(make_client)
+    content = (
+        '<section class="view-visitor public-view" data-kind="project">'
+        '<section class="phero hero dz"><div class="wrap"><h1>OZ Team</h1></div></section>'
+        "</section>"
+    )
+    store(
+        migrated,
+        body=render.page_document(
+            lang="en",
+            title="OZ Team",
+            canonical=f"https://hub.example{PATH}",
+            content=content,
+            styled=False,
+        ),
+    )
+    with migrated.connect() as conn:
+        assert "<style" not in conn.execute(select(t.public_page.c.body)).scalar_one()
+    page = client.get(PATH).text
+    assert f"<main>{content}</main>" in page and "stored-page" not in page
 
 
 def only_the_frames_script(html: str) -> bool:

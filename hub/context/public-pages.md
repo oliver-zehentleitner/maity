@@ -973,6 +973,8 @@ The placeholder is `pic none size-<side>`, with the sizes in `render.STYLE` and 
 (`public_people.PICTURE_SIDES`). `test_no_stored_page_carries_an_inline_style` reads every row of `public_page`.
 The end-to-end round `stored_pages_policy_round` opens every page the sitemap lists, plus a person's agents
 pages, at both addresses, and fails on any refusal.
+Since 2026-11-15 (5262b6b7) a project's stored page is in the dashboard's design, which draws no per-day bars:
+the SVG has left it, and the rule (no inline style, the guard and the run) holds for that design as before.
 
 **Reason:** the shell's policy is the dashboard's and protects it. A page that renders the same everywhere without
 an exception in that policy is the fix that cannot come back by a new inline style; the test guards the store, the
@@ -1056,3 +1058,49 @@ the public set renders them at once, so none keeps a harness from a session it n
   `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, while the agent's own page shows the new one at once.
 - Touching the person's page with its dependents for a new picture: those include every card page that names them,
   and no card page shows a picture.
+
+## The hub renders the public project pages in the dashboard's design, as a pure function of their data; one stylesheet home; a format guard
+
+**Id:** 5262b6b7-c4bf-472e-9a05-06f1a139a177
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's choice on req-nsstqtq7za1t (2026-11-15) and the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 2 of 4); contract `docs/api.md` §16.9 and §16.7.5 as changed by PR 1 of that card; `public_design.page`, `public_pages.FORMAT`, `public_pages.refresh`, `render.stored_in_frame`, `landing_assets/public-sections.css`; `hub/tests/test_public_skeletons.py`, `hub/tests/test_public_page_format.py`
+**See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-15
+**See:** public-pages.md#a-stored-page-carries-no-inline-style-the-per-day-bars-are-an-svg-sized-by-attributes-the-placeholder-a-class — a08a0c0d-ded2-483c-b509-19bfe49c3705 — as of 2026-11-15
+**Revisit when:** the dashboard gets a build step that could run one template on both sides, or the person, agent and organisation pages are redesigned (tsk-2t7efzj1p8zt) and join `public_design`
+
+The stored pages of a project (Overview, Board, Team, Organisation, Why) and of a card are HTML in the
+structure `web/js/visitor.js` draws for a visitor without a session: the same elements, classes, order,
+`data-kind` and static `aria` attributes, English words from `web/i18n/en.json` under the same keys
+(`public_design.WORDS`). Each renderer builds the page's `data` first, then the HTML with
+`public_design.page(kind, data, path)`, which reads nothing else; `inputs` stays the digest of the rendered
+content. These pages carry no `<style>` (`page_document(styled=False)`): their look is the frame's stylesheets
+only. `public-sections.css` moved from the dashboard to `landing_assets/` and is the frame's third stylesheet
+under `/assets/landing/`, linked by `render.public_frame` and by `web/js/site-chrome.js`. In the frame
+(`?as=public`) such a page stands in `<main>` as it is, where the dashboard puts its view, not in the stored
+pages' column. What the old pages showed beyond the design (the per-day bars, the medians, the per-agent table)
+stays in `data` only. Each row's `inputs` is written `f<FORMAT>:<digest>` (`FORMAT = 2`; a row without the prefix
+is format 1). `refresh` takes every page of a target off when one of them is of a later format and renders none,
+so the later version renders it first as a target without a page (deafb243); a row of an earlier format has
+other `inputs` and is rendered again. The person, agent and organisation pages keep their old HTML and `STYLE`
+for now (tsk-2t7efzj1p8zt). `test_public_skeletons.py` records the elements and classes of each kind for
+`web/tools/public-pages-fixture.json` in `web/tools/public-skeletons.json` (`make -C web skeletons`), the file
+the dashboard's side is compared with.
+
+**Reason:** a crawler, a reader without script and the first paint before the dashboard draws should see the
+page in its final design, and the dashboard then draws the same structure over it. With the HTML a pure function
+of `data`, the two cannot show different things; with one stylesheet, served by the hub, the two sides cannot
+style it differently. During an upgrade several versions render the same rows: without the guard an old process
+would put the old design back over the new one until the next pass.
+
+**Rejected alternatives:**
+- A shared template that both the hub and the dashboard interpret: the dashboard has no build step, so it would
+  need an interpreter of its own, and the drift would move into the two interpreters.
+- The dashboard parsing the hub's stored HTML: rejected earlier (eb7fd1c7), a page's markup would become an
+  interface.
+- Keeping the old design in the stored page and letting the dashboard replace it after a wait of up to 3 s (the
+  short-term fix 6fae1f6f, which PR 3 of the card removes): every reader saw the page change its design, and a
+  crawler and a reader without script never saw the design at all.
+- Keeping an old-format row while a newer one exists, or replacing a newer row: either serves a design, or a
+  removal, that the running version did not make; taking the target off is what a missing page already means.
