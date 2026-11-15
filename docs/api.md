@@ -15306,8 +15306,9 @@ value stops the hub at the start. While it is off:
   held (`held` is `[]`), a deny entry stops no one (no `chat_denied`,
   no `denied_participant`), and the owner's add writes no allow entry;
 - the hub files, updates and withdraws no request of the kind below,
-  and an answer to one still open writes its entries and sends no agent
-  out of a chat;
+  and an answer to one still open writes its entries for the agents it
+  was filed for (those waiting as stored, and those held) and sends no
+  agent out of a chat;
 - the allow and deny entries under `/me/chat-access` and the Chat access
   page work as below, so owners can prepare them before the switch;
 - who waits as stored (from a time it was on, or from revision

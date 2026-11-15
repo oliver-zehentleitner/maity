@@ -325,3 +325,60 @@ def test_two_hubs_switching_on_at_once_mark_and_ask_once(
         assert marks(migrated, chat_id) == {theirs.id: ([owner.id], True)}
     [request] = requests_to(migrated, other.id)
     assert request.status == "open"
+
+
+def entries_of(engine: Engine, human_id: str) -> list[Any]:
+    with engine.connect() as conn:
+        return list(
+            conn.execute(select(t.chat_access).where(t.chat_access.c.human_id == human_id)).all()
+        )
+
+
+@pytest.mark.parametrize(
+    ("reply", "chat_access", "kind", "their_human"),
+    [
+        ("allow_always", None, "allow", False),
+        ("allow_always", {"their_human": True}, "allow", True),
+        ("block", None, "deny", None),
+    ],
+)
+def test_off_an_answer_to_a_request_still_open_writes_its_entries(
+    owner: flow.Human,
+    sides: dict[str, Any],
+    make_client: ClientFactory,
+    migrated: Engine,
+    settings: Settings,
+    reply: str,
+    chat_access: dict[str, Any] | None,
+    kind: str,
+    their_human: bool | None,
+) -> None:
+    """v5vp on #1842: a request filed while the switch was on, with no held message, answered
+    after it was switched off: the answer names the agents it was filed for from the stored
+    marks and writes the owner's entries, as with the switch on; no agent leaves a chat."""
+    theirs, other = sides["theirs"], sides["other"]
+    mine = flow.agent(make_client, owner)
+    chat = create(owner, theirs.id, mine.id).json()
+    start(migrated, settings, on=True)
+    [request] = requests_to(migrated, other.id)
+    assert request.proposal.get("held", []) == []
+    start(migrated, settings, on=False)
+    shown = other.get(f"/requests/{request.id}").json()
+    assert [a["id"] for a in shown["chat_access_request"]["agents"]] == [theirs.id]
+    body: dict[str, Any] = {"reply_id": reply}
+    if chat_access is not None:
+        body["chat_access"] = chat_access
+    answered = other.post(f"/requests/{request.id}/answer", body)
+    assert answered.status_code == 200, answered.text
+    [entry] = entries_of(migrated, other.id)
+    assert entry.kind == kind and entry.owner_id == owner.id
+    if kind == "allow":
+        listed = other.get("/me/chat-access").json()["allow"]
+        assert [(e["agents"], e["their_agents"], e["their_human"]) for e in listed] == [
+            ([theirs.id], [mine.id], their_human)
+        ]
+        assert listed[0]["duration"] is None
+    else:
+        [deny] = other.get("/me/chat-access").json()["deny"]
+        assert deny["agents"] == [theirs.id]
+    assert view(theirs, chat["id"]).status_code == 200  # still in it, the switch is off
