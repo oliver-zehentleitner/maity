@@ -131,6 +131,27 @@ def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) 
     assert [r for r in opencode if r not in opencode_base] == ["make test", "make test *"]
 
 
+def test_an_os_uuid_v4_source_is_allowed_for_the_allowlist_harnesses(tmp_path: Path) -> None:
+    """Keep-the-Why gives every entry an Id made by an OS command (AGENTS.md); under a
+    deny-by-default command allowlist `uuidgen`, `node` and `od` on `/dev/urandom` are all
+    refused, so the runner allows the kernel's generator. Claude Code and opencode gate
+    commands this way; Codex and agy run an unlisted command in their sandbox instead."""
+    assert adapters.UUID_COMMAND == "cat /proc/sys/kernel/random/uuid"
+    rule = f"Bash({adapters.UUID_COMMAND})"
+    # Present with and without the harness's own sandbox, and independent of the grant.
+    plain = dataclasses.replace(context(tmp_path), grant=config.RepositoryGrant())
+    assert rule in adapters.claude_settings(plain)["permissions"]["allow"]
+    assert (
+        rule
+        in adapters.claude_settings(context(tmp_path / "s", sandbox=True))["permissions"]["allow"]
+    )
+    # opencode allows it, and no later deny (git/gh/maity) overrides it (last match wins).
+    bash = adapters.opencode_config(context(tmp_path / "o", harness_id="opencode"))["permission"][
+        "bash"
+    ]
+    assert bash[adapters.UUID_COMMAND] == "allow"
+
+
 def test_claude_code_grant(tmp_path: Path) -> None:
     ctx = context(tmp_path)
     settings = adapters.claude_settings(ctx)

@@ -182,6 +182,8 @@ allow = [
 
 Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) lists what is refused.
 
+**A UUID source for Keep the Why.** Beyond `maity`, `git` and the grant, the runner also allows one fixed command, `cat /proc/sys/kernel/random/uuid`, on the harnesses that gate commands with an allowlist (Claude Code and opencode). Keep the Why gives every entry an `Id` made by an OS command, never from memory, and under the allowlist the usual sources — `uuidgen`, `node`, `od /dev/urandom` — are all refused, so an agent could record no reasoning. The kernel's generator needs no package installed and prints a lowercase v4 directly. Codex and agy have no per-command allowlist, so the command already runs inside their own sandbox; no grant entry is needed on any harness.
+
 ## Clones after a stop
 
 The hub keeps a retention time per placement (`workspace_retention`: `immediate`, `3h`, `24h` by default, `7d`), and the agent's owner or a project admin can ask for a kept clone to be removed (`POST /projects/<owner>/<slug>/placements/<id>/workspace/remove`). Removing clones when their time is up is the runner's part, and it is not built yet: today the runner keeps every clone until you remove it (`maity runner gc --revoked`).
