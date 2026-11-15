@@ -377,17 +377,16 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
             )
         ).encode()
     )
-    return [
-        public_pages.Page(
-            path=path,
-            body=body,
-            inputs=inputs.hexdigest(),
-            lastmod=clock.now(),
-            view=KIND,
-            data=_data(human, named, agents, shown, picture),
-            indexed=chosen,
-        )
-    ]
+    page = public_pages.Page(
+        path=path,
+        body=body,
+        inputs=inputs.hexdigest(),
+        lastmod=clock.now(),
+        view=KIND,
+        data=_data(human, named, agents, shown, picture),
+        indexed=chosen,
+    )
+    return [page]
 
 
 def touch_owner_of(

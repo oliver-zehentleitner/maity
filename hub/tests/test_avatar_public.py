@@ -409,8 +409,10 @@ def test_a_new_picture_renders_the_pages_again(world: World) -> None:
     new = put_agent(world.bot, image()).json()["avatar_url"]
     assert digest(new) in main(world.anyone, f"/maintainer/agents/{handle}")
     assert digest(new) in main(world.anyone, "/maintainer")
-    old = put_human(world.owner, "/me/avatar", image()).json()["avatar_url"]
-    assert digest(old) in main(world.anyone, "/maintainer")
+    # Another image than the agent's: the person's page shows the agent's picture too, and the
+    # address is the image's digest (§6.10).
+    old = put_human(world.owner, "/me/avatar", image(size=(90, 90))).json()["avatar_url"]
+    assert digest(old) != digest(new) and digest(old) in main(world.anyone, "/maintainer")
     world.owner.delete("/me/avatar")
     html = main(world.anyone, "/maintainer")
     assert digest(old) not in html and "pic none" in html
