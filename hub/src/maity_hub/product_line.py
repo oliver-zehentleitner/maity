@@ -3,7 +3,7 @@ of the platform's own interface, on the hub's own pages as on the dashboard's, a
 at phone width (at most 600 CSS pixels) only its first part, the mark, Maity and the year.
 
     [Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] &
-    [Maity icon] · Found a bug? · Found a vulnerability?
+    [Maity icon] · Found a bug? · Found a vulnerability? · Chat with us on Discord
 
 The hub's pages load no file, so the icons are inline SVG with presentation attributes only.
 The line's look is one fixed block, `STYLE`: centred and muted. A page whose policy allows
@@ -26,6 +26,8 @@ from maity_hub import catalog, clock
 ISSUES = "https://github.com/oliver-zehentleitner/maity/issues"
 # Where a vulnerability is reported privately, never as a public issue.
 SECURITY = "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md"
+# The project's Discord server, as README, the docs and the issue chooser name it.
+DISCORD = "https://discord.gg/VRWUe7zKzp"
 GITHUB = "https://github.com/oliver-zehentleitner"
 PROFILE = "https://maity.team/oliver-zehentleitner"
 NAME = "Oliver Zehentleitner"
@@ -134,6 +136,7 @@ def html(language: str, section: str | None = None) -> str:
         _sentence(language),
         _link(ISSUES, escape(words["bug"])),
         _link(SECURITY, escape(words["security"])),
+        _link(DISCORD, escape(words["discord"])),
     )
     # Each part and each separator its own element, as on the dashboard, so a phone shows the
     # first part alone (`STYLE`). The separators are drawn, not read.

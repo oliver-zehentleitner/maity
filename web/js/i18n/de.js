@@ -3803,6 +3803,7 @@ window.MAITY_I18N["de"] = {
   "prefs.versions.reading": "Wird gelesen …",
   "prefs.versions.title": "Frühere Versionen",
   "product.bug": "Einen Fehler gefunden?",
+  "product.discord": "Chatte mit uns auf Discord",
   "product.love": "Liebe",
   "product.made_by": "Mit {heart} gemacht von {name} auf {github} & {maity}",
   "product.security": "Eine Sicherheitslücke gefunden?",

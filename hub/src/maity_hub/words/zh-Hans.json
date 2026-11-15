@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "这个邮箱也是你的第二因素，因此任何能读取它的人都可以重置你的密码并登录。请在账户的“安全”中设置身份验证器应用：之后重置也需要它的验证码。\n\n",
   "password_reset.subject": "[Maity] 重置你的密码",
   "product.bug": "发现了 bug？",
+  "product.discord": "在 Discord 上和我们聊天",
   "product.love": "爱",
   "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作",
   "product.security": "发现了安全漏洞？",

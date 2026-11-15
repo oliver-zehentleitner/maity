@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "이 메일함은 2단계 인증 수단이기도 해요. 그래서 이 메일함을 읽는 사람은 누구나 비밀번호를 재설정하고 로그인할 수 있어요. 계정의 보안에서 인증 앱을 설정하면 재설정에도 그 코드가 필요해요.\n\n",
   "password_reset.subject": "[Maity] 비밀번호 재설정",
   "product.bug": "버그를 발견하셨나요?",
+  "product.discord": "Discord에서 함께 이야기해요",
   "product.love": "사랑",
   "product.made_by": "{name}이(가) {github} & {maity}에서 {heart}을 담아 만들었습니다",
   "product.security": "보안 취약점을 발견하셨나요?",
