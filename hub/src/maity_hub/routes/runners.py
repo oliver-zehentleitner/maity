@@ -10,7 +10,7 @@ the credential is the response body and nothing else.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -33,7 +33,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
-from maity_hub.auth import credentials, second_factor
+from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
@@ -56,6 +56,7 @@ from maity_hub.runners import (
     runner_view,
     visible_to,
 )
+from maity_hub.runners import lock as lock_runners
 from maity_hub.scopes import has_scope
 
 router = APIRouter(route_class=ProjectRoute)
@@ -81,6 +82,10 @@ class Pair(Strict):
 
 class RunnerUpdate(Strict):
     name: str = Field(pattern=HANDLE_PATTERN)
+
+
+class UpdateNow(Strict):
+    tool: str = Field(min_length=1, max_length=200, pattern=r"^[\x20-\x7e]+$")
 
 
 class RunnerRevoke(Strict):
@@ -492,14 +497,10 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, li
         runner_id = _create_runner(conn, row.created_by, row.name)
     else:
         runner_id = row.runner_id
-        # The row lock orders two re-pairs of one runner: one live credential (§15.1).
-        runner = conn.execute(
-            select(t.runner.c.id)
-            .where(t.runner.c.id == runner_id, t.runner.c.active.is_(True))
-            .with_for_update()
-        ).first()
-        if runner is None:  # removed since the enrollment was created
-            raise not_found()
+        # The row lock orders two re-pairs of one runner: one live credential (§15.1). The
+        # live credential is locked before it, as every runner call takes them.
+        if not lock_runners(conn, t.runner.c.id == runner_id, t.runner.c.active.is_(True)):
+            raise not_found()  # removed since the enrollment was created
         previous = live_credential_id(conn, runner_id)
         if previous is not None:
             revoke_runner_credential(conn, previous, "repaired", by=row.created_by, replaced=True)
@@ -509,7 +510,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, li
         insert(t.runner_credential).values(
             id=credential_id,
             runner_id=runner_id,
-            verifier=verifier,
+            verifier=verifiers.stored("runner_credential", credential_id, verifier),
             enrollment_id=row.id,
             client=client,
             created_at=now,
@@ -569,11 +570,15 @@ def _visible_runner(conn: Connection, caller: Caller, runner_id: str) -> Any:
 
 
 def _own_runner(conn: Connection, caller: Caller, runner_id: str, *, lock: bool = False) -> Any:
-    """The caller's runner; `lock` orders a change with a concurrent re-pair (`_consume`)."""
-    query = select(t.runner).where(
-        t.runner.c.id == runner_id, t.runner.c.owner_id == caller.principal_id
-    )
-    row = conn.execute(query.with_for_update() if lock else query).first()
+    """The caller's runner; `lock` orders a change with a concurrent re-pair (`_consume`),
+    taking the live credential first, then the row (`runners.lock`), as the runner's own
+    calls do."""
+    mine = (t.runner.c.id == runner_id, t.runner.c.owner_id == caller.principal_id)
+    if lock:
+        rows = lock_runners(conn, *mine)
+        row = rows[0] if rows else None
+    else:
+        row = conn.execute(select(t.runner).where(*mine)).first()
     if row is None:
         raise not_found()
     return row
@@ -649,6 +654,60 @@ def update_runner(
                 raise taken from None
         return idempotency.Outcome(
             200, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _request_time(stored: list[Any], tool_id: str) -> str:
+    """A request's identity (§15.16): the hub's time in milliseconds, made strictly later
+    than the last request the hub issued for the tool, standing or `done`. The floor is the
+    hub's own; nothing a runner reports moves it, so no two requests for a tool on a runner
+    are ever the same string."""
+    moment = clock.now().astimezone(UTC)
+    moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    for entry in stored:
+        if entry.get("tool") != tool_id:
+            continue
+        try:
+            before = datetime.fromisoformat(str(entry.get("requested_at")))
+        except ValueError:
+            continue
+        if before.tzinfo is not None and moment <= before:
+            moment = before.astimezone(UTC) + timedelta(milliseconds=1)
+            moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    return clock.rfc3339(moment, millis=True)
+
+
+@router.post("/runners/{runner_id}/updates")
+def update_now(
+    runner_id: str, body: UpdateNow, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    """`Update now` (§15.16): the owner asks the runner to look for a newer version of one
+    tool. Only a tool the runner reports with `update: "daily"`; the runner's configuration
+    decides and the runner checks again. A second request for the tool replaces the first;
+    the runner reads them with `GET /runner` and nothing else wakes it."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        row = _own_runner(conn, caller, runner_id, lock=True)
+        _refuse_removed(row)
+        tools = (row.capabilities or {}).get("tools") or []
+        if not any(tool["id"] == body.tool and tool["update"] != "never" for tool in tools):
+            raise ApiError(
+                409,
+                "conflict",
+                "the runner does not update this tool",
+                {"reason": "updates_off"},
+            )
+        stored = row.update_requests or []
+        at = _request_time(stored, body.tool)
+        requests = [r for r in stored if r["tool"] != body.tool]
+        requests.append({"tool": body.tool, "requested_at": at})
+        conn.execute(
+            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=requests)
+        )
+        return idempotency.Outcome(
+            202, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)

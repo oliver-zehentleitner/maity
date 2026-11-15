@@ -498,7 +498,10 @@ its settings switches that off; unknown keys are refused. Started one
 level above the clone, it loaded none of the clone's configuration, also
 after the agent had worked in the clone. The folder is writable for the
 agent, so a run could leave configuration there for the next one: hence
-the check at every start. The mode is set because agy 1.5.7 made `auto`
+the check at every start, and in `supervised` mode before every run of
+the loop too, which starts agy again per event and after a failed run
+without the supervisor (the loop runs the same check, through the same
+listing, as the agents' user; review of PR #1815). The mode is set because agy 1.5.7 made `auto`
 the default, also headless, and in the test its reviewer model let a
 command leave the sandbox and list `.git/maity`. The settings are merged
 with the user's own, not replacing them; the owner accepted that for
@@ -543,6 +546,181 @@ delete what the agent left there.
   in a folder of its own.
 - Leaving agy's mode as it comes: `auto` lets a model decide whether a
   command leaves the sandbox.
+
+## agy's sandbox is reported off until the runner sees agy's own sandbox start
+
+**Id:** 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; agy 1.5.7's `--help`, its changelog and its built-in documentation; docs/api.md §15.3; review of PR #1815 (fix order A449: a namespace probe is a precondition, not agy's sandbox start), 2026-11-14
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** agy gains a command, flag or dry run that starts its terminal sandbox alone without a model call or the sign-in, or a setting that fails a run when the sandbox is missing: then a bounded check of that start can report `on`
+
+The runner advertises `sandbox: off` for agy on every host, so an agy
+placement runs as `sandbox_unavailable` and `require_sandbox = true`
+refuses it. The session settings still switch agy's terminal sandbox on
+(`enableTerminalSandbox`): what the runner reports does not change what
+agy does. `maity runner check` tries, as the agents' user, whether the
+namespaces agy's sandbox needs start (`unshare --user --map-root-user
+--mount --pid --fork --net true`, on Linux, on an ssh host there) and
+prints the result as a diagnostic, "agy's sandbox start not verified";
+it never turns the capability on.
+
+**Reason:** §15.3 lets the runner say `on` only where it has seen agy's
+sandbox start, because agy runs a command without it, silently, where it
+cannot start. agy 1.5.7 has no command that starts only its sandbox, as
+`codex sandbox -- true` does for Codex. Namespaces that start are the
+precondition named in agy's changelog, not agy's sandbox start, so they
+cannot satisfy the contract; until a bounded check of agy's own start
+exists, the code follows the contract and reports `off`.
+
+**Rejected alternatives:**
+- Reporting `on` where the namespaces start (the first version of this
+  PR): a precondition probe, which the contract does not accept as having
+  seen the sandbox start.
+- A headless `agy -p` run that executes one command: it needs the
+  operator's sign-in, costs model quota at every service start, and its
+  answer is the model's text, not an exit code.
+- Turning agy's sandbox off in the session settings while it is
+  reported off: `proceed-in-sandbox` would then fall back to asking,
+  which a supervised run refuses, and a host where it does start would
+  lose it.
+
+## agy's session settings: grants as command rules, the sign-in denied, hosts allowed
+
+**Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; the test runs of agy 1.5.7 in the notes of card tsk-e062xzrgfxxc; agy's built-in documentation of its rule forms; `agy --settings <file> agents` in a home of its own, which refuses unknown settings and values but not malformed rules
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** a real session shows a rule form not matching as assumed, or git cannot reach the forge from agy's sandbox
+
+Details of the settings §15.3 describes, chosen in the code:
+
+- A grant's `allow` entry became `command(<prefix>)`: the words before
+  a closing ` *`; an entry with another `*` is left out. Only the prefix
+  form was seen to work in a run; agy accepts a malformed rule at start
+  without a word, so an unverified form (`regex:`) could silently match
+  nothing. The cost: an entry without ` *` allowed any arguments.
+  Superseded for entries without `*` by the exact grants below
+  (f0ef544a-a531-4073-9572-af946f5475b2), 2026-11-15; the closing ` *`
+  and the left-out entry with another `*` stay as described here.
+- The file tools are denied the private paths every sandbox hides, but
+  for `~/.gemini` only agy's sign-in file: agy's sandboxed commands use
+  their scratch and artifact directories there. Other harnesses' sandboxes
+  hide all of `~/.gemini`.
+- Writes to GIT_PROTECTED are denied to the file tools, as Claude Code's
+  `Edit` denies are. Whether such a deny also makes the path read-only in
+  agy's sandbox, as the `.git/maity` read deny masked that directory in
+  the test, is unknown, so each session gets SANDBOX_GIT_CONFIG as well;
+  the three settings do no harm where `.git/config` stays writable.
+- `read_url(<host>)` for the hub, the forge and the grant's `network`
+  hosts, agy's documented rule for a domain, so git and `maity`'s
+  traffic may get out of the sandbox's network block. Not seen in a run.
+- `command(...)` denies only for prefixes (`git -c`, `git --config-env`,
+  `git --exec-path`, `gh`); git is not allowed at all and runs in the
+  sandbox, as §15.3 lists only `maity` and the grant.
+
+**Rejected alternatives:**
+- Denying all of `~/.gemini` to agy as well: it could break agy's own
+  sandboxed scratch, unseen.
+- Mapping grants with agy's `regex:` form to keep Claude Code's exact
+  match: no run showed how agy anchors it. Taken up later as a deny
+  beside the allow, once agy's matching code had been read
+  (f0ef544a-a531-4073-9572-af946f5475b2).
+
+## agy grants are exact, as for Claude Code: a deny for each exact entry's longer forms
+
+**Id:** f0ef544a-a531-4073-9572-af946f5475b2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source; review order A587 on #1828 (the empty argument), with agy's terminal.RequiresExactMatch, its walker, terminal.wordLiteral and extractSimpleCommands.func1 read from the binary
+**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
+**Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match, keeps an empty word, or adds an exact form
+
+An exact `allow` entry `a b` (no `*`) becomes the allow rule
+`command(a b)` plus the deny rule
+`command(regex:a b [[:ascii:][:^ascii:]]*)`; an entry
+ending in ` *` stays a plain prefix, and one with another `*` is left
+out, both as before. An exact entry is left out for agy, named by
+`maity runner check`, and runs in agy's sandbox like an unlisted
+command when a word holds a character outside letters, digits and
+`_ / = : @ % , -`, or when another entry may allow a longer command
+that starts with it. One covered by a ` *` entry gets no rules.
+
+**Reason:** agy matches `command(x)` and `command(regex:x)` both by the
+command's first words: a rule with more words than the command never
+matches, otherwise each of the rule's words is compared with the
+command's word at that place, literally or as `^(?:word)$`, and nothing
+anchors the end. An allow alone therefore granted any arguments, a
+wider grant than Claude Code's exact `Bash(a b)`. The deny has one word
+more, so it never matches the entry itself and matches every longer
+form, and deny beats allow; a longer form is then refused, also inside
+the sandbox, as an ungranted command is under Claude Code's `dontAsk`.
+agy accepts a regex that does not compile without a word and it then
+matches nothing, so a deny it could misread would fail open: hence the
+character set, which holds no regex or shell metacharacter (`.` and `+`
+included, which match more). Without its deny an exact entry would be a
+prefix, so such an entry is not allowed at all. The deny's last word
+is a bracket class of all ASCII and all non-ASCII characters, not
+`.*`: agy compiles each word with Go's `regexp.Compile` (syntax.Perl,
+without the `s` flag), where `.` matches every character but a line
+feed, so `.*` did not cover a quoted argument holding one. The class
+holds no backslash, quote, parenthesis or `|`, which agy's shell split
+of the rule would take apart or reject; it reaches the regex compiler
+unchanged on every path of that split. Two exact entries that
+share a start cannot both stay exact with one deny each: the shorter
+one's deny refuses the longer one, so the shorter one is left out.
+The env-assignment and redirect cases in **Revisit when** are open: both
+need a signed-in agy, which has not been allowed for a test run.
+
+**Limit:** agy cannot tell an extra empty argument apart; it is allowed.
+`a b ''`, `a b ""`, `a b $''`, `a b ' '` and `a '' b` run as `a b`,
+outside the sandbox, though the shell passes one argument more. No rule
+can catch it (review order A587 on #1828, agy 1.5.9 read from its
+binary): such a line does not make agy match the whole line, since
+`terminal.RequiresExactMatch` fires only on a NUL, a non-ASCII control,
+format or space character, a parse error or a construct its walker
+refuses, and the walker accepts `*syntax.SglQuoted` (with or without
+`$`) and a `*syntax.DblQuoted` of literals; so agy matches words, and
+`terminal.wordLiteral` takes a quoted word's raw text and ends in
+`strings.TrimSpace`, and `extractSimpleCommands.func1` skips a word
+whose text is then empty, before `shared.coversCommand` hands the words
+to `MatchesConfigAny`. `MatchesConfigAnyRaw`, the only matcher that sees
+the raw line, runs only on the whole-line path. The same trim makes
+`a ' b'` count as `a b`. `maity runner check` names the limit once per
+repository with exact entries for agy, and docs/runners.md says it to
+the owner.
+
+**Rejected alternatives:**
+- Keeping the prefix match as a recorded difference: one harness would
+  get a wider grant than another from the same list.
+- A PreToolUse hook that forbids leaving the sandbox for a line that is
+  not an exact grant: `--settings` refuses `hooks`, so it would live in
+  the workspace's `.agents/`, which the agent can write, or in the
+  agents' user's shared `~/.gemini`, re-parse the shell itself, and was
+  untried.
+- A shim for the granted programs on `PATH`: an allowed command leaves
+  the sandbox, and agy canonicalises command names, so the shim cannot
+  tell a sandboxed call from one that leaves it.
+- `ask` rules instead of the deny: a person is asked in an interactive
+  run and a headless run refuses, so nothing beyond the deny.
+- Escaping `.` or `+` in the deny: agy splits the rule like a shell
+  line, which would take the backslash, and no run showed another
+  escape working; left out rather than risk a deny that fails open.
+- A complement regex per word so that entries sharing a start stay
+  exact together: complex, and untried in agy.
+- `(?s).*` or `[\s\S]*` as the deny's last word: the shell split takes
+  the backslash, and the parentheses are shell syntax, so the word
+  would reach the compiler only through agy's fallback for a line that
+  does not parse; the bracket class needs no such fallback.
+- A deny that catches an empty quoted word after an exact entry (review
+  order A587's option (a)): agy drops the word before any rule is
+  compared, and `MatchesConfigAnyRaw` sees the raw line only on the
+  whole-line path, which such a line never takes; no rule can say it.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
@@ -3016,7 +3194,17 @@ in his words are this design's (inferred).
   closed (161d5507). Rejected: dropping it once a report shows a check at
   or after it, which compares the runner's clock with the hub's, and the
   signing window allows minutes of skew: a check decided before the
-  request could erase it (v5vp's review).
+  request could erase it (v5vp's review). One exception, without the
+  token: a report that lists the tool with `update: "never"`, leaves it
+  out or carries no `tools` drops its request, since that runner will
+  never carry it out and the owner would see it standing for nothing
+  (vhqe's review). Because equality decides, no two requests for a tool
+  may share a time: the hub makes each one strictly later than the last
+  it issued for that tool, a mark it keeps after the request is settled
+  or dropped. Rejected: taking that floor from the standing request and
+  the runner's last report, since a late or missing report moves it back
+  and a reissued time is settled by an old report (hcrb's review), and a
+  runner's far-future value would push it (47me's review).
 - **A rollback is a state of its own.** After `maity runner tools
   rollback`, the tool reports `rolled_back` while the version in use is
   older than `latest` (a second rollback back to `latest` reports

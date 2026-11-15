@@ -37,34 +37,47 @@ After a change of these words run `make -C web fixtures`, or the web job is red 
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23
-**Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or several hub replicas serve long-polls
+**Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23; body rewritten to the code of 2026-11-15 (card tsk-y5hkg2ztvwq9, item 11)
+**Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or a source of items gets a stored row per notification
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-23
+**See:** notifications.md#a-page-of-the-bell-is-cut-from-items-derived-only-as-far-as-the-page-reaches-no-cache — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-11-15
+**See:** notifications.md#a-messages-possible-recipients-are-written-with-it-to-notification_recipient-the-bell-reads-them-by-index-instead-of-matching-json-text — fc79a4a6-4b27-40f3-abd9-e7edb7ddd066 — as of 2026-11-15
+**See:** notifications.md#a-membership-stores-where-its-notifications-begin-joined_seq-the-bell-no-longer-finds-it-in-the-event-log — ed1bae10-a417-4c3e-881e-617cf0b3b805 — as of 2026-11-15
 
-`maity_hub.notifications.items.derive` reads, for each project the human
-is an active member of, the events of the last 30 days since the
-membership began, of the kinds that can make an item. Since the
-maintainer's narrowing of 2026-10-26 (root context, notifications.md)
-those are only messages, `mentioned` and the request events. It
-classifies them (`inbox` over `mention` over `chat`), checks each
-against what the human may read now, and adds the human's account
-records. Counts, filters, the cursor and positions all work on that
-list in Python. A request's relation to the human (addressee, holder,
-asker) is the request's as it is when the bell is read. The only stored
-state is the read marks (`notification_read`, the chats' own marks,
-`read_at` on records). A held long-poll looks every 0.5 seconds, one per
-session, and checks the session again at every look; which long-poll is
-current is kept in the process, so a second replica would need it
-shared.
+A notification is not stored: every read derives it from the events of the last 30 days of
+the projects the human is an active member of, since the membership began, of the kinds that
+can make an item (since the maintainer's narrowing of 2026-10-26, root context,
+notifications.md: messages, `mentioned`, the request events and the jour fixe's), and from
+the human's account records. `_classify` decides each one (`inbox` over `mention` over
+`chat`) against what the human may read now. A request's relation to the human (addressee,
+holder, asker) is the request's as it is when the item is read.
+
+How much is derived depends on the reader:
+- The bell reads only what its answer needs: a page from `items.derive_page`, which derives
+  each source only as far as the page reaches (24ca001c); the counts from `items.count_items`,
+  the mentions and the security and open inbox records; the pinned alerts from
+  `items.pinned`, account records alone.
+- Message candidates come from `notification_recipient`, written with each message (fc79a4a6),
+  and where a membership's items begin from `membership.joined_seq` (ed1bae10). Both only pick
+  rows; whether a row is an item is still decided at read time.
+- The full `items.derive` is read only by the notification mailer, which needs every unread
+  item of the window, and by `POST /me/notifications/read`, which marks a choice among them.
+
+What is stored besides the events is bookkeeping, never an item: the read marks
+(`notification_read`, the chats' own marks, `read_at` on records), the candidate rows and the
+join position above, and what the mailer has sent. A held long-poll looks again every 0.5
+seconds and compares a stamp before it derives (06563fc8); which wait of a session is current
+crosses replicas through the wake-ups (replicas.md 7c2e91d4).
 
 **Reason:** §18.1 asks that an item never shows more than the human may
 read at the moment it is read or mailed. A view computed when read
 meets that by construction. Stored notifications would need every
 membership end, redaction and permission change to find and withdraw
-them. Thirty days of a few projects are small for V1, and the scan has
-one place to optimise later.
+them. The rows the bell reads by index now are candidates only, so they
+can be stale (a redaction, a membership ended) without showing anything:
+the exact test stays at read time.
 
 **Rejected alternatives:**
 - A notification row written per human and event at emit time: faster
@@ -837,7 +850,8 @@ settings and a second error code that told a client what it had asked for in the
 
 **Id:** f1bba221-bde0-4988-96a5-6b55368693d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5fa1d7c2-8e34-4b6a-9c07-1d3e8f20ab46
 **Evidence:** inferred
 **Source:** docs/api.md §6.2, §18.1, §18.4; the implementation of #329 (`Scope.say`, `items.WORDS`) and its review, 2026-10-29
 **Revisit when:** a third language is added, a human asks for another language in the bell than in their mail, or the titles of an item kind outgrow the table in `items.WORDS`
@@ -1371,3 +1385,63 @@ items to someone removed from that project in the meantime.
 - Mark the projects and check for any active membership in them (the first version of #1807):
   a join after a leave passes with its new row, and a second query for the mark races a removal
   on READ COMMITTED.
+
+## Account records and the mail's bookkeeping are deleted by an hourly sweep; an open inbox record stays until its matter closes
+
+**Id:** c28a0dba-829b-4476-a422-9eadcca9337a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ar6h2s0kff5, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); docs/api.md §2.6.5 and §18.1 ("kept 90 days"), §18.2 (open inbox items "stay listed while their matter is open, however old"; a stored position "kept at least 30 days after its last use"); `notifications/retention.py`, `mail/outbox.py` `Worker._prune`; tests in `tests/test_notification_retention.py`
+**See:** https://github.com/oliver-zehentleitner/maity — b735056d-fb73-458b-8a85-d656dc7e218b — as of 2026-11-14
+**Revisit when:** an index is built for the sweep (`mail_item_sent.mailed_at`, `notification_position.last_used_at`; card tsk-3ar6h2s0kff5 leaves it as a follow-up), the bell lists an open record past `records.KEPT` (TODO #280 for `mail_disabled`), or a new inbox record type is added to `records.INBOX`
+
+Nothing deleted `account_record`, `mail_item_sent`, `mail_delivery` or `notification_position`
+but an account's deletion, though the contract keeps records 90 days and stored positions 30 days
+after their last use; a `session_created` record holds the IP, browser and system of a sign-in.
+`outbox.Worker` now runs `retention.prune` once an hour (one pod per hour through `worker_runs`,
+name `mail-retention`; the first sweep an hour after the process starts). It deletes:
+
+- account records older than `records.KEPT` plus a day (`MARGIN`), so a reader that filters by
+  `>= now - KEPT` never races the sweep for a row at the edge;
+- `mail_item_sent` rows mailed more than `records.KEPT` plus a day ago, and the mailer reads only
+  that span of them;
+- `mail_delivery` rows older than a day: the counters (`mail.settings.counters`) and the
+  instance budget (`mailer._instance_full`) read the last hour;
+- stored positions unused for 30 days.
+
+An inbox record whose matter is still open is kept past 90 days and goes on the first sweep
+after the matter closed, judged as the bell judges it: `registration_pending` while the
+registration it names is `pending`; `mail_disabled` while the human's `address_status` is
+`disabled`; `agents_not_listening` when it is the owner's newest of the type and its count is not 0.
+
+Each table goes in batches of 500 rows chosen by key and deleted by key in a short transaction of
+their own; the DELETE checks the condition again, so a position used in between stays. Account
+records are walked by number (`n > last`), so a batch that holds only open records is passed, not
+read again. A sweep stops after 30 seconds or when the worker stops and leaves the rest to the
+next hour; the mail worker's thread runs it between two looks at the outbox.
+
+**Reason:** the contract's "kept 90 days" and "kept at least 30 days after its last use" were
+true only as filters on read; a copy of the database kept every sign-in's address for good.
+Keeping open records follows §18.2, which lists them while their matter is open, however old:
+deleting one would end that promise for good, while keeping it costs one row per matter. In
+practice none stays long: a pending registration expires after 30 days
+(`registration_accounts.PENDING_ACCOUNT_FOR`), the digest writes a new `agents_not_listening`
+record once the open one left the window (`not_listening_digest.latest`), after which the old one
+is no longer the newest; only `mail_disabled` stays as long as the address stays disabled.
+`mail_item_sent` is kept as long as records, not the 30 days of events: an item from a record (a
+sign-in's alert, a security item) is derived for 90 days, so a row deleted after 30 would mail an
+unread one again; the test fails with a 31-day window.
+
+**Rejected alternatives:**
+- Deleting `mail_item_sent` after the 30-day item window and a margin, as the card proposed: the
+  record items above would be mailed a second time.
+- Reissuing an open inbox record past 90 days instead of keeping it: a new number and `at` for an
+  old matter, so the bell would show it as new and a position would not cover it.
+- Deleting open records past 90 days: §18.2 keeps their items listed while the matter is open.
+- A worker of its own, as `known_sources.Worker`: one more thread for a pass an hour; the mail
+  worker already holds the outbox's sweep.
+- One DELETE per table without a batch (`known_sources.forget_old`): the first sweep on a hub that
+  never pruned would delete every old row in one statement and hold their locks to its end.
+- An index for the sweep in the same change: a migration needs a slot, and the sweep runs once an
+  hour, the account records' walk on their primary key.

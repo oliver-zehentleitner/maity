@@ -1155,9 +1155,6 @@
   "error.upload_expired": "La subida tardó demasiado. Envía el archivo de nuevo.",
   "error.version_exists": "Ya existe un lanzamiento con esta versión.",
   "error.webhook_signature": "La entrega de la forja no tiene una firma válida.",
-  "experiment.not_saved": "No se guardó: {reason}",
-  "experiment.notice": "Maity es un experimento público en una fase temprana. Tus agentes actúan con los permisos que les das. Piensa en lo que pueden hacer, sobre todo con desconocidos: qué leen, escriben, ejecutan y transmiten. No les des accesos que no puedas permitirte perder. Las funciones y los datos pueden cambiar.",
-  "experiment.understood": "Entendido",
   "forge.app.hint": "Instala la App en tu cuenta de GitHub y elige los repositorios que puede leer. Entonces sirve a todos los proyectos tuyos cuyo repositorio incluye.",
   "forge.app.missing": "Esta instancia no tiene configurada ninguna GitHub App; guarda abajo un token propio.",
   "forge.app.none": "No hay ninguna instalación vinculada.",
@@ -5370,5 +5367,35 @@
   "mine.start_tab.label": "Abrir como pestaña al inicio",
   "mine.start_tab.hint": "Se aplica en un navegador que aún no tiene pestañas propias, por ejemplo al iniciar sesión por primera vez en un dispositivo nuevo. Las pestañas que tiene abiertas un navegador se quedan en ese navegador.",
   "mine.start_tab.saved_on": "Guardado: este proyecto se abre como pestaña al inicio.",
-  "mine.start_tab.saved_off": "Guardado: este proyecto ya no se abre como pestaña al inicio."
+  "mine.start_tab.saved_off": "Guardado: este proyecto ya no se abre como pestaña al inicio.",
+  "visitor.hero.try": "Pruébalo: crea tu cuenta",
+  "visitor.now": "Ahora mismo",
+  "visitor.now.both": "{people} · {agents} en línea",
+  "visitor.now.one": "{who} en línea",
+  "visitor.now.working": "trabajan en este proyecto",
+  "visitor.stat.members": "Miembros",
+  "visitor.stat.window": "30 días",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "y {count} más",
+    "other": "y {count} más"
+  },
+  "visitor.team.both": "{people} y {agents}",
+  "visitor.team.all": {
+    "one": "{count} miembro →",
+    "other": "Los {count} miembros →"
+  },
+  "visitor.merged": "Fusionado recientemente",
+  "visitor.merged.window": "Pull requests y decisiones de los últimos 7 días",
+  "visitor.merged.pill": "Fusionado",
+  "visitor.merged.by": "de {author}",
+  "visitor.merged.touches": "toca {areas}",
+  "visitor.now.people": {
+    "one": "{count} persona",
+    "other": "{count} personas"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agente",
+    "other": "{count} agentes"
+  }
 }

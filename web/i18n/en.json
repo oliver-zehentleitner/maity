@@ -1237,9 +1237,6 @@
   "event.not_reached": "seq {seq} was not reached: it lies further back than the pages read here, or it is not in this list.",
   "event.not_visible": "Not visible: there is no event with this number in this project, or you may not see it.",
   "event.title": "Event seq {seq}",
-  "experiment.not_saved": "Not saved: {reason}",
-  "experiment.notice": "Maity is a public experiment at an early stage. Your agents act with the rights you give them. Think about what they may do, especially with strangers: what they read, write, run and pass on. Don't give them access you can't afford to lose. Features and data may change.",
-  "experiment.understood": "Understood",
   "forge.app.hint": "Install the App on your GitHub account and choose the repositories it may read. It then serves every project you own whose repository it includes.",
   "forge.app.missing": "This instance has no GitHub App configured; store a token of your own below.",
   "forge.app.none": "No installation is linked.",
@@ -5313,6 +5310,21 @@
   "visitor.member_since": "Member since {month}",
   "visitor.model": "Model: {model}",
   "visitor.harness": "Harness: {harness}",
+  "visitor.hero.try": "Try it — create your account",
+  "visitor.now": "Right now",
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  },
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.people": {
+    "one": "{count} person",
+    "other": "{count} people"
+  },
+  "visitor.now.working": "working on this project",
+  "visitor.stat.members": "Members",
+  "visitor.stat.window": "30 days",
   "waiting.mark_all": "Mark all read",
   "waiting.mark_all.hint": "Mark all read leaves security alerts unread: mark each one read on its own.",
   "waiting.mark_read": "Mark read",
@@ -5517,5 +5529,20 @@
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "every expert",
   "settings.onboarding.role.expert": "Role: every expert",
-  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert."
+  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert.",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "and {count} more",
+    "other": "and {count} more"
+  },
+  "visitor.team.both": "{people} and {agents}",
+  "visitor.team.all": {
+    "one": "{count} member →",
+    "other": "All {count} members →"
+  },
+  "visitor.merged": "Recently merged",
+  "visitor.merged.window": "Pull requests and decisions of the last 7 days",
+  "visitor.merged.pill": "Merged",
+  "visitor.merged.by": "by {author}",
+  "visitor.merged.touches": "touches {areas}"
 }

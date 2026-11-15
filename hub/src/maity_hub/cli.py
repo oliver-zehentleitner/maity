@@ -1,5 +1,5 @@
 """`maity-hub serve` and `maity-hub migrate`, the operator's account commands, the copy of the
-attachments into a bucket, and the load test's seed."""
+attachments into a bucket, the sealing of stored verifiers, and the load test's seed."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ from maity_hub.app import (
     start_once,
     warn_on_connection_budget,
 )
-from maity_hub.auth import second_factor_reset
+from maity_hub.auth import second_factor_reset, verifiers
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
@@ -65,6 +65,11 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("serve", help="serve the API and the dashboard")
     commands.add_parser("migrate", help="bring the database schema to the current version")
+    commands.add_parser(
+        "seal-verifiers",
+        help="seal the credentials' plain verifiers with MAITY_SECRET_KEY; only with "
+        "MAITY_SEAL_VERIFIERS=1, a second run seals nothing",
+    )
     owner = commands.add_parser("owner", help="manage human accounts")
     owner_commands = owner.add_subparsers(dest="owner_command", required=True)
     create = owner_commands.add_parser(
@@ -136,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "migrate":
         return _migrate(settings)
+    if args.command == "seal-verifiers":
+        return _seal_verifiers(settings)
     if args.command == "owner":
         return _owner_create(settings, args.handle, args.display_name, args.email)
     if args.command == "second-factor":
@@ -285,6 +292,8 @@ def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        # sealed as the hub seals them
+        verifiers.configure(settings.secret_key, settings.seal_verifiers)
         made = loadtest.seed(engine, humans, out)
     except FileExistsError:
         return _fail(f"refused: {out} exists", EXIT_CONFIG)
@@ -482,7 +491,7 @@ def _migrate(settings: Settings) -> int:
             )
         before = current_revision(engine)
         try:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
         except SQLAlchemyError:
             # Where the run left the schema, after the last attempt (db.migrate): on PostgreSQL
             # the chain is one transaction and this is `before`; MariaDB commits per step.
@@ -500,6 +509,33 @@ def _migrate(settings: Settings) -> int:
         return _database_error(settings, error)
     finally:
         engine.dispose()
+    return 0
+
+
+def _seal_verifiers(settings: Settings) -> int:
+    """The explicit step that seals the verifiers written before sealing was switched on
+    (hub/context/credentials.md); no migration seals. Idempotent: a sealed row stays."""
+    if not settings.seal_verifiers or settings.secret_key is None:
+        return _fail(
+            "refused: sealing is off; set MAITY_SEAL_VERIFIERS=1 and MAITY_SECRET_KEY first",
+            EXIT_CONFIG,
+        )
+    try:
+        engine = make_engine(settings.database_url)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    try:
+        require_current_schema(engine)
+        counted = verifiers.seal_plain(engine, settings.secret_key)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except SQLAlchemyError as error:
+        return _database_error(settings, error)
+    finally:
+        engine.dispose()
+    for table, count in counted.items():
+        print(f"{table}: {count}")
+    print(f"sealed {sum(counted.values())} verifier(s)")
     return 0
 
 
@@ -551,7 +587,7 @@ def _quickstart(
     new = unversioned
     try:
         if new:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
             print(f"maity-hub: schema empty -> {head_revision(engine)}")
         else:
             require_current_schema(engine)

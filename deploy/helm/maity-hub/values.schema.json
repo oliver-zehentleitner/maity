@@ -412,6 +412,9 @@
         "key": {
           "type": "string",
           "minLength": 1
+        },
+        "sealVerifiers": {
+          "type": "boolean"
         }
       }
     },

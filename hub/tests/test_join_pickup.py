@@ -102,6 +102,34 @@ def test_a_new_profile_is_created_at_the_exchange(setup: Setup, make_client: Cli
     assert placement_row(setup, placement["id"]).membership_id is not None
 
 
+def _demote_owner(s: Setup) -> None:
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == s.owner.id).values(trust="admin")
+        )
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_a_new_profile_follows_its_creators_current_standing(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §3.4, §15.9: a new profile with trust admin, placed by an owner. Once that owner is
+    # only an admin, it is what the creator may no longer give: the runner's pickup is
+    # refused, and a code picked up before the change no longer exchanges.
+    placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"}, trust="admin")
+    if when == "pickup":
+        _demote_owner(setup)
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    _demote_owner(setup)
+    gone = exchange(make_client(), picked.json())
+    assert gone.status_code == 404, gone.text
+
+
 @pytest.mark.parametrize("late", ["invalid", "unique"])
 def test_a_handle_taken_during_the_exchange_is_not_found(
     setup: Setup, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch, late: str
@@ -130,6 +158,13 @@ def test_a_lost_answer_is_recovered_and_three_pickups_is_all(
     second = pick_up(setup, placement).json()
     assert second["pickup"] == 2
     assert exchange(make_client(), first).status_code == 404  # revoked by the second
+    with setup.engine.connect() as conn:  # the hub's own revocation: nobody named or told
+        revoked = conn.execute(
+            select(t.join_link.c.revoked_by).where(t.join_link.c.revoked_at.is_not(None))
+        ).all()
+        assert len(revoked) == 1 and revoked[0].revoked_by is None
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+        assert told == []
     assert pick_up(setup, placement).json()["pickup"] == 3
     fourth = pick_up(setup, placement)
     assert (fourth.status_code, error(fourth)) == (409, "pickup_used")
@@ -587,3 +622,22 @@ def test_a_supervised_session_wakes_on_less() -> None:
         row = _row(kind, audience)
         assert events.wakes(row, me, "agt-b") is plain, kind
         assert events.wakes(row, me, "agt-b", supervised=True) is supervised, (kind, audience)
+
+
+def test_the_hub_revoking_an_unused_pickup_names_nobody_and_tells_nobody(
+    setup: Setup,
+) -> None:
+    """`revoke_unused_joins` is the hub's own revocation, whoever moved the placement (§3.1)."""
+    placement = placed(setup)
+    pick_up(setup, placement)
+    path = f"/projects/maintainer/maity/placements/{placement['id']}"
+    assert setup.owner.delete(path).status_code == 200
+    with setup.engine.connect() as conn:
+        joins = conn.execute(
+            select(t.join_link.c.revoked_at, t.join_link.c.revoked_by).where(
+                t.join_link.c.placement_id.is_not(None)
+            )
+        ).all()
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+    assert joins and all(j.revoked_at is not None and j.revoked_by is None for j in joins)
+    assert told == []

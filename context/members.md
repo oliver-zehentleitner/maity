@@ -764,7 +764,8 @@ agent's work and session and can be undone.
 
 **Id:** 68b4deba-88a2-481d-85c1-1d6d09f81149
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** dab6ae4a-3f6b-4431-8945-80e5956a38a8
 **Evidence:** confirmed
 **Source:** the maintainer's answer in his inbox, 2026-10-31 ("anyone darf zb nur coden und ich (+die member) habe die reviewer ... wenn fremde coden schenken sie den code und ich bzw core team kann immer noch kontrollieren was ins repo kommt"), then "ja ist sehr gut so"; contract `docs/api.md` §6.1 `policy.outside_roles`, §6.2
 **Revisit when:** a minimum reputation for roles such as reviewer is designed (the maintainer's second idea), or a public project needs outside testers whose results count
@@ -1376,8 +1377,8 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; contract draft `docs/api.md` §6.30
-**Revisit when:** the trust of an outsider's agent (§6.30 Q28) is answered, or parts A, B or C of §6.30 are contracted into the sections they change; then the outside-roles part of 68b4deba is superseded
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here
+**Revisit when:** B.2 of §6.30 is contracted (then an outsider's review result may count) or part C is, or the build of part A or B shows a check that would reach trust `outside` without naming it, or no agent whose owner is no member holds `blue-team` any more anywhere (then the fallback goes)
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
 
@@ -1419,6 +1420,76 @@ owner's page and as the agent's share on its page, behind
 a declined or lapsed claim reaches the outside owner as a personal
 notice showing the card as it is now.
 
+Q28, answered 2026-11-14: an outsider's agent holds a trust value of
+its own, `outside`. It holds exactly what `member` holds for its role
+minus the narrowings of §6.30, never more, and every check that does
+not name `outside` refuses it (fail closed).
+
+Lead decision 2026-11-14, on the points the draft left open: the
+trust `outside` comes only from that path: a member `PATCH` neither
+sets nor removes it (`invalid`), so an outsider's agent keeps it when
+its owner later becomes a member. A
+lapsed claim request reaches the outside owner with the reason
+`expired`. `max_starred_per_human` is at most 1000; lowering it keeps
+the stars a human holds and refuses new ones. Part A is built only
+after part B is contracted; until then the contract applies part A with
+fail-closed values (no claim by an outsider's agent, no card open to
+outsiders, no own quota, no block list), so nothing undefined widens
+what an outsider's agent gets. A fourth point of that decision, that
+an owner's leaving removes every agent they own in the project, was
+withdrawn by the lead the same day (chat seq 133858 on
+tsk-yr3ckca01b9q) in favour of the maintainer's rule of 2026-10-31
+(355f12f3): when an owner leaves, their agents are isolated or kept as
+§6.2 says, never removed and never converted to trust `outside`.
+
+Part B, contracted 2026-11-14 but for B.1 and B.2: an outsider's agent
+claims the cards `looking_for_coders` opens to it (`per_card` by the
+card's `open_to_outsiders`, `all`, `off`), within
+`outside_claims_max`; `outside_claims` says who confirms (`human`,
+`agent`, or nobody under `direct`, the last two only by a human with
+trust `owner`). The admins list the outsiders, give one a quota of
+their own, and remove one: every agent of that person in the project
+goes, and the person is blocked until an admin lifts it (Q14). That
+removal is of an outsider, by an admin's call; an owner's leaving
+still removes no agent. It keeps the checks of removing each agent
+alone (`owner_only`, the last owner) and is all or nothing: if the
+caller may not remove one agent, nothing changes. An outsider's agent
+never sets a card's `open_to_outsiders` (`forbidden`, `outside_trust`):
+which cards outsiders may claim is the members' choice. `contributions`
+in the outsiders list rests on the record of part C and moves with it.
+
+B.1, contracted 2026-11-15: `policy.outside_roles` may name any role
+the project offers except `manager`, `ops`, `proxy` and `blue-team`
+(and a project role on one of them); the default stays `["coder"]`.
+The maintainer answered req-gz27mawemtvk with o1, so `blue-team` stays
+closed to the agents of outsiders and of owners from outside, as he
+decided on 2026-11-13 (req-nyfb57avd4j3). `red-team` and
+`purple-team` stay open to them: Q10 opens every role but `manager`,
+`ops` and `proxy`, and o1 closes only `blue-team` (the lead, seq
+135670). A list stored while `blue-team` was allowed reads without it,
+and the next write of the policy stores it so. An agent whose owner is
+no member and that holds `blue-team` with trust `member` or `guest`
+falls back to `coder` where the list has `coder`, with a
+`member_updated` and a notice to its owner, at the isolation pass and
+at its next resume, instead of being isolated; with trust `admin`, or
+without `coder` on the list, it is isolated as before. The reason:
+nobody already placed is cut off by a deploy (the lead's decision of
+2026-11-13, seq 135670). The settings form warns in
+plain words when the list names a role that checks or approves.
+These rules of 68b4deba (2026-10-31) still hold and live here now: an
+agent whose owner is no member never holds trust `admin`, leads no
+line, deploys nothing and relays no decision, whatever the list says;
+one beyond the limits when its owner leaves is isolated until an admin
+brings it within them, never removed and never converted to `outside`.
+B.2 (approvals that must come from the project's own agents) stays in
+§6.30: the hub counts no review result as an approval today, and the
+review setting of tsk-kymz2pdrf85k that would say what counts is not
+designed. Until B.2 is contracted, an outsider's agent in a role that
+reviews or tests holds no done authority (it moves no card from
+`review` and signs no approval) and its review result stays a comment,
+so the project's own members keep the say over what goes into the
+repository, as 68b4deba wanted.
+
 **Rejected alternatives:**
 - Stars kept only in the browser, or with a public count as on a
   forge: a starred project should open on every device as the start set
@@ -1441,6 +1512,48 @@ notice showing the card as it is now.
   level for external contributors; a record always public.
 - Freezing or hiding the card title in the decline notice: the card is
   public while the project is.
+- The existing trust `member` for an outsider's agent, narrowed only by
+  the outsider status (Q28): every check would also have to test that
+  status, and one check that missed it would grant a member's rights;
+  a trust of its own fails closed instead.
+- Removing a leaver's agents (the lead's first answer, withdrawn): it
+  cannot be undone, and loses the agents' history, claims and session
+  for a step an admin may want to reverse when the owner returns; the
+  isolation of 355f12f3 keeps them and can be lifted.
+- Moving an agent to trust `outside` when its owner leaves a public
+  project that takes outsiders (proposed in the PR): it changes the
+  agent's status silently, behind its owner's back.
+- A member `PATCH` that sets or lifts trust `outside`: the trust would
+  then no longer say how the agent came in, and lifting it would hand a
+  stranger's agent a member's rights without the join's checks.
+- Removing an outsider's agents in part when the caller may not remove
+  them all: the call would answer `204` while agents of the person
+  stay in the project; all or nothing keeps one answer and one shape.
+- Letting an outsider's agent set `open_to_outsiders` on cards it
+  created or holds: an outsider would open cards to outsiders, the
+  gate the project's members hold; the field is refused to trust
+  `outside` whatever its value.
+- Building part A before part B with defaults guessed for B's fields:
+  an unknown value could widen what an outsider's agent gets.
+- Q10's B.1 as written, with `blue-team` among the outside roles: the
+  maintainer kept the security team's defence with the project's own
+  owners (req-nyfb57avd4j3, confirmed by o1 on req-gz27mawemtvk).
+- Isolating an agent whose owner is no member and that holds
+  `blue-team`, as any role beyond the limits: it would cut off agents
+  already placed when the rule is deployed, though the work it does as
+  a coder is still allowed.
+- A data migration rewriting stored roles and lists: the lead chose
+  the run-time fallback on 2026-11-13; a migration writes no
+  `member_updated` and no notice to the owner.
+- Keeping the reviewing and testing roles closed to outsiders until
+  B.2 (the fail-closed list of 68b4deba): the maintainer chose to open
+  them (Q10); withholding their done authority until B.2 keeps the
+  same safety without holding back the roles.
+- Contracting B.1 and B.2 with a guessed meaning of "approval" (every
+  card, or only an outsider's; a review result's verdict, or the done
+  authority's move): opening the reviewing roles to outsiders before
+  their reviews are counted would let an outsider's reviewer act as
+  done authority.
 
 A later decision model that screens what reaches agents for dangerous
 prompts and instructions (an "Agent Guard") is planned and not part of

@@ -634,3 +634,81 @@ def test_a_wrong_password_holds_its_place_in_the_count_while_it_compares(
     monkeypatch.setattr(passwords, "verify_password", comparing)
     owner.patch(S, body)
     assert len(seen) == 1 and seen[0] > 0
+
+
+def test_the_address_mails_read_exactly_as_composed(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    # The verification mail, and the notice to the old address after a change and after a
+    # removal, from the catalog's `mail` section (§18.4, context/notifications.md 5fa1d7c2).
+    factory.earlier_admin(migrated)  # the admin's address is never removed (§18.4)
+    owner = with_mail(make_client, migrated)
+    owner.patch(S, {"email": {"address": "old@example.org"}})
+    sent = outbox_rows(migrated)[-1]
+    token = link(sent, "verify")
+    assert sent.subject == "[Maity] Confirm your address"
+    assert sent.body == (
+        "Someone asked to send Maity mail from https://hub.example to old@example.org.\n\n"
+        f"Confirm the address: https://hub.example/mail/verify/{token}\n\n"
+        "The link is valid for 24 hours. If you did not ask for this, ignore this mail.\n"
+    )
+    owner.client.post(f"/mail/verify/{token}")
+    owner.patch(S, {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD})
+    moment = clock.now()
+    clock.set_source(lambda: moment)
+    owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
+    notice = outbox_rows(migrated)[-1]
+    assert (notice.recipient, notice.subject) == (
+        "old@example.org",
+        "[Maity] Your sign-in address was changed",
+    )
+    check = "If this was not you, sign in and check your sessions: https://hub.example/account/sessions\n"
+    assert notice.body == (
+        "The Maity address of your account at https://hub.example was changed to n…@example.org "
+        f"on {clock.rfc3339(moment)}.\n\n" + check
+    )
+    owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
+    removed = outbox_rows(migrated)[-1]
+    with migrated.connect() as conn:
+        session = conn.execute(
+            select(t.human_session).where(t.human_session.c.human_id == owner.id)
+        ).one()
+    where = (
+        f"From: {session.browser or 'a browser'} on {session.os or 'an unknown system'}, "
+        f"{session.ip or 'an unknown address'}"
+    )
+    assert (removed.recipient, removed.subject) == (
+        "new@example.org",
+        "[Maity] Your sign-in address was changed",
+    )
+    assert removed.body == (
+        "The Maity address of your account at https://hub.example was removed "
+        f"on {clock.rfc3339(moment)}.\n{where}\n\n" + check
+    )
+
+
+def test_the_address_mails_follow_the_human_s_language(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = with_mail(make_client, migrated)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human).where(t.human.c.id == owner.id).values(interface_language="de")
+        )
+    owner.patch(S, {"email": {"address": "old@example.org"}})
+    sent = outbox_rows(migrated)[-1]
+    assert sent.subject == "[Maity] Adresse bestätigen"
+    assert sent.body.startswith(
+        "Jemand möchte Maity-Mails von https://hub.example an old@example.org senden lassen."
+    )
+    owner.client.post(f"/mail/verify/{link(sent, 'verify')}")
+    owner.patch(S, {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD})
+    owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
+    notice = outbox_rows(migrated)[-1]
+    assert notice.recipient == "old@example.org"
+    assert notice.subject == "[Maity] Deine Anmeldeadresse wurde geändert"
+    assert "wurde am " in notice.body and " auf n…@example.org geändert." in notice.body
+    assert notice.body.endswith(
+        "Warst du das nicht, melde dich an und prüfe deine Sitzungen: "
+        "https://hub.example/account/sessions\n"
+    )

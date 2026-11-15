@@ -16,9 +16,11 @@ from maity_hub import (
     account_deletion,
     attachment_store,
     clock,
+    events,
     public_pages,
     public_projects,
     runner_revoke,
+    runners,
     write_guard,
 )
 from maity_hub import tables as t
@@ -27,7 +29,7 @@ from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, lock_project
 from maity_hub.forge import Forge
 from maity_hub.notifications import records
-from maity_hub.runners import attached_project_ids, live_credential_id
+from maity_hub.runners import live_credential_id
 from maity_hub.views import principal_id, ts
 
 HOLDING = ("hide", "remove")
@@ -175,8 +177,8 @@ def suspensions(conn: Connection, rows: Any, owner_of: dict[str, str]) -> dict[i
 
 def _projects_to_lock(conn: Connection, runner_ids: list[str], own: Any) -> list[str]:
     """The projects a suspension locks, sorted: those of the account's live credentials,
-    those its runners are attached to, and every project where one of its runners has or
-    had a placement (a superset of what a runner's stop locks, `runner_revoke.apply`)."""
+    which their revocation locks, and for each of its runners what the owner's stop locks
+    (`runner_revoke.projects_to_lock`, the rule `apply` itself follows below)."""
     found = set(
         conn.execute(
             select(t.membership.c.project_id)
@@ -185,13 +187,7 @@ def _projects_to_lock(conn: Connection, runner_ids: list[str], own: Any) -> list
         ).scalars()
     )
     for runner_id in runner_ids:
-        found.update(attached_project_ids(conn, runner_id))
-    if runner_ids:
-        found.update(
-            conn.execute(
-                select(t.placement.c.project_id).where(t.placement.c.runner_id.in_(runner_ids))
-            ).scalars()
-        )
+        found.update(runner_revoke.projects_to_lock(conn, runner_id))
     return sorted(found)
 
 
@@ -212,30 +208,32 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     from maity_hub.routes import runners as runner_routes
 
     account_deletion.lock_account(conn, human_id)
-    owned = select(t.runner.c.id).where(
-        t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None)
-    )
-    r = t.runner_credential.c
-    conn.execute(
-        select(r.id)
-        .where(r.runner_id.in_(owned), r.revoked_at.is_(None))
-        .order_by(r.id)
-        .with_for_update()
-    ).all()
-    runner_ids = list(conn.execute(owned.order_by(t.runner.c.id).with_for_update()).scalars())
+    owned = runners.lock(conn, t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None))
+    runner_ids = [row.id for row in owned]
     m, c = t.membership.c, t.credential.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     own = (m.human_id == human_id) | m.agent_id.in_(agents)
     for project_id in _projects_to_lock(conn, runner_ids, own):
         lock_project(conn, project_id)
     credentials = conn.execute(
-        select(c.id)
+        select(c.id, m.project_id, m.agent_id)
         .join(t.membership, m.id == c.membership_id)
         .where(c.revoked_at.is_(None), own)
         .order_by(c.id)
-    ).scalars()
-    for credential_id in list(credentials):
-        leaks.revoke(conn, credential_id, REVOKED_REASON, None)
+    ).all()
+    for credential in credentials:
+        # Said as a revocation by hand says it (§6.17), so the agent's owner sees why its
+        # instances stopped; only the revocation that wins says it.
+        if leaks.revoke(conn, credential.id, REVOKED_REASON, None) and credential.agent_id:
+            events.emit(
+                conn,
+                credential.project_id,
+                "credential_revoked",
+                [f"member:{credential.agent_id}", "trust:owner"],
+                {"credential_id": credential.id, "reason": REVOKED_REASON},
+                actor=actor(report_id),
+                subject=("credential", credential.id),
+            )
     for runner_id in runner_ids:
         # `stop` whatever the projects' rule, so the instance rule passed is never read.
         applied = runner_revoke.apply(

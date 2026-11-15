@@ -8,7 +8,7 @@ events (hub/context/events.md). A new table: nothing to carry over.
 The chain follows whatever head `main` has when it lands.
 
 Revision ID: 20261114200000_chat_verdict
-Revises: 20261113130000_experiment_notice
+Revises: 20261114100000_runner_updates
 Create Date: 2026-11-14
 """
 
@@ -21,7 +21,7 @@ from alembic import op
 from maity_hub.types import UtcDateTime
 
 revision: str = "20261114200000_chat_verdict"
-down_revision: str | None = "20261113130000_experiment_notice"
+down_revision: str | None = "20261114100000_runner_updates"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

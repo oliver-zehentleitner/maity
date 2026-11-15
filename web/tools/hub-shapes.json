@@ -914,6 +914,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -1353,6 +1356,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -1649,6 +1655,9 @@
    "forwarding": {
     "array": null
    },
+   "held": {
+    "array": null
+   },
    "holder": "string",
    "humans_only": "boolean",
    "id": "string",
@@ -1879,6 +1888,9 @@
    "created_at": "string",
    "filed_by": "null",
    "forwarding": {
+    "array": null
+   },
+   "held": {
     "array": null
    },
    "holder": "string",
