@@ -35,8 +35,6 @@ NOT_MESSAGES = tuple(kind for kind in EVENT_KINDS if kind != "message")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
 
-# The texts the hub itself composes for a human, in that human's language (§6.2, §18.4).
-
 
 @dataclass
 class Item:
