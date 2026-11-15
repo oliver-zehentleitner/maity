@@ -22,6 +22,7 @@ from . import (
     config,
     install,
     limitread,
+    logcap,
     loop,
     operate,
     plaincall,
@@ -37,6 +38,8 @@ STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
 REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
+# The agents' user's Claude Code settings, read by `check`: larger is not looked at.
+SETTINGS_MAX = 1024 * 1024
 
 
 class Refused(Exception):
@@ -117,10 +120,11 @@ def cmd_pair(args: argparse.Namespace) -> int:
         },
         name=STATE_FILE,
     )
-    attached = ", ".join(result.attached) or "none yet"
+    attached = ", ".join(onboarding.inline(name) for name in result.attached) or "none yet"
     print(
-        f"paired as runner {result.runner_id}; attached to: {attached}; credential "
-        f"{result.credential_id} stored in {stored} (mode 0600, not printed)",
+        f"paired as runner {onboarding.inline(result.runner_id)}; attached to: {attached}; "
+        f"credential {onboarding.inline(result.credential_id)} stored in {stored} "
+        "(mode 0600, not printed)",
         file=sys.stderr,
     )
     if created:
@@ -186,7 +190,7 @@ class Report:
 
     def print(self) -> None:
         for level, text in self.lines:
-            print(f"{level:5}  {text}")
+            print(f"{level:5}  {onboarding.clean(text)}")
 
 
 DEFAULTS = (
@@ -195,7 +199,7 @@ DEFAULTS = (
     ("limits.stop_grace_max", "120 (seconds; caps a placement's stop_grace_seconds)"),
     ("limits.restart", "at most 5 exits in 1800 s; backoff from 10 s, factor 2, cap 300 s; "
                        "an exit within 60 s counts as a crash"),  # fmt: skip
-    ("limits.log_keep_bytes", "10 MiB per placement"),
+    ("limits.log_keep_bytes", "10 MiB per placement; a full log drops its older half"),
     ("limits.require_local_approval", "false"),
     ("backend.kind", "local"),
     ("backend.local.workspaces", config.DEFAULT_WORKSPACES),
@@ -211,7 +215,11 @@ DEFAULTS = (
     ("backend.ssh.hosts[].isolation", "shared_user (own_user: not yet)"),
     ("harness.<id>.modes", '["supervised"]; default_mode: the first'),
     ("harness.<id>.binary", "the harness's usual command, resolved on agent_path"),
-    ("harness.<id>.require_sandbox", "false"),
+    (
+        "harness.<id>.require_sandbox",
+        "unset: claude-code with bwrap and socat refused below version 2.1.295 or unknown;"
+        " false: never refused for the sandbox",
+    ),
     ("harness.<id>.env_file", "unset"),
     (
         "git.name, git.email",
@@ -397,6 +405,7 @@ def _check_claude_code(
     tools = capabilities.claude_sandbox_tools()
     missing = [t for t in tools or () if not capabilities.which(t, agent_path, as_user)]
     line = None
+    held = tools is not None and not missing
     if tools is None:
         line = f"harness claude-code: no OS sandbox on {sys.platform}; agents run unsandboxed"
     elif missing:
@@ -404,17 +413,31 @@ def _check_claude_code(
     elif not capabilities.sandbox_version_ok(harness.id, version):
         line = capabilities.sandbox_version_line(version)
     if line is not None:
-        (report.error if harness.require_sandbox else report.warn)(line)
+        refused = capabilities.sandbox_refused(harness, False, held)
+        (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        _check_claude_hooks(report, as_user, "")
     _check_claude_settings(report, as_user, "")
+
+
+def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
+    """With the sandbox on, the runner's hook must run: settings that switch hooks off
+    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error."""
+    why = capabilities.claude_hooks_off(as_user)
+    if why is None:
+        report.ok(f"{where}harness claude-code: hooks are not switched off")
+    else:
+        report.error(f"{where}{capabilities.claude_hooks_line(why)}")
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
     """The agents' user's own Claude Code settings (here, through sudo, or on a host):
     agents start with --setting-sources user, so they inherit its rules and hooks."""
     try:
-        settings = _json_bytes(as_user.read(as_user.home() / ".claude" / "settings.json"))
+        home = as_user.home()
+        path = home / ".claude" / "settings.json"
+        settings = _json_bytes(as_user.read_whole(path, SETTINGS_MAX, under=home))
     except (OSError, KeyError):
         settings = None
     if settings is None:
@@ -485,7 +508,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
-    probes, sandbox = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
+    probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]
         if harness.id == "stub":
@@ -502,7 +525,10 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
                 else:
                     line = f"{name}: {capabilities.sandbox_version_line(probe.version)}"
-                (report.error if harness.require_sandbox else report.warn)(line)
+                refused = capabilities.sandbox_refused(harness, False, harness.id in held)
+                (report.error if refused else report.warn)(line)
+            elif harness.id == "claude-code":
+                _check_claude_hooks(report, as_user, f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -717,10 +743,23 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r = rsub.add_parser("loop")
     r.add_argument("--spec", required=True)
     r.set_defaults(handler=lambda a: loop.main(["--spec", a.spec]))
-    # Internal too: the loop's limit file, read on the agents' side (limitread).
+    # Internal too: a file on the agents' side (the loop's limit file, a clone's, a log), read
+    # there without following a link or waiting on a FIFO (limitread).
     r = rsub.add_parser("limitread")
+    r.add_argument("--under", required=True)
+    r.add_argument("--bytes", type=int)
+    r.add_argument("--offset", type=int)
     r.add_argument("path")
-    r.set_defaults(handler=lambda a: limitread.main([a.path]))
+    r.set_defaults(handler=lambda a: limitread.main(
+        ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
+         *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
+    ))  # fmt: skip
+    # Internal too: what a pane's output goes through on an ssh host, holding its log to
+    # limits.log_keep_bytes (logcap).
+    r = rsub.add_parser("logcap")
+    r.add_argument("log")
+    r.add_argument("limit")
+    r.set_defaults(handler=lambda a: logcap.main([a.log, a.limit]))
     # Internal too: Claude Code's folder trust for a clone, recorded on the agents' side (trust).
     r = rsub.add_parser("trust")
     r.add_argument("home")

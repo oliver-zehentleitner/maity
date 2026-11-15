@@ -290,6 +290,32 @@ def test_an_owner_of_an_organisation_that_has_projects_may_delete_the_account(
         assert [r.human_id for r in conn.execute(select(t.org_member)).all()] == [other]
 
 
+def test_a_deleted_account_onboarding_names_goes_back_to_the_coordinator(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """§2.9: the hub ends the account's seats, and a project whose onboarding named the account
+    as `check_in_with` returns to `coordinator`, written by the hub; the deletion goes through."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    org = pat.post("/orgs", {"handle": "pat-team", "display_name": "Pat Team"}).json()
+    other = factory.human(migrated, "other")
+    add_member(migrated, org["id"], other, "owner")
+    made = pat.post("/projects", {"slug": "shop", "name": "Shop", "owner": "pat-team"})
+    assert made.status_code in (200, 201), made.text
+    named = pat.patch(
+        "/projects/pat-team/shop", {"settings": {"onboarding": {"check_in_with": pat.id}}}
+    )
+    assert named.status_code == 200, named.text
+    assert ask_deletion(pat).status_code == 202
+    done = press(pat, token_of(migrated))
+    assert done.status_code == 200, done.text
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        onboarding = conn.execute(select(t.project.c.settings)).scalar_one()["onboarding"]
+    assert onboarding["check_in_with"] == "coordinator"
+    assert onboarding["by"] == {"id": "hub", "handle": "hub", "kind": "hub"}
+
+
 def test_the_transfers_the_account_started_into_an_organisation_are_withdrawn(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
@@ -599,6 +625,11 @@ def test_the_deletion_does_what_the_contract_lists(
         assert invitation.voided_at is not None
         join = conn.execute(select(t.join_link).where(t.join_link.c.id == w["join"]["id"])).one()
         assert join.revoked_at is not None
+        # The hub's own revocation: nobody named, nobody told (§3.1).
+        assert join.revoked_by is None
+        assert (
+            conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all() == []
+        )
         # The decision it held went back to the admins.
         held = conn.execute(select(t.request).where(t.request.c.id == w["held"])).one()
         assert (held.holder_member, held.holder_pool) == (None, True)

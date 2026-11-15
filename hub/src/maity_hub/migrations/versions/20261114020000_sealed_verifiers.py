@@ -16,7 +16,7 @@ columns again. It refuses while a sealed row exists and no key, or not the key i
 with, is given: an older hub could not read such a row.
 
 Revision ID: 20261114020000_sealed_verifiers
-Revises: 20261113130000_experiment_notice
+Revises: 20261113200000_sf_day_revoked_by
 Create Date: 2026-11-14
 """
 
@@ -30,7 +30,7 @@ from alembic import context, op
 from maity_hub import secretbox
 
 revision: str = "20261114020000_sealed_verifiers"
-down_revision: str | None = "20261113130000_experiment_notice"
+down_revision: str | None = "20261113200000_sf_day_revoked_by"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

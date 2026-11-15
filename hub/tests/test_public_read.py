@@ -12,9 +12,9 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import public_pages, public_projects
 from maity_hub import tables as t
-from maity_hub.routes import pages
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.test_public_pages import only_the_frames_script
 from tests.test_public_project_views import World
 from tests.test_reports import report
 
@@ -283,8 +283,8 @@ def test_explore_draws_the_projects_as_cards_in_the_frame(world: World) -> None:
     got = world.anyone.get("/explore")
     html = got.text
     assert '<header class="site-header dz">' in html and '<footer class="site-footer">' in html
-    assert "/assets/landing/public-pages.css?v=" in html and "<script" not in html
-    assert got.headers["content-security-policy"] == pages.LEGAL_CSP
+    assert "/assets/landing/public-pages.css?v=" in html
+    assert got.headers["content-security-policy"] == public_pages.FRAMED_CSP
     assert "Accept-Language" in got.headers["vary"]
     assert '<section class="hero dz xhero"><div class="wrap"><p class="eyebrow">Explore</p>' in html
     assert (
@@ -298,6 +298,45 @@ def test_explore_draws_the_projects_as_cards_in_the_frame(world: World) -> None:
     assert ' style="' not in html.split("<body", 1)[1]
     flow.project(world.owner, "second", public_page="on")
     assert world.anyone.get("/explore").text.count('class="xcard"') == 2
+
+
+def test_explore_has_the_landing_pages_theme_switch(world: World) -> None:
+    """tsk-v499cfz74hma: `/explore`'s header has the landing page's light/dark switch, in the
+    frame's language, and the page loads the landing page's one script and no other, as a stored
+    page in its frame does (req-q34v0gr2rbw2); its policy lets that script run."""
+    got = world.anyone.get("/explore")
+    assert (
+        '<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
+        'aria-label="Switch between the light and the dark theme">◐</button>'
+    ) in got.text
+    assert only_the_frames_script(got.text)
+    assert "script-src 'self'" in got.headers["content-security-policy"]
+    # The switch sits in the header, before its call to sign in (the mockup's place).
+    header = got.text.split("<header ", 1)[1].split("</header>", 1)[0]
+    assert -1 < header.find("data-lp-theme") < header.find('class="signin"')
+    german = world.anyone.get("/explore", params={"lang": "de"}).text
+    assert 'aria-label="Zwischen hellem und dunklem Farbschema wechseln"' in german
+
+
+def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) -> None:
+    """A stored page's body also stands inside the app shell for a visitor (§16.11), whose policy
+    (`default-src 'self'`) refuses every inline style: the per-day bars of a project's page and
+    the placeholder of a person without a picture were drawn so, and not shown (tsk-8fk897a9tan8).
+    Every kind there is: a project and its views, a card, a person without a picture, their agents
+    page and an agent's page."""
+    publish_profile(world, world.owner, public_bio="I build.")
+    card = world.card(status="open", title="Next up", label="idea")
+    world.touch()
+    with migrated.begin() as conn:
+        public_pages.touch(conn, "card", card)
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.public_page.c.path, t.public_page.c.body)).all()
+    kinds = {read(world, path.lstrip("/"))["kind"] for path, _ in rows}
+    assert {"project", "board", "card", "person", "person_agents", "agent"} <= kinds, kinds
+    assert 'class="pic none size-128"' in next(body for path, body in rows if path == "/maintainer")
+    assert '<svg class="per-day"' in next(body for path, body in rows if path == f"/{BASE}")
+    styled = [path for path, body in rows if re.search(r"\sstyle=", body)]
+    assert not styled, styled
 
 
 def test_explore_says_so_when_no_project_has_a_page(world: World) -> None:

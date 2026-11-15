@@ -87,7 +87,8 @@ AES-256-GCM, a random nonce in front, the human's id and
 `notifications.position` as associated data, base64url without padding.
 The key is HKDF-SHA256 of `MAITY_SECRET_KEY` with that purpose as info.
 Without an instance key, the hub makes a random 32-byte key at first use
-and keeps it as `notifications.position_key` in `instance_secret`. That
+and keeps it as `notifications.position_key` in `instance_secret`, until
+an instance key is set (then it is removed, `secretbox.prepare_fallback`). That
 value is not sealed, since there is nothing to seal it with. Past 4096
 characters the vector is stored in `notification_position` and the
 position is a sealed `{v, h: handle}`, which looks like any other
@@ -1271,3 +1272,162 @@ cost without a purpose; stored, the read takes it with the membership row it loa
 - A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
   path that forgets the value.
 
+## A key per purpose comes from one helper in `secretbox`: HKDF of the instance key, else a fallback key made at first use
+
+**Id:** dc952df1-de40-4d07-b091-cb95d4063e6b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit tsk-hgnbapyw7hnh (area 12, item 4) and its card tsk-8vdegd61y70v, which proposed `secretbox` as the home; the follow-up card tsk-2y0qbc1zm7r1 (rate_count keys from one keyed helper); the lead's ruling on the wipe question on that card (`maity say`, seqs 129388 and 130728, 2026-11-14), after a read-only check of every reader of the fallback keys
+**Revisit when:** a keyed value needs a key that is not 32 bytes, a stored value comes to need a fallback key while an instance key is set, or the hub runs processes with and without `MAITY_SECRET_KEY` side by side
+
+`secretbox.derive` (HKDF-SHA256, no salt, the purpose as `info`),
+`secretbox.purpose_key` (derived from `MAITY_SECRET_KEY` when it is set,
+else the stored fallback key as it is) and `secretbox.prepare_fallback`
+(make the fallback at first use in a transaction of its own, keep a
+concurrent winner's) serve the address locks' pepper
+(`address.lock_pepper`), the notification positions' key and the known
+sources' fingerprints; a new keyed value (the rate counts' keys of
+tsk-2y0qbc1zm7r1) uses them too. The purpose strings are pinned by a test:
+a changed byte invalidates every lock row, position and fingerprint.
+
+**Once an instance key is set, every fallback key is removed**
+(`prepare_fallback`, at the next first use): the address pepper always
+was, the position key since the follow-up of the clean-up. The rule is
+the lead's: remove only if nothing stored still has to be read or
+compared with the fallback key once the instance key is set. The check
+found nothing. A position's stored vector (`notification_position`) is
+plain JSON; its token is held by the client and opens only under the
+derived key, so one sealed under the fallback already fails closed
+(docs/api.md §18.2: a change of `MAITY_SECRET_KEY` invalidates every
+position). Lock digests and known-source fingerprints are made again
+under the instance key. No other code reads the two names.
+
+**Limit:** while processes with and without `MAITY_SECRET_KEY` run side
+by side (a rollout), one removes the fallback key and the other makes a
+new one, so the positions the keyless process issued keep going invalid
+until every process has the key; the address locks already behaved so.
+
+**Reason:** the derivation had been copied three times, the generic part
+inside `mail/address.py` and the known sources reaching into the mail
+module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
+`cryptography` dependency, so every key the hub derives is in one module.
+
+**Rejected alternatives:**
+- Keeping a fallback key once an instance key is set (the position key
+  until the follow-up): nothing reads it, so it is only key material in
+  the database; removing the key again later makes a new one, which the
+  contract already allows, since every position is invalidated then.
+- A per-caller switch (`wipe_when_keyed`): two answers to one question.
+- A new module for the three functions: one more home for the instance
+  key, beside the one that parses and uses it.
+- `instance_settings`: it stores the fallback, but knows nothing of keys.
+
+## A notification mail's subject is defanged and cut like its body; a waiting mail is dropped once a membership it relies on ended
+
+**Id:** 64c0fbdf-0e1d-443e-af22-6bbc9c95df04
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (maity-review-team-antigravity#na6z, seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change
+**Revisit when:** the defang helpers move to `mail/` (card tsk-xx108ajy287x), `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
+
+A subject that carries text the hub did not write (a project's name, an item's title with a
+display name or a card's title in it, the inviter and project of an invitation) goes through
+`mailer.subject_line`: control characters become spaces (`headers.clean`), whitespace runs become
+one space, the result is defanged with the same `defang` as the body, and it is cut at
+`SUBJECT_MAX` (120) with `…`. The body was defanged already; the subject only lost its line
+breaks. Cleaning comes before defanging, so a control character between a name and its dot cannot
+hide a host from `defang`; cutting comes after, so a cut can shorten `[.]` but never undo it.
+
+A notification mail is built with the items readable at that moment, then may wait in the outbox
+for the hour's budget. The mailer marks the row with `_memberships` (a mark, never a header): the
+ids of the membership rows its items were read through, taken from the `items.scope` that derived
+them (items with a project and `member`), with no query of their own. Before delivery the outbox
+checks that each of those rows is still `active`; if one is not, or is gone, the whole row is
+`dropped`, as a row to a disabled address is. Items of a project the human is no member of (an
+invitation) or of no project add nothing to the mark.
+
+The mark holds rows, not projects, for two cases: a human who leaves and joins again gets a new
+row whose history begins at the new join (`joined_seq`), so the old mail is not theirs to read
+any more; and on READ COMMITTED a removal can commit between the scope's read and a second query
+for the mark, which would leave the project out and let the mail go. Taking the ids from the scope
+ties the mark to exactly what the items were read through.
+
+**Reason:** the subject is read before the mail is opened, from the hub's trusted sender, so text
+there needs the same treatment as in the body. A mail that waited should not take a project's
+items to someone removed from that project in the meantime.
+
+**Rejected alternatives:**
+- Defang only the project name and title separately before formatting: same result, two places
+  to forget; one helper on the whole line also covers the second-factor subject's display name.
+- Delete waiting rows when a membership is removed: every removal path would need it, the row
+  has no project column to find them by, and a send-time check also covers leaving and any path
+  added later.
+- Drop only the items of the ended project and rebuild the mail: the outbox holds built text; a
+  rebuild belongs to the mailer. The items stay in the bell.
+- A `project_id` column on `mail_outbox`: a migration for a mark only notification mail needs,
+  and a digest spans several projects.
+- Mark the projects and check for any active membership in them (the first version of #1807):
+  a join after a leave passes with its new row, and a second query for the mark races a removal
+  on READ COMMITTED.
+
+## Account records and the mail's bookkeeping are deleted by an hourly sweep; an open inbox record stays until its matter closes
+
+**Id:** c28a0dba-829b-4476-a422-9eadcca9337a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ar6h2s0kff5, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); docs/api.md §2.6.5 and §18.1 ("kept 90 days"), §18.2 (open inbox items "stay listed while their matter is open, however old"; a stored position "kept at least 30 days after its last use"); `notifications/retention.py`, `mail/outbox.py` `Worker._prune`; tests in `tests/test_notification_retention.py`
+**See:** https://github.com/oliver-zehentleitner/maity — b735056d-fb73-458b-8a85-d656dc7e218b — as of 2026-11-14
+**Revisit when:** an index is built for the sweep (`mail_item_sent.mailed_at`, `notification_position.last_used_at`; card tsk-3ar6h2s0kff5 leaves it as a follow-up), the bell lists an open record past `records.KEPT` (TODO #280 for `mail_disabled`), or a new inbox record type is added to `records.INBOX`
+
+Nothing deleted `account_record`, `mail_item_sent`, `mail_delivery` or `notification_position`
+but an account's deletion, though the contract keeps records 90 days and stored positions 30 days
+after their last use; a `session_created` record holds the IP, browser and system of a sign-in.
+`outbox.Worker` now runs `retention.prune` once an hour (one pod per hour through `worker_runs`,
+name `mail-retention`; the first sweep an hour after the process starts). It deletes:
+
+- account records older than `records.KEPT` plus a day (`MARGIN`), so a reader that filters by
+  `>= now - KEPT` never races the sweep for a row at the edge;
+- `mail_item_sent` rows mailed more than `records.KEPT` plus a day ago, and the mailer reads only
+  that span of them;
+- `mail_delivery` rows older than a day: the counters (`mail.settings.counters`) and the
+  instance budget (`mailer._instance_full`) read the last hour;
+- stored positions unused for 30 days.
+
+An inbox record whose matter is still open is kept past 90 days and goes on the first sweep
+after the matter closed, judged as the bell judges it: `registration_pending` while the
+registration it names is `pending`; `mail_disabled` while the human's `address_status` is
+`disabled`; `agents_not_listening` when it is the owner's newest of the type and its count is not 0.
+
+Each table goes in batches of 500 rows chosen by key and deleted by key in a short transaction of
+their own; the DELETE checks the condition again, so a position used in between stays. Account
+records are walked by number (`n > last`), so a batch that holds only open records is passed, not
+read again. A sweep stops after 30 seconds or when the worker stops and leaves the rest to the
+next hour; the mail worker's thread runs it between two looks at the outbox.
+
+**Reason:** the contract's "kept 90 days" and "kept at least 30 days after its last use" were
+true only as filters on read; a copy of the database kept every sign-in's address for good.
+Keeping open records follows §18.2, which lists them while their matter is open, however old:
+deleting one would end that promise for good, while keeping it costs one row per matter. In
+practice none stays long: a pending registration expires after 30 days
+(`registration_accounts.PENDING_ACCOUNT_FOR`), the digest writes a new `agents_not_listening`
+record once the open one left the window (`not_listening_digest.latest`), after which the old one
+is no longer the newest; only `mail_disabled` stays as long as the address stays disabled.
+`mail_item_sent` is kept as long as records, not the 30 days of events: an item from a record (a
+sign-in's alert, a security item) is derived for 90 days, so a row deleted after 30 would mail an
+unread one again; the test fails with a 31-day window.
+
+**Rejected alternatives:**
+- Deleting `mail_item_sent` after the 30-day item window and a margin, as the card proposed: the
+  record items above would be mailed a second time.
+- Reissuing an open inbox record past 90 days instead of keeping it: a new number and `at` for an
+  old matter, so the bell would show it as new and a position would not cover it.
+- Deleting open records past 90 days: §18.2 keeps their items listed while the matter is open.
+- A worker of its own, as `known_sources.Worker`: one more thread for a pass an hour; the mail
+  worker already holds the outbox's sweep.
+- One DELETE per table without a batch (`known_sources.forget_old`): the first sweep on a hub that
+  never pruned would delete every old row in one statement and hold their locks to its end.
+- An index for the sweep in the same change: a migration needs a slot, and the sweep runs once an
+  hour, the account records' walk on their primary key.
