@@ -936,7 +936,9 @@ def recorded_folder(cfg: config.Config) -> workspace.Workspace:
 def started(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sandbox: bool = False
 ) -> tuple[Any, Backend, list[str]]:
-    monkeypatch.setattr(capabilities, "sandbox_available", lambda h, p=None, a=None: sandbox)
+    monkeypatch.setattr(
+        capabilities, "sandbox_available", lambda h, p=None, a=None, t=None: sandbox
+    )
     cfg = load(tmp_path)
     backend, logs = Backend(), list[str]()
     probes = {"stub": capabilities.Probe(None, None, None),
