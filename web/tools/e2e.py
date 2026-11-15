@@ -5393,6 +5393,14 @@ def visitor_layout(run: Run, browser) -> None:
                     cards = team.locator(".mgrid").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
                     assert cards == (1 if width < 760 else 4), f"{where}: {cards} card columns"
                     assert team.evaluate("e => e.getBoundingClientRect().top") >= bar.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the team is not under the bar"
+                else:
+                    # A tab in the Overview's section style (part 3): one section across the page under
+                    # the bar, its heading, the columns as panels in it.
+                    tab = seen.locator("section.tab-sec.board-sec")
+                    expect(tab.locator(".sec-h h2")).to_have_text("Board")
+                    expect(tab.locator(".columns section.column").first).to_be_visible()
+                    assert tab.evaluate("e => e.getBoundingClientRect().top") >= bar.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the board is not under the bar"
+                    assert tab.evaluate("e => e.getBoundingClientRect().width") == width, f"{where}: the board's section is not as wide as the window"
                 if width < 760:
                     assert bar.locator(".wrap").evaluate("e => getComputedStyle(e).overflowX") == "auto", f"{where}: the bar does not scroll"
                     assert hero.locator(".wrap").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length") == 1, f"{where}: the hero is not stacked"

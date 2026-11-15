@@ -1,7 +1,7 @@
 /* The sections of the signed-out public pages the dashboard draws (js/visitor.js), from the approved
    mockup's pp.css (tsk-zp0vqj9wm37x, tsk-9482zxza3gs3): a page hero in the landing's dark zone, a
-   band of figures, a tab bar across the page, sections of cards. One set of rules for the project,
-   person and agent pages.
+   band of figures, a tab bar across the page, sections of cards (the Overview's, and the Board,
+   Team, Organisation and Why tabs'). One set of rules for the project, person and agent pages.
 
    It is on only while the landing's frame stands (js/site-chrome.js loads it after landing.css and
    public-pages.css): the tokens (--bg, --surface, --text, --muted, --border, --accent, --chip, --live
@@ -118,6 +118,51 @@ a.mcard:hover, a.pr:hover { border-color: var(--muted); }
 .dec li { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
 .dec time { flex: none; width: 13.5em; color: var(--muted); }
 
+/* ---- the Board, Team, Organisation and Why tabs (part 3) ------------------------------- */
+/* Each tab one section across the page under the bar (js/visitor.js, tabSection), less space above
+   it than between the Overview's sections; a part's own heading an h3 under the section's h2. */
+.public-view > .ptabs + .tab-sec { padding-top: 36px; }
+.tab-sec h3 { font: 700 1.15rem/1.3 var(--font-display); margin: 32px 0 14px; }
+.tab-sec .sec-h + h3 { margin-top: 0; }
+/* Board: the app's columns (css/app.css: the grid, sideways on a phone), drawn as panels of cards */
+.board-sec .columns { gap: 14px; }
+.board-sec .column { gap: 10px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); }
+.board-sec .column > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; font: 700 1rem/1.3 var(--font-display); }
+.board-sec .column > h3::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.board-sec .column[data-status="open"] > h3::before { background: var(--accent); }
+.board-sec .column[data-status="in_progress"] > h3::before { background: var(--plan, #8250df); }
+.board-sec .column[data-status="blocked"] > h3::before { background: var(--bad, #cf222e); }
+.board-sec .column[data-status="review"] > h3::before { background: var(--warn, #bf8700); }
+.board-sec .column[data-status="done"] > h3::before { background: var(--live); }
+.board-sec .card { display: grid; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--border);
+  box-shadow: 0 1px 2px var(--shadow); color: var(--text); font-size: 13px; }
+.board-sec .card header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.board-sec .card-id { font: 600 12px/1.4 var(--font-mono); color: var(--accent); text-decoration: none; }
+.board-sec .card-id:hover { text-decoration: underline; }
+.board-sec .card h4 { margin: 0; font: 600 14.5px/1.35 var(--font); letter-spacing: normal; text-transform: none; color: var(--text); overflow-wrap: anywhere; }
+.board-sec .card > :last-child:not(h4) { color: var(--muted); }
+.board-sec .card a:not(.card-id) { color: var(--text); }
+.chip.label { height: 20px; padding: 0 8px; font-size: 11px; }
+/* Team: the Overview's cards; those it only counts as a number with its role chip */
+.role-counts { display: flex; flex-wrap: wrap; gap: 10px 22px; list-style: none; margin: 0; padding: 0; }
+.role-counts li { display: inline-flex; align-items: center; gap: 8px; }
+.role-counts b { font: 700 1.25rem/1 var(--font-display); }
+/* Organisation: the tree, each node a small card, the lines to those who report to it at its left */
+.otree ul { list-style: none; margin: 0; padding: 0; }
+.otree ul ul { margin-left: 22px; padding-left: 20px; border-left: 2px solid var(--border); }
+.otree li { margin: 10px 0 0; }
+.onode { display: inline-flex; align-items: center; gap: 10px; max-width: 100%; padding: 8px 12px 8px 8px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text); text-decoration: none; box-shadow: 0 1px 2px var(--shadow); min-width: 0; }
+.onode .mc-t b { font-size: 14px; }
+.onode.anon { padding: 8px 12px; border-style: dashed; box-shadow: none; }
+a.onode:hover { border-color: var(--muted); }
+/* Why: the family as the Overview's cards with a letter, what needs attention as lines with a chip */
+.why-sec .mcard .mc-t small { font-family: var(--font-mono); }
+.chip.status { height: 21px; padding: 0 8px; font-size: 11.5px; }
+.dec.att { margin-top: 0; }
+.dec.att li { align-items: center; }
+.dec.att a { color: var(--text); }
+
 /* ---- phone --------------------------------------------------------------------------- */
 @media (max-width: 760px) {
   .phero .wrap { grid-template-columns: minmax(0, 1fr); gap: 22px; padding-top: 28px; padding-bottom: 32px; }
@@ -135,7 +180,10 @@ a.mcard:hover, a.pr:hover { border-color: var(--muted); }
   .sec-h h2 { font-size: 1.6rem; }
   .more-l { margin-left: 0; flex-basis: 100%; }
   .mgrid, .prgrid { grid-template-columns: minmax(0, 1fr); }
+  .otree ul ul { margin-left: 10px; padding-left: 12px; }
+  .public-view > .ptabs + .tab-sec { padding-top: 24px; }
   .dec li { flex-direction: column; gap: 2px; }
   .dec time { width: auto; }
+  .dec.att li { align-items: flex-start; gap: 6px; }
 }
 @media (prefers-reduced-motion: reduce) { .phero .btn { transition: none; } }
