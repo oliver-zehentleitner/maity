@@ -21,6 +21,9 @@
 .av.hu { border-radius: 50%; }
 .av.ag { border-radius: 24%; }
 .av.ini { align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; background: var(--chip); color: var(--chip-text); }
+/* the mockup's sizes, as classes: the dashboard's policy refuses a style attribute */
+.av-30 { width: 30px; height: 30px; font-size: 11px; }
+.av-44 { width: 44px; height: 44px; font-size: 17px; }
 .pmark.sm { width: 44px; height: 44px; border-radius: 12px; font-size: 21px; }
 .ico { width: 18px; height: 18px; flex: none; }
 /* the online dot, where the hero's panel and a member's card draw it */
@@ -55,10 +58,10 @@
 .ph-live .eyebrow { margin: 0; }
 .ph-live .big { margin: 10px 0 14px; font: 600 17px/1.3 var(--font); display: flex; align-items: center; gap: 10px; }
 .ph-live .muted { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
-.ph-live .ph-named { margin: 0; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
-.ph-live .ph-named a { color: var(--text); }
 .stack { display: flex; align-items: center; }
+.stack > a, .stack > span[role="img"] { display: inline-flex; border-radius: 50%; }
 .stack .av { border: 2px solid #0b0f14; margin-right: -8px; }
+.stack > a:hover .av { border-color: var(--muted); }
 .stack .more { margin-left: 16px; font: 600 13px var(--font); color: var(--muted); }
 
 /* ---- the figures band ---------------------------------------------------------------- */
@@ -98,6 +101,9 @@
 .mc-m { display: flex; gap: 8px; align-items: center; margin-top: 5px; flex-wrap: wrap; }
 .mc-m .h { font-size: 12px; color: var(--muted); }
 .mcard .dot { position: absolute; top: 12px; right: 12px; width: 8px; height: 8px; }
+a.mcard:hover, a.pr:hover { border-color: var(--muted); }
+/* the online dot stands in the corner: a long name stops short of it */
+.mcard:has(> .dot) { padding-right: 28px; }
 /* pull requests as cards, decisions as a list under them */
 .prgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .pr { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border);
@@ -110,7 +116,7 @@
 .pr small { color: var(--muted); font-size: 12.5px; line-height: 1.4; }
 .dec { list-style: none; margin: 18px 0 0; padding: 0; border-top: 1px solid var(--border); }
 .dec li { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
-.dec time { flex: none; width: 110px; color: var(--muted); }
+.dec time { flex: none; width: 13.5em; color: var(--muted); }
 
 /* ---- phone --------------------------------------------------------------------------- */
 @media (max-width: 760px) {
@@ -130,5 +136,6 @@
   .more-l { margin-left: 0; flex-basis: 100%; }
   .mgrid, .prgrid { grid-template-columns: minmax(0, 1fr); }
   .dec li { flex-direction: column; gap: 2px; }
+  .dec time { width: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .phero .btn { transition: none; } }
