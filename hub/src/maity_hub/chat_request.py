@@ -250,10 +250,18 @@ def _summary(conn: Connection, owner: str, side: str, proposal: dict[str, Any]) 
             lines.append(line)
         for h in held:
             if agent in h["agents"]:
-                lines.append(
-                    f"  - held for it: message {h['seq']} ({h['type']}) from {names[h['author']]}"
-                )
+                lines.append(f"  - held for it: {_held_item(h)} from {names[h['author']]}")
     return "\n".join(lines)
+
+
+def _held_item(held: dict[str, Any]) -> str:
+    """A held item as the summary names it (§9.6): a request or a ticker item by its own
+    name, a message with its type; by seq, never its text."""
+    if held["type"] == "request":
+        return f"request {held['seq']}"
+    if held["type"] == "ticker":
+        return f"ticker item {held['seq']}"
+    return f"message {held['seq']} ({held['type']})"
 
 
 def _file(conn: Connection, owner: str, side: str, held: list[dict[str, Any]]) -> Any:
@@ -416,6 +424,17 @@ def note_held(
             "agents": asked,
         }
         _hold(conn, owner, side, held)
+
+
+def note_held_by(conn: Connection, mine: Any, seq: int, kind: str, agents: list[str]) -> None:
+    """`note_held` for what the member `mine` wrote: a work message, a request (`kind`
+    `request`) or a ticker item (`ticker`), with its author and side read from `mine`."""
+    from maity_hub import chat_gate
+
+    me = mine.principal_id
+    author = (me, "agent" if mine.row.agent_id else "human")
+    side = chat_gate.owners_of(conn, [me]).get(me, me) if mine.row.agent_id else me
+    note_held(conn, mine.project.id, seq, kind, author, side, agents)
 
 
 def _hold(conn: Connection, owner: str, side: str, held: dict[str, Any]) -> None:

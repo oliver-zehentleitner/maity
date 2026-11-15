@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, events, idempotency, ticker
+from maity_hub import chat_request, clock, events, idempotency, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
@@ -190,6 +190,12 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
                 "log_url": d.get("log_url"),
             }
         audience = ticker.manual_audience(conn, people, kind, to, facts.get("areas", []))
+        # Its own `to` reaches an agent of another owner only on that owner's yes (§9.6).
+        held = (
+            ticker.gate_manual(conn, mine, people, audience)
+            if to == "all" or isinstance(to, list)
+            else []
+        )
         if key is not None:
             found = ticker.existing(conn, mine.project.id, key)
             if found is not None:
@@ -210,7 +216,10 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
             subject=("task", card.id) if card is not None else None,
             dedupe_key=key,
             facts=facts,
+            held=held,
         )
+        if seq is not None and held:  # each held agent's owner is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "ticker", held)
         if seq is None:  # taken between the check and the write: the first item stands
             raise ApiError(
                 409,
