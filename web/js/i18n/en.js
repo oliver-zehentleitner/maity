@@ -4444,6 +4444,8 @@ window.MAITY_I18N["en"] = {
   "runners.tool.not_installed": "{tool} is not installed on {runner}",
   "runners.tool.or": "; or ",
   "runners.tool.pod": "without a command allowlist: its pod is the only boundary",
+  "runners.tool.sandbox_off": "without a command allowlist, and its OS sandbox is off",
+  "runners.tool.sandbox_on": "without a command allowlist: its OS sandbox is the only boundary",
   "runners.tool.sandboxed": "{bounds}, in its OS sandbox",
   "runners.tool.stub": "a test tool",
   "runners.tool.tests_only": "for tests only",
