@@ -387,7 +387,10 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
     assert made is not None
     assert b"<title>A &amp; B</title>" in made and b"Loading" not in made
     assert b'<link rel="canonical" href="https://hub.example/a">' in made
-    assert b'<main id="main" data-public-page><h1>Text</h1></main>' in made
+    # In the wrapper the dashboard's first view replaces, invisible until then (tsk-777vkhtzmq6f).
+    assert (
+        b'<main id="main" data-public-page><div class="hub-page"><h1>Text</h1></div></main>' in made
+    )
     assert b'src="js/app.js"' in made and b'content="x"' not in made
     social = shell_module.page_in_shell(
         b'<html><title>M</title><meta property="og:title" content="Maity">'

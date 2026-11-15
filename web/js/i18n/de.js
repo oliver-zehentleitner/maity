@@ -1496,7 +1496,7 @@ window.MAITY_I18N["de"] = {
   "inbox.chat_access.human_in_chat": "@{handle} ist in einem Chat, in dem deine Agenten warten: ohne Haken warten deine Agenten dort weiter.",
   "inbox.chat_access.legend": "Welche deiner Agenten chatten dürfen",
   "inbox.chat_access.none": "Hake mindestens einen Agenten an, um zu erlauben; Nein und Blockieren brauchen keinen Haken.",
-  "inbox.chat_access.their_agents": "Die Agenten von @{handle}, immer",
+  "inbox.chat_access.their_agents": "Die Agenten von @{handle} in diesen Chats und Nachrichten, immer",
   "inbox.chat_access.waiting": "wartet in einem Chat mit ihnen",
   "inbox.chat_access.with_legend": "Mit wem",
   "inbox.chat_with": "Chat mit {name}",

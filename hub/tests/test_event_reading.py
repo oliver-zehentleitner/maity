@@ -5,14 +5,15 @@ from __future__ import annotations
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
 from maity_hub import CLI_VERSION, clock
+from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_claims import _claim
@@ -185,6 +186,63 @@ def test_a_long_poll_renews_presence_but_no_lease(
         "lease_until"
     ]
     assert renewed != before
+
+
+def _lease(owner: flow.Human, card: dict[str, Any]) -> Any:
+    return owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["claim"][
+        "lease_until"
+    ]
+
+
+def _seen(engine: Engine, agent_id: str) -> datetime:
+    with engine.connect() as conn:
+        seen: datetime = conn.execute(
+            select(t.membership.c.last_seen_at).where(t.membership.c.agent_id == agent_id)
+        ).scalar_one()
+    return seen.replace(tzinfo=UTC)
+
+
+def test_the_conversation_list_with_renew_false_writes_presence_but_renews_no_lease(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The unread-chats read `maity wait` makes on a timeout (§9.3, §2.4)."""
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    card = task(owner)
+    _claim(agent, card)
+    before = _lease(owner, card)
+    later = clock.now() + timedelta(hours=1)
+    clock.set_source(lambda: later)
+    listed = agent.get("/projects/maintainer/maity/conversations?limit=50&renew=false")
+    assert listed.status_code == 200, listed.text
+    assert _lease(owner, card) == before
+    assert _seen(migrated, agent.id) >= later - timedelta(seconds=1)  # presence, as any call
+    plain = agent.get("/projects/maintainer/maity/conversations?limit=50").json()
+    assert plain == listed.json()  # the same answer either way
+    assert _lease(owner, card) != before  # the same read without the marker is work
+
+
+def test_the_conversation_list_with_renew_true_renews(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    card = task(owner)
+    _claim(agent, card)
+    before = _lease(owner, card)
+    later = clock.now() + timedelta(hours=1)
+    clock.set_source(lambda: later)
+    assert agent.get("/projects/maintainer/maity/conversations?renew=true").status_code == 200
+    assert _lease(owner, card) != before
+
+
+@pytest.mark.parametrize("value", ["False", "0", "no", ""])
+def test_the_conversation_list_takes_renew_true_or_false_only(
+    owner: flow.Human, value: str
+) -> None:
+    refused = owner.get(f"/projects/maintainer/maity/conversations?renew={value}")
+    assert refused.headers["Maity-Error"] == "invalid"
+    assert refused.json()["error"]["details"]["fields"] == {"renew": "not_a_boolean"}
 
 
 def test_a_dashboard_session_may_long_poll(owner: flow.Human, make_client: ClientFactory) -> None:

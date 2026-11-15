@@ -6,6 +6,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl
 
 import fakehub
 import pytest
@@ -100,6 +101,14 @@ def test_wait_names_unread_chats_on_a_timeout(
     assert cli.main(["wait", "--timeout", "4"]) == cli.EXIT_TIMEOUT
     err = capsys.readouterr().err
     assert "maity: unread chats: 6 in 2 chats (1 mentions): maity chats\n" in err
+
+
+def test_the_timeout_read_renews_no_lease(joined: Path, fake: fakehub.FakeHub) -> None:
+    """The read is part of waiting, so it carries `renew=false` (§9.3, §2.4)."""
+    fake.routes[("GET", CHATS)] = lambda seen: (200, {"items": [], "next_cursor": None})
+    assert cli.main(["wait", "--timeout", "4"]) == cli.EXIT_TIMEOUT
+    [read] = [s for s in fake.seen if (s.method, s.path) == ("GET", CHATS)]
+    assert parse_qsl(read.query) == [("limit", "50"), ("renew", "false")]
 
 
 def test_past_the_first_page_the_counts_are_a_floor(

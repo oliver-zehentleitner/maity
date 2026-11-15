@@ -11369,10 +11369,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const caMine = caEntry().querySelector("fieldset.chat-access-mine"), caWhom = caEntry().querySelector("fieldset.chat-access-whom");
     expect(caMine && caWhom && text(caMine.querySelector("legend")) === "Which of your agents may chat"
       && caMine.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-agent-agt-x,chat-access-req-ch01-agent-agt-y"
-      && text(caWhom.querySelector("legend")) === "With whom" && text(caWhom).includes("@guest's agents, always")
+      && text(caWhom.querySelector("legend")) === "With whom" && text(caWhom).includes("@guest's agents in these chats and messages, always")
       && caWhom.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-human"
       && text(caWhom).includes("Also @guest in person"),
-      "chat request: your agents in one part, with whom in the next: @guest's agents always, @guest in person a tick of its own");
+      "chat request: your agents in one part, with whom in the next: @guest's agents in these chats and messages always, @guest in person a tick of its own");
     expect(text(caEntry().querySelector(".chat-access")).includes("@agent-y · a message from them is held for it")
       && text(caEntry()).includes("@guest sits in a chat where your agents wait: unticked, your agents go on waiting there."),
       "chat request: each agent says why it is on the request, and the human's box says what unticked means in a chat");
@@ -15143,6 +15143,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const nfFlaky = !nfPage() && !!byId("login-email");
   win.Maity.api.get = nfGet;
   expect(nfFlaky, "not found: a public page whose read failed with 503 keeps the sign-in, not \"not found\"");
+  // A click during the first drawing (tsk-25x1t18ergxz): the drawing of a public address still waits
+  // for the session when the visitor goes to the sign-in. The overtaken drawing asks for no page of
+  // the new address (it asked for /public/pages/login, a 404 in the browser's console); the newer
+  // one draws the sign-in.
+  {
+    const fdGet = win.Maity.api.get;
+    let fdRelease = null;
+    win.Maity.api.get = (p) => {
+      if (p === "/auth/session" && !fdRelease) return new Promise((resolve, reject) => { fdRelease = () => fdGet(p).then(resolve, reject); });
+      return fdGet(p);
+    };
+    const fdFrom = viAsked.length;
+    if (win.Maity.onWrite) win.Maity.onWrite();
+    win.location.hash = "#/sam"; win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
+    const fdWaited = !!fdRelease;
+    // The sign-in link's click: the address moves on while the first drawing waits.
+    win.location.hash = "#/login"; win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
+    if (fdRelease) fdRelease();
+    for (let k = 0; k < 8; k++) await tick();
+    win.Maity.api.get = fdGet;
+    const fdAsked = viAsked.slice(fdFrom);
+    expect(fdWaited && !fdAsked.includes("/public/pages/login") && !fdAsked.length && byId("login-email") && !nfPage() && !viView(),
+      "visitor: a click to the sign-in during the first drawing of a public page asks for no page of /login, and the sign-in stands " + JSON.stringify([fdWaited, fdAsked, !!byId("login-email")]));
+  }
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   viSignedOut = false;
   win.Maity.api.get = viChromeGet;
