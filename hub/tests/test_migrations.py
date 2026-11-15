@@ -1751,16 +1751,15 @@ def test_firewall_waiting_is_schema_only(engine: Engine) -> None:
     assert "lapsed_at" in {c["name"] for c in inspect(engine).get_columns("chat_access")}
 
 
-def test_sealed_verifiers_seals_with_the_key_and_the_downgrade_opens_them(engine: Engine) -> None:
-    """With the instance key the upgrade seals every verifier of both tables, again only the
-    plain ones, and the downgrade writes the same hex back; it refuses without the key."""
-    from alembic import command
+def test_sealed_verifiers_only_widens_and_the_downgrade_opens_sealed_rows(engine: Engine) -> None:
+    """The upgrade only widens: with the instance key given the rows stay plain. Rows sealed
+    later (`maity-hub seal-verifiers`) the downgrade opens with the key and writes the same hex
+    back, next to plain ones; it refuses without the key or with another."""
     from sqlalchemy import insert, select, update
 
     from maity_hub import clock
     from maity_hub import tables as t
-    from maity_hub.auth import credentials
-    from maity_hub.db import alembic_config
+    from maity_hub.auth import credentials, verifiers
     from tests import factory
 
     revision = "20261114020000_sealed_verifiers"
@@ -1812,10 +1811,13 @@ def test_sealed_verifiers_seals_with_the_key_and_the_downgrade_opens_them(engine
 
     before = _before(engine, revision)
     downgrade(engine, before)
-    migrate(engine)  # without the key: the rows stay as they are
+    migrate(engine, secret_key=key)  # with the key: widened, the rows stay plain
     assert stored() == plain
-    downgrade(engine, before)
-    migrate(engine, secret_key=key)
+    downgrade(engine, before)  # only plain rows: no key needed
+    assert stored() == plain
+    migrate(engine)
+    assert stored() == plain
+    assert verifiers.seal_plain(engine, key) == {"credential": 1, "runner_credential": 1}
     sealed = stored()
     assert all(value.startswith("s1:") for value in sealed.values())
     assert not set(sealed.values()) & set(plain.values())
@@ -1828,23 +1830,14 @@ def test_sealed_verifiers_seals_with_the_key_and_the_downgrade_opens_them(engine
     downgrade(engine, before, secret_key=key)
     assert stored() == plain
     migrate(engine, secret_key=key)
-    resealed = stored()
-    migrate(engine, secret_key=key)  # at head, nothing runs
-    assert stored() == resealed
-    # The migration run again over a mix of sealed and plain rows (on MariaDB a failed run keeps
-    # its widening): the sealed row stays as it is, only the plain one is sealed.
-    downgrade(engine, revision, secret_key=key)
+    assert stored() == plain  # the upgrade run again seals nothing either
+    # A mix of sealed and plain rows: the sealed one is opened, the plain one kept.
+    verifiers.seal_plain(engine, key)
     with engine.begin() as conn:
         conn.execute(
             update(t.credential)
             .where(t.credential.c.id == agent.credential_id)
             .values(verifier=agent.verifier)
         )
-    command.stamp(alembic_config(engine), before)
-    migrate(engine, revision, secret_key=key)
-    mixed = stored()
-    assert mixed["rcrd-migration"] == resealed["rcrd-migration"]
-    assert mixed[agent.credential_id].startswith("s1:")
-    assert mixed[agent.credential_id] != resealed[agent.credential_id]
     downgrade(engine, before, secret_key=key)
     assert stored() == plain

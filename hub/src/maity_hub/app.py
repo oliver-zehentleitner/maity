@@ -242,7 +242,9 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
             )
     check_secrets(engine, settings.secret_key)
-    verifiers.check_at_startup(engine, settings.secret_key)  # read only (§2.2)
+    verifiers.check_at_startup(  # read only (§2.2)
+        engine, settings.secret_key, settings.seal_verifiers
+    )
 
 
 def start_once(engine: Engine, settings: Settings) -> None:
@@ -342,7 +344,8 @@ def create_app(
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
     known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
-    verifiers.configure(settings.secret_key)  # seals the credentials' verifiers (§2.2)
+    # Reads sealed verifiers with the key; seals new ones only with MAITY_SEAL_VERIFIERS (§2.2).
+    verifiers.configure(settings.secret_key, settings.seal_verifiers)
     chat_gate.configure(settings.agent_firewall)  # MAITY_AGENT_FIREWALL (§9.6, "The switch")
 
     @asynccontextmanager
