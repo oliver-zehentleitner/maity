@@ -35,7 +35,7 @@ from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
-from maity_hub.auth.leaks import revoke_runner_credential
+from maity_hub.auth.revocation import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.db import retrying
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, origin_of, settings_of
