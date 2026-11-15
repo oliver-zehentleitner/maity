@@ -138,6 +138,10 @@ def deliver(
         ).scalar()
         if human_id is None:
             return
+        # The account's lock first, shared, as the link's `POST` takes it (`_live`): the mail
+        # has no session to take it, and a deletion of the account takes it exclusively before
+        # anything else, so the two run one after the other.
+        write_guard.share(conn, human_id)
         email_links.lock_human(conn, human_id)
         found = _eligible(conn, hub, human_id)
         # The address may have changed after the lookup without a lock.
