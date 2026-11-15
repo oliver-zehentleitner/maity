@@ -317,6 +317,12 @@ button.small { padding: 2px 8px; font-size: 0.82rem; }
   opacity: 0; animation: page-loading-shows 0s linear 300ms forwards; }
 .page-loading .maity-loader { width: 48px; height: 48px; }
 @keyframes page-loading-shows { to { opacity: 1; } }
+/* The hub's own page of a public address (§16.9, shell.py page_in_shell) waits invisible: the
+   first view replaces it with the page in its frame and final layout, so a visitor never sees
+   the stored layout first (tsk-777vkhtzmq6f). Shown after 3 s where no script replaces it (none
+   loaded, or its read failed and the view keeps the hub's page); a crawler reads it either way. */
+.hub-page { visibility: hidden; animation: hub-page-shows 0s linear 3s forwards; }
+@keyframes hub-page-shows { to { visibility: visible; } }
 /* A switch: the view being left stays, inert, until the next one is drawn (js/app.js render).
    A bar and the dimmed view say at once that the click was taken. The bar stands in main's top
    padding, under the header and above the sign-in banner, and its margins give back the 3 px, so

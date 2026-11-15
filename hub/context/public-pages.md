@@ -647,6 +647,32 @@ pages without a session, no longer bare. The answer inside the shell is unchange
 **Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
 the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
 
+## Inside the shell the stored page waits invisible for the dashboard's page, at most 3 s
+
+**Id:** 6fae1f6f-c1c2-46b2-9d72-03efbfea5417
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-777vkhtzmq6f (the maintainer saw the old layout for about a second on prod after the redesign of tsk-9482zxza3gs3, 2026-11-15); the lead's choice of 2026-11-15 between the options the card's coder put
+**See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-15
+**Revisit when:** the hub renders a public page in the same design as the dashboard, or the dashboard's first view of a public page takes longer than about 3 s
+
+The redesign drew a signed-out public page in the dashboard only (`web/js/visitor.js`), while the stored row,
+which the shell carries for crawlers and readers without scripts, kept the plain layout. A visitor saw that
+layout first and the page in its frame after the reads of the first view. `page_in_shell` now puts the row's
+text in a `.hub-page` that `web/css/app.css` keeps invisible; the first view replaces it. Where nothing replaces
+it (no script, or a failed read keeps the hub's page), it shows after 3 s, by a CSS delay that needs no script.
+3 s lies above the first view's usual time (about a second on prod) and below a wait a reader would take for
+a broken page. The text stays in the HTML, so a crawler reads what it read before. The price is an empty area
+for that moment instead of the flash.
+
+**Rejected:** the hub rendering the new design itself, so the first paint is the final page (the design twice,
+in Python and in the dashboard, kept in step), for now: the maintainer chose it on 2026-11-15 as its own card,
+tsk-zhyqdtt5v59c, and this delay is the fix until it lands; the stored
+page shown in the landing's stylesheets at once (a project's page would still change from the stored layout to
+the hero, and the dashboard's frame adds and removes those stylesheets itself); hiding it with no time limit (a
+page whose script fails would stay empty).
+
 ## The public Why is a stored row, an exception to "the export stays in memory"
 
 **Id:** aed779e9-be9c-40d2-a7ea-217cee06e470
