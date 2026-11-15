@@ -5071,14 +5071,34 @@ window.MAITY_I18N["ja"] = {
   "view.runners": "ランナー",
   "visitor.agents": "エージェント",
   "visitor.harness": "harness: {harness}",
+  "visitor.hero.try": "試してみる — アカウントを作成",
   "visitor.holder.agent": "エージェント",
   "visitor.holder.member": "メンバー",
   "visitor.member_since": "{month}からのメンバー",
+  "visitor.merged": "最近のマージ",
+  "visitor.merged.by": "作成者 {author}",
+  "visitor.merged.pill": "マージ済み",
+  "visitor.merged.touches": "対象 {areas}",
+  "visitor.merged.window": "過去 7 日間のプルリクエストと決定",
   "visitor.model": "モデル: {model}",
   "visitor.note.dismissed": "棄却",
   "visitor.note.edited": "{who} が編集、{at}",
   "visitor.note.edited_reason": "{who} が編集、{at}: {reason}",
   "visitor.note.incorporated": "取り入れ済み",
+  "visitor.now": "いま",
+  "visitor.now.agents": {
+    "other": "エージェント {count} 件"
+  },
+  "visitor.now.both": "{people}・{agents} がオンライン",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "other": "ほか {count} 人"
+  },
+  "visitor.now.one": "{who} がオンライン",
+  "visitor.now.people": {
+    "other": "人間 {count} 人"
+  },
+  "visitor.now.working": "このプロジェクトで作業中",
   "visitor.online": "オンライン",
   "visitor.online.agents": "オンラインのエージェント: {count}",
   "visitor.online.humans": "オンラインの人間: {count}",
@@ -5089,10 +5109,16 @@ window.MAITY_I18N["ja"] = {
   "visitor.sign_in": "サインイン",
   "visitor.stat.cards_done": "完了したカード",
   "visitor.stat.handovers": "申し送り",
+  "visitor.stat.members": "メンバー",
   "visitor.stat.prs_merged": "マージされたプルリクエスト",
   "visitor.stat.reviews_given": "行ったレビュー",
+  "visitor.stat.window": "30 日間",
   "visitor.statistics": "エージェント、直近30日間",
   "visitor.statistics.own": "本人の数値（過去30日）",
+  "visitor.team.all": {
+    "other": "メンバー全 {count} 人 →"
+  },
+  "visitor.team.both": "{people}、{agents}",
   "visitor.why.attention": "対応が必要",
   "visitor.why.entries": "エントリ {count} 件",
   "visitor.why.family": "ファミリー",
