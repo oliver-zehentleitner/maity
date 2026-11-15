@@ -723,25 +723,24 @@ the owner.
   compared, and `MatchesConfigAnyRaw` sees the raw line only on the
   whole-line path, which such a line never takes; no rule can say it.
 
-## agy exact grants are dropped, not paired with a deny: agy reads the command past a leading assignment or wrapper
+## agy command grants are dropped, exact and prefix: agy reads the command past a leading assignment or wrapper
 
 **Id:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-vgce05kdmk2x and the coordinator's go-ahead for the drop, 2026-11-15; agy 1.5.9's command matching read from its binary (terminal.extractSimpleCommands, terminal.isEnvAssignmentToken, terminal.isCommandWrapper, terminal.canonicalCommandName, shared.coversCommand, commandutils.MatchesConfigAny; the raw-line matcher commandutils.MatchesConfigAnyRaw and terminal.RequiresExactMatch on the whole-line path); agy's permissions documentation
+**Source:** card tsk-vgce05kdmk2x and the coordinator's go-ahead, 2026-11-15, first for dropping exact grants and then, once the same exposure was confirmed for prefix grants, for dropping those too (two stacked pull requests on the one card); agy 1.5.9's command matching read from its binary (terminal.extractSimpleCommands, terminal.isEnvAssignmentToken, terminal.isCommandWrapper, terminal.canonicalCommandName, shared.coversCommand, commandutils.MatchesConfigAny; the raw-line matcher commandutils.MatchesConfigAnyRaw and terminal.RequiresExactMatch on the whole-line path); agy's permissions documentation
 **See:** runner.md#agy-grants-are-exact-as-for-claude-code-a-deny-for-each-exact-entrys-longer-forms — f0ef544a-a531-4073-9572-af946f5475b2 — as of 2026-11-15
-**Revisit when:** an agy release changes how it reads the invoked command from a line, or gives `command(...)` rules a way to match a whole line or an exact form; or a signed-in agy session is allowed and shows a granted command matching differently
+**Revisit when:** an agy release changes how it reads the invoked command from a line, or gives `command(...)` rules a way to match a whole line or an exact form; a sound way to keep a prefix grant for agy is found; or a signed-in agy session is allowed and shows a granted command matching differently
 
-An exact `allow` entry `a b` (no `*`) is not given to agy as a rule: it is
-left out, named by `maity runner check`, and runs in agy's sandbox like
-every unlisted command. An entry ending in ` *` stays a plain prefix
-(`command(a b)` for `a b *`), and one with another `*` is left out without a
-word, both as before; an exact entry a ` *` prefix already covers is left out
-without a word too. So agy now gets only the prefix allows beside
-`command(maity)`, the `read_url` hosts and the file and command denies; no
-exact allow+deny pair is written any more, and `maity runner check` names
-each exact entry it leaves out.
+Neither an exact `allow` entry `a b` (no `*`) nor a ` *` prefix entry `a b *`
+is given to agy as a rule: each is left out, named by `maity runner check`,
+and runs in agy's sandbox like every unlisted command. An entry with another
+`*` (`a *.py`, `npm run test:*`) is left out without a word, as before, since
+a rule word is matched on its own. So agy now gets no `command(...)` allow
+from a grant's command list at all: only `command(maity)`, the `read_url`
+hosts and the file and command denies stand. The same `allow` command list
+reaches Claude Code and Codex unchanged.
 
 **Reason:** agy does not match a `command(...)` rule the way Claude Code
 matches `Bash(...)`. It reads the invoked command from the line first,
@@ -749,39 +748,50 @@ stepping over a leading environment assignment (terminal.isEnvAssignmentToken)
 and a command wrapper such as env, nohup, time, nice, sudo, xargs or timeout
 (terminal.isCommandWrapper), before any `command(...)` rule is compared; only
 the words that remain reach the matcher (shared.coversCommand →
-commandutils.MatchesConfigAny). A deny rule can only describe those remaining
-words, so it cannot describe a line that carries such a prefix: the one
-matcher that sees the raw line, commandutils.MatchesConfigAnyRaw, runs only on
-agy's whole-line path, and terminal.RequiresExactMatch takes that path only
-for a NUL, a non-ASCII control, format or space character, a parse error or a
-construct its walker refuses — not for a plain leading assignment or wrapper.
-The earlier allow+deny pair (f0ef544a) let an exact entry run outside agy's
-sandbox for the bare command and relied on the deny to refuse every longer
-form; but a line carrying such a prefix matches the bare allow with the prefix
-already stepped over, and no deny can refuse it, so the entry did not run as
-granted. A `command()`-level hard refusal of every such line is therefore not
-provably complete — the prefix is gone before any rule is compared, and the
-raw-line matcher is not on that path. Dropping the exact allow entirely is the
-only sound choice at the settings level: the entry then runs inside the
-sandbox, like an unlisted command. Prefix (` *`) entries are unchanged, since
-they already allow the words with any arguments. This narrows agy grants: a
-placement that relied on an exact grant running outside agy's sandbox must use
-a ` *` grant instead (docs/runners.md, CHANGELOG); the same `allow` list is
-unchanged for Claude Code and Codex.
+commandutils.MatchesConfigAny; terminal.canonicalCommandName canonicalises the
+program name). The one matcher that sees the raw line,
+commandutils.MatchesConfigAnyRaw, runs only on agy's whole-line path, and
+terminal.RequiresExactMatch takes that path only for a NUL, a non-ASCII
+control, format or space character, a parse error or a construct its walker
+refuses — not for a plain leading assignment or wrapper. So no `command(...)`
+rule can describe a line that carries such a prefix. This defeats both grant
+forms the same way: an exact entry's earlier allow+deny pair (f0ef544a) let
+the bare command run outside agy's sandbox and relied on the deny to refuse
+longer forms, but a line carrying the prefix matched the bare allow with the
+prefix already stepped over and no deny could refuse it; and a ` *` prefix
+entry, emitted as a bare `command(a b)` allow, matches such a line with the
+prefix stepped over just as directly, running the command outside the sandbox.
+A `command()`-level hard refusal of every assignment or wrapper line is
+therefore not provably complete — the prefix is gone before any rule is
+compared, and the raw-line matcher is not on that path — so there is no sound
+way at the settings level to keep either an exact or a prefix command grant
+for agy. Dropping both is the only sound choice: such a command then runs
+inside the sandbox, like an unlisted one. This narrows agy grants (a
+command that needs to run outside agy's sandbox through the `allow` list no
+longer can — arrange it another way, or run it under Claude Code or Codex;
+docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
+other harnesses.
 
 **Rejected alternatives:**
-- Keeping the allow+deny pair (f0ef544a): a line with a leading assignment or
-  wrapper matched the bare allow, which no deny could refuse, so the entry did
-  not run exactly as granted; this is what this decision supersedes.
+- Keeping the allow+deny pair for exact entries (f0ef544a): a line with a
+  leading assignment or wrapper matched the bare allow, which no deny could
+  refuse, so the entry did not run exactly as granted; this is what the drop
+  first replaced.
+- Keeping ` *` prefix grants (as the exact-grant drop first did): a prefix
+  entry is emitted as a bare `command(a b)` allow, which the same leading
+  assignment or wrapper matches with the prefix stepped over, so a prefix
+  grant has the same exposure as an exact one and cannot be kept soundly
+  either. agy differs from Claude Code here: Claude Code's `Bash(a b *)`
+  prefix-matches the literal command string, so a leading assignment keeps the
+  line from matching, but agy strips the prefix first. Confirmed against agy
+  1.5.9's binary.
 - A `command()`-level refusal of every assignment and wrapper line: agy reads
   the command past such a prefix before any rule is compared, and the raw-line
   matcher is not on that path, so no set of `command()` denies is provably
-  complete. Verified against agy 1.5.9's binary before the drop was chosen.
+  complete.
 - A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
-- Recording the prefix match as a difference from Claude Code: one harness
-  would get a wider grant than another from the same list.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 

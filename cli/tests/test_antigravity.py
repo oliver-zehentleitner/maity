@@ -157,9 +157,10 @@ def test_the_settings_profile(tmp_path: Path) -> None:
         "enableTerminalSandbox": True,
         "trustedWorkspaces": [str(ctx.folder)],
         "permissions": {
-            # `make test` is exact: not applied to agy, it runs in agy's sandbox instead.
+            # No command grant is applied to agy: `python3 -m pytest *` and `make test` both
+            # run in agy's sandbox, so only `command(maity)` and the hosts are allowed.
             "allow": [
-                "command(maity)", "command(python3 -m pytest)",
+                "command(maity)",
                 "read_url(github.com)", "read_url(maity.team)", "read_url(pypi.org)",
             ],
             "deny": [
@@ -330,7 +331,6 @@ def test_an_exact_grant_is_left_out_and_runs_in_the_sandbox(tmp_path: Path) -> N
     """An exact entry (no `*`) is not given to agy: no allow rule, named as left out. It runs
     in agy's sandbox like every unlisted command, the entry itself and every longer form."""
     found = adapters.agy_grants(["git status"])
-    assert found.allow == ()
     assert [left for left, _ in found.left_out] == ["git status"]
     settings = agy_settings(tmp_path, "git status")
     assert "command(git status)" not in settings["permissions"]["allow"]
@@ -348,6 +348,7 @@ def test_the_matcher_drops_a_leading_assignment_or_wrapper() -> None:
     assert _agy_words("env GIT_PAGER=x git status") == ["git", "status"]
     assert _agy_words("PATH=. git status") == ["git", "status"]
     assert _agy_words("sudo nice timeout git status") == ["git", "status"]
+    assert _agy_words("LD_PRELOAD=/tmp/x git push") == ["git", "push"]
     assert _agy_words("git status") == ["git", "status"]  # nothing to step over
 
 
@@ -360,7 +361,7 @@ def test_a_leading_assignment_does_not_run_an_exact_grant_outside_the_sandbox(
     tmp_path: Path, line: str
 ) -> None:
     """The regression: a line that puts an environment assignment (or `env` with one) in front
-    of what would be an exact grant must not run outside agy's sandbox. agy drops such a
+    of what would be an exact grant must not run outside agy's sandbox. agy steps over such a
     prefix before it matches, so a bare `command(git status)` allow would match the line (the
     counter-check); dropping the exact grant is what keeps the real settings from matching it,
     so the line runs in agy's sandbox instead."""
@@ -370,53 +371,82 @@ def test_a_leading_assignment_does_not_run_an_exact_grant_outside_the_sandbox(
     assert agy_decides(settings, line) == "sandbox"
 
 
-def test_a_grant_ending_in_a_star_stays_a_prefix(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "line",
+    ["LD_PRELOAD=/tmp/x git push", "env LD_PRELOAD=/tmp/x git push",
+     "GIT_SSH=/tmp/x git push", "sudo git push"],
+)  # fmt: skip
+def test_a_leading_assignment_does_not_run_a_prefix_grant_outside_the_sandbox(
+    tmp_path: Path, line: str
+) -> None:
+    """The same regression for a ` *` prefix grant: `git *` would become `command(git)`, and
+    agy steps over a leading assignment or wrapper before matching, so a bare `command(git)`
+    prefix allow would match the line (the counter-check). The prefix grant is dropped too,
+    so the real settings leave it out and the line runs in agy's sandbox instead."""
+    bare = {"permissions": {"allow": ["command(git)"], "deny": []}}
+    assert agy_decides(bare, line) == "allowed"  # the bare prefix allow would have matched it
+    settings = agy_settings(tmp_path, "git *")  # the real settings leave it out
+    assert agy_decides(settings, line) == "sandbox"
+    assert agy_decides(settings, "git push") == "sandbox"  # the prefix grant no longer stands
+
+
+def test_a_grant_ending_in_a_star_is_left_out_too(tmp_path: Path) -> None:
+    """A ` *` prefix entry is no longer a prefix allow for agy: it is left out and named, and
+    runs in agy's sandbox like an unlisted command, just as an exact entry does."""
+    found = adapters.agy_grants(["python3 -m pytest *", "ruff *"])
+    assert [left for left, _ in found.left_out] == ["python3 -m pytest *", "ruff *"]
     settings = agy_settings(tmp_path, "python3 -m pytest *", "ruff *")
-    assert agy_decides(settings, "python3 -m pytest") == "allowed"
-    assert agy_decides(settings, "python3 -m pytest tests/x.py -k y") == "allowed"
-    assert agy_decides(settings, "ruff check .") == "allowed"
-    assert agy_decides(settings, "python3 -m pip install x") == "sandbox"
-    assert not [rule for rule in settings["permissions"]["deny"] if "regex:" in rule]
+    assert [r for r in settings["permissions"]["allow"] if r.startswith("command(")] == [
+        "command(maity)"
+    ]
+    assert agy_decides(settings, "python3 -m pytest tests/x.py -k y") == "sandbox"
+    assert agy_decides(settings, "ruff check .") == "sandbox"
 
 
-def test_a_star_inside_a_grant_is_left_out_as_before(tmp_path: Path) -> None:
+def test_a_star_inside_a_grant_is_left_out_without_a_word(tmp_path: Path) -> None:
     found = adapters.agy_grants(["npm run test:*", "foo *.py", "*"])
-    assert found == adapters.AgyGrants()  # no rule and nothing named: as documented
+    assert found == adapters.AgyGrants()  # an interior `*`: no rule and nothing named
     assert agy_decides(agy_settings(tmp_path, "npm run test:*"), "npm run test:unit") == "sandbox"
 
 
-@pytest.mark.parametrize("rule", ["python3 tests/x.py", "make c++", "pytest -k a.b", "ls ~/x",
-                                  "git status", "cargo build --release"])  # fmt: skip
-def test_every_exact_grant_is_left_out_and_named(tmp_path: Path, rule: str) -> None:
-    """No exact entry (no `*`) becomes a rule for agy: no allow, named as left out, and run in
-    the sandbox, the entry itself and every longer form."""
+@pytest.mark.parametrize(
+    "rule",
+    ["python3 tests/x.py", "make c++", "pytest -k a.b", "ls ~/x", "git status",
+     "cargo build --release", "git *", "ruff *"],
+)  # fmt: skip
+def test_every_command_grant_is_left_out_and_named(tmp_path: Path, rule: str) -> None:
+    """No command grant, exact or ` *` prefix, becomes a rule for agy: none is allowed, each is
+    named as left out, and runs in the sandbox, the entry itself and every longer form."""
     found = adapters.agy_grants([rule])
-    assert found.allow == ()
     assert [left for left, _ in found.left_out] == [rule]
     settings = agy_settings(tmp_path, rule) if config.plain_command(rule) else None
     if settings is not None:
-        assert agy_decides(settings, rule) == "sandbox"
-        assert agy_decides(settings, rule + " --more") == "sandbox"
+        probe = rule.removesuffix(" *")
+        assert agy_decides(settings, probe) == "sandbox"
+        assert agy_decides(settings, probe + " --more") == "sandbox"
 
 
-def test_prefix_entries_are_allowed_and_exact_entries_left_out(tmp_path: Path) -> None:
-    """A mix: the ` *` prefixes become allows, every exact entry is left out, and the two sets
-    together are all the entries but the ones with another `*` (left out without a word)."""
+def test_exact_and_prefix_entries_are_all_left_out(tmp_path: Path) -> None:
+    """A mix: every exact entry and every ` *` prefix entry is left out and named; only an
+    entry with an interior `*` is left out without a word. agy gets no command allow."""
     rules = ("make test", "python3 -m pytest *", "go test ./...", "ruff *",
              "git status", "npm run test:*")  # fmt: skip
     found = adapters.agy_grants(rules)
-    assert found.allow == ("command(python3 -m pytest)", "command(ruff)")
-    assert [left for left, _ in found.left_out] == ["make test", "go test ./...", "git status"]
+    assert [left for left, _ in found.left_out] == [
+        "make test", "python3 -m pytest *", "go test ./...", "ruff *", "git status"
+    ]  # fmt: skip
 
 
-def test_an_exact_grant_a_prefix_grant_covers_is_dropped_silently(tmp_path: Path) -> None:
+def test_overlapping_entries_are_each_named(tmp_path: Path) -> None:
+    """With prefixes dropped too, an entry a ` *` prefix once covered is named like any other;
+    nothing is silently allowed."""
     found = adapters.agy_grants(["git log -1", "git log *", "git log"])
-    assert found == adapters.AgyGrants(allow=("command(git log)",))
+    assert [left for left, _ in found.left_out] == ["git log -1", "git log *", "git log"]
     settings = agy_settings(tmp_path, "git log -1", "git log *")
-    assert agy_decides(settings, "git log -1 --stat") == "allowed"
+    assert agy_decides(settings, "git log -1 --stat") == "sandbox"
 
 
-def test_check_names_every_exact_grant_left_out_for_antigravity() -> None:
+def test_check_names_every_command_grant_left_out_for_antigravity() -> None:
     grant = (
         '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
         'allow = ["git status", "git status --short", "pytest tests/x.py", "python3 -m pytest *",'
@@ -426,12 +456,13 @@ def test_check_names_every_exact_grant_left_out_for_antigravity() -> None:
     report = commands.Report()
     commands._check_repositories(report, config.parse(tomllib.loads(text), Path("runner.toml")))
     texts = [text for level, text in report.lines if level == "warn"]
-    # The three exact entries are each named; the ` *` prefix and the `*`-inside entry are not.
-    assert not report.failed and len(texts) == 3
+    # Three exact entries and the ` *` prefix are each named; only the `*`-inside entry is not.
+    assert not report.failed and len(texts) == 4
     assert "'git status' is left out for antigravity" in texts[0] and "agy's sandbox" in texts[0]
     assert "'git status --short' is left out" in texts[1]
     assert "'pytest tests/x.py' is left out" in texts[2]
-    assert all("agy does not match an exact command grant" in t for t in texts)
+    assert "'python3 -m pytest *' is left out" in texts[3]
+    assert all("agy does not match a command grant" in t for t in texts)
     without = text.replace("[harness.antigravity]\n", "")
     quiet = commands.Report()
     commands._check_repositories(quiet, config.parse(tomllib.loads(without), Path("runner.toml")))
@@ -453,15 +484,14 @@ repositories = ["github.com/oliver-zehentleitner/maity"]
 """
 
 
-def test_no_granted_rule_with_something_in_front_reaches_agy(tmp_path: Path) -> None:
+def test_no_command_grant_reaches_agy(tmp_path: Path) -> None:
+    # No command grant is applied to agy (exact or prefix), and the front-loaded entries are
+    # refused by plain_command before that; agy keeps only `command(maity)`.
     refused = ("FOO=1 make test", "env make test", "make test; maity *", "maity.exe *",
                "xargs /tmp/tools:local/maity")  # fmt: skip
-    # `make *` is a prefix that survives the filter; the front-loaded entries never reach agy.
-    ctx = context(tmp_path, grant=config.RepositoryGrant(allow=("make *", *refused)))
+    ctx = context(tmp_path, grant=config.RepositoryGrant(allow=("make *", "make test", *refused)))
     allow = adapters.antigravity_settings(ctx)["permissions"]["allow"]
-    assert [rule for rule in allow if rule.startswith("command(")] == [
-        "command(maity)", "command(make)"
-    ]  # fmt: skip
+    assert [rule for rule in allow if rule.startswith("command(")] == ["command(maity)"]
 
 
 def test_agy_accepts_the_settings_profile(tmp_path: Path) -> None:
