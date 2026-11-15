@@ -669,10 +669,11 @@ range; a HEAD says the whole length and sends no body.
 **Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
 **Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
 **See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
+**Verification:** corroborated — re-checked on 2026-11-15, when "Chat with us on Discord" became the fifth part (card tsk-01tt7j11yx3w): the rule hides every part after the first, so the decision holds; only the count changed
 
 The hub draws the product line on the join page, the `503` maintenance
 page and the registration link page (`product_line.html`). Each of its
-four parts is a `span.product-part` and each separator a
+five parts is a `span.product-part` and each separator a
 `span.product-sep`, the classes the dashboard uses. At
 `max-width: 600px` a rule hides the separators and every part after the
 first, so the line is the mark, `Maity` and the year, as on the

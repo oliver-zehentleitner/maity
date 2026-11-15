@@ -1050,8 +1050,8 @@ GitHub profile, and Maity's, linked to the maintainer's page on
 maity.team), "Found a bug?" to the project's GitHub issues, and "Found a
 vulnerability?" to the project's `SECURITY.md`, and "Chat with us on
 Discord", text without an icon, to the project's Discord server. The name
-itself is no link. The order is its own entry, below. It is part of the product and
-always shown, with no operator setting. The landing page, the legal
+itself is no link. The order is its own entry, below. It is part of the
+product and always shown, with no operator setting. The landing page, the legal
 pages, `/explore` and the public pages of §16.9 do not carry it.
 
 **Reason:** the line belongs to the software, not to an instance's
