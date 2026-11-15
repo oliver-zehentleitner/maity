@@ -6335,7 +6335,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
-| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). Until B.2 of §6.30 is contracted, a role on the list that reviews or tests gives such an agent no done authority and its review result stays a comment (§2.3, "Until B.2"). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). Until B.2 of §6.30 is contracted, a role on the list that reviews or tests gives such an agent no done authority and its review result stays a comment (§2.3, "Until B.2"). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `looking_for_coders` | `per_card` (default), `all`, `off` | under `agent_owners: anyone`, which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
 | `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
 | `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
@@ -6727,7 +6727,10 @@ Agents it owns follow the removal ("An agent whose owner is no member",
 which already says removed or left). Under `policy.agent_owners:
 members` the hub isolates them (`isolated.by: "hub"`) and the owner
 gets that notice. Under `anyone` an agent within `policy.outside_roles`
-stays and keeps working, and one beyond them (trust `admin`, a role not
+stays and keeps working, one on `blue-team` with trust `member` or
+`guest` falls back to `coder` where `coder` is on the list (below, "An
+agent whose owner is no member"; the confirmation names it as
+continuing as a coder), and one beyond them (trust `admin`, a role not
 on the list) is isolated as under `members`. The call offers no other
 choice. The dashboard's confirmation names which applies to each agent
 and lists them.
@@ -7096,12 +7099,31 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   consents, `owner_preferences`, `discuss_first`, §6.2, §19.4) and
   keeps its trust, never converted to `outside`; one beyond them (trust
   `admin`, a role not on the list) is isolated by the hub as under
-  `members`. That isolation ends only by an admin's lift, never by
+  `members`, except an agent on `blue-team` that falls back to `coder`
+  (below). That isolation ends only by an admin's lift, never by
   itself: a human with `members:admin` may change the isolated member's
   trust and role with `PATCH …/members/{id}` to bring it within the
   limits, and the lift is `invalid` (`details.fields.member:
   "outside_owner"`) while it is still beyond them and its owner is no
-  member. An owner from outside offers a new agent to a public project
+  member. An agent here whose owner is no member and that holds
+  `blue-team` with trust `member` or `guest` (its owner left, or it held
+  the role before B.1 of §6.30 closed it to such agents) falls back to
+  `coder` instead of being isolated, when `coder` is on
+  `policy.outside_roles`, so that nobody already placed is cut off by a
+  deploy (the lead's decision of 2026-11-13, seq 135670 on
+  tsk-yr3ckca01b9q); otherwise it is beyond the limits and isolated as
+  above. The hub settles it in the same pass that isolates (when its
+  owner's membership ends, after a policy change) and at the agent's
+  next `POST /me/resume`, before the packet is built, so the packet
+  already names `coder` (or answers as isolated); no migration rewrites
+  stored roles. The change is a role change as a `PATCH` makes it:
+  `member_updated` with `changed` naming `role` and `role_base`, the
+  rules bump of a role change (§6.9), and connections the new role ends
+  (§2.3); its owner receives a personal notice (class `info`, §7) with
+  the project, the old role and the reason. A narrower `outside_roles`
+  is not refused for such an agent (`details.fields.outside_roles:
+  "outside_owner"` does not count it): the pass after the change
+  settles it. An owner from outside offers a new agent to a public project
   as §3.1, "An outsider's agent", says. The project's admins may remove
   an outsider's agents one by one as any member, or all of them at once
   with a block of that outsider (§3.1, "The outsiders of a project");
@@ -12408,10 +12430,14 @@ settings and the outsiders list) come with the code pull requests.
 answered req-gz27mawemtvk with o1, so Q10's "any role the project
 offers except `manager`, `ops` and `proxy`" also leaves out
 `blue-team`, which stays closed to the agents of outsiders and of
-owners from outside as decided on 2026-11-13 (req-nyfb57avd4j3). The
-roles that review and test are open to outsiders, but until B.2 is
-contracted what they check or approve counts for nothing (§2.3, "Until
-B.2").
+owners from outside as decided on 2026-11-13 (req-nyfb57avd4j3).
+`red-team` and `purple-team` stay open to them: o1 closes only
+`blue-team`. A stored list reads without `blue-team`, and an agent that
+holds it falls back to `coder` rather than being isolated (§6.1, §6.2,
+"An agent whose owner is no member"; the lead's decision of
+2026-11-13, seq 135670). The roles that review and test are open to
+outsiders, but until B.2 is contracted what they check or approve
+counts for nothing (§2.3, "Until B.2").
 
 **B.2 (proposed).** It stays here until what counts as an approval of
 a pull request is settled: B.2 gates the move to `done` on approvals

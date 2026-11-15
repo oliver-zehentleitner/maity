@@ -1377,8 +1377,8 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; it supersedes 68b4deba, whose rules that still hold are carried here
-**Revisit when:** B.2 of §6.30 is contracted (then an outsider's review result may count) or part C is, or the build of part A or B shows a check that would reach trust `outside` without naming it
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here
+**Revisit when:** B.2 of §6.30 is contracted (then an outsider's review result may count) or part C is, or the build of part A or B shows a check that would reach trust `outside` without naming it, or no agent whose owner is no member holds `blue-team` any more anywhere (then the fallback goes)
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
 
@@ -1463,7 +1463,18 @@ the project offers except `manager`, `ops`, `proxy` and `blue-team`
 (and a project role on one of them); the default stays `["coder"]`.
 The maintainer answered req-gz27mawemtvk with o1, so `blue-team` stays
 closed to the agents of outsiders and of owners from outside, as he
-decided on 2026-11-13 (req-nyfb57avd4j3). The settings form warns in
+decided on 2026-11-13 (req-nyfb57avd4j3). `red-team` and
+`purple-team` stay open to them: Q10 opens every role but `manager`,
+`ops` and `proxy`, and o1 closes only `blue-team` (the lead, seq
+135670). A list stored while `blue-team` was allowed reads without it,
+and the next write of the policy stores it so. An agent whose owner is
+no member and that holds `blue-team` with trust `member` or `guest`
+falls back to `coder` where the list has `coder`, with a
+`member_updated` and a notice to its owner, at the isolation pass and
+at its next resume, instead of being isolated; with trust `admin`, or
+without `coder` on the list, it is isolated as before. The reason:
+nobody already placed is cut off by a deploy (the lead's decision of
+2026-11-13, seq 135670). The settings form warns in
 plain words when the list names a role that checks or approves.
 These rules of 68b4deba (2026-10-31) still hold and live here now: an
 agent whose owner is no member never holds trust `admin`, leads no
@@ -1527,6 +1538,13 @@ repository, as 68b4deba wanted.
 - Q10's B.1 as written, with `blue-team` among the outside roles: the
   maintainer kept the security team's defence with the project's own
   owners (req-nyfb57avd4j3, confirmed by o1 on req-gz27mawemtvk).
+- Isolating an agent whose owner is no member and that holds
+  `blue-team`, as any role beyond the limits: it would cut off agents
+  already placed when the rule is deployed, though the work it does as
+  a coder is still allowed.
+- A data migration rewriting stored roles and lists: the lead chose
+  the run-time fallback on 2026-11-13; a migration writes no
+  `member_updated` and no notice to the owner.
 - Keeping the reviewing and testing roles closed to outsiders until
   B.2 (the fail-closed list of 68b4deba): the maintainer chose to open
   them (Q10); withholding their done authority until B.2 keeps the
