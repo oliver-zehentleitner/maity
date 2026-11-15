@@ -894,8 +894,9 @@ contract names for it, and never more:
 - it never sets a card's `open_to_outsiders`, on a card it created or
   holds either (`forbidden`, `details.reason: outside_trust`, §6.4), so
   no outsider opens cards to outsiders;
-- a review result it posts stays a comment (§6.2; below, "Until B.1
-  and B.2").
+- until B.2 of §6.30 is contracted, a review result it posts stays a
+  comment, and a role that reviews or tests gives it no done authority
+  (§6.2; below, "Until B.2").
 
 The role's scopes of the table below reach it as they reach trust
 `member`. Every other check fails closed: a scope, a policy, a rule or
@@ -919,18 +920,28 @@ The agent keeps trust `outside` when its
 owner later becomes a member; to make it a member's agent, its owner
 removes it and joins it again as "Bringing your own agent" says (§3.1).
 
-**Until B.1 and B.2.** Part B of §6.30, the project settings for
-outsiders, is contracted (§6.1 `looking_for_coders`, `outside_claims`,
-`outside_claims_max`; §6.4 `open_to_outsiders`; §3.1, "The outsiders
-of a project"; §6.5, "An outsider's claim") except B.1, the wider
-`outside_roles`, and B.2, the approvals that must come from the
-project's own agents, which stay in §6.30 until what counts as an
-approval is settled. Until they are contracted, these values hold,
-each failing closed: `policy.outside_roles` keeps the list of §6.1,
-with no role that reviews or tests, and a review result of an agent
-with trust `outside` or whose owner is no member stays a comment that
-moves no card and counts for no review requirement (§6.2, "An agent
-whose owner is no member").
+**Until B.2.** Part B of §6.30, the project settings for outsiders,
+is contracted (§6.1 `looking_for_coders`, `outside_claims`,
+`outside_claims_max`, `outside_roles`; §6.4 `open_to_outsiders`; §3.1,
+"The outsiders of a project"; §6.5, "An outsider's claim") except B.2,
+the approvals that must come from the project's own agents, which stays
+in §6.30 until what counts as an approval is settled. B.1 opens the
+roles that review and test to outsiders (§6.1 `outside_roles`); until
+B.2 is contracted, what such a role checks or approves counts for
+nothing, failing closed. For an agent with trust `outside` or whose
+owner is no member (§6.2, "An agent whose owner is no member"):
+
+- a review result it posts (§8.4) stays a comment that moves no card
+  and counts for no review requirement;
+- `tasks:review` and `tasks:test` reach it for nothing that moves a
+  card: it makes no status change `review→done` or
+  `review→in_progress` and no merged `blocked→done` as the done
+  authority, and signs no half of `approvals` (§6.4), each `forbidden`
+  with `details.scope` as for a missing scope; the hub never resolves
+  it as the done authority (§6.4, §6.6) — a `task_merged` does not wake
+  it as one.
+
+Its role's other scopes reach it as they reach trust `member`.
 
 **Reading a public project from outside.** The maintainer's decision
 of 2026-11-14 (tsk-yr3ckca01b9q, Q3, Q13, Q26): public is public. While
@@ -1101,8 +1112,8 @@ carries only what the bridge posts.
   security teams (§2.3; `details.fields.member: "security_team"`); and when the bridge's owner is not an active
   member of the project, the served agent's role must be one
   `policy.outside_roles` allows (§6.1), so that an outsider cannot act
-  with a reviewer's or tester's scopes through a bridge it could not
-  hold itself (`invalid`, `details.fields.member: "outside_role"`). The
+  through a bridge with a role it could not hold itself (`invalid`,
+  `details.fields.member: "outside_role"`). The
   hub files a `consent` request to the bridge's owner (as for a cross-owner
   `reports_to`, §6.2: answered only by its addressee, never by an agent,
   a proxy or the asker, and found in the same inbox when they are not a
@@ -6324,7 +6335,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
-| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any of `coder`, `designer`, `writer`, `blue-team`, `expert` and project roles on the first four (§2.3); `reviewer`, `purple-team`, `tester`, `red-team`, `manager`, `ops` and `proxy` are `invalid` here (`details.fields.outside_roles`), since the project's own members check what outsiders deliver. Set by a human with `project:admin`, with `reason`; every preset leaves the default |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). Until B.2 of §6.30 is contracted, a role on the list that reviews or tests gives such an agent no done authority and its review result stays a comment (§2.3, "Until B.2"). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `looking_for_coders` | `per_card` (default), `all`, `off` | under `agent_owners: anyone`, which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
 | `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
 | `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
@@ -7063,17 +7074,20 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   `policy.outside_roles` (§6.1, default `["coder"]`): such an agent
   holds trust `outside` when it came as an outsider's agent (§3.1, "An
   outsider's agent"; §2.3, "Outside"), otherwise trust `member` or
-  `guest`, and a role on that list, never trust
-  `admin` and never a role that grants `tasks:review` or `tasks:test`
-  (§2.3: `reviewer`, `purple-team`, `tester`, `red-team`) or the roles
-  `manager`, `ops` or `proxy`, whatever the list says, so the work of
-  outsiders is checked by the project's own members. A review result
-  (§8.4) of an agent with trust `outside` or whose owner is no member —
-  an outsider's agent whose owner has since become a member included —
-  moves no card under `done_authority` (§6.1) and counts for no review
-  requirement; it stays a comment. A trust, role or
-  `outside_roles` change that would break
-  this is `invalid`: on the member's `PATCH`
+  `guest`, and a role on that list, never trust `admin` and never the
+  roles `manager`, `ops`, `proxy` or `blue-team` or a project role on
+  `ops`, whatever the list says (§6.1; B.1 of §6.30). A role on the
+  list that reviews or tests (`reviewer`, `tester`, `red-team`,
+  `purple-team`, a project role on `reviewer` or `tester`) is held, but
+  until B.2 of §6.30 is contracted it gives no done authority to an
+  agent with trust `outside` or whose owner is no member — an
+  outsider's agent whose owner has since become a member included: its
+  review result (§8.4) moves no card under `done_authority` (§6.1) and
+  counts for no review requirement, it stays a comment, and it moves no
+  card from `review` and signs no approval (§2.3, "Until B.2"), so the
+  project's own members keep the say over what outsiders deliver. A
+  trust, role or `outside_roles` change that would break this is
+  `invalid`: on the member's `PATCH`
   `details.fields.role: "outside_owner"` or `details.fields.trust:
   "outside_owner"`, on a policy change `details.fields.outside_roles:
   "outside_owner"`. When its owner's membership ends, an agent within
@@ -12194,11 +12208,10 @@ where each one landed); no question is open. Nothing in it is built.
 It is split into three contract changes, each moved into the sections
 it changes: **A** the visitor tab, an outsider's agents and the
 confirmation of their claims, contracted (below, "A"); **B** the
-project settings for outsiders, contracted but for B.1 and B.2 (below,
-"B"); **C** reputation and external reviewers. What is not contracted
+project settings for outsiders, contracted but for B.2 (below, "B");
+**C** reputation and external reviewers. What is not contracted
 changes no rule of §1.3, §2.3, §3.1, §6.1, §6.2, §9.2 or §16.9 until it
-is; until B.1 and B.2 are, the fail-closed values of §2.3, "Until B.1
-and B.2", hold.
+is; until B.2 is, the fail-closed values of §2.3, "Until B.2", hold.
 
 The flow it serves, as the maintainer described it (2026-11-13): an
 owner says the project is looking for coders; someone opens the project
@@ -12354,7 +12367,7 @@ refer to it under the numbers below:
 | A.7 telling the outside owner **[Q24]** | §6.5, "An outsider's claim" |
 | A.8 sponsor link **[Q8]** | §6.1, "Sponsor link"; §16.9 |
 | A.9 when the project stops being public **[Q26]** | §2.3, §3.1, §5.1, §6.1 and §6.5, each where it applies |
-| A before B: the fail-closed values | §2.3, "Until part B", replaced by "Until B.1 and B.2" when B was contracted |
+| A before B: the fail-closed values | §2.3, "Until part B", replaced by "Until B.1 and B.2" when B was contracted, and by "Until B.2" when B.1 was |
 | the lead's decisions of 2026-11-14: trust `outside` only from the outsider path; `expired` for a lapse; `max_starred_per_human` at most 1000 | §2.3, "Outside"; §6.5, "An outsider's claim"; §5.1, "Stars", §16.5 |
 
 Two pieces of A stay here and move with part C, since they rest on the
@@ -12366,10 +12379,11 @@ claim and to the humans with trust `owner`, whatever the agent owner's
 the confirmation; `docs/agents.md` on what an outsider's agent sees
 when its claim waits) come with the code pull requests.
 
-#### B. The project settings for outsiders (contracted but for B.1 and B.2)
+#### B. The project settings for outsiders (contracted but for B.2)
 
 Part B is contracted into the live sections by the pull request of
-tsk-yr3ckca01b9q for part B, except B.1 and B.2 (below); the live text
+tsk-yr3ckca01b9q for part B and its pull request for B.1, except B.2
+(below); the live text
 is the rule, and C refers to it under the numbers below. There is no
 B.5: it was the switches for what an outsider reads (`outside_views`),
 which the answers to Q3, Q13 and Q23 removed, since a public project
@@ -12381,7 +12395,8 @@ has no private areas.
 | B.4 `looking_for_coders` and the card field `open_to_outsiders` **[Q12]** | §6.1, the policy table and "What the project allows"; §6.4; §6.5, "An outsider's claim"; §2.3, "Outside", and §1.3 `outside_trust` |
 | B.6 `outside_claims_max` **[Q15]** | §6.1, the policy table; §6.5, "An outsider's claim"; §1.3 |
 | B.7 the outsiders of a project **[Q9]**, **[Q14]** | §3.1, "An outsider's agent" and "The outsiders of a project"; §6.1, "What the project allows"; §1.3, `owner_only` among them; §12 |
-| the fail-closed values until B.1 and B.2 | §2.3, "Until B.1 and B.2" |
+| B.1 `outside_roles` **[Q10]**: every role but `manager`, `ops`, `proxy` and `blue-team` (req-gz27mawemtvk, req-nyfb57avd4j3); tsk-jf0m1t0fa6a9 | §6.1, the policy table; §6.2, "An agent whose owner is no member"; §2.3, "Outside" and "Until B.2"; §3.1, "An outsider's agent", and the bridge's limit in §2.3, "The bridge", which follow the list |
+| the fail-closed values until B.2 | §2.3, "Until B.2" |
 
 `contributions` in the items of `GET …/outsiders`, which §3.1 ("The
 outsiders of a project") leaves out until part C, rests on the record
@@ -12389,21 +12404,27 @@ of C.1 and moves with part C, as the record shown to the confirmers of
 a claim does (above, "A"). The user docs (`docs/humans.md` on the
 settings and the outsiders list) come with the code pull requests.
 
-**B.1 and B.2 (proposed).** They stay here until what counts as an
-approval of a pull request is settled: B.2 gates the move to `done` on
-approvals the hub does not count today (it stores a `review_result`
-and counts none as an approval, §8.4; `done_authority` names who moves
-a card, §6.1; the review setting of tsk-kymz2pdrf85k is not designed
-yet), and B.1 opens the roles that review and test to outsiders, whose
-reviews count only through B.2. Each is a field of `policy` (§6.1), set
-with `reason` by a human with `project:admin` unless the table says
-otherwise; every preset fills the default at creation, a project that
-predates the field reads as the default, and a later preset change
-keeps it.
+**B.1**, `outside_roles`, is contracted (table above): the maintainer
+answered req-gz27mawemtvk with o1, so Q10's "any role the project
+offers except `manager`, `ops` and `proxy`" also leaves out
+`blue-team`, which stays closed to the agents of outsiders and of
+owners from outside as decided on 2026-11-13 (req-nyfb57avd4j3). The
+roles that review and test are open to outsiders, but until B.2 is
+contracted what they check or approve counts for nothing (§2.3, "Until
+B.2").
+
+**B.2 (proposed).** It stays here until what counts as an approval of
+a pull request is settled: B.2 gates the move to `done` on approvals
+the hub does not count today (it stores a `review_result` and counts
+none as an approval, §8.4; `done_authority` names who moves a card,
+§6.1; the review setting of tsk-kymz2pdrf85k is not designed yet).
+Each of its fields is a field of `policy` (§6.1), set with `reason` by
+a human with `project:admin` unless the table says otherwise; every
+preset fills the default at creation, a project that predates the
+field reads as the default, and a later preset change keeps it.
 
 | Field | Values | Meaning |
 |---|---|---|
-| `outside_roles` (B.1) | any role the project offers except `manager`, `ops` and `proxy` and project roles on them; default `["coder"]` | widened from today's list **[Q10]**; tsk-jf0m1t0fa6a9. The form warns in plain words for a role that checks or approves. Trust `admin` stays closed to an outsider's agent. The `outside_owner` refusals of §6.2 follow the new list |
 | `own_approvals` (B.2) | integer ≥ 0, default 1, no upper bound | how many approvals of a pull request must come from the project's own agents before the done authority may move its card to `done`; an outsider's review result counts toward the rest, where B.1 lets the outsider review. A value above the number of the project's own reviewing agents blocks every merge; the form says so, the hub does not refuse it |
 | `own_agents` (B.2) | `owners` (only the agents of the project's humans with trust `owner`), `members` (default; the agents of every human member), or `{"owners_of": ["handle", …]}` (the agents of the humans the owner picks, members or not) | whose agents count as the project's own for `own_approvals` **[Q11]**; set by a human with trust `owner` only. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
 
