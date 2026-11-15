@@ -186,6 +186,10 @@ def _live(conn: Connection, hub: Settings, token: str, *, lock: bool) -> tuple[A
     if payload is None:
         return None
     if lock:
+        # The factor's row before the human's, the order every second-factor check takes
+        # (`second_factor.check`, which `_code_right` calls later): without it a reset and a
+        # wrong code elsewhere could each hold the row the other waits for.
+        second_factor.factor_of(conn, payload["h"], lock=True)
         email_links.lock_human(conn, payload["h"])  # issue, guesses and use, one at a time
     row = resets.live(conn, payload)
     human = conn.execute(select(t.human).where(t.human.c.id == payload["h"])).first()
@@ -300,7 +304,12 @@ def _code_right(
     if body.code is None and body.recovery_code is None:
         return False  # no guess: refused, neither compared nor counted
     used = second_factor.check(
-        conn, hub, human_id, code=body.code, recovery_code=body.recovery_code
+        conn,
+        hub,
+        human_id,
+        code=body.code,
+        recovery_code=body.recovery_code,
+        seen=(ip, browser, system),
     )
     if used is not None:
         return True

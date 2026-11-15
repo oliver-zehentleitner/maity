@@ -1063,6 +1063,7 @@ def join_view(conn: Connection, row: Any) -> dict[str, Any]:
         "used_at": ts(row.used_at),
         "burned": row.burned_at is not None,
         "revoked_at": ts(row.revoked_at),
+        "revoked_by": row.revoked_by,
         "via": row.via,
         "new_instance": bool(row.new_instance),
         "replaces": row.replaces,

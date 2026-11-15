@@ -16,6 +16,7 @@ from maity_hub import (
     account_deletion,
     attachment_store,
     clock,
+    events,
     public_pages,
     public_projects,
     runner_revoke,
@@ -229,13 +230,24 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     for project_id in _projects_to_lock(conn, runner_ids, own):
         lock_project(conn, project_id)
     credentials = conn.execute(
-        select(c.id)
+        select(c.id, m.project_id, m.agent_id)
         .join(t.membership, m.id == c.membership_id)
         .where(c.revoked_at.is_(None), own)
         .order_by(c.id)
-    ).scalars()
-    for credential_id in list(credentials):
-        leaks.revoke(conn, credential_id, REVOKED_REASON, None)
+    ).all()
+    for credential in credentials:
+        # Said as a revocation by hand says it (§6.17), so the agent's owner sees why its
+        # instances stopped; only the revocation that wins says it.
+        if leaks.revoke(conn, credential.id, REVOKED_REASON, None) and credential.agent_id:
+            events.emit(
+                conn,
+                credential.project_id,
+                "credential_revoked",
+                [f"member:{credential.agent_id}", "trust:owner"],
+                {"credential_id": credential.id, "reason": REVOKED_REASON},
+                actor=actor(report_id),
+                subject=("credential", credential.id),
+            )
     for runner_id in runner_ids:
         # `stop` whatever the projects' rule, so the instance rule passed is never read.
         applied = runner_revoke.apply(
