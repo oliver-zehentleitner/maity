@@ -799,10 +799,11 @@ an allow entry admits, and each owner whose agent waits gets one
 request. Fresh installs and instances with marks end in the same state,
 and a restart or several pods starting at once write nothing more.
 
-**Reason:** the gate switched itself on with the upgrade to 0.1.0a6: the
-data step made every cross-owner agent wait, even where an allow entry
-covered the pair, and filed no request, so agents went quiet until an
-owner found the Chat access page. The maintainer wants the gate built
+**Reason:** as 0.1.0a6 shipped it, the upgrade switched the gate on by
+itself: the data step made every cross-owner agent wait, even where an
+allow entry covered the pair, and filed no request, so agents would go
+quiet until an owner found the Chat access page. A PyPI installation of
+0.1.0a6 may have run it; the instance this project runs on had not. The maintainer wants the gate built
 but turned on when the instance is ready for it, after owners had the
 chance to set their entries.
 
