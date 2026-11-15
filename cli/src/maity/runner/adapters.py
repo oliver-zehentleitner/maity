@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -643,17 +645,92 @@ AGY_LOGIN = Path(".gemini") / "antigravity-cli" / "antigravity-oauth-token"
 AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
 
 
-def agy_grant(rule: str) -> str | None:
-    """A grant's allow entry as agy's command prefix: the words before a closing ` *`, or the
-    entry itself (agy matches by prefix, so an entry without ` *` allows any arguments too).
-    An entry with another `*` has no prefix form and is left out; it still runs in agy's
-    sandbox, as every command no rule names."""
-    words = rule.split(" ")
-    if words[-1] == "*":
-        words = words[:-1]
-    if not words or any("*" in word for word in words):
-        return None
-    return " ".join(words)
+# The characters a word of an exact grant may hold for agy's generated deny: no regular
+# expression metacharacter and no shell one, so agy reads each word of the rule as written and
+# it matches only itself. agy takes a malformed regex without a word and it then matches
+# nothing, so a deny it could misread would fail open (the agy grants entry in
+# cli/context/runner.md). `.` and `+` are left out on purpose: in a regex they match more.
+AGY_SAFE_WORD = re.compile(r"[A-Za-z0-9_/=:@%,-]+")
+# The deny's last word: any further word agy sees (it drops an empty or blank one before
+# matching, which no rule can catch; docs/runners.md). agy compiles each word of a
+# `regex:` rule with Go's regexp.Compile (syntax.Perl, no DotNL), where `.` matches every
+# character but a line feed, so `.*` missed a quoted argument holding one. A bracket class of
+# all ASCII and all non-ASCII matches every character, `\n` included, and needs neither a
+# backslash nor a quote, a parenthesis or a `|`, which agy's shell split of the rule would
+# take apart (the agy grants entry in cli/context/runner.md).
+AGY_ANY_WORD = "[[:ascii:][:^ascii:]]*"
+
+
+@dataclass(frozen=True)
+class AgyGrants:
+    """A grant's `allow` list as agy's rules: allows, the denies that make the exact ones
+    exact, and the entries left out with why (`maity runner check` names those)."""
+
+    allow: tuple[str, ...] = ()
+    deny: tuple[str, ...] = ()
+    left_out: tuple[tuple[str, str], ...] = ()
+
+
+def _agy_prefix(words: list[str]) -> list[str] | None:
+    """The words before a closing ` *`, when no other word holds a `*`."""
+    if len(words) > 1 and words[-1] == "*" and not any("*" in word for word in words[:-1]):
+        return words[:-1]
+    return None
+
+
+def _could_extend(other: list[str], words: list[str]) -> bool:
+    """Whether `other`, a grant's words, may allow a command that starts with `words` and has
+    more words: it starts with them and is longer, or a `*` in it could stand for them."""
+    for at, word in enumerate(other):
+        if "*" in word:
+            return True
+        if at >= len(words):
+            return True
+        if word != words[at]:
+            return False
+    return False
+
+
+def agy_grants(rules: Sequence[str]) -> AgyGrants:
+    """agy matches `command(...)` by the words a rule starts with, so a rule allows any
+    arguments after it. An entry ending in ` *` is such a prefix, and its words are allowed
+    as one. An exact entry `a b` is allowed as `command(a b)` and its longer forms denied
+    with `command(regex:a b <AGY_ANY_WORD>)`: one word more, so never the entry itself, and
+    agy's deny beats its allow. An exact entry is left out, and runs in agy's sandbox like
+    every unlisted command, when a word is outside AGY_SAFE_WORD, or when another entry may
+    allow a longer command that starts with it, which its deny would refuse; when a prefix
+    entry already allows it, it is left out without a word. An entry with another `*` is
+    left out as well: a regex applies to one word, so no rule says what it says."""
+    allow: list[str] = []
+    deny: list[str] = []
+    left_out: list[tuple[str, str]] = []
+    split = [(rule, rule.split(" ")) for rule in dict.fromkeys(rules)]
+    prefixes = [prefix for _, words in split if (prefix := _agy_prefix(words))]
+    for rule, words in split:
+        prefix = _agy_prefix(words)
+        if prefix:
+            allow.append(f"command({' '.join(prefix)})")
+            continue
+        if "*" in rule:
+            continue  # left out without a word, as before (docs/runners.md)
+        if any(words[: len(start)] == start for start in prefixes):
+            continue  # a prefix entry allows it and every longer form
+        if not all(AGY_SAFE_WORD.fullmatch(word) for word in words):
+            left_out.append(
+                (
+                    rule,
+                    "a word holds a character other than letters, digits and "
+                    "_ / = : @ % , -, which agy's deny could misread",
+                )
+            )
+            continue
+        wider = [other for other, theirs in split if other != rule and _could_extend(theirs, words)]
+        if wider:
+            left_out.append((rule, f"{wider[0]!r} may start with it; its deny would refuse that"))
+            continue
+        allow.append(f"command({rule})")
+        deny.append(f"command(regex:{rule} {AGY_ANY_WORD})")
+    return AgyGrants(tuple(dict.fromkeys(allow)), tuple(deny), tuple(left_out))
 
 
 def _agy_private(path: Path) -> Path:
@@ -672,13 +749,14 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     own settings (cli/context/runner.md)."""
     assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
     git = ctx.clone / ".git"
-    granted = [agy_grant(cmd) for cmd in ctx.grant.allow if config.plain_command(cmd)]
-    allow = ["command(maity)", *(f"command({cmd})" for cmd in dict.fromkeys(granted) if cmd)]
+    granted = agy_grants([cmd for cmd in ctx.grant.allow if config.plain_command(cmd)])
+    allow = ["command(maity)", *granted.allow]
     allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
+    deny += granted.deny
     return {
         "agentMode": "",
         "toolPermission": "proceed-in-sandbox",

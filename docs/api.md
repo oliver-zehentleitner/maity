@@ -17798,7 +17798,8 @@ owner choose):
     allow); the sandbox on; the workspace folder trusted,
     so an interactive start shows no trust question; the file tools
     denied the clone's `.git/maity`; `maity` and the repository's `allow`
-    list allowed. A command an allow rule matches may run outside the
+    list allowed, each entry as exactly as for Claude Code: an entry
+    without `*` is allowed with a deny rule for its longer forms. A command an allow rule matches may run outside the
     sandbox. `maity` has to, for its credential and the network; outside
     the sandbox any allowed command can read the credential, as with
     Claude Code.
