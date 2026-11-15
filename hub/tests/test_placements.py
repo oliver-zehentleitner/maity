@@ -889,7 +889,7 @@ def test_restart_bumps_the_generation_and_rejoin_needs_a_revoked_credential(
     assert rejoin.json()["error"]["details"]["fields"] == {"rejoin": "credential_not_revoked"}
 
 
-# Who revoked and why, as `auth.leaks.revoke` stores it; "runner_owner" and "owner" name a
+# Who revoked and why, as `auth.revocation.revoke` stores it; "runner_owner" and "owner" name a
 # human of the setup, filled in by the test. `True`: anyone with the restart's right undoes it.
 REVOCATIONS = [
     ("revoked", "owner", False),  # a person, through the member routes
