@@ -24,7 +24,7 @@ from maity_hub import (
     write_guard,
 )
 from maity_hub import tables as t
-from maity_hub.auth import email_links, leaks, sessions
+from maity_hub.auth import email_links, revocation, sessions
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, lock_project
 from maity_hub.forge import Forge
@@ -224,7 +224,7 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     for credential in credentials:
         # Said as a revocation by hand says it (§6.17), so the agent's owner sees why its
         # instances stopped; only the revocation that wins says it.
-        if leaks.revoke(conn, credential.id, REVOKED_REASON, None) and credential.agent_id:
+        if revocation.revoke(conn, credential.id, REVOKED_REASON, None) and credential.agent_id:
             events.emit(
                 conn,
                 credential.project_id,
@@ -241,7 +241,7 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
         )
         live = live_credential_id(conn, runner_id)
         if live is not None:
-            leaks.revoke_runner_credential(conn, live, REVOKED_REASON, None, applied)
+            revocation.revoke_runner_credential(conn, live, REVOKED_REASON, None, applied)
         else:  # a key revoked already: what the stop applied joins its record (§15.3)
             runner_routes.record_applied(conn, runner_id, applied)
     sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
