@@ -6,7 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select, text, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -549,7 +549,9 @@ def test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking(
     `hello`). The owner's revoke and removal, and a re-pair's exchange, take the two in the
     same order (`runners.lock`), so one that starts while a call holds the credential waits
     for the call, instead of holding the runner row the call needs next (PostgreSQL,
-    MariaDB)."""
+    MariaDB). On MariaDB both sides run with `innodb_snapshot_isolation`, the default since
+    11.6, so that the wait also may not end in 1020 (record changed since last read), which
+    no retry covers: a lock taken through a subquery of the runners did (`runners.lock`)."""
     from types import SimpleNamespace
 
     from maity_hub.auth.leaks import revoke_runner_credential
@@ -578,6 +580,8 @@ def test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking(
 
     with race(setup.engine) as r:
         call, changing = r.first, r.second
+        for conn in (call, changing):
+            snapshot_isolation(conn)
         now = clock.now()
         call.execute(
             update(t.runner_credential)
@@ -591,3 +595,16 @@ def test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking(
         finished(step)
         changing.commit()
     assert error(hello(setup.client, setup.runner)) == "credential_revoked"
+
+
+def snapshot_isolation(conn: Any) -> None:
+    """MariaDB's `innodb_snapshot_isolation` for the connection's session, where the server
+    has it (10.6.18, 10.11.8, 11.4.2 and later; on by default since 11.6, off on CI's 11.4).
+    PostgreSQL has no such setting. The connection leaves the pool, so that the setting ends
+    with it and never reaches another test."""
+    if conn.dialect.name not in ("mysql", "mariadb"):
+        return
+    if conn.execute(text("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'")).first() is None:
+        return
+    conn.detach()
+    conn.execute(text("SET SESSION innodb_snapshot_isolation = ON"))

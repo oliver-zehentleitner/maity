@@ -799,7 +799,9 @@ def test_a_suspension_revokes_the_accounts_own_placed_agent_as_suspended(setup: 
 
 def test_a_suspension_locks_the_runner_rows_before_any_project(setup: Setup) -> None:
     """Runner credentials, then runner rows, as a runner's own call takes them; then the
-    projects in one pass; then the account's own credentials, then the runners' stop."""
+    projects in one pass; then the account's own credentials, then the runners' stop. The
+    runners' ids are read before, without a lock: the credentials are locked by that list,
+    not through a subquery (`runners.lock`)."""
     from tests.test_moderation import transactions
 
     _running_on_the_runner(setup)
@@ -810,14 +812,17 @@ def test_a_suspension_locks_the_runner_rows_before_any_project(setup: Setup) -> 
     def first(test: typing.Callable[[str], bool]) -> int:
         return next(i for i, x in enumerate(statements) if test(x))
 
+    ids = first(lambda x: x.startswith("SELECT runner.id \nFROM runner \nWHERE runner.owner_id"))
     keys = first(lambda x: x.startswith("SELECT runner_credential.id \nFROM runner_credential"))
     rows = first(
-        lambda x: x.startswith("SELECT runner.id") and "\nFROM runner \nWHERE runner.owner_id" in x
+        lambda x: x.startswith("SELECT runner.id, ")
+        and "\nFROM runner \nWHERE runner.owner_id" in x
     )
     project = first(lambda x: x.startswith("SELECT project.id,") and "WHERE project.id =" in x)
     own = first(lambda x: x.startswith("UPDATE credential "))
     runner = first(lambda x: x.startswith("UPDATE runner_credential "))
-    assert keys < rows < project < own < runner, statements
+    assert ids < keys < rows < project < own < runner, statements
+    assert "FOR UPDATE" not in statements[ids] and "SELECT" not in statements[keys][6:]
     if setup.engine.dialect.name != "sqlite":  # SQLite renders no lock clause
         assert "FOR UPDATE" in statements[keys] and "FOR UPDATE" in statements[rows]
 

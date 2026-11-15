@@ -174,9 +174,9 @@ exchange was changing; locking first leaves one read that is right.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-8s3fgn5bsyjr, from the review of pull request #1768 (the revoke route locked the runner row before its credential), 2026-11-14; `hub/tests/test_runner_revoke.py`: `test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking`
+**Source:** card tsk-8s3fgn5bsyjr, from the review of pull request #1768 (the revoke route locked the runner row before its credential), 2026-11-14; the review of pull request #1823 (1020 on MariaDB 11.8 from the credential lock through a subquery), 2026-11-15; `hub/tests/test_runner_revoke.py`: `test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking`
 **See:** reports.md#a-suspension-takes-the-account-lock-first-every-issue-waits-for-it — 525c4922-109b-418f-82e2-0b02b285b946 — as of 2026-11-14
-**Revisit when:** a runner's own call stops writing its credential's row before the runner's, or a new path locks a runner row and then writes its credential
+**Revisit when:** a runner's own call stops writing its credential's row before the runner's, or a new path locks a runner row and then writes its credential, or MariaDB stops failing a locking read whose subquery saw an older row (1020)
 
 Every authenticated runner call writes its credential's row and then the
 runner's (`auth/caller.py`, and `hello` again in its own transaction). Every
@@ -194,6 +194,24 @@ change's credential lock and its row lock (a re-pair whose new key
 committed in between) is still written under the row lock, out of the
 order; the retry covers that window.
 
+`runners.lock` reads the runners' ids first, without a lock, and locks
+the credentials by that list of ids, not through a subquery of the
+runners. On MariaDB with `innodb_snapshot_isolation` (on by default
+since 11.6, off on CI's 11.4) the subquery reads the runners in a
+snapshot taken when the statement starts; when the statement waits for a
+runner's call that then writes its runner row and commits, the locking
+read fails with 1020 (record changed since last read), which no retry
+covers. A literal list has no snapshot to compare with. The last read
+locks the runner rows by `where` again, not by the list: a runner that
+`where` selects only after the first read is still locked and returned,
+only without its credential locked first. Of the callers, the owner's
+revoke and removal and a re-pair select one runner by its id, which no
+other transaction creates, so for them the two reads choose the same
+runner. The account's deletion and the suspension select every runner of
+the account; a runner a concurrent first pair creates in between is
+still removed or stopped, and its credential is written out of the
+order, which at worst is a deadlock that the retry covers.
+
 The suspension locks, for its runners, exactly what the owner's stop locks
 (`runner_revoke.projects_to_lock`), plus the projects of the account's own
 live agent credentials. Its own list also took every project where a
@@ -210,6 +228,12 @@ every call, and the credential is the row each call already writes first.
 **Rejected alternatives:**
 - Only giving `hello` the retry: the inversion stays, and every new
   caller of the two rows has to remember to retry.
+- Locking the credentials through a subquery of the runners (the first
+  version of `runners.lock`): one statement, but 1020 on MariaDB 11.6
+  and later, which every caller would have to retry.
+- Adding 1020 to `db.TRANSIENT`: it would retry every 1020, also one that
+  is a lost update in code that read before it locked, and the shape
+  that avoids it costs one plain read.
 - Re-reading the live credential after the row lock and locking a new one
   then: that lock is out of the order again; one retried transaction is
   simpler.
