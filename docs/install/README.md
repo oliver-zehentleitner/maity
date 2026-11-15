@@ -617,7 +617,10 @@ k3s steps above show one way). Open it again only when both parts are done.
 
 ## Upgrades
 
-1. Read the `CHANGELOG.md` section of the new version.
+1. Read the [upgrade page](../upgrade/README.md) of every version between
+   yours and the new one, oldest first (`docs/upgrade/<version>.md`), and do
+   what its "What the operator must do" says before the upgrade. The
+   `CHANGELOG.md` sections list every change in detail.
 2. **Back up.** On Helm, `deploy/scripts/helm-upgrade.sh` takes the dump
    itself, by default: it runs a Job from the CronJob `maity-pg-dump`
    (`DUMP_CRONJOB` names another) and stops before it changes anything when

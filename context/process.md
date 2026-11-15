@@ -2611,3 +2611,43 @@ a tool that only sends what it is given is the place to refuse one before it is 
 - Chasing every Markdown form that renders a label (shortcut reference links were next, in round
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
+
+## Every hub release ships an upgrade page, and the release is refused without it
+
+**Id:** eb6ffcd4-28b0-4413-bc51-db3ead6cefb5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-15 in the team chat, relayed on card tsk-ptpqwezfnkk0; `tools/upgrade_page.py`, `tools/release_gate.py` (`--upgrade-page`), `docs/upgrade/README.md`, `hub/README.md` § Releases
+**Revisit when:** the hub leaves its pre-releases and gets an upgrade guide of another form, or operators other than maity.team's own run hubs and ask for a different shape
+**See:** process.md#a-release-tag-trusts-cis-result-on-its-commit-instead-of-running-the-suites-again — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-15
+**See:** process.md#changelog-entries-are-one-file-per-pull-request-in-changelogd-folded-into-changelogmd-at-release — b1258d90-a82b-48a1-9c5f-7ee4eb1295f9 — as of 2026-11-15
+
+Every hub release has a page, `docs/upgrade/<version>.md`, with five
+sections in a fixed order: what changes for users, what the operator must
+do, what happens by itself on upgrade, what cannot be undone, and the way
+back. The release pull request adds it together with a docs pass over the
+quickstart, getting started and the install guide. ci refuses the fold of a
+version into `CHANGELOG.md` without a complete page
+(`tools/upgrade_page.py check`), and the release tag's gate refuses it again
+on the tagged commit (`tools/release_gate.py --upgrade-page`, in
+`release-hub.yml` and `publish-image.yml`). The release author lists every
+migration and every new or changed default since the last tag; the lead and
+ops confirm that list before the tag.
+
+**Reason:** deploy 10 on 2026-11-15 nearly shipped 0.1.0a6 as it was: the
+upgrade would have sealed the stored credential verifiers and started the
+agent firewall's gate, which holds agents back from mixed group chats, with
+no warning to the operator. The changelog listed both among about 145
+entries; an operator without inside knowledge could not have told that the upgrade changes stored data and who reaches a
+chat. 0.1.0a7 put both behind settings that start off. The page asks the
+questions an operator needs answered, and the gate makes sure someone
+answered them for every release.
+
+**Alternatives:** unknown beyond the state before, the changelog alone: it
+records every change, but nothing in the release asked for the operator's
+view of them.
+
+The check counts the five headings and that each has text; it cannot tell
+whether the text is right. That is what the confirmation by the lead and ops
+before the tag is for.
