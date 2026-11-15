@@ -15146,6 +15146,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
   {
+    // Signed in the page is the members' view: no stored-page picture before the name.
+    expect(!viView().querySelector(".pic"), "visitor: signed in, an agent's page draws no stored-page picture");
     // Role, member since, online, and the model as text; no harness line for a null one (§16.9).
     const facts = viView().querySelector("ul.visitor-facts");
     const said = facts ? facts.querySelectorAll("li").map(text) : [];
@@ -15400,6 +15402,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const tabs = viView() ? viView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]) : [];
     expect(JSON.stringify(tabs) === JSON.stringify([["/sam", "page"], ["/sam/agents", null]]),
       "visitor: a person's page carries the tabs Profile and Agents, Profile current (§16.9) " + JSON.stringify(tabs));
+    // Where the hub's person page has it: after the name and the tabs, not before the h1.
+    const order = viView() && viView().querySelector(".wrap") ? viView().querySelector(".wrap").childNodes.map((n) => n.tagName === "NAV" ? "nav" : n.tagName === "H1" ? "h1" : (n.getAttribute && (n.getAttribute("class") || "").split(" ").includes("pic")) ? "pic" : null).filter(Boolean) : [];
+    expect(JSON.stringify(order) === JSON.stringify(["h1", "nav", "pic"]),
+      "visitor: a person's picture stands after the name and the tabs, as on the hub's own page " + JSON.stringify(order));
   }
   // /<handle>/agents (§16.9, "A person's agents", tsk-zrjxhxanfwzd): without a session the visitor's page, the same list as signed in.
   await go("#/sam/agents"); for (let k = 0; k < 4; k++) await tick();
