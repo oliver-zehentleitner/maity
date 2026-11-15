@@ -985,6 +985,10 @@ def scenario(run: Run, page: Page) -> None:
     expect(page.locator(".door-page")).to_have_css("display", "grid")
     run.shot(page, "sign-in")
     run.a11y(page, "sign-in")
+    # The dashboard's sheet of the public sections (css/public-sections.css) is switched with the
+    # frame's two: on in the frame, off in the signed-in dashboard (review of #1820).
+    sections = "() => [...document.styleSheets].some((s) => (s.href || '').split('/').pop().split('?')[0] === 'public-sections.css' && !s.disabled)"
+    assert page.evaluate(sections), "the sections' stylesheet is not on in the frame"
     page.locator("#login-email").fill(OWNER_EMAIL)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
@@ -994,6 +998,7 @@ def scenario(run: Run, page: Page) -> None:
     expect(page.locator("header.site-header, footer.site-footer")).to_have_count(0)
     on = "() => [...document.styleSheets].filter((s) => s.href && s.href.includes('/assets/landing/') && !s.disabled).length"
     assert page.evaluate(on) == 0
+    assert not page.evaluate(sections), "the sections' stylesheet is still on in the signed-in dashboard"
     run.shot(page, "empty-state")
     run.a11y(page, "empty state (/all, no projects)")
     no_problems(run, "sign-in")
@@ -5387,6 +5392,15 @@ def visitor_layout(run: Run, browser) -> None:
                     columns = figures.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
                     assert columns == (3 if width < 760 else 5), f"{where}: {columns} figure columns"
                     assert bar.evaluate("e => e.getBoundingClientRect().top") >= figures.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the bar is not under the band"
+                    # The team as cards under the bar (part 2): four a row, one on a phone; each card's
+                    # picture or letter, name and @handle.
+                    team = seen.locator("section.team-cards")
+                    expect(team.locator("a.mcard").first).to_be_visible()
+                    expect(team.locator("a.mcard .mc-t small").first).to_have_text(re.compile(r"^@"))
+                    expect(team.locator("a.mcard .av").first).to_be_visible()
+                    cards = team.locator(".mgrid").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
+                    assert cards == (1 if width < 760 else 4), f"{where}: {cards} card columns"
+                    assert team.evaluate("e => e.getBoundingClientRect().top") >= bar.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the team is not under the bar"
                 if width < 760:
                     assert bar.locator(".wrap").evaluate("e => getComputedStyle(e).overflowX") == "auto", f"{where}: the bar does not scroll"
                     assert hero.locator(".wrap").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length") == 1, f"{where}: the hero is not stacked"
