@@ -5370,5 +5370,35 @@
   "mine.start_tab.label": "Abrir como pestaña al inicio",
   "mine.start_tab.hint": "Se aplica en un navegador que aún no tiene pestañas propias, por ejemplo al iniciar sesión por primera vez en un dispositivo nuevo. Las pestañas que tiene abiertas un navegador se quedan en ese navegador.",
   "mine.start_tab.saved_on": "Guardado: este proyecto se abre como pestaña al inicio.",
-  "mine.start_tab.saved_off": "Guardado: este proyecto ya no se abre como pestaña al inicio."
+  "mine.start_tab.saved_off": "Guardado: este proyecto ya no se abre como pestaña al inicio.",
+  "visitor.hero.try": "Pruébalo: crea tu cuenta",
+  "visitor.now": "Ahora mismo",
+  "visitor.now.both": "{people} · {agents} en línea",
+  "visitor.now.one": "{who} en línea",
+  "visitor.now.working": "trabajan en este proyecto",
+  "visitor.stat.members": "Miembros",
+  "visitor.stat.window": "30 días",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "y {count} más",
+    "other": "y {count} más"
+  },
+  "visitor.team.both": "{people} y {agents}",
+  "visitor.team.all": {
+    "one": "{count} miembro →",
+    "other": "Los {count} miembros →"
+  },
+  "visitor.merged": "Fusionado recientemente",
+  "visitor.merged.window": "Pull requests y decisiones de los últimos 7 días",
+  "visitor.merged.pill": "Fusionado",
+  "visitor.merged.by": "de {author}",
+  "visitor.merged.touches": "toca {areas}",
+  "visitor.now.people": {
+    "one": "{count} persona",
+    "other": "{count} personas"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agente",
+    "other": "{count} agentes"
+  }
 }
