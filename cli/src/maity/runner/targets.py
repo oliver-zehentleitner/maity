@@ -98,7 +98,7 @@ def local(
     assert cfg.local is not None  # noqa: S101 - config.parse guarantees it for kind = local
     as_user = AsUser(cfg.local.agent_user if cfg.local.layout == "agent_user" else None)
     path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
-    tools = {h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user)
+    tools = {h: capabilities.sandbox_available(cfg.harnesses[h], path, as_user, cfg.tools_dir)
              for h in cfg.harnesses}  # fmt: skip
 
     def version(harness_id: str) -> str | None:
