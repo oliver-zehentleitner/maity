@@ -1038,7 +1038,7 @@ page offers an instance nobody has to host.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); the maintainer's addition of a link for security findings beside the issues, relayed by the lead on card tsk-jd3z8rr6de2t (2026-11-04); contract `docs/api.md` §16.13
+**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); the maintainer's addition of a link for security findings beside the issues, relayed by the lead on card tsk-jd3z8rr6de2t (2026-11-04); the maintainer's addition of a Discord link at the end, project chat seq 136222, relayed by the lead on card tsk-01tt7j11yx3w (2026-11-15); contract `docs/api.md` §16.13
 **See:** scope.md#every-page-without-a-session-has-the-landings-header-and-footer-from-one-model-the-hub-computes — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 
 The dashboard and the hub's own pages (the maintenance page,
@@ -1048,8 +1048,9 @@ public pages and end with its footer instead, §16.13): the Maity icon, "Maity" 
 Oliver Zehentleitner on" two icons (GitHub's, linked to the maintainer's
 GitHub profile, and Maity's, linked to the maintainer's page on
 maity.team), "Found a bug?" to the project's GitHub issues, and "Found a
-vulnerability?" to the project's `SECURITY.md`. The name itself is no
-link. The order is its own entry, below. It is part of the product and
+vulnerability?" to the project's `SECURITY.md`, and "Chat with us on
+Discord", text without an icon, to the project's Discord server. The name
+itself is no link. The order is its own entry, below. It is part of the product and
 always shown, with no operator setting. The landing page, the legal
 pages, `/explore` and the public pages of §16.9 do not carry it.
 
@@ -1060,7 +1061,10 @@ own site with the operator's footer, and the public pages show a
 member's or a project's content, so the product line stays off them.
 The security link stands beside the issues so that a vulnerability is
 reported privately, as `SECURITY.md` describes, and not filed as a
-public issue; alternatives to that link were not recorded. Both
+public issue; alternatives to that link were not recorded. The Discord
+link is the maintainer's addition of 2026-11-15, to the address the
+README and the docs already name; no reason or alternative was given
+beyond the wording, no logo and "Chat with us on Discord". Both
 profile links are absolute: the maintainer's page exists only on
 maity.team, and on any other instance a relative link would be dead or
 name another account.
@@ -1097,8 +1101,9 @@ name another account.
 
 The parts of the product line stand in this order: the Maity icon with
 "Maity" and the year, then "Made with ♥ by Oliver Zehentleitner on
-GitHub & Maity", then "Found a bug?", then "Found a vulnerability?".
-Only the order changed: the words, the links and their accessible names
+GitHub & Maity", then "Found a bug?", then "Found a vulnerability?",
+and last "Chat with us on Discord" (added 2026-11-15 at the end, see the
+entry above). Only the order changed: the words, the links and their accessible names
 stay as the entry above has them.
 
 **Reason:** unknown. The maintainer set the order without giving a
