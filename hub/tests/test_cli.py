@@ -42,7 +42,7 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
 
     import maity_hub.cli
 
-    def deadlocked(_engine: object) -> None:
+    def deadlocked(_engine: object, **_options: object) -> None:
         raise OperationalError("ALTER TABLE", {}, Exception("deadlock detected"))
 
     monkeypatch.setattr(maity_hub.cli, "migrate", deadlocked)
@@ -50,6 +50,22 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
     err = capsys.readouterr().err.splitlines()
     assert err[0] == f"maity-hub: schema stays at empty, head {head()} not reached"
     assert err[1].endswith(": deadlock detected")
+
+
+def test_migrate_hands_the_instance_key_to_the_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The migration that seals the credentials' verifiers needs the key (docs/api.md §2.2)."""
+    import base64
+
+    import maity_hub.cli
+
+    key = bytes(range(32))
+    handed: list[object] = []
+    monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(key).decode())
+    monkeypatch.setattr(
+        maity_hub.cli, "migrate", lambda _engine, **options: handed.append(options["secret_key"])
+    )
+    assert main(["migrate"]) == 0
+    assert handed == [key]
 
 
 @pytest.mark.wheel
@@ -621,6 +637,21 @@ def test_owner_create_refuses_anything_but_one_address_before_the_password(
     args = ["--handle", "maintainer", "--display-name", "Maint", "--email", email]
     assert main(["owner", "create", *args]) == 2
     assert "--email" in capsys.readouterr().err
+    assert stdin.tell() == 0  # the password was never asked for
+
+
+@pytest.mark.parametrize("bad", ["\x85", "\u2028", "\n"])
+def test_owner_create_refuses_a_display_name_with_a_line_break(
+    bad: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import io
+
+    assert main(["migrate"]) == 0
+    stdin = io.StringIO(ACCOUNT_PASSWORD + "\n")
+    monkeypatch.setattr("sys.stdin", stdin)
+    args = ["--handle", "maintainer", "--display-name", f"Ma{bad}int", "--email", "me@example.org"]
+    assert main(["owner", "create", *args]) == 2
+    assert "--display-name" in capsys.readouterr().err
     assert stdin.tell() == 0  # the password was never asked for
 
 

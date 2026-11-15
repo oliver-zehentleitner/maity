@@ -109,7 +109,8 @@ def test_a_public_merge_and_a_decision_on_a_public_card_are_shown(world: World) 
     item(world, decision(card_id))
     entries = snapshot(world)["ticker"]
     assert [e["type"] for e in entries] == ["decision", "merge"]
-    assert set(entries[0]) == {"type", "text", "url", "at"}
+    assert set(entries[0]) == {"type", "text", "url", "at", "merge"}
+    assert entries[0]["merge"] is None  # a decision has no merge facts
     assert entries[1]["url"] == "https://github.com/o/r/pull/1" and entries[0]["url"] is None
     text = world.anyone.get(BASE).text
     assert "<h2>Recently</h2>" in text and "#1 merged &lt;b&gt;x&lt;/b&gt;" in text

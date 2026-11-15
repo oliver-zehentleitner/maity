@@ -106,7 +106,7 @@ PULL_REQUEST_PROMPT = (
 # more placeholder that was not seen in a sandboxed run.
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
-READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
+READY = ("stub", "claude-code", "codex", "opencode", "antigravity")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
     "GIT_CONFIG_COUNT": "2",
     "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
@@ -128,8 +128,10 @@ SANDBOX_GIT_CONFIG = (
 
 def git_config(ctx: Context) -> dict[str, str]:
     """The session's `GIT_CONFIG_*`: SESSION_GIT_CONFIG, plus SANDBOX_GIT_CONFIG under a
-    sandbox that keeps `.git/config` unwritable."""
-    extra = SANDBOX_GIT_CONFIG if writes_denied(ctx) else ()
+    sandbox that keeps `.git/config` unwritable, and for agy, whose deny of `.git/config` to
+    its file tools may or may not reach its sandbox (not seen in a run): the three settings
+    work either way."""
+    extra = SANDBOX_GIT_CONFIG if writes_denied(ctx) or ctx.harness.id == "antigravity" else ()
     env = dict(SESSION_GIT_CONFIG)
     first = int(SESSION_GIT_CONFIG["GIT_CONFIG_COUNT"])
     for index, (key, value) in enumerate(extra, start=first):
@@ -167,6 +169,8 @@ CLAUDE_PLACEHOLDERS = (
 )  # fmt: skip
 EXCLUDE_BEGIN = "# maity-runner: the sandbox's placeholders (begin)"
 EXCLUDE_END = "# maity-runner: the sandbox's placeholders (end)"
+# A clone's `.git/info/exclude` larger than this is left as it is, without the block.
+EXCLUDE_MAX = 256 * 1024
 
 # Exit codes that are a harness's provider limit, per harness: only what a real run verified.
 LIMIT_EXITS: dict[str, tuple[int, ...]] = {}
@@ -195,6 +199,8 @@ class Context:
     agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
     resume: bool = False  # interactive: continue the harness's last conversation (§15.14)
     git: config.GitIdentity = config.GitIdentity()  # who the session commits as (`[git]`)
+    # The workspace folder the harness starts in, holding the clone (§15.5); None: the clone.
+    folder: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -255,6 +261,8 @@ def launch(ctx: Context) -> Launch:
         return _codex(ctx, env)
     if harness.id == "opencode":
         return _opencode(ctx, env)
+    if harness.id == "antigravity":
+        return _antigravity(ctx, env)
     raise NotYet(f"no adapter for {harness.id}")
 
 
@@ -276,6 +284,9 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             "first": first,
             "again": again,
             "env": env,
+            "clone": str(ctx.clone),  # where `maity wait` runs: agy starts above it
+            # agy's workspace folder, checked before every run as before the start (§15.5).
+            **({"folder": str(ctx.folder)} if ctx.folder is not None else {}),
             "restart": {
                 "initial": policy.initial, "factor": policy.factor, "max": policy.max,
                 "crash_window": policy.crash_window, "crash_cap": policy.crash_cap,
@@ -414,8 +425,12 @@ def hide_placeholders(ctx: Context) -> None:
     lines: list[str] = []
     if ctx.as_user.exists(path, "-f"):
         try:
-            lines = ctx.as_user.read(path).decode("utf-8").splitlines()
-        except UnicodeDecodeError:  # rewriting it could change bytes that are not ours
+            lines = (
+                ctx.as_user.read_whole(path, EXCLUDE_MAX, under=ctx.clone)
+                .decode("utf-8")
+                .splitlines()
+            )
+        except (OSError, UnicodeDecodeError):  # rewriting it could change bytes not ours
             return
     kept, had_block = _without_block(lines)
     hidden = [name for name in CLAUDE_PLACEHOLDERS if _placeholder_only(ctx, ctx.clone / name)]
@@ -602,3 +617,94 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, prompt]
     again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", prompt]
     return _supervised(ctx, first, again, env)
+
+
+# --- Antigravity (agy) ------------------------------------------------------------------------
+
+# agy starts in the workspace folder, one level above the clone, so it loads none of the
+# clone's own agy configuration; the project's `AGENTS.md` is then not loaded either and is
+# named here (§15.3, cli/context/runner.md).
+AGY_FOLDER_PROMPT = (
+    "You start in a workspace folder that holds the project's clone as `{repo}` and nothing "
+    "else. Run `cd {repo}` first and work only in the clone: read `{repo}/AGENTS.md`, and run "
+    "`maity`, `git` and every other command there. Leave nothing in this folder besides "
+    "`{repo}`: the runner does not start you again while anything else is there. "
+)
+# `maity` may leave agy's sandbox only as the command its allow rule names; a chained line is
+# refused outside the sandbox (the agy entry in cli/context/runner.md).
+AGY_MAITY_PROMPT = (
+    " Run every `maity` command alone, as one plain call, not piped or chained with other "
+    "commands; pass longer text in a file in the clone (`--body-file`)."
+)
+# agy's sign-in, a file in its directory under the agents' home when there is no keyring. The
+# rest of `~/.gemini` stays readable to agy's own sandbox, which keeps its scratch there.
+AGY_LOGIN = Path(".gemini") / "antigravity-cli" / "antigravity-oauth-token"
+# What agy's command rules match by prefix: GIT_DENIED without its globs, and gh.
+AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
+
+
+def agy_grant(rule: str) -> str | None:
+    """A grant's allow entry as agy's command prefix: the words before a closing ` *`, or the
+    entry itself (agy matches by prefix, so an entry without ` *` allows any arguments too).
+    An entry with another `*` has no prefix form and is left out; it still runs in agy's
+    sandbox, as every command no rule names."""
+    words = rule.split(" ")
+    if words[-1] == "*":
+        words = words[:-1]
+    if not words or any("*" in word for word in words):
+        return None
+    return " ".join(words)
+
+
+def _agy_private(path: Path) -> Path:
+    """A path no file tool may touch: as given, but for agy's own directory only its login."""
+    return path.parent / AGY_LOGIN if path.name == ".gemini" else path
+
+
+def antigravity_settings(ctx: Context) -> dict[str, Any]:
+    """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
+    `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
+    the sandbox without asking; the sandbox on; the workspace folder trusted, so an
+    interactive start asks nothing. Allowed: `maity`, the repository's `allow` list, and URLs
+    of the hub, the forge and the grant's `network` hosts. Denied to the file tools: the
+    clone's credential, what makes git run something (GIT_PROTECTED), the other clones'
+    credentials and the runner's private paths. agy merges these with the agents' user's
+    own settings (cli/context/runner.md)."""
+    assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
+    git = ctx.clone / ".git"
+    granted = [agy_grant(cmd) for cmd in ctx.grant.allow if config.plain_command(cmd)]
+    allow = ["command(maity)", *(f"command({cmd})" for cmd in dict.fromkeys(granted) if cmd)]
+    allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
+    denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
+    deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
+    deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
+    deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
+    return {
+        "agentMode": "",
+        "toolPermission": "proceed-in-sandbox",
+        "enableTerminalSandbox": True,
+        "trustedWorkspaces": [str(ctx.folder)],
+        "permissions": {"allow": allow, "deny": deny},
+    }
+
+
+def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
+    assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
+    assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
+    settings = _write(ctx, ctx.agent_dir / "agy-settings.json", antigravity_settings(ctx))
+    # agy takes the work tree from $PWD: the folder's real path (workspace.check_folder).
+    env = {**env, "PWD": str(ctx.folder)}
+    base = [ctx.binary, "--settings", str(settings)]
+    model = ctx.placement.get("model")
+    if model:
+        base += ["--model", model]
+    folder = AGY_FOLDER_PROMPT.format(repo=ctx.clone.name)
+    extra = AGY_MAITY_PROMPT + _sandbox_prompt(ctx)
+    if ctx.placement.get("mode") == "interactive":
+        if ctx.resume:  # `-c`: the folder's latest conversation, so this placement's
+            return Launch([*base, "-c", "-i", RESUME_PROMPT], env)
+        return Launch([*base, "-i", folder + START_PROMPT + extra], env)
+    # `-c` continues the latest conversation of the working directory: the placement's own
+    # folder, so never another placement's (cli/context/runner.md).
+    prompt = folder + SUPERVISED_PROMPT + extra
+    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env)

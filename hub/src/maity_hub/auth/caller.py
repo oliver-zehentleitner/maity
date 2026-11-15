@@ -25,7 +25,7 @@ from sqlalchemy import Connection, and_, or_, select, update
 from maity_hub import availability, clock, timing
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id_query
-from maity_hub.auth import credentials, nonces
+from maity_hub.auth import credentials, nonces, verifiers
 from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
@@ -281,6 +281,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
             .where(
                 t.membership.c.human_id == row.human_id,
                 t.membership.c.active.is_(True),
+                t.membership.c.trust != "guest",  # a guest holds no cards (§2.3)
                 claimed,
             )
         ).all()
@@ -340,7 +341,8 @@ def _possessed(conn: Connection, facts: RequestFacts, value: str) -> Any:
     if presented is None:
         raise unauthenticated()
     row = _credential(conn, presented.credential_id)
-    if not credentials.secret_matches(presented.secret, row.verifier):
+    verifier = _verifier(row)
+    if verifier is None or not credentials.secret_matches(presented.secret, verifier):
         raise unauthenticated()
     return row
 
@@ -390,7 +392,8 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         facts.headers.get("maity-for"),
         facts.headers.get("maity-on-request"),
     )
-    if not credentials.signature_matches(row.verifier, canonical, signature):
+    verifier = _verifier(row)
+    if verifier is None or not credentials.signature_matches(verifier, canonical, signature):
         raise ApiError(401, "signature_invalid", "the signature does not verify")
     _refuse_revoked(row)  # only now: the signature proved possession (§1.3)
     # Only a verified request spends its nonce, so a forger cannot burn them.
@@ -445,6 +448,12 @@ RUNNER_CREDENTIAL_PREFIX = "rcrd-"
 def is_runner_credential(credential_id: str) -> bool:
     """Runner and agent credentials share the format and differ by the id's prefix."""
     return credential_id.startswith(RUNNER_CREDENTIAL_PREFIX)
+
+
+def _verifier(row: Any) -> str | None:
+    """The row's verifier, unsealed; None when the instance key does not open it."""
+    table: verifiers.Table = "runner_credential" if is_runner_credential(row.id) else "credential"
+    return verifiers.usable(table, row.id, row.verifier)
 
 
 def _credential(conn: Connection, credential_id: str) -> Any:
@@ -611,7 +620,14 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
             select(t.project.c.lease_seconds).where(t.project.c.id == project_id)
         ).scalar_one()
         renewed = availability.renewed_lease(conn, membership_id, now, lease)
-        conn.execute(update(t.card).where(held).values(lease_until=renewed))
+        # Only a membership that may still hold cards renews them: a guest's claim runs out
+        # (§2.3, §6.5). In the same statement, so a call costs no more than before.
+        may_hold = (
+            select(t.membership.c.id)
+            .where(t.membership.c.id == membership_id, t.membership.c.trust != "guest")
+            .exists()
+        )
+        conn.execute(update(t.card).where(held, may_hold).values(lease_until=renewed))
     if session is not None:
         # The claim belongs to the instance; it follows the instance's live session.
         conn.execute(

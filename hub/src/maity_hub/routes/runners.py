@@ -33,7 +33,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
-from maity_hub.auth import credentials, second_factor
+from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
@@ -155,7 +155,7 @@ def _applied(conn: Connection, runner_id: str) -> list[dict[str, Any]]:
     return applied or []
 
 
-def _record_applied(conn: Connection, runner_id: str, applied: list[dict[str, Any]]) -> None:
+def record_applied(conn: Connection, runner_id: str, applied: list[dict[str, Any]]) -> None:
     """Add a later stop to the latest revoked key's record: the answer, its replay and
     the runner's `details.stop` read it from there."""
     latest = conn.execute(
@@ -183,15 +183,57 @@ def _load_revoked(conn: Connection, runner_id: str, request: Request) -> dict[st
     }
 
 
-idempotency.LOADERS["runner_enrollment"] = idempotency.plain(load_enrollment)
-idempotency.LOADERS["runner"] = lambda conn, runner_id, request: load_runner(
-    conn, runner_id, _viewer(request)
+def _sees_runner(conn: Connection, runner_id: str | None, caller: Caller) -> bool:
+    """As a runner's GET (§15.3): the runner itself, its owner, or `members:admin` in a project
+    it is attached to."""
+    if runner_id is None:
+        return False
+    if caller.kind == "runner":
+        return caller.runner_id == runner_id
+    row = conn.execute(select(t.runner).where(t.runner.c.id == runner_id)).first()
+    return row is not None and caller.kind == "human" and visible_to(conn, row, caller.principal_id)
+
+
+def _sees_enrollment(conn: Connection, enrollment_id: str, caller: Caller) -> bool:
+    """The human who made it, or whoever sees the runner it enrolled."""
+    row = conn.execute(
+        select(t.runner_enrollment).where(t.runner_enrollment.c.id == enrollment_id)
+    ).first()
+    if row is None:
+        return False
+    return (caller.kind == "human" and row.created_by == caller.principal_id) or _sees_runner(
+        conn, row.runner_id, caller
+    )
+
+
+def _sees_attachment(conn: Connection, attachment_id: str, caller: Caller) -> bool:
+    """Whoever sees the runner, or a member of the project it is attached to."""
+    row = conn.execute(
+        select(t.runner_attachment).where(t.runner_attachment.c.id == attachment_id)
+    ).first()
+    if row is None:
+        return False
+    in_project = idempotency.in_project(idempotency.the_project)
+    return _sees_runner(conn, row.runner_id, caller) or in_project(conn, row.project_id, caller)
+
+
+def _sees_runner_by_id(conn: Connection, runner_id: str, caller: Caller) -> bool:
+    return _sees_runner(conn, runner_id, caller)
+
+
+idempotency.register("runner_enrollment", idempotency.plain(load_enrollment), _sees_enrollment)
+idempotency.register(
+    "runner",
+    lambda conn, runner_id, request: load_runner(conn, runner_id, _viewer(request)),
+    _sees_runner_by_id,
 )
-idempotency.LOADERS["runner_removal"] = _load_removal
-idempotency.LOADERS["runner_revoked"] = lambda conn, runner_id, request: _load_revoked(
-    conn, runner_id, request
+idempotency.register("runner_removal", _load_removal, _sees_runner_by_id)
+idempotency.register(
+    "runner_revoked",
+    lambda conn, runner_id, request: _load_revoked(conn, runner_id, request),
+    _sees_runner_by_id,
 )
-idempotency.LOADERS["runner_attachment"] = load_attachment
+idempotency.register("runner_attachment", load_attachment, _sees_attachment)
 
 
 def _name_taken(conn: Connection, owner_id: str, name: str, but: str | None = None) -> bool:
@@ -464,14 +506,14 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, li
             raise not_found()
         previous = live_credential_id(conn, runner_id)
         if previous is not None:
-            revoke_runner_credential(conn, previous, "repaired", by=row.created_by)
+            revoke_runner_credential(conn, previous, "repaired", by=row.created_by, replaced=True)
     credential_id = new_id("runner_credential")
     value, verifier = credentials.issue(credential_id)
     conn.execute(
         insert(t.runner_credential).values(
             id=credential_id,
             runner_id=runner_id,
-            verifier=verifier,
+            verifier=verifiers.stored("runner_credential", credential_id, verifier),
             enrollment_id=row.id,
             client=client,
             created_at=now,
@@ -692,7 +734,6 @@ def revoke_runner(
                 by=caller.principal_id,
             )
             revoke_runner_credential(conn, live, reason, by=caller.principal_id, applied=applied)
-            placements.runner_credential_gone(conn, runner_id, caller.principal_id)
         elif agents == "stop":
             # A key revoked already (by a `keep`, or for a leak): the owner's stop still
             # stops its agents, added to what that revocation applied (§15.3).
@@ -704,7 +745,7 @@ def revoke_runner(
                 removing=False,
                 by=caller.principal_id,
             )
-            _record_applied(conn, runner_id, applied)
+            record_applied(conn, runner_id, applied)
         return idempotency.Outcome(
             200, "runner_revoked", runner_id, _load_revoked(conn, runner_id, request)
         )
@@ -749,7 +790,7 @@ def remove(conn: Connection, runner_id: str, *, agents: str, instance_rule: str,
     else:
         # A key revoked already (under `keep`, or for a leak): what the removal applied is
         # added to that key's record, as for a later revoke's stop (§15.3).
-        _record_applied(conn, runner_id, applied)
+        record_applied(conn, runner_id, applied)
     for project_id in attached_project_ids(conn, runner_id):
         detach(conn, project_id, runner_id, by)
     # An open re-pair would bring the removed runner back.

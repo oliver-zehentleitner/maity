@@ -44,6 +44,7 @@ from maity_hub import (
     public_agents,
     public_pages,
     public_people,
+    public_projects,
     ranks,
     restricted,
     rules,
@@ -292,6 +293,14 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         # `harness`, so that a switch across such a resume is still seen.
         model = body.model if body.model is not None or previous is None else previous.model
         harness = body.harness if body.harness is not None or previous is None else previous.harness
+        # The harness the agent's public pages show before this session (§16.9): a project's page
+        # names it too, and is rendered again only when this session changes it.
+        pages_of = (
+            public_agents.memberships(conn, caller.agent_id)
+            if mine.project.public_page == "on" and caller.agent_id is not None
+            else []
+        )
+        shown_harness = public_agents.latest_session(conn, pages_of)[1] if pages_of else None
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
@@ -317,6 +326,13 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         if mine.project.public_page == "on" and caller.agent_id is not None:
             # The agent's page shows its latest session's model and harness (§16.9).
             public_pages.touch(conn, public_agents.KIND, caller.agent_id, dependents=False)
+            if pages_of and (harness or None) != shown_harness:
+                # Its project pages name the harness as well; not on every start, since agents
+                # resume often and each render costs (hub/context/public-pages.md 0e401fc9).
+                for project, _ in pages_of:
+                    public_pages.touch(
+                        conn, public_projects.KIND, project.id, removal=False, dependents=False
+                    )
         commitment.start(conn, mine.project, caller.credential_id or "", session_id, now)
         conn.execute(
             update(t.card)
@@ -864,7 +880,7 @@ def load_human_profile(conn: Connection, human_id: str) -> dict[str, Any]:
     return {**human_body(conn, human_id), "server_time": clock.rfc3339(clock.now())}
 
 
-idempotency.LOADERS["human_profile"] = idempotency.plain(load_human_profile)
+idempotency.register("human_profile", idempotency.plain(load_human_profile), idempotency.is_caller)
 
 
 @router.patch("/me")

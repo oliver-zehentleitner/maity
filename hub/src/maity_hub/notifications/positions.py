@@ -7,7 +7,7 @@ under the position key, with the human's id and the purpose as associated data a
 version inside. The key comes from `MAITY_SECRET_KEY` (HKDF) when it is set, else from a
 random key the hub stores at first use; changing the instance key invalidates every
 position. A vector whose inline form would pass the cap is stored, and the position is
-a sealed handle to it.
+a sealed handle to it, kept 30 days after its last use (`retention`).
 """
 
 from __future__ import annotations
@@ -54,9 +54,9 @@ class Position:
 
 
 def prepare(engine: Engine, secret_key: bytes | None) -> None:
-    """Make the stored position key at first use, in a transaction of its own; it is
-    kept when an instance key is set."""
-    secretbox.prepare_fallback(engine, secret_key, KEY_NAME, wipe_when_keyed=False)
+    """Make the stored position key at first use, in a transaction of its own; once an
+    instance key is set it is no longer used and is removed."""
+    secretbox.prepare_fallback(engine, secret_key, KEY_NAME)
 
 
 def _key(conn: Connection, secret_key: bytes | None) -> bytes:

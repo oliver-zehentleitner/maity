@@ -330,6 +330,34 @@ def test_a_deleted_inviter_is_shown_as_a_deleted_account(
     assert pending["asked_by"]["display_name"] == "Deleted account"
 
 
+@pytest.mark.parametrize("change", ["suspended", "demoted"])
+def test_a_go_needs_the_inviter_still_able_to_send_it(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human, change: str
+) -> None:
+    # §6.26, §16.8: checked when the human says go, whatever path took the inviter's
+    # standing (a suspension leaves the organisation's rows as they are).
+    _, people = team(make_client, migrated, owner)
+    invited = flow.human(make_client, migrated, "g-owner")
+    second = people["owner2"]
+    assert invite(second, "g-owner", "owner").status_code == 202
+    with migrated.begin() as conn:
+        if change == "suspended":
+            conn.execute(
+                update(t.human).where(t.human.c.id == second.id).values(suspended_at=clock.now())
+            )
+        else:  # beside the route, which would withdraw the invitation itself
+            conn.execute(
+                update(t.org_member)
+                .where(t.org_member.c.human_id == second.id)
+                .values(role="admin")
+            )
+    [pending] = requests_of(invited)
+    stale = invited.post(f"/requests/{pending['id']}/answer", {"reply_id": "go"})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["details"] == {"reason": "invitation_stale"}
+    assert invited.get("/orgs").json() == {"items": []}
+
+
 def test_a_go_after_the_expiry_withdraws_the_invitation_as_expired(
     make_client: ClientFactory, migrated: Engine, owner: flow.Human
 ) -> None:

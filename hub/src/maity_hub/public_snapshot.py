@@ -63,7 +63,8 @@ def _entry(conn: Connection, project: Any, payload: dict[str, Any]) -> bool:
 
 def ticker(conn: Connection, project: Any) -> list[dict[str, Any]]:
     """The newest entries a visitor may read, newest first: `type`, `text`, `url` (a merge's
-    pull request only) and `at`; never the audience, paths or request."""
+    pull request only), `at` and `merge` (a merge's facts, else `None`); never the audience,
+    paths or request."""
     e = t.event.c
     rows = conn.execute(
         select(e.at, e.payload)
@@ -94,11 +95,27 @@ def ticker(conn: Connection, project: Any) -> list[dict[str, Any]]:
                     else None
                 ),
                 "at": clock.rfc3339(row.at),
+                "merge": _merge(payload) if payload["type"] == "merge" else None,
             }
         )
         if len(found) == TICKER_LIMIT:
             break
     return found
+
+
+def _merge(payload: dict[str, Any]) -> dict[str, Any]:
+    """A merge entry's facts as fields (§16.9): the pull request's number and title, its
+    author's forge login and the areas it touches, each `null` (`[]` for the areas) where the
+    entry does not carry it, so no client parses `text`. Never its paths, sha or cards."""
+    merge = payload.get("merge") or {}
+    number = merge.get("pr")
+    areas = payload.get("areas")
+    return {
+        "pr": number if isinstance(number, int) and not isinstance(number, bool) else None,
+        "title": merge["title"] if isinstance(merge.get("title"), str) else None,
+        "author": merge["author"] if isinstance(merge.get("author"), str) else None,
+        "areas": [a for a in areas if isinstance(a, str)] if isinstance(areas, list) else [],
+    }
 
 
 def online(conn: Connection, project_id: str) -> dict[str, Any]:
@@ -119,11 +136,36 @@ def online(conn: Connection, project_id: str) -> dict[str, Any]:
         people,
         key=lambda p: (not p.human, p.handle or "", p.id),
     )
+    pictures = _pictures(conn, {row.id: row for row in rows}, named)
     return {
         "humans": sum(1 for p in people if p.human),
         "agents": sum(1 for p in people if not p.human),
-        "named": [_shown(p) for p in named],
+        "named": [{**(_shown(p) or {}), "picture": pictures.get(p.id)} for p in named],
     }
+
+
+def _pictures(conn: Connection, rows: dict[int, Any], named: list[Any]) -> dict[int, str | None]:
+    """The picture of each one named, by membership id, as their own page shows it (§16.9):
+    a person's only while their `public_profile` is on, an agent's always."""
+    from maity_hub import avatars
+
+    principal = {p.id: rows[p.id].human_id or rows[p.id].agent_id for p in named}
+    humans = [rows[p.id].human_id for p in named if rows[p.id].human_id]
+    chosen = (
+        set(
+            conn.execute(
+                select(t.human.c.id).where(
+                    t.human.c.id.in_(humans), t.human.c.public_profile.is_(True)
+                )
+            ).scalars()
+        )
+        if humans
+        else set()
+    )
+    shown = [rows[p.id].agent_id or rows[p.id].human_id for p in named]
+    shown = [i for i in shown if i not in humans or i in chosen]
+    urls = avatars.public_urls(conn, shown)
+    return {mid: urls.get(i) for mid, i in principal.items()}
 
 
 def html(entries: list[dict[str, Any]], up: dict[str, Any]) -> str:

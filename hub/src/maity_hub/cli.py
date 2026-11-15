@@ -45,13 +45,14 @@ from maity_hub.app import (
     start_once,
     warn_on_connection_budget,
 )
-from maity_hub.auth import second_factor_reset
+from maity_hub.auth import second_factor_reset, verifiers
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
 from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
 from maity_hub.mail import address as addresses
+from maity_hub.models import one_line
 from maity_hub.notifications import preferences
 
 EXIT_FAILURE = 1
@@ -284,6 +285,7 @@ def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        verifiers.configure(settings.secret_key)  # sealed as the hub seals them
         made = loadtest.seed(engine, humans, out)
     except FileExistsError:
         return _fail(f"refused: {out} exists", EXIT_CONFIG)
@@ -314,6 +316,8 @@ def _owner_create(
         return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
     if not display_name.strip() or len(display_name) > 200:
         return _fail("--display-name: 1 to 200 characters", EXIT_CONFIG)
+    if not one_line(display_name):
+        return _fail("--display-name: one line, no control character", EXIT_CONFIG)
     email = email.strip()
     if not addresses.valid(email):
         return _fail("--email: one address, local-part@domain (docs/api.md §18.4)", EXIT_CONFIG)
@@ -479,7 +483,7 @@ def _migrate(settings: Settings) -> int:
             )
         before = current_revision(engine)
         try:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
         except SQLAlchemyError:
             # Where the run left the schema, after the last attempt (db.migrate): on PostgreSQL
             # the chain is one transaction and this is `before`; MariaDB commits per step.
@@ -548,7 +552,7 @@ def _quickstart(
     new = unversioned
     try:
         if new:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
             print(f"maity-hub: schema empty -> {head_revision(engine)}")
         else:
             require_current_schema(engine)

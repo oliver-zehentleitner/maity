@@ -60,6 +60,8 @@ TITLE = 200  # characters, docs/api.md §1.7
 BRIDGE_PURPOSE = 200  # characters, docs/api.md §2.3 ("The bridge")
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
 HEX_SHA256 = 64
+# A verifier sealed by `auth.verifiers`: `s1:` and the base64 of 60 bytes (83), or 64 hex.
+SEALED_VERIFIER = 128
 # A namespace owner is a human or an organisation: one of the two foreign keys, and
 # `owner_id` the same id (docs/api.md §6.25, §6.26).
 OWNER_SHAPE = (
@@ -466,6 +468,22 @@ second_factor = Table(
     Column("generation", Integer, nullable=False, server_default="0"),
     # After a reset the next sign-in enrols first, whatever the policy (§2.8.3).
     Column("reset_required", Boolean, nullable=False, server_default=false()),
+    **MYSQL_TABLE,
+)
+
+# The wrong second-factor codes of one human on one UTC day (§2.8.6): at the cap every check of
+# that human is refused for the rest of the day, unless the link mailed then lifts it; `unlocks`
+# counts the lifts, and a link names the count it was made at, so it works once. `alerted`: the
+# alert with its link was written since the day began or the cap was last lifted; no refusal
+# comes before it, also after the cap was lowered during the day.
+second_factor_day = Table(
+    "second_factor_day",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("wrong_codes", Integer, nullable=False),
+    Column("unlocks", Integer, nullable=False, server_default="0"),
+    Column("alerted", Boolean, nullable=False, server_default=false()),
     **MYSQL_TABLE,
 )
 
@@ -1031,6 +1049,13 @@ join_link = Table(
     Column("failed_attempts", Integer, nullable=False),
     Column("burned_at", UtcDateTime),
     Column("revoked_at", UtcDateTime),
+    # Who revoked it (§3.1): the principal behind a `DELETE`, a profile's deletion by its owner
+    # or the end of the creator's membership (`join_revocation`); null when the hub revoked it
+    # on its own: a runner's pickups (§15.9), an account's deletion (§2.9), and joins revoked
+    # before the column existed, and a membership end the hub carries out (an organisation
+    # owner's seat it kept, released, §6.26). No foreign key: the record stays as written, as
+    # `credential.revoked_by`.
+    Column("revoked_by", String(ID)),
     # A runner's pickup for a placement (§15.9): the placement, the runner and the
     # generation it was picked up for; null on a human's join.
     _ref("placement_id", "placement.id", index=True),
@@ -1045,8 +1070,9 @@ credential = Table(
     metadata,
     _id(primary_key=True),
     _membership_ref("membership_id", nullable=False, index=True),
-    # sha256 over the secret's text, hex; the HMAC key and the bearer verifier.
-    Column("verifier", String(HEX_SHA256), nullable=False),
+    # sha256 over the secret's text: the HMAC key and the bearer verifier. Sealed with
+    # MAITY_SECRET_KEY (`auth.verifiers`), plain hex without an instance key.
+    Column("verifier", String(SEALED_VERIFIER), nullable=False),
     # The agent instance this credential is (§6.17): unique within the membership and
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
@@ -1337,8 +1363,9 @@ runner_credential = Table(
     metadata,
     _id(primary_key=True),
     _ref("runner_id", "runner.id", nullable=False),
-    # sha256 over the secret's text, hex; the HMAC key (a runner signs every call).
-    Column("verifier", String(HEX_SHA256), nullable=False),
+    # sha256 over the secret's text: the HMAC key (a runner signs every call). Sealed as
+    # `credential.verifier` is.
+    Column("verifier", String(SEALED_VERIFIER), nullable=False),
     _ref("enrollment_id", "runner_enrollment.id", nullable=False),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),
