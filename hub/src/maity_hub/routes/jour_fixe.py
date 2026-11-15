@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, or_, select
 
-from maity_hub import clock, events, group_chats, idempotency, namespace, paging
+from maity_hub import chat_gate, clock, events, group_chats, idempotency, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller
@@ -150,7 +150,19 @@ def _readers(conn: Connection, rows: list[Any]) -> dict[str, set[str]]:
 
 def _views(conn: Connection, rows: list[Any], slug: str, reader: Any) -> list[dict[str, Any]]:
     now, readers = _now(conn, rows), _readers(conn, rows)
-    return [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+    found = [views.full(r, slug, now[r.id], reader, readers[r.id]) for r in rows]
+    for row, view in zip(rows, found, strict=True):
+        _mask_waiting(conn, row, view, reader)
+    return found
+
+
+def _mask_waiting(conn: Connection, row: Any, view: dict[str, Any], reader: Any) -> None:
+    """An agent waiting in the thread for its owner's yes reads the round without the thread's
+    text (§9.6), on every path that answers with the round, a replay's included."""
+    if reader is None or getattr(reader, "kind", None) != "agent":
+        return
+    if row.conversation_id and chat_gate.waiting(conn, row.conversation_id, reader.id):
+        view.update(statement=None, posts=[])
 
 
 def _round(conn: Connection, mine: Any, round_id: str) -> Any:
@@ -165,21 +177,20 @@ def _round(conn: Connection, mine: Any, round_id: str) -> Any:
     return row
 
 
-def round_view(conn: Connection, round_id: str) -> dict[str, Any]:
+def round_view(conn: Connection, round_id: str, caller: Any) -> dict[str, Any]:
+    """The round as a write answers it and its replay repeats it: no reader, no reason, but
+    without the thread's text for an agent `caller` that waits in the thread (§9.6)."""
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
     slug = namespace.name_of(conn, row.project_id)
-    return _views(conn, [row], slug, None)[0]  # a replay: no reader, no reason
+    view = _views(conn, [row], slug, None)[0]
+    _mask_waiting(conn, row, view, caller)
+    return view
 
 
 def answer_view(conn: Connection, answer_id: str) -> dict[str, Any]:
     """A named answer's replay: what its first call answered (an anonymous one has none)."""
     row = conn.execute(select(t.jour_fixe_answer).where(t.jour_fixe_answer.c.id == answer_id)).one()
     return {"round_id": row.round_id, "anonymous": False, "id": row.id}
-
-
-def series_view(conn: Connection, series_id: str) -> dict[str, Any]:
-    row = conn.execute(select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)).one()
-    return series.view(conn, row)
 
 
 def _member_now(conn: Connection, project_id: str, request: Request) -> Any:
@@ -199,8 +210,8 @@ def _round_project(conn: Connection, round_id: str) -> str:
 
 
 def _replay_round(conn: Connection, round_id: str, request: Request) -> dict[str, Any]:
-    _member_now(conn, _round_project(conn, round_id), request)
-    return round_view(conn, round_id)
+    mine = _member_now(conn, _round_project(conn, round_id), request)
+    return round_view(conn, round_id, mine)
 
 
 def _replay_answer(conn: Connection, answer_id: str, request: Request) -> dict[str, Any]:
@@ -211,13 +222,59 @@ def _replay_answer(conn: Connection, answer_id: str, request: Request) -> dict[s
     return answer_view(conn, answer_id)
 
 
+def _series_sight(conn: Connection, series_id: str, request: Request) -> tuple[Any, Any]:
+    """The series and how much of it the caller sees now, as the series list shows it."""
+    row = conn.execute(select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)).one()
+    seen = series.sight(conn, row, _member_now(conn, row.project_id, request))
+    if seen is None:
+        raise not_found()
+    return row, seen
+
+
 def _replay_series(conn: Connection, series_id: str, request: Request) -> dict[str, Any]:
-    return series_view(conn, series_id)
+    row, seen = _series_sight(conn, series_id, request)
+    return series.view(conn, row, seen)
 
 
-idempotency.LOADERS["jour_fixe_round"] = _replay_round
-idempotency.LOADERS["jour_fixe_answer"] = _replay_answer
-idempotency.LOADERS["jour_fixe_series"] = _replay_series
+def _answer_project(conn: Connection, answer_id: str) -> str | None:
+    found: str | None = conn.execute(
+        select(t.jour_fixe_round.c.project_id)
+        .join(t.jour_fixe_answer, t.jour_fixe_answer.c.round_id == t.jour_fixe_round.c.id)
+        .where(t.jour_fixe_answer.c.id == answer_id)
+    ).scalar()
+    return found
+
+
+def _reads_round(conn: Connection, mine: Any, round_id: str) -> bool:
+    """A replay of a round's write passes the round's own read (§20.7): its circle."""
+    row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).first()
+    return row is not None and circle.reads(conn, row, mine)
+
+
+def _reads_answers_round(conn: Connection, mine: Any, answer_id: str) -> bool:
+    round_id = conn.execute(
+        select(t.jour_fixe_answer.c.round_id).where(t.jour_fixe_answer.c.id == answer_id)
+    ).scalar()
+    return round_id is not None and _reads_round(conn, mine, round_id)
+
+
+def _sees_series(conn: Connection, mine: Any, series_id: str) -> bool:
+    """A replay of a series' write passes the series' own read (§20.1, "Who sees a series")."""
+    row = conn.execute(
+        select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)
+    ).first()
+    return row is not None and series.sight(conn, row, mine) is not None
+
+
+_SEES_ROUND = idempotency.in_project(idempotency.column_of(t.jour_fixe_round), _reads_round)
+_SEES_SERIES = idempotency.in_project(idempotency.column_of(t.jour_fixe_series), _sees_series)
+idempotency.register("jour_fixe_round", _replay_round, _SEES_ROUND)
+idempotency.register(
+    "jour_fixe_answer",
+    _replay_answer,
+    idempotency.in_project(_answer_project, _reads_answers_round),
+)
+idempotency.register("jour_fixe_series", _replay_series, _SEES_SERIES)
 
 
 def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[str, Any]:
@@ -225,7 +282,9 @@ def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[st
     (dzse at #947), for the member the original body named."""
     import json
 
-    row = conn.execute(select(t.jour_fixe_series).where(t.jour_fixe_series.c.id == series_id)).one()
+    row, seen = _series_sight(conn, series_id, request)
+    if seen != "full":  # who sees only that the series exists sees none of its grants
+        return {"series": series.view(conn, row, seen), "requests": []}
     body = json.loads(request.scope.get("state", {}).get("body") or b"{}")
     member_id = body.get("member_id")
     ids: list[str] = []
@@ -241,7 +300,7 @@ def _replay_grant(conn: Connection, series_id: str, request: Request) -> dict[st
     return {"series": series.view(conn, row), "requests": ids}
 
 
-idempotency.LOADERS["jour_fixe_grant"] = _replay_grant
+idempotency.register("jour_fixe_grant", _replay_grant, _SEES_SERIES)
 
 
 def _last_reported(conn: Connection, series_id: str) -> Any | None:
@@ -619,7 +678,7 @@ def start(
             reason=body.reason,
             actor=caller.actor(mine.id),
         )
-        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -690,7 +749,7 @@ def statement(
         row = _round(conn, mine, round_id)
         topics = [topic.model_dump(by_alias=True) for topic in body.topics]
         exchange.submit_statement(conn, row, mine, topics, caller.actor(mine.id))
-        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -704,7 +763,15 @@ def _replay_post(conn: Connection, ref: str, request: Request) -> dict[str, Any]
     return views.post(found, mine, _readers(conn, [row])[row.id])
 
 
-idempotency.LOADERS["jour_fixe_post"] = _replay_post
+idempotency.register(
+    "jour_fixe_post",
+    _replay_post,
+    # `<round id>/<post id>`
+    idempotency.in_project(
+        lambda conn, ref: idempotency.column_of(t.jour_fixe_round)(conn, ref.split("/", 1)[0]),
+        lambda conn, mine, ref: _reads_round(conn, mine, ref.split("/", 1)[0]),
+    ),
+)
 
 
 @router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/posts")
@@ -730,7 +797,7 @@ def further_step(
         mine = membership(conn, caller, slug)
         row = _round(conn, mine, round_id)
         exchange.add_step(conn, row, mine, body.reason, body.members, body.topics)
-        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id))
+        return idempotency.Outcome(201, "jour_fixe_round", row.id, round_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -738,23 +805,23 @@ def further_step(
 # --- the report (§20.6) -------------------------------------------------------------------------
 
 
-def report_view(conn: Connection, round_id: str) -> dict[str, Any]:
+def report_view(conn: Connection, round_id: str, caller: Any) -> dict[str, Any]:
     """The round, and what its report filed: the requests and the cards opened."""
     row = conn.execute(select(t.jour_fixe_round).where(t.jour_fixe_round.c.id == round_id)).one()
     proposals = (row.report or {}).get("proposals", [])
     return {
-        "round": round_view(conn, round_id),
+        "round": round_view(conn, round_id, caller),
         "requests": [p["request_id"] for p in proposals if p["request_id"]],
         "tasks": [p["task_id"] for p in proposals if p["task_id"]],
     }
 
 
 def _replay_report(conn: Connection, round_id: str, request: Request) -> dict[str, Any]:
-    _member_now(conn, _round_project(conn, round_id), request)
-    return report_view(conn, round_id)
+    mine = _member_now(conn, _round_project(conn, round_id), request)
+    return report_view(conn, round_id, mine)
 
 
-idempotency.LOADERS["jour_fixe_report"] = _replay_report
+idempotency.register("jour_fixe_report", _replay_report, _SEES_ROUND)
 
 
 @router.post("/projects/{owner}/{slug}/jour-fixe/rounds/{round_id}/report")
@@ -770,7 +837,7 @@ def report(
         mine = membership(conn, caller, slug)
         row = _round(conn, mine, round_id)
         triage.submit_report(conn, row, mine, body.model_dump(), caller.actor(mine.id), fg)
-        return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id))
+        return idempotency.Outcome(200, "jour_fixe_report", row.id, report_view(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 

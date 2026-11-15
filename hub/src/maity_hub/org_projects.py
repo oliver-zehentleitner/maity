@@ -24,7 +24,7 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import clock, restricted, start_tabs
 from maity_hub import tables as t
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.views import member_view
 
 HUB = Actor(None)  # the events name no actor: the hub's own change
@@ -79,6 +79,7 @@ def keep_owner(conn: Connection, project: Any, human_id: str, by: str | None = N
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
+                joined_seq=newest_seq(conn, project.id),
                 last_seen_at=now,
                 org_keep="created",
             )
@@ -104,6 +105,11 @@ def keep_owner(conn: Connection, project: Any, human_id: str, by: str | None = N
         return
     if found.trust == "owner":
         return  # their own ownership, or one the hub keeps already
+    from maity_hub import cards
+
+    # A signature that stopped counting before the raise goes first, so that the raise
+    # never brings it back (§6.4), as in the members PATCH.
+    cards.drop_signatures(conn, project.id, human_id, HUB)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == found.id)
@@ -133,9 +139,16 @@ def release_owner(conn: Connection, project: Any, human_id: str) -> None:
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == found.id)
-        .values(trust=found.org_keep_trust, org_keep=None, org_keep_trust=None)
+        .values(org_keep=None, org_keep_trust=None)
     )
-    _announce(conn, project, found.id, human_id)
+    from maity_hub.routes.members import Change, apply_patch
+
+    # The earlier trust comes back as any trust change does (§6.2): through the members
+    # PATCH's own step, so every hook of a lowering runs (signatures, rules, a manager's
+    # rights, a guest's claims), not a column written past them.
+    target = conn.execute(select(t.membership).where(t.membership.c.id == found.id)).one()
+    change = Change(project, HUB, human_id, human_id, None, None)
+    apply_patch(conn, change, target, {"trust": found.org_keep_trust}, (False, None))
 
 
 def _announce(conn: Connection, project: Any, membership_id: int, human_id: str) -> None:

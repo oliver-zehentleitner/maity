@@ -61,7 +61,7 @@ window.Maity = window.Maity || {};
     },
     h("h3", null, M.t("agents.new.title")),
     h("label", { for: "agent-new-handle" }, M.t("agents.handle")), handle,
-    M.handles.explain("agent", handle), h("p", { class: "hint" }, HANDLE.text),
+    M.handles.explain("agent", handle), M.handles.rule(handle),
     h("label", { for: "agent-new-name" }, M.t("agents.display_name")), name,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: cancel }, M.t("agents.new.cancel")), go), status.el);
   }
@@ -169,7 +169,7 @@ window.Maity = window.Maity || {};
     h("label", { for: key("name") }, M.t("agents.display_name")), name,
     h("label", { for: key("handle") }, M.t("agents.handle")), handle,
     M.handles.explain("agent", handle),
-    h("p", { class: "hint" }, HANDLE.text + " " + M.t("agents.edit.handle_hint")),
+    M.handles.rule(handle), h("p", { class: "hint" }, M.t("agents.edit.handle_hint")),
     h("label", { for: key("git-name") }, M.t("agents.edit.git_name")), gitName,
     h("label", { for: key("git-email") }, M.t("agents.edit.git_email")), gitMail,
     h("p", { class: "hint" }, M.t("agents.edit.git_hint")),
@@ -254,7 +254,8 @@ window.Maity = window.Maity || {};
   // project), here (what belongs to this project's membership, or none)}.
   function profileCard(ctx, a, o) {
     const marked = o.wanted === a.id;
-    return h("li", { class: "agent-card" + (marked ? " wanted" : ""), "data-agent": a.id },
+    // The card is its forms' reading column (web/context/views.md): its lists keep its width.
+    return h("li", { class: "agent-card form-column" + (marked ? " wanted" : ""), "data-agent": a.id },
       h("div", { class: "agent-card-head" }, M.avatar(a, 48),
         h("h3", { class: "agent-card-title", tabindex: marked ? "-1" : null }, a.display_name, h("span", { class: "muted" }, " @" + (a.name || a.handle)))),
       (a.memberships || []).length
@@ -359,10 +360,12 @@ window.Maity = window.Maity || {};
   // row what the profile card holds and the instances of each membership.
   // The page's tabs (§16.11, tsk-3s3eb6bsp15n): the list at /agents, where one's agents run at
   // /agents/placements, and which of them the hub tells about a maintenance window at
-  // /agents/maintenance. Both words are view names; the hub never issues either as an id.
+  // /agents/maintenance, and who may chat with them at /agents/chat-access (§9.6). The words are
+  // view names; the hub never issues any of them as an id (an agent's id starts with agt-).
   const pageTabs = (chosen) => M.tabBar("agents-tabs", M.t("agents.title"),
     [["list", "/agents", M.t("agents.tab.list")], ["placements", "/agents/placements", M.t("placements.title")],
-      M.broadcasts ? ["maintenance", "/agents/maintenance", M.t("broadcasts.title")] : null], chosen);
+      M.broadcasts ? ["maintenance", "/agents/maintenance", M.t("broadcasts.title")] : null,
+      M.chatAccess ? ["chat-access", "/agents/chat-access", M.t("chat_access.title")] : null], chosen);
   const ownProfiles = async (ctx) => (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
 
   // Where they run across projects: one section per project the human reads where one of their
@@ -405,6 +408,14 @@ window.Maity = window.Maity || {};
       append(root, M.broadcasts.part(ctx, profiles, "h2"));
       return;
     }
+    // Who may chat with one's agents (§9.6, js/chat-access.js): the allow and deny entries.
+    if (args && args[0] === "chat-access" && !args[1] && M.chatAccess) {
+      append(root, pageTabs("chat-access"));
+      let profiles = [];
+      try { profiles = await ownProfiles(ctx); } catch (err) { append(root, M.errorBox(err)); return; }
+      append(root, M.chatAccess.part(ctx, profiles));
+      return;
+    }
     const wanted = args && args[0] ? args[0] : null;
     const note = h("div");
     const body = h("div", { class: "agents-page" });
@@ -421,7 +432,17 @@ window.Maity = window.Maity || {};
       read = { profiles, views };
       render(words);
     };
-    const redraw = (answer, said) => draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
+    // A deletion is done when DELETE answers: its words and the list without the profile
+    // show at once, from what was read last, and the lists are read again behind them; a
+    // failed read shows under the words (tsk-m65g76c979jk).
+    const redraw = (answer, said) => {
+      if (answer && answer.deleted_at && read) {
+        read = { profiles: read.profiles.filter((a) => a.id !== answer.id), views: read.views };
+        opened.delete(answer.id);
+        render(said);
+      }
+      return draw(said).catch((err) => append(clear(body), h("p", { class: "send-status failed" }, M.t("agents.reread_failed", { reason: err.message }))));
+    };
     redrawing = redraw;
     function render(words) {
       const { profiles, views } = read;

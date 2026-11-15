@@ -379,6 +379,18 @@
     "en": "bee1b0f31c56132d",
     "text": "b2010b4418b89fa8"
   },
+  "admin_sign_in.password_reset.hint": {
+    "en": "ab46e395014c4992",
+    "text": "e913dc3af742fb06"
+  },
+  "admin_sign_in.password_reset.label": {
+    "en": "26268bdd3c58b389",
+    "text": "4010b37136365563"
+  },
+  "admin_sign_in.password_reset.not_offered": {
+    "en": "ec98408bf48d55ba",
+    "text": "3e53b5826eb41d15"
+  },
   "admin_sign_in.policy.email": {
     "en": "b027e133aa067c59",
     "text": "25bb6e39ca9d9c4a"
@@ -4302,6 +4314,26 @@
   "error.webhook_signature": {
     "en": "76c012bc07d476ba",
     "text": "cdf5d1029a0f3617"
+  },
+  "factor_banner.label": {
+    "en": "ca4ae1ba2d424523",
+    "text": "367cd96741fbd16d"
+  },
+  "factor_banner.later": {
+    "en": "c19525e91f26d3c4",
+    "text": "cebdaf45dbd1e5ca"
+  },
+  "factor_banner.link": {
+    "en": "d9294a6d54015834",
+    "text": "63c9600b8b086d26"
+  },
+  "factor_banner.mailbox": {
+    "en": "c678a8096fbd36fd",
+    "text": "2d061dc5ad8cd579"
+  },
+  "factor_banner.mailbox_alone": {
+    "en": "5b757446e6b8144e",
+    "text": "8aca125b6a2d7774"
   },
   "forge.app.hint": {
     "en": "41c994450fc4018e",
@@ -9031,6 +9063,18 @@
     "en": "6e83870255727d78",
     "text": "3f4d47638bd4a61d"
   },
+  "mail.password_reset": {
+    "en": "9ccd869f70fd0c85",
+    "text": "06ed6e78ca407e34"
+  },
+  "mail.password_reset.hint.mailbox": {
+    "en": "ad11a713e8d3e083",
+    "text": "9a6d5db65ffbe654"
+  },
+  "mail.password_reset.hint.totp": {
+    "en": "f1e8430115521581",
+    "text": "9b7b4a0a87b1ba9c"
+  },
   "mail.quiet.from": {
     "en": "702140636ff3977a",
     "text": "9c2227dc67cd6c64"
@@ -10847,6 +10891,14 @@
     "en": "91068c8308ff7d7d",
     "text": "6f3052e01ca60c59"
   },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "4b0727252a676758"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "b325a91c17b78d95"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "c898d6f68859b2f5"
@@ -12495,6 +12547,10 @@
     "en": "7e35927a104c820e",
     "text": "17951da0c0ef1039"
   },
+  "person.agents.none": {
+    "en": "5233ae2fc929a121",
+    "text": "8436d1ebd08a6805"
+  },
   "person.handle": {
     "en": "e52b730b195d5cd3",
     "text": "e52b730b195d5cd3"
@@ -12590,6 +12646,22 @@
   "person.role.owner": {
     "en": "622f06cbcd2e7e61",
     "text": "1772fa34b40d1e73"
+  },
+  "person.tab.agents": {
+    "en": "21cf98a292e94015",
+    "text": "ebeaf54d7484e60e"
+  },
+  "person.tab.profile": {
+    "en": "96ad4bd0f7baa40e",
+    "text": "6e1abd4982073a98"
+  },
+  "person.tabs.label": {
+    "en": "16a03e3aa01e736f",
+    "text": "6e3fe768541dddf3"
+  },
+  "person.title.agents": {
+    "en": "dd81b03eabf89b55",
+    "text": "cdda78c75d4b92c6"
   },
   "person.view_public": {
     "en": "8164ca72067a45c7",
@@ -14875,6 +14947,170 @@
     "en": "d355831585c6445d",
     "text": "c40feaa2b99e64cb"
   },
+  "reset.address": {
+    "en": "c6394f33e6b9bb97",
+    "text": "bf399553699f29b5"
+  },
+  "reset.ask.hint": {
+    "en": "2ea0248a297fa8ae",
+    "text": "fe2300afe7f266a4"
+  },
+  "reset.ask.title": {
+    "en": "2957c5c9a35bc3d4",
+    "text": "24f69811c3df0fd3"
+  },
+  "reset.code.hint": {
+    "en": "a5cf25f35bff72a7",
+    "text": "a20083be099cb94d"
+  },
+  "reset.code.label": {
+    "en": "a3ac073a85200e91",
+    "text": "aaa0b289d664dcb7"
+  },
+  "reset.code.need": {
+    "en": "ecf34fbe6b8917c0",
+    "text": "b4297c710c738f02"
+  },
+  "reset.code.use": {
+    "en": "9dca32ae476bd679",
+    "text": "2a4186b0ecf42917"
+  },
+  "reset.code_or_link": {
+    "en": "1d3b24f1a27fe54c",
+    "text": "6698739851f289be"
+  },
+  "reset.dead": {
+    "en": "a31c2ec8751551ab",
+    "text": "581a5c4b0229c302"
+  },
+  "reset.dead_reason": {
+    "en": "8a9a299780203966",
+    "text": "bbcdb65136585321"
+  },
+  "reset.disabled": {
+    "en": "0f2fb3b355f471b2",
+    "text": "fb31081c0dd3527b"
+  },
+  "reset.done.sessions": {
+    "en": "92d900d597143fb0",
+    "text": "968ac8a89fd5263c"
+  },
+  "reset.done.sign_in": {
+    "en": "5a365517fae8bf07",
+    "text": "cfbbe455543fdf23"
+  },
+  "reset.done.title": {
+    "en": "0628df3166cc93b4",
+    "text": "66c8def9c1f92a0c"
+  },
+  "reset.explain": {
+    "en": "6975567267afbe13",
+    "text": "d18cd1484d139b03"
+  },
+  "reset.for": {
+    "en": "5d2b9caf2ed5f345",
+    "text": "84f7abf059ae5a25"
+  },
+  "reset.forgot": {
+    "en": "f5697d65d9416be9",
+    "text": "a319b918c7699ee4"
+  },
+  "reset.mail_factor": {
+    "en": "4d17ca874152d8d0",
+    "text": "531ab20f6c1cb795"
+  },
+  "reset.mail_factor.link": {
+    "en": "be32b7c30a0c942f",
+    "text": "b9ce1d6354ad7736"
+  },
+  "reset.need_address": {
+    "en": "e98abe9bc98a8c00",
+    "text": "7155ed4e9fe43e0f"
+  },
+  "reset.new_link": {
+    "en": "d6a602621ba4c66a",
+    "text": "afb53aaab42f07e6"
+  },
+  "reset.new_link.link": {
+    "en": "1f22a8ea474c3e69",
+    "text": "02531b1f3fa5be6f"
+  },
+  "reset.not_sent": {
+    "en": "241164566757aa1a",
+    "text": "c352bdbe8d0716f6"
+  },
+  "reset.not_set": {
+    "en": "88228ed130dccde4",
+    "text": "855b8f6f4396c92a"
+  },
+  "reset.password": {
+    "en": "1990bbcf4f5c6736",
+    "text": "ea760a12f6ec59b8"
+  },
+  "reset.passwords_differ": {
+    "en": "bc20b19fc50c24b2",
+    "text": "731b25a5a87dc02c"
+  },
+  "reset.rate_limited": {
+    "en": "fe9e9d08628406d6",
+    "text": "9fc4af89b52ee0d2"
+  },
+  "reset.read_failed": {
+    "en": "c899cb903cb7c1c4",
+    "text": "90509be145818120"
+  },
+  "reset.reading": {
+    "en": "eefe16e38e93ad49",
+    "text": "7f98861d62f104f7"
+  },
+  "reset.recovery.hint": {
+    "en": "4e00d08731eb8dad",
+    "text": "d3dae7227ea85ab3"
+  },
+  "reset.recovery.label": {
+    "en": "ed6a748172069bb1",
+    "text": "463f03d538c0a467"
+  },
+  "reset.recovery.need": {
+    "en": "10aa94c5d34534c1",
+    "text": "143ec5b52bbfb04d"
+  },
+  "reset.recovery.use": {
+    "en": "81577682c00537d5",
+    "text": "01ca9d4affd37bf9"
+  },
+  "reset.repeat": {
+    "en": "ab38af0406d60575",
+    "text": "40b989c3e45fef04"
+  },
+  "reset.send": {
+    "en": "5fc23d70ea93c7c2",
+    "text": "3d319346d5419ee1"
+  },
+  "reset.sending": {
+    "en": "bb2e3496f3e0d7e0",
+    "text": "3f647fd59b33b9f5"
+  },
+  "reset.sent": {
+    "en": "70287a6e46bd88aa",
+    "text": "9608559031eef18b"
+  },
+  "reset.setting": {
+    "en": "58ae9a5890389903",
+    "text": "168430026c0592b2"
+  },
+  "reset.short_password": {
+    "en": "9708ab6b8c7c34de",
+    "text": "ce937a8c3f635168"
+  },
+  "reset.submit": {
+    "en": "dad31e18230fcf29",
+    "text": "fd4706c0f0ec90e0"
+  },
+  "reset.title": {
+    "en": "d37dfa9e63b23645",
+    "text": "7cf5245d6cba43c1"
+  },
   "restricted.agent_of": {
     "en": "ed5ee5d2bba1d43f",
     "text": "913c79ecb6998612"
@@ -16971,13 +17207,25 @@
     "en": "2a3edb7abc9e6929",
     "text": "33bccdedbc7f466a"
   },
+  "settings.tab.general": {
+    "en": "468d61a94d9f9d93",
+    "text": "68115143c300ba2e"
+  },
+  "settings.tab.members": {
+    "en": "e19fc6262faca358",
+    "text": "2aaf34079074c401"
+  },
   "settings.tab.mine": {
     "en": "a0b7adfdfdec7307",
     "text": "2ab8c92705b62075"
   },
-  "settings.tab.project": {
-    "en": "6c6b7df3070f112f",
-    "text": "e732e105f6a3357e"
+  "settings.tab.moderation": {
+    "en": "77d3010b1619f85e",
+    "text": "2c41769134eb63d9"
+  },
+  "settings.tab.work": {
+    "en": "b113e55138adce94",
+    "text": "f6c3171692eb44a4"
   },
   "settings.title": {
     "en": "83909f82446ee9c3",
@@ -18943,6 +19191,10 @@
     "en": "b3ae7ee4d934d009",
     "text": "b3ae7ee4d934d009"
   },
+  "visitor.hero.try": {
+    "en": "a934f2e0ccd4a613",
+    "text": "d1c0184a4e0c9af2"
+  },
   "visitor.holder.agent": {
     "en": "aec70cfd47032616",
     "text": "f0bf1eca13a602a7"
@@ -18954,6 +19206,26 @@
   "visitor.member_since": {
     "en": "068cef0810198a3d",
     "text": "617ae5b3ae42db49"
+  },
+  "visitor.merged": {
+    "en": "20a2d9635951284d",
+    "text": "2e8fe1b7b960c983"
+  },
+  "visitor.merged.by": {
+    "en": "760db489ae38e56d",
+    "text": "636782932be18b98"
+  },
+  "visitor.merged.pill": {
+    "en": "63f7ea9a67b1918b",
+    "text": "2f8b8262fc78ea06"
+  },
+  "visitor.merged.touches": {
+    "en": "9f96cbfe3aefbe09",
+    "text": "dfcf80adf4a31a1e"
+  },
+  "visitor.merged.window": {
+    "en": "527e74a00a093185",
+    "text": "f593ed50376d7c15"
   },
   "visitor.model": {
     "en": "00d5d0c26a1a0925",
@@ -18974,6 +19246,38 @@
   "visitor.note.incorporated": {
     "en": "65ed0630ec44c3b1",
     "text": "3e5dd84b63a28a00"
+  },
+  "visitor.now": {
+    "en": "6daba6e18d19bb49",
+    "text": "334d51607d5ceaa8"
+  },
+  "visitor.now.agents": {
+    "en": "37be5bf9ee1b4228",
+    "text": "05eae4392e57b27e"
+  },
+  "visitor.now.both": {
+    "en": "063bd57eebf6f866",
+    "text": "063bd57eebf6f866"
+  },
+  "visitor.now.more": {
+    "en": "ef1401d515ebac72",
+    "text": "ef1401d515ebac72"
+  },
+  "visitor.now.more.label": {
+    "en": "737c4c28d6c824c1",
+    "text": "11910545d97cfb8e"
+  },
+  "visitor.now.one": {
+    "en": "ffec9d158f4f123c",
+    "text": "ffec9d158f4f123c"
+  },
+  "visitor.now.people": {
+    "en": "fd5ff2a1c5aa16bf",
+    "text": "b4b8b37755330631"
+  },
+  "visitor.now.working": {
+    "en": "4bbfd3742efe22a2",
+    "text": "d35873900a133cfb"
   },
   "visitor.online": {
     "en": "b11148e2002ef092",
@@ -19015,6 +19319,10 @@
     "en": "0b6b9f7e499ac5f6",
     "text": "d273f0210492ba58"
   },
+  "visitor.stat.members": {
+    "en": "6bbc51529519435c",
+    "text": "80e90e6ecaae0247"
+  },
   "visitor.stat.prs_merged": {
     "en": "631e272f82e120d7",
     "text": "e35b2aa9aecd1b4d"
@@ -19023,6 +19331,10 @@
     "en": "c3839ae79e842a97",
     "text": "deb4c37bd4cfe7c0"
   },
+  "visitor.stat.window": {
+    "en": "6dce96dd18a540d7",
+    "text": "3630b2f1b1d69476"
+  },
   "visitor.statistics": {
     "en": "f7e895590e4ed336",
     "text": "0ce28b014f692721"
@@ -19030,6 +19342,14 @@
   "visitor.statistics.own": {
     "en": "068dce52f609b9c3",
     "text": "d9cc6a4aa1a6fa51"
+  },
+  "visitor.team.all": {
+    "en": "3d29f2722dcf9dab",
+    "text": "a6980c3dfb2af333"
+  },
+  "visitor.team.both": {
+    "en": "45a4ef43d5d36042",
+    "text": "5008aa569767db33"
   },
   "visitor.why.attention": {
     "en": "f98f532ad04f9c38",

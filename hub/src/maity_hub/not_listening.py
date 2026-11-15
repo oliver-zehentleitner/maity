@@ -303,7 +303,7 @@ class Worker:
                     continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "not-listening", self.interval) as held:
                     if held is not None:
-                        from maity_hub import chat_unread, holder_stalled
+                        from maity_hub import chat_gate, chat_unread, holder_stalled
 
                         # Each step its own try: a failure in one does not skip the others.
                         try:
@@ -319,5 +319,9 @@ class Worker:
                             chat_unread.sweep(self.engine)  # the unread nudge (§9.2)
                         except Exception:
                             log.exception("the unread nudge's sweep failed")
+                        try:
+                            chat_gate.sweep(self.engine)  # an allow entry's `until` (§9.6)
+                        except Exception:
+                            log.exception("the chat access sweep failed")
             except Exception:
                 log.exception("the not-listening sweep failed")

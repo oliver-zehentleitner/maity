@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 
-from maity_hub import chat_meat_proxy, events, group_chats
+from maity_hub import chat_gate, chat_meat_proxy, events, group_chats
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.views import principal_ids, ts
@@ -362,7 +362,7 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
         return []
     stays: dict[str, list[Any]] = defaultdict(list)
     for row in conn.execute(
-        select(t.conversation_participant, t.membership.c.agent_id, t.membership.c.human_id)
+        select(*chat_gate.stay_columns(), t.membership.c.agent_id, t.membership.c.human_id)
         .join(t.membership, t.membership.c.id == t.conversation_participant.c.membership_id)
         .where(
             t.conversation_participant.c.conversation_id.in_({c for _, c in pairs}),
@@ -454,8 +454,8 @@ def _access(
     for key in sorted(pairs):
         mine, current = mines[key[0]], stays[key[1]]
         keeper = keepers.get(key[1])
-        if any(s.membership_id == mine.id for s in current):
-            found[key] = "participant"
+        if any(s.membership_id == mine.id and not s.waiting for s in current):
+            found[key] = "participant"  # a waiting agent does not see the chat (§9.6)
         elif keeper is not None:  # an owner's round: only its `circle_owner` reads along
             if mine.kind == "human" and mine.principal_id == keeper:
                 found[key] = "observer"

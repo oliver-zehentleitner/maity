@@ -6,8 +6,9 @@ import json
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -258,3 +259,21 @@ def test_concurrent_go_from_two_projects_counts_both_versions(
     versions = owner.get(f"/agents/{agent.id}/soul/versions").json()["items"]
     assert [v["version"] for v in versions] == [2, 1]
     assert {v["markdown"] for v in versions} == {"First project", "Second project"}
+
+
+def test_a_go_needs_the_proposing_agent_still_standing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    # §19.1: an agent isolated after it proposed has its proposal refused at the go.
+    agent = flow.agent(make_client, owner)
+    request_id = propose(agent).json()["id"]
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent.id)
+            .values(isolated_since=clock.now())
+        )
+    refused = owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "proposer_lost"}
+    assert events(migrated, "soul_changed") == []

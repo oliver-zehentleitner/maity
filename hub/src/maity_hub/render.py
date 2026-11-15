@@ -21,7 +21,7 @@ from html import escape, unescape
 from typing import Any, NamedTuple
 from urllib.parse import quote, urlsplit
 
-from maity_hub import catalog, landing_files, product_line
+from maity_hub import catalog, landing_files
 from maity_hub.landing import (
     AGENTS,
     ALPHA_MARKS,
@@ -277,6 +277,7 @@ border-radius:.7rem;padding:1rem 1.1rem}.card h3{margin:.2rem 0 .4rem;font-size:
 .tag{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .pic{display:inline-block;vertical-align:middle;border-radius:.6rem;margin:.4rem .6rem .4rem 0}
 .pic.none{background:var(--card);border:1px solid var(--line)}
+.pic.none.size-64{width:64px;height:64px}.pic.none.size-128{width:128px;height:128px}
 .stats{display:flex;flex-wrap:wrap;gap:2rem}.stat b{display:block;font-size:2rem;line-height:1.1}
 .stat span{color:var(--muted);font-size:.9rem}
 pre{background:var(--card);border:1px solid var(--line);border-radius:.5rem;padding:.7rem .9rem;
@@ -332,9 +333,12 @@ def _document(
     )
 
 
-def _language_link(tag: str) -> str:
+def _language_link(tag: str, query: str = "") -> str:
+    """A language of the footer: this page with `?lang=<tag>`, after `query` where the page's
+    address needs one to stay itself (a stored page's `as=public`)."""
     name = LANGUAGE_NAMES.get(tag, tag)
-    return f'<a href="?lang={escape(tag)}" lang="{escape(tag)}">{escape(name)}</a>'
+    href = f"?{query}&lang={tag}" if query else f"?lang={tag}"
+    return f'<a href="{escape(href, quote=True)}" lang="{escape(tag)}">{escape(name)}</a>'
 
 
 def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> str | None:
@@ -717,7 +721,7 @@ def _site_header(model: dict[str, Any], nav: str, cta: str, theme: str | None) -
     )
 
 
-def _landing_footer(model: dict[str, Any], *, on_landing: bool = True) -> str:
+def _landing_footer(model: dict[str, Any], *, on_landing: bool = True, query: str = "") -> str:
     """Columns as the design has them, drawn from the frame's model (§16.7.5): the platform,
     open source, the legal pages and the social links; below them the operator's line and the
     language switch (§16.7). On the landing page itself a link to one of its sections is its
@@ -741,7 +745,7 @@ def _landing_footer(model: dict[str, Any], *, on_landing: bool = True) -> str:
     operator = f'<p class="operator">{escape(footer["operator"])}</p>' if footer["operator"] else ""
     switch = (
         '<p class="langs">'
-        + " ".join(_language_link(one["tag"]) for one in footer["languages"])
+        + " ".join(_language_link(one["tag"], query) for one in footer["languages"])
         + "</p>"
         if footer["languages"]
         else ""
@@ -923,17 +927,23 @@ class Frame(NamedTuple):
     style: str
 
 
-def public_frame(model: dict[str, Any], lang: str) -> Frame:
+def public_frame(
+    model: dict[str, Any], lang: str, *, theme: bool = False, query: str = ""
+) -> Frame:
     """The frame for a page in `lang`, from `chrome`'s model. The mark comes without its
     `style` attributes, which a policy without inline styles would block: `public-pages.css`
     colours it. Where the frame's words are in another language than the page (the landing page
-    has no `lang`), header and footer say theirs."""
+    has no `lang`), header and footer say theirs. With `theme`, the header has the landing
+    page's light/dark switch and the head its script (`landing.js`), for a page whose policy
+    allows the hub's own script; `query` goes before `lang=` in the footer's language links."""
     nav = "".join(
         f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
         for item in model["header"]["nav"]
     )
     cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
-    header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
+    switch = catalog.section("frame", model["language"])["theme"] if theme else None
+    header = _site_header(model, nav, cta, switch)
+    footer = _landing_footer(model, on_landing=False, query=query)
     mark = landing_files.svg("mark.svg")
     header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
     if model["language"] != lang:
@@ -943,6 +953,9 @@ def public_frame(model: dict[str, Any], lang: str) -> Frame:
     head = "".join(
         f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
     )
+    script = landing_files.url("landing.js") if theme else None
+    if script:
+        head += f'<script src="{escape(script, quote=True)}" defer></script>'
     return Frame(header, footer, head, "" if all(sheets) else STYLE)
 
 
@@ -1034,12 +1047,14 @@ def framed_document(
     and footer around the page, in the design of `public-pages.css`. The page is in the frame's
     language where the catalog's `section` has words in it, else in English. The footer keeps
     the landing page's language switch, as the landing footer is drawn 1:1 on every signed-out
-    page: its links (`?lang=…`) reopen this page in that language. `page(lang, words)` gives the
-    title and the content (HTML of escaped text and elements) in that language."""
+    page: its links (`?lang=…`) reopen this page in that language. The header keeps the landing
+    page's light/dark switch with its script, as a stored page's frame does, so the page's
+    policy is `public_pages.FRAMED_CSP`. `page(lang, words)` gives the title and the content
+    (HTML of escaped text and elements) in that language."""
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
     chosen = model["language"] if catalog.speaks(section, model["language"]) else "en"
     title, content = page(chosen, catalog.section(section, chosen))
-    frame = public_frame(model, chosen)
+    frame = public_frame(model, chosen, theme=True)
     return _document(
         lang=chosen,
         title=title,
@@ -1089,6 +1104,39 @@ def door_document(
     )
 
 
+def join_document(
+    *,
+    title: str,
+    content: str,
+    note: str,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    accept_language: str | None,
+) -> str:
+    """The join page (§3.2) in a browser on the public host, in the frame of §16.7.5: the
+    landing page's header and footer around the page's text in the legal pages' column, in
+    English like the page. No language switch: the page has one language. `content` and `note`
+    are HTML of escaped text and elements; the join host keeps its own page, as it serves none
+    of the frame's stylesheets (§1.1)."""
+    model = chrome(setting, legal, lang="en", accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    frame = public_frame(model, "en")
+    body = (
+        frame.header + '<main><div class="legal-page join-page"><div class="wrap">'
+        f'{content}<p class="note">{note}</p></div></div></main>' + frame.footer
+    )
+    return _document(
+        lang="en",
+        title=title,
+        description="",
+        head=frame.head,
+        body=body,
+        languages=[],
+        style=frame.style,
+    )
+
+
 # A stored public page (§16.9) as `page_document` wrote it: its title, description, canonical
 # link and robots line in the head, its content in `<main class="wrap">`. The app shell takes
 # the same parts out (shell.py), and so does the frame below.
@@ -1113,17 +1161,19 @@ def stored_in_frame(
     """A stored public page in the frame of §16.7.5, put around it when it is served: the
     landing page's header and footer in the visitor's language (`?lang`, else the reader's),
     the stored content between them as it was stored, never parsed again. The content keeps
-    its own language, and the frame says its own where that differs. No language switch in the
-    footer and no `hreflang` links: the page exists in one language, its content's. None when
-    `stored` is not of the shape `page_document` writes: the caller serves it bare."""
+    its own language, and the frame says its own where that differs. The frame is the landing
+    page's in full (the maintainer's decision req-q34v0gr2rbw2): the footer's language switch,
+    whose links (`?as=public&lang=`) change the frame's language and never the content's, and
+    the header's light/dark switch with the landing page's script. No `hreflang` links: the page
+    exists in one language, its content's. None when `stored` is not of the shape
+    `page_document` writes: the caller serves it bare."""
     found = STORED_PAGE.search(stored)
     tagged = _STORED_LANG.search(stored)
     if found is None or tagged is None:
         return None
     page_lang = unescape(tagged["lang"])
     model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
-    model["footer"]["languages"] = []
-    frame = public_frame(model, page_lang)
+    frame = public_frame(model, page_lang, theme=True, query="as=public")
     # The stored head parts are already escaped; only the title passes `_document`'s escape.
     head = (found["meta"] or "") + found["canonical"] + (found["robots"] or "") + frame.head
     return _document(
@@ -1136,53 +1186,6 @@ def stored_in_frame(
         + frame.footer,
         languages=[],
         style=frame.style,
-    )
-
-
-# --- a form page outside the app (§2.7.1) ---------------------------------------------------
-
-FORM_STYLE = """
-:root{--danger:#c92a2a}@media (prefers-color-scheme:dark){:root{--danger:#ff8787}}
-.panel{max-width:28rem;margin:2rem auto;background:var(--card);border:1px solid var(--line);
-border-radius:.8rem;padding:1.5rem}.panel h1{font-size:1.6rem;margin:0 0 .6rem}
-.field{margin:1rem 0 0}.field label{display:block;font-weight:600;margin:0 0 .3rem}
-.field input{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);
-border-radius:.5rem;background:var(--bg);color:var(--fg)}
-.field input:focus,.check input:focus,button:focus{outline:2px solid var(--accent);outline-offset:1px}
-.field input[aria-invalid=true]{border-color:var(--danger)}
-.check{margin:1rem 0 0}.check label{display:flex;gap:.5rem;align-items:flex-start}
-.check input{margin:.3rem 0 0;flex:none}
-.error{color:var(--danger);margin:.3rem 0 0;font-size:.92rem}
-.panel .note{margin:1rem 0 0}
-button{margin:1.4rem 0 0;width:100%;font:inherit;font-weight:600;padding:.65rem 1rem;
-border:1px solid var(--accent);border-radius:.5rem;background:var(--accent);color:var(--accent-fg);
-cursor:pointer}
-footer p{margin:0}footer a{margin-right:0}
-@media (max-width:30rem){.panel{margin:1rem 0;padding:1.1rem}}
-"""
-
-
-def form_document(*, lang: str, title: str, content: str, footer: str) -> str:
-    """A page outside the app that a link in a mail opens, such as the registration's (§2.7.1):
-    the legal pages' head and colours, one centred panel and the given footer, no script and
-    nothing loaded from elsewhere. `content` and `footer` are HTML of escaped text and elements."""
-    header = (
-        '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a></div></header>'
-    )
-    return _document(
-        lang=lang,
-        title=title,
-        description="",
-        head="",
-        body=(
-            f'{header}<main class="wrap"><div class="panel">{content}</div></main>'
-            + (f'<footer><div class="wrap">{footer}</div></footer>' if footer else "")
-            # The product line after the page's own footer (§16.13); this page's policy
-            # allows its stylesheet, so the mark follows a dark theme.
-            + product_line.html(lang)
-        ),
-        languages=[],
-        style=STYLE + FORM_STYLE + product_line.STYLE + product_line.DARK,
     )
 
 

@@ -216,3 +216,48 @@ The list filter `GET …/requests?to=<member id>` matches a request addressed to
 and also one addressed to an instance of its team: the team reads the instance addresses, so a
 plain member id names them too (the coordinator's decision, 2026-10-30, on spq4's review of
 the instance-address change). `to=<member>#<id>` matches that address only, as written.
+
+## The request to chat with an owner's agents is kept by one sync that reads who waits from the chats; only the held messages are stored on it
+
+**Id:** 6d50f4d0-1786-459a-bcbc-95e4e73b24fc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the hub's part 2c of card tsk-5c6hw63ncq3m (`maity_hub/chat_request.py`), building docs/api.md §9.6 "The request" on the gate of 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 (`context/chat.md`); the author's design, in review; the lock and the deleted agents changed on the Antigravity review of #1718 (lock order, deleted profiles), with the review lead agreeing on the direction
+**Revisit when:** the request needs a field the chats cannot give at read time, an owner's requests become many enough that the minute pass over all open ones is felt or that counting them for `_request_id` is, notification records stop locking the human's row, or the deadlocks between an entry change and a chat change that files or withdraws a request show up in the retry log under ordinary load
+
+`chat_request.sync(owner)` is the one place that files, updates and withdraws the request to an owner. It reads, from the stays, which of the owner's agents wait for which side in an open chat, and keeps exactly one open request per side that something waits or is held for. The proposal stores only the side and the free work messages held since the last answer (seq, type, author, the agents held), since nothing else can tell them later; who waits, in which chats, and the inbox's checkbox list (`chat_access_request`) are read live, so a chat that closes or an agent that leaves never leaves a stale line behind. The held agents are cut to the owner's live agents wherever they are read (`pruned`), and deleting a profile syncs its owner, so a deleted agent is neither offered nor written into an entry, and a request left with nothing is withdrawn. `chat_gate.settle` calls it for the owners of agents that waited or wait, `group_chats` for a waiting agent that leaves and a round thread that closes, the answer after its own changes, and the worker's minute pass (`chat_gate.sweep`) for every owner with an open request, which catches what ends a chat without passing those paths. A batch of resettles for one owner (`recheck`, `lapse`, `served`, the answer) syncs once at its end (`deferred`), so one transaction does not file a request and withdraw it again.
+
+`sync` takes no owner-wide lock. It locks the open requests' rows (`FOR UPDATE SKIP LOCKED`) and leaves a side alone whose row another transaction holds, since that one (an answer, a held message) syncs the owner at its end; a held message waits for the row instead, so that it is never lost. Two transactions that file for one pair at once compute the same request id from the pair and the number of its closed requests (`_request_id`; open ones are not counted, so one filed and committed between the read and the count changes nothing); every server engine runs at READ COMMITTED, so the count sees what committed before it; the second insert waits for the first and fails in a savepoint, and the loser reads the pair again (`_ensure`): it joins the request the first one filed, or, when that one was answered meanwhile, counts it and files the next id. Each collision means a committed request with the id tried, so the next pass finds it open or counts it; the loop gives up after `FILE_ATTEMPTS` passes, which takes a whole filing and closing of the same pair between every two of them. A chat change that only brings an open request up to date therefore never waits for an entry change, which holds the owner's human row before the projects'. Filing and withdrawing still write the owner's notification record, which locks the human's row as every record does (`records.lock_human`), and an answer meets a held message of the same pair on the request's row: those orders can meet, and the database rolls one back as a transient deadlock that is run again (`db.TRANSIENT`). The hub's own withdrawal goes through `close_request`, whose settlement does nothing for this kind; the owner's withdrawal is told apart by its `answerer`, which the personal withdraw route now passes, and counts as `no`.
+
+**Reason:** the waiting state already lives on the stays, written by the gate's one `settle`; a second copy on the request would have to follow every join, leave, close and project deletion. No new column or table means no migration slot for this part.
+
+**Rejected alternatives:**
+- Storing the waiting agents and chats on the request: a second state to keep in step with every path that changes a chat, stale after any path that forgets.
+- Syncing only in the worker's minute pass: the owner would wait up to a minute for the question, and the answer's "a new request at once" would not hold.
+- A unique index of open requests per owner pair: a new column and a migration for a guarantee the deterministic id gives, and the second writer would fail instead of joining the open request.
+- Locking the owner's human row in `sync` (the first version of this part): it serialised the filing, but every chat change of the owner's agents then took the human's row after its project's lock, the opposite of an entry change, so the two could deadlock whenever they met.
+
+## A go on a member's proposal checks the proposer again
+
+**Id:** 7ce9c6c4-bfbf-4b16-bd5c-ac6a461e7e5d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0f7nbt07f98r; `docs/api.md` §7, §19.1, §19.2, §19.4, §2.3 "The manager"
+
+A proposal is filed on its proposer's standing and answered later.
+`proposals.proposer_row` reads the asking membership when the `go` is
+given: active, not isolated, no guest, its account (a human's own, an
+agent's owner's) not suspended. Preferences, soul and community-memory
+proposals refuse the `go` with `proposer_lost` when it no longer stands
+(preferences also re-run `may_propose`); a manager's change refuses it
+with `not_in_line`, as a lost reach does. The request stays open.
+
+**Reason:** the answerer approves a change made on the proposer's
+authority; that authority can end in the hours between, by paths that do
+not know about open proposals.
+
+**Rejected alternatives:** withdrawing the open proposals on each such
+change — every path that lowers standing would need to find them, and
+one missed would leave a go acting on authority that is gone.

@@ -47,7 +47,7 @@ from maity_hub import (
     setup_cards,
 )
 from maity_hub import tables as t
-from maity_hub.auth import credentials, sessions
+from maity_hub.auth import credentials, sessions, verifiers
 from maity_hub.db import metadata
 from maity_hub.ids import new_id
 
@@ -143,6 +143,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
+                joined_seq=0,
             )
         )
         agents = []
@@ -168,6 +169,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                     areas=["/"],
                     capabilities=[],
                     joined_at=now,
+                    joined_seq=0,
                 )
             )
             key = result.inserted_primary_key
@@ -180,7 +182,7 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
                     id=credential_id,
                     membership_id=membership_id,
                     instance=f"lt{k}a",
-                    verifier=verifier,
+                    verifier=verifiers.stored("credential", credential_id, verifier),
                     created_at=now,
                 )
             )

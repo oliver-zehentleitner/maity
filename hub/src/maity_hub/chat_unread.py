@@ -57,7 +57,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, select
 
-from maity_hub import clock, listening
+from maity_hub import chat_gate, clock, listening
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 
@@ -132,6 +132,7 @@ def _candidates(conn: Connection, conversation_id: str | None = None) -> list[An
         .join(t.membership, m.id == p.membership_id)
         .where(
             p.here.is_(True),
+            chat_gate.not_waiting(p.waiting),  # nothing of the chat wakes a waiting agent (§9.6)
             c.closed_at.is_(None),
             c.hub_thread.is_(False),
             m.agent_id.is_not(None),

@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, events
+from maity_hub import chat_gate, clock, events
 from maity_hub import tables as t
 from maity_hub.scopes import tokens_of
 from maity_hub.ticker_read import may_read_request, reason_of
@@ -26,9 +26,13 @@ from maity_hub.views import event_views
 
 log = logging.getLogger(__name__)
 
-TYPES = ("merge", "decision", "deploy", "release", "rename", "note")
+# The item types (§17.1); the listing filters by every one of them (§17.9).
+TYPES = ("merge", "decision", "deploy", "release", "jour_fixe", "rename", "note")
 # `contract` is a merge with `contract` set, as a filter and in a subscription (§17.8).
-FILTER_TYPES = ("merge", "contract", "decision", "deploy", "release", "rename", "note")
+FILTER_TYPES = ("contract", *TYPES)
+# What follow and mute act on (§17.8): not `jour_fixe` and `rename`, whose audience is `all`
+# alone, so that a subscription to them would change nothing.
+SUBSCRIPTION_TYPES = ("merge", "contract", "decision", "deploy", "release", "note")
 TEXT_MAX = 280
 ENVIRONMENT_MAX = 64  # a deploy's environment, by hand or from the forge (§17.6)
 SHA = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")  # SHA-1, or SHA-256 repositories
@@ -279,13 +283,16 @@ def write(
     readers: Sequence[str] = (),
     broadcast: bool = True,
     facts: dict[str, Any] | None = None,
+    held: Sequence[str] = (),
 ) -> int | None:
     """Emit one item; `None` when its dedupe key is taken (the first item stands, §17.7).
 
     `broadcast` puts `all` in the audience (every type but a decision, §17.12);
     `readers` are further members who may read it without a reason (a decision's
     request readers). Only members with a waking reason get a `member:` token beside
-    `all`; the actor is never woken by its own item."""
+    `all`; the actor is never woken by its own item. `held` names the agents a manual
+    post's `to` was held for (§9.6, `gate_manual`): `held:<id>` each, which keeps `all`
+    from reaching them and lets their owner read it along."""
     events.lock_project(conn, project_id)
     if dedupe_key is not None and existing(conn, project_id, dedupe_key) is not None:
         return None
@@ -303,6 +310,7 @@ def write(
     for principal in readers:
         if f"member:{principal}" not in tokens:
             tokens.append(f"member:{principal}")
+    tokens.extend(f"held:{principal}" for principal in held)
     base: dict[str, Any] = {
         "merge": None,
         "request": None,
@@ -316,6 +324,7 @@ def write(
         "tasks": [],
     }
     payload = {
+        "held": list(held),
         "type": kind,
         "text": cut(text),
         "url": url,
@@ -524,6 +533,37 @@ def manual_audience(
             audience.add(m.principal, "addressed")
     apply_subscriptions(conn, people, audience, kind, False, areas)
     return audience
+
+
+# The reasons a manual post's own `to` gives (§17.6), which reach an agent of another owner
+# only on its owner's yes (§9.6); the computed ones (an area's owner, a release, a deploy to
+# whom it concerns) and a member's own follow stay open.
+GATED_REASONS = frozenset({"addressed", "posted_to_all"})
+
+
+def gate_manual(
+    conn: Connection, mine: Any, people: Sequence[Member], audience: Audience
+) -> list[str]:
+    """The agents a manual post's `to` (a token list or `all`) reaches on another side than
+    its poster without their owner's yes (`chat_gate.gate`), each with the gated reasons taken
+    off its entry, and the entry dropped where no other reason is left; those agents whose
+    entry is dropped are returned, the ones the item is held for. One that a follow of its
+    own keeps listed is not held."""
+    agents = {m.principal for m in people if m.kind == "agent"}
+    reached = [
+        p for p, entry in audience.entries.items() if p in agents and GATED_REASONS & set(entry.why)
+    ]
+    if not reached:
+        return []
+    _, judged = chat_gate.gate(conn, mine.project.id, mine, [], reaches=reached)
+    held = []
+    for principal in judged:
+        entry = audience.entries[principal]
+        entry.why = [why for why in entry.why if why not in GATED_REASONS]
+        if not entry.why:
+            del audience.entries[principal]
+            held.append(principal)
+    return held
 
 
 # --- the listing and the resume packet (§17.9) -----------------------------------------

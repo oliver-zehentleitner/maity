@@ -10,16 +10,20 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import quote_from_bytes, unquote_to_bytes
 
 PREFIX = "mty1"
-PATTERN = re.compile(rb"\bmty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
+# No boundary in front: a credential counts whatever stands right before it, a letter or the
+# `n` of a JSON `\n` included (§2.2). A match is refused anyway; only a verified one is revoked.
+PATTERN = re.compile(rb"mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 EMPTY_BODY_SHA256 = hashlib.sha256(b"").hexdigest()
 
 TIMESTAMP_WINDOW_SECONDS = 300
@@ -51,12 +55,48 @@ def parse(value: str) -> Presented | None:
 
 
 def find_all(data: bytes) -> list[Presented]:
-    """Every string in the credential format inside `data`."""
+    """Every string in the credential format inside `data`, and inside the strings a JSON
+    `data` decodes to, so that no escape (`\\n`, `\\u006d`) hides one (§2.2)."""
+    found = _matches(data)
+    for text in _json_strings(data):
+        found += _matches(text.encode("utf-8", "replace"))
+    return list(dict.fromkeys(found))
+
+
+def _matches(data: bytes) -> list[Presented]:
     found = []
     for match in PATTERN.finditer(data):
         _, credential_id, secret = match.group(0).decode("ascii").split(".")
         found.append(Presented(credential_id, secret))
     return found
+
+
+def _json_strings(data: bytes) -> list[str]:
+    """The keys and string values of `data` read as JSON; none when it is no JSON.
+
+    Decoded as the app's parser decodes a body (`json.loads` on bytes: a UTF-8 BOM, UTF-16
+    and UTF-32 in either byte order), so no body the app reads as JSON skips this scan."""
+    try:
+        text = data.decode(json.detect_encoding(data))
+    except (UnicodeDecodeError, LookupError):
+        return []
+    if text.lstrip()[:1] not in ("{", "[", '"'):
+        return []
+    try:
+        stack: list[Any] = [json.loads(text)]
+    except (ValueError, RecursionError):
+        return []
+    strings: list[str] = []
+    while stack:
+        value = stack.pop()
+        if isinstance(value, str):
+            strings.append(value)
+        elif isinstance(value, dict):
+            stack.extend(value.keys())
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return strings
 
 
 def secret_matches(secret: str, verifier_hex: str) -> bool:

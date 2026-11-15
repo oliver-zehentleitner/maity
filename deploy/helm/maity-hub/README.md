@@ -118,9 +118,12 @@ example; any cluster with the same pieces works.
    ```
 
    The instance key for secrets the hub stores (`MAITY_SECRET_KEY`: the
-   forge webhook's secret, a stored SMTP password, second-factor secrets;
-   docs/api.md §16.2, §17.4) is optional: without it none of those can be
-   stored, and the second factor `required_admins` refuses to start. 32
+   forge webhook's secret, a stored SMTP password, second-factor secrets,
+   the verifiers of agent and runner credentials; docs/api.md §2.2, §16.2,
+   §17.4) is optional: without it none of the first three can be stored,
+   the verifiers cannot be sealed, and the second factor
+   `required_admins` refuses to start. Sealing the verifiers is opt-in,
+   default off (`secretKey.sealVerifiers`, below). 32
    random bytes, base64:
 
    ```sh
@@ -131,7 +134,8 @@ example; any cluster with the same pieces works.
    A value that is not exactly 32 bytes of base64 stops the hub and the
    migrate Job from starting, so a typo shows at once. Keep a copy outside
    the cluster: a lost or changed key makes every stored secret unusable (the hub logs it at startup, and each webhook
-   needs a new secret). In the values it is `secretKey.existingSecret`
+   needs a new secret). With sealed credential verifiers it also means that every agent and runner
+   must join again. In the values it is `secretKey.existingSecret`
    (below); the Secret's key defaults to `secret-key`, set `secretKey.key` if you named it differently.
 
 4. **Values.** A `values.yaml` behind an ingress controller with
@@ -219,6 +223,7 @@ silently ignored. These are the values that matter:
 | `attachments.s3.bucket`, `.endpoint`, `.region`, `.prefix`, `.allowHttp` | none (bucket required with `s3`), AWS, none, none, `false` | `MAITY_ATTACHMENT_S3_BUCKET`, `_ENDPOINT` (an https URL without a path), `_REGION`, `_PREFIX`, `_ALLOW_HTTP` (plain http only to a host inside the cluster) |
 | `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
+| `secretKey.sealVerifiers` | `false` | `MAITY_SEAL_VERIFIERS=1`: the hub seals the verifiers of agent and runner credentials with the instance key (docs/api.md §2.2); needs `secretKey.existingSecret`. Opt-in, default off; sealed verifiers are read either way. After switching it on, run `maity-hub seal-verifiers` once in a hub pod to seal the verifiers stored before (idempotent, prints a count); the migrate Job seals nothing |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
 | `mail.username`, `.from`, `.replyTo` | none | `MAITY_SMTP_USERNAME`, `_FROM`, `_REPLY_TO` |
@@ -246,7 +251,8 @@ The chart refuses to render:
 - with `allowPlainHttp` together with the Ingress or a NodePort or
   LoadBalancer Service.
 
-The registration, terms, second-factor, limit and public-page settings have no
+The registration, terms, second-factor, limit, public-page and agent-firewall
+(`MAITY_AGENT_FIREWALL`) settings have no
 value of their own here. Set them in `extraEnv`, or as instance admin where the
 dashboard offers them; what each does is in
 [`hub/README.md`](../../../hub/README.md#settings-for-a-public-instance), the
@@ -258,6 +264,7 @@ extraEnv:
   - {name: MAITY_REGISTRATION, value: open}
   - {name: MAITY_SIGN_IN_SECOND_FACTOR, value: required_admins}
   - {name: MAITY_PUBLIC_PAGES, value: "on"}
+  - {name: MAITY_AGENT_FIREWALL, value: "on"}
 ```
 
 ## Client addresses
@@ -408,7 +415,13 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.
-  `DUMP_CRONJOB=<cronjob>` takes a dump job first (waiting up to `DUMP_TIMEOUT` seconds, 300 by default; `DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment tar in its mark), and
+  It takes a dump first, by default: a Job from the CronJob `maity-pg-dump`
+  (`DUMP_CRONJOB=<cronjob>` names another), waiting up to `DUMP_TIMEOUT`
+  seconds, 300 by default, and going on only when its log ends with the
+  `dump ok:` line (`DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment
+  tar in it). Without that CronJob the script stops before it changes
+  anything; `NO_DUMP=1` skips the dump, for a cluster where you take it
+  yourself. `deploy/k3s-single/backup.yaml` is such a CronJob. And
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
   `kubectl` and `helm`. A release whose migration touches no busy table can
   use plain `helm upgrade`.

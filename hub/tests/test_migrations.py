@@ -202,6 +202,7 @@ def insert_membership(project_id: str, human_id: str, joined: object, active: ob
     return insert(t.membership).values(
         project_id=project_id, human_id=human_id, trust="owner", role="coder",
         role_base="coder", areas=["/"], capabilities=[], joined_at=joined, active=active,
+        joined_seq=0,  # at head (since 20261112190000), before the downgrade
     )  # fmt: skip
 
 
@@ -1326,7 +1327,10 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
         }
         joins = {
             row.id: (row.subagents, row.subagents_language)
-            for row in conn.execute(select(t.join_link))
+            # The columns of that revision only: later ones (`revoked_by`) are not there yet.
+            for row in conn.execute(
+                select(t.join_link.c.id, t.join_link.c.subagents, t.join_link.c.subagents_language)
+            )
         }
     assert members[coder.agent_id] == (True, "de", chosen)
     assert members[reviewer.agent_id] == (True, "fr", written)
@@ -1566,3 +1570,274 @@ def test_notif_recipients_backfills_the_window_in_batches_and_runs_again(engine:
     assert rows() == expected
     indexes = {i["name"] for i in inspect(engine).get_indexes("notification_recipient")}
     assert "ix_notification_recipient_window" in indexes
+
+
+def test_join_seq_fills_every_membership_in_batches_and_runs_again(engine: Engine) -> None:
+    """20261112190000_join_seq: each membership, removed ones too, gets the highest seq of its
+    project's events at or before its `joined_at` (0 for none), the value the bell looked up
+    on every read before, over more than one batch. A MariaDB run that stopped part way left
+    the column and some values; the next run keeps them and fills the rest. The downgrade
+    drops the column and keeps the rows."""
+    from datetime import timedelta
+
+    from sqlalchemy import func, insert, inspect, select, text
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261112190000_join_seq"
+    migrate(engine, _before(engine, revision))
+    busy, empty = factory.project(engine, "join-seq"), factory.project(engine, "join-seq-2")
+    t0 = clock.now()
+    many = 501  # > BATCH
+    humans = [f"hum-joinseq{n:05d}" for n in range(many + 3)]
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.human),
+            [
+                {"id": h, "handle": h, "display_name": h, "password_hash": "x", "created_at": t0}
+                for h in humans
+            ],
+        )
+        conn.execute(
+            insert(t.event),
+            [
+                {"project_id": busy, "kind": "message", "at": t0 + timedelta(hours=k),
+                 "audience": ["role:coder"], "payload": {"body": str(k)}, "redacted": False}
+                for k in range(4)
+            ],
+        )  # fmt: skip
+
+        def joined(project_id: str, human_id: str, at: Any, active: Any = True) -> dict[str, Any]:
+            return {
+                "project_id": project_id, "human_id": human_id, "trust": "member",
+                "role": "coder", "role_base": "coder", "areas": ["/"], "capabilities": [],
+                "joined_at": at, "active": active,
+            }  # fmt: skip
+
+        conn.execute(
+            insert(t.membership),
+            [joined(busy, h, t0 + timedelta(hours=1)) for h in humans[:many]]
+            + [
+                joined(busy, humans[many], t0 - timedelta(hours=1)),  # before any event
+                joined(busy, humans[many + 1], t0 + timedelta(hours=9), None),  # removed
+                joined(empty, humans[many + 2], t0 + timedelta(hours=9)),  # no events
+            ],
+        )
+        # What the bell computed on each read until this revision.
+        expected = dict(
+            conn.execute(
+                select(t.membership.c.id, func.coalesce(func.max(t.event.c.seq), 0))
+                .select_from(t.membership)
+                .outerjoin(
+                    t.event,
+                    (t.event.c.project_id == t.membership.c.project_id)
+                    & (t.event.c.at <= t.membership.c.joined_at),
+                )
+                .group_by(t.membership.c.id)
+            ).all()
+        )
+    assert len(set(expected.values())) == 3  # 0, the second event, the last event
+
+    def stored() -> dict[int, int]:
+        with engine.connect() as conn:
+            rows = select(t.membership.c.id, t.membership.c.joined_seq)
+            return {row[0]: row[1] for row in conn.execute(rows)}
+
+    migrate(engine, revision)
+    assert stored() == expected
+    [column] = [c for c in inspect(engine).get_columns("membership") if c["name"] == "joined_seq"]
+    assert column["nullable"] is False
+    downgrade(engine, _before(engine, revision))
+    assert "joined_seq" not in {c["name"] for c in inspect(engine).get_columns("membership")}
+    with engine.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(t.membership)).scalar() == len(
+            expected
+        )
+    # What a MariaDB run that stopped after a batch leaves: the column, still nullable, and
+    # the values of the first rows.
+    first = sorted(expected)[:10]
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE membership ADD COLUMN joined_seq BIGINT"))
+        for membership_id in first:
+            conn.execute(
+                t.membership.update()
+                .where(t.membership.c.id == membership_id)
+                .values(joined_seq=expected[membership_id])
+            )
+    migrate(engine, revision)
+    assert stored() == expected
+
+
+def test_firewall_waiting_is_schema_only(engine: Engine) -> None:
+    """§9.6, "The switch" (req-5tngzfgp3nne o2): the revision adds the columns and the index
+    and marks no one, even an agent in an open group chat with someone of another side; who
+    waits is the hub's to write once the switch is on (`chat_gate.switch_on`). The downgrade
+    drops the columns and nothing else: the stays, chats and entries are kept."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func, insert, inspect, select, text
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    now = datetime(2026, 11, 12, tzinfo=UTC)
+    a, b = factory.human(engine, "a"), factory.human(engine, "b")
+    project_id = factory.project(engine, "p", owner_id=a)
+    human_a = factory.membership(engine, project_id, "owner", human_id=a)
+    factory.membership(engine, project_id, "admin", human_id=b)
+    agent_a = factory.agent(engine, project_id, a, with_session=False)
+    agent_b = factory.agent(engine, project_id, b, with_session=False)
+    rooms = {  # chat: (closed, members)
+        "cnv-mixed": (False, [human_a, agent_a.membership_id, agent_b.membership_id]),
+        "cnv-alone": (False, [human_a, agent_a.membership_id]),
+        "cnv-closed": (True, [human_a, agent_b.membership_id]),
+    }
+    with engine.begin() as conn:
+        for chat, (closed, members) in rooms.items():
+            conn.execute(
+                insert(t.conversation).values(
+                    id=chat, project_id=project_id, created_by=human_a, created_at=now,
+                    closed_at=now if closed else None,
+                )
+            )  # fmt: skip
+            for membership_id in members:
+                conn.execute(
+                    insert(t.conversation_participant).values(
+                        conversation_id=chat, membership_id=membership_id, joined_at=now,
+                        window_after=0, here=True,
+                    )
+                )  # fmt: skip
+
+    def counts() -> tuple[int, int]:
+        with engine.connect() as conn:
+            return (
+                conn.execute(select(func.count()).select_from(t.conversation_participant))
+                .scalar_one(),
+                conn.execute(select(func.count()).select_from(t.conversation)).scalar_one(),
+            )  # fmt: skip
+
+    before = counts()
+    downgrade(engine, _before(engine, "20261113010000_firewall_waiting"))
+    assert counts() == before == (7, 3)
+    migrate(engine)
+    assert counts() == before
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT p.conversation_id, m.agent_id, m.human_id, p.waiting_for, p.waiting"
+                " FROM conversation_participant p JOIN membership m ON m.id = p.membership_id"
+            )
+        ).all()
+    found = {(r[0], r[1] or r[2]): (r[3], bool(r[4])) for r in rows}
+    if engine.dialect.name in ("mysql", "mariadb", "sqlite"):
+        import json
+
+        found = {
+            k: (json.loads(w) if isinstance(w, str) else w, flag) for k, (w, flag) in found.items()
+        }
+    assert found == {
+        ("cnv-mixed", a): (None, False),
+        ("cnv-mixed", agent_a.agent_id): (None, False),
+        ("cnv-mixed", agent_b.agent_id): (None, False),
+        ("cnv-alone", a): (None, False),
+        ("cnv-alone", agent_a.agent_id): (None, False),
+        ("cnv-closed", a): (None, False),
+        ("cnv-closed", agent_b.agent_id): (None, False),
+    }
+    assert "ix_chat_access_until" in {i["name"] for i in inspect(engine).get_indexes("chat_access")}
+    assert "lapsed_at" in {c["name"] for c in inspect(engine).get_columns("chat_access")}
+
+
+def test_sealed_verifiers_only_widens_and_the_downgrade_opens_sealed_rows(engine: Engine) -> None:
+    """The upgrade only widens: with the instance key given the rows stay plain. Rows sealed
+    later (`maity-hub seal-verifiers`) the downgrade opens with the key and writes the same hex
+    back, next to plain ones; it refuses without the key or with another."""
+    from sqlalchemy import insert, select, update
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from maity_hub.auth import credentials, verifiers
+    from tests import factory
+
+    revision = "20261114020000_sealed_verifiers"
+    key, other = bytes(range(32)), bytes(32)
+    migrate(engine)
+    project_id = factory.project(engine)
+    human = factory.human(engine)
+    factory.membership(engine, project_id, human_id=human)
+    agent = factory.agent(engine, project_id, human)
+    _, runner_verifier = credentials.issue("rcrd-migration")
+    now = clock.now()
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.runner).values(
+                id="rnr-migration", owner_id=human, name="laptop", created_at=now, updated_at=now
+            )
+        )
+        conn.execute(
+            insert(t.runner_enrollment).values(
+                id="renr-migration",
+                name="laptop",
+                attach=[],
+                token_hash="a" * 64,
+                code_hash="b" * 64,
+                created_by=human,
+                created_at=now,
+                expires_at=now,
+                failed_attempts=0,
+            )
+        )
+        conn.execute(
+            insert(t.runner_credential).values(
+                id="rcrd-migration",
+                runner_id="rnr-migration",
+                verifier=runner_verifier,
+                enrollment_id="renr-migration",
+                created_at=now,
+            )
+        )
+    plain = {agent.credential_id: agent.verifier, "rcrd-migration": runner_verifier}
+
+    def stored() -> dict[str, str]:
+        with engine.connect() as conn:
+            rows = [
+                *conn.execute(select(t.credential.c.id, t.credential.c.verifier)),
+                *conn.execute(select(t.runner_credential.c.id, t.runner_credential.c.verifier)),
+            ]
+        return {row.id: row.verifier for row in rows}
+
+    before = _before(engine, revision)
+    downgrade(engine, before)
+    migrate(engine, secret_key=key)  # with the key: widened, the rows stay plain
+    assert stored() == plain
+    downgrade(engine, before)  # only plain rows: no key needed
+    assert stored() == plain
+    migrate(engine)
+    assert stored() == plain
+    assert verifiers.seal_plain(engine, key) == {"credential": 1, "runner_credential": 1}
+    sealed = stored()
+    assert all(value.startswith("s1:") for value in sealed.values())
+    assert not set(sealed.values()) & set(plain.values())
+    for refused_with in (None, other):
+        with pytest.raises(RuntimeError, match="sealed verifiers|does not open"):
+            downgrade(engine, before, secret_key=refused_with)
+        if engine.dialect.name in ("mariadb", "mysql"):
+            migrate(engine, secret_key=key)  # it stays at the refusing revision there
+        assert stored() == sealed
+    downgrade(engine, before, secret_key=key)
+    assert stored() == plain
+    migrate(engine, secret_key=key)
+    assert stored() == plain  # the upgrade run again seals nothing either
+    # A mix of sealed and plain rows: the sealed one is opened, the plain one kept.
+    verifiers.seal_plain(engine, key)
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == agent.credential_id)
+            .values(verifier=agent.verifier)
+        )
+    downgrade(engine, before, secret_key=key)
+    assert stored() == plain

@@ -15,7 +15,7 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import clock, environment, placements
 from maity_hub import tables as t
-from maity_hub.auth import credentials
+from maity_hub.auth import credentials, verifiers
 from maity_hub.auth.caller import is_runner_credential
 from maity_hub.events import emit
 from maity_hub.runners import attached_project_ids, human_actor
@@ -54,9 +54,7 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
     for row in rows:
         if row.revoked_at is not None:
             continue
-        if not any(
-            credentials.secret_matches(secret, row.verifier) for secret in secrets_by_id[row.id]
-        ):
+        if not _verifies("credential", row, secrets_by_id[row.id]):
             continue
         revoke(conn, row.id, REASON, by=None)
         payload = {"credential_id": row.id, "reason": REASON}
@@ -89,6 +87,7 @@ def revoke(
     *,
     holder_moves: bool = False,
     member_goes: bool = False,
+    stops_placements: bool = True,
 ) -> bool:
     """Revoke a credential and end its live session; True when this call revoked it
     (a conditional UPDATE decides between two at once), False when it was revoked
@@ -96,7 +95,9 @@ def revoke(
     transaction (a replacement, a member's removal), so no `holder_stalled` is said; it is
     the caller's word, never read from `reason`, which a revoking human writes freely.
     `member_goes`: the whole member is removed in the same transaction, so `member_removed`
-    says the lead's end; also the caller's word, for the same reason."""
+    says the lead's end; also the caller's word, for the same reason.
+    `stops_placements: False`: the revocation follows a clone the runner removed, whose
+    placement rejoins at its next start instead of being stopped (§15.5)."""
     now = clock.now()
     won = conn.execute(
         update(t.credential)
@@ -116,13 +117,20 @@ def revoke(
         ).one()
         environment.refresh(conn, member.project_id, member.id)
     _lead_revoked(conn, credential_id, announce=not member_goes)
+    if won == 1:
+        # Its open wait ends at once in this process; another replica's ends at its next
+        # pass, which reads `revoked_at` (`routes/events`).
+        from maity_hub import longpoll
+
+        longpoll.registry.end_keys_after(conn, {credential_id})
     if won == 1 and not holder_moves:  # a holder that stops (§6.5)
         from maity_hub import holder_stalled
 
         holder_stalled.revoked(conn, credential_id)
     # Every path ends here (the leak, §10's revoke, member removal): a placement that
     # names the credential stops in the same transaction (§15.5).
-    placements.credential_revoked(conn, credential_id, by)
+    if stops_placements:
+        placements.credential_revoked(conn, credential_id, by)
     return won == 1
 
 
@@ -154,6 +162,13 @@ def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> No
         )
 
 
+def _verifies(table: verifiers.Table, row: Any, secrets: set[str]) -> bool:
+    verifier = verifiers.usable(table, row.id, row.verifier)
+    return verifier is not None and any(
+        credentials.secret_matches(secret, verifier) for secret in secrets
+    )
+
+
 def _revoke_leaked_runners(
     conn: Connection, ids: list[str], secrets_by_id: dict[str, set[str]]
 ) -> list[str]:
@@ -171,15 +186,9 @@ def _revoke_leaked_runners(
     for row in rows:
         if row.revoked_at is not None:
             continue
-        if not any(
-            credentials.secret_matches(secret, row.verifier) for secret in secrets_by_id[row.id]
-        ):
+        if not _verifies("runner_credential", row, secrets_by_id[row.id]):
             continue
         revoke_runner_credential(conn, row.id, REASON, by=None)
-        runner_id = conn.execute(
-            select(t.runner_credential.c.runner_id).where(t.runner_credential.c.id == row.id)
-        ).scalar_one()
-        placements.runner_credential_gone(conn, runner_id, None)
         revoked.append(row.id)
     return revoked
 
@@ -190,12 +199,18 @@ def revoke_runner_credential(
     reason: str | None,
     by: str | None,
     applied: list[dict[str, Any]] | None = None,
+    *,
+    replaced: bool = False,
 ) -> bool:
     """Revoke a runner credential and end its live session; False when it was revoked
-    already. Every project the runner is attached to learns it from its own
-    `runner_credential_revoked` (§15.10), with the rule `runner_revoke.apply` applied
-    there (`keep` where nothing was applied: a leak's revocation keeps, §15.3) and the
-    placements it stopped, which the runner is also told on its next call."""
+    already. What the runner's placements lose with it follows in the same transaction,
+    so no caller has to remember it (`placements.runner_credential_gone`): its unused
+    pickups end, and what was closing closes now unless `replaced`, a re-pair whose new
+    credential takes over the same placements (§15.3). Every project the runner is
+    attached to learns it from its own `runner_credential_revoked` (§15.10), with the
+    rule `runner_revoke.apply` applied there (`keep` where nothing was applied: a leak's
+    revocation keeps, §15.3) and the placements it stopped, which the runner is also
+    told on its next call."""
     now = clock.now()
     by_project = {a["project_id"]: a for a in applied or []}
     revoked = conn.execute(
@@ -237,4 +252,5 @@ def revoke_runner_credential(
             actor=human_actor(conn, project_id, by),
             subject=("runner", runner_id),
         )
+    placements.runner_credential_gone(conn, runner_id, by, replaced=replaced)
     return True

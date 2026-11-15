@@ -216,6 +216,12 @@ def test_an_agent_reports_in_its_own_project_and_counts_for_its_owner(
     team: dict[str, Any], make_client: ClientFactory, migrated: Engine
 ) -> None:
     agent = flow.agent(make_client, team["owner"])
+    # Its owner lets pat's side reach it: a notice from another side is held otherwise (§9.6).
+    allowed = team["owner"].post(
+        "/me/chat-access/allow",
+        {"agents": [agent.id], "owner_id": team["pat"].id, "their_human": True},
+    )
+    assert allowed.status_code == 201, allowed.text
     seq = message(team["pat"], body="spam from pat")
     made = agent.post(
         "/reports",

@@ -10,6 +10,7 @@ unread requests of the small history (1000 by default, as in CI's job)."""
 
 from __future__ import annotations
 
+import contextvars
 import os
 import statistics
 import threading
@@ -87,13 +88,13 @@ def histories(
     """A bell with `UNIT` unread requests; calling the result grows it to `GROWTH` times."""
     inbox_item(make_client, owner)
     template = {"request": _request_of(migrated)}
-    # Joining never replays history (§18.2): the human joined before the window began, so
-    # that every seeded event is news to them.
+    # Joining never replays history (§18.2): the human joined before the window began and
+    # before any event, so that every seeded event is news to them.
     with migrated.begin() as conn:
         conn.execute(
             update(t.membership)
             .where(t.membership.c.human_id == owner.id)
-            .values(joined_at=clock.now() - timedelta(days=WINDOW_DAYS + 1))
+            .values(joined_at=clock.now() - timedelta(days=WINDOW_DAYS + 1), joined_seq=0)
         )
     seed(migrated, template, UNIT - 1, 1)
 
@@ -149,8 +150,13 @@ def held_statements(engine: Engine, humans: list[flow.Human], seconds: int) -> f
     starts = [bell(h, limit=0)["next_after"] for h in humans]
 
     def hold() -> None:
+        # Each poller runs in a copy of the call's context, so `count_statements` counts its
+        # request as the call's own (a thread starts with an empty context).
         pollers = [
-            threading.Thread(target=lambda h=h, s=s: bell(h, after=s, wait=seconds))
+            threading.Thread(
+                target=contextvars.copy_context().run,
+                args=(lambda h=h, s=s: bell(h, after=s, wait=seconds),),
+            )
             for h, s in zip(humans, starts, strict=True)
         ]
         for poller in pollers:

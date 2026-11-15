@@ -51,7 +51,8 @@ window.Maity = window.Maity || {};
     const label = (LABELS[what] || LABELS.person)();
     if (o.signedOut) {
       const back = o.signedOut + (o.signedOut.includes("?") ? "&" : "?") + "report";
-      return { button: h("a", { class: "button small report-open", href: M.withNext("/login", back), "aria-label": label }, M.t("report.sign_in")), slot };
+      // Its visible words are its name (WCAG 2.5.3, label in name); what is reported is its title.
+      return { button: h("a", { class: "button small report-open", href: M.withNext("/login", back), title: label }, M.t("report.sign_in")), slot };
     }
     const n = ++forms;
     const button = h("button", { type: "button", class: "small report-open", "aria-expanded": "false", "aria-label": label }, M.t("report.open"));

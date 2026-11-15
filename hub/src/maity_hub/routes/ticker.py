@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, events, idempotency, ticker
+from maity_hub import chat_request, clock, events, idempotency, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
@@ -71,7 +71,7 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
     kind = body.type
     if kind is None:
         errors["type"] = "required"
-    elif kind in ("merge", "decision", "rename"):
+    elif kind in ("merge", "decision", "jour_fixe", "rename"):
         errors["type"] = "not_for_type"
     elif kind not in ("note", "deploy", "release"):
         errors["type"] = "invalid"
@@ -190,6 +190,12 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
                 "log_url": d.get("log_url"),
             }
         audience = ticker.manual_audience(conn, people, kind, to, facts.get("areas", []))
+        # Its own `to` reaches an agent of another owner only on that owner's yes (§9.6).
+        held = (
+            ticker.gate_manual(conn, mine, people, audience)
+            if to == "all" or isinstance(to, list)
+            else []
+        )
         if key is not None:
             found = ticker.existing(conn, mine.project.id, key)
             if found is not None:
@@ -210,7 +216,10 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
             subject=("task", card.id) if card is not None else None,
             dedupe_key=key,
             facts=facts,
+            held=held,
         )
+        if seq is not None and held:  # each held agent's owner is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "ticker", held)
         if seq is None:  # taken between the check and the write: the first item stands
             raise ApiError(
                 409,
@@ -317,7 +326,11 @@ def _load_subscription(conn: Connection, membership_id: str, _request: Request) 
     return _subscription_view(ticker.subscription_of(conn, int(membership_id)))
 
 
-idempotency.LOADERS["ticker_subscription"] = _load_subscription
+idempotency.register(
+    "ticker_subscription",
+    _load_subscription,
+    idempotency.in_project(idempotency.column_of(t.membership, key=int)),
+)
 
 
 @router.get("/projects/{owner}/{slug}/ticker/subscription")
@@ -372,7 +385,14 @@ def patch_subscription(
                 name = f"{side}.{kind}"
                 if set(add) & set(remove):
                     errors[name] = "invalid"
-                if kind == "types" and any(v not in ticker.FILTER_TYPES for v in add + remove):
+                # A value stored before it stopped counting (`rename`) can still be removed.
+                if kind == "types" and (
+                    any(v not in ticker.SUBSCRIPTION_TYPES for v in add)
+                    or any(
+                        v not in ticker.SUBSCRIPTION_TYPES and v not in current[side][kind]
+                        for v in remove
+                    )
+                ):
                     errors[name] = "invalid"
                 if kind == "areas" and any(not AREA.match(v) for v in add + remove):
                     errors[name] = "invalid"

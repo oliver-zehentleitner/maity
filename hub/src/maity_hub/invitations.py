@@ -29,7 +29,7 @@ from sqlalchemy import Connection, Engine, insert, select, update
 from maity_hub import clock, maintenance, proposals, worker_runs
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, rate_limited
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.models import HANDLE_PATTERN
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
@@ -128,12 +128,16 @@ def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> boo
 
 
 def issuer_holds(conn: Connection, row: Any) -> bool:
-    """Whether the issuer is still an active human member with the authority it needs."""
+    """Whether the issuer is still an active human member with the authority it needs, and
+    an account not suspended (§16.8)."""
     issuer = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role_base).where(
+        select(t.membership.c.trust, t.membership.c.role_base)
+        .join(t.human, t.human.c.id == t.membership.c.human_id)
+        .where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
+            t.human.c.suspended_at.is_(None),
         )
     ).first()
     return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role_base)
@@ -313,6 +317,7 @@ def admit(
             areas=[],
             capabilities=[],
             joined_at=now,
+            joined_seq=newest_seq(conn, row.project_id),
             last_seen_at=now,
             changed_via=via,
         )

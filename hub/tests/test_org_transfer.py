@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import Engine, select, update
 
 from maity_hub import tables as t
+from maity_hub.events import newest_seq
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_orgs import add_member, make_org, team
@@ -192,6 +193,7 @@ def test_out_of_an_organisation_to_another_human_needs_their_go(
                 areas=["/"],
                 capabilities=[],
                 joined_at=conn.execute(select(t.membership.c.joined_at)).scalars().first(),
+                joined_seq=newest_seq(conn, pid),
                 last_seen_at=conn.execute(select(t.membership.c.joined_at)).scalars().first(),
             )
         )

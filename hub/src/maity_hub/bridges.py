@@ -385,6 +385,10 @@ def create(
         )
     )
     announce(conn, project_id, (served.id, bridge.id), actor)
+    if cross:  # the bridge's owner is a side in the served member's chats now (§9.6)
+        from maity_hub import chat_gate
+
+        chat_gate.served(conn, served.id)
     return conn.execute(select(t.bridge).where(t.bridge.c.id == bridge_id)).one()
 
 
@@ -411,6 +415,10 @@ def end(
         .values(ended_at=clock.now(), ended_by=by, end_reason=reason, live=None)
     )
     on_commit(conn, lambda: longpoll.registry.end_bridge(row.id))
+    if row.cross_owner:  # its owner is no side in the served member's chats any more (§9.6)
+        from maity_hub import chat_gate
+
+        chat_gate.served(conn, row.served)
     if actor is not None:
         announce(conn, row.project_id, _active(conn, (row.served, row.bridge)), actor)
     return conn.execute(select(t.bridge).where(t.bridge.c.id == row.id)).one()
@@ -665,6 +673,15 @@ def not_your_bridge() -> ApiError:
     )
 
 
+def _carries(conn: Connection, bridge: int | None, served_owner: str | None) -> bool:
+    """A connection carries only while the bridge member is no guest and the served agent's
+    owner is not suspended (§2.3, §16.8): checked at every call, whatever path changed it."""
+    from maity_hub import moderation
+
+    trust = conn.execute(select(t.membership.c.trust).where(t.membership.c.id == bridge)).scalar()
+    return trust not in (None, "guest") and not moderation.suspended(conn, served_owner)
+
+
 def carry(
     conn: Connection,
     caller: Caller,
@@ -704,6 +721,8 @@ def carry(
         raise not_your_bridge()
     if found.isolated_since is not None:
         raise refusal(found)
+    if not _carries(conn, caller.membership_id, found.served_owner):
+        raise not_your_bridge()
     if renew_leases:
         _renew_carried(conn, found.id, caller.project_id)
     assert caller.membership_id is not None and caller.agent_id is not None

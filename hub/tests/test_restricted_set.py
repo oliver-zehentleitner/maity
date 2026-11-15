@@ -656,6 +656,7 @@ def test_org_promotion_raises_an_existing_member_into_the_set(
                 areas=["/"],
                 capabilities=[],
                 joined_at=joined,
+                joined_seq=events.newest_seq(conn, pid),
                 last_seen_at=joined,
             )
         )

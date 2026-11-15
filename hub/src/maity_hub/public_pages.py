@@ -15,7 +15,7 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
@@ -37,11 +37,14 @@ log = logging.getLogger(__name__)
 
 # `img-src 'self'` for the pictures of a person's and an agent's page (§6.10, §16.9).
 CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'"
-# A stored page in its frame (§16.7.5): the landing page's stylesheets and fonts from this host
-# as well; still no script, and the stored page's inline styles (a picture's size) still apply.
+# A stored page in its frame (§16.7.5), and `/explore` in the same frame: the landing page's
+# stylesheets, fonts and its one script (landing.js, the theme switch; req-q34v0gr2rbw2) from
+# this host as well. The stored pages carry
+# no inline style (the shell's policy refuses it, tsk-8fk897a9tan8); 'unsafe-inline' stays for the
+# maintenance banner put around them.
 FRAMED_CSP = (
-    "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; "
-    "base-uri 'none'; frame-ancestors 'none'"
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
+    "img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
 CACHE = "public, max-age=60"
 READ_CACHE = "public, max-age=60"
@@ -143,7 +146,11 @@ def answer(
 
     window = maintenance.window_now(engine_of(request))
     if window is not None and window["state"] == "running":
-        return maintenance.refusal_page(window)  # type: ignore[no-any-return]
+        return maintenance.refusal_page(  # type: ignore[no-any-return]
+            window,
+            maintenance.cached_frame(engine_of(request)),
+            request.headers.get("accept-language"),
+        )
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
@@ -380,7 +387,13 @@ def refresh(
 
 
 def touch(
-    conn: Connection, kind: str, target_id: str, *, removal: bool = True, dependents: bool = True
+    conn: Connection,
+    kind: str,
+    target_id: str,
+    *,
+    removal: bool = True,
+    dependents: bool = True,
+    others: Callable[[], Sequence[tuple[str, str]]] | None = None,
 ) -> None:
     """An input of the target's pages changed, in the transaction that changed it. A change
     that takes anything off a page (`removal`, the default) renders it again at once under
@@ -388,7 +401,9 @@ def touch(
     a count waits for the next run (§16.9). Nothing happens while the instance serves no
     pages. `dependents=False` renders the target's own pages only, for a change that no other
     page shows: a project's dependents are every card page of the project, too many to render
-    while the caller holds the project row (hub/context/public-pages.md 721bcdfa)."""
+    while the caller holds the project row (hub/context/public-pages.md 721bcdfa). `others`, when
+    given, lists the dependents in place of the kind's own, read only when pages are rendered:
+    those a change of one member reaches (`public_projects.member_dependents`, fe966f9c)."""
     from maity_hub import events
 
     hub = _hub
@@ -396,14 +411,14 @@ def touch(
         return
     if not (removal or hub.public_pages_render == "on_change"):
         return
+    of_kind = KINDS[kind].dependents if dependents else None
+    pages = list(others()) if others else of_kind(conn, target_id) if of_kind else []
     if not events.in_transaction(conn):  # a caller with a plain `engine.begin()`
         refresh(conn, hub, kind, target_id)
-        others = KINDS[kind].dependents if dependents else None
-        for other, other_id in others(conn, target_id) if others else []:
+        for other, other_id in pages:
             refresh(conn, hub, other, other_id)
         return
-    others = KINDS[kind].dependents if dependents else None
-    targets = [(kind, target_id), *(others(conn, target_id) if others else [])]
+    targets = [(kind, target_id), *pages]
     if removal:
         # Off in the writer's transaction, so nothing removed is served for a moment; the
         # render follows the commit. Under the target's lock, so a render of it that is still

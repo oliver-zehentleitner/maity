@@ -3,8 +3,9 @@
 An entry says who may chat with the human's agents: an allow names a side (another human with
 all, listed or none of their agents, and that human or not) or a project; a deny names a side,
 one human, one agent or a project, and wins over every allow. Only the human reads and changes
-the list. The entries are kept here and served by `/me/chat-access`. Nothing admits or holds
-back an agent by them yet: the gate (§9.6, "Waiting") is a later part of the same card.
+the list. The entries are kept here and served by `/me/chat-access`; `chat_gate` admits an agent
+to a chat or lets it wait by them (§9.6, "Waiting"), and every write here is followed by its
+`recheck` of the owner's chats.
 
 An entry is a row of the human: deleted with the account and in its export. The agents, humans
 and projects it names are taken out of it when they go, and an entry left with no agent on the
@@ -307,7 +308,7 @@ def patch_allow(conn: Connection, me: str, entry_id: str, body: dict[str, Any]) 
         )
     if "duration" in body:
         duration = _duration(body["duration"])
-        values.update(duration=duration, until=_until(duration, clock.now()))
+        values.update(duration=duration, until=_until(duration, clock.now()), lapsed_at=None)
     for field in ("allowed", "denied"):
         if field in body:
             values[field] = _text(body[field], field)

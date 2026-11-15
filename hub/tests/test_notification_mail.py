@@ -89,6 +89,11 @@ def test_an_immediate_item_waits_its_window_and_goes_once(
     assert "Stop these mails (inbox): https://hub.example/mail/unsubscribe/" in mail.body
     assert mail.headers["List-Unsubscribe"].startswith("<https://hub.example/mail/unsubscribe/")
     assert mail.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+    stop = mail.headers["List-Unsubscribe"][1:-1]
+    assert mail.body.endswith(
+        f"\n\nStop these mails (inbox): {stop}\nSettings: {PUBLIC}/account/notifications\n\n"
+        f"Maity only links to {PUBLIC}; a link anywhere else in this mail was not sent by Maity.\n"
+    )
     at(minutes=10)
     run(migrated)
     assert len(notifications(migrated)) == 1  # an item goes out once
@@ -709,3 +714,307 @@ def test_a_sign_in_alert_in_a_digest_travels_with_it(
     assert "New sign-in:" in digest.body  # the sign-in itself, not a link every digest has
     waiting = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
     assert waiting == []  # no mail of its own: it went in the digest
+
+
+# --- subjects and memberships (§18.5) ------------------------------------------------
+
+
+def test_the_subject_defangs_what_the_hub_did_not_write(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    ask(agent, "Sign in at https://evil.example/login or www.evil.example now")
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert "https://evil" not in mail.subject and "www.evil" not in mail.subject
+    assert "https[:]//evil[.]example/login" in mail.subject
+    assert "www[.]evil[.]example" in mail.subject
+
+
+def test_subject_line_is_one_defanged_line_cut_at_its_maximum() -> None:
+    line = mailer.subject_line("[Maity] p: go to\x85evil.example  " + "x" * 300)
+    assert line.startswith("[Maity] p: go to evil[.]example x")
+    assert len(line) == mailer.SUBJECT_MAX and line.endswith("…")
+    assert mailer.subject_line("[Maity] Ann: version 1.2") == "[Maity] Ann: version 1.2"
+
+
+def _only_in_queue(engine: Engine, row_id: int) -> None:
+    """Every other row of the set-up out of the way: the fake server takes one mail."""
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.mail_outbox)
+            .where(t.mail_outbox.c.id != row_id, t.mail_outbox.c.status == "waiting")
+            .values(status="sent")
+        )
+
+
+def _remove(conn: Any, human_id: str) -> Any:
+    """End the human's active membership as a removal does; returns the row as it was."""
+    row = conn.execute(
+        select(t.membership).where(
+            t.membership.c.human_id == human_id, t.membership.c.active.is_(True)
+        )
+    ).one()
+    conn.execute(
+        update(t.membership)
+        .where(t.membership.c.id == row.id)
+        .values(active=None, removed_at=clock.now())
+    )
+    return row
+
+
+def _deliver_only(engine: Engine, row_id: int) -> tuple[str, list[str]]:
+    """Send what is due with only this row in the queue: its status, the server's commands."""
+    from maity_hub.mail import outbox
+
+    _only_in_queue(engine, row_id)
+    server = FakeSmtp(Script())
+    try:
+        outbox.send_due(engine, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    [after] = [r for r in outbox_rows(engine) if r.id == row_id]
+    return after.status, server.record.commands
+
+
+def test_a_mail_waiting_for_its_budget_is_dropped_once_the_membership_ended(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub.mail import outbox
+
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert mail.headers[outbox.MEMBERSHIPS_MARK]  # the membership the item was read through
+    _only_in_queue(migrated, mail.id)
+    with migrated.begin() as conn:  # removed from the project while the mail waits
+        _remove(conn, owner.id)
+    server = FakeSmtp(Script())
+    try:
+        outbox.send_due(migrated, mail_env(server.port).mail, None)
+    finally:
+        server.close()
+    [after] = [r for r in outbox_rows(migrated) if r.id == mail.id]
+    assert after.status == "dropped"
+    assert server.record.commands == []  # nothing left the hub
+
+
+def test_a_mail_goes_out_while_the_membership_holds(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    from maity_hub.mail import outbox
+
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    _only_in_queue(migrated, mail.id)
+    server = FakeSmtp(Script())
+    try:
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 1
+    finally:
+        server.close()
+    [after] = [r for r in outbox_rows(migrated) if r.id == mail.id]
+    assert after.status == "sent"
+
+
+def test_a_waiting_mail_is_dropped_though_the_human_joined_again(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    with migrated.begin() as conn:  # left, then joined again with a new row, while it waits
+        old = _remove(conn, owner.id)
+        again = {k: v for k, v in old._mapping.items() if k != "id"}
+        again.update(active=True, removed_at=None, joined_at=clock.now())
+        conn.execute(insert(t.membership).values(**again))
+    status, commands = _deliver_only(migrated, mail.id)
+    assert status == "dropped" and commands == []
+
+
+def test_a_removal_between_reading_the_scope_and_building_the_mail_drops_it(
+    make_client: ClientFactory, migrated: Engine, at: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity_hub.notifications import items
+
+    owner, agent = setup(make_client, migrated)
+    owner.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}})
+    ask(agent)
+    at(minutes=3)
+    derive = items.derive
+
+    def removed_after_derive(conn: Any, where: Any, **kwargs: Any) -> Any:
+        found = derive(conn, where, **kwargs)
+        _remove(conn, owner.id)  # as a removal that commits after the scope was read
+        return found
+
+    monkeypatch.setattr(items, "derive", removed_after_derive)
+    run(migrated)
+    monkeypatch.setattr(items, "derive", derive)
+    [mail] = notifications(migrated)
+    status, commands = _deliver_only(migrated, mail.id)
+    assert status == "dropped" and commands == []
+
+
+def test_removed_invited_and_accepted_again_the_old_mail_is_dropped(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """The history the review reproduced over HTTP: a member of olga's `lab` gets a mail
+    built, is removed, invited and accepted again (a new membership row, a new `joined_seq`),
+    and the mail built before the removal is dropped, not sent."""
+    anna = verified(make_client, migrated, "me@example.org")
+    olga = flow.human(make_client, migrated, "olga")
+    flow.project(olga, "lab")
+    lab = "/projects/olga/lab"
+
+    def joined() -> None:
+        made = olga.post(f"{lab}/invitations", {})
+        assert made.status_code == 201, made.text
+        token = made.json()["url"].rsplit("/", 1)[1]
+        assert anna.post(f"/invitations/{token}/accept").status_code == 201
+
+    joined()
+    agent = flow.agent(make_client, olga, "olga/lab")
+    with migrated.begin() as conn:  # the set-up's mails are out of the way
+        conn.execute(update(t.mail_outbox).values(status="sent"))
+    later = clock.now() + timedelta(seconds=30)
+    clock.set_source(lambda: later)
+    assert anna.patch(S, {"email": {"kinds": {"inbox": {"mode": "immediate"}}}}).status_code == 200
+    asked = agent.post(f"{lab}/requests", {"class": "decision", "title": "Which?", "to": anna.id})
+    assert asked.status_code == 201, asked.text
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert olga.delete(f"{lab}/members/{anna.id}").status_code in (200, 204)
+    joined()
+    with migrated.connect() as conn:
+        rows = conn.execute(
+            select(t.membership.c.id, t.membership.c.active).where(
+                t.membership.c.human_id == anna.id
+            )
+        ).all()
+    assert len(rows) == 2 and sum(1 for r in rows if r.active) == 1  # a new row
+    status, commands = _deliver_only(migrated, mail.id)
+    assert status == "dropped" and commands == []
+
+
+def test_the_security_mails_read_exactly_as_composed(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    # The whole body and headers of each record mail, so that the shared closing lines and
+    # the record read (mailer._footer, mailer._record) stay byte for byte what they were;
+    # the changed password's notice and the daily cap's unlock link (#1756) among them.
+    from maity_hub.auth import second_factor
+    from maity_hub.notifications import preferences, records
+
+    owner, _ = setup(make_client, migrated)
+    seen = {"ip": "203.0.113.9", "browser": "Firefox", "os": "Linux"}
+    with migrated.begin() as conn:
+        records.session_created(conn, owner.id, {"method": "password", **seen})
+        records.write(conn, owner.id, "second_factor_changed", {"change": "enrolled", "by": "x"})
+        records.write(conn, owner.id, "password_reset", {})
+        records.write(conn, owner.id, "password_changed", seen)
+        capped = {"day": "2026-10-25", "unlocks": 0, "password_generation": 0}
+        records.write(
+            conn,
+            owner.id,
+            "second_factor_failed",
+            {"method": second_factor.DAILY_LIMIT, **capped, **seen},
+        )
+        epoch = conn.execute(
+            select(t.notification_settings.c.epoch).where(
+                t.notification_settings.c.human_id == owner.id
+            )
+        ).scalar_one()
+        stamps = {
+            row.type: row.at.astimezone(UTC).strftime("%Y-%m-%d %H:%M %Z")
+            for row in conn.execute(
+                select(t.account_record).where(t.account_record.c.human_id == owner.id)
+            )
+        }
+    at(minutes=1)
+    run(migrated)
+    waiting = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
+    mails = {r.subject: r for r in waiting}
+    key = mail_env().mail.signing_key
+    assert key is not None
+    stop = f"{PUBLIC}/mail/unsubscribe/" + preferences.unsubscribe_token(
+        key, owner.id, "security", epoch
+    )
+    only = (
+        f"\n\nMaity only links to {PUBLIC}; a link anywhere else in this mail was not sent "
+        "by Maity.\n"
+    )
+    settings = f"\nSettings: {PUBLIC}/account/notifications"
+    [sign_in] = [r for r in waiting if "Browser: Firefox" in r.body]
+    assert sign_in.body == (
+        f"A new session signed in to your account at {PUBLIC}.\n\n"
+        f"Time: {stamps['session_created']}\nMethod: password\nBrowser: Firefox\nSystem: Linux\n"
+        f"Address: 203.0.113.9\n\nIf this was not you, end it here: {PUBLIC}/account/sessions\n"
+        f"\nStop these mails (security): {stop}" + only
+    )
+    assert sign_in.headers["List-Unsubscribe"] == f"<{stop}>"
+    assert sign_in.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+    factor = mails["[Maity] Two-factor sign-in turned on"]
+    assert factor.body == (
+        f"Two-factor sign-in turned on.\n\nTime: {stamps['second_factor_changed']}\n\n"
+        f"If this was not you, sign in and check your account here: {PUBLIC}/account/security\n"
+        + settings
+        + only
+    )
+    assert "List-Unsubscribe" not in factor.headers
+    reset = mails["[Maity] Your password was reset"]
+    assert reset.body == (
+        f"The password of your Maity account was reset at {stamps['password_reset']} from a "
+        "browser on an unknown system, ?. Every session has ended.\n\nIf this was not you, reset "
+        "it again, set up an authenticator app, and end your agents' access under Agents: "
+        f"{PUBLIC}/agents\n" + settings + only
+    )
+    assert "List-Unsubscribe" not in reset.headers
+    changed = mails["[Maity] Your password was changed"]
+    assert changed.body == (
+        f"The password of your Maity account was changed at {stamps['password_changed']} from "
+        "Firefox on Linux, 203.0.113.9. Every other session has ended.\n\nIf this was not you, "
+        "reset your password, set up an authenticator app, and end your agents' access under "
+        f"Agents: {PUBLIC}/agents\n" + settings + only
+    )
+    unlock = f"{PUBLIC}/mail/second-factor-unlock/" + second_factor.unlock_token(
+        key, owner.id, "2026-10-25", 0, 0
+    )
+    capped_mail = mails[
+        "[Maity] Second-factor codes refused for today after too many wrong ones: Firefox on "
+        "Linux, 203.0.113.9"
+    ]
+    assert capped_mail.body == (
+        "Second-factor codes refused for today after too many wrong ones: Firefox on Linux, "
+        f"203.0.113.9.\n\nTime: {stamps['second_factor_failed']}\n\nIf this was not you, sign "
+        f"in and check your account here: {PUBLIC}/account/security\n"
+        "\nYour second factor is refused until the end of the day (UTC). If the wrong codes were "
+        f"yours, this link lets you try again today: {unlock}\nIf they were not, do not open the "
+        "link, and change your password.\n" + settings + only
+    )
+    for mail in (sign_in, factor, reset, changed, capped_mail):
+        assert mail.recipient == "me@example.org"
+    assert {r.subject for r in waiting} == {
+        sign_in.subject,
+        factor.subject,
+        reset.subject,
+        changed.subject,
+        capped_mail.subject,
+    }
+    assert sign_in.headers == {
+        "List-Unsubscribe": f"<{stop}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+    for mail in (factor, reset, changed, capped_mail):  # at once, never an unsubscribe link
+        assert mail.headers == {}, mail.headers

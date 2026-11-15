@@ -54,7 +54,7 @@
         "security": { "mode": "immediate" },
         "invitation": { "mode": "immediate" }
       },
-      "sign_in_link": true, "hold_while_online": true, "daily_at": "08:00", "weekly_on": "mon", "quiet_hours": null,
+      "sign_in_link": true, "password_reset": true, "hold_while_online": true, "daily_at": "08:00", "weekly_on": "mon", "quiet_hours": null,
       "hard_failures": 0, "disabled_at": null
     },
     "mail_available": true

@@ -60,6 +60,8 @@ TITLE = 200  # characters, docs/api.md §1.7
 BRIDGE_PURPOSE = 200  # characters, docs/api.md §2.3 ("The bridge")
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
 HEX_SHA256 = 64
+# A verifier sealed by `auth.verifiers`: `s1:` and the base64 of 60 bytes (83), or 64 hex.
+SEALED_VERIFIER = 128
 # A namespace owner is a human or an organisation: one of the two foreign keys, and
 # `owner_id` the same id (docs/api.md §6.25, §6.26).
 OWNER_SHAPE = (
@@ -148,6 +150,9 @@ human = Table(
     # The terms version accepted at registration, and when (§2.7.2); null otherwise.
     Column("terms_version", String(64)),
     Column("terms_accepted_at", UtcDateTime),
+    # When the person answered the experiment notice with "Understood" (§5.1, "Experiment
+    # notice"); null until then. The first confirmation is kept.
+    Column("experiment_notice_understood_at", UtcDateTime),
     # Set when the human deleted the account (§2.9): the row stays, so every stored id
     # resolves and the handle stays taken; everything about the person is gone.
     Column("deleted_at", UtcDateTime),
@@ -463,6 +468,22 @@ second_factor = Table(
     Column("generation", Integer, nullable=False, server_default="0"),
     # After a reset the next sign-in enrols first, whatever the policy (§2.8.3).
     Column("reset_required", Boolean, nullable=False, server_default=false()),
+    **MYSQL_TABLE,
+)
+
+# The wrong second-factor codes of one human on one UTC day (§2.8.6): at the cap every check of
+# that human is refused for the rest of the day, unless the link mailed then lifts it; `unlocks`
+# counts the lifts, and a link names the count it was made at, so it works once. `alerted`: the
+# alert with its link was written since the day began or the cap was last lifted; no refusal
+# comes before it, also after the cap was lowered during the day.
+second_factor_day = Table(
+    "second_factor_day",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("wrong_codes", Integer, nullable=False),
+    Column("unlocks", Integer, nullable=False, server_default="0"),
+    Column("alerted", Boolean, nullable=False, server_default=false()),
     **MYSQL_TABLE,
 )
 
@@ -848,6 +869,10 @@ membership = Table(
     Column("briefing_by", String(ID)),
     Column("briefing_updated_at", UtcDateTime),
     Column("joined_at", UtcDateTime, nullable=False),
+    # The project's newest event seq when the membership was made, 0 for none: where its
+    # notifications begin, since joining never replays a project's history (§18.2). Written
+    # with the row (`events.newest_seq`), so no read looks for it in the event log.
+    Column("joined_seq", BIG_ID, nullable=False),
     Column("last_seen_at", UtcDateTime),
     Column("removed_at", UtcDateTime),
     # True while the membership exists, NULL once removed: a removed member
@@ -1024,6 +1049,13 @@ join_link = Table(
     Column("failed_attempts", Integer, nullable=False),
     Column("burned_at", UtcDateTime),
     Column("revoked_at", UtcDateTime),
+    # Who revoked it (§3.1): the principal behind a `DELETE`, a profile's deletion by its owner
+    # or the end of the creator's membership (`join_revocation`); null when the hub revoked it
+    # on its own: a runner's pickups (§15.9), an account's deletion (§2.9), and joins revoked
+    # before the column existed, and a membership end the hub carries out (an organisation
+    # owner's seat it kept, released, §6.26). No foreign key: the record stays as written, as
+    # `credential.revoked_by`.
+    Column("revoked_by", String(ID)),
     # A runner's pickup for a placement (§15.9): the placement, the runner and the
     # generation it was picked up for; null on a human's join.
     _ref("placement_id", "placement.id", index=True),
@@ -1038,8 +1070,9 @@ credential = Table(
     metadata,
     _id(primary_key=True),
     _membership_ref("membership_id", nullable=False, index=True),
-    # sha256 over the secret's text, hex; the HMAC key and the bearer verifier.
-    Column("verifier", String(HEX_SHA256), nullable=False),
+    # sha256 over the secret's text: the HMAC key and the bearer verifier. Sealed with
+    # MAITY_SECRET_KEY (`auth.verifiers`), plain hex without an instance key.
+    Column("verifier", String(SEALED_VERIFIER), nullable=False),
     # The agent instance this credential is (§6.17): unique within the membership and
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
@@ -1294,6 +1327,8 @@ runner = Table(
     Column("version", Text),  # the `client` of its last hello
     Column("capabilities", JSON_VALUE),  # what it last advertised (§15.3), never a grant
     Column("capabilities_at", UtcDateTime),
+    # The owner's open `Update now` requests, `[{tool, requested_at}]` (§15.16); null: none.
+    Column("update_requests", JSON_VALUE),
     # True until the runner is removed, NULL afterwards: a name is unique among
     # one owner's runners, and a removed runner's name is free again.
     Column("active", Boolean, default=True),
@@ -1328,8 +1363,9 @@ runner_credential = Table(
     metadata,
     _id(primary_key=True),
     _ref("runner_id", "runner.id", nullable=False),
-    # sha256 over the secret's text, hex; the HMAC key (a runner signs every call).
-    Column("verifier", String(HEX_SHA256), nullable=False),
+    # sha256 over the secret's text: the HMAC key (a runner signs every call). Sealed as
+    # `credential.verifier` is.
+    Column("verifier", String(SEALED_VERIFIER), nullable=False),
     _ref("enrollment_id", "runner_enrollment.id", nullable=False),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),
@@ -1403,6 +1439,20 @@ placement = Table(
     Column("generation", Integer, nullable=False),
     Column("rejoin", Boolean, nullable=False),
     Column("stop_grace_seconds", Integer, nullable=False),
+    # The clone after a stop or a close (§15.5): how long the runner keeps it, which clone
+    # of the placement is meant, and the runner's latest report on it. Columns, not one
+    # JSON value: both closed lists select on the state in SQL (context/placements.md).
+    Column("workspace_retention", String(16), nullable=False, server_default="24h"),
+    Column("workspace_epoch", Integer, nullable=False, server_default="1"),
+    Column("workspace_state", String(16)),
+    Column("workspace_reason", String(32)),
+    Column("workspace_unsaved", Integer),
+    Column("workspace_size_bytes", BigInteger),
+    Column("workspace_removes_at", UtcDateTime),
+    Column("workspace_outcome_epoch", Integer),
+    Column("workspace_reported_at", UtcDateTime),
+    # A removal by hand (§15.6), until a report names it; null when none is asked.
+    Column("remove_requested_at", UtcDateTime),
     Column("approval_status", String(16), nullable=False),
     Column("pending_change", JSON_VALUE),  # an agent's proposed change of the spec
     Column("reason", MARKDOWN_TEXT),
@@ -1662,6 +1712,10 @@ request = Table(
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
+    # The agents of other owners its `to` reached without their owner's yes when it was filed
+    # (§7, §9.6): it is not theirs to read, find or answer, whatever their owner says later;
+    # null when it held nobody.
+    Column("held", JSON_VALUE),
     Column("ktw_ref", String(255)),
     # The owner's digest (§5.3): what the request shows, one entry per listed instance
     # (`{membership_id, instance, kind, since, last_seen_at, cards, reason}`), compared on the
@@ -2001,8 +2055,14 @@ conversation_participant = Table(
     Column("added_by", String(ID)),  # a member id; null when the hub added it
     Column("left_at", UtcDateTime),
     Column("removed_by", String(ID)),
-    Column("reason", String(32)),  # removed, left, membership_removed, membership_isolated
+    # removed, left, membership_removed, membership_isolated, declined, denied_participant
+    Column("reason", String(32)),
     Column("here", Boolean, default=True),
+    # An agent of another side than someone in the chat (§9.6, "Waiting"): the human of each
+    # side its owner has not admitted it for, `[]` once admitted; null on a human and on an
+    # agent of the chat's only side. `waiting` is whether that list holds anyone, for queries.
+    Column("waiting_for", JSON_VALUE),
+    Column("waiting", Boolean, nullable=False, server_default=false()),
     UniqueConstraint(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
     ),
@@ -2099,7 +2159,11 @@ chat_access = Table(
     Column("denied", String(1000)),
     _ref("by", "human.id", nullable=False),
     Column("since", UtcDateTime, nullable=False),
+    # When the hub saw `until` pass and let the agents it admitted wait again (§9.6); a
+    # `PATCH` that sends `duration` clears it.
+    Column("lapsed_at", UtcDateTime),
     Index("ix_chat_access_human", "human_id", "kind", "since"),
+    Index("ix_chat_access_until", "kind", "lapsed_at", "until"),
     Index("ix_chat_access_owner", "owner_id"),
     Index("ix_chat_access_subject_human", "subject_human_id"),
     Index("ix_chat_access_subject_agent", "subject_agent_id"),

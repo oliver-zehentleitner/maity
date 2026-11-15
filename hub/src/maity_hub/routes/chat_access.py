@@ -1,6 +1,8 @@
 """`/me/chat-access` (docs/api.md §9.6, "The lists"): a human's allow and deny entries for their
 agents. Only that human reads and changes them; an agent is `humans_only`, since an agent does
-not open its own door."""
+not open its own door. Every change settles the owner's chats again (`chat_gate.recheck`): an
+agent an entry no longer covers waits, one a new entry covers is admitted, one a deny entry
+stops leaves."""
 
 from __future__ import annotations
 
@@ -10,7 +12,8 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
-from maity_hub import chat_access, idempotency
+from maity_hub import chat_access, chat_gate, chat_rules, events, idempotency
+from maity_hub.db import retrying
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import forbidden, humans_only
 from maity_hub.models import Strict
@@ -18,7 +21,7 @@ from maity_hub.models import Strict
 router = APIRouter()
 
 # A repeat with the same `Idempotency-Key` answers what the first call answered (§1.5).
-idempotency.LOADERS["chat_access"] = idempotency.plain(chat_access.replayed)
+idempotency.register("chat_access", idempotency.plain(chat_access.replayed), idempotency.own)
 
 CACHE = "private, no-store"
 
@@ -80,7 +83,9 @@ def create_allow(body: AllowIn, request: Request, caller: AnyCaller) -> JSONResp
     chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"))
 
     def action(conn: Connection) -> idempotency.Outcome:
-        entry_id = chat_access.create_allow(conn, me, sent)
+        with chat_rules.announcing(conn, me):
+            entry_id = chat_access.create_allow(conn, me, sent)
+            chat_gate.recheck(conn, me)
         entry = chat_access.one(conn, me, chat_access.ALLOW, entry_id)
         return idempotency.Outcome(201, "chat_access", entry_id, entry)
 
@@ -95,7 +100,9 @@ def patch_allow(
     sent = _sent(body)
 
     def action(conn: Connection) -> idempotency.Outcome:
-        chat_access.patch_allow(conn, me, entry_id, sent)
+        with chat_rules.announcing(conn, me):
+            chat_access.patch_allow(conn, me, entry_id, sent)
+            chat_gate.recheck(conn, me)
         entry = chat_access.one(conn, me, chat_access.ALLOW, entry_id)
         return idempotency.Outcome(200, "chat_access", entry_id, entry)
 
@@ -109,7 +116,9 @@ def create_deny(body: DenyIn, request: Request, caller: AnyCaller) -> JSONRespon
     chat_access.lock_rows(engine_of(request), me, sent.get("owner_id"), sent.get("human_id"))
 
     def action(conn: Connection) -> idempotency.Outcome:
-        entry_id = chat_access.create_deny(conn, me, sent)
+        with chat_rules.announcing(conn, me):
+            entry_id = chat_access.create_deny(conn, me, sent)
+            chat_gate.recheck(conn, me)
         entry = chat_access.one(conn, me, chat_access.DENY, entry_id)
         return idempotency.Outcome(201, "chat_access", entry_id, entry)
 
@@ -119,14 +128,30 @@ def create_deny(body: DenyIn, request: Request, caller: AnyCaller) -> JSONRespon
 @router.delete("/me/chat-access/allow/{entry_id}")
 def delete_allow(entry_id: str, request: Request, caller: AnyCaller) -> Response:
     me = _caller(caller)
-    with engine_of(request).begin() as conn:
-        chat_access.delete_entry(conn, me, chat_access.ALLOW, entry_id)
+
+    def work() -> None:  # run again after a transient deadlock, as an idempotent write is
+        with (
+            events.transaction(engine_of(request)) as conn,
+            chat_rules.announcing(conn, me),
+        ):
+            chat_access.delete_entry(conn, me, chat_access.ALLOW, entry_id)
+            chat_gate.recheck(conn, me)
+
+    retrying(work)
     return Response(status_code=204)
 
 
 @router.delete("/me/chat-access/deny/{entry_id}")
 def delete_deny(entry_id: str, request: Request, caller: AnyCaller) -> Response:
     me = _caller(caller)
-    with engine_of(request).begin() as conn:
-        chat_access.delete_entry(conn, me, chat_access.DENY, entry_id)
+
+    def work() -> None:  # run again after a transient deadlock, as an idempotent write is
+        with (
+            events.transaction(engine_of(request)) as conn,
+            chat_rules.announcing(conn, me),
+        ):
+            chat_access.delete_entry(conn, me, chat_access.DENY, entry_id)
+            chat_gate.recheck(conn, me)
+
+    retrying(work)
     return Response(status_code=204)

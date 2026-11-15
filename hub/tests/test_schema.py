@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError, StatementError
 from maity_hub import namespace
 from maity_hub import tables as t
 from maity_hub.db import metadata, migrate
+from maity_hub.events import newest_seq
 from maity_hub.ids import new_id
 
 # MariaDB reports a failed CHECK as an OperationalError (4025), the others as
@@ -92,6 +93,7 @@ def _membership(conn: Connection, project_id: str, **principal: Any) -> int:
             areas=["/"],
             capabilities=[],
             joined_at=NOW,
+            joined_seq=newest_seq(conn, project_id),
             **principal,
         )
     )

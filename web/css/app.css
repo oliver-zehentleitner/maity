@@ -62,6 +62,18 @@
   --shadow: 0 1px 2px rgba(20, 24, 29, 0.04), 0 6px 18px rgba(20, 24, 29, 0.06);
 }
 
+/* One reading column for the forms of a settings or manage panel (web/context/views.md): the
+   panel's parts stop at --form-column, left-aligned; its lists, tables and tab rows keep the
+   panel's full width (.full-width for one built of other elements). A part that holds a list,
+   however deep, keeps the full width too, and its own parts without one stop at the column
+   again, level by level down to the list (a list counts inside the column only: a column may
+   itself stand in a table or list, Manage's row, an agent's card). Inside the column, fields and help texts fill it and
+   a form's buttons start at its left. */
+:root { --form-column: 42rem; }
+:is(.form-column, .form-column :not(nav, ul, ol, table, .table-wrap, .full-width, .form-column :is(ul, ol, table, .table-wrap, .full-width) *):has(nav, ul, ol, table, .table-wrap, .full-width))
+  > :not(nav, ul, ol, table, .table-wrap, .full-width, :has(nav, ul, ol, table, .table-wrap, .full-width)) { max-width: var(--form-column); }
+/* Its buttons start at the column's left: the block at the end of this file, after the forms' own rules. */
+
 /* Dark: by the system's choice unless this browser picked Light, or when it
    picked Dark (data-theme on <html>, set by js/theme.js before the first
    paint). The two blocks hold the same tokens. */
@@ -573,10 +585,35 @@ main { --main-pad: var(--gap); padding: var(--main-pad); max-width: 1200px; marg
 .reply.later, .reply.talk { background: transparent; }
 .reply.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .reply.talk { border-style: dashed; }
+/* An option is the agent's own label, a word or five lines: a rounded box that grows in height with
+   it and wraps inside it. A pill would turn round around a long label and let it run over its edge. */
+.reply.option { border-radius: var(--r-field); white-space: normal; overflow-wrap: anywhere; min-height: 44px; max-width: 100%; }
 
 .free-text { margin-top: 12px; display: grid; gap: 6px; }
 .free-text label { font-size: 0.85rem; color: var(--muted); }
 .free-text button { justify-self: end; }
+/* The request to chat with one's agents (§9.6): its boxes and two rules above the note (js/inbox.js). */
+.chat-access { margin: 12px 0 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; gap: 6px; }
+.chat-access legend { font-weight: 600; padding: 0 4px; }
+/* The request's two parts (js/inbox.js chatAccessPicker): one's own agents, then with whom. */
+.chat-access fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.chat-access fieldset legend { padding: 0; }
+.chat-access fieldset p { margin: 0; }
+.chat-access fieldset + fieldset { margin-top: 6px; }
+.chat-access label.check { display: flex; align-items: center; gap: 6px; color: var(--text); }
+.chat-access label:not(.check) { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+.chat-access .hint, .chat-access .muted { margin: 0; }
+/* Who may chat with one's agents, the /agents page's tab Chat access (js/chat-access.js). */
+.chat-access-list { list-style: none; padding: 0; margin: 6px 0 12px; display: grid; gap: 8px; }
+.chat-access-entry { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 0; overflow-wrap: anywhere; }
+.chat-access-entry p { margin: 2px 0; }
+.chat-access-entry .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chat-access-add, .chat-access-edit { margin-top: 12px; }
+.chat-access-agents { border: 0; padding: 0; margin: 0; }
+.chat-access-page label.check { display: flex; align-items: center; gap: 6px; color: var(--text); min-height: 28px; }
+.chat-access-page input[type=checkbox] { width: 18px; height: 18px; margin: 0; flex: none; }
+/* A row of a subject not chosen, and the side's fields under a project: `hidden` wins over .field-stack's grid. */
+.chat-access-page [hidden] { display: none; }
 /* The @ picker under its text field; a stored mention as a member link. */
 .mention-list { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); max-width: 24rem; }
 .mention-list[hidden] { display: none; }
@@ -629,6 +666,12 @@ a.mention:hover, a.mention:focus-visible { text-decoration: underline; }
    paragraph with several ids stays quiet (the designer's pass part 3). */
 .id-ref { font-family: var(--mono); font-size: 0.9em; white-space: nowrap; }
 a.id-ref { text-decoration: none; }
+/* A full reference (owner/slug/tsk-…, docs/api.md §6.25) is longer than a phone's
+   chat bubble: it wraps in the project's name or before the id, the id itself stays
+   whole (js/ids.js refText, tsk-e9d52pfhvk3v). */
+.id-ref.full { white-space: normal; }
+.id-ref .ref-prefix { overflow-wrap: anywhere; }
+.id-ref .ref-id { white-space: nowrap; }
 a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .request-id { white-space: nowrap; }
 .area, .label-tag { font-family: var(--mono); font-size: 0.8rem; background: var(--surface-2); border-radius: 4px; padding: 0 6px; }
@@ -862,14 +905,14 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .member-manage td { background: var(--surface); }
 .member-manage .member-edit { margin: 4px 0 8px; }
 /* The team's rulebook, for the agent's owner (§6.18). */
-.member-team { display: grid; grid-template-columns: max-content minmax(0, 26rem); gap: 6px 12px; align-items: center; margin: 8px 0; }
+.member-team { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; align-items: center; margin: 8px 0; }
 .member-team h4, .member-team > .hint, .member-team > .muted, .member-team > .field-error, .member-team > .actions, .member-team > label.check { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 600px) { .member-team { grid-template-columns: minmax(0, 1fr); } }
 .member-manage .member-pause, .member-manage .member-remove { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0; }
 .member-manage .hint { flex-basis: 100%; margin: 0; }
 .member-manage label { font-size: 0.85rem; color: var(--muted); }
-.member-manage .member-remove { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
-.member-edit .member-fields { display: grid; grid-template-columns: max-content minmax(0, 26rem); gap: 6px 12px; align-items: center; }
+.member-manage .member-remove { justify-content: flex-start; border-top: 1px solid var(--border); padding-top: 8px; }
+.member-edit .member-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; align-items: center; }
 .member-edit .member-fields .hint { grid-column: 2; margin: 0; }
 .member-edit .member-fields .label { font-size: 0.85rem; color: var(--muted); }
 .member-edit textarea { width: 100%; }
@@ -912,7 +955,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   border: 1px solid var(--field); background: transparent; padding: 4px 12px; }
 /* The open Manage row (members: .member-manage, Agents: .agent-manage) on the same light ground as the hover. */
 :is(.view-team, .view-agents) :is(.member-manage, .agent-manage) > td { background: color-mix(in srgb, var(--surface-2) 40%, var(--surface)); }
-:is(.view-team, .view-agents) .member-manage .member-edit { padding: var(--s2) var(--s3); }
+/* No side padding: its fields start and end with the panel's other parts (the form column). */
+:is(.view-team, .view-agents) .member-manage .member-edit { padding: var(--s2) 0; }
 .view-agents .profile { border-radius: var(--r-card); }
 /* The runner's buttons (Stop, Start, Restart, Copy) with an edge of 3:1 or more on the card; a primary one (the restart's confirm) keeps its accent edge. */
 .placement button:not(:disabled):not(.primary) { border-color: var(--field); }
@@ -1363,8 +1407,10 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
   .facts dt { margin-top: 4px; }
   /* The answers two by two, a thumb's size; Send across the whole row. */
   .replies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .reply { min-height: 40px; min-width: 0; }
-  .reply.send, .reply:only-child { grid-column: 1 / -1; }
+  .reply { min-height: 44px; min-width: 0; }
+  /* An option one per row, its label from the start of the line. */
+  .reply.send, .reply.option, .reply:only-child { grid-column: 1 / -1; }
+  .reply.option { text-align: start; }
 }
 
 /* Pictures on the account (docs/api.md §6.10). */
@@ -1539,6 +1585,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .sessions-ended { margin-top: 8px; }
 .address-change { margin-top: 12px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: var(--radius); }
 .signin-banner { margin: 0 0 12px; }
+.factor-banner { margin: 0 0 12px; }
+.factor-banner .flag { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.factor-banner .flag p { flex: 1 1 20em; margin: 0; }
 
 /* The change ticker (js/ticker.js). */
 .ticker-tabs { display: flex; gap: 6px; margin: 8px 0; }
@@ -1824,6 +1873,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    control. One class for every such wrapper (tsk-jpaqk8m7j52v), so none runs label and field inline. */
 .field-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .sign-in-form button, .register-form button { justify-self: end; }
+/* The reset of a forgotten password (js/password-reset.js) lays out as registration does. */
+.reset-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.reset-form button[type="submit"] { justify-self: end; }
 .link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
 .device-account { display: flex; align-items: center; gap: 8px; }
@@ -1993,7 +2045,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-actions { white-space: nowrap; }
 .member-actions .member-chat + button { margin-left: 6px; }
 /* Agents that stop listening, on the account (js/notify-settings.js). */
-.not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
+.not-listening-settings { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
 .mail-address { margin: 16px 0; max-width: 32rem; }
@@ -2027,7 +2079,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .member-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 8px; border-bottom: 1px solid var(--border); }
 .member-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .member-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
-/* A view's own tabs (Overview, the Team page): links, the shown one marked. */
+/* A view's own tabs (Overview, the Team page, a project's Settings): links, the shown one marked. */
 .view-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
 .view-tab { padding: 6px 12px; text-decoration: none; border-bottom: 2px solid transparent; color: var(--text); }
 .view-tab[aria-current="page"] { border-bottom-color: var(--accent); font-weight: 600; }
@@ -2063,11 +2115,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .review-quote { white-space: pre-wrap; }
 @media (max-width: 720px) { .review-cite { grid-template-columns: minmax(0, 1fr); } }
 
-/* A project's Settings, two tabs: Project (its admins) and Mine (§16.11). */
-.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 12px; }
-.settings-tabs a { padding: 6px 12px; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; color: var(--text); text-decoration: none; }
-.settings-tabs a[aria-current="page"] { border-color: var(--border); background: var(--surface); font-weight: 600; }
-
 /* Meat proxy (js/account.js): the two parts under the switch, indented as its own. */
 .meat-proxy-parts { border: 0; margin: 4px 0 0; padding: 0 0 0 24px; display: grid; gap: 4px; }
 .meat-proxy-parts .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
@@ -2085,6 +2132,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .person-picture-none.size-20 { width: 20px; height: 20px; }
 .person-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
 .person-links, .person-projects, .person-members { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; overflow-wrap: anywhere; }
+/* A person's agents (§16.9, "A person's agents"), in the person view and on the visitor's page: each
+   with its picture at 64 px beside its name, handle, roles, model and harness. */
+.person-agents { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s2); overflow-wrap: anywhere; }
+.person-agents li { display: flex; align-items: flex-start; gap: var(--s3); min-width: 0; }
+.person-agents li > div { min-width: 0; }
+.person-agents li p { margin: 2px 0 0; }
+.person-agents .avatar-img, .person-agents .person-picture-none { flex: none; width: 64px; height: 64px; border-radius: 50%; }
 
 /* The person or organisation view in the refreshed look (design refresh step 4): the head as a
    panel with a round picture, the name in the display face, links and the public page as pills,
@@ -2113,7 +2167,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
-.handle-form .handle-explain { flex-basis: 100%; margin: 0; }
+.handle-form .handle-explain, .handle-form .hint { flex-basis: 100%; margin: 0; }
+/* A handle field's word while what is typed breaks the rule (js/handles.js rule()). */
+.handle-check:empty { display: none; }
 .handle-at { color: var(--muted, inherit); }
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -2206,3 +2262,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .leave-dialog h3 { margin: 0 0 0.5rem; }
 .leave-dialog .actions { justify-content: flex-end; }
 .leave-agents { margin: 0.35rem 0 0; padding-left: 1.2rem; }
+/* The page as the focus's place where what held it went (the authenticator banner): no ring
+   around the whole page. */
+#main[tabindex="-1"]:focus { outline: none; }
+
+/* The form column's buttons (web/context/views.md): at the column's left, Remove included, after
+   the forms' own rules above that put them at the right edge. */
+.form-column :is(.actions, .row) { justify-content: flex-start; }
+.form-column :is(form, .field-stack, .image-row) button { justify-self: start; }
+/* Inside the column a form fills it: its own width (32, 36 or 48rem) holds only outside one;
+   the preferences' versions are a list, at the full width. */
+.form-column :is(.inline-form, .project-form, .image-row, .preferences-form, .preferences-projects, .not-listening-settings, .mail-address, .mail-modes, .leave-project) { max-width: var(--form-column); }
+.form-column .preferences-history { max-width: none; }
+/* A fieldset's own side margin (2px by the browser) would end it past the column's edge. */
+.form-column > fieldset { margin-inline: 0; }

@@ -175,6 +175,22 @@
     "en": "9d1a4d7e2b6e1f5d",
     "text": "9cc161e79fef5969"
   },
+  "mail.address_changed_body": {
+    "en": "219a6f021ae9f584",
+    "text": "9fba1d5520c9fad9"
+  },
+  "mail.address_from": {
+    "en": "047165494d34f84b",
+    "text": "059dea3123fef318"
+  },
+  "mail.address_removed_body": {
+    "en": "032acd3da7bab9bb",
+    "text": "d6eb254b63eba2e5"
+  },
+  "mail.address_subject": {
+    "en": "db411d71ce3e92da",
+    "text": "83bf4aa8f6008c29"
+  },
   "mail.more": {
     "en": "a1cd32796e7e9005",
     "text": "fe3e57f51afe1131"
@@ -211,9 +227,21 @@
     "en": "dfaef747e184ddf6",
     "text": "babb7123d8dcfdcc"
   },
+  "mail.unknown_ip": {
+    "en": "e56c65d7188c79cc",
+    "text": "b14af0077d757cf5"
+  },
   "mail.updates": {
     "en": "ee72d97604a9a40d",
     "text": "918dfa4a77ae4101"
+  },
+  "mail.verify_body": {
+    "en": "dbf48469793468cf",
+    "text": "fdb353634d0846d6"
+  },
+  "mail.verify_subject": {
+    "en": "749bdc78cabbe4a2",
+    "text": "518f9c10092f131a"
   },
   "mail.wrote": {
     "en": "3cff4d92714ec5c4",
@@ -471,6 +499,18 @@
     "en": "32548671ddc1415a",
     "text": "4a75d23aa5cf1361"
   },
+  "register_page.again": {
+    "en": "e3eb981a5111d261",
+    "text": "f8438f9205337933"
+  },
+  "register_page.again_dead": {
+    "en": "ce628d661377887c",
+    "text": "39d100bd836d44f5"
+  },
+  "register_page.again_password": {
+    "en": "01c90acff032ebd4",
+    "text": "59de63964821a3cd"
+  },
   "register_page.button": {
     "en": "e63588a861737d67",
     "text": "3a1c9fae7e85f064"
@@ -511,9 +551,21 @@
     "en": "89c71e1f5a396594",
     "text": "f41db4c3a455faa8"
   },
+  "register_page.experiment": {
+    "en": "ef237730002e679e",
+    "text": "33c61df9122d9181"
+  },
   "register_page.handle": {
     "en": "41483b645efc0c65",
     "text": "54e0ac86feb7f833"
+  },
+  "register_page.handle_lower": {
+    "en": "1418319d65caffe0",
+    "text": "3b766d9d4d087920"
+  },
+  "register_page.handle_rule": {
+    "en": "91068c8308ff7d7d",
+    "text": "59b2933f261e2172"
   },
   "register_page.intro": {
     "en": "3af54dd923e1059b",
@@ -522,18 +574,6 @@
   "register_page.later": {
     "en": "240294e5364ce34d",
     "text": "df1ae00171153162"
-  },
-  "register_page.legal_imprint": {
-    "en": "1d0610cdac8612da",
-    "text": "2f8b680ce1abf6fa"
-  },
-  "register_page.legal_privacy": {
-    "en": "5da7aab1c428b242",
-    "text": "60d1058eb6826ea3"
-  },
-  "register_page.legal_terms": {
-    "en": "b6afdb846801fc10",
-    "text": "421cee56e8006f66"
   },
   "register_page.password": {
     "en": "8adcb6a3d0c1f216",

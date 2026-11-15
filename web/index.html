@@ -18,7 +18,10 @@
   <link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="brand/loader.css">
+  <!-- The signed-out pages' sections (js/site-chrome.js switches it on with the landing's stylesheets) -->
+  <link rel="stylesheet" href="css/public-sections.css" id="public-sections" disabled>
   <script src="js/theme.js"></script>
+  <script src="js/assets.js" defer></script>
   <script src="js/i18n/languages.js" defer></script>
   <script src="js/i18n/en.js" defer></script>
   <script src="js/i18n.js" defer></script>
@@ -53,6 +56,8 @@
   <script src="js/invite.js" defer></script>
   <script src="js/invitations.js" defer></script>
   <script src="js/register.js" defer></script>
+  <script src="js/password-reset.js" defer></script>
+  <script src="js/factor-banner.js" defer></script>
   <script src="js/paths.js" defer></script>
   <script src="js/org.js" defer></script>
   <script src="js/attachments.js" defer></script>
@@ -91,6 +96,7 @@
   <script src="js/second-factor.js" defer></script>
   <script src="js/admin-maintenance.js" defer></script>
   <script src="js/broadcasts.js" defer></script>
+  <script src="js/chat-access.js" defer></script>
   <script src="js/report.js" defer></script>
   <script src="js/security.js" defer></script>
   <script src="js/your-data.js" defer></script>

@@ -16,7 +16,7 @@ import hmac
 import secrets
 from html import escape
 from typing import Any, NamedTuple
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Request
 from fastapi.concurrency import run_in_threadpool
@@ -26,6 +26,8 @@ from sqlalchemy import Connection, select
 from maity_hub import (
     catalog,
     clock,
+    landing,
+    landing_stats,
     legal,
     registration,
     registration_accounts,
@@ -47,18 +49,54 @@ FORM_COOKIE = "maity_form"
 FORM_PATH = "/mail/register"
 FORM_FOR = 600  # seconds the form cookie lives
 BODY_MAX = 8192
-# The legal pages' policy (no script, nothing from elsewhere: the token is in the address), and
-# the form posts only to this page.
-CSP = (
-    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; "
-    "frame-ancestors 'none'"
-)
+# "Register again" (tsk-pxc5cx4hgb0y): a refused password, an expired or voided link leave the
+# person no way forward on this page, while a new registration of the address works (§2.7.1,
+# the newest link replaces the earlier one). The address goes to the sign-up page in a short
+# cookie its script reads and removes, never in the sign-up page's address.
+AGAIN_COOKIE = "maity_register_again"
+AGAIN_PATH = "/register"
+AGAIN_FOR = 600  # seconds: long enough to follow the link, gone soon after
+# The handle's syntax (`models.HANDLE_PATTERN`) as an HTML `pattern`: the page has no script
+# (§16.7.5), so the browser's own check and the door's stylesheet show the rule while it is typed.
+HANDLE_PATTERN = "[a-z0-9][a-z0-9\\-]{1,30}"
+# The door's policy (docs/api.md §16.7.5, `render.DOOR_CSP`): the hub's own stylesheets and
+# fonts, no script, nothing from elsewhere (the token is in the address), and the form posts only
+# to this page.
+CSP = render.DOOR_CSP
+
+
+class Frame(NamedTuple):
+    """What the frame of the pages without a session is drawn from (§16.7.5)."""
+
+    setting: dict[str, Any]
+    legal: dict[str, Any]
+    stats: dict[str, Any] | None
+
+
+def _frame(conn: Connection) -> Frame:
+    setting = landing.stored(conn)
+    return Frame(setting, legal.public(legal.stored(conn)), landing_stats.for_frame(conn, setting))
+
+
+def _frame_read(request: Request) -> Frame:
+    with engine_of(request).begin() as conn:
+        return _frame(conn)
 
 
 def _html(
-    body: str, title: str, status: int = 200, *, lang: str = "en", footer: str = ""
+    frame: Frame, request: Request, body: str, title: str, status: int = 200, *, lang: str = "en"
 ) -> HTMLResponse:
-    html = render.form_document(lang=lang, title=title, content=body, footer=footer)
+    """The page in the landing page's header and footer around the door (§16.7.5), as the mail
+    link pages are; the frame's footer names the legal pages."""
+    html = render.door_document(
+        lang=lang,
+        title=title,
+        content=body,
+        setting=frame.setting,
+        legal=frame.legal,
+        stats=frame.stats,
+        accept_language=request.headers.get("accept-language"),
+    )
     # The token is in the address and the form holds a password: nothing that carries
     # either may leak in a `Referer` or sit in a cache.
     return HTMLResponse(
@@ -72,16 +110,62 @@ def _html(
     )
 
 
-def _message(title: str, text: str, status: int, lang: str = "en") -> HTMLResponse:
-    return _html(f"<h1>{escape(title)}</h1><p>{escape(text)}</p>", title, status, lang=lang)
+def _message(
+    frame: Frame, request: Request, title: str, text: str, status: int, lang: str = "en"
+) -> HTMLResponse:
+    return _html(
+        frame, request, f"<h1>{escape(title)}</h1><p>{escape(text)}</p>", title, status, lang=lang
+    )
 
 
-def _dead() -> HTMLResponse:
-    """Invalid, expired, used or voided: one page, `not_found`, never which (§18.6)."""
-    return _message(
-        catalog.section("register_page", "en")["dead"],
-        catalog.section("register_page", "en")["dead"],
-        404,
+def _dead(frame: Frame, request: Request) -> HTMLResponse:
+    """Invalid, expired, used or voided: one page, `not_found`, never which (§18.6). Nobody is
+    known here, so it is in the browser's language, as the sign-in link's dead page (§16.7.5)."""
+    lang = render.choose_language(
+        list(landing.LANGUAGES), "en", None, request.headers.get("accept-language")
+    )
+    words = catalog.section("register_page", lang)
+    body = f"<h1>{escape(words['dead'])}</h1><p>{escape(words['dead'])}</p>" + _again(
+        words, words["again_dead"], None, button=True
+    )
+    return _html(frame, request, body, words["dead"], 404, lang=lang)
+
+
+def _again(
+    words: dict[str, str], sentence: str, next_path: str | None, *, button: bool = False
+) -> str:
+    """The way forward when this link cannot make the account: the sign-up page, with the
+    sentence that says why that works (the newest mail's link replaces the earlier one). A
+    button where it is the page's only way on, a link under the password the form refused,
+    where typing it again is the other. The registration's `next` goes along where it is more
+    than the start page, so an invitation's sign-up stays one (§3.4); the frame adds `?lang=`."""
+    href = AGAIN_PATH
+    if (
+        next_path
+        and next_path != "/"
+        and next_path.startswith("/")
+        and not next_path.startswith("//")
+    ):
+        href += "?next=" + quote(next_path, safe="/")
+    look = ' class="btn btn-secondary"' if button else ""
+    return (
+        f'<p class="hint register-again-why">{escape(sentence)}</p>'
+        f'<p class="register-again"><a{look} href="{escape(href)}">'
+        f"{escape(words['again'])}</a></p>"
+    )
+
+
+def _set_again_cookie(response: Response, request: Request, address: str) -> None:
+    """The address for the sign-up page's field: readable by its script, which removes it, sent
+    only to `/register`, and gone after ten minutes. The person saw the address on this page."""
+    response.set_cookie(
+        AGAIN_COOKIE,
+        quote(address, safe=""),  # percent-encoded: a cookie value with no quotes to strip
+        max_age=AGAIN_FOR,
+        path=AGAIN_PATH,
+        secure=origin_of(request).tls,
+        httponly=False,
+        samesite="strict",
     )
 
 
@@ -122,17 +206,6 @@ def _terms(conn: Connection, request: Request) -> dict[str, str] | None:
     return found if isinstance(found, dict) else None
 
 
-def _legal(conn: Connection) -> list[str]:
-    """The legal pages the instance serves (§16.7.1), in their order: the page links
-    them as the dashboard's registration form does, the privacy notice included."""
-    served = set(
-        conn.execute(
-            select(t.legal_page.c.page).where(t.legal_page.c.current.is_not(None))
-        ).scalars()
-    )
-    return [page for page in legal.PAGES if page in served]
-
-
 def _terms_field(hub: Any, nonce: str, terms: dict[str, str] | None) -> str:
     """The version the person saw, signed together with the registration's nonce (§2.7.2)."""
     if terms is None:
@@ -149,6 +222,8 @@ def _seen_terms(hub: Any, nonce: str, signed: str) -> str | None:
 
 
 def _form(
+    frame: Frame,
+    request: Request,
     words: dict[str, str],
     *,
     lang: str,
@@ -158,27 +233,29 @@ def _form(
     terms_field: str,
     given: dict[str, str],
     errors: dict[str, str],
-    pages: list[str],
     notice: str | None = None,
+    again: str | None = None,
     status: int = 200,
 ) -> HTMLResponse:
-    def error(name: str) -> tuple[str, str]:
-        """The field's error under it, and the attributes that tie the field to it."""
+    def error(name: str, hints: tuple[str, ...] = ()) -> tuple[str, str]:
+        """The field's error under it, and the attributes that tie the field to it and to its
+        hints."""
         problem = errors.get(name)
-        if not problem:
-            return "", ""
-        return (
-            f'<p class="error" id="{name}-error" role="alert">{escape(problem)}</p>',
-            f' aria-invalid="true" aria-describedby="{name}-error"',
+        described = " ".join(((f"{name}-error",) if problem else ()) + hints)
+        tied = (' aria-invalid="true"' if problem else "") + (
+            f' aria-describedby="{described}"' if described else ""
         )
+        if not problem:
+            return "", tied
+        return f'<p class="error" id="{name}-error" role="alert">{escape(problem)}</p>', tied
 
-    def row(name: str, label: str, kind: str, extra: str = "") -> str:
+    def row(name: str, label: str, kind: str, extra: str = "", hints: tuple[str, ...] = ()) -> str:
         shown = "" if kind == "password" else escape(given.get(name, ""))
-        message, tied = error(name)
+        message, tied = error(name, hints)
         return (
-            f'<p class="field"><label for="{name}">{escape(label)}</label>'
+            f'<label for="{name}">{escape(label)}</label>'
             f'<input id="{name}" name="{name}" type="{kind}" value="{shown}" required '
-            f"{extra}{tied}></p>{message}"
+            f"{extra}{tied}>{message}"
         )
 
     box = ""
@@ -192,29 +269,35 @@ def _form(
         )
     body = (
         f"<h1>{escape(words['title'])}</h1>"
-        f"<p>{escape(words['intro'].format(address=address))}</p>"
+        f'<p class="intro">{escape(words["intro"].format(address=address))}</p>'
         + (f'<p class="note" role="alert">{escape(notice)}</p>' if notice else "")
         + '<form method="post">'
         + row("password", words["password"], "password", 'autocomplete="current-password"')
-        + row("handle", words["handle"], "text", 'autocomplete="username" autocapitalize="none"')
+        + (again or "")
+        # The rule beside the field, and a word while what is typed breaks it (an upper-case
+        # letter first of all): the door's stylesheet shows `handle-check` for an invalid,
+        # non-empty field, since the page has no script. Nothing is lower-cased for the person.
+        + row(
+            "handle",
+            words["handle"],
+            "text",
+            'autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="31" '
+            f'pattern="{HANDLE_PATTERN}" placeholder=" "',
+            ("handle-rule",),
+        )
+        + f'<p class="hint" id="handle-rule">{escape(words["handle_rule"])}</p>'
+        + f'<p class="hint handle-check" id="handle-check">{escape(words["handle_lower"])}</p>'
         + row("display_name", words["display_name"], "text", 'autocomplete="name"')
         + f'<p class="note">{escape(words["public"])}</p>'  # §2.7.1, profiles are public
         + box
+        # §2.7.1 step 5, §5.1 "Experiment notice": above the button, terms or not; it asks for
+        # nothing of its own.
+        + f'<p class="experiment-notice" role="note">{escape(words["experiment"])}</p>'
         + f'<input type="hidden" name="form" value="{escape(form_value)}">'
         + f'<input type="hidden" name="terms_seen" value="{escape(terms_field)}">'
-        + f'<button type="submit">{escape(words["button"])}</button></form>'
+        + f'<button type="submit" class="btn btn-primary">{escape(words["button"])}</button></form>'
     )
-    return _html(body, words["title"], status, lang=lang, footer=_legal_links(words, pages))
-
-
-def _legal_links(words: dict[str, str], pages: list[str]) -> str:
-    """The served legal pages under the form, each at its address (§16.11)."""
-    if not pages:
-        return ""
-    links = " · ".join(
-        f'<a href="/{legal.ADDRESS[page]}">{escape(words["legal_" + page])}</a>' for page in pages
-    )
-    return f"<p>{links}</p>"
+    return _html(frame, request, body, words["title"], status, lang=lang)
 
 
 def _set_form_cookie(response: Response, request: Request, value: str) -> None:
@@ -235,15 +318,17 @@ def register_page(token: str, request: Request) -> Response:
     hub = settings_of(request)
     require_secure_transport(origin_of(request), hub.allow_plain_http)
     with engine_of(request).begin() as conn:
+        frame = _frame(conn)
         found = _pending(conn, request, token)
         if found is None:
-            return _dead()
+            return _dead(frame, request)
         row, payload = found
         terms = _terms(conn, request)
-        pages = _legal(conn)
     form_value = secrets.token_urlsafe(24)
     lang = registration_mail.language_of(row.interface_language or row.language, "register_page")
     page = _form(
+        frame,
+        request,
         catalog.section("register_page", lang),
         lang=lang,
         address=row.address,
@@ -252,7 +337,6 @@ def register_page(token: str, request: Request) -> Response:
         terms_field=_terms_field(hub, str(payload["n"]), terms),
         given={},
         errors={},
-        pages=pages,
     )
     _set_form_cookie(page, request, form_value)
     return page
@@ -283,7 +367,7 @@ class Outcome(NamedTuple):
     payload: dict[str, Any]
     terms: dict[str, str] | None
     device: str | None  # the device cookie's new value, when this browser needs one
-    pages: list[str]  # the legal pages served (§16.7.1)
+    frame: Frame  # the frame of the pages without a session (§16.7.5)
 
 
 def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome | None:
@@ -320,7 +404,7 @@ def _complete(request: Request, token: str, fields: dict[str, str]) -> Outcome |
             device = sessions.remember_device(
                 conn, done.human_id, request.cookies.get(sessions.DEVICE_COOKIE)
             )
-        return Outcome(done, row, payload, _terms(conn, request), device, _legal(conn))
+        return Outcome(done, row, payload, _terms(conn, request), device, _frame(conn))
 
 
 @page_router.post("/mail/register/{token}")
@@ -344,8 +428,8 @@ async def register_complete(token: str, request: Request) -> Response:
         raise rate_limited(wait)
     result = await run_in_threadpool(_complete, request, token, fields)
     if result is None:
-        return _dead()
-    done, row, payload, terms, device, pages = result
+        return _dead(await run_in_threadpool(_frame_read, request), request)
+    done, row, payload, terms, device, frame = result
     lang = registration_mail.language_of(row.interface_language or row.language, "register_page")
     words = catalog.section("register_page", lang)
     if done.kind == "created":
@@ -355,22 +439,29 @@ async def register_complete(token: str, request: Request) -> Response:
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
     if done.kind == "gone":
-        return _dead()
+        return _dead(frame, request)
     if done.kind == "closed":
-        return _message(words["title"], words["closed"], 403, lang)
+        return _message(frame, request, words["title"], words["closed"], 403, lang)
     if done.kind == "later":
-        return _message(words["title"], words["later"], 503, lang)
+        return _message(frame, request, words["title"], words["later"], 503, lang)
     given = {"handle": fields.get("handle", ""), "display_name": fields.get("display_name", "")}
     errors: dict[str, str] = {}
     notice = None
     status = 400
+    again = None
     if done.kind == "wrong_password":
         errors["password"] = words["error_password"]
+        again = _again(words, words["again_password"], row.next)
     elif done.kind == "invalid":
         errors = {name: words.get(f"error_{name}_{why}", why) for name, why in done.fields.items()}
+        typed = fields.get("handle", "").strip()
+        if done.fields.get("handle") == "invalid" and typed != typed.lower():
+            errors["handle"] = words["handle_lower"]  # what the field said while it was typed
     elif done.kind == "terms_changed":
         notice, status = words["terms_changed"], 409  # the page asks again, unchecked
-    return _form(
+    page = _form(
+        frame,
+        request,
         words,
         lang=lang,
         address=row.address,
@@ -379,7 +470,10 @@ async def register_complete(token: str, request: Request) -> Response:
         terms_field=_terms_field(hub, str(payload["n"]), terms),
         given=given,
         errors=errors,
-        pages=pages,
         notice=notice,
+        again=again,
         status=status,
     )
+    if again is not None:
+        _set_again_cookie(page, request, row.address)
+    return page

@@ -407,3 +407,80 @@ added them as a contact so that they may.
 - `not_a_person` for every agent handle across all owners and for a deleted organisation: an
   oracle for names `GET /people` and the contact route answer `not_found` for.
 - Counting only issued invitations against the rate: refused probes would be free.
+
+## The join page stands in the frame in a browser on the public host only; its Markdown is untouched
+
+**Id:** 3b0bf382-8361-4166-9ab9-bed14d2a15e3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-tp97v64vpy5z, PR 4: lotse#wtwy's answers 121818 (frame only the browser's HTML, Markdown byte-identical with a test) and 121899 (public host only, the join host keeps its page; no `/join/<token>` route on the join host); `routes/joins.py` `_framed`, `render.join_document`
+**Revisit when:** the join host serves the landing stylesheets, or the join page gets languages
+
+`GET /join/{token}` on the public host with `Accept: text/html` answers the page's text in the
+frame of §16.7.5, in the legal pages' column (`legal-page join-page`), in English, with
+`render.DOOR_CSP` and no referrer; so does the dead-link page there. The join host (`/{token}`)
+keeps `_html`, its own small page with the product line. The Markdown answer is built as before and
+never passes the frame; a test compares its bytes with `render_page` on both hosts.
+
+**Reason:** a person who opens the page in a browser on the public host should see the same frame
+as the other pages without a session. The agents read the Markdown, and a change to it is a change
+to their onboarding. The join host serves none of the frame's stylesheets and none of the
+header's targets (§1.1), so the frame there would show only its fallback style.
+
+**Rejected alternatives:**
+- The frame on both hosts: only the fallback style on the join host, and header links that lead
+  to its start-page redirect.
+- The door layout of the mail link pages: the join page is a long text with code blocks, too wide
+  for the door's form column.
+- Answering `/join/<token>` on the join host as an alias (4c): a contract change and a new
+  feature; it goes to the owner first if it is wanted.
+
+
+## A join's revoker is a column without a foreign key, and its revocation is a humans-only event like the invitation events
+
+**Id:** 0f0250d0-dc1e-46da-b2ad-f53b858ddaa5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 ("revoking a join link records `revoked_by` and writes an event, as `invitation_revoked` does"); review of #1756 by maity-review-team-grok#axvg, 2026-11-13 (the cascades revoked joins without it); `join_revocation.py`; `routes/joins.py` `revoke_join`; docs/api.md §3.1, §8.2
+**Revisit when:** the instance audit log exists, or agents get to revoke joins
+
+`DELETE …/joins/{id}` stores the caller's id in `join_link.revoked_by` and writes `join_revoked`
+`{id, agent_id, trust, role, revoked_by}` to the join's creator and the project's human
+`members:admin` holders (`invitations.audience`), in `HUMANS_ONLY_KINDS`. The column has no
+foreign key, as `credential.revoked_by`.
+
+Every revocation a person starts goes through `join_revocation.revoke`, which sets `revoked_by`
+and writes the event: the `DELETE`, the deletion of the agent profile a join names by its owner
+(`DELETE /agents/{id}`), and the end of the creator's membership (`agent_owners.human_left`,
+`revoked_by` whoever ended it). The hub's own revocations leave it null and write nothing:
+`placements.revoke_unused_joins` and the pickup's reissue (a runner's joins, no person behind
+them), an account's deletion with its profiles and memberships (the membership end it carries
+out has the `HUB` actor), the release of an organisation owner's seat the hub kept
+(`org_projects.release_owner`, also with the `HUB` actor), and the joins revoked before the
+column existed.
+
+**Reason:** a join mints an agent's credential, so who stopped one belongs on the record, readable
+by those who may revoke it. The invitation events already reach exactly them and wake no agent;
+the agent a join names is not yet a member and has no business with it. A null for the hub's own
+revocation says what happened without naming the deleted human as the actor.
+
+**Rejected alternatives:**
+- A foreign key to `human`: the downgrade on MariaDB would have to drop its index after the key
+  (error 1553), and the record is kept as written anyway, the account row stays (§2.9).
+- Writing the event to `trust:owner` or `all`: wider than who may act on a join, and an `all`
+  token would reach agents.
+- Setting `revoked_by` to the deleted account at its deletion: the human did not revoke anything;
+  the hub did.
+- Recording `revoked_by` on the cascades without the event: the creator and the admins would see a
+  join stop working with nobody told, unlike the `DELETE` that does the same thing directly.
+- Attributing the release of an organisation owner's kept seat to whoever changed the
+  organisation (review of #1756 by maity-review-team-grok#axvg): the seat is the hub's, the
+  release follows from a change to the organisation in four places (a role, a removal, its
+  deletion, a project's move) and the deletion has no remover to pass; naming one would change
+  `Change.by`, which pauses and placement closures read as well. The seat's `member_updated`
+  names the hub too.
+- One revoking `UPDATE … WHERE` per cascade as before: the ids it hit are not known, so no event
+  can name them; `revoke` selects the rows and revokes each with its own conditional update, so a
+  join revoked meanwhile is neither attributed nor announced twice.

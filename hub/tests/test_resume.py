@@ -31,6 +31,7 @@ PACKET = {
     "events",
     "conversations",  # §5.2, §9.2
     "cross_chats",  # §5.2, §9.5
+    "chat_rules",  # §5.2, §9.6
     "peers",
     "preferences",  # §19.4
     "operations",

@@ -814,8 +814,48 @@ fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the 
 the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
 change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
 `changed` fields still renders the project page with its dependents, since a member's name stands on the card
-pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+pages they hold; narrowed since to the card pages that name the member (fe966f9c-3557-4473-a0d6-14aa4d714a43).
+Rejected: naming the fields a page shows instead (an allowlist), because a field added later
 would silently leave a stale name on a public page; a field missing from the list only costs a render.
+
+## A member change takes off and renders only the card pages that name that member
+
+**Id:** fe966f9c-3557-4473-a0d6-14aa4d714a43
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-m65g76c979jk: on maity.team on 2026-11-12, `DELETE /agents/{id}?cascade=true` took 56.86 s in the maintainer's browser, its `Server-Timing` 31,871 statements and 44.7 s in the database (relayed by the lead in seq 118556); measured locally with public pages on, every card of the project added 17 statements to the delete (5 cards 412, 20 cards 667), and none with this change (330 for both); the lead's go for a set-based fix with the same result (seq 118556); `public_cards.render_card` names only the claim holder, the notes' authors and their latest editors
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-12
+**See:** public-pages.md#a-page-that-shows-people-is-rendered-again-with-them-through-dependents-and-the-member-events — dd4a04fc-9382-4966-b77e-0d9aba7c9fcb — as of 2026-11-12
+**Revisit when:** a card page shows a member in another way than as holder, note author or note editor (an assignee, a mention, a reviewer)
+
+A `member_joined` or shown `member_updated` of a public project still touches the project's page with its
+dependents, but the dependents are `public_projects.member_dependents`: the views, the organisation, the
+agent and person pages as before, and of the card pages only those that name the member under any membership
+the principal held in the project (`public_cards.naming`: claim holder, note author, latest note editor; the
+editor is in JSON, so the project's few edited notes are matched in Python, as for a person's cards).
+`events.emit` hands that list to `public_pages.touch` as `others`, read only when pages are rendered at all.
+A removal and an isolation give the member's cards back (`isolation.release_claims`) before their event, so
+the holder is no longer there to be found: a card that left `in_progress` is rendered by its own status event,
+and one that kept its status (`review`, `blocked`, `open`) is touched by `isolation.tell_released` after the
+member's event, under the project lock that event took (a review found the gap on #1700; a test holds both).
+Every page that named the member is still taken off in the writer's transaction and rendered after its commit;
+every other card page is left as it is, since it shows nothing of the member. A test holds the statement
+count of a profile's deletion independent of the project's cards.
+
+**Reason:** a project's dependents include every card page, so each member change in a public project locked,
+deleted and re-rendered every card page of the project in the request: with about 1,850 card pages the
+deletion of one agent profile sent 31,871 statements, and the same held for every removal, join and shown
+change of a member. 721bcdfa had already taken card events off this path; its last paragraph kept the member
+events on it because a member's name stands on the card pages they hold, which is true only of those pages.
+
+**Rejected alternatives:**
+- Removing all dependents in one statement and rendering them in the background: a removal would no longer
+  be back when the answer arrives (deafb243), and most of those pages never changed.
+- Leaving the card pages to the snapshot worker for member changes: a removed name would stay on a card page
+  until the run, which §16.9 does not allow for a removal.
+- Narrowing by the `changed` fields of the event: 721bcdfa rejected an allowlist of shown fields, and the cost
+  is in the number of pages, not in which field changed.
 
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
@@ -911,3 +951,108 @@ source, and no page is rendered again for it.
   not chosen by the reader.
 - The stored row's tag (with the banner) as the `ETag`: a changed frame would answer `304` to a cache holding
   the old one.
+
+## A stored page carries no inline style: the per-day bars are an SVG sized by attributes, the placeholder a class
+
+**Id:** a08a0c0d-ded2-483c-b509-19bfe49c3705
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8fk897a9tan8; the lead's instructions of 2026-11-13: an SVG or classes, a hub test against
+`style=`, the end-to-end run listening on every stored page, the policy not loosened; found by the Report run of
+tsk-w0g9d128wgma; contract `docs/api.md` §16.9 ("The picture"), §16.11
+**See:** public-pages.md — c0868c32-a98a-46d9-ab65-f6ad9583848a — as of 2026-11-13
+
+A stored page's body is served three ways: bare, in the frame (`?as=public`), and for a visitor without the query
+inside the app shell (`shell.page_in_shell`), until the dashboard draws the page. The first two answer under the
+pages' own policy, which allows inline style. The shell answers under the dashboard's `default-src 'self'`, which
+refuses it. So the "Cards done per day" bars (`public_projects._per_day_html`, a `<span style>` per day) and the
+placeholder of a person without a picture (`public_people.picture_html`) were not drawn there. The bars are now
+one `<svg>` whose `<rect>`s take their height, place and colour from attributes, each day's text in its `<title>`.
+The placeholder is `pic none size-<side>`, with the sizes in `render.STYLE` and `public-pages.css`
+(`public_people.PICTURE_SIDES`). `test_no_stored_page_carries_an_inline_style` reads every row of `public_page`.
+The end-to-end round `stored_pages_policy_round` opens every page the sitemap lists, plus a person's agents
+pages, at both addresses, and fails on any refusal.
+
+**Reason:** the shell's policy is the dashboard's and protects it. A page that renders the same everywhere without
+an exception in that policy is the fix that cannot come back by a new inline style; the test guards the store, the
+run guards what a browser refuses.
+
+**Rejected alternatives:**
+- `'unsafe-inline'` or the styles' hashes in the shell's policy: it would loosen the dashboard's own policy for
+  markup it does not need, and a hash breaks with every bar height (the lead: do not loosen the policy).
+- A class per bar height (`h-1` to `h-41`): 41 rules in two stylesheets for what an SVG attribute says directly.
+- Leaving the shell's copy unstyled because the dashboard redraws the page: the copy is what a reader without
+  script, or before the script, and a crawler sees.
+
+## A stored page's frame has the landing page's theme switch and language row
+
+**Id:** 3ebf3861-2939-45c2-a459-1949ddcf1cef
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8mkezms3h9xh; the maintainer's decision req-q34v0gr2rbw2 (2026-11-13): the stored pages' frame
+and the landing page's are to be identical, the language row and the theme switch both; contract `docs/api.md`
+§16.9
+**See:** public-pages.md — c0868c32-a98a-46d9-ab65-f6ad9583848a — as of 2026-11-13
+
+`render.stored_in_frame` builds the frame with `public_frame(..., theme=True, query="as=public")`: the header's
+`[data-lp-theme]` button, the landing page's one script (`landing.js`, which does nothing else without the landing
+page's elements), and the footer's language row, whose links are `?as=public&lang=<tag>`. A language there changes
+the frame only; the stored page keeps the language it was rendered in. `FRAMED_CSP` gains `script-src 'self'`, no
+inline script. `test_the_frame_has_the_landing_pages_theme_switch_and_language_row` compares the controls with the
+landing page's; the end-to-end `stored_page_layout` clicks the switch and reads the row.
+
+**Reason:** a reader moving from the start page to a project's or a person's page should find the same header and
+footer, not a frame with two controls missing. The script is the landing page's own file, served by this hub, so
+the policy admits only `'self'`.
+
+**Rejected alternatives:**
+- The frame without a language row and without script, as built first (c0868c32): one language on the page, the
+  content's, and the pages' policy without script. It lost to the decision that the two frames be identical.
+- The language row leading to `?lang=` alone: the link would drop `as=public` and a signed-in reader would land in
+  the app instead of the page they were reading.
+
+## A project's page data names its members with picture, role and harness; a new picture renders it at once
+
+**Id:** 0e401fc9-0080-4289-8488-cb4a6fb5ad8f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-h822960mytm9 and the lead's go on its shape (2026-11-14) (the data part of the approved mockups' design, its gap list against main
+8b7db15f); the mockups' README, point 3 ("add picture and harness to the project data, from the same source") and
+point 5; contract `docs/api.md` §16.9
+**See:** public-pages.md — 3ebf3861-2939-45c2-a459-1949ddcf1cef — as of 2026-11-14
+
+`public_projects.team_details` adds to each entry of `people` and `agents` the picture, the membership's role and,
+for an agent, the harness. The picture follows the member's own page: a person's only while `public_profile` is on,
+an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
+agent's page's projects, the value its own page shows. `online.named` and the agent page's `owner` take the
+picture by the same rule. `members` is the length of the Team tab's list, both the members it names and those it only
+counts, and stands next to `statistics`, not inside it. Each ticker entry gets `merge`: `{pr, title, author,
+areas}` read from the event's own facts, or `null`. `avatars._touch_page` renders, besides the owner's page, every
+public project page with the member (`public_projects.pages_with_picture`) and, for a person, their agents'
+pages, through `others`, so no card page is rendered for it. The Team and Organisation tabs' `data` take the
+picture by the same rule (`public_projects.member_pictures`, one call per render of the views,
+`public_project_views.shown_pictures`; tsk-9482zxza3gs3), and `pages_with_picture` names the views with the page.
+`test_public_page_data.py` holds the shapes and the renders.
+
+**Reason:** the design draws a team of avatar cards, a "Right now" stack and an "Agent of [picture] name" line.
+Without these fields it would need a second request per member, or would parse `text`. A picture follows the rule
+of the page that already publishes it, so the data makes nothing public that was not public before. Its address
+answers `not_found` from a change on, so every stored `data` that names it is rendered again at once. A session
+start (`routes/me_session.py`) renders the agent's public project pages again only when it changes the harness
+their data shows (`removal=False`, `dependents=False`): agents resume often, and a render of every such page per
+resume costs the public routes their load. Since the harness comes from all of the agent's public projects, a
+project's dependents also hold the other public project pages of its agents (`_shared_agent_pages`): one leaving
+the public set renders them at once, so none keeps a harness from a session it no longer counts (review P2,
+2026-11-14).
+
+**Rejected alternatives:**
+- `members` inside `statistics`: that object is §6.22's, reduced, and the count is not one of its counters.
+- Rendering the project pages again at every session start, for the harness: a render per resume, most of them
+  for no change (the lead's condition, 2026-11-14).
+- Leaving the harness to the snapshot worker alone: the page would show the old harness for up to
+  `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, while the agent's own page shows the new one at once.
+- Touching the person's page with its dependents for a new picture: those include every card page that names them,
+  and no card page shows a picture.

@@ -158,7 +158,9 @@ window.Maity = window.Maity || {};
     if (!Object.hasOwn(loading, tag)) {
       loading[tag] = new Promise((resolve) => {
         const script = window.document.createElement("script");
-        script.src = new URL("i18n/" + tag + ".js", new URL(here, window.document.baseURI)).href;
+        // Under its version where the hub lists one, so the browser keeps it (js/assets.js).
+        const version = M.assetQuery ? M.assetQuery("js/i18n/" + tag + ".js") : "";
+        script.src = new URL("i18n/" + tag + ".js" + version, new URL(here, window.document.baseURI)).href;
         script.onload = () => { delete loading[tag]; resolve(!!catalogs[tag]); };
         script.onerror = () => { delete loading[tag]; resolve(false); };
         window.document.head.appendChild(script);
@@ -362,7 +364,8 @@ window.Maity = window.Maity || {};
   i18n.frameAddress = frameAddress;
   i18n.frame = (tag) => {
     const found = closest(tag);
-    if (!found) return Promise.resolve(false);
+    // Not in fixture mode, as readFrame: its frame answers English whatever ?lang= asked.
+    if (!found || (window.location && window.location.protocol === "file:")) return Promise.resolve(false);
     framed[frameAddress()] = found;
     const next = visitorChoice();
     if (account || next === i18n.language) return Promise.resolve(false);

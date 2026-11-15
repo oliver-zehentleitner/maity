@@ -15,6 +15,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 import anyio
@@ -251,6 +252,16 @@ def lock_project(conn: Connection, project_id: str) -> Any:
     ).one()
 
 
+def newest_seq(conn: Connection, project_id: str) -> int:
+    """The project's newest event seq, 0 for none: one step down the index (project_id, seq).
+    A new membership stores it as `joined_seq`, read under the project's lock that its
+    caller holds, so no event of the project lands between this read and the insert."""
+    found = conn.execute(
+        select(func.max(t.event.c.seq)).where(t.event.c.project_id == project_id)
+    ).scalar()
+    return int(found or 0)
+
+
 WATCHERS = "watchers:"
 # A notice about an event, and the payload field that names that event.
 _READ_AS_THEIR_EVENT = {"event_redacted": "seq", "attachment_deleted": "message_seq"}
@@ -298,10 +309,13 @@ def emit(
     subject: tuple[str, str] | None = None,
     conversation_id: str | None = None,
     restricted_list: Sequence[int] | None = None,
+    card_watchers: Sequence[int] | None = None,
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`. A
     `restricted_changed` names its private list (`restricted_list`, §6.4): stored apart from
-    the event, never served, read again against the set at every read."""
+    the event, never served, read again against the set at every read. `card_watchers` is the
+    watcher list (§6.4) the caller already read with `card_watches.at_write` for this event's
+    card, so that what it decided from that list and the list stored here are one read."""
     project = lock_project(conn, project_id)
     if kind == "member_updated":
         # Everyone reads it; these tokens are who it wakes (§8.2).
@@ -316,7 +330,11 @@ def emit(
         from maity_hub import card_watches
 
         audience = [*audience, f"{WATCHERS}{watched_card}"]
-        watchers = card_watches.at_write(conn, watched_card)
+        watchers = (
+            list(card_watchers)
+            if card_watchers is not None
+            else card_watches.at_write(conn, watched_card)
+        )
     elif kind in _READ_AS_THEIR_EVENT and any(
         isinstance(token, str) and token.startswith(WATCHERS) for token in audience
     ):
@@ -422,9 +440,17 @@ def emit(
         # Who a public page shows follows who is a member (§16.9): a join adds, any other
         # change may take someone off. A change no page shows renders nothing: this
         # transaction holds the project row (hub/context/public-pages.md 721bcdfa).
-        from maity_hub import public_pages
+        from maity_hub import public_pages, public_projects
 
-        public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
+        # Of the card pages only those that name the member: no other shows one (fe966f9c).
+        others = (
+            partial(public_projects.member_dependents, conn, project_id, subject[1])
+            if subject and subject[0] == "member"
+            else None
+        )
+        public_pages.touch(
+            conn, "project", project_id, removal=kind != "member_joined", others=others
+        )
     elif kind in CARD_KINDS and project.public_page == "on":
         # The Board follows its cards: a new one adds, any other change may take one off.
         from maity_hub import public_pages
@@ -563,10 +589,11 @@ NOTE_KINDS = frozenset({"note_added", "note_resolved", "note_edited"})
 SEE_ALL_TRUSTS = ("owner", "admin")
 # Kinds no agent reads, whatever its role or audience (§8.2): one names who shares an
 # environment, which only the humans responsible may know; invitations are a human's
-# business from issue to use, and never wake an agent (§3.4).
+# business from issue to use, and never wake an agent (§3.4); so is a join's revocation (§3.1).
 HUMANS_ONLY_KINDS = frozenset(
     {
         "shared_environment_detected",
+        "join_revoked",
         "invitation_created",
         "invitation_revoked",
         "invitation_voided",
@@ -587,7 +614,8 @@ def hidden_redactions(
     - with `membership`, `ticker:<seq>` for each decision item, and for the notice of
       one, whose request it may not read now: no item, no placeholder, no notice;
     - with a human's `membership`, `owns:<agent id>` for each agent it owns that a group
-      chat's event in the batch names: the owner reads along (§9.2);
+      chat's event in the batch names, waiting or not, or that a free work message holds
+      (`held:`): the owner reads along (§9.2, §9.6);
     - with `membership`, `watching:<seq>` for each event its private list holds it on (§6.4);
     - with `membership`, `restricted:<seq>` for each `restricted_changed` it reads now: on
       the event's private list and in the project's restricted-access set (§6.4);
@@ -694,12 +722,12 @@ def _owned_in_chats(conn: Connection, rows: Sequence[Any], membership: Any) -> s
     if membership is None or membership.human_id is None:
         return set()
     named = {
-        token.removeprefix("member:")
+        chat_agent(token)
         for r in rows
         if r.conversation_id is not None and r.conversation_id.startswith("cnv-")
         for token in (r.audience or [])
-        if token.startswith("member:agt-")
-    }
+        if chat_agent(token)
+    } | {held_agent(token) for r in rows for token in (r.audience or []) if held_agent(token)}
     if not named:
         return set()
     owned = conn.execute(
@@ -708,6 +736,32 @@ def _owned_in_chats(conn: Connection, rows: Sequence[Any], membership: Any) -> s
         )
     ).scalars()
     return {f"owns:{agent_id}" for agent_id in owned}
+
+
+def chat_agent(token: Any) -> str:
+    """The agent a group chat's audience token names, `member:agt-…` or a waiting agent's
+    `waiting:agt-…` (§9.6), whose owner reads along by it; else ``."""
+    if not isinstance(token, str):
+        return ""
+    for prefix in ("member:", "waiting:"):
+        if token.startswith(f"{prefix}agt-"):
+            return token.removeprefix(prefix)
+    return ""
+
+
+def held_agent(token: Any) -> str:
+    """The agent a free work message's `held:agt-…` token names (§9.6), whose owner reads it
+    along by it; else ``."""
+    if isinstance(token, str) and token.startswith("held:agt-"):
+        return token.removeprefix("held:")
+    return ""
+
+
+def held_for(row: Any, principal: str) -> bool:
+    """A free work message holds `principal` back (§9.6): no token reaches it for this one.
+    Read from the audience, not the payload: a redaction replaces the payload, and the
+    `event_redacted` and `attachment_deleted` of a held message copy its audience."""
+    return f"held:{principal}" in (row.audience or ())
 
 
 def _names_team(audience: list[str], principal: str) -> bool:
@@ -776,10 +830,17 @@ def _isolated(membership: Any) -> bool:
 
 
 def readable_by(
-    row: Any, membership: Any, principal: str, hidden: frozenset[str] = frozenset()
+    row: Any,
+    membership: Any,
+    principal: str,
+    hidden: frozenset[str] = frozenset(),
+    *,
+    carried: bool = False,
 ) -> bool:
     """§8.2: audience `all`, `member:<id>` or an instance of it, `role:<role>`, or one's
-    own; owners and admins read every event of the project."""
+    own; owners and admins read every event of the project. `carried` is a bridge's read for
+    the agent (`Maity-For`, §2.3), which reads as the agent but never what is the agent's
+    alone towards its owner (`chat_rules_changed`, §9.6)."""
     if _isolated(membership):
         return False  # an isolated agent is left out of every audience (§6.2)
     if in_window(row, membership):
@@ -803,12 +864,22 @@ def readable_by(
         return (row.payload or {}).get("member_id") == principal or (
             membership.agent_id is None and membership.trust in SEE_ALL_TRUSTS
         )
-    if row.kind in ("cross_chat_mention", "chat_unread"):
+    if row.kind == "chat_rules_changed" and carried:
+        # The rules an owner sets are for its own agent: a bridge serving it across owners
+        # (§2.3) neither reads nor wakes on their change (§9.6). The other two kinds below make
+        # no such promise; a bridge reads them for the agent as the agent would.
+        return False
+    if row.kind in ("cross_chat_mention", "chat_unread", "chat_rules_changed"):
         # The agent it names, and nobody else: not the author, not an admin's see-all (§9.5);
-        # the unread nudge names a group chat's title, which the see-all does not read (§9.2).
+        # the unread nudge names a group chat's title, which the see-all does not read (§9.2);
+        # a change of the rules its owner set is the agent's alone, not its owner's (§9.6).
         return _names_team(audience, principal)
     if row.actor_membership == membership.id:
         return True
+    if held_for(row, principal):
+        return False  # held for its owner's yes: not `all`, a role or a trust either (§9.6)
+    if any(f"owns:{held_agent(token)}" in hidden for token in audience if held_agent(token)):
+        return True  # the owner of an agent held for it reads it along (§9.6)
     if row.conversation_id is not None:
         # A conversation is its two parties' or participants' alone, admins included;
         # the owner of an agent a group chat's event names reads along (§9.2). An
@@ -817,7 +888,7 @@ def readable_by(
             _names_team(audience, principal)
             or (
                 f"outside:{row.conversation_id}" not in hidden
-                and any(f"owns:{token.removeprefix('member:')}" in hidden for token in audience)
+                and any(f"owns:{chat_agent(token)}" in hidden for token in audience)
             )
             # A round's thread names `trust:owner`: every human owner reads along (§20.5).
             or (
@@ -846,13 +917,15 @@ def read(
     *,
     chat_windows: dict[str, int] | None = None,
     until: int | None = None,
+    carried: bool = False,
 ) -> tuple[list[Any], int, bool]:
     """Readable events after `after` (and up to `until`, when given), oldest first: (rows,
     highest seq examined, truncated).
     With `chat_windows` (the resume packet, §5.2: each group chat the member is in now,
     and the seq its current stay's window starts after), a group chat's message is kept
     only when it mentions `principal` and lies in that window; any other is passed over
-    and does not count against `limit`."""
+    and does not count against `limit`. `carried`: a bridge's read for the agent
+    (`readable_by`)."""
 
     def wanted(row: Any, hidden: frozenset[str]) -> bool:
         if chat_windows is not None and _group_chat(row) and row.kind == "message":
@@ -862,7 +935,7 @@ def read(
                 return False
             if not any(m.get("member_id") == principal for m in mentioned):
                 return False
-        return readable_by(row, membership, principal, hidden)
+        return readable_by(row, membership, principal, hidden, carried=carried)
 
     scope = t.event.c.project_id == project_id
     if until is not None:
@@ -1000,7 +1073,7 @@ def wakes(
 
     `watched`: the events the reader's private watcher list holds it on (`watched_seqs`), which
     wake it as its `member:` token would (§6.4)."""
-    if row.kind in NON_WAKING or _isolated(membership):
+    if row.kind in NON_WAKING or _isolated(membership) or held_for(row, principal):
         return False
     if row.kind == "member_updated" and (row.payload or {}).get("changed") == ["language"]:
         return False  # read at the next wake-up, never a reason for one (§6.2)
@@ -1176,7 +1249,9 @@ def read_waking(
         ).scalar()
         is not None
     )
-    rows, examined, truncated = read(conn, project_id, membership, principal, after, 10_000)
+    rows, examined, truncated = read(
+        conn, project_id, membership, principal, after, 10_000, carried=carried
+    )
     # The notice of a removed ticker item is read like the item, and woken by never (§17.5).
     notices = hidden_redactions(conn, [r for r in rows if r.kind == "event_redacted"])
     watched = watched_seqs(conn, rows, membership)
@@ -1193,12 +1268,15 @@ def read_waking(
     return found, examined
 
 
-def highest_readable(conn: Connection, project_id: str, membership: Any, principal: str) -> int:
-    """`after=latest`: the highest seq this reader may read, or 0."""
+def highest_readable(
+    conn: Connection, project_id: str, membership: Any, principal: str, *, carried: bool = False
+) -> int:
+    """`after=latest`: the highest seq this reader may read, or 0 (`carried`: a bridge's read
+    for the agent, `readable_by`)."""
     return _highest(
         conn,
         t.event.c.project_id == project_id,
-        lambda row, hidden: readable_by(row, membership, principal, hidden),
+        lambda row, hidden: readable_by(row, membership, principal, hidden, carried=carried),
         membership,
     )
 

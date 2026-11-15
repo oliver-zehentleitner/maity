@@ -814,3 +814,80 @@ into `False`, and that route's `Outsider` branch cannot apply, as an outsider ne
   and a link opened is not a wait for events.
 - A shortcut for a `seq` beyond the head or `0`: it would answer a missing event with
   fewer reads than a hidden one for no gain, and the contract leaves time open anyway (§8.9).
+
+## `chat_rules_changed` comes from each entry's reach read before and after the write; the reading before takes the owner's row only
+
+**Id:** 088c296c-003d-46d1-8b06-f7760e2b4b03
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dq1229pyh333 (the hub step), building docs/api.md §9.6 "Rules per side" and the `chat_rules_changed` row of §8.2; how the hub gets there is the implementer's
+**Revisit when:** a chat write (a join, a leave, a new participant) is to announce the rules too, or the owner's entry writes come to take the projects before the other human's `account_lock`
+
+Every write of an owner's entries runs inside `chat_rules.announcing`: the `/me/chat-access`
+writes, the inbox answer (`chat_request.settle`) and the lapse of an `until`
+(`chat_gate.lapse`). It reads, for each allow entry with a text, which agent it admits to
+which chat (`_reach`), before the write and again after the `recheck`. For each entry, a
+change of its texts goes to every `(agent, project)` of both readings, and with the texts
+unchanged to each `(agent, project)` of a chat in only one of them: the readings are
+compared per chat, so an entry that comes to admit the agent to a second chat of a project
+is a change there too. An entry whose `until` passed and that the worker has not lapsed yet
+(`lapsed_at` empty) is judged just before its `until`, in every reading: `_allows` already
+sees it passed, while the stays still hold the admission, and an owner's write between the
+`until` and the lapse would otherwise read it as admitting nothing both before and after.
+The reading before takes the owner's human row only (`chat_access._lock`), not the
+projects.
+
+An entry with neither text gives no item and no event: it sets no rule, and an item would
+only print an empty heading in the agent's packet.
+
+**Reason:** what an entry admits depends on the stays and on the owner's other entries
+(`waiting_for`), so only the two readings show what a write changed for each agent; a
+change of the texts reaches every agent the entry covers before or after it. Taking the
+projects before the write would turn an order round that a write already has: the owner's
+row, the other human's `account_lock` (shared, `chat_access._human`), then the projects
+in `recheck`. Without them a chat write may come in between; what it changes shows as a
+difference too, and the agent gets an event that is still true (its entry came to admit it
+or stopped), never one less for the entry's own change.
+
+**Rejected alternatives:**
+- An event only on the texts' change: an agent a narrowing, a removal or an `until` takes
+  out of an entry's reach would keep reading rules that no longer apply until its next
+  resume; §9.6 names those cases.
+- Locking every project of the owner's chats before the reading: the deadlock order above.
+- An item for every admitting entry, texts or not: the literal reading of "one item per
+  entry"; it fills the packet with entries that say nothing, and §5.2 calls the field "the
+  rules its owner set". The contract now says so (an open point of the PR for the
+  maintainer).
+
+## A long-poll ends with its credential or session: at once in the process that ended it, at the next pass elsewhere, the check inside the look
+
+**Id:** 92ef7fa8-fc4f-4b96-8089-903b6ac959af
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0f7nbt07f98r (part 2), building docs/api.md §8.3 and §16.8 `suspend`; the way there is the implementer's
+**Revisit when:** a held wait's pass comes to cost more than the one look, or an agent's `active` off without a revocation is to end its own wait
+
+A revocation (`leaks.revoke`, so a replacement and a suspension too) and the end of a
+dashboard session (`sessions.end_where`) end the open waits of that credential or session
+through `longpoll.registry.end_keys_after`, once the transaction commits: through
+`events.on_commit`, and on a plain `engine.begin()` (the sign-out, password and session
+routes) through the connection's `commit` event. Every pass also reads the row: the read re-reads the
+credential and the session (`gone`), and the look of a skipped pass takes the same as one
+scalar (`live_column`) in its one statement. A human's wait also ends with the membership's
+`active`; an agent's does not, as before: removing an agent revokes its credentials.
+
+**Reason:** a registry holds only its own process's waits (hub/context/replicas.md), so the
+end at commit is fast only where the change was made; the row read makes every replica end
+the wait within one pass, and reading it inside the look keeps the cost the look's test pins.
+
+**Rejected alternatives:**
+- The registry end alone: a wait on another replica would keep delivering until its deadline.
+- Moving every session-ending route into `events.transaction`: nine routes and helpers
+  across auth, password reset and second factor for one hook; the connection's `commit`
+  event reaches them all from the one place that ends sessions.
+- A separate query per pass for the credential or session: one more statement on every pass
+  of every held wait, against the one look a pass the earlier entry above settled.
+- Ending an agent's own wait on `active` off: changes a behaviour a test pins on purpose,
+  and the removal that sets it revokes the credential, which ends the wait anyway.

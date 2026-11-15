@@ -273,11 +273,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The gear menu in the header: the hub's and one's own, not the project's.
   const gearButton = () => header.querySelectorAll("button").find((b) => b.getAttribute("aria-label") === "Settings");
   // Project settings are the project's Settings tab (the maintainer's request): the helper opens it,
-  // drawn afresh; a test moves on by its next go().
-  const onSettings = () => /^#\/[^/]+\/[^/]+\/settings$/.test(win.location.hash);
-  const projectSettings = async () => {
+  // drawn afresh, at one of its sub-tabs (General without one, tsk-chtvqs62cd10); a test moves on by
+  // its next go().
+  const onSettings = () => /^#\/[^/]+\/[^/]+\/settings(\/(members|work|moderation|mine))?$/.test(win.location.hash);
+  const projectSettings = async (tab) => {
     const full = (/^#\/([^/]+\/[^/]+)/.exec(win.location.hash) || [])[1];
-    await go("#/" + full + "/settings"); for (let k = 0; k < 6; k++) await tick();
+    await go("#/" + full + "/settings" + (tab ? "/" + tab : "")); for (let k = 0; k < 6; k++) await tick();
   };
   const byId = (id) => main.all().find((e) => e.id === id) || header.all().find((e) => e.id === id);
   // A browser compiles `pattern` as ^(?:…)$ with the v flag and ignores one that does not compile.
@@ -364,6 +365,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(refuses("https://evil.example/x.png") && refuses("blob:https://evil.example/x") && refuses("//evil.example/x.png")
     && refuses("/api/v1/projects/../logo?v=1") && !refuses("fixtures/maity/logo.png") && !refuses("/api/v1/projects/maintainer/maity/logo?v=%22f1%22"),
     "dom: an image is a local file or the hub's own image, never another origin, not even https");
+  // A local file under its version, as the shell names it (js/assets.js, §16.11): `?v=` and 16 hex digits, nothing else.
+  expect(!refuses("brand/maity-lockup.svg?v=0123456789abcdef") && refuses("brand/maity-lockup.svg?v=0123456789ABCDEF")
+    && refuses("brand/maity-lockup.svg?v=0123456789abcde") && refuses("brand/maity-lockup.svg?x=0123456789abcdef")
+    && refuses("brand/maity-lockup.svg?v=0123456789abcdef&v=0") && refuses("https://evil.example/x.svg?v=0123456789abcdef")
+    && refuses("javascript:x/y?v=0123456789abcdef") && refuses("brand/x.svg#?v=0123456789abcdef"),
+    "dom: a local file may carry its version, and only that");
   let cur = main.querySelector(".current");
   expect(cur && text(cur).includes("rounding fix") && text(cur).includes("Review") && text(cur).includes("urgent"), "urgent first (Sample shop, with its state)");
   expect(cur && !btn(cur, "Later (stays open)") && btn(cur, "Later"), "local Later button present");
@@ -602,7 +609,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let c2 = main.querySelector(".current");
   expect(c2 && text(c2).includes("Merge PR #2") && text(c2).includes("On behalf of") && text(c2).includes("Reviewer · member · reviewer"), "consent without options, on_behalf_of shown");
   expect(btn(c2, "go") && btn(c2, "no") && !btn(c2, "Discuss"), "replies go/no from the hub, no discuss");
-  expect(btn(c2, "go").className === "reply primary" && btn(c2, "no").className === "reply", "only the hub's go of a consent is primary");
+  expect(btn(c2, "go").className === "reply primary option" && btn(c2, "no").className === "reply option" && btn(c2, "Later").className === "reply later", "only the hub's go of a consent is primary");
   expect(JSON.stringify(c2.querySelector(".replies").querySelectorAll("button").map((b) => b.textContent)) === JSON.stringify(["Later", "Talk", "no", "go", "Send"]),
     "the replies at the right edge: Later and Talk first, the hub's replies, Send last");
   // A consent takes no words alone (a proposal's would be read as No, §15.6): Send stays, disabled, and says why.
@@ -2091,7 +2098,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "placements: the form offers one's own unplaced agents or a new one, one's live runner here (not the revoked one), its targets, its installed tools, modes and models "
     + JSON.stringify([srOpts("placement-new-agent"), srOpts("placement-new-runner"), srOpts("placement-new-tool")]));
   const srHandleBy = (byId("placement-new-handle").getAttribute("aria-describedby") || "").split(" ");
-  expect(srHandleBy.includes("placement-new-handle-hint") && srHandleBy.some((x) => /^handle-explain-/.test(x) && byId(x)
+  expect(srHandleBy.some((x) => /^handle-rule-\d+$/.test(x) && byId(x) && text(byId(x)).startsWith("Lowercase letters, digits and -"))
+    && srHandleBy.some((x) => /^handle-rule-\d+-check$/.test(x)) && srHandleBy.some((x) => /^handle-explain-/.test(x) && byId(x)
     && text(byId(x)) === "The agent's handle names it among your agents and in @mentions in a project."),
     "placements: the new handle says what a handle is and its rule, as every agent handle does (#1488) " + JSON.stringify(srHandleBy));
   byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change");
@@ -4077,7 +4085,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!text(main).includes("Adding an agent of yours is on Agents"), "members: a guest is not pointed to adding an agent");
   win.Maity.api.get = agGet;
   // Project settings: whether members add their own agents, and how many each, with a reason (an owner).
-  await go("#/maintainer/maity/inbox"); await projectSettings();
+  await go("#/maintainer/maity/inbox"); await projectSettings("members");
   const maPatches = [];
   const maPatch = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { maPatches.push([p, b]); return maPatch(p, b); };
@@ -4093,7 +4101,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
 
   // A card's restricted text (§6.1, §6.4, tsk-g8ts5vxhj1md): the setting with its widening preview,
   // the box on a card for a member in the set alone, its refusals in words, the set's notice.
-  await projectSettings();
+  await projectSettings("members");
   const raSection = () => byId("restricted-access");
   const raSubmit = async () => { raSection().querySelector("form.restricted-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
   const raConfirm = () => raSection().querySelector(".restricted-confirm");
@@ -4175,26 +4183,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = raGet;
   // The set's notice links the project's setting and reads as read like any notice; one's own settings stay as they were.
   const raNote = { kind: "inbox", target: { type: "settings", id: "restricted_access" }, project: { full_name: "maintainer/maity", member: true } };
-  expect(win.Maity.notify.linkOf(raNote) === "/maintainer/maity/settings" && !win.Maity.notify.keepsUnread(raNote)
+  expect(win.Maity.notify.linkOf(raNote) === "/maintainer/maity/settings/members" && !win.Maity.notify.keepsUnread(raNote)
     && win.Maity.notify.linkOf({ kind: "inbox", target: { type: "settings", id: "notifications" } }) === "/account/notifications"
     && win.Maity.notify.keepsUnread({ kind: "inbox", target: { type: "settings", id: "notifications" } }),
-    "restricted: the set's notice opens the project's settings and is read by a read mark");
-  // Where that notice leads a member in the set without project:admin (§19): settings sends them to
-  // settings/mine, which shows the setting to read, with the set the hub serves them, and no control.
+    "restricted: the set's notice opens the project's settings at Members and agents, and is read by a read mark");
+  // Where that notice leads a member in the set without project:admin (§19): settings/members sends
+  // them to settings/mine, which shows the setting to read, with the set the hub serves them, and no control.
   await win.Maity.api.patch("/projects/maintainer/maity", { settings: { restricted_access: { mode: "nobody_except", members: ["hum-maintainer"] } } });
   const raMeGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? raMeGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").trust = "member"; return x; }) : raMeGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 8; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings/members"); for (let k = 0; k < 8; k++) await tick();
   expect(/settings\/mine$/.test(win.location.hash) && raSection() && !byId("restricted-mode") && !raSection().querySelector("form")
     && text(raSection()).includes("Only the members ticked. You are in the set.")
     && text(raSection()).includes("In the set now: Maintainer (@maintainer).")
     && text(raSection()).includes("Only a human with the right to administer the project changes who is in the set."),
     "restricted: a member in the set without the right reads the setting on settings/mine, where the notice leads, and changes nothing " + win.location.hash);
   win.Maity.api.get = raMeGet;
-  await go("#/maintainer/maity/inbox"); await projectSettings();
+  await go("#/maintainer/maity/inbox"); await projectSettings("members");
   expect(byId("restricted-mode") && byId("restricted-mode").value === "nobody_except", "restricted: an admin still edits the setting on the project's settings");
   // Closed again: nobody is in the set, and no card shows the box.
-  await projectSettings();
+  await projectSettings("members");
   byId("restricted-mode").value = ""; byId("restricted-mode").dispatch("change");
   await raSubmit();
   await go("#/maintainer/maity/board"); await go("#/maintainer/maity/tasks/tsk-0004"); for (let k = 0; k < 8; k++) await tick();
@@ -4313,7 +4321,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox");
 
   // Agents of owners who are not members (§6.1, §6.2): settings, the mark, the hub's isolation, the refused lift.
-  await projectSettings();
+  await projectSettings("members");
   const aoForm = () => main.querySelector("form.agent-owners-form");
   expect(aoForm() && byId("agent-owners-select").value === "" && text(byId("agent-owners-select")).includes("Not set, follows the public page (now: "),
     "agent owners: unset, the form says what it reads now");
@@ -4335,7 +4343,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const aoRolesGet = win.Maity.api.get;
   let aoRolesAnswer;
   win.Maity.api.get = (p) => (p.endsWith("/roles") ? new Promise((resolve) => { aoRolesAnswer = resolve; }) : aoRolesGet(p));
-  await projectSettings();
+  await projectSettings("members");
   byId("outside-role-writer").checked = true; byId("agent-owners-reason").value = "kept";
   aoRolesAnswer({ custom: [{ name: "triage", base: "coder" }, { name: "outsider", base: "viewer" }] });
   for (let k = 0; k < 4; k++) await tick();
@@ -4827,7 +4835,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const boxes = main.querySelectorAll("section.placements");
     const here = boxes.find((b) => text(b.childNodes[0]).includes("maintainer/maity"));
     const ids = boxes.map((b) => b.getAttribute("aria-labelledby"));
-    expect(JSON.stringify(agentsTabRow()) === JSON.stringify([["Agents", "#/agents", null], ["Managed agents", "#/agents/placements", "page"], ["Maintenance notices", "#/agents/maintenance", null]])
+    expect(JSON.stringify(agentsTabRow()) === JSON.stringify([["Agents", "#/agents", null], ["Managed agents", "#/agents/placements", "page"], ["Maintenance notices", "#/agents/maintenance", null], ["Chat access", "#/agents/chat-access", null]])
       && boxes.length === where.size && here && ownRows.length > 0 && ownRows.length < 6
       && JSON.stringify(here.querySelectorAll("li.placement").map((li) => li.attrs["data-placement"]).sort()) === JSON.stringify(ownRows)
       && !main.querySelector("button.placement-new-open") && !main.querySelector(".placement-new-none")
@@ -5763,6 +5771,42 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(asked.i18n.language === "de" && asked.i18n.explicit() === "de" && !("maity.language" in asked.kept),
       "language: ?lang= is the visitor's choice, and nothing is stored for it");
   }
+  // A file a script loads later is asked for under the version the hub lists in the shell's
+  // `#maity-assets` block (js/assets.js, docs/api.md §16.11, tsk-0pp41wxp6f75); without the block
+  // (fixture mode) or for a file it does not list, under its plain name.
+  {
+    const V = "0123456789abcdef";
+    const withBlock = (text) => {
+      const page = { document: { getElementById: (id) => (id === "maity-assets" && text !== null ? { textContent: text } : null) }, JSON, Object };
+      page.window = page;
+      vm.runInContext(fs.readFileSync(path.join(WEB, "js/assets.js"), "utf8"), vm.createContext(page), { filename: "js/assets.js" });
+      return page.Maity.assetQuery;
+    };
+    const listed = withBlock(JSON.stringify({ "js/i18n/de.js": V, "brand/x.svg": "ABCDEF0123456789", "vendor/a.js": V + "0", "brand/p.svg": 7 }));
+    expect(listed("js/i18n/de.js") === "?v=" + V && listed("js/i18n/fr.js") === "",
+      "assets: a listed file gets ?v=<version>, an unlisted one its plain name");
+    expect(listed("brand/x.svg") === "" && listed("vendor/a.js") === "" && listed("brand/p.svg") === "" && listed("constructor") === "",
+      "assets: only 16 lower hex digits are a version, and only the block's own keys count");
+    expect(withBlock(null)("js/i18n/de.js") === "" && withBlock("{not json")("js/i18n/de.js") === "" && withBlock("[1]")("0") === "",
+      "assets: no block (file://), a block that does not parse or is no object: plain names");
+    // js/i18n.js asks for a catalog under its version.
+    const added = [];
+    const page = {
+      MAITY_I18N: { en: {} }, MAITY_I18N_LANGUAGES: ["en", "de"],
+      location: { search: "", protocol: "https:" }, navigator: { languages: ["en"] },
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      document: { documentElement: { lang: "" }, baseURI: "https://hub.example/assets/", currentScript: { src: "https://hub.example/assets/js/i18n.js?v=" + V },
+        createElement: () => ({}), head: { appendChild: (el) => added.push(el) } },
+      setTimeout, clearTimeout, AbortController, URLSearchParams, URL, Intl, Promise, Object, console,
+    };
+    page.window = page;
+    page.Maity = { assetQuery: (p) => (p === "js/i18n/de.js" ? "?v=" + V : "") };
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), vm.createContext(page), { filename: "js/i18n.js" });
+    page.Maity.i18n.follow("de");
+    await tick();
+    expect(added.length === 1 && added[0].src === "https://hub.example/assets/js/i18n/de.js?v=" + V,
+      "assets: js/i18n.js asks for a catalog under its version, beside its own address");
+  }
   // Before sign-in the page takes the landing page's own language, from GET /site/chrome
   // (tsk-jh94ax9pphxs): the hub chooses it from the raw ?lang=, Accept-Language, the landing
   // page's languages and its default_language. js/i18n.js afresh on a public host, with a hub
@@ -6116,6 +6160,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const idFull = idBox(IDS.link("see guest/shop/tsk-0123456789ab, maintainer/maity/req-abcdefghjkmn and https://x.org/guest/shop/tsk-0123456789ab", idAt));
   expect(idHrefs(idFull) === "guest/shop/tsk-0123456789ab=#/guest/shop/tasks/tsk-0123456789ab maintainer/maity/req-abcdefghjkmn=#/maintainer/maity/inbox/req-abcdefghjkmn",
     "ids: a card or request with a project's full name before it links into that project, as written; inside a URL nothing links " + idHrefs(idFull));
+  // A full reference wraps in the project's name or before the id, never inside the id (tsk-e9d52pfhvk3v).
+  const idFullA = idFull.querySelectorAll("a.id-ref")[1];
+  expect(idFullA.getAttribute("class") === "id-ref full" && text(idFullA.querySelector(".ref-prefix")) === "maintainer/maity/"
+    && idFullA.querySelector("wbr") && text(idFullA.querySelector(".ref-id")) === "req-abcdefghjkmn"
+    && idAll.querySelectorAll("a.id-ref").every((a) => a.getAttribute("class") === "id-ref" && !a.querySelector(".ref-prefix"))
+    && thCss.includes(".id-ref.full { white-space: normal; }") && thCss.includes(".id-ref .ref-id { white-space: nowrap; }"),
+    "ids: a full reference may break in its project's name or before the id, a bare id stays one unit");
+  const idPlainFull = IDS.plain("guest/shop/tsk-0123456789ab");
+  expect(idPlainFull.tagName === "SPAN" && idPlainFull.getAttribute("class") === "id-ref full" && text(idPlainFull) === "guest/shop/tsk-0123456789ab"
+    && text(idPlainFull.querySelector(".ref-id")) === "tsk-0123456789ab" && IDS.plain("tsk-0123456789ab").getAttribute("class") === "id-ref",
+    "ids: a reference drawn inside a link (the inbox's Card row) has the same markup, not a link of its own");
   // A first word the hub or the dashboard keeps (api, join, impressum, admin) names no project: the id is text, never a
   // broken link that would stop the view (review of #701).
   const idReserved = "api/v1/tsk-0123456789ab, join/x/req-abcdefghjkmn, impressum/ab/tsk-0123456789ab, admin/users/tsk-0123456789ab";
@@ -7400,8 +7455,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(hcState()) === "@agent-zz is free." && hcState().className.includes("ok"), "handle check: an unused handle is free");
   hcType("old-one");
   expect(text(hcState()) === "@old-one is free.", "handle check: a deleted profile does not block its handle");
-  hcType("A");
+  hcType("a_");
   expect(text(hcState()).startsWith("Not a handle yet: Lowercase letters") && hcState().className.includes("field-error"), "handle check: the pattern is said too");
+  // An upper-case letter has its own word, before anything is sent, and nothing is lower-cased (tsk-pxc5cx4hgb0y).
+  hcType("Agent-q");
+  expect(text(hcState()) === "Lowercase only: a handle has no capital letters." && byId("join-handle").value === "Agent-q",
+    "handle check: an upper-case letter is said as such, the field keeps what was typed");
+  hcType("A");
+  expect(text(hcState()).startsWith("Lowercase only: a handle has no capital letters. Lowercase letters"), "handle check: an upper-case letter that breaks more says the rule too");
   // Allowed projects (§6.3): a profile the project is not allowed for is not offered, its handle stays taken.
   const alOffer = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p.startsWith("/agents?allowed_in=")
@@ -7979,6 +8040,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(header).includes("Review") && onSettings() && text(main).includes("State saved.")
     && header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings").getAttribute("aria-current") === "page",
     "state changed to review; the save stays on the Settings tab, says so, the tab marked current");
+  // The owner's absence is on Mine (tsk-chtvqs62cd10).
+  await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 6; k++) await tick();
   // The field holds the account's time zone, the one the absence is then shown in (§5.1).
   await win.Maity.api.patch("/me/notification-settings", { email: { timezone: "Asia/Kolkata" } });
   byId("absence-until").value = "2026-10-25T08:00"; byId("absence-scope").value = "fixes only";
@@ -8006,7 +8069,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sigPatches = [];
   const realPatch4 = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { sigPatches.push([p, b]); return realPatch4(p, b); };
-  await projectSettings(); await tick();
+  await projectSettings("members"); await tick();
   const sigSel = byId("signing-select");
   expect(sigSel && sigSel.value === "optional", "signing: the switch shows the project's policy");
   sigSel.value = "required"; sigSel.dispatch("change"); await tick(); await tick(); await tick();
@@ -8023,7 +8086,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(sigPatches.length === 1 && sigPatches[0][0] === "/projects/maintainer/maity"
     && JSON.stringify(sigPatches[0][1]) === JSON.stringify({ policy: { signing: "required" }, reason: "all agents run the CLI now" }),
     "signing: confirmed, the PATCH carries the policy field and the reason");
-  await projectSettings(); await tick();
+  await projectSettings("members"); await tick();
   expect(byId("signing-select").value === "required", "signing: the switch reads required after the change");
   byId("signing-select").value = "optional"; byId("signing-select").dispatch("change"); await tick();
   expect(!text(main.querySelector(".signing-impact")).length, "signing: back to optional needs no check");
@@ -8161,6 +8224,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // A refusal has its own line under the field (the form is a wrapping flex row): review of #950.
     && /\.handle-form \.field-error \{ flex-basis: 100%;/.test(hdCss),
     "handles: an untouched rename form shows no error box");
+  // The rule beside the field and a word while it is typed (tsk-pxc5cx4hgb0y): an upper-case letter is said
+  // before anything is sent, and the form never lower-cases it into another handle.
+  const hdInput = () => hdForm().querySelector("input");
+  const hdCheck = () => hdForm().querySelector(".handle-check");
+  expect(text(hdForm()).includes("Lowercase letters, digits and -, 2–31 characters") && hdCheck() && text(hdCheck()) === ""
+    && hdCheck().getAttribute("role") === "status" && hdInput().getAttribute("aria-describedby").includes(hdCheck().getAttribute("id"))
+    && /\.handle-check:empty \{ display: none; \}/.test(hdCss),
+    "handles: the rename shows the handle's rule, its live word empty while nothing breaks it");
+  hdInput().value = "Boss"; hdInput().dispatch("input");
+  expect(text(hdCheck()) === "Lowercase only: a handle has no capital letters." && hdCheck().className.includes("field-error"),
+    "handles: an upper-case letter is said while it is typed");
+  await hdRename("Boss");
+  expect(!hdPatches.length && text(byId(hdInput().getAttribute("id") + "-error")).includes("lower-case letters") && hdInput().value === "Boss",
+    "handles: an upper-case handle is refused locally, not lower-cased and sent");
+  hdInput().value = "boss"; hdInput().dispatch("input");
+  expect(text(hdCheck()) === "", "handles: the word goes once the handle keeps the rule");
   await hdRename("Bad_Handle");
   expect(!hdPatches.length && text(main.querySelector(".handle-form .field-error")).includes("lower-case letters"), "handles: a handle with the wrong syntax is refused locally");
   await hdRename("boss");
@@ -8707,7 +8786,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "jour fixe: a round shows its topic, phase, the count of answers but none, who was absent and why, the statement, the posts (a removed one said so) and the report's triage with its request");
 
     // Project settings only say where the series are kept now.
-    await go("#/maintainer/maity/settings"); await settle();
+    await go("#/maintainer/maity/settings/work"); await settle();
     const jfMoved = main.querySelector("section.jf-series-moved");
     expect(jfMoved && !main.querySelector("li.jf-series") && !main.querySelector("details.jf-series-settings")
       && jfMoved.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/jour-fixe")
@@ -10117,7 +10196,162 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? Promise.resolve({ password: true, device_code: true, email_link: true, registration: true, terms: { url: "javascript:alert(1)", version: "1" } }) : rgGet(p));
   await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(main.querySelector(".register-terms") && !main.querySelector(".register-terms a"), "register: terms whose address is not plain https are named, not linked");
+  // "Register again" on the registration link's page (tsk-pxc5cx4hgb0y) hands the address over in a cookie
+  // only /register is sent: read once into the field and removed; a later visit in the same document starts
+  // empty, reads a new handover, and a sent form forgets it.
+  {
+    const agCookie = () => String(document.cookie);
+    const agVisit = async () => { await go("#/login"); await go("#/register"); for (let k = 0; k < 6; k++) await tick(); };
+    document.cookie = "maity_register_again=ada%2Bx%40example.org";
+    await agVisit();
+    expect(byId("register-address").value === "ada+x@example.org" && !agCookie().includes("example.org"),
+      "register: the address Register again handed over fills the field, and its cookie is removed " + JSON.stringify([byId("register-address").value, agCookie()]));
+    await agVisit();
+    expect(byId("register-address").value === "", "register: a later visit in the same document starts empty");
+    document.cookie = "maity_register_again=bo%40example.org";
+    await agVisit();
+    expect(byId("register-address").value === "bo@example.org", "register: a new handover in the same document is read");
+    const agPost = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => (p === "/auth/register" ? Promise.resolve({ expires_in: 86400 }) : agPost(p, b));
+    byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
+    rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.post = agPost;
+    expect(text(main).includes("Check your mail"), "register: the handed-over address is sent like a typed one");
+    await agVisit();
+    expect(byId("register-address") && byId("register-address").value === "", "register: after sending, the form starts empty again");
+    document.cookie = "";
+  }
   win.Maity.api.get = rgGet;
+  // A forgotten password (docs/api.md §2.10, tsk-yksxdpd2pk0m): "Forgot password?" under the
+  // password field where the hub offers it, one answer for every address; the mailed link's page.
+  {
+    const fpMethods = (on) => (p) => (p === "/auth/methods"
+      ? Promise.resolve({ password: true, device_code: true, email_link: true, password_reset: on, registration: false, terms: null }) : rgGet(p));
+    const fpPosts = [];
+    const fpPost = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => { if (p.startsWith("/auth/password-reset")) fpPosts.push([p, Object.assign({}, b)]); return fpPost(p, b); };
+    const fpOpen = () => main.querySelector("button.reset-open");
+    win.Maity.api.get = fpMethods(false);
+    await go("#/register"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+    expect(byId("login-email") && main.querySelector(".sign-in-forgot") && main.querySelector(".sign-in-forgot").hidden,
+      "reset: without password_reset in /auth/methods the login offers no Forgot password?");
+    win.Maity.api.get = fpMethods(true);
+    await go("#/register"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+    const fpForgot = main.querySelector(".sign-in-forgot");
+    const fpSiblings = fpForgot ? fpForgot.parentNode.childNodes : [];
+    const fpAfterPassword = !!fpForgot && fpSiblings[fpSiblings.indexOf(fpForgot) - 1] === byId("login-password");
+    expect(fpForgot && !fpForgot.hidden && fpOpen() && text(fpOpen()) === "Forgot password?" && fpAfterPassword && !byId("reset-address"),
+      "reset: Forgot password? stands under the password field, its form closed " + JSON.stringify([!!fpForgot, fpForgot && fpForgot.hidden, !!fpOpen(), fpOpen() && text(fpOpen()), fpAfterPassword, !!byId("reset-address")]));
+    byId("login-email").value = "maintainer@example.org";
+    fpOpen().click(); await tick();
+    expect(byId("reset-address") && byId("reset-address").value === "maintainer@example.org" && fpOpen().hidden,
+      "reset: the form opens with the login's address in it");
+    byId("reset-address").value = "  "; main.querySelector("form.reset-ask").dispatch("submit"); await tick();
+    expect(!fpPosts.length && text(main.querySelector("form.reset-ask")).includes("your address is needed"), "reset: an empty address is refused before sending");
+    byId("reset-address").value = " someone@example.org "; main.querySelector("form.reset-ask").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(fpPosts) === JSON.stringify([["/auth/password-reset", { address: "someone@example.org" }]])
+      && text(main.querySelector("form.reset-ask")).includes("If this address can reset a password here, a link is on its way. It is valid for 30 min."),
+      "reset: the address is sent trimmed, and the answer is the same sentence for every address " + JSON.stringify([fpPosts, text(main.querySelector("form.reset-ask"))]));
+    win.Maity.api.get = rgGet;
+    // The page: the token from the link, the name it is for, the fields the factor asks for.
+    const fpForm = () => main.querySelector("form.reset-form");
+    const fpH1 = () => main.querySelector("article.reset-page h1");
+    const fpSet = (a, b) => { byId("reset-password").value = a; byId("reset-repeat").value = b; };
+    fpPosts.length = 0;
+    await go("#/login"); await go("#/sign-in/reset?token=reset-plain"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)" && !byId("reset-code") && !main.querySelector(".reset-mail-factor")
+      && JSON.stringify(fpPosts) === JSON.stringify([["/auth/password-reset/check", { token: "reset-plain" }]]),
+      "reset: the page asks the hub about the token once and names whom the password is for; no code without a second factor " + JSON.stringify([win.location.hash, fpPosts, text(main).slice(0, 300)]));
+    // A redraw finds the token gone from the address, as over http(s) (the frame's language
+    // arriving, a language chosen in its footer): the same form, the link read again (#1714 review).
+    await go("#/sign-in/reset"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)" && !main.querySelector(".reset-dead")
+      && JSON.stringify(fpPosts.map((x) => x[1].token)) === JSON.stringify(["reset-plain", "reset-plain"]),
+      "reset: a redraw without the token in the address keeps the link's form " + JSON.stringify([win.location.hash, fpPosts]));
+    // A language picked in the frame's footer: the page's address without the token, drawn again.
+    const fpGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => (p.startsWith("/site/chrome") ? fpGet(p, o).then((m) => Object.assign({}, m, {
+      footer: Object.assign({}, m.footer, { languages: [{ tag: "de", name: "Deutsch" }, { tag: "en", name: "English" }] }) })) : fpGet(p, o));
+    await go("#/sign-in/reset?lang=de"); for (let k = 0; k < 6; k++) await tick();
+    const fpFoot = body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
+    const fpLang = fpFoot && fpFoot.querySelector("p.langs") ? fpFoot.querySelector("p.langs").querySelectorAll("a").find((a) => text(a) === "English") : null;
+    if (fpLang) { fpLang.click(); for (let k = 0; k < 6; k++) await tick(); }
+    expect(fpLang && /^#\/sign-in\/reset\?lang=en$/.test(win.location.hash) && fpForm() && text(fpH1()) === "Set a new password for Maintainer (maintainer)"
+      && !main.querySelector(".reset-dead") && fpPosts.length === 4 && fpPosts.every((x) => x[1].token === "reset-plain"),
+      "reset: a language picked in the frame's footer keeps the link's form " + JSON.stringify([win.location.hash, fpPosts.length, !!fpLang]));
+    win.Maity.api.get = fpGet;
+    fpPosts.length = 1;
+    fpSet("short", "short"); fpForm().dispatch("submit"); await tick();
+    expect(fpPosts.length === 1 && text(fpForm()).includes("a password has at least 12 characters"), "reset: a short password is refused before sending");
+    fpSet("a long new password", "a long new passwort"); fpForm().dispatch("submit"); await tick();
+    expect(fpPosts.length === 1 && text(fpForm()).includes("the two passwords differ"), "reset: two passwords that differ are refused before sending");
+    fpSet("a long new password", "a long new password"); fpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(fpPosts[1]) === JSON.stringify(["/auth/password-reset/complete", { token: "reset-plain", new: "a long new password" }])
+      && !fpForm() && text(fpH1()) === "Your password is set" && main.querySelector('article.reset-page a[href="#/login"]'),
+      "reset: complete sends the token and the new password, says the sessions ended and links to the login, signing nobody in");
+    win.Maity.redraw(); for (let k = 0; k < 6; k++) await tick();
+    expect(!fpForm() && text(fpH1()) === "Your password is set" && fpPosts.length === 2, "reset: a redraw after the password is set still says so, and asks nothing");
+    await go("#/login"); await go("#/sign-in/reset?token=reset-plain"); for (let k = 0; k < 6; k++) await tick();
+    expect(!fpForm() && main.querySelector(".reset-dead") && main.querySelector('article.reset-page a[href="#/login"]'),
+      "reset: a used link says it does not work, and where to ask for a new one");
+    await go("#/login"); await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+    expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.filter((x) => x[0].endsWith("/check")).length === 2,
+      "reset: a page without a token, reached from another page, says the link does not work and asks nothing");
+    await go("#/login"); await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && !byId("reset-code") && main.querySelector(".reset-mail-factor")
+      && text(main.querySelector(".reset-mail-factor")).startsWith("This mailbox is your second factor too")
+      && main.querySelector('.reset-mail-factor a[href="#/account/security"]'),
+      "reset: where the mail is the second factor the page says so, with the way to an authenticator app");
+    await go("#/login"); await go("#/sign-in/reset?token=reset-totp"); for (let k = 0; k < 6; k++) await tick();
+    expect(fpForm() && byId("reset-code") && text(main.querySelector('label[for="reset-code"]')) === "Code from your authenticator app"
+      && text(main.querySelector("button.reset-code-swap")) === "Use a recovery code", "reset: with an authenticator app the page asks for its code");
+    fpSet("a long new password", "a long new password"); fpForm().dispatch("submit"); await tick();
+    expect(text(fpForm()).includes("the code from your authenticator app is needed"), "reset: no code, nothing sent");
+    const fpBefore = fpPosts.length;
+    byId("reset-code").value = "000 000"; fpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(fpPosts.length === fpBefore + 1 && fpPosts[fpBefore][1].code === "000000" && fpForm() && byId("reset-code").value === ""
+      && text(fpForm()).includes("the code is wrong, or this link no longer works"),
+      "reset: a refused code keeps the form, clears the code and says it may be the code or the link");
+    main.querySelector("button.reset-code-swap").click(); await tick();
+    expect(text(main.querySelector('label[for="reset-code"]')) === "Recovery code", "reset: Use a recovery code switches the field");
+    fpSet("a long new password", "a long new password"); byId("reset-code").value = "ABCD-EFGH-JKMN"; fpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    const fpLast = fpPosts[fpPosts.length - 1][1];
+    expect(fpLast.recovery_code === "ABCD-EFGH-JKMN" && !("code" in fpLast) && text(fpH1()) === "Your password is set",
+      "reset: a recovery code is sent as recovery_code and sets the password");
+    await go("#/register"); for (let k = 0; k < 4; k++) await tick();
+    await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(fpH1()) !== "Your password is set" && main.querySelector(".reset-dead"), "reset: after a set password and /register, a page without a token is no link, not \"set\"");
+    // Registration and an invitation draw themselves before the rest: leaving to either ends the
+    // kept link too, so /sign-in/reset without a token afterwards is no link (#1714 review, v5vp).
+    for (const away of ["#/register", "#/invite/open-xxxxxxxxxxxxxxxx1"]) {
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      const fpWas = fpPosts.length;
+      await go(away); for (let k = 0; k < 4; k++) await tick();
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(fpWas && !fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas,
+        "reset: after " + away + " a page without a token is no link and asks nothing " + JSON.stringify([fpWas, fpPosts.length, !!fpForm()]));
+    }
+    // A maintenance window that holds the reset page, and an address that does not parse, end it too.
+    {
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      const fpRunning = win.Maity.maintenance.running;
+      win.Maity.maintenance.running = () => true;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      win.Maity.maintenance.running = fpRunning;
+      const fpWas = fpPosts.length;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas,
+        "reset: after a maintenance window held the page, a page without a token is no link " + JSON.stringify([fpWas, fpPosts.length]));
+      await go("#/sign-in/reset?token=reset-email"); for (let k = 0; k < 6; k++) await tick();
+      await go("#/%E0%A4%A"); for (let k = 0; k < 4; k++) await tick();
+      const fpWas2 = fpPosts.length;
+      await go("#/sign-in/reset"); for (let k = 0; k < 4; k++) await tick();
+      expect(!fpForm() && main.querySelector(".reset-dead") && fpPosts.length === fpWas2,
+        "reset: after an address that does not parse, a page without a token is no link " + JSON.stringify([fpWas2, fpPosts.length]));
+    }
+    win.Maity.api.post = fpPost;
+    await go("#/login"); for (let k = 0; k < 4; k++) await tick();
+  }
   // Signing in from the invitation returns to it, now with the button to join.
   await go("#/login?next=%2Finvite%2Fonly-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();
   byId("login-email").value = "maintainer@example.org"; byId("login-password").value = "a long new password";
@@ -10456,17 +10690,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       + "Publish the Keep the Why dashboard|Run the Keep the Why linter in CI|Set up Keep the Why in the repository"
     && setupCards.every((c) => text(c).includes("Setup") && text(c).includes("Unclaimed")),
     "create: the five setup cards on the new project's board, open, marked Setup");
-  await projectSettings();
+  await projectSettings("work");
   const memPanel = main.querySelector(".memory-panel");
   expect(memPanel && text(memPanel).includes("Keep the Why: joining agents load the Keep the Why skill") && memPanel.querySelectorAll("a.id-ref").length === 5 && text(memPanel).includes("The dashboard is published under keep-the-why-dashboard.")
     && memPanel.querySelectorAll("a.id-ref").every((a) => /^#\/maintainer\/dogfood\/tasks\/tsk-/.test(a.getAttribute("href")))
     && byId("memory-provider") && byId("memory-provider").value === "keep-the-why" && text(memPanel).includes("It makes no setup card and cancels none"),
     "settings: the memory provider with links to its setup cards and the dashboard's path, changeable by the owner (tsk-41hpr02cvej8)");
-  // The Keep the Why commitment stands above the README badge (the maintainer, 2026-11-01).
+  // The Keep the Why commitment is on Way of working beside the memory provider, the README badge on
+  // General (tsk-chtvqs62cd10; on the one page before, the commitment stood above the badge).
   const setForms = main.querySelectorAll("form");
   const ktwAt = setForms.findIndex((f) => f.className.split(" ").includes("ktw-policy-form"));
   const badgeAt = setForms.findIndex((f) => f.className.split(" ").includes("badge-form"));
-  expect(ktwAt >= 0 && badgeAt >= 0 && ktwAt < badgeAt, "settings: the Keep the Why commitment above the README badge (" + ktwAt + ", " + badgeAt + ")");
+  expect(ktwAt >= 0 && badgeAt < 0, "settings: the Keep the Why commitment on Way of working, the README badge not (" + ktwAt + ", " + badgeAt + ")");
+  await projectSettings();
   expect(byId("badge-select").value === "members" && text(main.querySelector("form.badge-form .paste-line")).endsWith("/badge/maintainer/dogfood.svg)](" + (win.location.origin && win.location.origin !== "null" ? win.location.origin : "https://<hub>") + "/maintainer/dogfood/overview)")
     && text(main.querySelector("form.badge-form .paste-line")).startsWith("[![maity]("),
     "settings: the badge is on (members) after the Maity badge was chosen, its README snippet shown");
@@ -10495,11 +10731,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     policy: { preset: "hierarchical" } }),
     "create: None sends the Keep the Why options false, no path, and the unticked Maity badge false " + JSON.stringify(posts[posts.length - 1]));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
+  await projectSettings("work");
+  const noneMemory = text(main.querySelector(".memory-panel"));
   await projectSettings();
-  expect(text(main.querySelector(".memory-panel")).includes("None: the project works without a memory provider.")
-    && text(main.querySelector(".memory-panel")).includes("No setup option was chosen.") && byId("badge-select").value === "off"
+  expect(noneMemory.includes("None: the project works without a memory provider.")
+    && noneMemory.includes("No setup option was chosen.") && byId("badge-select").value === "off"
     && text(main.querySelector("form.badge-form")).includes("While the badge is off, its address answers not found."),
     "settings: None, nothing chosen, the badge off");
+  await projectSettings("work");
   // The provider changes in Project settings (tsk-41hpr02cvej8, §6.1): a reason first, then a PATCH of
   // memory; under Keep the Why the commitment can be required, back under None it is optional and locked.
   const memPatches = [];
@@ -10557,7 +10796,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ltSent.setup.keep_the_why_dashboard === false && !("dashboard_path" in ltSent.setup),
     "create: with the dashboard unticked, dashboard_path is not sent at all " + JSON.stringify(ltSent.setup));
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
-  await projectSettings();
+  await projectSettings("work");
   expect(text(main.querySelector(".memory-panel")).includes("Chosen: Set up Keep the Why in the repository; Run the Keep the Why linter in CI; Add the Maity badge to the README.")
     && text(main.querySelector(".memory-panel")).includes("The cards are made when the project gets a repository."),
     "settings: options chosen without a repository wait for it");
@@ -10572,8 +10811,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "create: the mock refuses the old keep_the_why alias in POST and PATCH, and the project view has none");
   win.onhashchange(); for (let k = 0; k < 4; k++) await tick();
   // The settings view of a project with None, its setup processed with nothing chosen, and its badge on.
-  await go("#/maintainer/sample/inbox"); await projectSettings();
-  expect(text(main.querySelector(".memory-panel")).includes("None") && text(main.querySelector(".memory-panel")).includes("No setup option was chosen.")
+  await go("#/maintainer/sample/inbox"); await projectSettings("work");
+  const sampleMemory = text(main.querySelector(".memory-panel"));
+  await projectSettings();
+  expect(sampleMemory.includes("None") && sampleMemory.includes("No setup option was chosen.")
     && byId("badge-select").value === "members" && !main.querySelector("img.badge-preview")
     && text(main.querySelector("form.badge-form .paste-line")).includes("/badge/maintainer/sample.svg"),
     "settings: a project with None and its badge on; no preview without a hub to serve it");
@@ -10761,6 +11002,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(obLine && /Outside Bridge \(carries for Agent A\)/.test(text(obLine)), "bridges: a cross-owner bridge stands among a group chat's observers, carrying for its participant " + (obLine ? text(obLine) : "none"));
     win.Maity.api.get = obGet;
   }
+  {
+    // Waiting (§9.6): anna and her agent join; her agent waits for the maintainer's side, Agent B (the
+    // maintainer's) for anna's. The line says whom each waits for; the reader's own waiting agent leads to the inbox.
+    const wtGet = win.Maity.api.get;
+    const anna = { id: "hum-anna", kind: "human", handle: "anna", display_name: "Anna", trust: "member", role: "coder", areas: [], capabilities: [], presence: "online" };
+    const annaAgent = { id: "agt-an", kind: "agent", handle: "anna-bot", display_name: "Anna Bot", owner_id: "hum-anna", trust: "member", role: "coder",
+      areas: [], capabilities: [], presence: "online", paused: null, bridges: [], bridging_for: [] };
+    win.Maity.api.get = (p, ...r) => (/\/members$/.test(p) ? wtGet(p, ...r).then((x) => Object.assign({}, x, { items: x.items.concat([anna, annaAgent]) }))
+      : /\/conversations\/cnv-0007$/.test(p) ? wtGet(p, ...r).then((v) => Object.assign({}, v, { participants: v.participants.map((x) => (x.member_id === "agt-b" ? Object.assign({}, x, { waiting_for: ["hum-anna"] }) : x))
+        .concat([{ member_id: "hum-anna", kind: "human", handle: "anna", joined_at: "2026-11-13T10:00:00Z" },
+          { member_id: "agt-an", kind: "agent", handle: "anna-bot", owner_id: "hum-anna", joined_at: "2026-11-13T10:00:00Z", waiting_for: ["hum-maintainer"] }]) }))
+        : wtGet(p, ...r));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007"); for (let k = 0; k < 6; k++) await tick();
+    const wtLine = text(main.querySelector(".group-chat .group-people-line"));
+    const wtOwn = main.querySelector(".group-chat .group-waiting");
+    expect(wtLine.includes("Agent A (agent),") && wtLine.includes("Agent B (agent, waiting for its owner's yes to Anna)")
+      && wtLine.includes("Anna Bot (agent, waiting for its owner's yes to Maintainer)"),
+      "waiting: an agent that waits names the side it waits for; an admitted one reads as before " + wtLine);
+    expect(wtOwn && text(wtOwn) === "Waiting here for your yes, given in your inbox: Agent B. Until then they read nothing of this chat."
+      && wtOwn.querySelector("a").getAttribute("href") === "#/all",
+      "waiting: the reader's own waiting agent leads to the inbox, where the yes is given; anna's is hers to answer " + (wtOwn ? text(wtOwn) : "none"));
+    win.Maity.api.get = wtGet;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007"); for (let k = 0; k < 6; k++) await tick();
+    expect(!main.querySelector(".group-chat .group-waiting") && !text(main.querySelector(".group-chat .group-people-line")).includes("waiting"),
+      "waiting: a chat where nobody waits says nothing of it");
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
   const gcNull = gcList().querySelectorAll("li.msg")[1];
   expect(text(gcNull).includes("This message was removed.") && !btn(gcNull, "Quote") && !btn(gcNull, "Remove"), "group chat: body null reads as removed, nothing to quote or remove");
@@ -10848,7 +11115,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "direct chat: the human party removes a message with a reason");
   win.prompt = gcPrompt;
   // Blind removal (§8.5, #206): a closed group chat's message the admin was never in, by its number.
-  await go("#/maintainer/maity/inbox"); await projectSettings();
+  await go("#/maintainer/maity/inbox"); await projectSettings("moderation");
   byId("remove-seq").value = "x1";
   main.querySelector("form.remove-reported").dispatch("submit"); await tick();
   expect(text(main).includes("Not removed: the message number is a whole number") && gcRemoves.length === 1, "blind removal: the number is checked before sending");
@@ -10970,7 +11237,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const hgSettle = async () => { for (let k = 0; k < 6; k++) await tick(); };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat"); await hgSettle();
   expect(main.querySelector("a.new-group"), "group chat: New group chat is offered");
-  await go("#/maintainer/maity/inbox"); await projectSettings(); await hgSettle();
+  await go("#/maintainer/maity/inbox"); await projectSettings("moderation"); await hgSettle();
   expect(main.querySelector("form.remove-reported"), "group chat: the removal of a closed group chat's message is offered");
   await projectSettings();
   await go("#/maintainer/maity/chat/agt-b"); await hgSettle();
@@ -11046,6 +11313,82 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(psCalls.length === 1 && psCalls[0][0] === "/requests/req-p001/answer" && psCalls[0][1].reply_id === "go",
     "personal request: answered through /requests/{id}/answer");
   win.Maity.api.post = psPost;
+
+  // The request to chat with one's agents (§9.6): a box per waiting or held agent, all ticked, one for
+  // that side's human, not ticked, and the two rules; an allow takes them along as chat_access, No none.
+  {
+    // The live fixture store (as for Leave project below): the request is put in and taken out again.
+    const caFx = win.Maity.api.fixturesLive();
+    const caItems = caFx["personal-requests.json"].items;
+    const caAllow = [["allow_hour", "Allow for an hour"], ["allow_day", "Allow for a day"], ["allow_week", "Allow for a week"], ["allow_always", "Allow always"]];
+    caItems.push({ id: "req-ch01", class: "consent", title: "guest and their agents want to chat with your agents",
+      summary: "agent-x waits in “Launch” (ada/elsewhere), added by guest.", tried: null, options: [],
+      replies: caAllow.map(([id, label]) => ({ id, label })).concat([{ id: "no", label: "No" }, { id: "block", label: "Block" }]),
+      priority: "normal", to: "human:" + caFx["me.json"].member.id, filed_by: "hub", asked_by: null, on_behalf_of: null,
+      task_id: null, task: null, while_open: "wait", needs_in_session: null, ktw_ref: null, report: null, personal: true,
+      status: "open", answer: null, created_at: "2026-10-23T06:00:00Z", answered_at: null, project: null,
+      chat_access_request: { side: { id: "hum-guest", handle: "guest" }, their_human_in_chat: true,
+        agents: [{ id: "agt-x", handle: "agent-x", waiting: true, held: false }, { id: "agt-y", handle: "agent-y", waiting: false, held: true }] } });
+    const caList = await win.Maity.api.get("/requests");
+    expect(caList.items.some((r) => r.id === "req-ch01") && !caList.items.some((r) => "chat_access_request" in r),
+      "chat request: listed without its boxes, which only GET /requests/{id} carries (§9.6)");
+    const caCalls = [];
+    win.Maity.api.post = (p, b) => { caCalls.push([p, b]); return p === "/requests/req-ch01/answer" && b.reply_id === "no"
+      ? Promise.reject(new win.Maity.api.ApiError("no", 503, p, "unavailable", {})) : psPost(p, b); };
+    await go("#/all"); await hgSettle();
+    const caHead = () => main.querySelectorAll(".entry-head").find((b) => b.textContent.includes("want to chat with your agents"));
+    if (caHead().attrs["aria-expanded"] !== "true") { caHead().click(); await tick(); }
+    const caEntry = () => main.querySelector(".current");
+    const caBox = (id) => caEntry().querySelectorAll("input").find((i) => i.id === "chat-access-req-ch01-" + id);
+    const caAllowBtns = () => caAllow.map(([, label]) => btn(caEntry(), label));
+    expect(caEntry().querySelector(".chat-access") && caBox("agent-agt-x").checked && caBox("agent-agt-y").checked && !caBox("human").checked,
+      "chat request: a box per waiting or held agent, all ticked, and the side's human not ticked");
+    // Two parts (tsk-3b2znzcw4rxv): one's own agents alone, then with whom, their agents always and their person
+    // as a box of its own, so the other side never reads as one of one's agents.
+    const caMine = caEntry().querySelector("fieldset.chat-access-mine"), caWhom = caEntry().querySelector("fieldset.chat-access-whom");
+    expect(caMine && caWhom && text(caMine.querySelector("legend")) === "Which of your agents may chat"
+      && caMine.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-agent-agt-x,chat-access-req-ch01-agent-agt-y"
+      && text(caWhom.querySelector("legend")) === "With whom" && text(caWhom).includes("@guest's agents, always")
+      && caWhom.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-human"
+      && text(caWhom).includes("Also @guest in person"),
+      "chat request: your agents in one part, with whom in the next: @guest's agents always, @guest in person a tick of its own");
+    expect(text(caEntry().querySelector(".chat-access")).includes("@agent-y · a message from them is held for it")
+      && text(caEntry()).includes("@guest sits in a chat where your agents wait: unticked, your agents go on waiting there."),
+      "chat request: each agent says why it is on the request, and the human's box says what unticked means in a chat");
+    expect(caAllowBtns().every((b) => b && !b.disabled) && !btn(caEntry(), "No").disabled && btn(caEntry(), "Talk").disabled,
+      "chat request: the allow replies are offered; Talk is not, the hub filed it");
+    // No tick: the allows wait for one and point to the line that says so; No and Block stay.
+    ["agent-agt-x", "agent-agt-y"].forEach((id) => { caBox(id).checked = false; caBox(id).dispatch("change"); });
+    const caNone = caEntry().querySelectorAll("p").find((p) => p.id === "chat-access-req-ch01-none");
+    expect(caAllowBtns().every((b) => b.disabled && b.getAttribute("aria-describedby") === "chat-access-req-ch01-none") && !caNone.hidden
+      && !btn(caEntry(), "No").disabled && !btn(caEntry(), "Block").disabled,
+      "chat request: with no agent ticked the allows are disabled and say why; No and Block are not");
+    // No carries no chat_access (the hub refuses it with no or block); refused here, the controls come back as they were.
+    btn(caEntry(), "No").click(); await hgSettle();
+    expect(caCalls.length === 1 && caCalls[0][1].reply_id === "no" && !("chat_access" in caCalls[0][1]),
+      "chat request: No is sent without chat_access");
+    expect(caAllowBtns().every((b) => b.disabled) && !caBox("human").disabled && !caBox("agent-agt-x").disabled,
+      "chat request: after a refused answer the boxes come back, and the allows still wait for a tick");
+    caCalls.length = 0;
+    caBox("agent-agt-x").checked = true; caBox("agent-agt-x").dispatch("change");
+    caBox("human").checked = true;
+    caEntry().querySelectorAll("textarea").find((t) => t.id === "chat-access-req-ch01-allowed").value = "  web and frontend  ";
+    expect(caAllowBtns().every((b) => !b.disabled && !b.getAttribute("aria-describedby")), "chat request: one tick gives the allows back");
+    btn(caEntry(), "Allow for a day").click(); await hgSettle();
+    expect(caCalls.length === 1 && caCalls[0][0] === "/requests/req-ch01/answer"
+      && JSON.stringify(caCalls[0][1]) === JSON.stringify({ reply_id: "allow_day", chat_access: { agents: ["agt-x"], their_human: true, allowed: "web and frontend" } }),
+      "chat request: an allow sends the ticked agents, the human's box and a written rule as chat_access, an empty rule left out");
+    // The mock refuses as the hub does (§9.6, docs/api.md: details.fields).
+    const caRefused = (b) => psPost("/requests/req-ch01/answer", b).then(() => null, (e) => e.details && e.details.fields);
+    caItems.find((r) => r.id === "req-ch01").status = "open";
+    expect(JSON.stringify(await caRefused({ reply_id: "no", chat_access: {} })) === JSON.stringify({ chat_access: "allow_only" })
+      && JSON.stringify(await caRefused({ reply_id: "allow_day", chat_access: { agents: ["agt-z"] } })) === JSON.stringify({ "chat_access.agents": "not_on_this_request" })
+      && JSON.stringify(await caRefused({ reply_id: "allow_day", chat_access: { denied: "x".repeat(1001) } })) === JSON.stringify({ denied: "format" })
+      && JSON.stringify(await psPost("/requests/req-p002/answer", { reply_id: "go", chat_access: {} }).then(() => null, (e) => e.details.fields)) === JSON.stringify({ chat_access: "not_a_chat_request" }),
+      "chat request: the mock refuses chat_access on another request, beside No, for an agent not on it, and a rule over 1000 characters");
+    caItems.splice(caItems.findIndex((r) => r.id === "req-ch01"), 1);
+    win.Maity.api.post = psPost;
+  }
 
   // Attachments (docs/api.md §8.7): upload when chosen, name when sent, images inline, files as downloads.
   const atCalls = [];
@@ -11139,7 +11482,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ? atAll(p).then((r) => ({ items: r.items.concat([{ id: "att-other", uploaded_by: "agt-b", size: 4096, uploaded_at: "2026-10-23T00:00:00Z", expires_at: "2026-10-24T00:00:00Z",
       name: null, type: null, kind: null, sha256: null, width: null, height: null, message_seq: null }]), next_cursor: null }))
     : atAll(p));
-  await go("#/maintainer/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await projectSettings("moderation"); for (let k = 0; k < 4; k++) await tick();
   const atAdmin = main.querySelector(".attach-admin");
   expect(atAdmin && text(atAdmin).includes("draft.png") && text(atAdmin).includes("4.0 KB · Agent B") && !text(atAdmin).includes("null"),
     "attachments: the admin sees everyone's pending uploads, another member's by size and uploader only");
@@ -11206,7 +11549,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Project settings then asks no more either.
   let atAskedAll = 0;
   win.Maity.api.getAll = (p) => (/\/attachments\?status=pending/.test(p) ? (atAskedAll++, atAll2(p)) : atAll2(p));
-  await go("#/maintainer/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await projectSettings("moderation"); for (let k = 0; k < 4; k++) await tick();
   expect(atAskedAll === 0 && text(main.querySelector(".attach-admin")).includes("Attachments are not set up on this instance."), "attachments: settings ask a hub with them off no more");
   await projectSettings();
   win.Maity.api.getAll = atAll2;
@@ -11262,15 +11605,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const aoGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? aoGet(p).then((x) => Object.assign({}, x, { attachments: { used: 0, quota: 1024 * 1024 * 1024 } })) : aoGet(p));
   win.Maity.attachments.forget();
-  await go("#/maintainer/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await projectSettings("moderation"); for (let k = 0; k < 4; k++) await tick();
   const aoAdmin = main.querySelector(".attach-admin-box");
   expect(aoAdmin && text(aoAdmin).includes("Attachments are not set up on this instance.") && text(aoAdmin).includes("Stored: 0 B of 1024.0 MB.")
     && !btn(aoAdmin, "Delete"), "attachments off: settings say so in words and keep the storage line");
-  await projectSettings();
+  await projectSettings("moderation");
   // Under no limit the project's quota is null (§8.7): the line says so instead of a size.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? aoGet(p).then((x) => Object.assign({}, x, { attachments: { used: 2048, quota: null } })) : aoGet(p));
   win.Maity.attachments.forget();
-  await go("#/maintainer/maity/inbox"); await projectSettings(); for (let k = 0; k < 4; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await projectSettings("moderation"); for (let k = 0; k < 4; k++) await tick();
   const aoUnlimited = main.querySelector(".attach-admin-box");
   expect(aoUnlimited && text(aoUnlimited).includes("Stored: 2.0 KB, no limit.") && !text(aoUnlimited).includes(" of "),
     "attachments: under no limit the storage line names no quota " + (aoUnlimited ? text(aoUnlimited) : ""));
@@ -12155,7 +12498,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ktPatches = [];
   const ktPatch = win.Maity.api.patch, ktGet = win.Maity.api.get;
   win.Maity.api.patch = (p, b) => { if (b && b.policy && "keep_the_why" in b.policy) ktPatches.push(b); return ktPatch(p, b); };
-  await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/settings/work"); for (let k = 0; k < 6; k++) await tick();
   const ktForm = () => main.querySelector("form.ktw-policy-form");
   expect(ktForm() && byId("ktw-policy-select").value === "required" && !byId("ktw-policy-select").disabled, "keep the why: Settings offer the commitment, required here");
   byId("ktw-policy-select").value = "optional"; ktForm().dispatch("submit"); await tick();
@@ -12166,7 +12509,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "keep the why: switched to optional as a policy change with its reason");
   await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why: "required" }, reason: "back" });
   // Who closes a card (§6.1): every value of the contract, a change needs a reason, and it goes as a policy change.
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings/work"); for (let k = 0; k < 6; k++) await tick();
   {
     const daForm = () => main.querySelector("form.done-authority-form");
     expect(daForm() && byId("done-authority-select").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "holder,reviewer,tester,reviewer_and_tester,admin",
@@ -12244,14 +12587,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.trust.owner = owner;
     win.Maity.api.getAll = getAll; win.Maity.api.post = post;
   }
-  // Where a joining agent's personal settings come from (§6.23), between the commitment and the badge.
+  // Where a joining agent's personal settings come from (§6.23): on Way of working, after the commitment
+  // (tsk-chtvqs62cd10; the badge is on General).
   const kdForm = () => main.querySelector("form.ktw-defaults-form");
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings/work"); for (let k = 0; k < 6; k++) await tick();
   const kdForms = main.querySelectorAll("form").map((f) => f.className.split(" "));
   const kdAt = kdForms.findIndex((c) => c.includes("ktw-defaults-form"));
-  expect(kdAt > kdForms.findIndex((c) => c.includes("ktw-policy-form")) && kdAt < kdForms.findIndex((c) => c.includes("badge-form")),
-    "keep the why: the personal settings stand between the commitment and the badge");
+  expect(kdAt >= 0 && kdAt > kdForms.findIndex((c) => c.includes("ktw-policy-form")) && kdForms.findIndex((c) => c.includes("badge-form")) < 0,
+    "keep the why: the personal settings stand after the commitment on Way of working, the badge not there");
   // The public page (§16.9): for the namespace owner, says what becomes public, sends what changed.
+  await go("#/maintainer/maity/settings");
   for (let k = 0; k < 6; k++) await tick();
   const ppForm = () => main.querySelector("form.public-page-form");
   expect(ppForm() && /anyone can read/.test(text(ppForm())) && /Never public/.test(text(ppForm())) && /reads "anyone"/.test(text(ppForm())) && !ppForm().querySelector(".public-page-link"),
@@ -12290,6 +12635,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const shown = await win.Maity.api.patch("/me", { public_presence: true });
     expect(hidden.member.public_presence === false && shown.member.public_presence === true, "online switch: the fixture stores public_presence and answers it");
   }
+  await go("#/maintainer/maity/settings/work"); for (let k = 0; k < 6; k++) await tick();
   expect(byId("ktw-defaults-select").value === "adopt" && text(kdForm()).includes(".keep-the-why"),
     "keep the why: the personal settings read adopt and name the repository's file");
   const kdPatches = [];
@@ -12302,7 +12648,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "keep the why: the personal settings change as a policy change with its reason");
   await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why_defaults: "adopt" }, reason: "back" });
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? ktGet(p).then((x) => ({ ...x, memory: { provider: "none" }, policy: { ...x.policy, keep_the_why: "optional" } })) : ktGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings/work"); for (let k = 0; k < 6; k++) await tick();
   expect(ktForm() && byId("ktw-policy-select").getAttribute("disabled") !== null && byId("ktw-policy-reason").getAttribute("disabled") !== null
     && btn(ktForm(), "Change").getAttribute("disabled") !== null && text(ktForm()).includes("no memory provider"),
     "keep the why: under no memory provider the choice is disabled and says why");
@@ -13340,12 +13686,58 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
   await go("#/maintainer/maity/settings"); for (let k = 0; k < 4; k++) await tick();
   const msTabs = () => main.querySelectorAll("nav.settings-tabs a").map((a) => text(a) + "=" + a.getAttribute("href") + (a.getAttribute("aria-current") ? "*" : "")).join();
+  const msAll = (on) => [["General", ""], ["Members and agents", "/members"], ["Way of working", "/work"], ["Moderation", "/moderation"], ["Mine", "/mine"]]
+    .map(([label, path]) => label + "=#/maintainer/maity/settings" + path + (label === on ? "*" : "")).join();
   expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("My settings"))
-    && msTabs() === "Project=#/maintainer/maity/settings*,Mine=#/maintainer/maity/settings/mine",
-    "settings: one Settings view, its Project tab shown, Mine beside it; no My settings tab");
+    && msTabs() === msAll("General") && main.querySelector("nav.settings-tabs").className === "view-tabs settings-tabs"
+    && main.querySelector("nav.settings-tabs").getAttribute("aria-label") === "Settings",
+    "settings: one Settings view in the dashboard's view tabs, General shown at settings, the others beside it; no My settings tab " + msTabs());
   await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
-  expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
-    "settings: settings/mine shows one's own settings, its tab marked, not the project's");
+  const msAt = (el) => main.all().indexOf(el);
+  expect(msTabs() === msAll("Mine") && !byId("project-language") && byId("absence-until") && main.querySelector("form.my-settings")
+    && msAt(main.querySelector("form.my-settings")) < msAt(byId("absence-until")) && msAt(byId("absence-until")) < msAt(main.querySelector(".leave-project")),
+    "settings: settings/mine shows one's own settings and the owner's absence before leaving, its tab marked, not the project's");
+  // Each tab by its address, marked; every section's heading on exactly one tab (tsk-chtvqs62cd10).
+  {
+    const msWhere = {};
+    for (const [label, path] of [["General", ""], ["Members and agents", "/members"], ["Way of working", "/work"], ["Moderation", "/moderation"], ["Mine", "/mine"]]) {
+      await go("#/maintainer/maity/settings" + path); for (let k = 0; k < 6; k++) await tick();
+      expect(win.location.hash === "#/maintainer/maity/settings" + path && msTabs() === msAll(label), "settings: " + label + " opens by its address, marked " + msTabs());
+      main.querySelectorAll("h2.panel-title").forEach((t) => { (msWhere[text(t)] = msWhere[text(t)] || []).push(label); });
+    }
+    const msOn = (title, label) => JSON.stringify(msWhere[title]) === JSON.stringify([label]);
+    expect(Object.keys(msWhere).length > 15 && Object.values(msWhere).every((tabs) => tabs.length === 1)
+      && ["Project state", "Project language", "Logo and banner", "Links", "README badge", "Repository"].every((t) => msOn(t, "General"))
+      && ["Members' own agents", "Agents of owners who are not members", "Onboarding", "Agent signing", "Restricted access"].every((t) => msOn(t, "Members and agents"))
+      && ["Who closes a card", "Keep the Why commitment", "Keep the Why personal settings", "Memory", "Jour fixe series"].every((t) => msOn(t, "Way of working"))
+      && ["Remove a reported message"].every((t) => msOn(t, "Moderation")) && msOn("Your absence", "Mine"),
+      "settings: every section on exactly one tab, where it belongs " + JSON.stringify(msWhere));
+    // settings/general is General's longer name, a word that is no tab leads to General; both replace the address.
+    for (const wrong of ["general", "nothing"]) {
+      await go("#/maintainer/maity/settings/" + wrong); for (let k = 0; k < 6; k++) await tick();
+      expect(win.location.hash === "#/maintainer/maity/settings" && msTabs() === msAll("General"), "settings: settings/" + wrong + " leads to General " + win.location.hash);
+    }
+    // An admin agent: only the tabs with a section for it, and no Mine.
+    const msGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/me" ? msGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: "agent" }),
+      projects: x.projects.map((y) => (y.slug === "maity" ? Object.assign({}, y, { trust: "admin" }) : y)) })) : msGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 6; k++) await tick();
+    const agentTabs = msTabs();
+    win.Maity.api.get = msGet;
+    expect(!/Mine=/.test(agentTabs) && /^General=#\/maintainer\/maity\/settings\*,/.test(agentTabs) && win.location.hash === "#/maintainer/maity/settings",
+      "settings: an admin agent sees no Mine; its address leads to General " + agentTabs);
+    // An agent neither admin nor owner: the project's row offers it no Settings (NAV's `when`, the
+    // same on the one page), so a typed address is the page-not-found page, never an empty one.
+    win.Maity.api.get = (p) => (p === "/me" ? msGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: "agent" }),
+      projects: x.projects.map((y) => (y.slug === "maity" ? Object.assign({}, y, { trust: "member", role: "coder" }) : y)) })) : msGet(p));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings/work"); for (let k = 0; k < 6; k++) await tick();
+    const plainAgent = [win.location.hash, msTabs(), text(main)];
+    win.Maity.api.get = msGet;
+    expect(plainAgent[0] === "#/maintainer/maity/settings/work" && !plainAgent[1] && plainAgent[2].includes("Page not found")
+      && !header.querySelectorAll("nav.views a").some((a) => a.textContent === "Settings"),
+      "settings: an agent without project:admin at a settings address gets page not found, as on the one page, no empty page " + JSON.stringify(plainAgent));
+    await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
+  }
   // Leaving the project from Mine (§6.2): the namespace owner is stopped up front; a member and a
   // guest confirm, and the dialog says which of their agents are isolated or stay. The live fixture
   // store is set for each caller and put back, so the pages after this keep what they had.
@@ -13726,6 +14118,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await mmSubmit();
     expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { hold_while_online: false } }) && !byId("mail-hold-while-online").checked,
       "mail modes: turning the hold off sends hold_while_online false, the answer shown");
+    // §2.10: the human's own switch for a reset by mail, beside the sign-in link, its warning by factor.
+    const prEnrolled = !!(await win.Maity.api.get("/auth/second-factor")).enrolled;
+    expect(byId("mail-password-reset") && byId("mail-password-reset").checked
+      && text(main.querySelector('label[for="mail-password-reset"]')) === " Allow a password reset by mail"
+      && text(byId("mail-password-reset-hint")).startsWith(prEnrolled ? "A reset by mail also needs a code from your authenticator app"
+        : "Turn this off if an agent or anyone else can read this mailbox"),
+      "mail modes: the password reset by mail is on by default, its warning following the human's factor " + JSON.stringify([prEnrolled, text(byId("mail-password-reset-hint"))]));
+    byId("mail-password-reset").checked = false;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { password_reset: false } }) && !byId("mail-password-reset").checked,
+      "mail modes: turning the reset off sends password_reset false");
     // The tab's presence (§18.4), driven here with its own clock, timers and listeners: fixture mode
     // never starts it (js/app.js), so the dashboard drawn above did not.
     expect(!win.Maity.presence.running(), "presence: fixture mode sends no presence");
@@ -14103,6 +14506,149 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main.querySelector("section.sessions .send-status.failed")).includes("Could not read your sessions"), "sessions: a failed read is said as an error");
   win.Maity.api.get = sesGet;
 
+  // Toward an authenticator app (§2.10): a banner on every page while the mail is the second
+  // factor; its sentence says whether a reset by mail could reach the human; Later until the
+  // next sign-in; what it stands on read once, again after a write.
+  {
+    const fbGet = win.Maity.api.get;
+    const fbLs = win.localStorage;
+    const fbStore = {};
+    win.localStorage = { getItem: (k) => (k in fbStore ? fbStore[k] : null), setItem: (k, v) => { fbStore[k] = String(v); }, removeItem: (k) => { delete fbStore[k]; } };
+    const fbBox = () => main.querySelector(".factor-banner");
+    let fbVia = "totp", fbOffered = true, fbOwn = true, fbReads = 0;
+    win.Maity.api.get = async (p, o) => {
+      if (p === "/auth/second-factor") { fbReads += 1; return { enrolled: fbVia === "totp", enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: fbVia }; }
+      const v = await fbGet(p, o);
+      if (p === "/auth/methods") return Object.assign({}, v, { password_reset: fbOffered });
+      if (p === "/me/notification-settings") return Object.assign({}, v, { email: Object.assign({}, v.email, { password_reset: fbOwn }) });
+      return v;
+    };
+    const fbGo = async (route) => { await go(route); for (let k = 0; k < 6; k++) await tick(); };
+    win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(!fbBox(), "authenticator banner: none while the app is the second factor");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbLink = fbBox() && fbBox().querySelector('a[href="#/account/security"]');
+    expect(fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone: whoever reads it can reset your password and sign in. Set up an authenticator app.")
+      && fbLink && text(fbLink) === "Set up an authenticator app" && btn(fbBox(), "Later") && fbBox().getAttribute("role") === "region",
+      "authenticator banner: the mail as the factor and a reset that could reach the human, linked to Security, with Later ");
+    const fbRead = fbReads;
+    await fbGo("#/maintainer/maity/board");
+    expect(fbBox() && fbReads === fbRead, "authenticator banner: on the next page too, without reading again (" + fbReads + ")");
+    win.Maity.onWrite("/projects/maintainer/maity/tasks");
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && fbReads === fbRead, "authenticator banner: a write elsewhere reads nothing again (" + fbReads + ")");
+    fbOwn = false; win.Maity.onWrite("/me/notification-settings");
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox. Set up an authenticator app: it is the stronger one.") && fbReads === fbRead + 1,
+      "authenticator banner: the human's own switch off, the milder sentence, read again after a write");
+    fbOwn = true; fbOffered = false; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."), "authenticator banner: the instance not offering a reset, the milder sentence");
+    // A change made elsewhere (another tab enrolled an app, an admin, the human's switch on another
+    // device) writes nothing in this tab: Security reads afresh, and nothing is kept past a minute (#1716 review).
+    fbOffered = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone"), "authenticator banner: the sharp sentence again before the outside change");
+    fbVia = "totp";
+    await fbGo("#/maintainer/maity/board");
+    const fbStale = !!fbBox();
+    await fbGo("#/account/security");
+    expect(fbStale && !fbBox(), "authenticator banner: an app enrolled in another tab ends it on Security, without a reload or a write here");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbOwn = false;
+    await fbGo("#/maintainer/maity/board");
+    const fbKept = fbBox() && text(fbBox()).startsWith("Your sign-in rests on your mailbox alone");
+    const fbNow = win.Maity.api.now;
+    const fbLater = fbNow() + 61000;
+    win.Maity.api.now = () => fbLater;
+    await fbGo("#/maintainer/maity/inbox");
+    win.Maity.api.now = fbNow;
+    expect(fbKept && fbBox() && text(fbBox()).startsWith("Your second factor is your mailbox."),
+      "authenticator banner: a switch turned off elsewhere shows within a minute, read again once the kept answer is a minute old");
+    // The banner on screen and the page left as it is: drawn again once its reads are a minute
+    // old, and when the tab is shown again, not only on the next page (#1716 review).
+    const fbSettle = async () => { for (let k = 0; k < 6; k++) await tick(); };
+    fbOwn = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbIdle = fbReads;
+    fbVia = "totp";
+    await fireIntervals(); await fbSettle();
+    const fbWithin = !!fbBox() && fbReads === fbIdle;
+    const fbAged = fbNow() + 61000;
+    win.Maity.api.now = () => fbAged;
+    await fireIntervals(); await fbSettle();
+    win.Maity.api.now = fbNow;
+    expect(fbWithin && !fbBox() && fbReads === fbIdle + 1,
+      "authenticator banner: an app enrolled elsewhere ends it on a page left as it is, once its reads are a minute old (" + fbReads + ")");
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbVia = "totp";
+    const fbVis = document.visibilityState;
+    document.visibilityState = "hidden"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    const fbHidden = !!fbBox();
+    document.visibilityState = "visible"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    document.visibilityState = fbVis;
+    expect(fbHidden && !fbBox(), "authenticator banner: and at once when the tab is shown again");
+    // A refresh that says the same keeps the banner standing (the reader's focus stays in it), and a
+    // hidden tab reads nothing on the minute's check; shown again, it reads at once (#1716 review).
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbStanding = fbBox(), fbBefore = fbReads;
+    const fbAged2 = fbNow() + 61000;
+    win.Maity.api.now = () => fbAged2;
+    await fireIntervals(); await fbSettle();
+    win.Maity.api.now = fbNow;
+    expect(fbStanding && fbBox() === fbStanding && fbReads === fbBefore + 1,
+      "authenticator banner: a refresh that says the same leaves the standing banner in place (" + fbReads + ")");
+    const fbVis2 = document.visibilityState;
+    document.visibilityState = "hidden"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    const fbAged3 = fbNow() + 122000;
+    win.Maity.api.now = () => fbAged3;
+    fbVia = "totp";
+    await fireIntervals(); await fbSettle();
+    const fbHiddenReads = fbReads === fbBefore + 1 && !!fbBox();
+    document.visibilityState = "visible"; if (docListeners.visibilitychange) docListeners.visibilitychange(); await fbSettle();
+    win.Maity.api.now = fbNow; document.visibilityState = fbVis2;
+    expect(fbHiddenReads && !fbBox(), "authenticator banner: a hidden tab reads nothing on the minute's check, and catches up when shown (" + fbReads + ")");
+    // No watch left behind: none while no banner stands, none after Later, none once the page is gone.
+    const fbTimers = intervals.size;
+    fbVia = "email"; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    const fbWatched = intervals.size === fbTimers + 1 && !!docListeners.visibilitychange;
+    await fbGo("#/maintainer/maity/board");
+    const fbOnBoard = intervals.size;
+    const fbOne = !!fbBox() && fbOnBoard >= fbTimers + 1;
+    btn(fbBox(), "Later").click(); await tick();
+    const fbAfterLater = intervals.size === fbOnBoard - 1 && !docListeners.visibilitychange;
+    delete fbStore["maity.factor-banner.later"]; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    fbBox().remove(); await fireIntervals(); await fbSettle();
+    expect(fbTimers === intervals.size && fbWatched && fbOne && fbAfterLater && fbReads > 0,
+      "authenticator banner: one watch while it stands, none after Later or once it is gone (" + [fbTimers, intervals.size, fbWatched, fbOne, fbAfterLater] + ")");
+    fbOwn = true; fbVia = "email"; win.Maity.factorBanner.forget();
+    fbOffered = true; win.Maity.factorBanner.forget();
+    await fbGo("#/maintainer/maity/inbox");
+    btn(fbBox(), "Later").click(); await tick();
+    const fbSession = (await win.Maity.api.get("/auth/session")).session_id;
+    expect(!fbBox() && fbStore["maity.factor-banner.later"] === fbSession, "authenticator banner: Later hides it, kept for this session " + JSON.stringify(fbStore));
+    await fbGo("#/maintainer/maity/board");
+    expect(!fbBox(), "authenticator banner: Later holds on the next page");
+    fbStore["maity.factor-banner.later"] = "an-earlier-session";
+    await fbGo("#/maintainer/maity/inbox");
+    expect(fbBox(), "authenticator banner: back after the next sign-in");
+    // A browser that keeps nothing: Later still holds for this page load.
+    win.localStorage = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => { throw new Error("blocked"); } };
+    btn(fbBox(), "Later").click(); await tick();
+    await fbGo("#/maintainer/maity/board");
+    expect(!fbBox(), "authenticator banner: Later without storage holds for this page load");
+    fbVia = "totp"; win.Maity.factorBanner.forget();
+    win.localStorage = fbLs;
+    win.Maity.api.get = fbGet;
+  }
+
   // Ctrl+Enter (Cmd+Enter on a Mac) sends every multi-line form; plain Enter never does, nor a disabled submit button.
   const ceCalls = [];
   const cePost = win.Maity.api.post, cePatch = win.Maity.api.patch;
@@ -14426,11 +14972,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       member_since: "2026-03", online: true, model: "model-<b>one</b>", harness: null } },
     "/public/pages/sam": { path: "/sam", kind: "person", data: { name: "Sam", handle: "sam", bio: null, projects: [{ name: "Tool", full_name: "stranger/tool", role: "coder" }], agents: [],
       member_since: "2025-11", online: false, statistics: { cards_done: 4, reviews_given: 2, prs_merged: null } } },
+    // A person's agents (§16.9, "A person's agents"): one with a page, one without.
+    "/public/pages/sam/agents": { path: "/sam/agents", kind: "person_agents", data: { owner: { name: "Sam", handle: "sam", page: "/sam" }, agents: [
+      { name: "Helper", handle: "helper", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", page: null, roles: [], model: null, harness: null },
+      { name: "Overview <b>bot</b>", handle: "overview", picture: "/api/v1/avatars/public/def", page: "/stranger/agents/overview", roles: ["coder", "reviewer"], model: "model-one", harness: "harness-x" }] } },
     "/public/pages/stranger/tool/team": { path: "/stranger/tool/team", kind: "team", data: { shown: [{ name: "Sam", handle: "sam", page: "/sam", trust: "owner", role: "coder" }], others: [{ role: "reviewer", count: 2 }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
-    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
-      ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
-      online: { humans: 1, agents: 2, named: [{ name: "Sam", handle: "sam", page: "/sam" }], as_of: "2026-11-02T08:05:00Z" } } },
+    // §16.9's project data: a person whose profile is off has no picture, an agent always one; `members` the Team tab's count.
+    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [],
+      people: [{ name: "Sam", handle: "sam", page: "/sam", picture: null, role: "coder" }],
+      agents: [{ name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", role: "reviewer", harness: "harness-<b>x</b>" }],
+      members: 4, statistics: { totals: { cards_done: 3, prs_merged: null } },
+      ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z", merge: { pr: 1, title: "A <b>title</b>", author: "sam-gh", areas: ["hub", "web"] } },
+        { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z", merge: null }],
+      online: { humans: 1, agents: 2, named: [{ name: "Sam", handle: "sam", page: "/sam", picture: null }, { name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000" }], as_of: "2026-11-02T08:05:00Z" } } },
   };
   const viAll = [];
   win.Maity.api.get = (p) => {
@@ -14451,6 +15006,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !viPress().length,
     "visitor: the board of a project one is no member of, its text as text, and nothing to press");
   expect(viView().querySelectorAll("a.card-id").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/tasks/tsk-1")), "visitor: the board links each card to its own page");
+  {
+    const cols = viView().querySelector(".columns");
+    expect(cols && !cols.getAttribute("tabindex") && !cols.getAttribute("role") && !cols.getAttribute("aria-label"),
+      "visitor: a board with cards adds no focus stop before them, its card links scroll the columns");
+  }
   await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "team" && viAsked.includes("/public/pages/stranger/tool/team")
     && text(viView()).includes("(sam)") && text(viView()).includes("2 ×")
@@ -14512,7 +15072,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
   // stored public page the hub put into <main> stands without it, the next view has it again.
   expect(productLine.querySelectorAll("a").length === 4, "product line: under a public address the dashboard draws");
-  // From the framed sign-in to a public address: the frame goes once the public page is drawn, the line with it.
+  // From the framed sign-in to a public address: the frame stays (the visitor's page stands in it too, tsk-tp97v64vpy5z),
+  // its footer in the product line's place.
   // Signed out for this step, as a visitor is: the sign-in in the frame first.
   const viChromeGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(frModel({}))
@@ -14524,7 +15085,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   const viAfter = [!!viView(), !!frFoot(), header.hidden, productLine.querySelectorAll("a").length];
   const rpOut = viView() && viView().querySelector("a.report-open");
-  expect(rpOut && rpOut.getAttribute("href").replace(/^#/, "") === "/login?next=%2Fstranger%2Ftool%3Freport" && text(rpOut) === "Sign in to report",
+  expect(rpOut && rpOut.getAttribute("href").replace(/^#/, "") === "/login?next=%2Fstranger%2Ftool%3Freport" && text(rpOut) === "Sign in to report"
+    && !rpOut.getAttribute("aria-label") && rpOut.getAttribute("title") === "Report this project to the instance's admins",
     "report: signed out, a public page's Report is a link to the sign-in that comes back with the form open " + (rpOut && rpOut.getAttribute("href")));
   // An address that shows a visitor nothing (tsk-h1e5zmq1wnhj): "not found" in the frame instead of
   // the sign-in form, worded so that a private name and a missing one read alike (routing.md
@@ -14559,8 +15121,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   viSignedOut = false;
   win.Maity.api.get = viChromeGet;
   await win.Maity.api.get("/auth/session");
-  expect(viFramed && JSON.stringify(viAfter) === "[true,false,false,4]",
-    "product line: from the framed sign-in to a public address, the frame gone, the line back " + viFramed + JSON.stringify(viAfter));
+  expect(viFramed && JSON.stringify(viAfter) === "[true,true,true,0]",
+    "product line: from the framed sign-in to a public address, the frame stays, its footer in the line's place " + viFramed + JSON.stringify(viAfter));
   main.hasAttribute = (k) => k in main.attrs;
   main.setAttribute("data-public-page", "");
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
@@ -14606,6 +15168,220 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
   viOverview("visitor: without a session, /overview of a public project is its public overview, not the login");
   expect(header.querySelector(".visitor-sign-in") && !byId("login-email"), "visitor: without a session, /overview has the way to the sign-in in its header");
+  // In the landing's frame (§16.7.5) as the sign-in is: its header and footer around the page, the
+  // content in the stored pages' look, Sign in coming back here; the app's bar only where the frame cannot be read.
+  {
+    const vfHead = () => body.childNodes.find((x) => x.tagName === "HEADER" && x.className === "site-header dz") || null;
+    const vfFoot = () => body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
+    const vfOn = () => (document.documentElement.className || "").split(" ").includes("public-frame");
+    const vfIn = vfHead() && vfHead().querySelector("a.signin");
+    expect(vfOn() && vfHead() && vfFoot() && header.hidden === true && viView().classList.contains("public-view")
+      && viView().querySelector("section.team-cards div.wrap") && !viView().querySelector("div.stored-page")
+      && vfIn && vfIn.getAttribute("href") === "#/login?lang=en&next=" + encodeURIComponent("/stranger/tool/overview") && !vfIn.getAttribute("aria-current"),
+      "visitor: without a session, the page stands in the landing's frame, Sign in coming back to it " + (vfIn ? vfIn.getAttribute("href") : null));
+    // The approved mockup's project page (tsk-9482zxza3gs3): the dark hero with the crumb, the
+    // tile, the title and the state chip; the figures band without a 0 or empty figure; the views
+    // as a bar across the page under both; "Try it" from the frame's call to action.
+    {
+      // "Try it" is the frame model's own call to action: a model that has one (the fixture's landing has none here).
+      const ppGet = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(frModel({ language: "en" })) : ppGet(p));
+      await go("#/stranger/tool"); for (let k = 0; k < 8; k++) await tick();
+      const hero = viView().querySelector("section.phero");
+      const parts = viView().childNodes.map((x) => x.className);
+      const figures = viView().querySelectorAll("section.band div.stat").map((s) => [text(s.querySelector("b")), text(s.querySelector("span.label")), s.querySelector("small") ? text(s.querySelector("small")) : null]);
+      const bar = viView().querySelector("nav.ptabs");
+      const current = bar ? bar.querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").map((a) => (a.getAttribute("href") || "").replace(/^#/, "")) : [];
+      const tryIt = hero && hero.querySelector("div.cta a.btn.btn-primary");
+      expect(hero && hero.className === "phero hero dz" && text(hero.querySelector("p.crumb")) === "stranger / tool"
+        && text(hero.querySelector("span.pmark")) === "T" && hero.querySelector("span.pmark").getAttribute("aria-hidden") === "true"
+        && text(hero.querySelector("h1")) === "Tool" && text(hero.querySelector("span.chip.state")) === "active"
+        && JSON.stringify(parts) === JSON.stringify(["phero hero dz", "band", "ptabs", "sec team-cards", "sec alt recently"])
+        && JSON.stringify(figures) === JSON.stringify([["4", "Members", null], ["3", "Cards done", "30 days"]])
+        && JSON.stringify(current) === JSON.stringify(["/stranger/tool"]) && bar.querySelectorAll("a.view-tab").length === 5
+        && tryIt && text(tryIt) === "Try it — create your account" && tryIt.getAttribute("href") === "#/register?lang=de",
+      "visitor: without a session, a project's page has the hero (crumb, tile, title, state), the figures band without an empty one, the views as a bar, Try it from the frame "
+        + JSON.stringify([parts, figures, current, tryIt && tryIt.getAttribute("href"), hero && text(hero.querySelector("span.chip.state")), hero && text(hero.querySelector("p.crumb"))]));
+      // Its unsafe repository is no button; who is online stands in the hero, the figures no longer as a list below.
+      const live = hero && hero.querySelector("div.ph-live");
+      expect(!hero.querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && !hero.querySelector("a.btn-secondary")
+        && live && text(live.querySelector("p.big")) === "1 person · 2 agents online"
+        && !viView().querySelector("ul.visitor-stats") && !text(viView()).includes("Humans online"),
+      "visitor: without a session, an unsafe repository is no button, Right now counts who is online, the figures are not repeated below " + (live ? text(live) : null));
+      // Right now's stack: each one online as their picture, or their letter where the hub sends none,
+      // linked to their page and named there; a person round, an agent square (tsk-9482zxza3gs3, part 2).
+      const stack = live && live.querySelector("div.stack");
+      const faces = stack ? stack.querySelectorAll("a").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-label"), a.firstChild.tagName, a.firstChild.className, a.firstChild.tagName === "IMG" ? a.firstChild.getAttribute("src") : text(a.firstChild)]) : [];
+      expect(JSON.stringify(faces) === JSON.stringify([["/sam", "Sam", "SPAN", "av hu av-30 ini", "S"],
+        ["/stranger/agents/bot", "Bot <b>one</b>", "IMG", "av ag av-30", "/api/v1/avatars/public/abc00000000000000000000000000000?s=64"]])
+        && !stack.querySelector("span.more") && stack.querySelector("img").getAttribute("alt") === "" && !live.querySelector("b"),
+      "visitor: without a session, Right now stacks who is online, a picture or the letter, each a named link " + JSON.stringify(faces));
+      // The team as cards: picture or letter, name, @handle, role, an agent's harness, the dot while online;
+      // the line counts people and agents, the link names the Team tab's figure.
+      const team = viView().querySelector("section.team-cards");
+      const cards = team ? team.querySelectorAll("div.mgrid a.mcard").map((c) => [(c.getAttribute("href") || "").replace(/^#/, ""), text(c.querySelector(".mc-t b")), text(c.querySelector(".mc-t small")),
+        c.querySelector(".chip.role") ? text(c.querySelector(".chip.role")) : null, c.querySelector(".mc-m .h") ? text(c.querySelector(".mc-m .h")) : null,
+        c.firstChild.className, c.querySelector("i.dot") ? c.querySelector("i.dot").getAttribute("aria-label") : null]) : [];
+      const all = team && team.querySelector("a.more-l");
+      expect(team && text(team.querySelector("h2")) === "Team" && text(team.querySelector(".sec-h p")) === "1 person and 1 agent"
+        && all && text(all) === "All 4 members →" && (all.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool/team"
+        && JSON.stringify(cards) === JSON.stringify([["/sam", "Sam", "@sam", "Coder", null, "av hu av-44 ini", "Online"],
+          ["/stranger/agents/bot", "Bot <b>one</b>", "@bot", "Reviewer", "harness-<b>x</b>", "av ag av-44", "Online"]])
+        && team.querySelector("img").getAttribute("src").endsWith("?s=128") && !team.querySelector("b b"),
+      "visitor: without a session, the team as cards with picture or letter, handle, role, harness and the online dot, All N members to the Team tab " + JSON.stringify([cards, all && text(all)]));
+      // What happened lately: a merge as a pull request card from its facts, a decision in the list under the cards.
+      const lately = viView().querySelector("section.recently");
+      const pr = lately && lately.querySelector("div.prgrid a.pr");
+      const decided = lately ? lately.querySelectorAll("ul.dec li").map((li) => text(li.querySelector("span"))) : [];
+      expect(lately && text(lately.querySelector("h2")) === "Recently merged" && text(lately.querySelector(".sec-h p")) === "Pull requests and decisions of the last 7 days"
+        && pr && pr.getAttribute("href") === "https://github.com/s/t/pull/1" && pr.getAttribute("rel") === "nofollow ugc"
+        && text(pr.querySelector(".num")) === "#1" && text(pr.querySelector(".merged")) === "Merged" && pr.querySelector("time").getAttribute("datetime") === "2026-11-02T08:00:00Z"
+        && text(pr.querySelector("b")) === "A <b>title</b>" && text(pr.querySelector("small")) === "by sam-gh · touches hub, web"
+        && lately.querySelectorAll("a.pr").length === 1 && JSON.stringify(decided) === '["Decided: tsk-1"]',
+      "visitor: without a session, a merge is a pull request card from its facts, a decision a line under the cards " + JSON.stringify([pr && text(pr), decided]));
+      // A GitHub repository is a GitHub button; the project's links one row of short words, a page of the
+      // repository by the dashboard's word and any other by host and path; nobody online, no Right now;
+      // a tab's hero has only its crumb, tile and slug, and no band.
+      const plain = viPages["/public/pages/stranger/tool"];
+      viPages["/public/pages/stranger/tool"] = { path: "/stranger/tool", kind: "project", data: Object.assign({}, plain.data, {
+        name: "4tool", about: "Run it:\n\n```sh\nmake smoke\n```", repository_url: "https://github.com/stranger/tool", links: ["https://github.com/stranger/tool/issues", "https://t.me/tool_chat/", "javascript:alert(1)"],
+        online: { humans: 0, agents: 0, named: [], as_of: "2026-11-02T08:05:00Z" }, statistics: { totals: { cards_done: 0, reviews_given: null } } }) };
+      await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+      const h2 = viView().querySelector("section.phero");
+      const repo = h2.querySelector("a.btn.btn-secondary");
+      const row = h2.querySelector("p.plinks") ? h2.querySelector("p.plinks").querySelectorAll("a").map((a) => [text(a), a.getAttribute("href")]) : [];
+      expect(repo && text(repo) === "GitHub" && repo.getAttribute("href") === "https://github.com/stranger/tool" && repo.querySelector("svg")
+        && JSON.stringify(row) === JSON.stringify([["Issues", "https://github.com/stranger/tool/issues"], ["t.me/tool_chat", "https://t.me/tool_chat/"]])
+        && text(h2.querySelector("span.pmark")) === "T" && !h2.querySelector("div.ph-live")
+        && JSON.stringify(viView().querySelectorAll("section.band div.stat").map((s) => text(s.querySelector("span.label")))) === '["Members"]',
+      "visitor: without a session, the repository's button names GitHub, the links are one row of short words, the tile's letter is the name's first letter "
+        + JSON.stringify([repo && text(repo), row, text(h2.querySelector("span.pmark"))]));
+      // A code block in the about text stands in the always-dark hero: its ground is the dark zone's
+      // (the app's --surface-2 is mapped there), not the light app's (review of #1820, A507).
+      const ppCss = fs.readFileSync(path.join(WEB, "css/public-sections.css"), "utf8");
+      const appCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+      expect(h2.querySelector("div.sub pre.md-code") && /\.md-code \{[^}]*background: var\(--surface-2\)/.test(appCss)
+        && /\.phero \{[^}]*--surface-2: var\(--surface2\)[^}]*--ok: #7ee2a0/.test(ppCss),
+      "visitor: without a session, a code block in the about text stands in the hero on the dark zone's ground, the app's --surface-2 and --ok mapped there");
+      // The sections' stylesheet is named in index.html, so the shell names it with its version (§16.11; the
+      // e2e's warm load refuses a dashboard file named without one); site-chrome.js only moves and switches it.
+      const ppIndex = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
+      const ppChrome = fs.readFileSync(path.join(WEB, "js/site-chrome.js"), "utf8");
+      const ppSheets = /const SHEETS = \[([^\]]*)\]/.exec(ppChrome);
+      expect(/<link rel="stylesheet" href="css\/public-sections\.css" id="public-sections" disabled>/.test(ppIndex)
+        && ppSheets && !/"(?:brand|css|js|vendor)\//.test(ppSheets[1]) && ppChrome.includes('const OWN_SHEET = "public-sections"'),
+      "visitor: the sections' stylesheet is named in index.html, disabled, for the shell's version; the frame adds no dashboard file by a name of its own " + (ppSheets && ppSheets[1]));
+      // Ten online: the stack shows eight and how many more; a picture from elsewhere is the letter (h() refuses it), one that
+      // does not load turns into the letter; a team of people alone counts only them, past twelve only twelve cards; a ticker of
+      // decisions alone is "Recently", with no cards.
+      const many = Array.from({ length: 14 }, (_, i) => ({ name: "P" + i, handle: "p" + i, page: "/p" + i, picture: "/api/v1/avatars/public/" + String(i).padStart(32, "0"), role: null }));
+      viPages["/public/pages/stranger/tool"] = { path: "/stranger/tool", kind: "project", data: Object.assign({}, plain.data, {
+        people: [Object.assign({}, many[0], { picture: "https://elsewhere.example/p.png" })].concat(many.slice(1)), agents: [], members: 14,
+        ticker: [plain.data.ticker[1]], online: { humans: 10, agents: 0, named: many.slice(0, 10), as_of: "2026-11-02T08:05:00Z" } }) };
+      await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+      const st = viView().querySelector("div.ph-live div.stack");
+      const more = st && st.querySelector("span.more");
+      const firstCard = viView().querySelector("a.mcard");
+      const failing = viView().querySelectorAll("a.mcard")[1].querySelector("img");
+      if (failing) failing.dispatch("error");
+      const failed = viView().querySelectorAll("a.mcard")[1].firstChild;
+      const t4 = viView().querySelector("section.team-cards");
+      const r4 = viView().querySelector("section.recently");
+      expect(st && st.querySelectorAll("a").length === 8 && more && text(more) === "+2" && more.getAttribute("title") === "and 2 more"
+        && firstCard.firstChild.tagName === "SPAN" && text(firstCard.firstChild) === "P" && !firstCard.querySelector(".mc-m")
+        && failed.tagName === "SPAN" && failed.className === "av hu av-44 ini" && text(failed) === "P"
+        && text(t4.querySelector(".sec-h p")) === "14 people" && t4.querySelectorAll("a.mcard").length === 12 && text(t4.querySelector("a.more-l")) === "All 14 members →"
+        && text(r4.querySelector("h2")) === "Recently" && !r4.querySelector("div.prgrid") && r4.querySelectorAll("ul.dec li").length === 1,
+      "visitor: without a session, eight faces and +N, a picture from elsewhere or one that fails is the letter, twelve cards, decisions alone are Recently "
+        + JSON.stringify([st && st.querySelectorAll("a").length, more && text(more), t4 && text(t4.querySelector(".sec-h p")), r4 && text(r4.querySelector("h2"))]));
+      viPages["/public/pages/stranger/tool"] = plain;
+      await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
+      const h3 = viView().querySelector("section.phero");
+      expect(viView().getAttribute("data-kind") === "team" && h3 && text(h3.querySelector("h1")) === "tool" && text(h3.querySelector("p.crumb a")) === "tool"
+        && text(h3.querySelector("span.pmark")) === "T" && !viView().querySelector("section.band") && !h3.querySelector("span.chip")
+        && viView().querySelector("nav.ptabs").querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").length === 1
+        && h3.querySelector("div.cta a.btn.btn-primary") && text(h3.querySelector("div.cta a.btn.btn-primary")) === "Try it — create your account"
+        && h3.querySelector("p.report-row a.report-open") && !h3.querySelector("a.btn-secondary") && !h3.querySelector("p.plinks") && !h3.querySelector("div.ph-live"),
+      "visitor: without a session, a project's tab has the hero with its crumb linking the Overview, Try it and Report, no Overview parts, no band, the bar with its tab current");
+      // The Board, Team, Organisation and Why tabs in the Overview's section style (part 3, README point 10):
+      // one section across the page under the bar, its h2 and line, then cards and chips; the same content.
+      const tabParts = () => viView().childNodes.map((x) => x.className);
+      const tabSec = (kind) => viView().querySelector("section.tab-sec." + kind + "-sec");
+      const t3 = tabSec("team");
+      const t3Cards = t3 ? t3.querySelectorAll("div.mgrid a.mcard").map((c) => [(c.getAttribute("href") || "").replace(/^#/, ""), text(c.querySelector(".mc-t b")), text(c.querySelector(".mc-t small")),
+        text(c.querySelector(".chip.role")), c.firstChild.className]) : [];
+      const t3Others = t3 ? t3.querySelectorAll("ul.role-counts li").map((li) => [text(li.querySelector("b")), text(li.querySelector(".chip.role"))]) : [];
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec team-sec"])
+        && text(t3.querySelector(".sec-h h2")) === "Team" && text(t3.querySelector(".sec-h p")) === "1 person"
+        && JSON.stringify(t3Cards) === JSON.stringify([["/sam", "Sam", "@sam", "Coder", "av hu av-44 ini"]])
+        && text(t3.querySelector("h3")) === "Others" && JSON.stringify(t3Others) === JSON.stringify([["2", "Reviewer"]]) && !viView().querySelector(".stored-page"),
+      "visitor: without a session, the Team tab is a section of member cards, those only counted as chips with their number " + JSON.stringify([tabParts(), t3Cards, t3Others]));
+      const tabPages = {
+        "/public/pages/stranger/tool/team": { path: "/stranger/tool/team", kind: "team", data: { shown: [
+          { name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", trust: "member", role: "reviewer" },
+          { name: "Sam", handle: "sam", page: "/sam", picture: null, trust: "owner", role: "coder" }], others: [] } },
+        "/public/pages/stranger/tool/organisation": { path: "/stranger/tool/organisation", kind: "organisation", data: { nodes: [
+          { index: 0, person: { name: "Sam", handle: "sam", page: "/sam", picture: null }, role: "coder", reports_to: null },
+          { index: 1, person: { name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000" }, role: "reviewer", reports_to: 0 },
+          { index: 2, person: null, role: "tester", reports_to: 1 },
+          { index: 3, person: null, role: "coder", reports_to: 2 }] } },
+        "/public/pages/stranger/tool/why": { path: "/stranger/tool/why", kind: "why", data: { readable: true, observed_at: "2026-11-02T08:00:00Z", summary: { entries: 12 },
+          family: [{ name: "Hub", path: "hub", dashboard_url: "https://example.org/ktw/hub" }, { name: null, path: "web", dashboard_url: "javascript:alert(1)" }],
+          attention: [{ title: "A <b>stale</b> entry", link: "https://example.org/ktw/hub#a", status: "needs-review" }] } },
+      };
+      const tabKept = {};
+      Object.keys(tabPages).forEach((k) => { tabKept[k] = viPages[k]; viPages[k] = tabPages[k]; });
+      await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
+      const t4Cards = tabSec("team").querySelectorAll("div.mgrid a.mcard").map((c) => [text(c.querySelector(".mc-t b")), c.firstChild.className,
+        c.firstChild.tagName === "IMG" ? c.firstChild.getAttribute("src") : text(c.firstChild)]);
+      expect(text(tabSec("team").querySelector(".sec-h p")) === "1 person and 1 agent" && !tabSec("team").querySelector("ul.role-counts") && !tabSec("team").querySelector("b b")
+        && JSON.stringify(t4Cards) === JSON.stringify([["Sam", "av hu av-44 ini", "S"], ["Bot <b>one</b>", "av ag av-44", "/api/v1/avatars/public/abc00000000000000000000000000000?s=128"]]),
+      "visitor: without a session, the Team tab's cards carry the picture from its data, the people first, an agent square " + JSON.stringify(t4Cards));
+      await go("#/stranger/tool/organisation"); for (let k = 0; k < 4; k++) await tick();
+      const o3 = tabSec("organisation");
+      const o3Nodes = o3 ? o3.querySelectorAll(".otree li").map((li) => { const n = li.firstChild;
+        return [n.tagName, n.className, (n.getAttribute("href") || "").replace(/^#/, ""), text(n.querySelector(".chip.role")), n.querySelector(".av") ? n.querySelector(".av").className : null]; }) : [];
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec organisation-sec"])
+        && text(o3.querySelector(".sec-h h2")) === "Organisation" && text(o3.querySelector(".sec-h p")) === "1 person and 1 agent"
+        && o3.querySelectorAll(".otree ul").length === 4 && !o3.querySelector("b b")
+        && JSON.stringify(o3Nodes) === JSON.stringify([["A", "onode", "/sam", "Coder", "av hu av-30 ini"], ["A", "onode", "/stranger/agents/bot", "Reviewer", "av ag av-30"],
+          ["SPAN", "onode anon", "", "Tester", null], ["SPAN", "onode anon", "", "Coder", null]]),
+      "visitor: without a session, the Organisation tab is the same tree of small cards, a named member with picture or letter and a link, one not named only its role " + JSON.stringify(o3Nodes));
+      await go("#/stranger/tool/why"); for (let k = 0; k < 4; k++) await tick();
+      const w3 = tabSec("why");
+      const w3Kin = w3 ? w3.querySelectorAll("div.mgrid .mcard").map((c) => [c.tagName, c.getAttribute("href"), text(c.querySelector(".pmark")), text(c.querySelector(".mc-t b")),
+        c.querySelector(".mc-t small") ? text(c.querySelector(".mc-t small")) : null]) : [];
+      const w3Att = w3 ? w3.querySelectorAll("ul.dec.att li").map((li) => [text(li.querySelector(".chip")), text(li.querySelector("a")), li.querySelector("a").getAttribute("rel")]) : [];
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec why-sec"])
+        && text(w3.querySelector(".sec-h h2")) === "Why" && text(w3.querySelector(".sec-h p")) === "12 entries"
+        && JSON.stringify(w3.querySelectorAll("h3").map(text)) === JSON.stringify(["Family", "Needs attention"])
+        && JSON.stringify(w3Kin) === JSON.stringify([["A", "https://example.org/ktw/hub", "H", "Hub", "hub"], ["DIV", null, "W", "web", null]])
+        && JSON.stringify(w3Att) === JSON.stringify([["needs review", "A <b>stale</b> entry", "nofollow ugc"]])
+        && !w3.querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")),
+      "visitor: without a session, the Why tab's count beside its heading, the family as cards, what needs attention as lines with a chip " + JSON.stringify([w3Kin, w3Att]));
+      viPages["/public/pages/stranger/tool/why"] = { path: "/stranger/tool/why", kind: "why", data: { readable: false } };
+      await go("#/stranger/tool/why"); for (let k = 0; k < 4; k++) await tick();
+      expect(tabSec("why") && text(tabSec("why").querySelector("p.muted")) === "The Keep the Why of this project is not public, or not read yet." && !tabSec("why").querySelector(".sec-h p"),
+        "visitor: without a session, an unread Why says so in its section");
+      await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+      const b3 = tabSec("board");
+      const b3Card = b3 && b3.querySelector(".columns section.column article.card");
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec board-sec"])
+        && text(b3.querySelector(".sec-h h2")) === "Board" && text(b3.querySelector(".sec-h p")) === "1 card"
+        && text(b3.querySelector("section.column h3")) === "Open (1)" && b3Card && text(b3Card.querySelector("h4")) === "A <b>card</b>"
+        && text(b3Card.querySelector("span.chip.label")) === "bug" && !b3Card.querySelector(".label-tag") && b3Card.querySelector("a.card-id"),
+      "visitor: without a session, the Board tab is a section of its columns, a column an h3, a card's title an h4 and its label a chip");
+      Object.keys(tabKept).forEach((k) => { if (tabKept[k]) viPages[k] = tabKept[k]; else delete viPages[k]; });
+      win.Maity.api.get = ppGet;
+      await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
+    }
+    const vfGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(new win.Maity.api.ApiError("down", 503, p, "unavailable")) : vfGet(p));
+    await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+    expect(viView() && viView().getAttribute("data-kind") === "board" && !vfHead() && !vfFoot() && header.hidden === false && header.querySelector(".visitor-sign-in"),
+      "visitor: where the frame cannot be read, the app's bar with Sign in stands instead");
+    win.Maity.api.get = vfGet;
+  }
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
@@ -14617,7 +15393,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(viView() && viView().getAttribute("data-kind") === "person" && said.length === 1 && said[0].startsWith("Member since ")
       && JSON.stringify(stats) === JSON.stringify(["Cards done: 4", "Reviews given: 2"]),
       "visitor: a person's page says member since, no Online while offline, and their own counts without a null one " + JSON.stringify([said, stats]));
+    const tabs = viView() ? viView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]) : [];
+    expect(JSON.stringify(tabs) === JSON.stringify([["/sam", "page"], ["/sam/agents", null]]),
+      "visitor: a person's page carries the tabs Profile and Agents, Profile current (§16.9) " + JSON.stringify(tabs));
   }
+  // /<handle>/agents (§16.9, "A person's agents", tsk-zrjxhxanfwzd): without a session the visitor's page, the same list as signed in.
+  await go("#/sam/agents"); for (let k = 0; k < 4; k++) await tick();
+  {
+    const items = viView() ? viView().querySelectorAll("ul.person-agents li") : [];
+    const tabs = viView() ? viView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]) : [];
+    expect(viView() && viView().getAttribute("data-kind") === "person_agents" && viAsked[viAsked.length - 1] === "/public/pages/sam/agents"
+      && JSON.stringify(tabs) === JSON.stringify([["/sam", null], ["/sam/agents", "page"]]) && text(viView().querySelector("h1")) === "Agents of Sam",
+      "visitor: without a session, /<handle>/agents is the person's agents page, its Agents tab current " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1), tabs]));
+    expect(items.length === 2 && !items[0].querySelector("a") && text(items[0]).includes("Helper (helper)") && !items[0].querySelector(".label-tag")
+      && items[0].querySelector("img").getAttribute("src") === "/api/v1/avatars/public/abc00000000000000000000000000000?s=64"
+      && items[1].querySelector("a").getAttribute("href").replace(/^#/, "") === "/stranger/agents/overview" && text(items[1]).includes("Overview <b>bot</b> (overview)")
+      && !items[1].querySelector("b") && items[1].querySelectorAll(".label-tag").map(text).join() === "Coder,Reviewer"
+      && text(items[1]).includes("Model: model-one · Harness: harness-x"),
+      "visitor: each agent with its picture at 64 px, a page linked with its roles, model and harness, one without a page only named " + JSON.stringify(items.map(text)));
+  }
+  await go("#/sam/agents/helper"); for (let k = 0; k < 4; k++) await tick();
+  expect(viAsked[viAsked.length - 1] === "/public/pages/sam/agents/helper",
+    "visitor: /<owner>/agents/<handle> stays an agent's own page, not the person's agents tab " + JSON.stringify(viAsked.slice(-1)));
   await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && byId("login-email"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
   win.Maity.api.get = viSoGet;
@@ -14666,6 +15463,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(pvView()).includes("2 of 3 shown."),
     "person: a shared project to its overview, a public one to its page, a cut list said with its total");
   expect(text(header).includes("People") && document.title.includes("@wolfgang"), "person: the header and the title name the view");
+  const pvPersonTabs = () => pvView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]);
+  const pvAgents = () => pvView().querySelectorAll("ul.person-agents li");
+  expect(JSON.stringify(pvPersonTabs()) === JSON.stringify([["/wolfgang", "page"], ["/wolfgang/agents", null]]) && !pvAgents().length,
+    "person: a person's view has the tabs Profile and Agents (§16.9), Profile current at /<handle> " + JSON.stringify(pvPersonTabs()));
+  // /<handle>/agents signed in (tsk-zrjxhxanfwzd): the tab Agents of the person's view, §6.27's `agents`, one read.
+  const pvBefore = pvAsked.length;
+  await go("#/wolfgang/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(pvView() && JSON.stringify(pvAsked.slice(pvBefore)) === JSON.stringify(["/people/wolfgang"]) && pvName() === "Wolfgang"
+    && JSON.stringify(pvPersonTabs()) === JSON.stringify([["/wolfgang", null], ["/wolfgang/agents", "page"]])
+    && !pvView().querySelector(".person-bio") && !pvProjects().length && document.title.includes("Agents of @wolfgang")
+    && pvPublic() && pvPublic().getAttribute("href") === "#/wolfgang/agents?as=public",
+    "person: signed in, /<handle>/agents is the person view's Agents tab, from GET /people alone, View public page at its own address "
+    + JSON.stringify([pvAsked.slice(pvBefore), pvView() && pvPersonTabs(), document.title]));
+  expect(pvAgents().length === 2 && !pvAgents()[0].querySelector("a") && text(pvAgents()[0]).includes("Quiet Bot (quiet-bot)") && !pvAgents()[0].querySelector(".label-tag")
+    && pvAgents()[0].querySelector("img").getAttribute("src") === "/api/v1/avatars/public/0f3c9a2b7d1e4c580f3c9a2b7d1e4c58?s=64"
+    && pvAgents()[1].querySelector("a").getAttribute("href").replace(/^#/, "") === "/wolfgang/agents/trader-bot" && text(pvAgents()[1]).includes("Trader <b>Bot</b> (trader-bot)")
+    && !pvAgents()[1].querySelector("b") && pvAgents()[1].querySelector(".person-picture-none.size-64")
+    && pvAgents()[1].querySelectorAll(".label-tag").map(text).join() === "Coder,Reviewer" && text(pvAgents()[1]).includes("Model: model-one · Harness: harness-x"),
+    "person: the Agents tab lists each agent as the public page does: picture at 64 px or a placeholder, a page linked with roles, model and harness, one without only named "
+    + JSON.stringify(pvAgents().map(text)));
+  await go("#/wolf/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(win.location.hash === "#/wolfgang/agents" && pvAgents().length === 2, "person: an alias at /<alias>/agents goes to the current handle's Agents tab");
+  await go("#/anna/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(pvView()).includes("No agents are listed here.") && !pvAgents().length && !pvPublic(), "person: a person with no agent listed says so");
+  await go("#/oz-team/agents"); for (let k = 0; k < 4; k++) await tick();
+  expect(pvView() && text(pvView()).includes("This page does not exist, or you cannot see it.") && !pvView().querySelector("nav.person-tabs")
+    && !pvView().querySelector(".person-name") && pvAsked[pvAsked.length - 1] === "/people/oz-team",
+    "organisation: /<org>/agents names nothing (§16.9), the dashboard's not found");
   await go("#/wolf"); for (let k = 0; k < 4; k++) await tick();
   expect(win.location.hash === "#/wolfgang" && pvName() === "Wolfgang", "person: an alias goes to the current handle");
   await go("#/anna"); for (let k = 0; k < 4; k++) await tick();
@@ -15546,7 +16371,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const onboardingGet = win.Maity.api.get, onboardingPatch = win.Maity.api.patch;
   const onboardingWrites = [];
   win.Maity.api.patch = (path, body) => { onboardingWrites.push([path, body]); return onboardingPatch(path, body); };
-  await go("#/maintainer/maity/board"); await projectSettings();
+  await go("#/maintainer/maity/board"); await projectSettings("members");
   expect(!!byId("onboarding-briefing") && byId("onboarding-target").querySelectorAll("option").some((o) => o.attrs.value === "coordinator" && "selected" in o.attrs), "onboarding: default coordinator is editable");
   byId("onboarding-briefing").value = "Report here: **welcome**";
   byId("onboarding-target").value = "role:reviewer";
@@ -16419,7 +17244,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.get = async (p, o) => { const v = await siGet(p, o); return p === "/admin/settings/sign-in" ? Object.assign(v, { missing: ["mail"], email_link_available: false }) : v; };
     await redraw();
     expect(!policyOptions().includes("email") && text(siSection()).includes("Mail is not ready"), "sign-in: no Mail for everyone while mail is not ready");
+    // §2.10: the reset by mail is a switch of its own; while on but not offered, the reasons stand under it.
+    win.Maity.api.get = async (p, o) => { const v = await siGet(p, o); return p === "/admin/settings/sign-in" ? Object.assign(v, { password_reset_available: false, password_reset_missing: ["mail", "signing_key"] }) : v; };
+    await redraw();
+    expect(byId("admin-sign-in-password_reset") && byId("admin-sign-in-password_reset").checked && byId("admin-sign-in-password_reset-missing")
+      && text(byId("admin-sign-in-password_reset-missing")).startsWith("Not offered right now: ") && text(byId("admin-sign-in-password_reset-missing")).includes("Mail is not ready"),
+      "sign-in: the password reset by mail is on, and why it is not offered stands under it");
     win.Maity.api.get = siGet;
+    await redraw();
+    expect(!byId("admin-sign-in-password_reset-missing"), "sign-in: an offered reset needs no reasons");
+    const siBefore = siPatches.length;
+    byId("admin-sign-in-password_reset").checked = false;
+    await siSubmit();
+    expect(JSON.stringify(siPatches[siBefore]) === JSON.stringify({ password_reset: false }) && !byId("admin-sign-in-password_reset").checked
+      && (await win.Maity.api.get("/auth/methods")).password_reset === false,
+      "sign-in: turning the reset off sends password_reset false, and the login no longer offers it");
+    byId("admin-sign-in-password_reset").checked = true;
+    await siSubmit();
     await redraw();
     // No verified address: said at the field, no code asked for.
     win.Maity.api.patch = async () => { throw Object.assign(new Error("invalid"), { code: "invalid", details: { fields: { second_factor: "no_verified_address" } } }); };
@@ -16796,6 +17637,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/agents/agt-x"); for (let k = 0; k < 6; k++) await tick();
   const pdX = main.querySelectorAll("li.agent-card").find((li) => li.getAttribute("data-agent") === "agt-x");
   expect(pdX && pdX.querySelector(".profile-delete-box") && text(pdX).includes("guest/guestlab"), "profile: Your agents offers the deletion of a profile");
+  // The deletion is done when DELETE answers: its words and the list without the row show at once, while the
+  // lists are still being read again; a failed read shows under the words (tsk-m65g76c979jk).
+  const pdGetAll = win.Maity.api.getAll;
+  let pdReread = null;
+  win.Maity.api.getAll = (p, ...rest) => p === "/agents"
+    ? new Promise((resolve, reject) => { pdReread = () => reject(new win.Maity.api.ApiError("slow hub", 503, p, "unavailable", {})); })
+    : pdGetAll(p, ...rest);
+  byId("profile-delete-agt-x").value = "@spare"; byId("profile-delete-agt-x").dispatch("input");
+  pdX.querySelector("form.profile-delete").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  const pdRow = () => main.querySelectorAll("tr.agent-row").some((tr) => tr.getAttribute("data-agent") === "agt-x");
+  expect(pdReread && text(main).includes("The profile @spare was deleted; its memberships ended.") && !pdRow(),
+    "profile: on Your agents the deletion shows as soon as DELETE answers, before the lists are read again");
+  pdReread(); for (let k = 0; k < 8; k++) await tick();
+  expect(text(main).includes("The profile @spare was deleted; its memberships ended.") && text(main).includes("Your agents could not be read again: slow hub"),
+    "profile: a failed read after the deletion shows under its words");
+  win.Maity.api.getAll = pdGetAll;
   win.Maity.api.del = pdDel;
 
   // §6.26 at the end of fixture mode (it adds a project): out of an organisation into one's own namespace, at once.
@@ -16975,15 +17832,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   "maintenance: the sign-in still offers the mailed link when a window refuses the methods; another failure offers nothing, as before");
   // The owner's choice, the /agents page's tab Maintenance notices (§16.11): which agents get the notice.
   await go("#/agents"); await mtSettle();
-  const mtTabs = JSON.stringify([["Agents", "#/agents", "page"], ["Managed agents", "#/agents/placements", null], ["Maintenance notices", "#/agents/maintenance", null]]);
+  const mtTabs = JSON.stringify([["Agents", "#/agents", "page"], ["Managed agents", "#/agents/placements", null], ["Maintenance notices", "#/agents/maintenance", null], ["Chat access", "#/agents/chat-access", null]]);
   expect(JSON.stringify(agentsTabRow()) === mtTabs && !main.querySelector("section.broadcasts") && main.querySelector("table.agents-list"),
-    "broadcasts: /agents is the list's tab, with Managed agents and Maintenance notices beside it and the choice no longer under the list " + JSON.stringify(agentsTabRow()));
+    "broadcasts: /agents is the list's tab, with Managed agents, Maintenance notices and Chat access beside it and the choice no longer under the list " + JSON.stringify(agentsTabRow()));
   await go("#/agents/maintenance"); await mtSettle();
   const mtChoice = main.querySelector("section.broadcasts");
   const mtMode = byId("broadcasts-mode");
   expect(mtChoice && mtMode && mtMode.value === "accept_all" && mtChoice.querySelector("fieldset").hidden
     && byId("broadcasts-heading") && byId("broadcasts-heading").tagName === "H2" && !main.querySelector("table.agents-list")
-    && JSON.stringify(agentsTabRow().map((t) => t[2])) === JSON.stringify([null, null, "page"]),
+    && JSON.stringify(agentsTabRow().map((t) => t[2])) === JSON.stringify([null, null, "page", null]),
     "broadcasts: /agents/maintenance shows the choice under its own heading, all agents by default");
   mtMode.value = "accept_only"; mtMode.dispatch("change");
   byId("broadcasts-agent-agt-b").checked = true;
@@ -16993,6 +17850,141 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector("section.broadcasts fieldset").hidden, "broadcasts: only the agents ticked, saved as the hub has it");
   const mtBad = await win.Maity.api.patch("/me/broadcasts", { mode: "refuse_all", agents: ["agt-b"] }).then(() => null, (err) => err);
   expect(mtBad && mtBad.details.fields.agents === "not_allowed", "broadcasts: a list with refuse_all is refused, as the hub refuses it");
+
+  // Who may chat with one's agents (§9.6, "The lists"), the tab Chat access: the entries, an allow
+  // and a deny added, an allow edited (only what changed), a deny removed. A person to name is one of
+  // the members of one's projects: anna is put into sample's member list for this and taken out again.
+  {
+    const caFx = win.Maity.api.fixturesLive();
+    const caMembers = caFx["sample/members.json"].items;
+    caMembers.push({ id: "hum-anna", kind: "human", handle: "anna", display_name: "Anna", trust: "member", role: "coder", owner_id: null });
+    const caSent = [];
+    const caPost = win.Maity.api.post, caPatch = win.Maity.api.patch, caDel = win.Maity.api.del, caConfirm = win.confirm;
+    win.Maity.api.post = (p, b) => { caSent.push(["POST", p, b]); return caPost(p, b); };
+    win.Maity.api.patch = (p, b) => { caSent.push(["PATCH", p, b]); return caPatch(p, b); };
+    win.Maity.api.del = (p, b) => { caSent.push(["DELETE", p]); return caDel(p, b); };
+    win.confirm = () => true;
+    await go("#/agents/chat-access"); await mtSettle();
+    const caPage = () => main.querySelector("section.chat-access-page");
+    const caRows = (kind) => caPage().querySelectorAll("ul.chat-access-list." + kind + " li");
+    expect(caPage() && byId("chat-access-heading").tagName === "H2"
+      && JSON.stringify(agentsTabRow().map((t) => t[2])) === JSON.stringify([null, null, null, "page"]),
+      "chat access: /agents/chat-access is the page's fourth tab, under its own heading");
+    expect(caRows("allow").length === 1 && text(caRows("allow")[0]).includes("@anna's side · all their agents · not @anna themselves")
+      && text(caRows("allow")[0]).includes("for @agent-a · for good") && text(caRows("allow")[0]).includes("nothing about releases")
+      && caRows("deny").length === 1 && text(caRows("deny")[0]).includes("the agent @shop-dev") && text(caRows("deny")[0]).includes("for all your agents"),
+      "chat access: an allow names the side, its agents, its human, one's agents, the time and the rules; a deny names whom by handle " + text(caPage()).slice(0, 400));
+    const [caAllowForm, caDenyForm] = caPage().querySelectorAll("form.chat-access-add");
+    const caSelects = (form) => form.querySelectorAll("select");
+    const caBoxes = (form) => form.querySelectorAll("input");
+    // Nobody chosen: said beside the button, nothing sent.
+    caAllowForm.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && text(caAllowForm).includes("Choose whom the entry names."), "chat access: an allow naming nobody is not sent, and says so");
+    // An allow for anna's side: none of her agents, anna herself, a day, one rule.
+    const [caKind, caPerson, , , caTheir, caDuration] = caSelects(caAllowForm);
+    expect(caKind.value === "owner_id" && caPerson.querySelectorAll("option").some((o) => (o.getAttribute("value") || o.value) === "hum-anna"),
+      "chat access: a person is chosen among the members of one's projects");
+    caPerson.value = "hum-anna"; caTheir.value = "none"; caDuration.value = "day";
+    caBoxes(caAllowForm).find((b) => b.id && /-human-/.test(b.id)).checked = true;
+    caAllowForm.querySelectorAll("textarea")[0].value = " web only ";
+    caAllowForm.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][1] === "/me/chat-access/allow"
+      && JSON.stringify(caSent[0][2]) === JSON.stringify({ agents: "all", owner_id: "hum-anna", their_agents: "none", their_human: true, duration: "day", allowed: "web only" })
+      && caRows("allow").length === 2 && text(caPage()).includes("Allow entry added."),
+      "chat access: an allow is sent as the hub takes it, an empty rule left out, and listed first " + JSON.stringify(caSent[0]));
+    // Edit the older one: a week from now and its first rule cleared; nothing else is sent.
+    caSent.length = 0;
+    const caOld = caRows("allow").find((li) => text(li).includes("the shop's frontend"));
+    btn(caOld, "Edit").click(); await tick();
+    const caEdit = caOld.querySelector("form.chat-access-edit");
+    const caEditSelects = caSelects(caEdit);
+    expect(caEditSelects[0].value === "keep" && caEditSelects[1].value === "all", "chat access: an edit keeps the time and the reach until changed");
+    caEditSelects[0].value = "week";
+    caEdit.querySelectorAll("textarea")[0].value = "  ";
+    caEdit.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][0] === "PATCH" && caSent[0][1] === "/me/chat-access/allow/cha-0001"
+      && JSON.stringify(caSent[0][2]) === JSON.stringify({ duration: "week", allowed: null })
+      && text(caRows("allow").find((li) => text(li).includes("for @agent-a"))).includes("until "),
+      "chat access: an edit sends only what changed, a cleared rule as null, and the entry ends a week on " + JSON.stringify(caSent[0]));
+    // A deny for agent-a alone toward the project sample; then the older deny removed.
+    caSent.length = 0;
+    const caDenyBoxes = caBoxes(caDenyForm);
+    caDenyBoxes[0].checked = false; caDenyBoxes[0].dispatch("change");
+    caDenyBoxes[1].checked = true;
+    const caDenyKind = caSelects(caDenyForm)[0];
+    caDenyKind.value = "project"; caDenyKind.dispatch("change");
+    caSelects(caDenyForm)[3].value = "maintainer/sample";
+    caDenyForm.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][1] === "/me/chat-access/deny"
+      && JSON.stringify(caSent[0][2]) === JSON.stringify({ agents: ["agt-a"], project: { owner: "maintainer", slug: "sample" } })
+      && caRows("deny").length === 2 && text(caRows("deny")[0]).includes("everyone in the project maintainer/sample"),
+      "chat access: a deny for one agent toward a project is sent and listed first " + JSON.stringify(caSent[0]));
+    caSent.length = 0;
+    btn(caRows("deny").find((li) => text(li).includes("@shop-dev")), "Remove").click(); await mtSettle();
+    expect(caSent.length === 1 && caSent[0][0] === "DELETE" && caSent[0][1] === "/me/chat-access/deny/cha-0002" && caRows("deny").length === 1,
+      "chat access: Remove, confirmed, deletes the entry and the list is read again");
+    // The mock refuses as the hub does (chat_access.py: details.fields).
+    const caRefused = (b) => caPost("/me/chat-access/allow", b).then(() => null, (e) => JSON.stringify(e.details.fields));
+    expect(await caRefused({ agents: "all", owner_id: "hum-anna", their_agents: "none", their_human: false }) === JSON.stringify({ their_agents: "names_no_one" })
+      && await caRefused({ agents: ["agt-zz"], owner_id: "hum-anna" }) === JSON.stringify({ agents: "not_yours" })
+      && await caRefused({ agents: "all", owner_id: "hum-anna", project: { owner: "maintainer", slug: "sample" } }) === JSON.stringify({ owner_id: "one_subject", project: "one_subject" })
+      && await caRefused({ agents: "all", project: { owner: "maintainer", slug: "sample" }, their_human: true }) === JSON.stringify({ their_human: "project_entry" }),
+      "chat access: the mock refuses an entry naming no one, another's agent, two subjects and a side's field on a project entry");
+    expect(await caRefused({ agents: [], owner_id: "hum-anna" }) === JSON.stringify({ agents: "format" }),
+      "chat access: the mock refuses an empty list of agents, as the hub does");
+    // Review of #1726. A subject not chosen is hidden, and the stylesheet keeps it so under .field-stack's grid.
+    const caDenyForm2 = () => caPage().querySelectorAll("form.chat-access-add")[1];
+    const caRowsOf = (form) => form.querySelectorAll("div.field-stack").filter((d) => d.querySelector("select"));
+    const caKind2 = caSelects(caDenyForm2())[0];
+    const caShown = [];
+    for (const k of ["owner_id", "human_id", "agent_id", "project"]) {
+      caKind2.value = k; caKind2.dispatch("change");
+      caShown.push(caRowsOf(caDenyForm2()).map((d) => (d.hidden ? 0 : 1)).join(""));
+    }
+    expect(JSON.stringify(caShown) === JSON.stringify(["100", "100", "010", "001"])
+      && fs.readFileSync(path.join(WEB, "css/app.css"), "utf8").includes(".chat-access-page [hidden] { display: none; }"),
+      "chat access: each subject shows its own row alone, and [hidden] wins over the grid " + JSON.stringify(caShown));
+    // An unchanged edit sends nothing, whatever order the entry lists the agents in, and gives the focus back to Edit.
+    await caPatch("/me/chat-access/allow/cha-0001", { agents: ["agt-b", "agt-a"] });
+    caSent.splice(0);
+    await go("#/agents"); await go("#/agents/chat-access"); await mtSettle();
+    const caOld2 = () => caRows("allow").find((li) => text(li).includes("nothing about releases"));
+    const caFocusProto = Object.getPrototypeOf(main);
+    const caFocus0 = caFocusProto.focus;
+    caFocusProto.focus = function () { document.activeElement = this; };
+    btn(caOld2(), "Edit").click(); await tick();
+    caOld2().querySelector("form.chat-access-edit").dispatch("submit"); await mtSettle();
+    expect(!caSent.length && !caOld2().querySelector("form.chat-access-edit") && document.activeElement === btn(caOld2(), "Edit"),
+      "chat access: an edit with nothing changed sends nothing, whatever the agents' order, and the focus is back on Edit");
+    // What the hub would refuse is said by the form, nothing sent: no agent ticked, a side's entry naming no one.
+    btn(caOld2(), "Edit").click(); await tick();
+    const caEdit2 = caOld2().querySelector("form.chat-access-edit");
+    caBoxes(caEdit2).forEach((b) => { b.checked = false; b.dispatch("change"); });
+    caEdit2.dispatch("submit"); await mtSettle();
+    const caNoAgent = text(caEdit2.querySelector(".field-error"));
+    caBoxes(caEdit2)[1].checked = true;
+    caSelects(caEdit2)[1].value = "none";
+    caEdit2.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && caNoAgent === "Tick at least one of your agents, or all of them."
+      && text(caEdit2.querySelector(".field-error")) === "This would allow no one: choose some of their agents, or tick the person themselves.",
+      "chat access: an edit with no agent, or naming no one, says so by the form and sends nothing");
+    // A refusal the client cannot foresee is said in words, in the form that was sent.
+    win.Maity.api.post = (p, b) => { caSent.push(["POST", p, b]); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { reason: "too_many_entries" })); };
+    const caAllow2 = caPage().querySelectorAll("form.chat-access-add")[0];
+    const caSel2 = caSelects(caAllow2);
+    caSel2[1].value = "hum-anna";
+    caAllow2.dispatch("submit"); await mtSettle();
+    expect(caSent.length === 1 && text(caAllow2.querySelector(".send-status")) === "Not saved: You keep 1,000 entries already, the most there can be: remove one first.",
+      "chat access: a refusal is said in the page's words, by the form " + text(caAllow2.querySelector(".send-status")));
+    caSent.splice(0);
+    caSel2[4].value = "none";
+    caAllow2.dispatch("submit"); await mtSettle();
+    expect(!caSent.length && text(caAllow2.querySelector(".field-error")) === "This would allow no one: choose some of their agents, or tick the person themselves.",
+      "chat access: a new allow naming no one is not sent, and says why");
+    caFocusProto.focus = caFocus0; document.activeElement = undefined;
+    caMembers.splice(caMembers.findIndex((x) => x.id === "hum-anna"), 1);
+    win.Maity.api.post = caPost; win.Maity.api.patch = caPatch; win.Maity.api.del = caDel; win.confirm = caConfirm;
+  }
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

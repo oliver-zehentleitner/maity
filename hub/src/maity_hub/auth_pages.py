@@ -6,7 +6,7 @@ dashboard's, and no sign-in depends on reading these.
 from __future__ import annotations
 
 import unicodedata
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import Connection, select
 
@@ -109,7 +109,7 @@ store.register(store.Setting(SETTING, _stored_ok, DEFAULT))
 
 
 def stored(conn: Connection) -> dict[str, Any]:
-    return store.stored(conn, "auth_pages").get(SETTING, DEFAULT)  # type: ignore[no-any-return]
+    return cast(dict[str, Any], store.stored(conn, "auth_pages").get(SETTING, DEFAULT))
 
 
 def view(conn: Connection) -> dict[str, Any]:

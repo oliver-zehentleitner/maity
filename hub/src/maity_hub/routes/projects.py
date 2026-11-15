@@ -56,9 +56,9 @@ from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
-from maity_hub.models import SLUG_PATTERN, Strict, markdown, title
+from maity_hub.models import SLUG_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.onboarding import OnboardingIn
 from maity_hub.scopes import in_admin_team
@@ -349,7 +349,7 @@ def _provider(memory: MemoryIn | None) -> bool | None:
 
 class ProjectCreate(Strict):
     slug: str = Field(pattern=SLUG_PATTERN)
-    name: str = title()
+    name: Name = title()
     # The handle of an organisation to create the project in (§6.26); the caller's own
     # handle or nothing is the default of §6.1.
     owner: str | None = Field(default=None, max_length=64)
@@ -364,7 +364,7 @@ class ProjectCreate(Strict):
 
 class ProjectPatch(Strict):
     slug: str | None = Field(default=None, pattern=SLUG_PATTERN)  # a rename (§6.25)
-    name: str | None = title(default=None)
+    name: Name | None = title(default=None)
     repository: RepositoryIn | None = None
     # The project's own links (§6.11), merged by key; checked by project_links.
     links: Any = None
@@ -433,6 +433,15 @@ def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor:
     public_pages.touch(conn, public_projects.KIND, project_id)  # an archived project has no page
 
 
+# A path segment of the repository URL (§6.1, "The shape of `url`", step 4): owner and name are
+# what the probe puts into its API paths (`forge.repository_of`), so `.`, `..`, percent-encoding,
+# a query or a fragment would make it read another path than the repository's.
+def _repository_path(path: str) -> bool:
+    """Whether `owner/name` holds two segments of the contract's shape; a lower-case `.git` at
+    the end of the name is the clone suffix and is taken off first (step 3)."""
+    return forge.valid_repository(path.removesuffix(".git"))
+
+
 def _repository_columns(repository: RepositoryIn | None, current: Any = None) -> dict[str, Any]:
     """The project's repository columns from a request's `repository`; `current` is the
     project a `PATCH` changes. Unlike `default_branch`, a `required_check` left out keeps the
@@ -444,8 +453,15 @@ def _repository_columns(repository: RepositoryIn | None, current: Any = None) ->
             "repository_default_branch": None,
             "repository_required_check": None,
         }
-    url = repository.url.rstrip("/")
-    if not url.startswith("https://") or forge_of(url) is None or url.count("/") != 4:
+    url = repository.url
+    if url.endswith("/") and not url.endswith("//"):
+        url = url[:-1]  # one trailing slash (§6.1 step 2); a second one leaves an empty segment
+    if (
+        not url.startswith("https://")
+        or forge_of(url) is None
+        or url.count("/") != 4
+        or not _repository_path(url.split("/", 3)[3])
+    ):
         raise invalid(
             {"repository.url": "not_a_configured_forge"},
             "the repository must be https://<forge host>/<owner>/<name> on a configured forge",
@@ -768,7 +784,7 @@ def load_project(conn: Connection, project_id: str, request: Request) -> dict[st
     return _view(conn, _load(conn, project_id), request)
 
 
-idempotency.LOADERS["project"] = load_project
+idempotency.register("project", load_project, idempotency.in_project(idempotency.the_project))
 
 
 @router.get("/projects")
@@ -923,6 +939,7 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
                 areas=["/"],
                 capabilities=[],
                 joined_at=now,
+                joined_seq=newest_seq(conn, project_id),
                 last_seen_at=now,
                 changed_via=caller.via,
                 # an owner of the organisation holds a membership the hub keeps (§6.26)
@@ -1053,6 +1070,8 @@ def patch_project(
             if body.public_page != project.public_page:
                 if body.public_page == "on":  # a hidden or removed project stays so (§16.8)
                     moderation.refuse_held(conn, "project", project.id)
+                    if project.owner_org_id is not None:  # and so does a suspended org's
+                        moderation.refuse_held(conn, "org", project.owner_org_id, "suspend")
                 values["public_page"] = body.public_page
                 # What the forge said belongs to the time the page was on: asked again.
                 values["repository_public"] = None

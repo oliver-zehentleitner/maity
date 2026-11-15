@@ -112,6 +112,31 @@ def test_a_signal_reaches_the_command_and_the_cleanup_waits_for_it(
     assert ended.exists() and len(calls(run, "stop")) == 1
 
 
+@pytest.mark.parametrize("sent", [signal.SIGTERM, signal.SIGINT, signal.SIGHUP])
+def test_a_signal_the_moment_the_command_starts_is_passed_on_too(
+    run: dict[str, str], tmp_path: Path, sent: signal.Signals
+) -> None:
+    ended = tmp_path / "ended"
+    name = sent.name[3:]
+    command = f"trap 'sleep 0.3; touch {ended}; exit 7' {name}; kill -{name} $PPID; "
+    command += "while :; do sleep 0.05; done"
+    script = subprocess.Popen([SCRIPT, "sh", "-c", command], env=run)
+    assert script.wait(timeout=30) == 7
+    assert ended.exists() and len(calls(run, "stop")) == 1
+
+
+def test_the_traps_are_set_before_the_command_starts() -> None:
+    """A signal between the command's start and its traps ended the script under the running
+    command (-15 instead of 7 in the test above, once in 2438 on CI). The window is too short
+    to hit on purpose, so the order is pinned here."""
+    lines = SCRIPT.read_text().splitlines()
+    started = lines.index('"$@" 8>&- &')
+    first_trap = next(
+        n for n, line in enumerate(lines) if line.strip().startswith("trap 'pending=")
+    )
+    assert first_trap < started
+
+
 def at_a_terminal(env: dict[str, str], command: str, typed: bytes) -> tuple[int, bytes]:
     """Runs the script on a terminal of its own, types once the command is up; status, output."""
     pid, terminal = pty.fork()

@@ -17,14 +17,23 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import ColumnElement, Connection, select
 
-from maity_hub import allowed_projects, events, handles, idempotency, moderation, namespace, paths
+from maity_hub import (
+    allowed_projects,
+    events,
+    handles,
+    idempotency,
+    moderation,
+    namespace,
+    paths,
+    runner_revoke,
+)
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
-from maity_hub.models import HANDLE_PATTERN, Strict, markdown, title
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
+from maity_hub.models import HANDLE_PATTERN, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES, REASON_STATES
 from maity_hub.routes.members import validate_assignment
@@ -35,14 +44,17 @@ from maity_hub.views import event_views
 router = APIRouter(route_class=ProjectRoute)
 
 CLONE_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
-NOT_NULLABLE = frozenset({"desired", "harness", "mode", "stop_grace_seconds"})
+NOT_NULLABLE = frozenset(
+    {"desired", "harness", "mode", "stop_grace_seconds", "workspace_retention"}
+)
+Retention = Literal["immediate", "3h", "24h", "7d"]
 REPORTS_DEFAULT, REPORTS_MAX = 10, 50
 
 
 class AgentRef(Strict):
     id: str | None = None
     handle: str | None = Field(default=None, pattern=HANDLE_PATTERN)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
 
 
 class WorkspaceIn(Strict):
@@ -66,6 +78,7 @@ class PlacementCreate(Strict):
     workspace: WorkspaceIn = Field(default_factory=WorkspaceIn)
     desired: Literal["running", "stopped"] = "running"
     stop_grace_seconds: int = Field(default=120, ge=0, le=900)
+    workspace_retention: Retention = "24h"
     reason: str | None = markdown(default=None)
 
 
@@ -76,11 +89,16 @@ class PlacementPatch(Strict):
     model: str | None = Field(default=None, min_length=1, max_length=200)
     target: str | None = Field(default=None, min_length=1, max_length=200)
     stop_grace_seconds: int | None = Field(default=None, ge=0, le=900)
+    workspace_retention: Retention | None = None
     reason: str | None = markdown(default=None)
 
 
 class RestartIn(Strict):
     rejoin: bool = False
+
+
+class Empty(Strict):
+    """`{}`: the call takes no fields."""
 
 
 # --- who the caller is to a placement --------------------------------------------------------
@@ -127,7 +145,17 @@ def _load(conn: Connection, placement_id: str, request: Request) -> dict[str, An
     return _view(conn, membership(conn, caller, slug), placement)
 
 
-idempotency.LOADERS["placement"] = _load
+def _sees_placement(conn: Connection, mine: Membership, placement_id: str) -> bool:
+    """What `GET …/placements/{id}` shows (`_visible`): an agent its own placement only,
+    unless it holds `agents:propose`."""
+    return _visible(mine, pl.row(conn, placement_id))
+
+
+idempotency.register(
+    "placement",
+    _load,
+    idempotency.in_project(idempotency.column_of(t.placement), _sees_placement),
+)
 
 
 def _placement(conn: Connection, mine: Membership, placement_id: str) -> Any:
@@ -199,7 +227,13 @@ def list_placements(
         mine.require("project:read")
         shown: ColumnElement[bool] = t.placement.c.active.is_(True)
         if closed:
-            shown = shown | (t.placement.c.closed_at >= pl.recently_closed())
+            # A closed placement whose clone is still held stays in view, however old,
+            # until the clone is removed (§15.6).
+            shown = (
+                shown
+                | (t.placement.c.closed_at >= pl.recently_closed())
+                | (t.placement.c.active.is_(None) & t.placement.c.workspace_state.in_(pl.HELD))
+            )
         rows = [
             r
             for r in conn.execute(
@@ -315,6 +349,7 @@ def create_placement(
             "branch": body.workspace.branch,
             "desired": body.desired,
             "stop_grace_seconds": body.stop_grace_seconds,
+            "workspace_retention": body.workspace_retention,
             "approval_status": "pending" if proposed else "approved",
             "reason": body.reason,
             "credential_id": credential_id,
@@ -482,6 +517,9 @@ def patch_placement(
     if nulls:
         raise invalid(nulls)
     stop_only = given == {"desired"} and body.desired == "stopped"
+    # The retention goes on after a close: its clock runs until the runner removes the
+    # clone, so a change of it alone reaches a closed or closing placement too (§15.5).
+    retention_only = given == {"workspace_retention"}
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -497,9 +535,13 @@ def patch_placement(
         if stop_only and (placement.active is None or placement.closing is not None):
             # A stop is never refused (§15.6): closed or closing, it is answered as it is.
             return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
-        _transition(placement)
         actor = caller.actor(mine.id)
         by = mine.principal_id
+        if retention_only and (placement.active is None or placement.closing is not None):
+            assert body.workspace_retention is not None  # NOT_NULLABLE
+            placement = pl.set_retention(conn, placement, body.workspace_retention, actor, by)
+            return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
+        _transition(placement)
         request_open = pl.open_request_id(conn, placement.id) is not None
         if request_open and right:
             if stop_only and placement.approval_status == "pending":
@@ -530,10 +572,13 @@ def patch_placement(
                 else:
                     placement = pl.propose_change(conn, placement, spec_change, by)
                     _file(conn, mine, caller, placement, runner, "Change", body.reason, new_spec)
+        if body.workspace_retention is not None:
+            placement = pl.set_retention(conn, placement, body.workspace_retention, actor, by)
         if body.desired is not None and "desired" in given:
             if body.desired == "running":
                 _require_open(project)
                 _require_live(conn, runner)
+                _check_rejoin(conn, placement, runner, owner, asked=False)
             placement = pl.set_desired(conn, placement, body.desired, actor, by)
         return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
 
@@ -564,6 +609,54 @@ def _settle_by_right(
     return pl.approve(conn, placement, actor, by)
 
 
+def _undone_by_anyone(revoked: Any, runner: Any) -> bool:
+    """Whether a revoked credential may be replaced by a rejoin of someone other than the
+    agent's owner (§15.6): only where no person chose to end that agent. The runner removed
+    the clone (`workspace_removed`, revoked by the hub itself), or the runner's owner revoked
+    the runner and its agents' credentials with it (`runner_revoked`, by that owner). A
+    revocation by a person through the member routes, a leak's or a suspension's is the
+    owner's to undo alone. The reason alone decides nothing: a person revoking writes it
+    freely (`auth.leaks.revoke`), so who revoked is checked with it."""
+    if revoked.revoked_reason == "workspace_removed":
+        return revoked.revoked_by is None
+    if revoked.revoked_reason == runner_revoke.REASON:
+        return runner is not None and revoked.revoked_by == runner.owner_id
+    return False
+
+
+def _check_rejoin(
+    conn: Connection, placement: Any, runner: Any, owner: bool, *, asked: bool
+) -> None:
+    """A start that replaces a revoked credential, asked for (`rejoin: true`) or stored on
+    the placement (`rejoin` set by the clone's removal, §15.5): only the agent's owner
+    starts it after a revocation no one else may undo (`_undone_by_anyone`), however the
+    start comes, a `restart` with `{}` and a `PATCH desired: running` included."""
+    if not (asked or placement.rejoin):
+        return
+    revoked = (
+        None
+        if placement.credential_id is None
+        else conn.execute(
+            select(
+                t.credential.c.revoked_at,
+                t.credential.c.revoked_by,
+                t.credential.c.revoked_reason,
+            ).where(t.credential.c.id == placement.credential_id)
+        ).first()
+    )
+    if revoked is None or revoked.revoked_at is None:
+        if asked:
+            raise invalid({"rejoin": "credential_not_revoked"})
+        return  # nothing revoked to replace
+    if not owner and not _undone_by_anyone(revoked, runner):
+        raise ApiError(
+            403,
+            "forbidden",
+            "only the agent's owner starts it again after this revocation",
+            {"reason": "owner_only"},
+        )
+
+
 @router.post("/projects/{owner}/{slug}/placements/{placement_id}/restart")
 def restart_placement(
     slug: str, placement_id: str, request: Request, caller: AnyCaller, body: RestartIn | None = None
@@ -572,10 +665,11 @@ def restart_placement(
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
-        if rejoin:  # a rejoin issues a credential: none for a suspended account (§16.8)
-            # Before the project lock: the suspension takes the account lock, then projects.
-            account = pl.profile_owner(conn, _placement(conn, mine, placement_id))
-            moderation.refuse_suspended(conn, account)
+        before = _placement(conn, mine, placement_id)
+        if rejoin or before.rejoin:  # a rejoin issues a credential: none for a suspended
+            # account (§16.8). Before the project lock: the suspension takes the account
+            # lock, then projects.
+            moderation.refuse_suspended(conn, pl.profile_owner(conn, before))
         project = events.lock_project(conn, mine.project.id)
         placement = _placement(conn, mine, placement_id)
         runner = _runner(conn, placement.runner_id)
@@ -584,17 +678,7 @@ def restart_placement(
         if not (right or owner or _proposer(mine)):
             raise forbidden("members:admin" if mine.kind == "human" else "agents:propose")
         _transition(placement)
-        if rejoin:
-            revoked = (
-                placement.credential_id is not None
-                and conn.execute(
-                    select(t.credential.c.revoked_at).where(
-                        t.credential.c.id == placement.credential_id
-                    )
-                ).scalar()
-            )
-            if not revoked:
-                raise invalid({"rejoin": "credential_not_revoked"})
+        _check_rejoin(conn, placement, runner, owner, asked=rejoin)
         actor = caller.actor(mine.id)
         if pl.open_request_id(conn, placement.id) is not None:
             if not right:
@@ -604,6 +688,33 @@ def restart_placement(
         _require_live(conn, runner)
         placement = pl.restart(conn, placement, rejoin, actor, mine.principal_id)
         return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.post("/projects/{owner}/{slug}/placements/{placement_id}/workspace/remove")
+def remove_workspace(
+    slug: str, placement_id: str, request: Request, caller: AnyCaller, body: Empty | None = None
+) -> JSONResponse:
+    """A person asks the runner to remove a held clone, unsaved work included (§15.5,
+    §15.6): the agent profile's owner or `members:admin`, never an agent."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        if mine.kind != "human":
+            raise humans_only("only a person has a clone removed: its unsaved work goes too")
+        events.lock_project(conn, mine.project.id)
+        placement = _placement(conn, mine, placement_id)
+        owner = pl.profile_owner(conn, placement) == mine.principal_id
+        if not (owner or mine.may("members:admin")):
+            raise forbidden("members:admin")
+        try:
+            placement = pl.request_removal(
+                conn, placement, caller.actor(mine.id), mine.principal_id
+            )
+        except pl.Refusal as refusal:
+            raise _refused(refusal) from None
+        return idempotency.Outcome(202, "placement", placement.id, _view(conn, mine, placement))
 
     return idempotency.run(engine_of(request), request, caller, action)
 

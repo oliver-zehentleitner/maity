@@ -4203,6 +4203,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-21T13:20:00Z",
+        "held": [],
         "id": "req-0012",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4256,6 +4257,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-21T12:48:00Z",
+        "held": [],
         "id": "req-0011",
         "ktw_ref": null,
         "needs_in_session": {
@@ -4306,6 +4308,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T11:30:00Z",
+        "held": [],
         "id": "req-0010",
         "ktw_ref": "context/join.md",
         "mentions": [
@@ -4385,6 +4388,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T10:05:00Z",
+        "held": [],
         "id": "req-0009",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4436,6 +4440,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "info",
         "created_at": "2026-10-21T11:45:00Z",
+        "held": [],
         "id": "req-0013",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4465,6 +4470,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T11:50:00Z",
+        "held": [],
         "id": "req-0014",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4512,6 +4518,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T11:51:00Z",
+        "held": [],
         "id": "req-0015",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4560,6 +4567,7 @@ window.MAITY_FIXTURES = {
         "class": "decision",
         "created_at": "2026-10-21T11:52:00Z",
         "filed_by": "hub",
+        "held": [],
         "id": "req-0016",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -6343,6 +6351,7 @@ window.MAITY_FIXTURES = {
     "member": {
       "aliases": [],
       "display_name": "Maintainer",
+      "experiment_notice_understood_at": null,
       "handle": "maintainer",
       "id": "hum-maintainer",
       "instance_admin": true,
@@ -6543,6 +6552,7 @@ window.MAITY_FIXTURES = {
           }
         },
         "language": "en",
+        "password_reset": true,
         "pending_address": null,
         "quiet_hours": null,
         "sign_in_link": true,
@@ -6645,6 +6655,29 @@ window.MAITY_FIXTURES = {
   "people.json": {
     "items": [
       {
+        "agents": [
+          {
+            "avatar_url": "/api/v1/avatars/public/0f3c9a2b7d1e4c580f3c9a2b7d1e4c58",
+            "display_name": "Quiet Bot",
+            "handle": "quiet-bot",
+            "harness": null,
+            "model": null,
+            "page": null,
+            "roles": []
+          },
+          {
+            "avatar_url": null,
+            "display_name": "Trader <b>Bot</b>",
+            "handle": "trader-bot",
+            "harness": "harness-x",
+            "model": "model-one",
+            "page": "/wolfgang/agents/trader-bot",
+            "roles": [
+              "coder",
+              "reviewer"
+            ]
+          }
+        ],
         "aliases": [
           "wolf"
         ],
@@ -6675,6 +6708,7 @@ window.MAITY_FIXTURES = {
         "website": "https://example.org"
       },
       {
+        "agents": [],
         "aliases": [],
         "avatar_url": null,
         "display_name": "Anna",
@@ -6706,6 +6740,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-23T05:40:00Z",
+        "held": [],
         "id": "req-p001",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -6747,6 +6782,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-24T07:10:00Z",
+        "held": [],
         "id": "req-p002",
         "ktw_ref": null,
         "memory_proposal": {
@@ -6794,6 +6830,7 @@ window.MAITY_FIXTURES = {
         "class": "info",
         "created_at": "2026-10-29T09:10:00Z",
         "filed_by": "hub",
+        "held": [],
         "id": "req-r003",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -6824,6 +6861,7 @@ window.MAITY_FIXTURES = {
         "class": "info",
         "created_at": "2026-10-28T15:00:00Z",
         "filed_by": "hub",
+        "held": [],
         "id": "req-r002",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -7762,6 +7800,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-21T13:05:00Z",
+        "held": [],
         "id": "req-0003",
         "ktw_ref": null,
         "needs_in_session": null,

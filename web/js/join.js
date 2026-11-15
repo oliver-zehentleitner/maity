@@ -130,6 +130,7 @@ window.Maity = window.Maity || {};
       const bad = !HANDLE.test.test(v);
       handleState.className = "hint handle-state" + (!v ? "" : bad || taken || refused.has(v) ? " field-error" : " ok");
       handleState.textContent = !v ? ""
+        : bad && /[A-Z]/.test(v) ? M.handles.problem(v)
         : bad ? M.t("join.handle.bad", { rule: HANDLE.text })
         : taken ? M.t("join.handle.taken", { name: taken.display_name, handle: v })
         : refused.has(v) ? M.t("join.handle.refused", { handle: v })

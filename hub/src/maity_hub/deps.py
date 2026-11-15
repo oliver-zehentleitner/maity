@@ -13,6 +13,7 @@ from maity_hub import events, namespace, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
+from maity_hub.auth.permitted import Calls
 from maity_hub.config import Settings
 from maity_hub.db import retrying_async
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
@@ -153,14 +154,17 @@ def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
 
 # What an account that waits for approval may call (§2.7.5): its own account and
 # sessions. `/auth/methods` needs no caller and is everyone's.
-PENDING_MAY = {
-    ("GET", "/api/v1/me"),
-    ("GET", "/api/v1/auth/session"),
-    ("POST", "/api/v1/auth/logout"),
-    ("GET", "/api/v1/auth/sessions"),
-    ("POST", "/api/v1/auth/sessions/end-others"),
-    ("POST", "/api/v1/auth/password"),
-}
+PENDING_MAY = Calls(
+    ("GET", "/me"),
+    ("GET", "/auth/session"),
+    ("POST", "/auth/logout"),
+    ("GET", "/auth/sessions"),
+    ("POST", "/auth/sessions/end-others"),
+    ("POST", "/auth/password"),
+    # Its own session by id; `:path` keeps the check it has always been, anything below
+    # `/auth/sessions/` (no other DELETE route is there).
+    ("DELETE", "/auth/sessions/{public_id:path}"),
+)
 
 
 def _confine_pending(conn: Connection, caller: Caller, method: str, path: str) -> None:
@@ -174,10 +178,8 @@ def _confine_pending(conn: Connection, caller: Caller, method: str, path: str) -
         ).scalar()
     if status != "pending":
         return
-    if (method, path) in PENDING_MAY:
+    if PENDING_MAY.admits_api(method, path):
         return
-    if method == "DELETE" and path.startswith("/api/v1/auth/sessions/"):
-        return  # its own session by id
     raise ApiError(
         403, "forbidden", "the account waits for approval", {"reason": "account_pending"}
     )

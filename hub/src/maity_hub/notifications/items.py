@@ -35,8 +35,6 @@ NOT_MESSAGES = tuple(kind for kind in EVENT_KINDS if kind != "message")
 ADDRESSED = ("request_created", "request_forwarded")  # one item per request, the latest
 TITLE_MAX = 200
 
-# The texts the hub itself composes for a human, in that human's language (§6.2, §18.4).
-
 
 @dataclass
 class Item:
@@ -102,26 +100,11 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
             select(t.project).where(t.project.c.id.in_({m.project_id for m in members}))
         )
     }
-    # Joining never replays a project's history (§18.2): the highest seq at the join.
-    joined = dict(
-        conn.execute(
-            select(t.membership.c.id, func.coalesce(func.max(t.event.c.seq), 0))
-            .select_from(t.membership)
-            .outerjoin(
-                t.event,
-                and_(
-                    t.event.c.project_id == t.membership.c.project_id,
-                    t.event.c.at <= t.membership.c.joined_at,
-                ),
-            )
-            .where(t.membership.c.id.in_([m.id for m in members]))
-            .group_by(t.membership.c.id)
-        ).all()
-    )
     for member in members:
         project = projects[member.project_id]
         found.memberships.append(Membership(project, member, "human"))
-        found.joined_seq[project.id] = int(joined[member.id])
+        # Joining never replays a project's history (§18.2): the seq stored with the join.
+        found.joined_seq[project.id] = int(member.joined_seq)
     return found
 
 
@@ -671,13 +654,18 @@ def _classify(
         )
     if row.kind == "mentioned" and readable and f"member:{principal}" in (row.audience or []):
         task = payload.get("task") or {}
+        copied = task.get("title")
+        if isinstance(copied, dict):  # redacted since (§20.8): the card's own title now
+            from maity_hub.jourfixe.redaction import REDACTED_TITLE
+
+            copied = REDACTED_TITLE
         return Item(
             kind="mention",
             title=_cut(
                 where.say(
                     "mentioned",
                     who=look.name(row.actor_membership),
-                    chat=f"{task.get('id')} {task.get('title')}",
+                    chat=f"{task.get('id')} {copied}",
                 )
             ),
             target={"type": "task", "id": str(task.get("id"))},
@@ -703,7 +691,8 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
     change = f"tf_{data.get('change')}"
-    alarms = ("tf_changed", "tf_failed", "tf_failed_reset")  # not changes; other placeholders
+    # Not changes; other placeholders.
+    alarms = ("tf_changed", "tf_failed", "tf_failed_reset", "tf_failed_daily")
     if change not in catalog.section("notify", "en") or change in alarms:
         change = "tf_changed"
     return where.say(change, by=data.get("by"))
@@ -837,12 +826,12 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     title=_cut(
                         where.say(
                             # The reset's alarm says so: the mailbox, not the app, is
-                            # in other hands (§2.10, §18.1).
-                            (
-                                "tf_failed_reset"
-                                if data.get("method") == "password_reset"
-                                else "tf_failed"
-                            ),
+                            # in other hands (§2.10, §18.1); the daily cap says what
+                            # stopped (§2.8.6).
+                            {
+                                "password_reset": "tf_failed_reset",
+                                "daily_limit": "tf_failed_daily",
+                            }.get(str(data.get("method")), "tf_failed"),
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",
@@ -854,7 +843,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record_type=row.type,
                 )
             )
-        elif row.type == "password_reset":
+        elif row.type in ("password_reset", "password_changed"):
             items.append(
                 Item(
                     kind="security",
@@ -862,7 +851,7 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                     record=row.n,
                     title=_cut(
                         where.say(
-                            "password_reset",
+                            row.type,
                             browser=data.get("browser") or where.say("a_browser"),
                             os=data.get("os") or where.say("unknown_os"),
                             ip=data.get("ip") or "?",

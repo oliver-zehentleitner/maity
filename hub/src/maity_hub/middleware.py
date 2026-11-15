@@ -3,7 +3,8 @@
 - the client address and scheme, from forwarded headers of trusted proxies only;
 - the body cap (64 KiB) and the credential filter over body and query string;
 - the headers every response carries: `Maity-Server-Time`, `Cache-Control:
-  no-store`, `X-Content-Type-Options: nosniff`, and a CSP on HTML.
+  no-store`, `X-Content-Type-Options: nosniff`, HSTS over TLS, and on HTML a CSP and the
+  framing, opener, referrer and permissions headers.
 """
 
 from __future__ import annotations
@@ -72,7 +73,23 @@ _LANDING_PREVIEWS = (
     "/api/v1/admin/settings/legal/preview",
     f"{_AUTH_PAGES}/check",
 )
-CSP = "default-src 'self'"
+# The policy of every HTML document that brings none of its own: the app shell at every path
+# (§1.1, §16.11). `base-uri` is `'self'`, not `'none'`: the shell's own `<base href="/assets/">`
+# (shell.BASE) must keep working.
+CSP = (
+    "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; "
+    "object-src 'none'"
+)
+# What every HTML document carries unless its route set the header itself (§1.1): no page of the
+# hub is ever framed, opens a window that keeps a handle on it, or needs these devices.
+HTML_HEADERS = (
+    (b"x-frame-options", b"DENY"),
+    (b"cross-origin-opener-policy", b"same-origin"),
+    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=()"),
+)
+# With the default policy goes the dashboard's referrer rule; a page with a policy of its own
+# chooses its own (the landing and legal pages, the pages with a token in their path).
+DEFAULT_REFERRER = (b"referrer-policy", b"same-origin")
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS); and a reader's
 # own answer that names it so, as `GET /people/{handle}` (§6.27).
@@ -104,6 +121,9 @@ SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # one asked for under another answers `no-cache` (in ROUTE_CACHE), so a stale link repairs itself.
 LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
+# The dashboard's files (§16.11) the same way: one asked for under its version may be cached for
+# good, any other answers `no-cache` (shell.AssetFiles decides, hub/context/serving.md).
+DASHBOARD_FILES = re.compile(r"/assets/(?:brand|css|js|vendor)/.+")
 
 
 # Not refused during a maintenance window (§16.12): health, the window's own routes, the
@@ -150,13 +170,20 @@ class HubMiddleware:
                 public = PUBLIC_AVATARS_CACHE
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
-            elif LANDING_FILES.fullmatch(path):
+            elif LANDING_FILES.fullmatch(path) or DASHBOARD_FILES.fullmatch(path):
                 public = LANDING_FILES_CACHE
             elif self.settings.public_pages and not paths.is_hub_path(path):
                 # A public page may be cached; only the stored page's answer asks for it, the
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
-        send = _noting_refusal(_with_headers(send, public=public), scope["state"])
+        # HSTS only on an answer that went out over TLS (§2.5): a plain-HTTP hub at home never
+        # tells a browser to insist on a TLS it does not have.
+        hsts = (
+            f"max-age={self.settings.hsts_max_age}".encode()
+            if origin.tls and self.settings.hsts_max_age
+            else None
+        )
+        send = _noting_refusal(_with_headers(send, public=public, hsts=hsts), scope["state"])
 
         if await self._maintenance_refused(scope, receive, send, path):
             return
@@ -353,7 +380,16 @@ class HubMiddleware:
 
             response = Response(status_code=503, headers=headers)
         else:
-            response = maintenance.refusal_page(found)
+            # The frame as last read, never read in this request: the 503 must not wait for the
+            # database (§16.12). The small page while none is kept, and on the join host, which
+            # serves none of the frame's stylesheets (§1.1).
+            frame = (
+                None
+                if scope["state"].get("on_join_host")
+                else maintenance.cached_frame(self.engine)
+            )
+            accept = Request(scope).headers.get("accept-language")
+            response = maintenance.refusal_page(found, frame, accept)
         await response(scope, receive, send)
         _access(scope, 503)
         return True
@@ -386,8 +422,8 @@ _TOKEN_PATHS = (
     re.compile(r"^(/api/v1/runners/pair/)[^/]+"),
     re.compile(r"^(/api/v1/invitations/)[^/]+"),  # the invitation's token (§3.4)
     re.compile(
-        r"^(/mail/(?:verify|unsubscribe|register|second-factor-reset|account-deletion|sign-in)/)"
-        r"[^/]+"
+        r"^(/mail/(?:verify|unsubscribe|register|second-factor-reset|second-factor-unlock"
+        r"|account-deletion|sign-in)/)[^/]+"
     ),  # §18.6
 )
 
@@ -569,8 +605,9 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
     _access(scope, 400)
 
 
-def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
-    """`public` is the one caching a successful answer of this path may choose."""
+def _with_headers(send: Send, *, public: bytes | None = None, hsts: bytes | None = None) -> Send:
+    """`public` is the one caching a successful answer of this path may choose; `hsts` the
+    `Strict-Transport-Security` value of a request that arrived over TLS (§2.5), or None."""
 
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
@@ -591,14 +628,26 @@ def _with_headers(send: Send, *, public: bytes | None = None) -> Send:
                 (b"cache-control", cache),
                 (b"x-content-type-options", b"nosniff"),
             ]
-            if content_type.startswith(b"text/html") and not any(
-                k.lower() == b"content-security-policy" for k, _ in headers
-            ):  # the landing and legal pages bring a stricter one of their own (§16.7)
-                headers.append((b"content-security-policy", CSP.encode()))
+            if hsts is not None:
+                headers.append((b"strict-transport-security", hsts))
+            if content_type.startswith(b"text/html"):
+                named = {k.lower() for k, _ in headers}
+                extra = [h for h in HTML_HEADERS if h[0] not in named]
+                if b"content-security-policy" not in named:
+                    # the landing and legal pages bring a stricter one of their own (§16.7)
+                    extra.append((b"content-security-policy", CSP.encode()))
+                    if b"referrer-policy" not in named:
+                        extra.append(DEFAULT_REFERRER)
+                headers += extra
             message["headers"] = headers
         await send(message)
 
     return wrapped
 
 
-_SET = {b"maity-server-time", b"cache-control", b"x-content-type-options"}
+_SET = {
+    b"maity-server-time",
+    b"cache-control",
+    b"x-content-type-options",
+    b"strict-transport-security",
+}

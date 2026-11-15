@@ -10,6 +10,7 @@ maintenance` (`refusal`), and the sweeps that decide on deadlines by themselves 
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import threading
 import time
@@ -23,6 +24,8 @@ from sqlalchemy import Connection, Engine, and_, select, update
 from maity_hub import clock, events
 from maity_hub import tables as t
 from maity_hub.ids import new_id
+
+log = logging.getLogger(__name__)
 
 TEXT_MAX = 500
 MARGIN = timedelta(minutes=1)  # deadlines this soon after `until` move too (§16.12)
@@ -131,23 +134,127 @@ PAGE = (
 )
 
 
-def refusal_page(found: dict[str, Any]) -> Any:
-    """The small `503` page of the hub's own pages while a window runs (§16.12)."""
+# The frame of the 503 page (§16.7.5, §16.12): the last one read, kept per process. A request
+# never reads it itself, so the page that says the hub is down never waits for the database it
+# protects (a used-up pool would hold it up to the pool's timeout); a stale or missing frame is
+# read again in one thread of its own, and the page is the small one until a frame is there.
+FRAME_SECONDS = 60.0  # a kept frame this old is read again
+FRAME_MAX_SECONDS = 120.0  # a kept frame this old is no longer served: the small page instead
+RETRY_SECONDS = 10.0  # after a failed read, the next one waits this long: no log storm
+_frame: tuple[float, dict[str, Any]] | None = None
+_frame_reading = False
+_frame_failed: float | None = None  # when the last read failed
+
+
+def cached_frame(engine: Engine) -> dict[str, Any] | None:
+    """The last frame read while it is younger than `FRAME_MAX_SECONDS`, else None (the small
+    page); starts one read in the background when it is missing or older than `FRAME_SECONDS`.
+    Touches no database in the caller. At most one read runs at a time, in a daemon thread that
+    ends with the read; after a failed one the next waits `RETRY_SECONDS`, so a database that
+    keeps failing costs one read and one warning per 10 s, and its last frame goes once it is two
+    minutes old."""
+    global _frame_reading
+    with _lock:
+        held = _frame
+        now = monotonic()
+        stale = held is None or now - held[0] >= FRAME_SECONDS
+        resting = _frame_failed is not None and now - _frame_failed < RETRY_SECONDS
+        start = stale and not resting and not _frame_reading
+        if start:
+            _frame_reading = True
+    if start:
+        _in_background(refresh_frame, engine)
+    return held[1] if held is not None and now - held[0] < FRAME_MAX_SECONDS else None
+
+
+def _in_background(read: Callable[[Engine], None], engine: Engine) -> None:
+    """One daemon thread for one read; it ends with the read (tests run it in place)."""
+    threading.Thread(target=read, args=(engine,), name="maintenance-frame", daemon=True).start()
+
+
+def refresh_frame(engine: Engine) -> None:
+    """Read the frame and keep it; on any failure keep the last one (the page falls back)."""
+    global _frame, _frame_reading, _frame_failed
+    found: dict[str, Any] | None = None
+    try:
+        found = frame_of(engine)
+    except Exception:  # noqa: BLE001 - a failed read only means the small page
+        log.warning(
+            "the maintenance page's frame could not be read; the last one is served until it is"
+            " two minutes old, then the small page"
+        )
+    with _lock:
+        if found is not None:
+            _frame = (monotonic(), found)
+            _frame_failed = None
+        else:
+            _frame_failed = monotonic()
+        _frame_reading = False
+
+
+def forget_frame() -> None:
+    """Drop the kept frame (in tests)."""
+    global _frame, _frame_reading, _frame_failed
+    with _lock:
+        _frame = None
+        _frame_reading = False
+        _frame_failed = None
+
+
+def frame_of(engine: Engine) -> dict[str, Any]:
+    """What the frame of the pages without a session is drawn from (§16.7.5): the landing
+    setting, the legal pages served and the counters its sections name."""
+    from maity_hub import landing, landing_stats, legal
+
+    with engine.begin() as conn:
+        setting = landing.stored(conn)
+        return {
+            "setting": setting,
+            "legal": legal.public(legal.stored(conn)),
+            "stats": landing_stats.for_frame(conn, setting),
+        }
+
+
+def refusal_page(
+    found: dict[str, Any],
+    frame: dict[str, Any] | None = None,
+    accept_language: str | None = None,
+) -> Any:
+    """The `503` page of the hub's own pages while a window runs (§16.12): in the landing page's
+    header and footer around the door (§16.7.5) where `frame` could be read, else the small page
+    with the product line, so it never depends on more than the window it reports."""
     from html import escape
 
     from starlette.responses import HTMLResponse
 
-    from maity_hub import product_line
+    from maity_hub import product_line, render
 
+    headers = {"Retry-After": str(retry_after(found))}
+    if frame is not None:
+        content = (
+            "<h1>Maintenance</h1>"
+            f'<p class="intro">Back at {escape(found["until"])} UTC.</p>'
+            f"<p>{escape(found['text'])}</p>"
+        )
+        page = render.door_document(
+            lang="en",
+            title="Maintenance",
+            content=content,
+            setting=frame["setting"],
+            legal=frame["legal"],
+            stats=frame["stats"],
+            accept_language=accept_language,
+        )
+        # It also answers the paths with a token in them (`/join/…`, `/mail/…`): no referrer.
+        door = {"Content-Security-Policy": render.DOOR_CSP, "Referrer-Policy": "no-referrer"}
+        return HTMLResponse(page, status_code=503, headers={**headers, **door})
     page = PAGE.format(
         until=escape(found["until"]),
         text=escape(found["text"]),
         style=product_line.HEAD,
         product=product_line.html("en"),
     )
-    # It also answers the paths with a token in them (`/join/…`, `/mail/…`): no referrer.
-    headers = {"Retry-After": str(retry_after(found)), **product_line.HEADERS}
-    return HTMLResponse(page, status_code=503, headers=headers)
+    return HTMLResponse(page, status_code=503, headers={**headers, **product_line.HEADERS})
 
 
 def retry_after(found: dict[str, Any]) -> int:
