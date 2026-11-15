@@ -4471,7 +4471,7 @@ the window, so the input sat past the bottom edge and the page had to be scrolle
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
 At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
-- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other three parts and the separators are not shown.
+- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other four parts and the separators are not shown (re-checked 2026-11-15, when "Chat with us on Discord" became the fifth part, tsk-01tt7j11yx3w: the rule hides every part after the first, so this holds).
 - A group chat shows no "In it: …" line over the messages. Its participants stay under Manage.
 - The composer's label ("Message (@handle reaches someone in the chat)") is out of sight but still the field's label. A reader still hears what the field is for.
 

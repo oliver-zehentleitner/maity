@@ -38,7 +38,15 @@ HARNESSES = (
 # run in a pod and the operator says so for each.
 NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
 # Built but not offered: the maintainer decides on these when the runner goes into use.
-NOT_OFFERED_YET = ("opencode",)
+# Antigravity is built but held back on purpose: its one remaining command grant, command(maity),
+# cannot be confined from the runner's settings (agy reads the command past a leading assignment
+# or wrapper), so it is not offered until that is closed at the OS level (tsk-zjv2xyhyggnm).
+NOT_OFFERED_YET = ("opencode", "antigravity")
+# Why a not-offered harness is held back, where there is a specific reason to name.
+NOT_OFFERED_WHY = {
+    "antigravity": "antigravity is held back until its command grants are confined at the OS "
+    "level (tsk-zjv2xyhyggnm)",
+}
 BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode",
             "antigravity": "agy", "pi": "pi", "hermes": "hermes", "kimi": "kimi", "cline": "cline",
             "omp": "omp"}  # fmt: skip
@@ -698,8 +706,10 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
             "(runner design §6.3)"
         )
     elif name in NOT_OFFERED_YET:
+        why = NOT_OFFERED_WHY.get(name)
+        reason = f": {why}" if why else ""
         problems.append(
-            f"{where}: not offered yet; for now the runner runs claude-code, codex and antigravity"
+            f"{where}: not offered yet{reason}; for now the runner runs claude-code and codex"
             " (and stub)"
         )
     modes = tuple(
