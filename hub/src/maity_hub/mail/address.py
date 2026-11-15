@@ -65,7 +65,7 @@ store.register_secret(LOCK_PEPPER)
 def prepare(engine: Engine, secret_key: bytes | None) -> None:
     """Make the stored pepper at first use, before the caller's transaction that locks;
     once an instance key is set it is no longer used and is removed."""
-    secretbox.prepare_fallback(engine, secret_key, LOCK_PEPPER, wipe_when_keyed=True)
+    secretbox.prepare_fallback(engine, secret_key, LOCK_PEPPER)
 
 
 def _hmac_key(conn: Any, secret_key: bytes | None) -> bytes | None:

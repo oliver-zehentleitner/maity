@@ -84,6 +84,61 @@ After you update `maity` on a runner, restart the placements that were already r
 
 By default, agents running Claude Code write no attribution lines: the settings the runner passes with `--settings` tell Claude Code to leave out the `Co-Authored-By` trailer on commits and the "Generated with Claude Code" line in pull request bodies. Placements that were already running get this only after a restart. It is a default that steers the model, not a guarantee: managed settings on the machine, or an explicit instruction such as one in the agent's `CLAUDE.md` or memory, can still add the lines. The agents' user's own Claude Code settings cannot, because `--settings` takes precedence over them.
 
+The runner owner can ask a runner to look for a newer version of one of its tools at once ("Update now", `POST /api/v1/runners/<id>/updates` with `{"tool": "claude-code"}`), for a tool the runner reports it updates; the runner view (`GET /api/v1/runners/<id>`) shows the tools a runner reports (`capabilities.tools`: version, kept version, latest, state) and the open requests (`update_requests`). The dashboard has no button for it yet. What the runner does with it: [Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current).
+
+## Antigravity (agy)
+
+The runner can start Google's Antigravity CLI, `agy`, as the `antigravity` harness, in both modes:
+
+```toml
+[harness.antigravity]
+modes = ["supervised", "interactive"]
+```
+
+Install agy for the user the agents run as (`~/.local/bin/agy`; add that to `agent_path` if the service's `PATH` lacks it) and sign in once by running `agy` as that user. Without a desktop keyring agy keeps the sign-in as a file in `~/.gemini/antigravity-cli/`, which `maity runner check` looks for, and the onboarding questions of the first run are answered there once, not by the runner.
+
+**A workspace folder per placement.** agy loads the hooks, MCP servers, plugins, skills and rules of the directory it starts in, even headless and in a folder nobody trusted, and its hooks and MCP servers run outside its sandbox. So an antigravity placement gets a folder, `<workspaces>/<project id>/<clone>`, with the clone as `repo` inside it. agy starts in the folder, and the start prompt tells the agent to `cd repo`, read `repo/AGENTS.md` and work only there. Before every start, and in `supervised` mode before every run of the loop as well, the runner checks the folder and starts nothing (`failed`, `workspace_in_use`) when
+
+- it holds anything besides `repo`, such as a `GEMINI.md` or `.agents/` a run left there (`workspace_not_bare`), or
+- a directory above it, up to `/`, has an entry `.git`, so it lies inside a git work tree whose configuration agy would load, or its path goes through a symbolic link (`workspace_in_repository`).
+
+The runner deletes nothing in the folder. The service's log names what it found, without file contents; remove the entry by hand and restart the placement. Keep the workspaces root out of any git repository: `maity runner check` fails when it lies inside one. A clone does not move between the two layouts: an existing plain clone at the folder's path, or a folder at a plain clone's path, is refused as `workspace_in_use`.
+
+**Session settings.** Before each start the runner writes the settings agy gets for that session with `--settings`, in the runner's own directory for the agent, outside the folder:
+
+- `agentMode` set to the default mode, not `auto` (agy's default since 1.5.7), whose reviewer model may let a command leave the sandbox;
+- `toolPermission: proceed-in-sandbox` and the terminal sandbox on: a command that no rule names runs inside the sandbox without asking;
+- the workspace folder trusted, so an interactive start asks nothing;
+- denied to the file tools: the clone's `.git/maity` (the agent's credential), writing `.git/config`, `.git/hooks` and the rest that makes git run something, the other clones' credentials, the runner's state and configuration, the secrets in the agents' home and agy's own sign-in;
+- allowed: `maity`, the repository's `allow` list and reading the hub's, the forge's and the grant's `network` hosts.
+
+An allowed command may leave agy's sandbox. `maity` has to, for its credential and the network, and outside the sandbox any allowed command can read the credential, as with Claude Code. So for agy the `allow` list says which commands may run outside the sandbox: list only what needs to. Run every `maity` command alone; a line that chains it with another command is refused outside the sandbox.
+
+**Grants are exact, as for Claude Code.** agy's own command rules match a command by its first words, so a rule `make test` alone would allow `make test` with any arguments. For each entry of the `allow` list the runner therefore writes:
+
+- an entry without `*`, such as `make test`: the allow rule `command(make test)` and the deny rule `command(regex:make test [[:ascii:][:^ascii:]]*)`. The deny has one word more than the entry, so it never matches `make test` itself and matches it with any further arguments, and agy's deny beats its allow. Its last word matches any word, also one holding a line break: agy reads it as a Go regular expression, where `.*` would not match a line feed. `make test` runs outside the sandbox, `make test --anything` is refused, also inside the sandbox, as an ungranted command is with Claude Code, and `make lint` runs inside the sandbox like every unlisted command;
+- an entry ending in ` *`, such as `python3 -m pytest *`: the allow rule `command(python3 -m pytest)`, which allows those words with any arguments, as with Claude Code;
+- an entry with another `*` (`npm run test:*`): nothing. agy's rules cannot say it, since a regex applies to one word, so it runs inside the sandbox like every unlisted command.
+
+Two kinds of exact entry are left out for agy, run inside the sandbox like every unlisted command, and are named as a warning by `maity runner check`:
+
+- an entry with a word holding anything besides letters, digits and `_ / = : @ % , -`, such as `pytest tests/x.py` or `make c++`. agy reads the deny as a regular expression per word and accepts a malformed one without a word, which then matches nothing, so the runner writes a deny only from these characters; without the deny the allow would be a prefix, so the entry is not allowed at all. Write such an entry with a closing ` *` if any arguments may follow it;
+- an entry that another entry may extend, such as `git status` beside `git status --short` (or `git status --short *`, or `git status --format=*`): the deny for `git status` would refuse the longer one. The longer entry stays exact; drop the shorter one or end it with ` *`.
+
+An exact entry that an entry with a closing ` *` already covers (`git log -1` beside `git log *`) gets no rules of its own.
+
+**One limit agy cannot be configured around:** agy cannot tell an extra empty argument apart; it is allowed. agy takes each argument's text without its quotes, trims spaces, tabs and line breaks at both ends and drops an argument that is then empty, before it compares any rule. So with the entry `make test`, agy also runs `make test ''`, `make test ""`, `make test $''`, `make test ' '` and `make '' test` as `make test`, outside the sandbox, although the program gets one argument more than the entry names; and `make ' test'` counts as `make test`. No allow or deny rule sees such an argument. An argument with anything else in it is refused as described. `maity runner check` says this once for each repository with exact entries for agy. Keep exact entries to commands for which an extra empty argument does no harm.
+
+Two cases have not been checked in a real agy session yet, because that needs a signed-in agy and no signed-in test run has been allowed so far: whether agy drops an environment assignment in front of a granted command (`GIT_DIR=x git status`) before matching it, and whether a granted command with a plain redirect (`git status > f`) matches as the bare command and so runs outside the sandbox. The rules above come from agy's documentation and from reading agy 1.5.9's matching code; Claude Code's handling of the same two lines has not been compared either.
+
+**The agents' user's own agy settings apply too.** agy merges the session settings with that user's `~/.gemini`: its allow rules widen every agent's grant, and its global rules, skills, hooks, MCP servers and plugins load for every agent, the hooks and MCP servers outside the sandbox. The runner neither reads nor changes them, apart from the warnings in `maity runner check` about allow rules in `~/.gemini/antigravity-cli/settings.json` and servers in `~/.gemini/config/mcp_config.json`. Keep that home free of anything agents should not run, ideally with a user of its own for the agents.
+
+**Modes.** `supervised` runs `agy -p` on each event and continues with `-c`, which agy scopes to the working directory, so to the placement's own folder. `interactive` runs `agy -i` with the start prompt in the tmux pane, and after a restart for silence resumes the folder's last conversation with `-c`. agy's exit code for a provider limit is not known yet, so a limit ends a run like any other failure.
+
+**The sandbox.** On Linux agy's terminal sandbox runs commands in kernel namespaces, and where they cannot start agy runs commands without it, without saying so. The runner may advertise `sandbox: on` only where it has seen agy's sandbox start, and agy has no command that starts only its sandbox without a model call, so for now the runner advertises `sandbox: off` for agy on every host: an antigravity placement reports `running` with `sandbox_unavailable`, and `require_sandbox = true` under `[harness.antigravity]` refuses it. The session settings still switch agy's sandbox on; only the report is off. `maity runner check` tries, as the agents' user, whether the namespaces agy's sandbox needs start (user, mount, PID and network, with `unshare`) and says so as a diagnostic ("agy's sandbox start not verified"); where they do not (a kernel or AppArmor setting that blocks unprivileged user namespaces), agy runs commands unsandboxed.
+
+Two things have not been tried in a real session yet: whether `git fetch` and `git push` reach the forge from inside agy's sandbox, and whether the deny on `.git/config` reaches the sandbox too. The runner gives each agy session the same three git settings as a sandboxed Claude Code session (below), so git works either way.
+
 ## When an agent goes quiet
 
 An interactive agent listens by running `maity wait`. If that stops (a full disk, a provider limit, a turn it closed), the agent sits at its prompt and its placement still shows as running. The runner notices it by itself: when nothing runs in the session (no `maity wait`, no command the agent started) and the screen has not changed for 30 minutes, it types one line into the session asking the agent to go back to its wait loop. Any answer counts. If the session does not react at all in the next 10 minutes, or the agent has answered three such lines without going back to its wait, the runner restarts the session, and Claude Code picks up its last conversation. **Managed agents** then shows the restart as `hung`. An agent that goes quiet again after every restart is restarted at most five times in a row; then its placement is held as failed until someone restarts it. Once it runs its wait again, the count starts over. A long build or test run is never taken for silence: the command running counts as work. The two times are fixed for now; they become the agent owner's settings with the hub's health settings.
@@ -145,7 +200,7 @@ install = true      # install it when it is missing (at start)
 update = "daily"    # look for a newer version once a day, and on "Update now"
 ```
 
-Without these lines nothing changes: the runner uses the tool it finds on the agents' PATH. With them it uses only its own copy, in `~/.local/share/maity-runner/tools/` of the runner's user, never one on the PATH; a `binary` setting for such a tool is refused. A newer version goes in beside the one in use and is used from the next start of a session, never under a running one; the version before stays, and `maity runner tools rollback codex` goes back to it (a second rollback goes forward again). `maity runner tools` lists what is installed. The owner can ask for an update at once with **Update now** on the runners tab; the runner reads it within a minute.
+Without these lines nothing changes: the runner uses the tool it finds on the agents' PATH. With them it uses only its own copy, in `~/.local/share/maity-runner/tools/` of the runner's user, never one on the PATH; a `binary` setting for such a tool is refused. A newer version goes in beside the one in use and is used from the next start of a session, never under a running one; the version before stays, and `maity runner tools rollback codex` goes back to it (a second rollback goes forward again). `maity runner tools` lists what is installed. The owner can ask for an update at once ("Update now", above; the dashboard has no button for it yet); the runner reads it within a minute.
 
 What the runner checks before it uses a download, and what it does not:
 
@@ -154,6 +209,10 @@ What the runner checks before it uses a download, and what it does not:
 - No vendor install script is ever run, and nothing falls back to an unchecked download: a failed check reports `failed` (`installer_failed`) and keeps the version in use.
 
 The runner never logs a tool in. After an install, log in to it once as the agents' user, as the tool's own documentation says; until then the tool is reported `login_needed` and offered to no placement. A managed tool does not update itself (the runner switches its own updater off), and the runner manages tools only on its own machine: not on an ssh target, and not yet in the `agent_user` layout. Updating `maity` itself this way is not built yet.
+
+## Logs and a full disk
+
+Each placement's session output goes to a log on the runner, which `maity runner logs <agent>` shows. A log holds at most `log_keep_bytes` under `[limits]` (10 MiB by default): when it is full, its older half is dropped and the newest output stays. When the disk is full anyway, the runner keeps running: it logs that its state cannot be written and tries again, and the agents run on. Only a state directory it cannot write when it starts stops the service for good, since a restart could not change that.
 
 ## Working in an agent's clone
 

@@ -6,9 +6,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
-from maity_hub import preferences
+from maity_hub import clock, preferences
 from maity_hub import tables as t
 from maity_hub.events import transaction
 from tests import factory, flow
@@ -142,6 +142,26 @@ def test_only_an_admin_agent_or_the_proxy_proposes(
     assert owner.get("/projects/maintainer/maity/requests?to=all").json()["items"] == []
     inbox = owner.get("/requests").json()["items"]
     assert [r["id"] for r in inbox] == [request["id"]]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"trust": "member", "role": "coder"}, {"isolated_since": "now"}, {"trust": "guest"}],
+)
+def test_a_go_needs_the_proposer_still_standing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, change: dict[str, Any]
+) -> None:
+    # §19.4: the go acts on the proposing agent's authority, which it no longer has.
+    admin = flow.agent(make_client, owner, role="admin")
+    proposed = propose(admin, owner.id, "Be brief.").json()
+    values = {k: (clock.now() if v == "now" else v) for k, v in change.items()}
+    with migrated.begin() as conn:
+        conn.execute(update(t.membership).where(t.membership.c.agent_id == admin.id).values(values))
+    refused = answer(owner, proposed["id"], reply_id="go")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "proposer_lost"}
+    assert owner.get("/me/preferences").json()["version"] == 0
+    assert answer(owner, proposed["id"], reply_id="no").status_code == 200
 
 
 def test_a_new_proposal_supersedes_the_open_one_and_five_a_day_is_the_cap(

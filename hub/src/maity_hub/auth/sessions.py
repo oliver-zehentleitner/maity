@@ -203,6 +203,10 @@ def end_where(conn: Connection, which: Any, by: str) -> None:
     hashes = [row.id_hash for row in ending]
     if not hashes:
         return
+    from maity_hub import longpoll
+
+    # The sessions' open waits end with them (§8.3); another replica's at its next pass.
+    longpoll.registry.end_keys_after(conn, {f"session:{h}" for h in hashes})
     conn.execute(
         update(t.human_session)
         .where(t.human_session.c.id_hash.in_(hashes))

@@ -606,6 +606,20 @@ def test_an_issuer_who_lost_the_authority_voids_it(
     assert accept(guest, token_of(made)).status_code == 404
 
 
+def test_a_suspended_issuers_invitation_admits_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = member(make_client, migrated, "an-admin", "admin")
+    made = issue(admin)
+    with migrated.begin() as conn:  # suspended between issue and accept (§16.8)
+        conn.execute(
+            update(t.human).where(t.human.c.id == admin.id).values(suspended_at=clock.now())
+        )
+    guest = flow.human(make_client, migrated, "guest")
+    void = accept(guest, token_of(made))
+    assert (void.status_code, reason(void)) == (403, "invitation_void")
+
+
 def test_an_owner_invitation_needs_the_issuer_still_owner(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

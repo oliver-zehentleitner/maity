@@ -39,6 +39,7 @@ from maity_hub import (
     instances,
     invitations,
     join_line,
+    join_revocation,
     landing,
     landing_stats,
     legal,
@@ -57,7 +58,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
-from maity_hub.auth import credentials, second_factor
+from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke
 from maity_hub.cards import open_claims
@@ -68,7 +69,7 @@ from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
-from maity_hub.models import HANDLE_PATTERN, GitIdentity, Strict, markdown, title
+from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
@@ -90,7 +91,7 @@ _TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 class JoinAgent(Strict):
     id: str | None = None
     handle: str | None = title(default=None, pattern=HANDLE_PATTERN)
-    display_name: str | None = title(default=None)
+    display_name: Name | None = title(default=None)
     git_identity: GitIdentity | None = None
 
 
@@ -129,7 +130,22 @@ def load_join(conn: Connection, join_id: str) -> dict[str, Any]:
     return join_view(conn, row)
 
 
-idempotency.LOADERS["join"] = idempotency.plain(load_join)
+def _sees_join(conn: Connection, mine: Any, join_id: str) -> bool:
+    """As the joins list (§3.1): every join to `members:admin`, one's own to whoever may
+    bring agents."""
+    if mine.may("members:admin"):
+        return True
+    created_by = conn.execute(
+        select(t.join_link.c.created_by).where(t.join_link.c.id == join_id)
+    ).scalar()
+    return bool(may_bring(mine)) and created_by == mine.principal_id
+
+
+idempotency.register(
+    "join",
+    idempotency.plain(load_join),
+    idempotency.in_project(idempotency.column_of(t.join_link), _sees_join),
+)
 
 
 # --- the join link (human) --------------------------------------------------------
@@ -640,10 +656,12 @@ def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) 
                     f"a {state} join cannot be revoked",
                     {"from": state, "to": "revoked"},
                 )
-            conn.execute(
-                update(t.join_link)
-                .where(t.join_link.c.id == join_id)
-                .values(revoked_at=clock.now())
+            # Who revoked it, and `join_revoked` as `invitation_revoked` (§3.1, §8.2).
+            join_revocation.revoke(
+                conn,
+                t.join_link.c.id == join_id,
+                by=caller.principal_id,
+                actor_in=lambda _project_id: caller.actor(mine.id),
             )
         return idempotency.Outcome(200, "join", join_id, load_join(conn, join_id))
 
@@ -1144,7 +1162,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
             instance=instance,
             replaces=row.replaces,
             exchange_seq=handover.newest_seq(conn, row.project_id),  # §5.2 handover
-            verifier=verifier,
+            verifier=verifiers.stored("credential", credential_id, verifier),
             join_id=row.id,
             client=client,
             created_at=now,
@@ -1286,6 +1304,8 @@ def _require_pickup_holds(conn: Connection, row: Any) -> None:
         or runner is None
         or runner.removed_at is not None
         or live is None
+        # A profile the exchange creates: its creator still may give it (§3.4, §15.9).
+        or (row.agent_id is None and not invitations.issuer_holds(conn, row))
     ):
         raise not_found()
 

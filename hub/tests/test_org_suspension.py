@@ -213,6 +213,17 @@ def test_while_suspended_its_archived_projects_cannot_be_reopened_or_made_public
     assert boss.get(f"/projects/{PROJECT}").json()["state"] == "build"
 
 
+def test_while_suspended_the_project_page_alone_is_not_turned_on_either(
+    world: dict[str, Any],
+) -> None:
+    # §16.8: `public_page` on its own, without the policy, meets the organisation's hold too.
+    boss = world["boss"]
+    assert boss.patch(f"/projects/{PROJECT}", {"public_page": "off"}).status_code == 200
+    assert resolve(world, filed(world), "suspend").status_code == 200
+    held(boss.patch(f"/projects/{PROJECT}", {"public_page": "on"}))
+    assert boss.get(f"/projects/{PROJECT}").json()["public_page"] == "off"
+
+
 def test_a_hide_of_the_project_does_not_hide_the_suspension_of_its_organisation(
     world: dict[str, Any], migrated: Engine
 ) -> None:

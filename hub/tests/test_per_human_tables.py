@@ -72,6 +72,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("instance_landing", "updated_by"): True,
     ("instance_legal", "updated_by"): True,
     ("invitation", "address"): True,
+    ("join_link", "revoked_by"): True,  # the human who revoked it (§3.1)
     ("invitation", "address_normalized"): True,
     ("jour_fixe_moderator", "granted_by"): True,  # the human who granted the right
     ("jour_fixe_series", "created_by"): True,
@@ -225,6 +226,7 @@ EXPORT_LEAVES_OUT = {
     "runner_credential": _SECRET,
     "runner_enrollment": _SECRET,
     "second_factor_reset": _SECRET,
+    "second_factor_day": _BOOKKEEPING,
     "soul_version": f"the current souls are exported; {_UNLISTED}",
 }
 

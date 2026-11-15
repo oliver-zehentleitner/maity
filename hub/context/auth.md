@@ -730,6 +730,116 @@ that a member that calls is never shown away.
   expire up to a minute early.
 - Other options of the first request: unknown.
 
+## The daily cap of wrong second-factor codes is a row per human and UTC day, refuses before the compare, and its alert mail carries the one link that lifts it
+
+**Id:** bdb3d207-90bb-4f5c-999c-110a8a9f10fb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-8mgb85ne0nrq, 2026-11-13 (a daily cap per human, a setting with default 50, refused until the next day or a mail confirmation); review of #1756 by maity-review-team-grok#axvg, 2026-11-13 (the link outlived a password change; a lowered cap refused without an alert); `auth/second_factor.py` `refuse_over_day`, `_count_day`, `unlock`; `auth/password_resets.py` `password_changed`; docs/api.md §2.8.6, §18.6
+**Revisit when:** the 15-minute window or the per-session limit changes, a human asks for the cap per instance in the admin settings rather than the environment, or the hub keeps a sliding day for another limit
+**See:** auth.md#two-factor-sign-in-whether-a-session-must-enrol-is-worked-out-per-call-and-the-second-step-re-keys-the-session-in-place — ff8b8099-8384-4d68-906a-1b4d7b17bc47 — as of 2026-11-13
+
+Every wrong TOTP or recovery code of an enrolled human (`second_factor.check`: the sign-in step,
+a step-up, a password reset) adds one to `second_factor_day(human_id, day)`, the UTC date, under
+the factor's row lock the check already holds. At `MAITY_SECOND_FACTOR_WRONG_PER_DAY` (default
+50) the check refuses with `rate_limited` (`reason: daily_limit`) before it compares anything, so
+a right code is refused too, until the UTC day ends. The first wrong code at or over the cap
+writes `second_factor_failed` with `method: daily_limit`, the day, `unlocks` and the human's
+`password_generation`, and sets the row's `alerted`; the refusal needs `alerted` as well as the
+count. The mailer's at-once mail of that record carries `/mail/second-factor-unlock/{token}`, a
+signed token of the human, the day, `unlocks` and the password generation. Its `POST` resets the
+day's count to zero, clears `alerted` and moves `unlocks` in one conditional update, so the link
+works once and dies with the day. A password change moves the generation, which kills the link,
+and clears `alerted`, so the next wrong code mails a link of the new password. The mail factor's
+codes and an enrolment's confirm do not count: neither is a guess at an enrolled secret. Rows are
+locked in one order: the factor, the human, then the day. `_count_day` locks the human before it
+touches the day row, because the alert's record locks the human and a password change updates
+the human before it clears `alerted`; the other order lets the two wait on each other. A reset by
+mail locks the factor before the human (`routes/password_reset._live`), since its code is
+checked after the token: the human's lock first would cross a wrong code counted elsewhere.
+
+**Reason:** the 15-minute window alone lets 960 guesses through a day. A count in the database,
+unlike the in-process limiters, survives a restart, which a limit over a whole day must; and
+lifting it needs one human's count reset, which a row gives directly. Comparing a code after the
+cap would answer whether it was right, so the refusal comes first. The calendar day follows the
+card ("until the next day") and `email_sign_in_day`, and gives one `Retry-After`. Putting the
+link into the alert's own mail sends one mail, not two, and the `unlocks` counter makes it
+single-use without a table of nonces. Refusing only once the alert is written keeps the promise
+that the refused human holds a way back: a count over a cap the operator lowered during the day,
+or one whose link a password change voided, would otherwise refuse with no mail at all; the cost
+is one more compared code in those two cases. The link carries the password generation as the
+reset links do (§2.10): a link mailed under a password someone else may have known should not
+outlive the human's change of it.
+
+**Rejected alternatives:**
+- A `Limiter` with a 24-hour window: shared across replicas only on PostgreSQL, forgotten on a
+  restart on SQLite and MariaDB, and no way to lift one human's count but clearing its bucket.
+- A sliding 24 hours: the count of a refused human would never fall to a clear moment for the
+  `Retry-After` and the mail's "until the end of the day".
+- Comparing the code at the cap and only refusing a wrong one: an oracle for the guesser.
+- A separate unlock mail beside the alert: two mails for one event, and the alert's mail would
+  still say nothing about the way back.
+- A stored nonce per link (as the admin's reset keeps): one more table where a counter on the
+  day's row already decides "once".
+- Alerting only on the code that hits the cap exactly (`==`): a lowered cap is passed without
+  ever being hit, and the human is refused with neither notice nor link.
+- Leaving the reset by mail to lock the human first and the factor at its code check (review A308
+  of #1756): a wrong code elsewhere holds the factor and waits for the human, so the two cross.
+- Clearing `alerted` before the password change updates the human: `POST /auth/password` has
+  already written the new password, and with it locked the human, by then; the count moves
+  instead (review A215 of #1756, a deadlock reproduced on PostgreSQL).
+- Leaving the link alive across a password change: it is single-use and dies with the day, but
+  every other mailed link of the human dies with the old password, and this one should not be
+  the exception.
+
+`password_changed` is a record type of its own rather than `password_reset` with a method: the
+text differs (every other session ends, not every one), and the bell and the mail name what the
+human did in the account apart from a reset by mail.
+
+## The mail links and the second-factor resets of another human take that human's account lock first, as the deletion does
+
+**Id:** 8dfeeba9-9c68-4fab-a06c-3cc457abdd49
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a9jk1ec1frgk, from review A319 of #1756, 2026-11-14, and review A543 of #1827, 2026-11-15; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_mail_link_pressed_first_…`, `test_a_second_factor_reset_by_the_admin_or_the_operator_…`); `write_guard.share`, `routes/password_reset._live`, `auth/second_factor._unlockable`, `auth/second_factor_reset._alive`, `request`, `operator_reset`
+**Revisit when:** a path locks a human's factor, human or day row without that human's account lock, or the deletion stops taking `account_lock` before everything else
+**See:** auth.md#the-daily-cap-of-wrong-second-factor-codes-is-a-row-per-human-and-utc-day-refuses-before-the-compare-and-its-alert-mail-carries-the-one-link-that-lifts-it — bdb3d207-90bb-4f5c-999c-110a8a9f10fb — as of 2026-11-15
+
+The `POST` of a password reset link (§2.10), of the link that lifts the daily cap (§2.8.6) and
+of an admin's second-factor reset link (§2.8.3) takes the human's `account_lock` shared
+(`write_guard.share`) before any other lock, as the address's confirmation link already did.
+So do an admin's request for that link and the operator's reset (`maity-hub second-factor
+reset`), before they lock the other human's factor: the admin's own write guard holds only the
+admin's account lock, the operator's command none. One order for every path: the account lock,
+then the factor, the human, the day. The deletion's confirmation takes the account lock
+exclusively before anything else (`lock_account`), so these paths and a deletion run one after
+the other. A path that came first commits, and the deletion then goes on: after a password reset
+it deletes nothing, since the reset withdrew the pending deletion; after the unlock link or a
+second-factor reset it deletes the account. A link that came second waits for the deletion's
+commit and then finds nothing left to change (its `POST` answers as a dead link).
+
+**Reason:** these paths ran without the human's account lock (the links carry no session, the
+admin's guard is the admin's, the command has none), and the deletion's later locks crossed
+theirs. The reset link held the factor and the human and then withdrew the pending deletion,
+whose row the confirmation held while it waited for the human; the unlock link held the factor
+and then wrote the day's row, which the deletion had already deleted on its way to the factor;
+the admin's reset link held the factor and its reset row and then wrote the human's record,
+while the deletion held the human and waited for that row; the admin's request and the
+operator's reset held the factor and then wrote rows that wait for the human's row or its
+sessions, which the deletion held while it waited for the factor. Each deadlocked on PostgreSQL.
+A lock in front of both sides removes every such crossing at once, whatever the deletion locks
+later.
+
+**Rejected alternatives:**
+- The deletion locking the factor's row right after the account lock, so it follows "the factor,
+  the human, the day" too: a human without TOTP has no factor row to lock, and the reset link
+  still crossed the deletion on the human's row and the deletion request's row.
+- The deletion locking the human's row early: ordinary work locks it after project locks, and the
+  deletion takes its project locks after the account lock (`confirm`), so that would invert the
+  order against every other write.
+
 ## The credential filter has no boundary in front, and reads a JSON body's decoded strings too
 
 **Id:** d539d36c-45e7-4178-8428-835e67549e0f
@@ -763,3 +873,83 @@ but the scan does not would carry an escaped credential past it.
   no JSON, would still pass.
 - Scanning only the decoded strings: the raw scan is what covers a
   body that is not JSON, or JSON that does not decode, and the query.
+
+## Every anonymous sign-in and sign-up call keeps one rule, `same-site` refused too
+
+**Id:** 5c274a37-aec7-45d5-86e6-49bbee326b87
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-hkgnd1dp0c9c (sign-in routes clean-up), the lead's ruling 2026-11-14; docs/api.md §2.1, §2.6.5
+**Revisit when:** the dashboard is served from a host other than the hub's own, or an anonymous call has to be started from another site on purpose
+
+The password login, the registration, the device login and its
+completion, the mail link and code and the password reset all call
+`auth.anonymous.entry` first: an `Authorization` header is `forbidden`
+with `humans_only`, plain HTTP is refused as §2.5 says, and a
+`Sec-Fetch-Site` of `cross-site` or `same-site` is `forbidden`. The mail
+link's `GET` page only shows a form and keeps `anonymous.no_credential`
+without the site check.
+
+**Reason:** these calls run before a session exists, so neither the
+`SameSite` cookie nor `X-CSRF-Token` protects them, and a sibling host
+under the same registrable domain counts as the same site for
+`SameSite`; refusing `same-site` keeps such a host from signing a
+visitor into an account of its choosing or starting a registration in
+their name. Nothing legitimate is lost: the dashboard posts
+same-origin, the hub has no separate web origin, and the CLI sends no
+`Sec-Fetch-Site` at all. One guard with no switch per route, because
+each route's own copy is how the registration and the login came to
+refuse only `cross-site` while §2.6.5 asked for both.
+
+**Rejected alternatives:**
+- Keeping the login at `cross-site` only and rewording §2.6.5: it
+  leaves login CSRF from a sibling host open for no gain.
+- A guard with a per-route switch for the site rule: the switch is the
+  divergence this replaces.
+
+## The permitted-call allowlists share one format and one matcher, each gate keeping the path it reads
+
+**Id:** a8fd69cb-de04-4977-af4e-90a06ddc6415
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f5sdcgr7vzj0, item 3 (clean-up audit tsk-hgnbapyw7hnh, area 14, finding #12), 2026-11-15; docs/api.md §2.7.5, §2.8.2, §2.8.5, §6.2
+
+The lists of what an isolated agent (`caller.ISOLATED_MAY`), a
+second-factor or enrolment session (`second_factor.SECOND_STEP_CALLS`,
+`ENROLMENT_CALLS`, `MOVED_ENROLMENT_CALLS`) and a pending account
+(`deps.PENDING_MAY`) may still call are `auth.permitted.Calls`: a
+method and the path template below `/api/v1` as the router writes it,
+`{name}` for one segment and `{name:path}` for the rest. A list refuses
+an entry in another form when it is built, and a test holds every entry
+to exactly one route of the router.
+
+The matcher only compares. Each gate hands it the path it always read:
+the isolated agent's authentication the raw request path (decoded
+byte for byte as Latin-1, so `/api/v1/m%65` is not `/me`), the
+second-factor gate and the pending check the decoded path. The
+second-factor gate still takes `/api/v1` off only where it is there, so
+a path without it reads as one below it; the other two refuse such a
+path. The pending account's own-session delete is
+`/auth/sessions/{public_id:path}`, the `startswith` it replaced.
+`tests/test_permitted_calls.py` pins what each gate let through and
+refused before the change, the edges included.
+
+**Reason:** three formats for one concept (bytes with the prefix,
+strings without it plus a regex, strings with it plus a `startswith`)
+meant a path written in the wrong form opened or closed a call
+silently, and nothing checked the lists against the router. One format
+checked at build time and against the routes makes such a slip fail a
+test instead.
+
+**Rejected alternatives:**
+- Matching on the router's own route (the matched `path_format`)
+  instead of the path: the isolated agent is judged during
+  authentication, on the raw path, and `GET /bootstrap` judges each
+  part on a path no route matched for it; moving the gates would
+  change what they see.
+- Narrowing the pending delete to `{public_id}` and making the
+  second-factor gate require the prefix: no route tells them apart
+  today, but either is a change of an access gate, left to a card of
+  its own.

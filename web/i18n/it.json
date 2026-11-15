@@ -1155,9 +1155,6 @@
   "error.upload_expired": "Il caricamento ha richiesto troppo tempo. Invia di nuovo il file.",
   "error.version_exists": "Esiste già una release con questa versione.",
   "error.webhook_signature": "La consegna della forge non ha una firma valida.",
-  "experiment.not_saved": "Non salvato: {reason}",
-  "experiment.notice": "Maity è un esperimento pubblico in fase iniziale. I tuoi agenti agiscono con i permessi che dai loro. Pensa a cosa possono fare, soprattutto con estranei: cosa leggono, scrivono, eseguono e trasmettono. Non dare loro accessi che non puoi permetterti di perdere. Funzionalità e dati possono cambiare.",
-  "experiment.understood": "Ho capito",
   "forge.app.hint": "Installa l'App sul tuo account GitHub e scegli i repository che può leggere. Poi serve ogni progetto di tua proprietà il cui repository è incluso.",
   "forge.app.missing": "Questa istanza non ha nessuna GitHub App configurata; salva qui sotto un tuo token.",
   "forge.app.none": "Nessuna installazione collegata.",
@@ -2898,6 +2895,8 @@
   "mine.title": "Le tue impostazioni per {name}",
   "mine.use_default": "Usa il mio valore predefinito",
   "name_rules.handle": "Lettere minuscole, cifre e -, da 2 a 31 caratteri, con una lettera o una cifra all'inizio.",
+  "name_rules.handle_bad": "Non è ancora un handle: {rule}",
+  "name_rules.handle_lowercase": "Solo minuscole: un handle non ha lettere maiuscole.",
   "name_rules.slug": "Lettere minuscole, cifre e -, da 2 a 63 caratteri, con una lettera o una cifra all'inizio.",
   "names.aliases": "Nomi precedenti, ancora validi qui: {names}.",
   "names.current": "Questo progetto è {name}.",
@@ -4606,8 +4605,11 @@
   "settings.state.released": "In release dal {day}, in via definitiva: le interfacce cambiano solo con versionamento e un periodo di transizione dichiarato, le migrazioni restano retrocompatibili e la checklist di release è obbligatoria.",
   "settings.state.saved": "Stato salvato.",
   "settings.state.title": "Stato del progetto",
+  "settings.tab.general": "Generale",
+  "settings.tab.members": "Membri e agenti",
   "settings.tab.mine": "Le mie",
-  "settings.tab.project": "Progetto",
+  "settings.tab.moderation": "Moderazione",
+  "settings.tab.work": "Modo di lavorare",
   "settings.title": "Impostazioni",
   "sf.elsewhere": "Apri questo link nel browser in cui hai effettuato l'accesso, oppure digita lì il codice di questa email.",
   "sf.elsewhere.dashboard": "Vai al dashboard",
@@ -5365,5 +5367,35 @@
   "mine.start_tab.label": "Apri in una scheda all'avvio",
   "mine.start_tab.hint": "Vale in un browser che non ha ancora schede proprie, per esempio al primo accesso da un nuovo dispositivo. Le schede aperte in un browser restano in quel browser.",
   "mine.start_tab.saved_on": "Salvato: questo progetto si apre in una scheda all'avvio.",
-  "mine.start_tab.saved_off": "Salvato: questo progetto non si apre più in una scheda all'avvio."
+  "mine.start_tab.saved_off": "Salvato: questo progetto non si apre più in una scheda all'avvio.",
+  "visitor.hero.try": "Provalo: crea il tuo account",
+  "visitor.now": "In questo momento",
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.working": "lavorano a questo progetto",
+  "visitor.stat.members": "Membri",
+  "visitor.stat.window": "30 giorni",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "e {count} altro",
+    "other": "e altri {count}"
+  },
+  "visitor.team.both": "{people} e {agents}",
+  "visitor.team.all": {
+    "one": "{count} membro →",
+    "other": "Tutti i {count} membri →"
+  },
+  "visitor.merged": "Merge recenti",
+  "visitor.merged.window": "Pull request e decisioni degli ultimi 7 giorni",
+  "visitor.merged.pill": "Merge eseguito",
+  "visitor.merged.by": "di {author}",
+  "visitor.merged.touches": "tocca {areas}",
+  "visitor.now.people": {
+    "one": "{count} persona",
+    "other": "{count} persone"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agente",
+    "other": "{count} agenti"
+  }
 }

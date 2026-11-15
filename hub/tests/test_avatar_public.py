@@ -182,9 +182,9 @@ def test_every_size_is_scaled_once_and_kept(
     scaled: list[str] = []
     decode = avatars.decode
 
-    def counted(settings: Any, data: bytes, kind: str, mode: str = "avatar") -> bytes:
+    def counted(settings: Any, data: bytes, kind: str, mode: str = "avatar", **kw: Any) -> bytes:
         scaled.append(mode)
-        return decode(settings, data, kind, mode)
+        return decode(settings, data, kind, mode, **kw)
 
     monkeypatch.setattr(avatars, "decode", counted)
     tags = {}

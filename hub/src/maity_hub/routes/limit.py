@@ -117,4 +117,4 @@ def _human(
     return idempotency.Outcome(200, "me", caller.human_id, human_body(conn, caller.human_id))
 
 
-idempotency.LOADERS["me"] = idempotency.plain(human_body)
+idempotency.register("me", idempotency.plain(human_body), idempotency.is_caller)

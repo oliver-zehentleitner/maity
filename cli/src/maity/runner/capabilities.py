@@ -108,6 +108,7 @@ CLAUDE_MANAGED = {
     "darwin": Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
 }
 HOOK_SWITCHES = ("disableAllHooks", "allowManagedHooksOnly")
+SETTINGS_MAX = 1024 * 1024  # a Claude Code settings file read for its hook switches
 _DROP_INS = 'for f in "$1"/*.json; do if [ -f "$f" ]; then printf "%s\\n" "$f"; fi; done'
 
 
@@ -132,26 +133,29 @@ def claude_hooks_off(as_user: AsUser = RUNNER, platform: str | None = None) -> s
     else:
         platform = "linux"
     managed = next((p for key, p in CLAUDE_MANAGED.items() if platform.startswith(key)), None)
-    files: list[tuple[Path, tuple[str, ...]]] = []
+    # Each file with its switches and the directory it is read from (limitread): the managed
+    # settings' own directory, the agents' user's home.
+    files: list[tuple[Path, tuple[str, ...], Path]] = []
     try:
         if managed is not None:
             if _present(as_user, managed):
-                files.append((managed, HOOK_SWITCHES))
+                files.append((managed, HOOK_SWITCHES, managed.parent))
             drop_ins = managed.parent / "managed-settings.d"
             if _present(as_user, drop_ins, "-d"):
                 done = as_user.run(["sh", "-c", _DROP_INS, "sh", str(drop_ins)])
                 if done.returncode != 0:
                     return f"{drop_ins} cannot be listed"
                 listed = sorted(done.stdout.splitlines())
-                files += [(Path(line), HOOK_SWITCHES) for line in listed]
-        user = as_user.home() / ".claude" / "settings.json"
+                files += [(Path(line), HOOK_SWITCHES, managed.parent) for line in listed]
+        home = as_user.home()
+        user = home / ".claude" / "settings.json"
         if _present(as_user, user):
-            files.append((user, ("allowManagedHooksOnly",)))
+            files.append((user, ("allowManagedHooksOnly",), home))
     except (OSError, KeyError) as exc:
         return f"the Claude Code settings cannot be checked ({ascii_text(str(exc), 120)})"
-    for path, switches in files:
+    for path, switches, under in files:
         try:
-            data = json.loads(as_user.read(path))
+            data = json.loads(as_user.read_whole(path, SETTINGS_MAX, under=under))
         except (OSError, KeyError, ValueError):
             return f"{path} cannot be read as JSON"
         if not isinstance(data, dict):
@@ -249,10 +253,14 @@ def sandbox_available(
     """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
     needs its tools (`claude_sandbox_tools`, §6.1) found on the agents' PATH. Codex's is
     tried once per binary (`codex sandbox -- true`): a host where it cannot start is not
-    advertised as sandboxed. Nothing else is switched on yet."""
+    advertised as sandboxed. agy's is reported off until the runner has a bounded check
+    that sees agy's own sandbox start (§15.3, `agy_namespaces`). Nothing else is switched on
+    yet."""
     if harness.id == "codex":
         binary = which(harness.binary or "codex", path, as_user)
         return binary is not None and _codex_sandbox_starts(binary, as_user.user)
+    if harness.id == "antigravity":
+        return False  # not seen starting: the namespaces it needs are a diagnostic only
     tools = claude_sandbox_tools()
     if harness.id != "claude-code" or tools is None:
         return False
@@ -282,6 +290,43 @@ def _codex_sandbox_starts(binary: str, user: str | None = None) -> bool:
     except (proc.ToolError, subprocess.TimeoutExpired):
         return False
     return done.returncode == 0
+
+
+# agy's terminal sandbox on Linux runs each command in kernel namespaces of its own, which
+# needs unprivileged user namespaces; where they are blocked agy runs the command without it,
+# and without saying so (§15.3). The contract reports the sandbox on only once the runner has
+# seen agy's sandbox start, and agy has no command that starts its sandbox alone (as `codex
+# sandbox` does) while a headless run costs the operator's model quota and needs the sign-in.
+# So the capability stays off (`sandbox_available`), and `maity runner check` only tries the
+# namespaces agy's sandbox needs, as the agents' user: user, mount, pid and network. That they
+# start says agy's sandbox could, never that it did (cli/context/runner.md).
+AGY_NAMESPACES = ("--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "true")
+
+
+def agy_sandbox_platform(platform: str | None = None) -> bool:
+    """Where the runner knows what agy's sandbox needs: Linux only."""
+    return (sys.platform if platform is None else platform).startswith("linux")
+
+
+def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
+    """A diagnostic for `maity runner check`: whether the namespaces agy's sandbox needs start
+    as the agents' user (`unshare`, on the agents' PATH). It never turns the capability on."""
+    unshare = which("unshare", path, as_user)
+    if unshare is None:
+        return False
+    try:
+        if as_user.direct:
+            done = proc.run([unshare, *AGY_NAMESPACES], cwd=Path.home(), timeout=30)
+        else:
+            done = as_user.run([unshare, *AGY_NAMESPACES], env={"PATH": path}, timeout=30)
+    except (proc.ToolError, subprocess.TimeoutExpired, OSError):
+        return False
+    return done.returncode == 0
+
+
+def agy_login(as_user: AsUser = RUNNER) -> Path:
+    """Where agy keeps its sign-in for the agents' user without a keyring (never read)."""
+    return as_user.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
 
 
 def agent_path(cfg: config.Config, environ_path: str) -> str:
