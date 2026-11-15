@@ -15396,6 +15396,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         && text(b3Card.querySelector("span.chip.label")) === "bug" && !b3Card.querySelector(".label-tag") && b3Card.querySelector("a.card-id"),
       "visitor: without a session, the Board tab is a section of its columns, a column an h3, a card's title an h4 and its label a chip");
       Object.keys(tabKept).forEach((k) => { if (tabKept[k]) viPages[k] = tabKept[k]; else delete viPages[k]; });
+      {
+        // The structure the hub stores for each page (web/tools/public-skeletons.json, written by
+        // hub/tests/test_public_skeletons.py from the same fixture) is the one drawn here over it, so
+        // the first paint and the redraw are one layout (tsk-zhyqdtt5v59c): elements, classes and
+        // data-kind, every text and every other attribute dropped.
+        const skFixture = JSON.parse(fs.readFileSync(path.join(WEB, "tools/public-pages-fixture.json"), "utf8"));
+        const skWanted = JSON.parse(fs.readFileSync(path.join(WEB, "tools/public-skeletons.json"), "utf8"));
+        // The slot of the hero's offer is the frame's to fill (its `cta`, §16.7.5), so its content is not the page's.
+        // An svg's class is set as an attribute, which this page's stand-in keeps apart from className.
+        const skOf = (n) => [n.tagName.toLowerCase(), (n.className || n.attrs.class || "").split(" ").filter(Boolean).sort(), n.getAttribute("data-kind") || null,
+          n.classList.contains("cta-slot") ? [] : n.childNodes.filter((c) => c.tagName).map(skOf)];
+        // The first place two skeletons part, as a path of tags, for the message.
+        const skDiff = (a, b, at) => {
+          if (!a || !b) return at + ": " + JSON.stringify(a && a.slice(0, 3)) + " vs " + JSON.stringify(b && b.slice(0, 3));
+          if (a[0] !== b[0] || JSON.stringify(a[1]) !== JSON.stringify(b[1]) || a[2] !== b[2]) return at + ": " + JSON.stringify(a.slice(0, 3)) + " vs " + JSON.stringify(b.slice(0, 3));
+          for (let i = 0; i < Math.max(a[3].length, b[3].length); i++) {
+            const d = skDiff(a[3][i], b[3][i], at + ">" + (a[3][i] || b[3][i])[0] + "[" + i + "]");
+            if (d) return d;
+          }
+          return null;
+        };
+        const skKept = {};
+        skFixture.forEach((pg) => { skKept[pg.path] = viPages["/public/pages" + pg.path]; viPages["/public/pages" + pg.path] = pg; });
+        for (const pg of skFixture) {
+          await go("#" + pg.path); for (let k = 0; k < 4; k++) await tick();
+          const drawn = viView() ? [skOf(viView())] : [];
+          const diff = skDiff(drawn[0], (skWanted[pg.kind] || [])[0], pg.kind);
+          expect(viView() && !diff, "visitor: without a session, the " + pg.kind + " page is drawn in the structure the hub stores for it " + (diff || ""));
+        }
+        skFixture.forEach((pg) => { if (skKept[pg.path]) viPages["/public/pages" + pg.path] = skKept[pg.path]; else delete viPages["/public/pages" + pg.path]; });
+      }
       win.Maity.api.get = ppGet;
       await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
     }
