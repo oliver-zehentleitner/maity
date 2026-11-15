@@ -14960,7 +14960,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
           edited: { by: "agent", at: "2026-11-02T08:30:00Z", reason: "a <b>typo</b>" } },
         { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true, edited: null }] } },
     "/public/pages/stranger/agents/overview": { path: "/stranger/agents/overview", kind: "agent", data: { name: "Overview", handle: "overview", owner: { name: "Sam", handle: "sam", page: "/sam" }, projects: [{ name: "Tool", full_name: "stranger/tool", role: "reviewer" }], statistics: { totals: { cards_done: 1, prs_merged: null } },
-      member_since: "2026-03", online: true, model: "model-<b>one</b>", harness: null } },
+      member_since: "2026-03", online: true, model: "model-<b>one</b>", harness: null, picture: "/api/v1/avatars/public/0123456789abcdef0123456789abcdef" } },
     "/public/pages/sam": { path: "/sam", kind: "person", data: { name: "Sam", handle: "sam", bio: null, projects: [{ name: "Tool", full_name: "stranger/tool", role: "coder" }], agents: [],
       member_since: "2025-11", online: false, statistics: { cards_done: 4, reviews_given: 2, prs_merged: null } } },
     // A person's agents (§16.9, "A person's agents"): one with a page, one without.
@@ -15376,6 +15376,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
+  {
+    // The picture the hub's stored page shows above the name stays after the redraw (tsk-777vkhtzmq6f):
+    // the agent's at 128 pixels before its h1; a person without one keeps the neutral square instead.
+    const pic = viView() ? viView().querySelector(".pic") : null;
+    const wrap = viView() ? viView().querySelector(".wrap") : null;
+    const first = wrap ? wrap.firstChild : null;
+    expect(pic && pic.tagName === "IMG" && pic.getAttribute("src") === "/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=128" && pic.getAttribute("alt") === ""
+      && pic.getAttribute("width") === "128" && first === pic,
+      "visitor: an agent's page shows its picture above the name, as the hub's own page does " + JSON.stringify(pic && [pic.tagName, pic.getAttribute("src")]));
+  }
   // A person's page is the visitor's without a session; signed in, /<handle> is the members' person view.
   await go("#/sam"); for (let k = 0; k < 4; k++) await tick();
   {
@@ -15384,6 +15394,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(viView() && viView().getAttribute("data-kind") === "person" && said.length === 1 && said[0].startsWith("Member since ")
       && JSON.stringify(stats) === JSON.stringify(["Cards done: 4", "Reviews given: 2"]),
       "visitor: a person's page says member since, no Online while offline, and their own counts without a null one " + JSON.stringify([said, stats]));
+    const none = viView() ? viView().querySelector(".pic") : null;
+    expect(none && none.tagName === "SPAN" && (none.getAttribute("class") || "").split(" ").includes("none") && !viView().querySelector("img.pic"),
+      "visitor: a person's page without a picture keeps the neutral square of the hub's page, no image");
     const tabs = viView() ? viView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]) : [];
     expect(JSON.stringify(tabs) === JSON.stringify([["/sam", "page"], ["/sam/agents", null]]),
       "visitor: a person's page carries the tabs Profile and Agents, Profile current (§16.9) " + JSON.stringify(tabs));

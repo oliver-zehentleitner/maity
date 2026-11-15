@@ -153,6 +153,21 @@ window.Maity = window.Maity || {};
       return letter(); // not an address the page may load (h() allows only the hub's own images)
     }
   }
+  // A person's or an agent's own picture above the name, as the hub's stored page draws it
+  // (`picture_html`, §16.9): 128 pixels from its public address, or the neutral square of that
+  // size where the page names none or the address does not load. The name follows, so alt="".
+  function portrait(d) {
+    const none = () => h("span", { class: "pic none size-128", "aria-hidden": "true" });
+    if (typeof d.picture !== "string" || !d.picture) return none();
+    try {
+      const src = `${d.picture}${d.picture.includes("?") ? "&" : "?"}s=128`;
+      const img = h("img", { class: "pic", src, alt: "", width: "128", height: "128", decoding: "async" });
+      img.addEventListener("error", () => { if (img.parentNode) img.parentNode.replaceChild(none(), img); });
+      return img;
+    } catch (refused) {
+      return none(); // not an address the page may load (h() allows only the hub's own images)
+    }
+  }
   // Whether a member of the project's lists is an agent: by its page, which the hub builds.
   const agentPages = (d) => new Set((d.agents || []).map((a) => a.page));
 
@@ -560,6 +575,8 @@ window.Maity = window.Maity || {};
       return true;
     }
     const content = [
+      // The picture the hub's own page shows above the name, so the redraw keeps it (tsk-777vkhtzmq6f).
+      answer.kind === "person" || answer.kind === "agent" ? portrait(d) : null,
       h("h1", null, title),
       reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
