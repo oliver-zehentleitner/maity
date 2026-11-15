@@ -17941,9 +17941,9 @@ owner choose):
   limited to those the caller is a member of.
 - `tools` is what the runner manages of its harness tools and of `maity`
   itself, and `update_requests` (top level of the runner view) the
-  owner's open `Update now` requests (§15.16; the hub stores and shows
-  them, the runner does not report them yet, tsk-29nmydbzrg5z). Absent
-  from a runner that does not report them.
+  owner's open `Update now` requests (§15.16). Absent from a runner that
+  manages no tool (no `install` or `update` set), so such a runner's
+  `hello` stays what a hub from before §15.16 accepts.
 - `handover_key` is the runner's public X25519 key for a `full`
   replacement (§15.14), `public` base64url without padding, 32 bytes;
   `fingerprint` is computed by the hub, never taken from the runner.
@@ -20259,7 +20259,11 @@ update = "daily"    # maity itself; default "never"
   refuses `install` and `update` there.
 
 **What the runner reports.** `capabilities.tools` (§15.3), one entry
-per harness tool the configuration lists, and one for `maity`:
+per harness tool the configuration lists, and one for `maity`, once the
+configuration manages at least one tool (`install` or `update` set). A
+runner that manages none leaves `tools` out, so it keeps working with a
+hub from before this section, which refuses the field; managing a tool
+needs a hub that has it:
 
 ```json
 "tools": [
