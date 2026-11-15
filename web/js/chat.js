@@ -336,6 +336,96 @@ window.Maity = window.Maity || {};
         M.projectMark(p.slug, p.name, p.view, "small"), h("span", { class: "visually-hidden" }, (i ? ", " : "") + p.name))));
   }
 
+  // §9.7: each human's current verdict under a message, and, for a human who reads the chat, on
+  // someone else's message, Agree, Disagree (one sentence optional) and Take back.
+  // opts.verdictPath: the conversation's messages path, where the reader may give one;
+  // opts.verdictDraws: seq -> draw again, for a change that comes as an event.
+  function verdicts(ctx, msg, o, own) {
+    const box = h("div", { class: "msg-verdicts" });
+    const status = M.statusLine();
+    let asking = false;
+    const mayGive = !!o.verdictPath && !own && ctx.me.kind === "human";
+    const url = () => o.verdictPath + "/" + encodeURIComponent(msg.seq) + "/verdict";
+    async function send(value, sentence) {
+      status.busy(M.t("chat.verdict.busy"));
+      try {
+        const fresh = value === null ? await M.api.del(url()) : await M.api.put(url(), sentence ? { value, sentence } : { value });
+        msg.verdicts = fresh.verdicts || [];
+        asking = false;
+        status.done();
+        draw();
+      } catch (err) {
+        status.fail(M.t("chat.verdict.failed"), err);
+      }
+    }
+    // Whole sentences, one per verdict; the sentence of a Disagree is plain text (§9.7).
+    function line(v) {
+      const who = M.dom.memberRef(ctx, v.by);
+      if (v.value === "agree") return h("li", { class: "verdict agree" }, M.tn("chat.verdict.agrees", { who }));
+      return h("li", { class: "verdict disagree" }, v.sentence
+        ? M.tn("chat.verdict.disagrees_because", { who, sentence: v.sentence }) : M.tn("chat.verdict.disagrees", { who }));
+    }
+    function form(mine) {
+      const id = "verdict-sentence-" + msg.seq;
+      const input = h("input", { type: "text", id, maxlength: "500", value: mine && mine.value === "disagree" && mine.sentence ? mine.sentence : "" });
+      return h("form", { class: "verdict-form", onsubmit: (e) => { e.preventDefault(); send("disagree", input.value.trim() || null); } },
+        h("label", { for: id }, M.t("chat.verdict.sentence")), input,
+        h("button", { type: "submit", class: "small" }, M.t("chat.verdict.send")),
+        h("button", { type: "button", class: "small", onclick: () => { asking = false; status.done(); draw(); } }, M.t("chat.verdict.cancel")));
+    }
+    function draw() {
+      clear(box);
+      const list = isRemoved(msg) ? [] : (msg.verdicts || []);
+      if (list.length) append(box, h("ul", { class: "verdict-list", "aria-label": M.t("chat.verdict.list") }, list.map(line)));
+      if (!mayGive || isRemoved(msg)) return;
+      const mine = list.find((v) => v.by === ctx.me.id);
+      if (asking) {
+        append(box, form(mine), status.el);
+        return;
+      }
+      const is = (value) => !!mine && mine.value === value;
+      append(box, h("div", { class: "verdict-actions" },
+        h("button", { type: "button", class: "small", "aria-pressed": String(is("agree")), disabled: is("agree"), onclick: () => send("agree") }, M.t("chat.verdict.agree")),
+        // Pressed again, Disagree opens its sentence to change it.
+        h("button", { type: "button", class: "small", "aria-pressed": String(is("disagree")),
+          onclick: () => { asking = true; draw(); const field = box.querySelector("input"); if (field) field.focus(); } }, M.t("chat.verdict.disagree")),
+        mine ? h("button", { type: "button", class: "small", onclick: () => send(null) }, M.t("chat.verdict.take_back")) : null), status.el);
+    }
+    draw();
+    if (o.verdictDraws) o.verdictDraws.set(msg.seq, draw);
+    return box;
+  }
+
+  // A `chat_verdict` (§9.7) of a message on screen: that human's verdict replaced, or gone
+  // when taken back; the latest per human counts. True when one was on screen.
+  function applyVerdict(shownMessages, draws, e) {
+    const p = e.payload;
+    const by = e.actor && e.actor.member_id;
+    const msg = p && by ? shownMessages.find((m) => m.seq === p.message_seq) : null;
+    if (!msg) return false;
+    const rest = (msg.verdicts || []).filter((v) => v.by !== by);
+    msg.verdicts = p.value ? rest.concat({ by, value: p.value, sentence: p.sentence || null, at: e.at || null, seq: e.seq }) : rest;
+    const draw = draws.get(msg.seq);
+    if (draw) draw();
+    return true;
+  }
+  // A `chat_verdict` redacted (§8.5): the verdict it set stays, without its sentence.
+  function verdictRedacted(shownMessages, draws, seq) {
+    shownMessages.forEach((m) => (m.verdicts || []).forEach((v) => {
+      if (v.seq !== seq || v.sentence === null) return;
+      v.sentence = null;
+      const draw = draws.get(m.seq);
+      if (draw) draw();
+    }));
+  }
+  // The verdicts as a page read again has them, taken over where they changed.
+  function takeVerdicts(kept, fresh, draws) {
+    if (!kept || JSON.stringify(kept.verdicts || []) === JSON.stringify(fresh.verdicts || [])) return;
+    kept.verdicts = fresh.verdicts || [];
+    const draw = draws.get(kept.seq);
+    if (draw) draw();
+  }
+
   // opts.group: a group chat's message (no delivery: several recipients,
   // §9.2); opts.onRedact: offered to a human in the room (§8.5).
   function message(ctx, msg, pending, grouped, onQuote, opts) {
@@ -371,7 +461,7 @@ window.Maity = window.Maity || {};
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "") + target, "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
-        M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
+        M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta, verdicts(ctx, msg, o, own),
         onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.quote.label"), onclick: () => onQuote(msg) }, M.t("chat.quote")) : null,
         o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null,
         reporting ? [reporting.button, reporting.slot] : null));
@@ -731,7 +821,7 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+  M.chatParts = { applyVerdict, verdictRedacted, takeVerdicts, actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, fullScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
     chatsOf, ordered, listItem, togglePin, pinColumn, LIST_MS, RESYNC, reveal };
 
   // One focus handler for the page; it serves the chat view on screen.
@@ -803,7 +893,9 @@ window.Maity = window.Maity || {};
     // The human party removes a message of the chat, the agent's or their own (§8.5).
     // §8.5: it needs events:admin too, which owner and admin hold.
     // The human party deletes a file of the chat (§8.7), whoever sent it.
-    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true, target: M.route.seqTarget() };
+    // The human party gives a verdict on the agent's messages (§9.7).
+    const verdictDraws = new Map();
+    const drawOpts = { onRedact: ctx.canAdmin ? redactDirect : null, canDeleteFile: () => true, target: M.route.seqTarget(), verdictPath: path, verdictDraws };
     let draw = timeline(ctx, pending, firstUnread, quote, drawOpts);
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // Everything loaded drawn again as one timeline (days, groups): after
@@ -912,7 +1004,9 @@ window.Maity = window.Maity || {};
       if (events.some((e) => e.kind === RESYNC)) await resync();
       // A message of this chat removed (§8.5): its text goes at once.
       events.filter((e) => e.kind === "event_redacted" && e.payload)
-        .forEach((e) => markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason));
+        .forEach((e) => { markRemoved(e.payload.seq, e.actor && e.actor.member_id, e.payload.reason); verdictRedacted(loaded, verdictDraws, e.payload.seq); });
+      events.filter((e) => e.kind === "chat_verdict" && e.payload && e.payload.conversation && e.payload.conversation.id === agent.id)
+        .forEach((e) => applyVerdict(loaded, verdictDraws, e));
       events.filter((e) => e.kind === "attachment_deleted" && e.payload)
         .forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
       if (events.some((e) => e.actor && e.actor.member_id === agent.id)) await checkDelivery();
@@ -941,6 +1035,7 @@ window.Maity = window.Maity || {};
         resyncBefore = lowest !== null && page.items.length === HISTORY_PAGE && lowest > oldestShown ? lowest : null;
         page.items.filter((m) => shown.has(m.seq)).forEach((m) => {
           if (isRemoved(m)) markRemoved(m.seq, m.redaction && m.redaction.by, m.redaction && m.redaction.reason);
+          takeVerdicts(loaded.find((x) => x.seq === m.seq), m, verdictDraws);
           (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));
         });
       } catch (err) {
@@ -953,9 +1048,12 @@ window.Maity = window.Maity || {};
       const md = li && li.querySelector(".md");
       if (!md) return;
       const kept = loaded.find((m) => m.seq === seq);
-      if (kept) Object.assign(kept, { body: null, redacted: true, redaction: { by, reason } });
+      if (kept) Object.assign(kept, { body: null, redacted: true, redaction: { by, reason }, verdicts: [] });
       md.parentNode.insertBefore(tombstone(ctx, { by, reason }), md);
       md.remove();
+      // A removed message reads no verdicts and takes none (§9.7).
+      const box = li.querySelector(".msg-verdicts");
+      if (box) clear(box);
       Array.from(li.querySelectorAll("button.msg-quote")).forEach((b) => b.remove());
     }
     async function redactDirect(msg) {

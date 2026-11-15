@@ -7019,6 +7019,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("chat-text").value.startsWith("> Agent A:\n> Endpoints for join, tasks and requests are drafted.\n> Messages and presence follow this afternoon.\n\n"),
     "chat: Quote puts the message into the composer as a quote");
   byId("chat-text").value = ""; byId("chat-text").dispatch("input");
+  // §9.7: Agree, Disagree with its sentence, and Take back, on the agent's message; one's own offers none.
+  {
+    const vIn = () => main.querySelector("li.msg.in");
+    const vBtn = (label) => vIn().querySelectorAll(".msg-verdicts button").find((b) => b.textContent === label);
+    const vList = () => vIn().querySelector(".verdict-list");
+    expect(vBtn("Agree") && vBtn("Disagree") && !vBtn("Take back") && !vList() && !main.querySelector("li.msg.out .msg-verdicts button"),
+      "verdict: Agree and Disagree under someone else's message only, nothing given yet");
+    vBtn("Agree").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(vList() && text(vList()).startsWith("👍 ") && text(vList()).endsWith(" agrees") && vBtn("Agree").getAttribute("aria-pressed") === "true" && vBtn("Take back"),
+      "verdict: Agree is given and said under the message, Take back offered " + (vList() ? text(vList()) : ""));
+    vBtn("Disagree").click(); await tick();
+    const vForm = vIn().querySelector("form.verdict-form");
+    expect(vForm && vForm.querySelector("label") && text(vForm.querySelector("label")) === "Why not? One sentence, if you like", "verdict: Disagree asks for its optional sentence");
+    vForm.querySelector("input").value = "  Not before the release.  ";
+    vForm.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(vList() && text(vList()).startsWith("👎 ") && text(vList()).endsWith(" disagrees: Not before the release.") && !vIn().querySelector("form.verdict-form")
+      && vBtn("Disagree").getAttribute("aria-pressed") === "true" && vBtn("Agree").getAttribute("aria-pressed") === "false",
+      "verdict: Disagree replaces Agree, its sentence trimmed " + (vList() ? text(vList()) : ""));
+    vBtn("Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!vList() && !vBtn("Take back") && vBtn("Agree").getAttribute("aria-pressed") === "false", "verdict: Take back leaves none");
+  }
   // The history: a day separator, the line before what was unread, the agent's picture.
   const histItems = main.querySelector("ol.messages").childNodes.map((li) => li.className);
   expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
@@ -11002,6 +11023,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick(); await tick();
   expect(text(main.querySelector(".group-chat .group-title")) === "Renamed by Ops" && byId("chat-text") === gcTyping,
     "group chat: someone else's rename is drawn in place, the composer untouched");
+  // §9.7: a verdict given elsewhere (another tab) arrives with the feed under its message; redacted, it keeps its
+  // value without the sentence; taken back, it is gone.
+  {
+    const vLi = gcList().querySelectorAll("li.msg.in").find((li) => !li.querySelector(".msg-redacted"));
+    const vSeq = Number(vLi.getAttribute("data-seq"));
+    const vNow = () => gcList().querySelectorAll("li.msg").find((li) => li.getAttribute("data-seq") === String(vSeq));
+    const vEvent = (seq, value, sentence) => ({ seq, kind: "chat_verdict", at: "2026-11-15T10:00:00Z", actor: { member_id: "hum-maintainer" },
+      payload: { conversation: { id: "cnv-0007", kind: "group", title: null }, message_seq: vSeq, author: "agt-a", value, previous: null, sentence } });
+    gcFeed = [vEvent(9104, "disagree", "Not before the release.")];
+    await fireIntervals(); await tick(); await tick();
+    expect(text(vNow().querySelector(".verdict-list") || { textContent: "" }) === "👎 Maintainer disagrees: Not before the release.", "group chat: a verdict is drawn under the message at once");
+    gcFeed = [{ seq: 9105, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 9104, reason: "a name" } }];
+    await fireIntervals(); await tick(); await tick();
+    const vText = text(vNow().querySelector(".verdict-list") || { textContent: "" });
+    expect(vText === "👎 Maintainer disagrees", "group chat: a redacted verdict keeps its value, not its sentence " + vText);
+    gcFeed = [vEvent(9106, null, null)];
+    await fireIntervals(); await tick(); await tick();
+    expect(!vNow().querySelector(".verdict-list") && text(vNow()).includes("Quote"), "group chat: a verdict taken back is gone, the message stays");
+  }
   // A direct chat takes a removal the same way.
   await go("#/maintainer/maity/chat/agt-a");
   gcFeed = [{ seq: 9103, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 4202, reason: "pasted" } }];

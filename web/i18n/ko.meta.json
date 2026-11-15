@@ -3271,6 +3271,54 @@
     "en": "3a26dc0879f9a035",
     "text": "2fa1caf79088a6ea"
   },
+  "chat.verdict.agree": {
+    "en": "08c068ceec37bae5",
+    "text": "75ce17a50159ad4b"
+  },
+  "chat.verdict.agrees": {
+    "en": "5f4feafd8adc2f71",
+    "text": "3acce98b553b7dd9"
+  },
+  "chat.verdict.busy": {
+    "en": "4e65400e023b52a3",
+    "text": "659a0a45c1b17d53"
+  },
+  "chat.verdict.cancel": {
+    "en": "c0774c185060fc13",
+    "text": "0ffb3668cf88fff5"
+  },
+  "chat.verdict.disagree": {
+    "en": "58c2c949322ab752",
+    "text": "aba5b3d5ac3727c8"
+  },
+  "chat.verdict.disagrees": {
+    "en": "3223e4971a407bc1",
+    "text": "6c4d710508bc4549"
+  },
+  "chat.verdict.disagrees_because": {
+    "en": "3a39b4da351eda7b",
+    "text": "7642073f0be95a51"
+  },
+  "chat.verdict.failed": {
+    "en": "831641bc8e3a7e90",
+    "text": "eb0f9d4f826a7c2c"
+  },
+  "chat.verdict.list": {
+    "en": "f73a01919cade3a4",
+    "text": "99bd7561c68e9fab"
+  },
+  "chat.verdict.send": {
+    "en": "58c2c949322ab752",
+    "text": "aba5b3d5ac3727c8"
+  },
+  "chat.verdict.sentence": {
+    "en": "bb8ec57024c8c5d0",
+    "text": "559d9a28f98b2b56"
+  },
+  "chat.verdict.take_back": {
+    "en": "5ecd7560aa5038c4",
+    "text": "b9358b4ed7b1508d"
+  },
   "chat.who.agent": {
     "en": "7649b444a37e5ea5",
     "text": "efd0461a0aa8254d"

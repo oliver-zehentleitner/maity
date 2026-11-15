@@ -1217,6 +1217,16 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
 .msg.in.grouped { margin-top: -4px; padding-inline-start: 48px; }
 .msg-avatar { flex: none; }
 .msg-body { min-width: 0; }
+/* §9.7: the verdicts under a message, and Agree, Disagree and Take back. */
+.msg-verdicts:empty { display: none; }
+.msg-verdicts .verdict-list { list-style: none; margin: 4px 0 0; padding: 0; font-size: 0.8rem; }
+.msg-verdicts .verdict-list li { margin: 1px 0; overflow-wrap: anywhere; }
+.msg-verdicts .verdict-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.msg-verdicts .verdict-actions button, .msg-verdicts .verdict-form button { font-size: 0.75rem; padding: 1px 6px; }
+.msg-verdicts button[aria-pressed="true"] { border-color: var(--accent); font-weight: 600; }
+.msg-verdicts .verdict-form { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; font-size: 0.8rem; }
+.msg-verdicts .verdict-form input { flex: 1 1 12rem; min-width: 0; }
+.msg-verdicts .send-status:empty { display: none; }
 /* A grouped message says only when; muted, never fainter than --muted (contrast). */
 .msg.grouped .meta { font-size: 0.74rem; }
 .messages .empty p { margin: 0 0 4px; }

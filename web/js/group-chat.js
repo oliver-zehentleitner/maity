@@ -150,7 +150,7 @@ window.Maity = window.Maity || {};
         await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason });
         // The answer is the event (§8.5); the message shows its tombstone.
         const at = all.findIndex((m) => m.seq === msg.seq);
-        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason } });
+        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason }, verdicts: [] });
         redraw();
         status.done();
         append(status.el, h("span", { class: "ok" }, M.t("group.redact.done")));
@@ -167,7 +167,10 @@ window.Maity = window.Maity || {};
       text.focus();
     }
     // A human in the chat deletes a file of it, as it removes a message (§8.7).
-    const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed, target: M.route.seqTarget() };
+    // A human who reads the chat, an observer too, gives a verdict while it is open (§9.7).
+    const verdictDraws = new Map();
+    const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed, target: M.route.seqTarget(),
+      verdictPath: closed ? null : path, verdictDraws };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // At the newest unless the reader scrolled up; then a pill counts what came (js/chat.js).
     // Newest leaves the focus in the composer, or on the title where there is none.
@@ -263,6 +266,7 @@ window.Maity = window.Maity || {};
           page.items.forEach((m) => {
             const at = all.findIndex((x) => x.seq === m.seq);
             if (at >= 0 && parts.isRemoved(m) && !parts.isRemoved(all[at])) { all[at] = Object.assign({}, all[at], m); changed = true; }
+            else if (at >= 0) parts.takeVerdicts(all[at], m, verdictDraws);
             (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));
           });
           if (changed) { const top = messages.scrollTop; redraw(); messages.scrollTop = top; }
@@ -271,11 +275,14 @@ window.Maity = window.Maity || {};
         }
       }
       events.filter((e) => e.kind === "attachment_deleted" && e.payload).forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
+      events.filter((e) => e.kind === "chat_verdict" && e.payload && e.payload.conversation && e.payload.conversation.id === id)
+        .forEach((e) => parts.applyVerdict(all, verdictDraws, e));
+      events.filter((e) => e.kind === "event_redacted" && e.payload).forEach((e) => parts.verdictRedacted(all, verdictDraws, e.payload.seq));
       const removedHere = events.filter((e) => e.kind === "event_redacted" && e.payload && all.some((m) => m.seq === e.payload.seq));
       if (removedHere.length) {
         removedHere.forEach((e) => {
           const at = all.findIndex((m) => m.seq === e.payload.seq);
-          all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: e.actor && e.actor.member_id, reason: e.payload.reason } });
+          all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: e.actor && e.actor.member_id, reason: e.payload.reason }, verdicts: [] });
         });
         const top = messages.scrollTop;
         redraw();
