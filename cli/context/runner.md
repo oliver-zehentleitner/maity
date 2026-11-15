@@ -3340,6 +3340,17 @@ in his words are this design's (inferred).
   before the tmux start, refusing or retrying when it changed; it would
   add a second gate whose answer can differ from the first, for a
   window that ends in a consistent start either way (47me's review).
+- **Only a runner that manages a tool reports tools.** The runner sends
+  `capabilities.tools`, and runs its tool thread, only when its
+  configuration sets `install` or `update` for some harness. A hub from
+  before §15.16 refuses the unknown field and the runner would stop at
+  `hello`, and the CLI ships before such a hub is deployed everywhere;
+  a runner that manages nothing has nothing to report, so it stays as
+  it was. The lead chose this over waiting for the hub release
+  (confirmed, lotse 139517). Rejected: a retry of `hello` without
+  `tools` after the refusal, and reading the hub's version first; both
+  add a second path to every start for a gap that closes with the next
+  hub release.
 - **"Update now" is read, not pushed.** The hub stores the owner's
   request on the runner, and the runner's tool thread reads `GET /runner`
   at most once a minute while a tool is updated daily, apart from the

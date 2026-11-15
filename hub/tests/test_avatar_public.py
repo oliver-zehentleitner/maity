@@ -101,7 +101,8 @@ def test_a_persons_picture_is_public_while_their_profile_is(world: World) -> Non
     assert got.headers["etag"] == f'"{digest(url)}"'
     # The id address keeps its readers: a stranger never reads it, whatever the page.
     assert world.anyone.get(url).status_code in (401, 404)
-    assert world.owner.client.get(url).headers["cache-control"] == "private, no-cache"
+    kept = world.owner.client.get(url).headers["cache-control"]  # its readers' browsers only
+    assert kept == "private, max-age=31536000, immutable"
     assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
     gone = world.anyone.get(public)
     assert gone.status_code == 404

@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "Deze mailbox is ook je tweede factor: wie hem leest, kan je wachtwoord opnieuw instellen en inloggen. Stel een authenticator-app in onder Beveiliging in je account: dan heeft een reset ook de code daarvan nodig.\n\n",
   "password_reset.subject": "[Maity] Stel je wachtwoord opnieuw in",
   "product.bug": "Een bug gevonden?",
+  "product.discord": "Chat met ons op Discord",
   "product.love": "liefde",
   "product.made_by": "Gemaakt met {heart} door {name} op {github} & {maity}",
   "product.security": "Een kwetsbaarheid gevonden?",

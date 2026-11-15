@@ -17,7 +17,6 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # and path, its reason on the same line: a pull request adding or removing an entry touches only
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
-    ("DELETE", "/projects/{}/{}/conversations/{}/messages/{}/verdict"),  # tsk-55x4f398dttv
     ("DELETE", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/outsiders/{}/block"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
@@ -49,7 +48,6 @@ NOT_ROUTED = {
     ("POST", "/projects/{}/{}/tasks/{}/claim/decline"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/runner/placements/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
-    ("PUT", "/projects/{}/{}/conversations/{}/messages/{}/verdict"),  # tsk-55x4f398dttv
     ("PUT", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
 }
 
