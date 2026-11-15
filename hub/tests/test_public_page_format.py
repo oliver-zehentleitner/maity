@@ -4,9 +4,12 @@ the format it was rendered in (`public_pages.FORMAT`); a row without one is form
 
 from __future__ import annotations
 
+import hashlib
+
 from sqlalchemy import Engine
 
 from maity_hub import clock, public_pages
+from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests.test_public_pages_engine import NOTE, Shown, hub, rows, shown  # noqa: F401
 
@@ -31,6 +34,17 @@ def test_the_format_of_a_row() -> None:
     # Before the prefix, a digest or anything else: format 1.
     assert public_pages.format_of("abc") == 1 and public_pages.format_of("A@2026-11-15:00") == 1
     assert public_pages.stamped("abc") == f"f{public_pages.FORMAT}:abc"
+
+
+def test_a_stamped_digest_fits_the_column() -> None:
+    # A sha256 in hex is the column's whole width: the prefix takes its place from the end, so a
+    # row stays writable where the database holds the width to its word (PostgreSQL, MariaDB).
+    width = t.public_page.c.inputs.type.length
+    assert width == public_pages.INPUTS_LENGTH
+    made = public_pages.stamped(hashlib.sha256(b"inputs").hexdigest())
+    assert len(made) == width and public_pages.format_of(made) == public_pages.FORMAT
+    other = public_pages.stamped(hashlib.sha256(b"other inputs").hexdigest())
+    assert made != other
 
 
 def test_a_row_of_a_later_format_is_deleted_and_never_overwritten(

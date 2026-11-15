@@ -529,7 +529,7 @@ def team(d: dict[str, Any]) -> str:
         parts += (
             f'<h3>{_e(t("visitor.others"))}</h3><ul class="role-counts">'
             + "".join(
-                f'<li><b>{o["count"]}</b><span class="chip role">{_e(word_of("role", o["role"]))}'
+                f'<li><b>{_e(o["count"])}</b><span class="chip role">{_e(word_of("role", o["role"]))}'
                 "</span></li>"
                 for o in others
             )

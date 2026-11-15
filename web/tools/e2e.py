@@ -5296,7 +5296,10 @@ def stored_page_layout(run: Run, browser) -> None:
             assert answer is not None and answer.status == 200, f"{where}: {answer.status if answer else None}"
             expect(seen.locator("header.site-header")).to_be_visible()
             expect(seen.locator("footer.site-footer")).to_be_visible()
-            expect(seen.locator("main .stored-page h1")).to_be_visible()
+            # A project's page is stored in the dashboard's design: it stands in <main> as it is,
+            # where the dashboard puts its view (§16.9, tsk-zhyqdtt5v59c).
+            expect(seen.locator("main > section.view-visitor.public-view[data-kind='project'] section.phero h1")).to_be_visible()
+            expect(seen.locator("main .stored-page")).to_have_count(0)
             # The landing page's controls (req-q34v0gr2rbw2): its one script, the theme switch, the
             # language row keeping `as=public`.
             scripts = seen.evaluate("[...document.scripts].map(s => (s.src || 'inline').split('/').pop().split('?')[0])")
@@ -5326,7 +5329,7 @@ def stored_page_layout(run: Run, browser) -> None:
             else:
                 expect(toggle).to_be_hidden()
             sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
-            assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
+            assert {"landing.css", "public-pages.css", "public-sections.css"} <= set(sheets), f"{where}: {sheets}"
             wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert wide <= 0, f"{where}: {wide} px wider than the window"
             assert not refused, f"{where}: {refused}"
