@@ -637,12 +637,13 @@ Details of the settings §15.3 describes, chosen in the code:
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own
+**Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source
 **See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
 **Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match or adds an exact form
 
 An exact `allow` entry `a b` (no `*`) becomes the allow rule
-`command(a b)` plus the deny rule `command(regex:a b .*)`; an entry
+`command(a b)` plus the deny rule
+`command(regex:a b [[:ascii:][:^ascii:]]*)`; an entry
 ending in ` *` stays a plain prefix, and one with another `*` is left
 out, both as before. An exact entry is left out for agy, named by
 `maity runner check`, and runs in agy's sandbox like an unlisted
@@ -663,7 +664,15 @@ agy accepts a regex that does not compile without a word and it then
 matches nothing, so a deny it could misread would fail open: hence the
 character set, which holds no regex or shell metacharacter (`.` and `+`
 included, which match more). Without its deny an exact entry would be a
-prefix, so such an entry is not allowed at all. Two exact entries that
+prefix, so such an entry is not allowed at all. The deny's last word
+is a bracket class of all ASCII and all non-ASCII characters, not
+`.*`: agy compiles each word with Go's `regexp.Compile` (syntax.Perl,
+without the `s` flag), where `.` matches every character but a line
+feed, so `.*` did not cover a quoted argument holding one. The class
+holds no backslash, quote, parenthesis or `|`, which agy's shell split
+of the rule would take apart or reject; it reaches the regex compiler
+unchanged on every path of that split. agy drops an empty word, so
+`a b ''` is `a b` and allowed. Two exact entries that
 share a start cannot both stay exact with one deny each: the shorter
 one's deny refuses the longer one, so the shorter one is left out.
 The env-assignment and redirect cases in **Revisit when** are open: both
@@ -687,6 +696,10 @@ need a signed-in agy, which has not been allowed for a test run.
   escape working; left out rather than risk a deny that fails open.
 - A complement regex per word so that entries sharing a start stay
   exact together: complex, and untried in agy.
+- `(?s).*` or `[\s\S]*` as the deny's last word: the shell split takes
+  the backslash, and the parentheses are shell syntax, so the word
+  would reach the compiler only through agy's fallback for a line that
+  does not parse; the bracket class needs no such fallback.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 

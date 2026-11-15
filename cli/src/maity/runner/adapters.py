@@ -651,6 +651,13 @@ AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
 # nothing, so a deny it could misread would fail open (the agy grants entry in
 # cli/context/runner.md). `.` and `+` are left out on purpose: in a regex they match more.
 AGY_SAFE_WORD = re.compile(r"[A-Za-z0-9_/=:@%,-]+")
+# The deny's last word: any further word, whatever it holds. agy compiles each word of a
+# `regex:` rule with Go's regexp.Compile (syntax.Perl, no DotNL), where `.` matches every
+# character but a line feed, so `.*` missed a quoted argument holding one. A bracket class of
+# all ASCII and all non-ASCII matches every character, `\n` included, and needs neither a
+# backslash nor a quote, a parenthesis or a `|`, which agy's shell split of the rule would
+# take apart (the agy grants entry in cli/context/runner.md).
+AGY_ANY_WORD = "[[:ascii:][:^ascii:]]*"
 
 
 @dataclass(frozen=True)
@@ -687,12 +694,12 @@ def agy_grants(rules: Sequence[str]) -> AgyGrants:
     """agy matches `command(...)` by the words a rule starts with, so a rule allows any
     arguments after it. An entry ending in ` *` is such a prefix, and its words are allowed
     as one. An exact entry `a b` is allowed as `command(a b)` and its longer forms denied
-    with `command(regex:a b .*)`: one word more, so never the entry itself, and agy's deny
-    beats its allow. An exact entry is left out, and runs in agy's sandbox like every unlisted
-    command, when a word is outside AGY_SAFE_WORD, or when another entry may allow a longer
-    command that starts with it, which its deny would refuse; when a prefix entry already
-    allows it, it is left out without a word. An entry with another `*` is left out as well:
-    a regex applies to one word, so no rule says what it says."""
+    with `command(regex:a b <AGY_ANY_WORD>)`: one word more, so never the entry itself, and
+    agy's deny beats its allow. An exact entry is left out, and runs in agy's sandbox like
+    every unlisted command, when a word is outside AGY_SAFE_WORD, or when another entry may
+    allow a longer command that starts with it, which its deny would refuse; when a prefix
+    entry already allows it, it is left out without a word. An entry with another `*` is
+    left out as well: a regex applies to one word, so no rule says what it says."""
     allow: list[str] = []
     deny: list[str] = []
     left_out: list[tuple[str, str]] = []
@@ -721,7 +728,7 @@ def agy_grants(rules: Sequence[str]) -> AgyGrants:
             left_out.append((rule, f"{wider[0]!r} may start with it; its deny would refuse that"))
             continue
         allow.append(f"command({rule})")
-        deny.append(f"command(regex:{rule} .*)")
+        deny.append(f"command(regex:{rule} {AGY_ANY_WORD})")
     return AgyGrants(tuple(dict.fromkeys(allow)), tuple(deny), tuple(left_out))
 
 

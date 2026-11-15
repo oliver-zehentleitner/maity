@@ -11,6 +11,7 @@ import shlex
 import shutil
 import subprocess
 import tomllib
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -165,7 +166,7 @@ def test_the_settings_profile(tmp_path: Path) -> None:
                 *(f"write_file({git_dir / name})" for name in adapters.GIT_PROTECTED),
                 "command(git -c)", "command(git --config-env)", "command(git --exec-path)",
                 "command(gh)",
-                "command(regex:make test .*)",
+                f"command(regex:make test {adapters.AGY_ANY_WORD})",
             ],
         },
     }  # fmt: skip
@@ -184,29 +185,61 @@ def test_agys_own_directory_stays_readable_but_its_login(tmp_path: Path) -> None
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
 
 
+# agy 1.5.9 compiles each word of a `regex:` rule with Go's regexp.Compile (syntax.Perl: `.`
+# matches every character but a line feed). Python's `.` without DOTALL does the same, so only
+# the POSIX classes Go knows and Python does not are written out.
+_GO_CLASSES = {"[:ascii:]": "\\x00-\\x7f", "[:^ascii:]": "\\x80-\\U0010ffff"}
+
+
+def _go_regex(word: str) -> str:
+    for go, python in _GO_CLASSES.items():
+        word = word.replace(go, python)
+    return word
+
+
+def _agy_words(line: str) -> list[str]:
+    """A line split into words like a shell line, as agy does with mvdan/sh; agy drops a word
+    that comes out empty (`''`), so `git status ''` is `git status`."""
+    return [word for word in shlex.split(line) if word]
+
+
+def _agy_exact(command: str) -> bool:
+    """agy's RequiresExactMatch for the characters: a NUL, or a non-ASCII character that is a
+    control, format or space character (U+2028 and U+2029 among them), makes agy match the
+    whole line instead of its words."""
+    return "\0" in command or any(
+        ord(c) > 0x7F and (unicodedata.category(c)[0] == "C" or c.isspace()) for c in command
+    )
+
+
 def _agy_rule_matches(rule: str, command: str) -> bool:
     """agy's documented `command(...)` match for a simple command, as agy 1.5.9 does it: the
     rule split into words like a shell line; more words than the command, no match; else the
     command's first words, each equal to the rule's, or for `regex:` each matched as
-    `^(?:word)$`, where a word that does not compile matches nothing."""
+    `^(?:word)$` with Go's regexp, where a word that does not compile matches nothing. A line
+    agy must match exactly is compared whole: char for char, or as `^(?:rule)$`."""
     target = rule.removeprefix("command(").removesuffix(")")
     if target == "*":
         return True
     regex = target.startswith("regex:")
-    words = shlex.split(target.removeprefix("regex:"))
-    line = shlex.split(command)
-    if len(words) > len(line):
-        return False
-    for word, given in zip(words, line, strict=False):
-        if not regex:
-            if word != given:
-                return False
-            continue
-        try:
-            if re.fullmatch(f"(?:{word})", given) is None:
-                return False
-        except re.error:
+    pattern = target.removeprefix("regex:").strip()
+    try:
+        if _agy_exact(command):
+            if not regex:
+                return pattern == command.strip()
+            return re.fullmatch(f"(?:{_go_regex(pattern)})", command.strip()) is not None
+        words = _agy_words(pattern)
+        line = _agy_words(command)
+        if len(words) > len(line):
             return False
+        for word, given in zip(words, line, strict=False):
+            if not regex:
+                if word != given:
+                    return False
+            elif re.fullmatch(f"(?:{_go_regex(word)})", given) is None:
+                return False
+    except re.error:
+        return False
     return True
 
 
@@ -244,12 +277,37 @@ def test_an_exact_grant_allows_exactly_that_command(tmp_path: Path) -> None:
     assert agy_decides(settings, "git status") == "allowed"
     assert agy_decides(settings, "git  status") == "allowed"  # the same words
     assert agy_decides(settings, "git status --anything") == "denied"
-    assert agy_decides(settings, "git status ''") == "denied"  # an empty word is one too
+    # agy drops an empty word, so this is `git status` itself, allowed as Claude Code allows
+    # `Bash(git status)` for it: the shell passes no further argument either.
+    assert agy_decides(settings, "git status ''") == "allowed"
     assert agy_decides(settings, "git status -s --porcelain") == "denied"
     assert agy_decides(settings, "git log") == "sandbox"  # unrelated: not granted
     assert agy_decides(settings, "git statusx") == "sandbox"
     assert agy_decides(settings, "git") == "sandbox"
     assert agy_decides(settings, "maity status") == "allowed"  # maity stays a prefix
+
+
+@pytest.mark.parametrize("extra", ["a\nb", "a\rb", "a\u2028b", "a\u2029b", "\n", " "])
+def test_the_deny_covers_an_extra_argument_with_a_line_break(tmp_path: Path, extra: str) -> None:
+    """A quoted further argument holding a line break is still a longer form: refused. A line
+    feed stays in agy's word (Go's `.` does not match it); U+2028 and U+2029 make agy match the
+    whole line, which the deny matches as well."""
+    settings = agy_settings(tmp_path, "echo hello")
+    assert agy_decides(settings, f"echo hello {shlex.quote(extra)}") == "denied"
+    assert agy_decides(settings, f"echo hello -n {shlex.quote(extra)}") == "denied"
+
+
+def test_a_dot_star_deny_misses_a_line_feed(tmp_path: Path) -> None:
+    """The counter-check for the deny's last word: `.*` in Go's regexp does not match a line
+    feed, so a quoted argument holding one got past it; the generated word does."""
+    dotted = {
+        "permissions": {"allow": ["command(echo hello)"], "deny": ["command(regex:echo hello .*)"]}
+    }
+    assert agy_decides(dotted, "echo hello 'a\nb'") == "allowed"
+    assert agy_decides(dotted, "echo hello 'a\rb'") == "denied"
+    assert adapters.agy_grants(["echo hello"]).deny == (
+        f"command(regex:echo hello {adapters.AGY_ANY_WORD})",
+    )
 
 
 def test_a_grant_ending_in_a_star_stays_a_prefix(tmp_path: Path) -> None:
@@ -287,7 +345,7 @@ def test_grants_that_share_a_start_leave_the_shorter_one_out(tmp_path: Path) -> 
     the shorter entry is left out and named, the longer one stays exact."""
     found = adapters.agy_grants(["git status", "git status --short"])
     assert found.allow == ("command(git status --short)",)
-    assert found.deny == ("command(regex:git status --short .*)",)
+    assert found.deny == (f"command(regex:git status --short {adapters.AGY_ANY_WORD})",)
     assert found.left_out[0][0] == "git status" and "'git status --short'" in found.left_out[0][1]
     settings = agy_settings(tmp_path, "git status", "git status --short")
     assert agy_decides(settings, "git status --short") == "allowed"
@@ -312,9 +370,9 @@ def test_every_generated_deny_has_one_more_word_and_compiles(tmp_path: Path) -> 
     found = adapters.agy_grants(rules)
     for allow, deny in zip(found.allow, found.deny, strict=True):
         words = allow.removeprefix("command(").removesuffix(")").split(" ")
-        assert deny == f"command(regex:{' '.join(words)} .*)"
+        assert deny == f"command(regex:{' '.join(words)} {adapters.AGY_ANY_WORD})"
         for word in deny.removeprefix("command(regex:").removesuffix(")").split(" "):
-            re.compile(word)
+            re.compile(_go_regex(word))
         assert all(adapters.AGY_SAFE_WORD.fullmatch(w) for w in words)
     granted = {a.removeprefix("command(").removesuffix(")") for a in found.allow}
     left = {rule for rule, _ in found.left_out}
