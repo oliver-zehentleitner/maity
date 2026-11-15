@@ -39,6 +39,7 @@ from maity_hub import (
     instances,
     invitations,
     join_line,
+    join_revocation,
     landing,
     landing_stats,
     legal,
@@ -655,10 +656,12 @@ def revoke_join(slug: str, join_id: str, request: Request, caller: HumanCaller) 
                     f"a {state} join cannot be revoked",
                     {"from": state, "to": "revoked"},
                 )
-            conn.execute(
-                update(t.join_link)
-                .where(t.join_link.c.id == join_id)
-                .values(revoked_at=clock.now())
+            # Who revoked it, and `join_revoked` as `invitation_revoked` (§3.1, §8.2).
+            join_revocation.revoke(
+                conn,
+                t.join_link.c.id == join_id,
+                by=caller.principal_id,
+                actor_in=lambda _project_id: caller.actor(mine.id),
             )
         return idempotency.Outcome(200, "join", join_id, load_join(conn, join_id))
 

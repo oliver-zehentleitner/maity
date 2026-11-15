@@ -218,6 +218,23 @@ def test_the_invited_owner_joins_the_projects_with_their_go(
     assert members(owner)["guest"]["org_owner"] is True
 
 
+def test_an_owner_s_released_seat_revokes_their_joins_as_the_hub(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    """The release of a seat the hub kept is the hub's (§3.1, §6.26): `revoked_by` null, no
+    `join_revoked`, though a person changed the organisation."""
+    _, people = team(make_client, migrated, owner)
+    assert create(owner).status_code in (200, 201)
+    second = people["owner2"]
+    made = flow.join(second, "oz-team/shop")
+    assert owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "member"}).status_code == 200
+    with migrated.connect() as conn:
+        join = conn.execute(select(t.join_link).where(t.join_link.c.id == made["id"])).one()
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+    assert join.revoked_at is not None and join.revoked_by is None
+    assert told == []
+
+
 def test_the_event_of_a_seat_that_ends_does_not_say_org_owner(
     make_client: ClientFactory, migrated: Engine, owner: flow.Human
 ) -> None:

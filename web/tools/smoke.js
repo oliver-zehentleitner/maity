@@ -15188,9 +15188,83 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const vfFoot = () => body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
     const vfOn = () => (document.documentElement.className || "").split(" ").includes("public-frame");
     const vfIn = vfHead() && vfHead().querySelector("a.signin");
-    expect(vfOn() && vfHead() && vfFoot() && header.hidden === true && viView().classList.contains("stored-page") && viView().firstChild.className === "wrap"
+    expect(vfOn() && vfHead() && vfFoot() && header.hidden === true && viView().classList.contains("public-view")
+      && viView().querySelector("div.stored-page div.wrap")
       && vfIn && vfIn.getAttribute("href") === "#/login?lang=en&next=" + encodeURIComponent("/stranger/tool/overview") && !vfIn.getAttribute("aria-current"),
       "visitor: without a session, the page stands in the landing's frame, Sign in coming back to it " + (vfIn ? vfIn.getAttribute("href") : null));
+    // The approved mockup's project page (tsk-9482zxza3gs3): the dark hero with the crumb, the
+    // tile, the title and the state chip; the figures band without a 0 or empty figure; the views
+    // as a bar across the page under both; "Try it" from the frame's call to action.
+    {
+      // "Try it" is the frame model's own call to action: a model that has one (the fixture's landing has none here).
+      const ppGet = win.Maity.api.get;
+      win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(frModel({ language: "en" })) : ppGet(p));
+      await go("#/stranger/tool"); for (let k = 0; k < 8; k++) await tick();
+      const hero = viView().querySelector("section.phero");
+      const parts = viView().childNodes.map((x) => x.className);
+      const figures = viView().querySelectorAll("section.band div.stat").map((s) => [text(s.querySelector("b")), text(s.querySelector("span.label")), s.querySelector("small") ? text(s.querySelector("small")) : null]);
+      const bar = viView().querySelector("nav.ptabs");
+      const current = bar ? bar.querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").map((a) => (a.getAttribute("href") || "").replace(/^#/, "")) : [];
+      const tryIt = hero && hero.querySelector("div.cta a.btn.btn-primary");
+      expect(hero && hero.className === "phero hero dz" && text(hero.querySelector("p.crumb")) === "stranger / tool"
+        && text(hero.querySelector("span.pmark")) === "T" && hero.querySelector("span.pmark").getAttribute("aria-hidden") === "true"
+        && text(hero.querySelector("h1")) === "Tool" && text(hero.querySelector("span.chip.state")) === "active"
+        && JSON.stringify(parts) === JSON.stringify(["phero hero dz", "band", "ptabs", "stored-page"])
+        && JSON.stringify(figures) === JSON.stringify([["1", "Members", null], ["3", "Cards done", "30 days"]])
+        && JSON.stringify(current) === JSON.stringify(["/stranger/tool"]) && bar.querySelectorAll("a.view-tab").length === 5
+        && tryIt && text(tryIt) === "Try it — create your account" && tryIt.getAttribute("href") === "#/register?lang=de",
+      "visitor: without a session, a project's page has the hero (crumb, tile, title, state), the figures band without an empty one, the views as a bar, Try it from the frame "
+        + JSON.stringify([parts, figures, current, tryIt && tryIt.getAttribute("href"), hero && text(hero.querySelector("span.chip.state")), hero && text(hero.querySelector("p.crumb"))]));
+      // Its unsafe repository is no button; who is online stands in the hero, the figures no longer as a list below.
+      const live = hero && hero.querySelector("div.ph-live");
+      expect(!hero.querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && !hero.querySelector("a.btn-secondary")
+        && live && text(live.querySelector("p.big")) === "1 person · 2 agents online" && live.querySelector("p.ph-named a")
+        && !viView().querySelector("ul.visitor-stats") && !text(viView().querySelector("div.stored-page")).includes("Humans online"),
+      "visitor: without a session, an unsafe repository is no button, Right now counts who is online, the figures are not repeated below " + (live ? text(live) : null));
+      // A GitHub repository is a GitHub button; the project's links one row of short words, a page of the
+      // repository by the dashboard's word and any other by host and path; nobody online, no Right now;
+      // a tab's hero has only its crumb, tile and slug, and no band.
+      const plain = viPages["/public/pages/stranger/tool"];
+      viPages["/public/pages/stranger/tool"] = { path: "/stranger/tool", kind: "project", data: Object.assign({}, plain.data, {
+        name: "4tool", about: "Run it:\n\n```sh\nmake smoke\n```", repository_url: "https://github.com/stranger/tool", links: ["https://github.com/stranger/tool/issues", "https://t.me/tool_chat/", "javascript:alert(1)"],
+        online: { humans: 0, agents: 0, named: [], as_of: "2026-11-02T08:05:00Z" }, statistics: { totals: { cards_done: 0, reviews_given: null } } }) };
+      await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+      const h2 = viView().querySelector("section.phero");
+      const repo = h2.querySelector("a.btn.btn-secondary");
+      const row = h2.querySelector("p.plinks") ? h2.querySelector("p.plinks").querySelectorAll("a").map((a) => [text(a), a.getAttribute("href")]) : [];
+      expect(repo && text(repo) === "GitHub" && repo.getAttribute("href") === "https://github.com/stranger/tool" && repo.querySelector("svg")
+        && JSON.stringify(row) === JSON.stringify([["Issues", "https://github.com/stranger/tool/issues"], ["t.me/tool_chat", "https://t.me/tool_chat/"]])
+        && text(h2.querySelector("span.pmark")) === "T" && !h2.querySelector("div.ph-live")
+        && JSON.stringify(viView().querySelectorAll("section.band div.stat").map((s) => text(s.querySelector("span.label")))) === '["Members"]',
+      "visitor: without a session, the repository's button names GitHub, the links are one row of short words, the tile's letter is the name's first letter "
+        + JSON.stringify([repo && text(repo), row, text(h2.querySelector("span.pmark"))]));
+      // A code block in the about text stands in the always-dark hero: its ground is the dark zone's
+      // (the app's --surface-2 is mapped there), not the light app's (review of #1820, A507).
+      const ppCss = fs.readFileSync(path.join(WEB, "css/public-sections.css"), "utf8");
+      const appCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
+      expect(h2.querySelector("div.sub pre.md-code") && /\.md-code \{[^}]*background: var\(--surface-2\)/.test(appCss)
+        && /\.phero \{[^}]*--surface-2: var\(--surface2\)[^}]*--ok: #7ee2a0/.test(ppCss),
+      "visitor: without a session, a code block in the about text stands in the hero on the dark zone's ground, the app's --surface-2 and --ok mapped there");
+      // The sections' stylesheet is named in index.html, so the shell names it with its version (§16.11; the
+      // e2e's warm load refuses a dashboard file named without one); site-chrome.js only moves and switches it.
+      const ppIndex = fs.readFileSync(path.join(WEB, "index.html"), "utf8");
+      const ppChrome = fs.readFileSync(path.join(WEB, "js/site-chrome.js"), "utf8");
+      const ppSheets = /const SHEETS = \[([^\]]*)\]/.exec(ppChrome);
+      expect(/<link rel="stylesheet" href="css\/public-sections\.css" id="public-sections" disabled>/.test(ppIndex)
+        && ppSheets && !/"(?:brand|css|js|vendor)\//.test(ppSheets[1]) && ppChrome.includes('const OWN_SHEET = "public-sections"'),
+      "visitor: the sections' stylesheet is named in index.html, disabled, for the shell's version; the frame adds no dashboard file by a name of its own " + (ppSheets && ppSheets[1]));
+      viPages["/public/pages/stranger/tool"] = plain;
+      await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
+      const h3 = viView().querySelector("section.phero");
+      expect(viView().getAttribute("data-kind") === "team" && h3 && text(h3.querySelector("h1")) === "tool" && text(h3.querySelector("p.crumb a")) === "tool"
+        && text(h3.querySelector("span.pmark")) === "T" && !viView().querySelector("section.band") && !h3.querySelector("span.chip")
+        && viView().querySelector("nav.ptabs").querySelectorAll("a.view-tab").filter((a) => a.getAttribute("aria-current") === "page").length === 1
+        && h3.querySelector("div.cta a.btn.btn-primary") && text(h3.querySelector("div.cta a.btn.btn-primary")) === "Try it — create your account"
+        && h3.querySelector("p.report-row a.report-open") && !h3.querySelector("a.btn-secondary") && !h3.querySelector("p.plinks") && !h3.querySelector("div.ph-live"),
+      "visitor: without a session, a project's tab has the hero with its crumb linking the Overview, Try it and Report, no Overview parts, no band, the bar with its tab current");
+      win.Maity.api.get = ppGet;
+      await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
+    }
     const vfGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(new win.Maity.api.ApiError("down", 503, p, "unavailable")) : vfGet(p));
     await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
