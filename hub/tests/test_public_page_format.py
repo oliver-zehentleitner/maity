@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import hashlib
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, String
 
 from maity_hub import clock, public_pages
 from maity_hub import tables as t
@@ -39,7 +39,9 @@ def test_the_format_of_a_row() -> None:
 def test_a_stamped_digest_fits_the_column() -> None:
     # A sha256 in hex is the column's whole width: the prefix takes its place from the end, so a
     # row stays writable where the database holds the width to its word (PostgreSQL, MariaDB).
-    width = t.public_page.c.inputs.type.length
+    column = t.public_page.c.inputs.type
+    assert isinstance(column, String)
+    width = column.length
     assert width == public_pages.INPUTS_LENGTH
     made = public_pages.stamped(hashlib.sha256(b"inputs").hexdigest())
     assert len(made) == width and public_pages.format_of(made) == public_pages.FORMAT
