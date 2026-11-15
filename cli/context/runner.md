@@ -635,7 +635,8 @@ Details of the settings §15.3 describes, chosen in the code:
 
 **Id:** f0ef544a-a531-4073-9572-af946f5475b2
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
 **Evidence:** inferred
 **Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source; review order A587 on #1828 (the empty argument), with agy's terminal.RequiresExactMatch, its walker, terminal.wordLiteral and extractSimpleCommands.func1 read from the binary
 **See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
@@ -721,6 +722,66 @@ the owner.
   order A587's option (a)): agy drops the word before any rule is
   compared, and `MatchesConfigAnyRaw` sees the raw line only on the
   whole-line path, which such a line never takes; no rule can say it.
+
+## agy exact grants are dropped, not paired with a deny: agy reads the command past a leading assignment or wrapper
+
+**Id:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-vgce05kdmk2x and the coordinator's go-ahead for the drop, 2026-11-15; agy 1.5.9's command matching read from its binary (terminal.extractSimpleCommands, terminal.isEnvAssignmentToken, terminal.isCommandWrapper, terminal.canonicalCommandName, shared.coversCommand, commandutils.MatchesConfigAny; the raw-line matcher commandutils.MatchesConfigAnyRaw and terminal.RequiresExactMatch on the whole-line path); agy's permissions documentation
+**See:** runner.md#agy-grants-are-exact-as-for-claude-code-a-deny-for-each-exact-entrys-longer-forms — f0ef544a-a531-4073-9572-af946f5475b2 — as of 2026-11-15
+**Revisit when:** an agy release changes how it reads the invoked command from a line, or gives `command(...)` rules a way to match a whole line or an exact form; or a signed-in agy session is allowed and shows a granted command matching differently
+
+An exact `allow` entry `a b` (no `*`) is not given to agy as a rule: it is
+left out, named by `maity runner check`, and runs in agy's sandbox like
+every unlisted command. An entry ending in ` *` stays a plain prefix
+(`command(a b)` for `a b *`), and one with another `*` is left out without a
+word, both as before; an exact entry a ` *` prefix already covers is left out
+without a word too. So agy now gets only the prefix allows beside
+`command(maity)`, the `read_url` hosts and the file and command denies; no
+exact allow+deny pair is written any more, and `maity runner check` names
+each exact entry it leaves out.
+
+**Reason:** agy does not match a `command(...)` rule the way Claude Code
+matches `Bash(...)`. It reads the invoked command from the line first,
+stepping over a leading environment assignment (terminal.isEnvAssignmentToken)
+and a command wrapper such as env, nohup, time, nice, sudo, xargs or timeout
+(terminal.isCommandWrapper), before any `command(...)` rule is compared; only
+the words that remain reach the matcher (shared.coversCommand →
+commandutils.MatchesConfigAny). A deny rule can only describe those remaining
+words, so it cannot describe a line that carries such a prefix: the one
+matcher that sees the raw line, commandutils.MatchesConfigAnyRaw, runs only on
+agy's whole-line path, and terminal.RequiresExactMatch takes that path only
+for a NUL, a non-ASCII control, format or space character, a parse error or a
+construct its walker refuses — not for a plain leading assignment or wrapper.
+The earlier allow+deny pair (f0ef544a) let an exact entry run outside agy's
+sandbox for the bare command and relied on the deny to refuse every longer
+form; but a line carrying such a prefix matches the bare allow with the prefix
+already stepped over, and no deny can refuse it, so the entry did not run as
+granted. A `command()`-level hard refusal of every such line is therefore not
+provably complete — the prefix is gone before any rule is compared, and the
+raw-line matcher is not on that path. Dropping the exact allow entirely is the
+only sound choice at the settings level: the entry then runs inside the
+sandbox, like an unlisted command. Prefix (` *`) entries are unchanged, since
+they already allow the words with any arguments. This narrows agy grants: a
+placement that relied on an exact grant running outside agy's sandbox must use
+a ` *` grant instead (docs/runners.md, CHANGELOG); the same `allow` list is
+unchanged for Claude Code and Codex.
+
+**Rejected alternatives:**
+- Keeping the allow+deny pair (f0ef544a): a line with a leading assignment or
+  wrapper matched the bare allow, which no deny could refuse, so the entry did
+  not run exactly as granted; this is what this decision supersedes.
+- A `command()`-level refusal of every assignment and wrapper line: agy reads
+  the command past such a prefix before any rule is compared, and the raw-line
+  matcher is not on that path, so no set of `command()` denies is provably
+  complete. Verified against agy 1.5.9's binary before the drop was chosen.
+- A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
+  agy (no `hooks` through `--settings`; agy canonicalises command names), and
+  the drop needs neither.
+- Recording the prefix match as a difference from Claude Code: one harness
+  would get a wider grant than another from the same list.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
@@ -3188,6 +3249,16 @@ in his words are this design's (inferred).
   An older version goes only once no running session started from it,
   and an install and a rollback hold the tool's lock across processes,
   so neither overwrites the other's `state.json` (a4xv's review).
+- **A start keeps the tool its gate looked at.** The start gate reads the
+  harness's probe, sandbox and held state once, under the supervisor's
+  lock, and the launch uses that same view (`GateView`), held through
+  the clone and join, which can take minutes. A rollback in that window
+  therefore still starts the version just left, under the sandbox
+  decision made for that version, and the session then counts as one
+  on an older version. Rejected: a fresh look under the lock right
+  before the tmux start, refusing or retrying when it changed; it would
+  add a second gate whose answer can differ from the first, for a
+  window that ends in a consistent start either way (47me's review).
 - **"Update now" is read, not pushed.** The hub stores the owner's
   request on the runner, and the runner's tool thread reads `GET /runner`
   at most once a minute while a tool is updated daily, apart from the

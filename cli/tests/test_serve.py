@@ -607,3 +607,20 @@ def test_status_prints_the_attach_line_of_a_running_placement(
     assert cli.main(["runner", "status", "--config", str(path), "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)["placements"]
     assert [(p["state"], p["attach"]) for p in shown][:2] == [("running", hint), ("failed", None)]
+
+
+def test_the_keeper_changes_the_targets_tools_under_the_supervisors_lock(
+    tmp_path: Path,
+) -> None:
+    """The keeper writes the local target's own probes, sandbox and held state, and under
+    the lock the start gate reads them under (supervisor.GateView): never half of a swap."""
+    from test_supervisor import load
+
+    cfg = load(tmp_path)
+    state.write_credential(cfg.state_dir, state.Secret(fakehub.CREDENTIAL))
+    svc = serve.open_service(cfg, {})
+    assert svc.keeper is not None and svc.supervisor is not None
+    local = svc.supervisor.targets["local"]
+    assert svc.keeper.guard is svc.supervisor.lock
+    assert svc.keeper.probes is local.probes
+    assert svc.keeper.sandbox is local.sandbox and svc.keeper.held is local.held

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -654,29 +653,20 @@ AGY_LOGIN = Path(".gemini") / "antigravity-cli" / "antigravity-oauth-token"
 AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
 
 
-# The characters a word of an exact grant may hold for agy's generated deny: no regular
-# expression metacharacter and no shell one, so agy reads each word of the rule as written and
-# it matches only itself. agy takes a malformed regex without a word and it then matches
-# nothing, so a deny it could misread would fail open (the agy grants entry in
-# cli/context/runner.md). `.` and `+` are left out on purpose: in a regex they match more.
-AGY_SAFE_WORD = re.compile(r"[A-Za-z0-9_/=:@%,-]+")
-# The deny's last word: any further word agy sees (it drops an empty or blank one before
-# matching, which no rule can catch; docs/runners.md). agy compiles each word of a
-# `regex:` rule with Go's regexp.Compile (syntax.Perl, no DotNL), where `.` matches every
-# character but a line feed, so `.*` missed a quoted argument holding one. A bracket class of
-# all ASCII and all non-ASCII matches every character, `\n` included, and needs neither a
-# backslash nor a quote, a parenthesis or a `|`, which agy's shell split of the rule would
-# take apart (the agy grants entry in cli/context/runner.md).
-AGY_ANY_WORD = "[[:ascii:][:^ascii:]]*"
+# Why an exact entry (no `*`) is not given to agy as a rule. agy does not match a
+# `command(...)` rule the way Claude Code matches `Bash(...)`: it reads the invoked command
+# from the line, so an exact entry cannot be reproduced for it as Claude Code's exact grant
+# is. Such an entry is left out and runs in agy's sandbox like every unlisted command (the
+# agy grants entry in cli/context/runner.md).
+AGY_EXACT_LEFT_OUT = "agy does not match an exact command grant the way Claude Code does"
 
 
 @dataclass(frozen=True)
 class AgyGrants:
-    """A grant's `allow` list as agy's rules: allows, the denies that make the exact ones
-    exact, and the entries left out with why (`maity runner check` names those)."""
+    """A grant's `allow` list as agy's rules: the prefix allows, and the entries left out
+    with why (`maity runner check` names those)."""
 
     allow: tuple[str, ...] = ()
-    deny: tuple[str, ...] = ()
     left_out: tuple[tuple[str, str], ...] = ()
 
 
@@ -687,31 +677,15 @@ def _agy_prefix(words: list[str]) -> list[str] | None:
     return None
 
 
-def _could_extend(other: list[str], words: list[str]) -> bool:
-    """Whether `other`, a grant's words, may allow a command that starts with `words` and has
-    more words: it starts with them and is longer, or a `*` in it could stand for them."""
-    for at, word in enumerate(other):
-        if "*" in word:
-            return True
-        if at >= len(words):
-            return True
-        if word != words[at]:
-            return False
-    return False
-
-
 def agy_grants(rules: Sequence[str]) -> AgyGrants:
     """agy matches `command(...)` by the words a rule starts with, so a rule allows any
     arguments after it. An entry ending in ` *` is such a prefix, and its words are allowed
-    as one. An exact entry `a b` is allowed as `command(a b)` and its longer forms denied
-    with `command(regex:a b <AGY_ANY_WORD>)`: one word more, so never the entry itself, and
-    agy's deny beats its allow. An exact entry is left out, and runs in agy's sandbox like
-    every unlisted command, when a word is outside AGY_SAFE_WORD, or when another entry may
-    allow a longer command that starts with it, which its deny would refuse; when a prefix
-    entry already allows it, it is left out without a word. An entry with another `*` is
-    left out as well: a regex applies to one word, so no rule says what it says."""
+    as one. An exact entry (no `*`) is not given to agy: it is left out and runs in agy's
+    sandbox like every unlisted command, since agy does not match an exact grant the way
+    Claude Code does, and `maity runner check` names it. One a ` *` prefix entry already
+    allows is left out without a word, and so is an entry with another `*`: a rule word is
+    matched on its own, so no rule says what it says."""
     allow: list[str] = []
-    deny: list[str] = []
     left_out: list[tuple[str, str]] = []
     split = [(rule, rule.split(" ")) for rule in dict.fromkeys(rules)]
     prefixes = [prefix for _, words in split if (prefix := _agy_prefix(words))]
@@ -724,22 +698,8 @@ def agy_grants(rules: Sequence[str]) -> AgyGrants:
             continue  # left out without a word, as before (docs/runners.md)
         if any(words[: len(start)] == start for start in prefixes):
             continue  # a prefix entry allows it and every longer form
-        if not all(AGY_SAFE_WORD.fullmatch(word) for word in words):
-            left_out.append(
-                (
-                    rule,
-                    "a word holds a character other than letters, digits and "
-                    "_ / = : @ % , -, which agy's deny could misread",
-                )
-            )
-            continue
-        wider = [other for other, theirs in split if other != rule and _could_extend(theirs, words)]
-        if wider:
-            left_out.append((rule, f"{wider[0]!r} may start with it; its deny would refuse that"))
-            continue
-        allow.append(f"command({rule})")
-        deny.append(f"command(regex:{rule} {AGY_ANY_WORD})")
-    return AgyGrants(tuple(dict.fromkeys(allow)), tuple(deny), tuple(left_out))
+        left_out.append((rule, AGY_EXACT_LEFT_OUT))
+    return AgyGrants(tuple(dict.fromkeys(allow)), tuple(left_out))
 
 
 def _agy_private(path: Path) -> Path:
@@ -751,8 +711,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
     `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
     the sandbox without asking; the sandbox on; the workspace folder trusted, so an
-    interactive start asks nothing. Allowed: `maity`, the repository's `allow` list, and URLs
-    of the hub, the forge and the grant's `network` hosts. Denied to the file tools: the
+    interactive start asks nothing. Allowed: `maity`, the ` *` prefix entries of the
+    repository's `allow` list (an exact entry is left out, named by `maity runner check`), and
+    URLs of the hub, the forge and the grant's `network` hosts. Denied to the file tools: the
     clone's credential, what makes git run something (GIT_PROTECTED), the other clones'
     credentials and the runner's private paths. agy merges these with the agents' user's
     own settings (cli/context/runner.md)."""
@@ -765,7 +726,6 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
-    deny += granted.deny
     return {
         "agentMode": "",
         "toolPermission": "proceed-in-sandbox",
