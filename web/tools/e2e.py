@@ -5010,7 +5010,7 @@ def report_pages_round(run: Run, browser) -> None:
     # Signed out, /<handle>/agents names nothing since the agents stand on the person's page
     # (§16.9, tsk-2t7efzj1p8zt): the dashboard's not found at the same address, no redirect.
     page.goto(f"{run.base}/owner/agents")
-    expect(page.locator("main")).to_contain_text("This page does not exist, or you cannot see it.")
+    expect(page.locator("section.view-not-found")).to_contain_text("This page does not exist, or it is not public.")
     expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/agents$"))
     context.close()
 

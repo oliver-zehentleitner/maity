@@ -15393,7 +15393,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // harness and model as facts; the band of its four counts with a 0 shown and an empty one left out; projects as cards.
     const v = viView();
     const hero = v && v.querySelector("section.uhero.hero.dz");
-    const pic = hero && hero.querySelector(".wrapimg.av.ag.av-128");
+    const pic = hero && hero.querySelector(".wrap img.av.ag.av-128");
     const meta = hero ? hero.querySelectorAll("p.meta span").map(text) : [];
     const owner = hero && hero.querySelector("p.owner");
     const facts = hero ? hero.querySelectorAll("dl.facts div").map((d) => text(d.querySelector("dt")) + "=" + text(d.querySelector("dd"))) : [];
@@ -15421,7 +15421,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // The person's page in the mockup's layout (person.html, tsk-2t7efzj1p8zt), one page: no tabs (req-xkxaq2c3cjjq).
     const v = viView();
     const hero = v && v.querySelector("section.uhero.hero.dz");
-    const pic = hero && hero.querySelector(".wrapimg.av.hu.av-128");
+    const pic = hero && hero.querySelector(".wrap img.av.hu.av-128");
     const meta = hero ? hero.querySelectorAll("p.meta span").map(text) : [];
     const socs = hero ? hero.querySelectorAll(".socs .soc").map((s) => [s.tagName.toLowerCase(), text(s.querySelector(".net")), s.getAttribute("href"), s.getAttribute("rel")]) : [];
     const web = hero && hero.querySelector("a.web");
@@ -15455,7 +15455,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/stranger/tool/board"); await go("#/sam"); for (let k = 0; k < 4; k++) await tick();
     const v = viView();
     const hero = v && v.querySelector("section.uhero");
-    expect(hero && hero.querySelector(".wrapspan.av.hu.av-128.ini") && !hero.querySelector("img") && JSON.stringify(hero.querySelectorAll("p.meta span").map(text)) === JSON.stringify(["@sam"])
+    expect(hero && hero.querySelector(".wrap span.av.hu.av-128.ini") && !hero.querySelector("img") && JSON.stringify(hero.querySelectorAll("p.meta span").map(text)) === JSON.stringify(["@sam"])
       && !hero.querySelector(".socs, a.web, p.bio") && !v.querySelector("section.band, section.profile-projects, section.profile-agents"),
       "visitor: with the profile off, the letter for the picture and nothing but the name and handle");
     viPages["/public/pages/sam"] = off;
@@ -15464,7 +15464,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const before = viAsked.length;
     await go("#/sam/agents"); for (let k = 0; k < 4; k++) await tick();
-    expect(!viView() && viAsked.length === before && text(main).includes("This page does not exist, or you cannot see it.") && win.location.hash === "#/sam/agents",
+    expect(!viView() && viAsked.length === before && main.querySelector("section.view-not-found") && text(main).includes("This page does not exist, or it is not public.") && win.location.hash === "#/sam/agents",
       "visitor: without a session, /<handle>/agents asks the hub nothing and is the dashboard's not found, no redirect " + JSON.stringify(viAsked.slice(before)));
   }
   await go("#/sam/agents/helper"); for (let k = 0; k < 4; k++) await tick();
