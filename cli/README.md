@@ -1239,9 +1239,10 @@ project's own harness configuration is never loaded:
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity`, the repository's `allow` list (exact, as for
-  Claude Code: a deny rule for each exact entry's longer forms) and the
-  hub's, forge's and `network` hosts allowed. An allowed command may
+  sign-in; `maity`, the ` *` prefix entries of the repository's `allow`
+  list (an entry without `*` is left out and runs in agy's sandbox, named
+  by `maity runner check`) and the hub's, forge's and `network` hosts
+  allowed. An allowed command may
   leave agy's sandbox. agy also merges the agents' user's own
   `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
   continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.
