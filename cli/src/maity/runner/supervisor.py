@@ -244,6 +244,8 @@ class Record:
     hung_at: float | None = None
     hung_exits: list[float] = field(default_factory=list)  # for the crash cap (§15.14)
     binary: str | None = None  # the harness binary this session started with (§15.16)
+    # Its OS sandbox as the start gate decided (GateView); None for a record from before.
+    sandbox: bool | None = None
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
@@ -548,9 +550,10 @@ class Supervisor:
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
-                unconfined = p["harness"] in UNCONFINED_REPORTED and not target.sandbox.get(
-                    p["harness"], False
-                )
+                on = rec.sandbox  # the start's own view, not the tool in use now (§15.16)
+                if on is None:
+                    on = target.sandbox.get(p["harness"], False)
+                unconfined = p["harness"] in UNCONFINED_REPORTED and not on
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
@@ -909,6 +912,7 @@ class Supervisor:
         retrying = rec.state in ("exited", "rate_limited")
         rec.calm()
         rec.enter(now, "starting", retry_at=None, started_at=now)
+        rec.sandbox = view.sandbox
         if retrying:
             rec.restarts += 1
         task = threading.Thread(
@@ -1001,7 +1005,7 @@ class Supervisor:
             rec.resume = False
             rec.binary = context.binary
         self.log(f"{name}: started generation {p['generation']}")
-        found = target.probes.get(harness.id)
+        found = (view or GateView.of(target, harness.id)).found  # the version that started
         warning = capabilities.unchecked(harness.id, found.version if found else None)
         if warning is not None:
             self.log(f"{name}: {warning}")
