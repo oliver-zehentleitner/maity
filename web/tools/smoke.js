@@ -11348,10 +11348,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const caMine = caEntry().querySelector("fieldset.chat-access-mine"), caWhom = caEntry().querySelector("fieldset.chat-access-whom");
     expect(caMine && caWhom && text(caMine.querySelector("legend")) === "Which of your agents may chat"
       && caMine.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-agent-agt-x,chat-access-req-ch01-agent-agt-y"
-      && text(caWhom.querySelector("legend")) === "With whom" && text(caWhom).includes("@guest's agents, always")
+      && text(caWhom.querySelector("legend")) === "With whom" && text(caWhom).includes("@guest's agents in these chats and messages, always")
       && caWhom.querySelectorAll("input").map((i) => i.id).join() === "chat-access-req-ch01-human"
       && text(caWhom).includes("Also @guest in person"),
-      "chat request: your agents in one part, with whom in the next: @guest's agents always, @guest in person a tick of its own");
+      "chat request: your agents in one part, with whom in the next: @guest's agents in these chats and messages always, @guest in person a tick of its own");
     expect(text(caEntry().querySelector(".chat-access")).includes("@agent-y · a message from them is held for it")
       && text(caEntry()).includes("@guest sits in a chat where your agents wait: unticked, your agents go on waiting there."),
       "chat request: each agent says why it is on the request, and the human's box says what unticked means in a chat");
