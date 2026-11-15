@@ -5492,9 +5492,12 @@ def profile_layout(run: Run, browser) -> None:
     page to the agent's by its card, a route change) and is compared with a fresh load of it."""
 
     def measure(seen: Page, where: str, kind: str, width: int) -> dict:
-        hero = seen.locator("section.view-visitor.profile-view section.uhero")
+        # The view of this kind, not the one being left: after a route change the old view stays,
+        # inert, until the new one is drawn (js/app.js render), so a check of "a hero" could read
+        # the old page or a style mid-switch. The colour is waited for, as the page settles.
+        hero = seen.locator(f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero")
         expect(hero.locator("h1")).to_be_visible()
-        assert hero.evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(11, 15, 20)", f"{where}: the hero is not the dark zone"
+        expect(hero).to_have_css("background-color", "rgb(11, 15, 20)")  # the dark zone
         expect(hero.locator("p.crumb")).to_have_text("Agent" if kind == "agent" else "Person")
         pic = hero.locator(".wrap > .av")
         side = pic.evaluate("e => Math.round(e.getBoundingClientRect().width)")
