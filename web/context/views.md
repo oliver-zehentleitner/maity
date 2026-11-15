@@ -6799,7 +6799,7 @@ held messages) goes, and a narrower one is set through the API.
 
 The form has two parts (the owner's feedback of 2026-11-15): first "Which
 of your agents may chat", the boxes of one's own agents alone; then "With
-whom", a line naming that side's agents as always included, and the box
+whom", a line naming that side's agents in these chats and messages as always included, and the box
 for that side's human, "Also @… in person", with its hint.
 
 **Reason:** an allow with no agent writes no entry, and the hub files a
