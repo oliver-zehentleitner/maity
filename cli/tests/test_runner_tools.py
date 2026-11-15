@@ -291,3 +291,27 @@ def test_a_binary_outside_its_directory_is_never_run(tmp_path: Path, fake: FakeI
     state = tools.take(tmp_path, "codex", fake, "t")
     assert (state.state, state.reason) == ("failed", "installer_failed")
     assert asked == []  # refused before its version answer runs it
+
+
+def test_a_link_out_of_the_directory_is_neither_installed_nor_started(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    outside = tmp_path / "elsewhere"
+    outside.write_text("#!/bin/sh\necho 1.0.0\n")
+
+    def linked(version: str, into: Path) -> Path:
+        (into / "bin").mkdir()
+        (into / "bin" / "tool").symlink_to(outside)  # inside as written, outside followed
+        return into / "bin" / "tool"
+
+    fake.install = linked  # type: ignore[method-assign]
+    state = tools.take(tmp_path / "t", "codex", fake, "t")
+    assert (state.state, state.reason) == ("failed", "installer_failed")
+    # and one planted after the install is not started either
+    good = FakeInstaller()
+    tools.take(tmp_path, "codex", good, "t")
+    found = tools.binary(tmp_path, "codex")
+    assert found is not None
+    found.unlink()
+    found.symlink_to(outside)
+    assert tools.binary(tmp_path, "codex") is None

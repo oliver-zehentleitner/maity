@@ -362,7 +362,10 @@ def page_in_shell(shell: bytes, body: str) -> bytes | None:
     og_text = f'<meta property="og:description" content="{words[1]}">'.encode() if words else b""
     done = _SHELL_OG_DESCRIPTION.sub(lambda _: og_text, done, count=1)
     done = _SHELL_TITLE.sub(lambda _: title + head, done, count=1)
-    inner = found["main"].encode()
+    # In its own `.hub-page`, which css/app.css keeps invisible until the dashboard replaces it
+    # with the view, or shows after 3 s when no script does (tsk-777vkhtzmq6f): a visitor sees
+    # the page once, in its final layout, and a crawler still reads this text.
+    inner = b'<div class="hub-page">' + found["main"].encode() + b"</div>"
     return _SHELL_MAIN.sub(
         lambda _: b'<main id="main" data-public-page>' + inner + b"</main>", done, count=1
     )
