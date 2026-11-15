@@ -5681,15 +5681,11 @@ it. It grants nothing and is no role.
 namespace owner alone (for a project of an organisation, any of its
 owners, §6.26).
 
-**Repository** (proposed target): `url` is an `https` URL of the shape
+**Repository**: `url` is an `https` URL of the shape
 below, on any DNS host; anything else is `invalid`
 (`details.fields["repository.url"]: "not_a_repository_url"`). This
 replaces `not_a_configured_forge`, which named a forge list the
-operator was said to configure and the hub does not have. Until the
-implementation lands, the hub refuses every URL whose host is not
-`github.com` with `invalid`
-(`details.fields["repository.url"]: "not_a_configured_forge"`), and the
-dashboard reports that same reason. `forge` is
+operator was said to configure and the hub does not have. `forge` is
 derived from the host, below. `probe_configured` is `true` only when
 `forge` is `github` and §11.4 has a grant that covers the repository;
 otherwise it is `false` and `probe_via` is `null`. When `forge` is
@@ -5701,7 +5697,7 @@ the human who did (for a project of an organisation, one of its
 owners, §6.26). Off GitHub the confirmation is still recorded, and
 still cleared when the URL changes, and it authorises no read and
 sends no token.
-One repository per project in V1. Under this target the hub stores the
+One repository per project in V1. The hub stores the
 URL. Where `forge` is `github`, `gitlab`, `gitea` or `bitbucket`, the
 dashboard links the forge's merge or pull-request list from it (§6.11);
 `other` has the repository link and no such list. The hub does not clone the
@@ -15916,9 +15912,7 @@ GET /projects/{owner}/{slug}/probe?commit=6e3eceee…40 hex
 GET /projects/{owner}/{slug}/probe?pr=3&max_age=0
 ```
 
-Scope `project:read`. This section is the proposed target, as §6.1 is.
-Until the implementation lands, a non-GitHub URL is refused when the
-project is written (§6.1) and never reaches a probe. The hub's read-only
+Scope `project:read`. The hub's read-only
 view of the project's forge when that forge is GitHub.
 `repository.forge` (§6.1) is `github` only for the exact host
 `github.com`, which selects the only supported forge kind. That kind's
@@ -15998,11 +15992,11 @@ runs only when `probe_configured` is true.
 target from `repository.url`. That URL is stored and linked (§6.1). The
 hub does not resolve its host and does not connect to it. A read whose
 target comes from somewhere else may still name the same host. The
-state URL of §11.3, and the bodies file §11.5 reads beside it, are
-taken from the repository file and are never derived from
-`repository.url`. That file may name `github.com`, or whatever host the
-repository uses; the two hosts being equal is not a refusal, and it is
-not a request to `repository.url`. The reads below run only when
+state URL of §11.3 is taken from the repository file. The bodies file
+§11.5 reads is the one the export names, beside that URL. Neither is
+derived from `repository.url`. The repository file may name
+`github.com`, or whatever host the repository uses; the two hosts being
+equal is not a refusal, and it is not a request to `repository.url`. The reads below run only when
 `forge` is `github`, and, apart from that state URL and its bodies
 file, only against `api.github.com` or the two image hosts of §11.2. A
 token — the instance token, an installation token, an owner's token —
@@ -16024,10 +16018,11 @@ exchange §11.4 describes; it does not use `repository.url`.
 - The forge logo and banner (§11.2).
 - The Keep the Why contents read that finds `dashboard-state:` (§11.3)
   and the views' reads (§11.5). The contents and metadata reads stay on
-  GitHub's fixed hosts. The state download, and the bodies download
-  beside it, use the validated export URL: the target is the one the
-  repository file names and is never derived from `repository.url`.
-  That host may equal the repository host. The fetch is §11.1.
+  GitHub's fixed hosts. The state download uses the validated URL from
+  the repository file. The bodies download is the file the export
+  names, beside that URL (§11.5). Neither target is derived from
+  `repository.url`. That host may equal the repository host. The fetch
+  is §11.1.
 - The webhook (§17.4). It is a delivery the forge sends to the hub. The
   hub checks GitHub's `X-Hub-Signature-256` and `X-GitHub-Event` and
   does not call the sender. A verified delivery queues a probe read;
@@ -16072,11 +16067,12 @@ read:
   of §11.2, all public names. A request target is never taken from
   `repository.url` or from a project link, and such a host is never
   exempt (above, "No request to a repository host"). The export's state
-  URL, and the bodies file beside it, come from the repository file and
-  are still fetched, only after the contents read on `api.github.com`
-  (§11.3). They are never derived from `repository.url`. The file may
-  name the same host as the repository; that equality does not make
-  `repository.url` a target and does not refuse the export URL. The
+  URL is taken from the repository file and is still fetched, only
+  after the contents read on `api.github.com` (§11.3). The bodies file
+  is the one the export names, beside that URL (§11.5). Neither is
+  derived from `repository.url`. The file may name the same host as
+  the repository; that equality does not make `repository.url` a
+  target and does not refuse the export URL. The
   export URL is not exempt from the address rule. A self-hosted forge
   on a private network is not fetched.
 - 10 seconds per read, connect to last byte. The body is read up to its
@@ -17441,10 +17437,10 @@ Outside a placement every path is read as before.
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` after every wake (§15.16; the hub answers it, the runner does not call it yet, tsk-29nmydbzrg5z), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers both, the runner does not call them yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` at most once a minute while a tool is updated daily, for the owner's `Update now` (§15.16), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers both, the runner does not call them yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local, the free space of the file system holding the workspaces included (§15.5; not built yet, tsk-34gb7frfbsk7) |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
-| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16; not built yet, tsk-29nmydbzrg5z). `status` also prints the fingerprint of the runner's handover key (§15.14) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7). |
+| `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16). `status` also prints the fingerprint of the runner's handover key (§15.14) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7). |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
 | `maity dormant [--off] [--json]` | `PATCH /me` with `{"dormant": true}` (`false` with `--off`); prints `dormant: only @<handle>#<id> wakes this instance` or `awake`, read from this instance's entry in the answer's `instances` (an answer without it prints no line and the hint `the hub's answer does not show this instance; run maity resume to see whether it is dormant` on stderr, exit 0); with `--json`, the hub's answer. Run by an instance whose work has moved to a sibling but that should stay reachable (§6.17) |
@@ -18516,7 +18512,7 @@ Runner credential, signed (§15.1).
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
 | POST | `/runner/placements/{id}/usage` | `{run, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same body; supervised placements only, for the placement's open `run` (`run_closed` otherwise); no `Idempotency-Key`: the `run` is its key; §15.15 |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable, a tool's version or state, §15.16). `Idempotency-Key` required |
-| GET | `/runner` | — | `200`, `{update_requests: [{tool, requested_at}]}`: the owner's open `Update now` requests (§15.16). Read after every wake of the event wait. The hub answers it; the runner does not call it yet, tsk-29nmydbzrg5z |
+| GET | `/runner` | — | `200`, `{update_requests: [{tool, requested_at}]}`: the owner's open `Update now` requests (§15.16). Read after every wake of the event wait |
 
 ```json
 {
@@ -20151,9 +20147,10 @@ or limit: the hub stays out of pricing and billing.
 
 ### 15.16 Harness tools and maity on the runner
 
-The hub's part is built; the runner's and the dashboard's are not yet,
-tsk-29nmydbzrg5z. A runner can install and update the
-harness tools its placements need, and `maity` itself, each only when its
+The hub's and the runner's parts for harness tools are built; `maity`'s
+own update and the dashboard's part are not yet (tsk-29nmydbzrg5z). A
+runner can install and update the harness tools its placements need, and
+`maity` itself, each only when its
 owner allows it for that tool (the owner's decision of 2026-11-12). Without
 that, nothing changes from today: the runner uses what it finds and
 touches nothing.
@@ -20172,10 +20169,13 @@ update = "daily"    # maity itself; default "never"
 
 - **Install.** A harness tool that the configuration lists, that has
   `install = true` and that is missing is installed by the runner when it
-  starts, and again when the configuration is reloaded. Only with the
-  tool vendor's own installer, only into the runner user's own space,
-  never with elevated rights, and with the checksum check where the
-  installer offers one. Which installer belongs to which tool is fixed in
+  starts, and again when the configuration is reloaded. Only from the
+  tool vendor's own release of one exact version, never by running a
+  script the vendor serves, only into the runner user's own space, never
+  with elevated rights, and only after the vendor's signature or checksum
+  for that release checked out: a release the runner cannot check is
+  refused, never installed unchecked (what each tool's check covers:
+  docs/runners.md). Which installer belongs to which tool is fixed in
   the runner's code, never taken from the configuration or the hub.
   `maity` is never installed by the runner; it is what runs it.
 - **Update.** With `update = "daily"`, the runner looks for a newer
@@ -20185,9 +20185,12 @@ update = "daily"    # maity itself; default "never"
   start of a session. A session that runs keeps the version it started
   with: the runner never swaps a tool under a running agent. The version
   before stays on the machine, so the operator can go back to it on the
-  runner (`maity runner tools rollback <tool>`, no hub call). A newer
-  version that does not run is removed again, the version in use stays,
-  and the tool reports `failed`.
+  runner (`maity runner tools rollback <tool>`, no hub call). An older
+  version is removed only once no running session started from it. A
+  newer version that does not run is removed again, the version in use
+  stays, and the tool reports `failed`. With `install = false`, an update
+  never installs a missing tool, neither the daily check nor `Update
+  now`.
 - **Rollback.** `maity runner tools rollback <tool>` makes the kept
   version the one new sessions start with; the version it left stays on
   the machine as `previous_version`, so a second rollback goes back to
@@ -20197,7 +20200,9 @@ update = "daily"    # maity itself; default "never"
   one that failed its version answer, again on its own, neither on the
   daily check nor on `Update now`: it takes only a version newer than
   those, which ends `rolled_back`. Taking the left version again is the
-  operator's second rollback. For example, with 2.1.320 in use, 2.1.308
+  operator's second rollback. A rollback is refused while an install or
+  update of the tool runs; it can be run again once that is done, so
+  neither overwrites the other. For example, with 2.1.320 in use, 2.1.308
   kept and `latest` 2.1.320: a rollback starts new sessions on 2.1.308,
   keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
   daily check finds 2.1.320 again and leaves it. A second rollback
@@ -20216,10 +20221,13 @@ update = "daily"    # maity itself; default "never"
   tool. A tool that needs a login after its install reports
   `login_needed` and is not offered to placements (`available: false`,
   `reason: login_needed`, §15.3) until its owner has logged in on the
-  machine.
+  machine. The runner asks the tool once a minute whether it is logged
+  in, and offers it again as soon as it is.
 - **Where.** On the runner's local target. On an `ssh` target the
   runner only reports what it finds there, and manages nothing (the
-  owner's answer to req-vpcfh15h247c, event 119538).
+  owner's answer to req-vpcfh15h247c, event 119538). Not yet in the
+  `agent_user` layout, whose agents run as another OS user: the runner
+  refuses `install` and `update` there.
 
 **What the runner reports.** `capabilities.tools` (§15.3), one entry
 per harness tool the configuration lists, and one for `maity`:

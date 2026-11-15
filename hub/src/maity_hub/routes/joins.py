@@ -60,7 +60,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
-from maity_hub.auth.leaks import revoke
+from maity_hub.auth.revocation import revoke
 from maity_hub.cards import open_claims
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.config import Settings
