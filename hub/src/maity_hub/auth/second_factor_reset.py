@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import catalog, clock, handles
+from maity_hub import catalog, clock, handles, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.codes import digest
@@ -130,6 +130,8 @@ def _alive(conn: Connection, hub: Settings, token: str, *, lock: bool) -> Any | 
     nonce, human_id = payload.get("n"), payload.get("h")
     if not isinstance(nonce, str) or not isinstance(human_id, str):
         return None
+    if lock:
+        write_guard.share(conn, human_id)  # before any other, as against a deletion
     factor = second_factor.factor_of(conn, human_id, lock=lock)
     query = select(t.second_factor_reset).where(
         t.second_factor_reset.c.id == _nonce_id(nonce),

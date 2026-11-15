@@ -1146,6 +1146,139 @@ def test_a_profile_delete_racing_the_deletion_does_not_deadlock(
     assert deleted_at(migrated, pat.id) is not None
 
 
+def test_a_reset_by_mail_racing_the_deletion_does_not_deadlock(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The reset link holds the human's row when the confirmation starts. With one lock order
+    both take the account lock first: the confirmation waits for it, the reset withdraws the
+    pending deletion and commits, and the link then deletes nothing (PostgreSQL, MariaDB)."""
+    from maity_hub.auth import password_resets
+    from maity_hub.routes import password_reset
+    from tests.concurrency import finished, race, waiting
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    assert hub.mail.signing_key is not None
+    with migrated.begin() as conn:
+        issued = password_resets.issue(
+            conn, human_id=pat.id, source="198.51.100.7", requested_at=clock.now()
+        )
+        assert issued is not None
+        generation = conn.execute(
+            select(t.human.c.password_generation).where(t.human.c.id == pat.id)
+        ).scalar_one()
+        epoch = conn.execute(
+            select(t.notification_settings.c.epoch).where(
+                t.notification_settings.c.human_id == pat.id
+            )
+        ).scalar_one()
+    link = password_resets.token(hub.mail.signing_key, pat.id, issued, generation, epoch)
+    body = password_reset.ResetComplete(token=link, new="a brand new passphrase")
+    with race(migrated) as r:
+        reset, deletion = r.first, r.second
+        assert password_reset._live(reset, hub, link, lock=True) is not None
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        assert waiting(step)  # on the account lock, holding nothing the reset needs
+        assert password_reset._complete(reset, hub, body, "198.51.100.7", None, None)
+        reset.commit()
+        assert finished(step) is None  # the reset withdrew the request
+        deletion.commit()
+    assert deleted_at(migrated, pat.id) is None
+
+
+def test_an_unlock_link_racing_the_deletion_does_not_deadlock(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The link that lifts the daily cap (§2.8.6) holds the factor's row when the
+    confirmation starts. With one lock order both take the account lock first: the
+    confirmation waits for it, the cap is lifted and committed, then the account is deleted
+    (PostgreSQL, MariaDB)."""
+    from maity_hub.auth import second_factor
+    from tests.concurrency import finished, race, waiting
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    assert hub.mail.signing_key is not None
+    day = second_factor._today()
+    with migrated.begin() as conn:
+        conn.execute(insert(t.second_factor).values(human_id=pat.id))
+        conn.execute(
+            insert(t.second_factor_day).values(
+                human_id=pat.id, day=day, wrong_codes=50, unlocks=0, alerted=True
+            )
+        )
+        generation = conn.execute(
+            select(t.human.c.password_generation).where(t.human.c.id == pat.id)
+        ).scalar_one()
+    link = second_factor.unlock_token(hub.mail.signing_key, pat.id, day, 0, generation)
+    with race(migrated) as r:
+        unlock, deletion = r.first, r.second
+        assert second_factor._unlockable(unlock, hub, link, lock=True) is not None
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        assert waiting(step)  # on the account lock, holding nothing the link needs
+        assert second_factor.unlock(unlock, hub, link)
+        unlock.commit()
+        assert finished(step) == "deleted"
+        deletion.commit()
+    assert deleted_at(migrated, pat.id) is not None
+
+
+def test_an_admins_second_factor_reset_link_racing_the_deletion_does_not_deadlock(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The link of an admin's second-factor reset (§2.8.3) holds the factor's and the reset's
+    rows when the confirmation starts. With one lock order both take the account lock first:
+    the confirmation waits for it, the reset takes effect and commits, then the account is
+    deleted (PostgreSQL, MariaDB)."""
+    from maity_hub.auth import second_factor_reset
+    from maity_hub.notifications import tokens
+    from tests.concurrency import finished, race, waiting
+
+    admin = admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    assert hub.mail.signing_key is not None
+    now = clock.now()
+    expires = now + timedelta(hours=1)
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.second_factor).values(
+                human_id=pat.id, secret=b"sealed", enrolled_at=now, generation=0
+            )
+        )
+        conn.execute(
+            insert(t.second_factor_reset).values(
+                id=second_factor_reset._nonce_id("n0nce"), human_id=pat.id, generation=0,
+                requested_by=admin, reason="lost the phone", created_at=now, expires_at=expires,
+            )
+        )  # fmt: skip
+    link = tokens.make(
+        hub.mail.signing_key,
+        {
+            "h": pat.id,
+            "p": second_factor_reset.PURPOSE,
+            "n": "n0nce",
+            "g": 0,
+            "x": int(expires.timestamp()),
+        },
+    )
+    with race(migrated) as r:
+        reset, deletion = r.first, r.second
+        assert second_factor_reset._alive(reset, hub, link, lock=True) is not None
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        assert waiting(step)  # on the account lock, holding nothing the link needs
+        assert second_factor_reset.take_effect(reset, hub, link)
+        reset.commit()
+        assert finished(step) == "deleted"
+        deletion.commit()
+    assert deleted_at(migrated, pat.id) is not None
+
+
 def test_forge_links_and_sign_in_links_go_with_the_account(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:
