@@ -139,20 +139,16 @@ def release_owner(conn: Connection, project: Any, human_id: str) -> None:
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == found.id)
-        .values(trust=found.org_keep_trust, org_keep=None, org_keep_trust=None)
+        .values(org_keep=None, org_keep_trust=None)
     )
-    from maity_hub import cards
+    from maity_hub.routes.members import Change, apply_patch
 
-    # A signature counts while its signer may give it (§6.4): gone with the raised trust.
-    cards.drop_signatures(conn, project.id, human_id, HUB)
-    if found.org_keep_trust == restricted.GUEST:
-        # Back to guest, which holds and takes no cards (§2.3): as a `PATCH` to guest does.
-        from maity_hub import isolation, takeovers
-
-        released = isolation.release_claims(conn, found.id)
-        takeovers.membership_removed(conn, found.id, HUB)
-        isolation.tell_released(conn, released, HUB, project)
-    _announce(conn, project, found.id, human_id)
+    # The earlier trust comes back as any trust change does (§6.2): through the members
+    # PATCH's own step, so every hook of a lowering runs (signatures, rules, a manager's
+    # rights, a guest's claims), not a column written past them.
+    target = conn.execute(select(t.membership).where(t.membership.c.id == found.id)).one()
+    change = Change(project, HUB, human_id, human_id, None, None)
+    apply_patch(conn, change, target, {"trust": found.org_keep_trust}, (False, None))
 
 
 def _announce(conn: Connection, project: Any, membership_id: int, human_id: str) -> None:

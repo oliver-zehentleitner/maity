@@ -109,6 +109,9 @@ the cluster.
 {{- else if .Values.ingress.joinHost -}}
 {{- fail "ingress.joinHost needs the Ingress enabled; with your own Ingress, set MAITY_JOIN_URL through extraEnv" -}}
 {{- end -}}
+{{- if and .Values.secretKey.sealVerifiers (not .Values.secretKey.existingSecret) -}}
+{{- fail "secretKey.sealVerifiers needs secretKey.existingSecret: the verifiers are sealed with the instance key" -}}
+{{- end -}}
 {{- if and .Values.config.allowPlainHttp (or .Values.ingress.enabled (ne .Values.service.type "ClusterIP")) -}}
 {{- fail "config.allowPlainHttp is only for a hub nothing outside the cluster reaches: not with the Ingress enabled or a NodePort/LoadBalancer Service" -}}
 {{- end -}}
@@ -142,6 +145,10 @@ the chart.
     secretKeyRef:
       name: {{ . }}
       key: {{ $.Values.secretKey.key }}
+{{- end }}
+{{- if .Values.secretKey.sealVerifiers }}
+- name: MAITY_SEAL_VERIFIERS
+  value: "1"
 {{- end }}
 {{- with .Values.mail.signingKeySecret.existingSecret }}
 - name: MAITY_MAIL_SIGNING_KEY

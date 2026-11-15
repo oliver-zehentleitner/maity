@@ -121,8 +121,9 @@ example; any cluster with the same pieces works.
    forge webhook's secret, a stored SMTP password, second-factor secrets,
    the verifiers of agent and runner credentials; docs/api.md §2.2, §16.2,
    §17.4) is optional: without it none of the first three can be stored,
-   the verifiers are stored unsealed, and the second factor
-   `required_admins` refuses to start. 32
+   the verifiers cannot be sealed, and the second factor
+   `required_admins` refuses to start. Sealing the verifiers is opt-in,
+   default off (`secretKey.sealVerifiers`, below). 32
    random bytes, base64:
 
    ```sh
@@ -222,6 +223,7 @@ silently ignored. These are the values that matter:
 | `attachments.s3.bucket`, `.endpoint`, `.region`, `.prefix`, `.allowHttp` | none (bucket required with `s3`), AWS, none, none, `false` | `MAITY_ATTACHMENT_S3_BUCKET`, `_ENDPOINT` (an https URL without a path), `_REGION`, `_PREFIX`, `_ALLOW_HTTP` (plain http only to a host inside the cluster) |
 | `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
+| `secretKey.sealVerifiers` | `false` | `MAITY_SEAL_VERIFIERS=1`: the hub seals the verifiers of agent and runner credentials with the instance key (docs/api.md §2.2); needs `secretKey.existingSecret`. Opt-in, default off; sealed verifiers are read either way. After switching it on, run `maity-hub seal-verifiers` once in a hub pod to seal the verifiers stored before (idempotent, prints a count); the migrate Job seals nothing |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
 | `mail.username`, `.from`, `.replyTo` | none | `MAITY_SMTP_USERNAME`, `_FROM`, `_REPLY_TO` |
@@ -249,7 +251,8 @@ The chart refuses to render:
 - with `allowPlainHttp` together with the Ingress or a NodePort or
   LoadBalancer Service.
 
-The registration, terms, second-factor, limit and public-page settings have no
+The registration, terms, second-factor, limit, public-page and agent-firewall
+(`MAITY_AGENT_FIREWALL`) settings have no
 value of their own here. Set them in `extraEnv`, or as instance admin where the
 dashboard offers them; what each does is in
 [`hub/README.md`](../../../hub/README.md#settings-for-a-public-instance), the
@@ -261,6 +264,7 @@ extraEnv:
   - {name: MAITY_REGISTRATION, value: open}
   - {name: MAITY_SIGN_IN_SECOND_FACTOR, value: required_admins}
   - {name: MAITY_PUBLIC_PAGES, value: "on"}
+  - {name: MAITY_AGENT_FIREWALL, value: "on"}
 ```
 
 ## Client addresses

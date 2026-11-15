@@ -33,7 +33,6 @@ NOT_ROUTED = {
     ("GET", "/projects/{}/{}/members/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/projects/{}/{}/outsiders"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/tasks/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
-    ("GET", "/runner"),  # no route yet: tsk-29nmydbzrg5z, tool updates
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
@@ -49,7 +48,6 @@ NOT_ROUTED = {
     ("POST", "/projects/{}/{}/tasks/{}/claim/confirm"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/projects/{}/{}/tasks/{}/claim/decline"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/runner/placements/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
-    ("POST", "/runners/{}/updates"),  # no route yet: tsk-29nmydbzrg5z, tool updates
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("PUT", "/projects/{}/{}/conversations/{}/messages/{}/verdict"),  # tsk-55x4f398dttv
     ("PUT", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
