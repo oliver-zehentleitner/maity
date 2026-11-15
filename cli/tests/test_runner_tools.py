@@ -93,9 +93,57 @@ def test_the_first_install_and_an_update_keep_the_version_before(
     assert tools.binary(tmp_path, "codex") != first
     fake.offered = "1.2.0"
     tools.take(tmp_path, "codex", fake, "2026-11-16T06:00:00Z")
+    assert first.is_file()  # an install never removes a version: prune does
+    assert tools.prune(tmp_path, "codex", set()) == ["1.0.0"]
     assert not first.exists()  # one kept version, not more
     assert tools.take(tmp_path, "codex", fake, "now").version == "1.2.0"  # nothing newer
     assert fake.installed == ["1.0.0", "1.1.0", "1.2.0"]
+
+
+def test_prune_keeps_a_version_a_running_session_started_from(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    tools.take(tmp_path, "codex", fake, "t1")
+    first = tools.binary(tmp_path, "codex")
+    assert first is not None
+    for version in ("1.1.0", "1.2.0"):
+        fake.offered = version
+        tools.take(tmp_path, "codex", fake, "t")
+    assert tools.prune(tmp_path, "codex", {str(first)}) == []  # a session still runs it
+    assert tools.prune(tmp_path, "codex", None) == []  # a session whose binary is unknown
+    assert first.is_file()
+    assert tools.prune(tmp_path, "codex", set()) == ["1.0.0"]  # it has ended
+    assert sorted(p.name for p in (tmp_path / "codex" / "versions").iterdir()) == [
+        "1.1.0", "1.2.0",
+    ]  # fmt: skip
+
+
+def test_a_rollback_while_an_update_runs_is_refused_and_overwrites_nothing(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    tools.take(tmp_path, "codex", fake, "t1")
+    fake.offered = "1.1.0"
+    tools.take(tmp_path, "codex", fake, "t2")
+    seen: list[str] = []
+    install = fake.install
+
+    def install_with_a_rollback(version: str, into: Path) -> Path:
+        # `maity runner tools rollback` from another shell, mid-install; a new open file,
+        # so the lock is contended as from another process
+        with pytest.raises(ValueError, match="an install or update is running"):
+            tools.rollback(tmp_path, "codex")
+        seen.append(str(tools.prune(tmp_path, "codex", set())))  # nor is anything removed
+        return install(version, into)
+
+    fake.install = install_with_a_rollback  # type: ignore[method-assign]
+    fake.offered = "1.2.0"
+    state = tools.take(tmp_path, "codex", fake, "t3")
+    assert seen == ["[]"]
+    assert (state.version, state.previous_version) == ("1.2.0", "1.1.0")
+    assert tools.load(tmp_path, "codex").version == "1.2.0"
+    assert (tmp_path / "codex" / "versions" / "1.0.0").is_dir()
+    done = tools.rollback(tmp_path, "codex")  # once the update is done, it goes through
+    assert (done.version, done.previous_version) == ("1.1.0", "1.2.0")
 
 
 def test_a_version_that_does_not_run_is_removed_and_reported(

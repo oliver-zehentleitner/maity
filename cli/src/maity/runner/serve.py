@@ -349,6 +349,9 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
             supervisor.agents_user(cfg),
             sessions_on=sup.sessions_on,
             advertise=sup.advertise_now,
+            sandbox=sup.targets["local"].sandbox if "local" in sup.targets else {},
+            held=sup.targets["local"].held if "local" in sup.targets else set(),
+            binaries_in_use=sup.binaries_in_use,
         )
         service.advertised["tools"] = service.keeper.entries()
     return service

@@ -200,7 +200,7 @@ install = true      # install it when it is missing (at start)
 update = "daily"    # look for a newer version once a day, and on "Update now"
 ```
 
-Without these lines nothing changes: the runner uses the tool it finds on the agents' PATH. With them it uses only its own copy, in `~/.local/share/maity-runner/tools/` of the runner's user, never one on the PATH; a `binary` setting for such a tool is refused. A newer version goes in beside the one in use and is used from the next start of a session, never under a running one; the version before stays, and `maity runner tools rollback codex` goes back to it (a second rollback goes forward again). `maity runner tools` lists what is installed. The owner can ask for an update at once ("Update now", above; the dashboard has no button for it yet); the runner reads it within a minute.
+Without these lines nothing changes: the runner uses the tool it finds on the agents' PATH. With them it uses only its own copy, in `~/.local/share/maity-runner/tools/` of the runner's user, never one on the PATH; a `binary` setting for such a tool is refused. A newer version goes in beside the one in use and is used from the next start of a session, never under a running one; the version before stays, and `maity runner tools rollback codex` goes back to it (a second rollback goes forward again; while an install or update of the tool runs, it is refused, try again after it). Older versions are removed once no running session uses them. With `install = false`, a missing tool is not installed by an update either. `maity runner tools` lists what is installed. The owner can ask for an update at once ("Update now", above; the dashboard has no button for it yet); the runner reads it within a minute.
 
 What the runner checks before it uses a download, and what it does not:
 
@@ -208,7 +208,7 @@ What the runner checks before it uses a download, and what it does not:
 - **Codex:** the exact release from OpenAI's GitHub repository, its package matching the SHA-256 GitHub states for it. The release's sigstore signature is not checked.
 - No vendor install script is ever run, and nothing falls back to an unchecked download: a failed check reports `failed` (`installer_failed`) and keeps the version in use.
 
-The runner never logs a tool in. After an install, log in to it once as the agents' user, as the tool's own documentation says; until then the tool is reported `login_needed` and offered to no placement. A managed tool does not update itself (the runner switches its own updater off), and the runner manages tools only on its own machine: not on an ssh target, and not yet in the `agent_user` layout. Updating `maity` itself this way is not built yet.
+The runner never logs a tool in. After an install, log in to it once as the agents' user, as the tool's own documentation says; until then the tool is reported `login_needed` and offered to no placement; the runner checks once a minute and offers it again as soon as you have logged in. A managed tool does not update itself (the runner switches its own updater off), and the runner manages tools only on its own machine: not on an ssh target, and not yet in the `agent_user` layout. Updating `maity` itself this way is not built yet.
 
 ## Logs and a full disk
 

@@ -202,3 +202,134 @@ def test_sessions_on_an_older_binary_are_counted(tmp_path: Path) -> None:
         "d": supervisor.Record(state="running", binary="/usr/bin/claude"),
     }
     assert sup.sessions_on("codex", "/t/codex/versions/1.1.0/bin/codex") == 1
+
+
+def test_the_sandbox_follows_the_install_an_update_and_a_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Claude Code's sandbox state (on, held for its version) is worked out again from the
+    binary each install, update and rollback leaves, and reaches the target and the hub."""
+    installer = FakeInstaller("1.0.0")  # older than CLAUDE_SANDBOX_MIN: held
+    monkeypatch.setitem(tools.INSTALLERS, "claude-code", lambda: installer)
+    monkeypatch.setattr(capabilities, "claude_sandbox_tools", lambda: ("bwrap", "socat"))
+    monkeypatch.setattr(capabilities, "which", lambda name, path, as_user=RUNNER: f"/x/{name}")
+    keep, _, published = make(
+        tmp_path, '\n[harness.claude-code]\ninstall = true\nupdate = "daily"\n'
+    )
+    target_sandbox: dict[str, bool] = {"claude-code": False}
+    target_held: set[str] = set()
+    keep.sandbox, keep.held = target_sandbox, target_held  # the target's own, as serve passes
+
+    def advertised() -> str:
+        entry = next(h for h in keep.advertised["harnesses"] if h["id"] == "claude-code")
+        return str(entry["sandbox"])
+
+    def placed() -> tuple[bool, bool]:  # what the supervisor's refusal reads
+        harness = keep.cfg.harnesses["claude-code"]
+        on = target_sandbox["claude-code"]
+        return on, capabilities.sandbox_refused(harness, on, "claude-code" in target_held)
+
+    keep.step()  # the first install: 1.0.0
+    assert (target_sandbox["claude-code"], target_held, advertised()) == (
+        False, {"claude-code"}, "off",
+    )  # fmt: skip
+    assert placed() == (False, True)
+    installer.offered = "2.1.300"
+    keep.take(keep.cfg.harnesses["claude-code"])  # the update
+    assert (target_sandbox["claude-code"], target_held, advertised()) == (True, set(), "on")
+    assert placed() == (True, False)
+    published.clear()
+    assert tools.rollback(keep.cfg.tools_dir, "claude-code").version == "1.0.0"
+    keep.step()  # the rollback on the machine, seen within a round
+    assert (target_sandbox["claude-code"], target_held, advertised()) == (
+        False, {"claude-code"}, "off",
+    )  # fmt: skip
+    assert "PATCH" in published
+
+
+def test_a_managed_codex_is_sandbox_checked_as_its_own_binary(
+    tmp_path: Path, fake: FakeInstaller, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never a codex the agents' PATH finds: the one new sessions start with."""
+    on_path = tmp_path / "bin" / "codex"
+    on_path.parent.mkdir()
+    on_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    on_path.chmod(0o755)
+    tried: list[str] = []
+
+    def starts(binary: str, user: str | None = None) -> bool:
+        tried.append(binary)
+        return True
+
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", starts)
+    cfg = dataclasses.replace(
+        parse(BASE + "\n[harness.codex]\ninstall = true\n"), tools_dir=tmp_path / "tools"
+    )
+    harness = cfg.harnesses["codex"]
+    path = str(on_path.parent)
+    assert not capabilities.sandbox_available(harness, path, RUNNER, cfg.tools_dir)
+    assert tried == []  # nothing installed yet: not the PATH's codex either
+    tools.take(cfg.tools_dir, "codex", fake, "t")
+    assert capabilities.sandbox_available(harness, path, RUNNER, cfg.tools_dir)
+    assert tried == [str(tools.binary(cfg.tools_dir, "codex"))]
+    entry = capabilities.harness_entry(harness, capabilities.Probe(None, "1.0.0", None), path,
+                                       tools_dir=cfg.tools_dir)  # fmt: skip
+    assert entry["sandbox"] == "on"
+    unmanaged = parse(BASE + "\n[harness.codex]\n").harnesses["codex"]
+    capabilities.sandbox_available(unmanaged, path, RUNNER, cfg.tools_dir)
+    assert tried[-1] == str(on_path)  # an unmanaged codex is still the PATH's
+
+
+def test_a_login_given_later_is_seen_within_a_round(
+    tmp_path: Path, fake: FakeInstaller, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    answer = [False]
+    monkeypatch.setattr(keeper, "logged_in", lambda harness_id, binary, as_user: answer[0])
+    keep, _, published = make(tmp_path, "\n[harness.codex]\ninstall = true\n")
+    keep.step()
+    assert keep.probes["codex"].reason == "login_needed"
+    published.clear()
+    keep.step()
+    assert "PATCH" not in published  # asked again, nothing changed, nothing sent
+    answer[0] = True  # the owner logged in on the machine
+    keep.step()
+    harness = next(h for h in keep.advertised["harnesses"] if h["id"] == "codex")
+    assert (harness["available"], harness["reason"]) == (True, None)
+    assert tool(keep, "codex")["state"] == "current"
+    assert "PATCH" in published
+    published.clear()
+    keep.step()
+    assert "PATCH" not in published  # logged in: not asked again
+
+
+def test_install_false_never_installs_a_missing_tool(tmp_path: Path, fake: FakeInstaller) -> None:
+    clock = [T0]
+    keep, client, _ = make(tmp_path, '\n[harness.codex]\nupdate = "daily"\n', clock)
+    keep.step()
+    clock[0] += DAY
+    keep.step()  # the daily check
+    client.view = {"update_requests": [{"tool": "codex", "requested_at": "2026-11-14T09:00:00Z"}]}
+    keep.step()  # Update now
+    assert fake.installed == []
+    assert tools.load(keep.cfg.tools_dir, "codex").version is None
+
+
+def test_an_older_version_goes_once_no_session_runs_it(tmp_path: Path, fake: FakeInstaller) -> None:
+    keep, _, published = make(tmp_path, '\n[harness.codex]\ninstall = true\nupdate = "daily"\n')
+    keep.step()
+    first = keep.probes["codex"].path
+    assert first is not None
+    for version in ("1.1.0", "1.2.0"):
+        fake.offered = version
+        keep.take(keep.cfg.harnesses["codex"])
+    in_use: set[str] | None = {first}
+    keep.binaries_in_use = lambda: in_use
+    keep.step()
+    assert Path(first).is_file()
+    in_use = None  # a session whose binary is not known
+    keep.step()
+    assert Path(first).is_file()
+    in_use = set()
+    keep.step()
+    assert not Path(first).exists()
+    assert "tools: codex: 1.0.0 removed, no session uses it" in published

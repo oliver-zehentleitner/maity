@@ -17441,7 +17441,7 @@ Outside a placement every path is read as before.
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
-| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` after every wake (§15.16; the hub answers it, the runner does not call it yet, tsk-29nmydbzrg5z), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers both, the runner does not call them yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
+| `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` at most once a minute while a tool is updated daily, for the owner's `Update now` (§15.16), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers both, the runner does not call them yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local, the free space of the file system holding the workspaces included (§15.5; not built yet, tsk-34gb7frfbsk7) |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16). `status` also prints the fingerprint of the runner's handover key (§15.14) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7). |
@@ -20189,9 +20189,12 @@ update = "daily"    # maity itself; default "never"
   start of a session. A session that runs keeps the version it started
   with: the runner never swaps a tool under a running agent. The version
   before stays on the machine, so the operator can go back to it on the
-  runner (`maity runner tools rollback <tool>`, no hub call). A newer
-  version that does not run is removed again, the version in use stays,
-  and the tool reports `failed`.
+  runner (`maity runner tools rollback <tool>`, no hub call). An older
+  version is removed only once no running session started from it. A
+  newer version that does not run is removed again, the version in use
+  stays, and the tool reports `failed`. With `install = false`, an update
+  never installs a missing tool, neither the daily check nor `Update
+  now`.
 - **Rollback.** `maity runner tools rollback <tool>` makes the kept
   version the one new sessions start with; the version it left stays on
   the machine as `previous_version`, so a second rollback goes back to
@@ -20201,7 +20204,9 @@ update = "daily"    # maity itself; default "never"
   one that failed its version answer, again on its own, neither on the
   daily check nor on `Update now`: it takes only a version newer than
   those, which ends `rolled_back`. Taking the left version again is the
-  operator's second rollback. For example, with 2.1.320 in use, 2.1.308
+  operator's second rollback. A rollback is refused while an install or
+  update of the tool runs; it can be run again once that is done, so
+  neither overwrites the other. For example, with 2.1.320 in use, 2.1.308
   kept and `latest` 2.1.320: a rollback starts new sessions on 2.1.308,
   keeps 2.1.320 as `previous_version` and reports `rolled_back`; the
   daily check finds 2.1.320 again and leaves it. A second rollback
@@ -20220,7 +20225,8 @@ update = "daily"    # maity itself; default "never"
   tool. A tool that needs a login after its install reports
   `login_needed` and is not offered to placements (`available: false`,
   `reason: login_needed`, §15.3) until its owner has logged in on the
-  machine.
+  machine. The runner asks the tool once a minute whether it is logged
+  in, and offers it again as soon as it is.
 - **Where.** On the runner's local target. On an `ssh` target the
   runner only reports what it finds there, and manages nothing (the
   owner's answer to req-vpcfh15h247c, event 119538). Not yet in the

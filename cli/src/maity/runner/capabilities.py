@@ -248,23 +248,31 @@ def claude_sandbox_tools(platform: str | None = None) -> tuple[str, ...] | None:
 
 
 def sandbox_available(
-    harness: config.Harness, path: str | None = None, as_user: AsUser = RUNNER
+    harness: config.Harness,
+    path: str | None = None,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> bool:
     """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
     needs its tools (`claude_sandbox_tools`, §6.1) found on the agents' PATH. Codex's is
     tried once per binary (`codex sandbox -- true`): a host where it cannot start is not
     advertised as sandboxed. agy's is reported off until the runner has a bounded check
     that sees agy's own sandbox start (§15.3, `agy_namespaces`). Nothing else is switched on
-    yet."""
+    yet. A Codex the runner manages (§15.16) is tried as the binary its sessions start with,
+    from `tools_dir`, never one the PATH finds, as `probe` does."""
     if harness.id == "codex":
-        binary = which(harness.binary or "codex", path, as_user)
+        if tools_dir is not None and (harness.install or harness.update != "never"):
+            managed = tools.binary(tools_dir, harness.id)
+            binary = str(managed) if managed is not None else None
+        else:
+            binary = which(harness.binary or "codex", path, as_user)
         return binary is not None and _codex_sandbox_starts(binary, as_user.user)
     if harness.id == "antigravity":
         return False  # not seen starting: the namespaces it needs are a diagnostic only
-    tools = claude_sandbox_tools()
-    if harness.id != "claude-code" or tools is None:
+    needed = claude_sandbox_tools()
+    if harness.id != "claude-code" or needed is None:
         return False
-    return all(which(tool, path, as_user) for tool in tools)
+    return all(which(tool, path, as_user) for tool in needed)
 
 
 def which(name: str, path: str | None, as_user: AsUser = RUNNER) -> str | None:
@@ -340,9 +348,10 @@ def harness_entry(
     targets: list[str] | None = None,
     sandbox: bool | None = None,
     as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> dict[str, Any]:
     if sandbox is None:
-        sandbox = sandbox_available(harness, path, as_user) and sandbox_version_ok(
+        sandbox = sandbox_available(harness, path, as_user, tools_dir) and sandbox_version_ok(
             harness.id, found.version
         )
     on = sandbox
@@ -404,7 +413,7 @@ def build(
         ],
         "harnesses": [
             harness_entry(h, probes[h.id], agent_path(cfg, os.environ.get("PATH", "")),
-                          as_user=AsUser(agents_user))  # fmt: skip
+                          as_user=AsUser(agents_user), tools_dir=cfg.tools_dir)  # fmt: skip
             for h in cfg.harnesses.values()
         ],
         "projects": list(limits.projects),

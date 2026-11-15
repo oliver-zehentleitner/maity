@@ -3185,6 +3185,9 @@ in his words are this design's (inferred).
   answered its version; a running session keeps what it started with.
   The previous version stays for `maity runner tools rollback`, a local
   command, because a rollback is the operator's call on the machine.
+  An older version goes only once no running session started from it,
+  and an install and a rollback hold the tool's lock across processes,
+  so neither overwrites the other's `state.json` (a4xv's review).
 - **"Update now" is read, not pushed.** The hub stores the owner's
   request on the runner, and the runner reads `GET /runner` after every
   wake of its event wait. Every event belongs to a project, and a runner

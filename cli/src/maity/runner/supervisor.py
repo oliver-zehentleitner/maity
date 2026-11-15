@@ -1156,6 +1156,16 @@ class Supervisor:
                 and rec.binary != binary
             )
 
+    def binaries_in_use(self) -> set[str] | None:
+        """The harness binaries live sessions started from, so `tools.prune` keeps their
+        versions; None when a live session's binary is not known."""
+        with self.lock:
+            live = [r for r in self.records.values()
+                    if r.state in ("starting", "running", "stopping")]  # fmt: skip
+            if any(r.binary is None for r in live):
+                return None
+            return {r.binary for r in live if r.binary is not None}
+
     def advertise_now(self) -> None:
         """`PATCH /runner` at once: the capabilities themselves changed (a tool, §15.16)."""
         self._advertise(None, self.now(), force=True)

@@ -70,6 +70,12 @@ class Keeper:
     as_user: AsUser
     sessions_on: Callable[[str, str | None], int] = lambda harness_id, binary: 0
     advertise: Callable[[], None] = lambda: None
+    # The local target's own sandbox state (targets.Target.sandbox, .held), replaced in place
+    # with the probe: the supervisor refuses or starts a placement on what they say.
+    sandbox: dict[str, bool] = field(default_factory=dict)
+    held: set[str] = field(default_factory=set)
+    # The binaries running sessions started from; None when one of them is not known.
+    binaries_in_use: Callable[[], set[str] | None] = lambda: set()
     now: Callable[[], float] = time.time
     pause: Callable[[float], None] = time.sleep
     lock: threading.RLock = field(default_factory=threading.RLock)
@@ -116,17 +122,34 @@ class Keeper:
         )
         return out
 
-    def refresh(self, harness: config.Harness) -> None:
-        """Probe the harness again: the managed binary, its version answer, and its login."""
+    def refresh(self, harness: config.Harness) -> bool:
+        """Probe the harness again: the managed binary, its version answer, its login, and
+        its OS sandbox at that binary and version (an install, update or rollback changes
+        all of them). Whether anything the runner advertises changed."""
         found = capabilities.probe(harness, self.agent_path, self.as_user, self.cfg.tools_dir)
         if found.available and managed(harness) and found.path is not None:
             if not logged_in(harness.id, found.path, self.as_user):
                 found = capabilities.Probe(found.path, found.version, "login_needed")
+        tools_ok = capabilities.sandbox_available(
+            harness, self.agent_path, self.as_user, self.cfg.tools_dir
+        )
+        on = tools_ok and capabilities.sandbox_version_ok(harness.id, found.version)
+        changed = self.probes.get(harness.id) != found or self.sandbox.get(harness.id) != on
         self.probes[harness.id] = found
+        self.sandbox[harness.id] = on
+        if capabilities.sandbox_held(harness.id, tools_ok, found.version):
+            self.held.add(harness.id)
+        else:
+            self.held.discard(harness.id)
         for entry in self.advertised.get("harnesses", []):
             if entry.get("id") == harness.id:
-                entry.update(version=found.version, available=found.available,
-                             reason=found.reason)  # fmt: skip
+                entry.update(
+                    version=found.version,
+                    available=found.available,
+                    reason=found.reason,
+                    sandbox="n/a" if harness.id == "stub" else "on" if on else "off",
+                )
+        return changed
 
     def publish(self) -> None:
         with self.lock:
@@ -144,12 +167,13 @@ class Keeper:
             f"tools: {harness.id}: {'installing' if state.version is None else 'checking'}"
             + (f" (Update now of {requested_at})" if requested_at else "")
         )
-        with self.lock:
-            state.state = "installing" if state.version is None else "updating"
-            tools.save(self.cfg.tools_dir, harness.id, state)
-        self.publish()
         result = tools.take(
-            self.cfg.tools_dir, harness.id, factory(), stamp(self.now()), requested_at=requested_at
+            self.cfg.tools_dir,
+            harness.id,
+            factory(),
+            stamp(self.now()),
+            requested_at=requested_at,
+            started=self.publish,
         )
         if result.state == "failed":
             self.log(f"tools: {harness.id}: failed ({result.reason})")
@@ -177,23 +201,30 @@ class Keeper:
         return found
 
     def step(self) -> None:
-        """One round: the first install, the daily check, the requests."""
+        """One round: the first install, the daily check, the requests, a login the owner
+        has since given, and the versions no session uses any more."""
         now = self.now()
         for harness in self.cfg.harnesses.values():
             if not managed(harness):
                 continue
             current = tools.binary(self.cfg.tools_dir, harness.id)
             known = self.probes.get(harness.id)
-            if self.started and (str(current) if current else None) != (known and known.path):
-                self.refresh(harness)  # `maity runner tools rollback` on this machine
+            moved = (str(current) if current else None) != (known and known.path)
+            waiting = known is not None and known.reason == "login_needed"
+            # `maity runner tools rollback` on this machine, or a login asked for again
+            if self.started and (moved or waiting) and self.refresh(harness):
                 self.publish()
             state = tools.load(self.cfg.tools_dir, harness.id)
-            if not self.started and state.version is None and harness.install:
+            if state.version is None and not harness.install:
+                pass  # `install = false`: a missing tool is never installed, not even by Update now
+            elif not self.started and state.version is None:
                 self.take(harness)
             elif harness.update == "daily":
                 age = _age(state.checked_at, now)
                 if age is None or age >= CHECK_EVERY:
                     self.take(harness)
+            for version in tools.prune(self.cfg.tools_dir, harness.id, self.binaries_in_use()):
+                self.log(f"tools: {harness.id}: {version} removed, no session uses it")
         self.started = True
         if not any(h.update == "daily" for h in self.cfg.harnesses.values()):
             return
@@ -201,8 +232,11 @@ class Keeper:
             asked = self.cfg.harnesses.get(tool_id)
             if asked is None or asked.update != "daily":
                 continue  # the hub refuses those; one that slips through is left standing
-            if tools.load(self.cfg.tools_dir, tool_id).update_requested_at == requested_at:
+            state = tools.load(self.cfg.tools_dir, tool_id)
+            if state.update_requested_at == requested_at:
                 continue
+            if state.version is None and not asked.install:
+                continue  # `install = false`: Update now updates, it never installs
             self.take(asked, requested_at=requested_at)
 
     def run(self, stopping: threading.Event) -> None:

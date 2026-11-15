@@ -17,7 +17,9 @@ import json
 import os
 import re
 import shutil
-from collections.abc import Callable
+import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -83,6 +85,12 @@ class ToolState:
 
 
 BINARY_FILE = "binary.path"  # the binary's path inside its version directory
+LOCK_FILE = "lock"
+
+
+class Busy(Exception):
+    """Another process (the runner's install, or `maity runner tools rollback`) holds the
+    tool's lock."""
 
 
 def root(tools_dir: Path, tool_id: str) -> Path:
@@ -107,6 +115,30 @@ def save(tools_dir: Path, tool_id: str, state: ToolState) -> None:
     os.replace(tmp, folder / "state.json")
 
 
+@contextmanager
+def locked(tools_dir: Path, tool_id: str, *, wait: bool = True) -> Iterator[None]:
+    """The tool's lock across processes: `serve`'s install or update and a `rollback` from
+    the command line never write `state.json` or remove a version at the same time. Without
+    `wait`, Busy when another process holds it. The runner does not run on Windows
+    (context/credentials.md), where nothing is locked."""
+    if sys.platform == "win32":
+        yield
+        return
+    import fcntl
+
+    folder = root(tools_dir, tool_id)
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(folder / LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except BlockingIOError:
+            raise Busy(f"{tool_id}: an install or update is running") from None
+        yield
+    finally:
+        os.close(fd)  # closing it releases the lock
+
+
 def version_dir(tools_dir: Path, tool_id: str, version: str) -> Path:
     return root(tools_dir, tool_id) / "versions" / version
 
@@ -127,7 +159,16 @@ def binary(tools_dir: Path, tool_id: str) -> Path | None:
 
 def rollback(tools_dir: Path, tool_id: str) -> ToolState:
     """Swap the version in use with the kept one (§15.16); a second rollback swaps back.
-    The version it leaves is not taken again on its own; a newer one ends that."""
+    The version it leaves is not taken again on its own; a newer one ends that. ValueError
+    while an install or update of the tool runs: it would overwrite the swap."""
+    try:
+        with locked(tools_dir, tool_id, wait=False):
+            return _rollback(tools_dir, tool_id)
+    except Busy as exc:
+        raise ValueError(f"{exc}; try again when it is done") from None
+
+
+def _rollback(tools_dir: Path, tool_id: str) -> ToolState:
     state = load(tools_dir, tool_id)
     if state.previous_version is None or state.version is None:
         raise ValueError(f"{tool_id}: no kept version to go back to")
@@ -175,16 +216,31 @@ def take(
     now: str,
     *,
     requested_at: str | None = None,
+    started: Callable[[], None] = lambda: None,
 ) -> ToolState:
     """Look for a newer version and install it beside the one in use (§15.16). Used for the
-    first install, the daily check and `Update now` alike. Never removes the version in use;
-    keeps one previous version and removes older ones."""
+    first install, the daily check and `Update now` alike. Holds the tool's lock throughout,
+    so a rollback waits for it; `started` is called once `installing` or `updating` is
+    saved. Never removes a version: older ones go in `prune`, once no session uses them."""
+    with locked(tools_dir, tool_id):
+        return _take(tools_dir, tool_id, installer, now, requested_at, started)
+
+
+def _take(
+    tools_dir: Path,
+    tool_id: str,
+    installer: Installer,
+    now: str,
+    requested_at: str | None,
+    started: Callable[[], None],
+) -> ToolState:
     state = load(tools_dir, tool_id)
     if requested_at is not None:
         state.update_requested_at = requested_at
     first = state.version is None
     state.state, state.reason = ("installing" if first else "updating"), None
     save(tools_dir, tool_id, state)
+    started()
     try:
         latest = installer.latest()
     except InstallError as error:
@@ -217,14 +273,34 @@ def take(
     (staging / BINARY_FILE).write_text(str(found.relative_to(staging)) + "\n", encoding="utf-8")
     shutil.rmtree(target, ignore_errors=True)
     staging.rename(target)
-    older = state.previous_version
     state.previous_version, state.version = state.version, latest
     state.updated_at, state.state, state.reason = now, "current", None
     state.skipped = [v for v in state.skipped if newer(v, latest)]
     save(tools_dir, tool_id, state)
-    if older is not None and older not in (state.version, state.previous_version):
-        shutil.rmtree(version_dir(tools_dir, tool_id, older), ignore_errors=True)
     return state
+
+
+def prune(tools_dir: Path, tool_id: str, in_use: set[str] | None) -> list[str]:
+    """Remove the installed versions that are neither in use nor kept for a rollback, and
+    that no running session started from: `in_use` holds those sessions' binaries, None
+    when one of them is not known (nothing is removed then). Skipped while an install or
+    rollback holds the lock; the next round tries again. Returns the versions removed."""
+    if in_use is None:
+        return []
+    try:
+        with locked(tools_dir, tool_id, wait=False):
+            state = load(tools_dir, tool_id)
+            keep = {state.version, state.previous_version}
+            folder = root(tools_dir, tool_id) / "versions"
+            removed = []
+            for path in sorted(folder.iterdir()) if folder.is_dir() else []:
+                if path.name in keep or any(Path(b).is_relative_to(path) for b in in_use):
+                    continue
+                shutil.rmtree(path, ignore_errors=True)
+                removed.append(path.name)
+            return removed
+    except Busy:
+        return []
 
 
 def _failed(tools_dir: Path, tool_id: str, state: ToolState, reason: str, now: str) -> ToolState:
