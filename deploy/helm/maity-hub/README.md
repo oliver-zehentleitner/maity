@@ -249,7 +249,8 @@ The chart refuses to render:
 - with `allowPlainHttp` together with the Ingress or a NodePort or
   LoadBalancer Service.
 
-The registration, terms, second-factor, limit and public-page settings have no
+The registration, terms, second-factor, limit, public-page and agent-firewall
+(`MAITY_AGENT_FIREWALL`) settings have no
 value of their own here. Set them in `extraEnv`, or as instance admin where the
 dashboard offers them; what each does is in
 [`hub/README.md`](../../../hub/README.md#settings-for-a-public-instance), the
@@ -261,6 +262,7 @@ extraEnv:
   - {name: MAITY_REGISTRATION, value: open}
   - {name: MAITY_SIGN_IN_SECOND_FACTOR, value: required_admins}
   - {name: MAITY_PUBLIC_PAGES, value: "on"}
+  - {name: MAITY_AGENT_FIREWALL, value: "on"}
 ```
 
 ## Client addresses

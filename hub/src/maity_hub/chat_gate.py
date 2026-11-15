@@ -20,6 +20,14 @@ author and two leads). A request (§7) and a ticker item's `to` (§17.6) pass th
 `settle` is the one place that writes the state: every change of who is in a chat, and every
 change of an owner's entries, ends in it. It hands the owners whose agents waited or wait to
 `chat_request.sync`, which keeps the request to each owner (§9.6, "The request").
+
+All of it runs only while the switch is on (`MAITY_AGENT_FIREWALL`, §9.6, "The switch";
+req-5tngzfgp3nne o2, context/chat.md). Off, the default, `settle` writes nothing,
+`gate` and `hold` pass every audience, a deny entry stops no one, the owner's add writes no
+entry, and every read of the marks (`stay_columns`, `not_waiting`, `waiting`) sees no agent
+waiting, so marks written while it was on, or by revision 20261113010000 in 0.1.0a6, are kept
+and inert. The entries stay editable either way. A hub started with it on judges every open
+chat once before it serves (`switch_on`).
 """
 
 from __future__ import annotations
@@ -30,7 +38,8 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, false, func, insert, null, select, true, update
+from sqlalchemy.sql.elements import ColumnElement
 
 from maity_hub import chat_access, clock
 from maity_hub import tables as t
@@ -39,6 +48,9 @@ from maity_hub.ids import new_id
 from maity_hub.scopes import tokens_of
 
 DENIED = "denied_participant"
+# MAITY_AGENT_FIREWALL, set from the settings by every app and before the one-time start work
+# (`configure`): whether the gate is on. Off by default (§9.6, "The switch").
+ON = False
 # Whether a jour fixe round's moderator that waits in the round's thread is held back from
 # its own writes too (the statement, a further step, the report), as from the steps it is
 # eligible for (§9.6): on, by the maintainer's answer o2 to req-a89crp06kjf3 ("gesperrt bis
@@ -63,6 +75,28 @@ GATED_WORK = frozenset(
     }
 )
 LEAD_TRUSTS = frozenset({"owner", "admin"})
+
+
+def configure(on: bool) -> None:
+    """Switch the gate on or off for this process (`Settings.agent_firewall`)."""
+    global ON
+    ON = on
+
+
+def stay_columns() -> list[Any]:
+    """The columns of a `conversation_participant` read: the table as is while the gate is on;
+    off, `waiting` false and `waiting_for` null on every stay, whatever is stored."""
+    p = t.conversation_participant
+    if ON:
+        return [p]
+    kept = [c for c in p.c if c.name not in ("waiting", "waiting_for")]
+    return [*kept, false().label("waiting"), null().label("waiting_for")]
+
+
+def not_waiting(column: Any) -> ColumnElement[bool]:
+    """A query's condition that a stay does not wait (`conversation_participant.waiting`):
+    always true while the gate is off."""
+    return column.is_(False) if ON else true()
 
 
 @dataclass(frozen=True)
@@ -212,7 +246,10 @@ def verdicts(conn: Connection, conversation: Any, current: list[Any]) -> dict[in
 
 def refuse_denied(conn: Connection, conversation: Any, current: list[Any], agent_id: str) -> None:
     """`forbidden` (`chat_denied`) when a deny entry of the agent's owner names someone in the
-    chat or its project: the caller learns that the owner said no, not to whom (§9.6)."""
+    chat or its project: the caller learns that the owner said no, not to whom (§9.6). Nothing
+    while the gate is off."""
+    if not ON:
+        return
     met = parties(conn, current)
     owner = owners_of(conn, [agent_id])[agent_id]
     if judge(agent_id, owner, met, _entries(conn, [owner])[owner], conversation.project_id).denied:
@@ -243,7 +280,9 @@ def lock_for_yes(conn: Connection, owner: str, project_id: str, agent_ids: Itera
 def owner_yes(conn: Connection, conversation: Any, current: list[Any], agent_id: str) -> None:
     """The owner's add is the yes (§9.6): an allow entry for the agent and each other side in
     the chat now, `their_agents` that side's agents in it and `their_human` whether its human
-    is, with no `duration`."""
+    is, with no `duration`. While the gate is off the add is no yes and writes no entry."""
+    if not ON:
+        return
     met = parties(conn, current)
     owner = owners_of(conn, [agent_id])[agent_id]
     sides: dict[str, tuple[list[str], bool]] = {}
@@ -294,9 +333,12 @@ def settle(
     `participants_changed` items of the stays whose `waiting_for` changed (not of the `fresh`
     ones, which the change that brought them in names), and the membership ids a deny entry
     stops, which the caller removes. An agent admitted now reads from here on: its window
-    starts at the admission (§9.6)."""
+    starts at the admission (§9.6). While the gate is off nothing is written or asked: the
+    stored marks stay as they are, and every read sees them as no one waiting."""
     from maity_hub import group_chats
 
+    if not ON:
+        return [], []
     current = group_chats.stays(conn, conversation.id)
     if conversation.closed_at is not None:
         _ask(conn, [s for s in current if s.waiting])
@@ -346,7 +388,9 @@ def _ask(conn: Connection, stays: list[Any]) -> None:
 
 
 def waiting(conn: Connection, conversation_id: str, membership_id: int) -> bool:
-    """Whether the member takes part in the chat as waiting now."""
+    """Whether the member takes part in the chat as waiting now; never while the gate is off."""
+    if not ON:
+        return False
     found = conn.execute(
         select(t.conversation_participant.c.waiting).where(
             t.conversation_participant.c.conversation_id == conversation_id,
@@ -402,8 +446,12 @@ def chats_of_owner(conn: Connection, owner: str) -> list[Any]:
 
 def served(conn: Connection, membership_id: int) -> None:
     """After a connection across owners that serves this member starts or ends (§2.3): the
-    bridge counts on its owner's side in the member's open chats, so settle them again."""
+    bridge counts on its owner's side in the member's open chats, so settle them again.
+    Nothing while the gate is off."""
     from maity_hub import chat_request, group_chats
+
+    if not ON:
+        return
 
     p, c = t.conversation_participant.c, t.conversation.c
     chats = conn.execute(
@@ -419,8 +467,12 @@ def served(conn: Connection, membership_id: int) -> None:
 
 def recheck(conn: Connection, owner: str) -> None:
     """After a change of the owner's entries (§9.6): settle each open chat of the owner's
-    agents and announce what changed; an agent a new deny entry stops leaves."""
+    agents and announce what changed; an agent a new deny entry stops leaves. Nothing while
+    the gate is off: the entries wait for it to be switched on (`switch_on`)."""
     from maity_hub import chat_request, group_chats
+
+    if not ON:
+        return
 
     with chat_request.deferred(conn):
         for chat in chats_of_owner(conn, owner):
@@ -489,6 +541,51 @@ def sweep(engine: Any) -> int:
     return lapsed
 
 
+def switch_on(engine: Any) -> int:
+    """What a start with the gate on does once before the hub serves (`app.start_once`):
+    settle every open group chat with an agent in it, each in a transaction of its own under
+    its project's lock (`group_chats.resettle`), then sync the owners of open requests
+    (`chat_request.sweep_owners`). Returns how many chats were settled.
+
+    The same whatever is stored: a stay never judged (a fresh install, a stay that joined while
+    the gate was off) is judged now, a mark from before (0.1.0a6's revision 20261113010000, or
+    an earlier time the gate was on) is judged again, so an allow entry that covers the pair
+    admits the agent. Each agent that waits gets its owner's request, filed where none is open
+    (`chat_request.sync`). A second run, a restart or a second replica starting at the same
+    time writes nothing more: `settle` writes only what changed, under the project lock, and
+    two filings of one request get the same id (`chat_request._request_id`)."""
+    from maity_hub import chat_request, events, group_chats
+    from maity_hub.db import retrying
+
+    p, m, c = t.conversation_participant.c, t.membership.c, t.conversation.c
+    with engine.connect() as conn:
+        chats = conn.execute(
+            select(t.conversation)
+            .where(
+                c.closed_at.is_(None),
+                c.id.in_(
+                    select(p.conversation_id)
+                    .join(t.membership, m.id == p.membership_id)
+                    .where(p.here.is_(True), m.agent_id.is_not(None))
+                ),
+            )
+            .order_by(c.project_id, c.id)
+        ).all()
+
+    def one(chat: Any) -> None:
+        with events.transaction(engine) as conn, chat_request.deferred(conn):
+            group_chats.resettle(conn, chat, None)
+
+    def asking() -> None:
+        with events.transaction(engine) as conn:
+            chat_request.sweep_owners(conn)
+
+    for chat in chats:
+        retrying(partial(one, chat))
+    retrying(asking)
+    return len(chats)
+
+
 def sides_of(conn: Connection, current: list[Any]) -> list[str]:
     """The sides of a chat now: the human of each, in the order first met."""
     return list(dict.fromkeys(p.side for p in parties(conn, current)))
@@ -533,8 +630,9 @@ def gate(
     """`hold`'s judging, for every path that addresses an agent with a member's own text: a
     work message, a request (§7) and a ticker item's `to` (§17.6). A lead's text is not gated:
     a member with trust `owner` or `admin`, or a manager whose line the agent is in (§2.3,
-    "The manager"). Decided once, at write time: a later yes admits what comes after it."""
-    if mine.trust in LEAD_TRUSTS:
+    "The manager"). Decided once, at write time: a later yes admits what comes after it.
+    While the gate is off every audience passes as it is."""
+    if not ON or mine.trust in LEAD_TRUSTS:
         return audience, []
     author = mine.principal_id
     side = owners_of(conn, [author]).get(author, author) if mine.row.agent_id else author

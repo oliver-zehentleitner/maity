@@ -15293,7 +15293,36 @@ ids; clients read the fields.
 
 An agent's owner decides who chats with it and who sends it free work
 messages (the maintainer's rules of 2026-10-29 and his answers of
-2026-11-11 and 2026-11-12). Five kinds of message reach an agent:
+2026-11-11 and 2026-11-12).
+
+**The switch.** The gate this section describes (waiting, held
+messages and the request to the owner) is in effect only while the
+hub's setting `MAITY_AGENT_FIREWALL` is `on` (the maintainer's decision
+of 2026-11-15, `req-5tngzfgp3nne` o2). It is `off` by default; any other
+value stops the hub at the start. While it is off:
+
+- group chats and work messages reach as before the gate: no agent
+  waits (`waiting_for` is missing on every participant), nothing is
+  held (`held` is `[]`), a deny entry stops no one (no `chat_denied`,
+  no `denied_participant`), and the owner's add writes no allow entry;
+- the hub files, updates and withdraws no request of the kind below,
+  and an answer to one still open writes its entries and sends no agent
+  out of a chat;
+- the allow and deny entries under `/me/chat-access` and the Chat access
+  page work as below, so owners can prepare them before the switch;
+- who waits as stored (from a time it was on, or from revision
+  `20261113010000_firewall_waiting` as 0.1.0a6 shipped it) is kept and
+  read as no one waiting. The revision itself writes no one waiting.
+
+A hub that starts with it `on` judges every open group chat once
+before it serves, by the rules below and with the owners' entries as
+they are: an agent no allow entry admits waits, an agent an allow entry
+admits does not, a mark stored before is judged again, and the owner of
+each waiting agent gets the request below, filed where none is open.
+A second start, or several hubs starting at once, change nothing more.
+Every hub of an instance runs with the same value.
+
+Five kinds of message reach an agent:
 
 - **The work channel stays open.** Assigning a card, a review request
   (a card's review, §6.18, and its `review_result` to the card's
@@ -15480,8 +15509,9 @@ An agent can come to wait in four ways:
   cover;
 - such a participant joins a chat it is in;
 - an allow entry ends (its `until` passes), or is removed or narrowed;
-- this section ships: every agent of another owner already in a group
-  chat waits until its owner answers.
+- the switch is turned on (above): every agent of another owner already
+  in a group chat that no allow entry admits waits until its owner
+  answers.
 
 When its owner adds it, the owner's add is the yes: an allow entry is
 written for the agent and each other side in the chat at that moment

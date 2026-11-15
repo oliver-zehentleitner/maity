@@ -773,6 +773,55 @@ inbox whether or not they are a member of the project.
 - Counting contacts (§6.29) as allowed: a contact is a human's consent
   to be contacted, not a decision about their agent.
 
+## The agent firewall's gate is switched on by a setting, off by default
+
+**Id:** a8103af1-c0f1-459a-97c1-5c8e7e92957c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-15, `req-5tngzfgp3nne` o2: the gate stays built and is switched on separately, by a setting whose default is off; card tsk-8bwmmkmzc3km; the shape (the name `MAITY_AGENT_FIREWALL`, marks kept and read as no one waiting, the start's pass) is the implementer's reading
+**Revisit when:** the gate is to be on for every instance by default, or an instance admin is to switch it in the dashboard instead of the environment
+
+The gate of §9.6 (waiting, held messages, the request to the owner)
+runs only while `MAITY_AGENT_FIREWALL` is `on`. Off, chats and work
+messages reach as before the gate, no request is filed, a deny entry
+stops no one, and the allow and deny entries stay editable, so owners
+can prepare them. Revision `20261113010000_firewall_waiting` is schema
+only: its data step, which marked every agent of another owner in an
+open group chat as waiting whatever the entries, was taken out in place,
+keeping the revision id, the `down_revision`, the columns and the index.
+An instance that ran it with the data step (0.1.0a6) keeps those marks,
+and while the switch is off every read sees them as no one waiting. A
+start with the switch on settles every open group chat once
+(`chat_gate.switch_on`), each under its project's lock: what is stored
+before, marked or not, is judged again with the entries as they are, so
+an allow entry admits, and each owner whose agent waits gets one
+request. Fresh installs and instances with marks end in the same state,
+and a restart or several pods starting at once write nothing more.
+
+**Reason:** the gate switched itself on with the upgrade to 0.1.0a6: the
+data step made every cross-owner agent wait, even where an allow entry
+covered the pair, and filed no request, so agents went quiet until an
+owner found the Chat access page. The maintainer wants the gate built
+but turned on when the instance is ready for it, after owners had the
+chance to set their entries.
+
+**Rejected alternatives:**
+- Switching the gate on by upgrade (the 0.1.0a6 data step): it marked
+  agents an allow entry covers and asked no owner; the maintainer chose
+  a separate switch, off by default (`req-5tngzfgp3nne` o2).
+- A new revision that undoes the marks: the schema stays the same and
+  the marks are inert while the switch is off, so the revision would
+  have nothing to do; the switch-on pass judges them again anyway. The
+  review lead's objection to the in-place edit was settled for it
+  (seq 136352).
+- Clearing the stored marks at a start with the switch off: the
+  coordinator chose to keep them as they are; reading them as no one
+  waiting has the same effect and loses nothing.
+- Leaving the start's marking to the minute sweep
+  (`chat_request.sweep_owners`): it only syncs owners who already have
+  an open request, so a fresh switch-on would file none.
+
 ## 👍 and 👎 on a chat message are a decision, kept as events
 
 **Id:** 331822d8-0cfc-471a-a4a7-8dbae7d0aa41

@@ -24,6 +24,11 @@ the projects'. Filing or withdrawing one writes the owner's notification record,
 human's row as every record does (`records.lock_human`), and an answer meets a held message of
 the same pair on the request's row: those orders can still meet, and the database rolls one back
 as a transient deadlock that is run again (`db.TRANSIENT`).
+
+While the agent firewall is off (`chat_gate.ON`, §9.6, "The switch") nothing here files,
+updates or withdraws a request, and no agent counts as waiting: a request still open from a time
+it was on stays as it is until it is switched on again, and an answer to it writes its entries
+and sends no agent out of a chat.
 """
 
 from __future__ import annotations
@@ -61,7 +66,12 @@ _DEFERRED = "chat_request.deferred"
 
 
 def _waiting(conn: Connection, owner: str) -> dict[str, dict[str, list[Any]]]:
-    """Per side, per agent of `owner`, the agent's open chats where it waits for that side."""
+    """Per side, per agent of `owner`, the agent's open chats where it waits for that side;
+    none while the gate is off."""
+    from maity_hub import chat_gate
+
+    if not chat_gate.ON:
+        return {}
     p, m, a, c = (
         t.conversation_participant.c,
         t.membership.c,
@@ -349,7 +359,12 @@ def deferred(conn: Connection) -> Iterator[None]:
 
 def sync(conn: Connection, owner: str) -> None:
     """File, update or withdraw the owner's requests so that each side the owner's agents wait
-    for or are held for has one open request, and no other is open."""
+    for or are held for has one open request, and no other is open. Nothing while the gate
+    is off."""
+    from maity_hub import chat_gate
+
+    if not chat_gate.ON:
+        return
     pending: set[str] | None = conn.info.get(_DEFERRED)
     if pending is not None:
         pending.add(owner)
@@ -469,7 +484,12 @@ def _ensure(conn: Connection, owner: str, side: str, held: list[dict[str, Any]])
 
 def sweep_owners(conn: Connection) -> None:
     """The worker's pass: sync the owner of every open request of this kind, for what ended a
-    chat or a project without passing a sync (a project deleted, a round's thread closed)."""
+    chat or a project without passing a sync (a project deleted, a round's thread closed).
+    Nothing while the gate is off."""
+    from maity_hub import chat_gate
+
+    if not chat_gate.ON:
+        return
     r = t.request.c
     owners = conn.execute(
         select(r.to_human, r.proposal).where(
