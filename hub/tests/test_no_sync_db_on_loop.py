@@ -31,8 +31,6 @@ SYNC_CONTEXTS = {"begin", "connect"}
 # can hold the write lock then.
 STARTUP = {("app", "lifespan")}
 
-Key = tuple[str, str]  # (module, function)
-
 
 def _own_nodes(fn: ast.AST) -> Iterator[ast.AST]:
     """The nodes of `fn`'s body, without those of nested functions and lambdas, and without
@@ -50,43 +48,137 @@ def _own_nodes(fn: ast.AST) -> Iterator[ast.AST]:
         stack.extend(ast.iter_child_nodes(node))
 
 
+Key = tuple[str, str]  # (module, function), (module, "Class.method") or (module, "Class")
+
+
 class Module:
     def __init__(self, name: str, tree: ast.Module, modules: set[str]) -> None:
         self.name = name
         self.tree = tree
-        self.functions = {
-            node.name: node
-            for node in tree.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        }
-        # Local name -> a module of the package, or (module, function) of the package.
+        self.functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+        self.classes: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                self.functions[node.name] = node
+            elif isinstance(node, ast.ClassDef):
+                self.classes.add(node.name)
+                for item in node.body:
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        self.functions[f"{node.name}.{item.name}"] = item
+        # Local name -> a module of the package, or (module, name) of the package.
         self.modules: dict[str, str] = {}
         self.imported: dict[str, Key] = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
+        for imp in ast.walk(tree):
+            if isinstance(imp, ast.Import):
+                for alias in imp.names:
                     if alias.name in modules and alias.asname:
                         self.modules[alias.asname] = alias.name
-            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-                for alias in node.names:
+            elif isinstance(imp, ast.ImportFrom) and imp.module and imp.level == 0:
+                for alias in imp.names:
                     local = alias.asname or alias.name
-                    full = f"{node.module}.{alias.name}"
+                    full = f"{imp.module}.{alias.name}"
                     if full in modules:
                         self.modules[local] = full
-                    elif node.module in modules:
-                        self.imported[local] = (node.module, alias.name)
+                    elif imp.module in modules:
+                        self.imported[local] = (imp.module, alias.name)
+        # Objects of the package's classes: module-level names and `self.<attr>` of a class.
+        self.instances: dict[str, Key] = {}
+        self.attributes: dict[tuple[str, str], Key] = {}  # (class, attr) -> class
 
-    def resolve(self, call: ast.Call) -> Key | None:
-        """The package function a call names, if it names one."""
+
+class Package:
+    def __init__(self, sources: dict[str, str]) -> None:
+        names = set(sources)
+        self.modules = {
+            name: Module(name, ast.parse(text), names) for name, text in sources.items()
+        }
+        for module in self.modules.values():
+            for node in module.tree.body:
+                if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    made = self._made(module, node.value)
+                    for target in targets:
+                        if made is not None and isinstance(target, ast.Name):
+                            module.instances[target.id] = made
+                elif isinstance(node, ast.ClassDef):
+                    for sub in ast.walk(node):
+                        if isinstance(sub, ast.Assign):
+                            made = self._made(module, sub.value)
+                            for target in sub.targets:
+                                if (
+                                    made is not None
+                                    and isinstance(target, ast.Attribute)
+                                    and isinstance(target.value, ast.Name)
+                                    and target.value.id == "self"
+                                ):
+                                    module.attributes[(node.name, target.attr)] = made
+
+    def _class(self, module: Module, expr: ast.expr) -> Key | None:
+        """The package class `expr` names."""
+        key: Key | None = None
+        if isinstance(expr, ast.Name):
+            key = (
+                (module.name, expr.id)
+                if expr.id in module.classes
+                else module.imported.get(expr.id)
+            )
+        elif (
+            isinstance(expr, ast.Attribute)
+            and isinstance(expr.value, ast.Name)
+            and (other := module.modules.get(expr.value.id)) is not None
+        ):
+            key = (other, expr.attr)
+        if key is not None and key[0] in self.modules and key[1] in self.modules[key[0]].classes:
+            return key
+        return None
+
+    def _made(self, module: Module, value: ast.expr | None) -> Key | None:
+        """The class of the object `value` makes, unless it is a limiter counted in this
+        process only (`local=True`), which never reaches the database."""
+        if not isinstance(value, ast.Call):
+            return None
+        for keyword in value.keywords:
+            if (
+                keyword.arg == "local"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is True
+            ):
+                return None
+        return self._class(module, value.func)
+
+    def _object(self, module: Module, expr: ast.expr, owner: str | None) -> Key | None:
+        """The class of the object `expr` names: a module-level object of this module or
+        another, `self` in a method, or an object in an attribute of `self`."""
+        if isinstance(expr, ast.Name):
+            if expr.id == "self" and owner is not None:
+                return (module.name, owner)
+            if expr.id in module.instances:
+                return module.instances[expr.id]
+            if (source := module.imported.get(expr.id)) is not None and source[0] in self.modules:
+                return self.modules[source[0]].instances.get(source[1])
+        if isinstance(expr, ast.Attribute) and isinstance(expr.value, ast.Name):
+            if expr.value.id == "self" and owner is not None:
+                return module.attributes.get((owner, expr.attr))
+            if (other := module.modules.get(expr.value.id)) is not None:
+                return self.modules[other].instances.get(expr.attr)
+        return None
+
+    def resolve(self, module: Module, call: ast.Call, owner: str | None) -> Key | None:
+        """The package function or method a call names, if it names one."""
         func = call.func
         if isinstance(func, ast.Name):
-            if func.id in self.functions:
-                return (self.name, func.id)
-            return self.imported.get(func.id)
-        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-            module = self.modules.get(func.value.id)
-            if module is not None:
-                return (module, func.attr)
+            if func.id in module.functions:
+                return (module.name, func.id)
+            return module.imported.get(func.id)
+        if isinstance(func, ast.Attribute):
+            cls = self._object(module, func.value, owner)
+            if cls is not None:
+                return (cls[0], f"{cls[1]}.{func.attr}")
+            if (
+                isinstance(func.value, ast.Name)
+                and (other := module.modules.get(func.value.id)) is not None
+            ):
+                return (other, func.attr)
         return None
 
 
@@ -106,16 +198,19 @@ def _direct(node: ast.AST) -> str | None:
     return None
 
 
+def _owner(key: Key) -> str | None:
+    return key[1].rsplit(".", 1)[0] if "." in key[1] else None
+
+
 def _scan(sources: dict[str, str]) -> list[str]:
     """`sources` maps a module's dotted name to its text; the offences of every `async def`."""
-    names = set(sources)
-    modules = {name: Module(name, ast.parse(text), names) for name, text in sources.items()}
+    package = Package(sources)
     functions = {
-        (module.name, fn_name): fn
-        for module in modules.values()
-        for fn_name, fn in module.functions.items()
+        (module.name, name): fn
+        for module in package.modules.values()
+        for name, fn in module.functions.items()
     }
-    # Sync functions that open a transaction, directly or through another such function.
+    # Sync functions and methods that open a transaction, directly or through another one.
     opens: dict[Key, str] = {}
     for key, fn in functions.items():
         if isinstance(fn, ast.FunctionDef):
@@ -131,27 +226,27 @@ def _scan(sources: dict[str, str]) -> list[str]:
                 continue
             for node in _own_nodes(fn):
                 if isinstance(node, ast.Call):
-                    callee = modules[key[0]].resolve(node)
-                    if callee in opens and callee != key:
+                    callee = package.resolve(package.modules[key[0]], node, _owner(key))
+                    if callee is not None and callee in opens and callee != key:
                         opens[key] = f"{callee[1]}(...) -> {opens[callee]}"
                         changed = True
                         break
 
     found = []
-    for module in modules.values():
-        for coroutine in ast.walk(module.tree):
-            if not isinstance(coroutine, ast.AsyncFunctionDef):
-                continue
-            if (module.name.rsplit(".", 1)[-1], coroutine.name) in STARTUP:
-                continue
-            for node in _own_nodes(coroutine):
-                what = _direct(node)
-                if what is None and isinstance(node, ast.Call):
-                    callee = module.resolve(node)
-                    if callee in opens:
-                        what = f"{callee[1]}(...) -> {opens[callee]}"
-                if what is not None:
-                    found.append((module.name, getattr(node, "lineno", 0), coroutine.name, what))
+    for key, coroutine in functions.items():
+        if not isinstance(coroutine, ast.AsyncFunctionDef):
+            continue
+        if (key[0].rsplit(".", 1)[-1], key[1]) in STARTUP:
+            continue
+        module = package.modules[key[0]]
+        for node in _own_nodes(coroutine):
+            what = _direct(node)
+            if what is None and isinstance(node, ast.Call):
+                callee = package.resolve(module, node, _owner(key))
+                if callee is not None and callee in opens:
+                    what = f"{callee[1]}(...) -> {opens[callee]}"
+            if what is not None:
+                found.append((key[0], getattr(node, "lineno", 0), key[1], what))
     return [
         f"{name}:{line} {fn_name} runs {what} on the event loop"
         for name, line, fn_name, what in sorted(found)
@@ -255,4 +350,66 @@ async def good(request):
         "pkg.routes:11 bad runs opens(...) -> with engine.begin() on the event loop",
         "pkg.routes:12 bad runs through(...) -> opens(...) -> with engine.begin()"
         " on the event loop",
+    ]
+
+
+def test_the_scan_follows_methods_of_the_package_s_objects() -> None:
+    limits = """
+class Limiter:
+    def __init__(self, limit, *, name, local=False):
+        self.local = local
+
+    def hit(self, key):
+        return self.take(key, 1)
+
+    def take(self, key, count):
+        if not self.local:
+            return self._shared(key, count)
+        return 0
+
+    def _shared(self, key, count):
+        with _db().begin() as conn:
+            return 0
+
+    def size(self):
+        return 0
+"""
+    routes = """
+from pkg import limits
+from pkg.limits import Limiter
+
+BY_ADDRESS = Limiter(10, name="a")
+IN_PROCESS = Limiter(10, name="b", local=True)
+OTHER = limits.Limiter(10, name="c")
+
+
+class Pair:
+    def __init__(self):
+        self.by_source = Limiter(10, name="d")
+
+    def take(self, key):
+        return self.by_source.hit(key)
+
+
+PAIRS = Pair()
+
+
+async def bad(request):
+    BY_ADDRESS.hit(request)
+    OTHER.take(request, 2)
+    PAIRS.take(request)
+
+async def good(request):
+    await run_in_threadpool(BY_ADDRESS.hit, request)
+    IN_PROCESS.hit(request)
+    BY_ADDRESS.size()
+    unknown.hit(request)
+"""
+    assert _scan({"pkg.limits": limits, "pkg.routes": routes}) == [
+        "pkg.routes:22 bad runs Limiter.hit(...) -> Limiter.take(...) -> Limiter._shared(...)"
+        " -> with _db().begin() on the event loop",
+        "pkg.routes:23 bad runs Limiter.take(...) -> Limiter._shared(...)"
+        " -> with _db().begin() on the event loop",
+        "pkg.routes:24 bad runs Pair.take(...) -> Limiter.hit(...) -> Limiter.take(...)"
+        " -> Limiter._shared(...) -> with _db().begin() on the event loop",
     ]

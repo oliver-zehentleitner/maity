@@ -1245,13 +1245,20 @@ review of #1845 (A637: the helper the guard did not follow)
 A sync engine's transaction (`with engine.begin()` / `.connect()`, `events.transaction`,
 `idempotency.run`, `retrying`) never starts on the loop's thread: an `async def` route hands it to
 `run_in_threadpool`, as `routes/auth.py` does, or the route stays a plain `def`.
-That holds for a call of a sync helper that opens one, too (`device_codes._require_enabled`).
+That holds for a call of a sync helper that opens one, too (`device_codes._require_enabled`),
+and for a rate limiter's `hit`, `take`, `place` and `release`: on PostgreSQL they count in
+`shared_counts`, a sync transaction with an advisory lock (`ratelimit.Limiter`, replicas.md).
 `hub/tests/test_no_sync_db_on_loop.py` scans every `async def` in the package for those calls
-outside a nested function, and for unawaited calls of the package's module-level sync functions
-that open one, transitively, and names file, line and function. Startup and shutdown
-(`app.lifespan`) are exempt: no request holds the lock then. `routes/reports.py` (`file_report`,
-`resolve_report`), `routes/email_sign_in.py` (`complete_link`) and `routes/device_codes.py`
-(`get_code`, `watch_redemption`) broke the rule and were moved.
+outside a nested function, and for unawaited calls of the package's sync functions and of
+methods of its objects (module-level objects, `self` and `self.<attr>`) that open one,
+transitively, and names file, line and function. A limiter made with `local=True` counts in the
+process and is left out. Startup and shutdown (`app.lifespan`) are exempt: no request holds the
+lock then. `routes/reports.py` (`file_report`, `resolve_report`), `routes/email_sign_in.py`
+(`complete_link`), `routes/device_codes.py` (`get_code`, `watch_redemption`) and the limiter
+calls of `routes/auth.py` (`login`), `routes/invitations.py` (`invitation_page`,
+`accept_invitation`), `routes/joins.py` (`exchange`), `routes/register_page.py`
+(`register_complete`), `routes/registration.py` (`register`), `routes/runners.py` (`pair`) and
+`forge_webhook.handle` broke the rule and were moved.
 
 **Reason:** on SQLite every transaction begins IMMEDIATE, and every request's authentication
 (`deps.authenticated`) is an async-engine transaction that holds the write lock across awaits. A

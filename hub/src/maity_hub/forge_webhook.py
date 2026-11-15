@@ -31,7 +31,7 @@ from maity_hub import body as body_reader
 from maity_hub import clock, events, namespace, secretbox, ticker
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, error_response
-from maity_hub.ratelimit import Limiter
+from maity_hub.ratelimit import Limiter, Mark
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +130,28 @@ async def _answer(response: Any, scope: Scope, receive: Receive, send: Send) -> 
     return int(response.status_code)
 
 
+def _places(source: str, bucket: str) -> tuple[int, Mark, Mark]:
+    """Both places or neither: a full slug bucket keeps the address place free."""
+    wait, address_mark = NOBODY.place(source)
+    bucket_mark = None
+    if not wait:
+        wait, bucket_mark = UNVERIFIED.place(bucket)
+        if wait:
+            NOBODY.release(source, address_mark)
+    return wait, address_mark, bucket_mark
+
+
+def _verified(
+    source: str, address_mark: Mark, bucket: str, bucket_mark: Mark, project_id: str
+) -> int:
+    """This request's own places back, by their marks: after a body read that outlasted the
+    window they are gone already, and nobody else's is freed instead. Then the verified
+    delivery's own limit."""
+    NOBODY.release(source, address_mark)
+    UNVERIFIED.release(bucket, bucket_mark)
+    return VERIFIED.hit(project_id)
+
+
 async def handle(
     scope: Scope, receive: Receive, send: Send, engine: Engine, key: bytes | None
 ) -> int:
@@ -148,13 +170,8 @@ async def handle(
     slug = PATH.match(str(scope["path"])).group(1)  # type: ignore[union-attr]
     source = scope["state"]["origin"].address
     bucket = f"{slug}|{source}"
-    # Both places or neither: a full slug bucket keeps the address place free.
-    wait, address_mark = NOBODY.place(source)
-    bucket_mark = None
-    if not wait:
-        wait, bucket_mark = UNVERIFIED.place(bucket)
-        if wait:
-            NOBODY.release(source, address_mark)
+    # The limiters write `shared_counts` on PostgreSQL: off the event loop.
+    wait, address_mark, bucket_mark = await run_in_threadpool(_places, source, bucket)
     if wait:
         return await _answer(_limited(wait), scope, receive, send)
     declared = _declared(scope)
@@ -177,11 +194,7 @@ async def handle(
     # One signature or none: with two, which one the forge meant is anyone's guess.
     if len(given) != 1 or not hmac.compare_digest(given[0].encode(), expected.encode()):
         return await _answer(_refused(), scope, receive, send)
-    # This request's own places, by their marks: after a body read that outlasted the
-    # window they are gone already, and nobody else's is freed instead.
-    NOBODY.release(source, address_mark)
-    UNVERIFIED.release(bucket, bucket_mark)
-    wait = VERIFIED.hit(project.id)
+    wait = await run_in_threadpool(_verified, source, address_mark, bucket, bucket_mark, project.id)
     if wait:
         await run_in_threadpool(_record, engine, project.id, "rate_limited")
         return await _answer(_limited(wait), scope, receive, send)
