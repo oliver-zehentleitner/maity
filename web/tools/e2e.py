@@ -3901,7 +3901,8 @@ def chat_phone_views(run: Run, browser) -> None:
                 if phone:
                     assert len(parts) == 1 and parts[0].startswith("Maity ") and line and line["height"] < 48, f"{where}: {parts} {line}"
                 else:
-                    assert len(parts) == 7, f"{where}: the product line shows {parts}"
+                    # Five parts and the four separators between them, the last "Chat with us on Discord".
+                    assert len(parts) == 9 and parts[-1] == "Chat with us on Discord", f"{where}: the product line shows {parts}"
                 people = pane.locator(".group-people-line")
                 assert people.count() == 1 and people.is_visible() is not phone, f"{where}: In it: shown {people.is_visible()}"
                 label = pane.locator(".compose-head label[for='chat-text']")
