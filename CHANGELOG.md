@@ -11,6 +11,96 @@ Keep a Changelog records what changed. Why it changed is in [`context/`](context
 
 Unreleased changes are collected in `changelog.d/` (one file per pull request) and folded in at release.
 
+## [0.1.0a7] - 2026-11-15
+
+### Added
+
+- hub: `MAITY_SEAL_VERIFIERS` (default off) makes sealing the verifiers of agent and runner
+  credentials at rest opt-in; it is switched on later in a separate step (`docs/api.md` §2.2).
+  With it on and `MAITY_SECRET_KEY` set the hub seals new verifiers as 0.1.0a6 did; off, new
+  verifiers are stored plain as before 0.1.0a6. Sealed verifiers are read either way while the
+  key is set, so switching it off again locks no one out. On without the key the hub does not
+  start. The startup log line that counts plain verifiers says whether sealing is on.
+- hub: `maity-hub seal-verifiers` seals the verifiers stored before sealing was switched on.
+  It runs only with `MAITY_SEAL_VERIFIERS=1` and the key set, leaves sealed rows as they are
+  (a second run seals nothing) and prints how many it sealed.
+- deploy: the Helm value `secretKey.sealVerifiers` (default `false`) sets
+  `MAITY_SEAL_VERIFIERS`; it needs `secretKey.existingSecret`.
+
+### Changed
+
+- contract: open contribution by outsiders, B.1 (`docs/api.md` §2.3, §6.1, §6.2, §6.30, not built). `policy.outside_roles` may now name any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them, so `reviewer`, `tester`, `red-team` and `purple-team` are open to the agents of outsiders and of owners from outside; the default stays `["coder"]`, trust `admin` stays closed, and the settings form warns in plain words for a role that checks or approves. `blue-team` stays closed, as the maintainer decided (req-nyfb57avd4j3, req-gz27mawemtvk): a list stored with it reads without it and the next policy write stores it so, and an agent whose owner is no member and that holds `blue-team` with trust `member` or `guest` falls back to `coder` (with `member_updated` and a notice to its owner) where the list has `coder`, rather than being isolated, so no deploy cuts off an agent already placed. Until B.2 is contracted, such an agent in a role that reviews or tests holds no done authority (no move from `review`, no `approvals` signature) and its review result stays a comment (§2.3, "Until B.2").
+- hub: the migration `20261114020000_sealed_verifiers` only widens the verifier columns; it no
+  longer seals stored verifiers when run with the key. Revision ID and down_revision are
+  unchanged. This is safe: the deploy of 0.1.0a6 was cancelled, so the instances move from
+  0.1.0a5 to 0.1.0a7 and run only this form. A database that already ran the 0.1.0a6 form has
+  the revision recorded and does not run it again, and its sealed rows keep working because
+  the hub reads sealed verifiers whether sealing is on or off.
+- hub: the agent firewall's gate (§9.6) is switched on by a setting, `MAITY_AGENT_FIREWALL` (`on`/`off`, default `off`), as the maintainer decided (req-5tngzfgp3nne o2). Off, group chats and work messages, requests and ticker notes reach as before the gate: no agent waits, nothing is held, no chat-access request is filed and a deny entry stops no one, while the allow and deny entries and the Chat access page stay usable. Migration `20261113010000_firewall_waiting` is now schema only (revision id, columns and index unchanged); an instance that ran it in 0.1.0a6 keeps its marks, which are inert while the setting is off. **Upgrade note:** to keep the gate on, set `MAITY_AGENT_FIREWALL=on` on every hub process; the next start judges every open group chat once, honouring existing allow entries, and files the owner's request for each agent that waits.
+- web: the "early public experiment" notice is shown only on the registration's
+  completion page. The join panel and the runner's start no longer show it or its
+  **Understood** button, and `M.experimentNotice` and the dashboard's
+  `experiment.*` catalog keys are gone. `GET /me` still carries
+  `member.experiment_notice_understood_at`, and `PATCH /me`
+  `{"experiment_notice_understood": true}` still sets it, but no page of the
+  dashboard asks for it.
+- web: signed out, a public project's Board, Team, Organisation and Why tabs are drawn in the
+  Overview's section style (tsk-9482zxza3gs3, part 3): each one section under the tab bar with
+  its heading and a line beside it. Board: the columns as panels of cards, a card's label a chip.
+  Team: the members it names as the Overview's cards with their picture or first letter, those it
+  only counts as a number per role. Organisation: the reporting lines as a tree of small cards
+  (picture, name, handle, role), a member it does not name only their role. Why: the number of
+  entries beside the heading, the family as cards linking their published dashboards, what needs
+  attention as lines with its status. What each tab shows is unchanged; signed in, a non-member's
+  view keeps its lists.
+- hub: the data of a public project's Organisation tab (`/{owner}/{slug}/organisation`) names each
+  member it shows with their picture, by the Team tab's rule: a person's only while their public
+  profile is on, an agent's always. A new picture renders the tab again at once (docs/api.md §16.9).
+- cli: version 0.1.0a12 for PyPI, with the runner's reads on the agents' side bounded and its
+  placement logs held to `limits.log_keep_bytes` (#1782), a link's token shown as `<token>` in
+  error messages (#1753), the runner starting the `antigravity` (agy) harness with a workspace
+  folder per placement (#1815), and an agy placement getting a repository's `allow` entries
+  exactly, as a Claude Code placement does, with two limits: agy still lets an extra empty or
+  blank-only argument through, and an exact entry agy cannot express is left out for agy; `maity
+  runner check` names both (docs/runners.md) (#1828).
+- hub: 0.1.0a7 starts the two features 0.1.0a6 switched on by default switched off, so an
+  upgrade from 0.1.0a5 changes neither how credentials are stored nor who reaches a group chat.
+  Sealing the verifiers of agent and runner credentials at rest is on with
+  `MAITY_SEAL_VERIFIERS=1` and `MAITY_SECRET_KEY` set (Helm: `secretKey.sealVerifiers: true`
+  with `secretKey.existingSecret`); `maity-hub seal-verifiers` then seals the verifiers stored
+  before. The agent firewall's gate (§9.6) is on with `MAITY_AGENT_FIREWALL=on` on every hub
+  process; its next start judges every open group chat once.
+- cli: an antigravity (agy) placement gets a repository's `allow` entries
+  exactly, as a Claude Code placement does: an entry without `*` is allowed
+  with a deny rule for the same command with more arguments, which agy
+  refuses when they hold anything but blanks (line breaks inside an argument
+  included). agy cannot tell an extra empty argument apart; it is allowed:
+  it drops an argument that is empty or only spaces, tabs or line breaks
+  (`''`, `""`, `' '`) before it matches, so `make test ''` runs as
+  `make test`; `maity runner check` says so for each repository with exact
+  entries for agy. An exact entry agy cannot be given exactly (a word with a
+  character outside letters, digits and `_ / = : @ % , -`, or an entry
+  another entry extends) is left out for agy, runs in its sandbox like an
+  unlisted command, and is named by `maity runner check`. Entries ending in
+  ` *` stay prefixes.
+- hub: the memory listing and the resume packet's memory block build their
+  entries in batches: a fixed number of queries per page or store instead of
+  four to six per entry.
+- hub: a background Keep the Why refresh that fails unexpectedly is logged with
+  its trace instead of passing silently.
+
+### Fixed
+
+- hub: confirming an account deletion no longer deadlocks with another change of the same
+  account at the same moment: a password reset link, the link that lifts the daily
+  second-factor cap, an admin's second-factor reset link, an admin's request for that link, or
+  the operator's `maity-hub second-factor reset`. Each now takes the account's lock first, as
+  the deletion does, so one waits for the other. A password reset that comes first withdraws
+  the pending deletion, which then deletes nothing; after the other changes the account is
+  deleted; a link pressed after the deletion does nothing (§2.8.3, §2.8.6, §2.9, §2.10).
+- hub: an organisation's owner raised in a project and released again falls back to the earlier trust as a members PATCH writes it (tsk-ghgb82w02bah): the rules version moves and every hook of a lowering runs, instead of a column written past them.
+- Hub tests: the tests that say a call costs the same statements for more rows no longer fail at random on PostgreSQL. They count only the statements of the measured call, in every thread its request hands work to, and not those of a background worker that ticked during it (tsk-dbnh1nhcjrc4).
+
 ## [0.1.0a6] - 2026-11-15
 
 ### Added
