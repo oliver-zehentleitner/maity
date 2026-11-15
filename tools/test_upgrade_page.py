@@ -84,6 +84,17 @@ class Problems(unittest.TestCase):
             (found,) = u.problems(root, "0.1.0a9")
             self.assertIn("## The way back", found)
 
+    def test_an_empty_code_block_is_no_text(self):
+        page = FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n```\n```\n")
+        with Tree(page=page) as root:
+            (found,) = u.problems(root, "0.1.0a9")
+            self.assertIn("'## The way back' is empty", found)
+
+    def test_a_code_block_with_text_counts(self):
+        page = FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n```sh\nmaity-hub migrate\n```\n")
+        with Tree(page=page) as root:
+            self.assertEqual(u.problems(root, "0.1.0a9"), [])
+
     def test_extra_sections_are_allowed(self):
         page = FULL + "## Notes\n\nMore.\n"
         with Tree(page=page) as root:

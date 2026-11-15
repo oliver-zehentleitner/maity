@@ -67,7 +67,9 @@ def problems(root: Path, version: str) -> list[str]:
     fence = False
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("```"):
+            # A fence line is no text of its own: an empty code block leaves a section empty.
             fence = not fence
+            continue
         if not fence and line.startswith("## "):
             headings.append(line[3:].strip())
             bodies[headings[-1]] = []
