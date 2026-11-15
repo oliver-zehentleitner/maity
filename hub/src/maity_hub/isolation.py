@@ -159,6 +159,7 @@ def isolate(
         cross_chats.isolation_settled(conn, target.agent_id, human_id)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
+    cards.drop_signatures(conn, project.id, target.agent_id or target.human_id, actor)  # §6.4
     tell_released(conn, released, actor, project)
     _tell_owner(
         conn,
@@ -209,6 +210,11 @@ def lift(
         ).scalar()
     if hide and from_seq is not None and from_seq <= to_seq:
         windows.append({"from_seq": from_seq, "to_seq": to_seq})
+    from maity_hub import cards
+
+    # A signature left from while it stood isolated goes before the lift gives the
+    # standing back, so the lift never makes it count again (§6.4).
+    cards.drop_signatures(conn, project.id, target.agent_id, actor)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)

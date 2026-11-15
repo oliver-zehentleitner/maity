@@ -535,13 +535,15 @@ def _revision(card: Any) -> int | None:
     return revision
 
 
-def _signatures(mine: Membership, card: Any, body: TaskPatch) -> dict[str, Any] | None:
+def _signatures(
+    conn: Connection, mine: Membership, card: Any, body: TaskPatch
+) -> dict[str, Any] | None:
     """The signatures after a `review→done` under `reviewer_and_tester`, else None."""
     if not (card.status == "review" and body.status == "done"):
         return None
     if not cards.two_signatures(mine.project):
         return None
-    return cards.sign(mine, card, body.approve, _revision(card))
+    return cards.sign(conn, mine, card, body.approve, _revision(card))
 
 
 def _check_label(label: str | None) -> None:
@@ -1156,7 +1158,7 @@ def patch_task(
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
-            signed = _signatures(mine, card, body)
+            signed = _signatures(conn, mine, card, body)
             if signed is not None:
                 values["approvals"] = signed
             if card.status == "review" and body.status == "in_progress":
@@ -2008,7 +2010,7 @@ def report(
             closing = False
             if not (mine.may("tasks:review") and mine.may("tasks:test")):
                 empty = SimpleNamespace(approvals=None)
-                signatures = cards.sign(mine, empty, None, revision)
+                signatures = cards.sign(conn, mine, empty, None, revision)
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
         now = clock.now()
         stored = {
