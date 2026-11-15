@@ -117,7 +117,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   registration's, §2.7.1) answer with the frame's policy (§16.7.5). The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
-  by `ETag`, the project
+  by `ETag` (an avatar asked for under its current digest is
+  `private, max-age=31536000, immutable`, §6.10), the project
   badge (§6.20), with a public cache (`public, max-age=60`) because it
   carries nothing but a count, a public picture (§6.10, `public,
   max-age=86400, s-maxage=60` at its address by digest, which names no
@@ -8949,8 +8950,9 @@ generated avatar the client draws.
 
 **`avatar_url`** is a path on the hub's own origin, versioned:
 `/api/v1/avatars/{id}?v=<digest>`, where `<digest>` is the stored image's
-`ETag` without quotes; the hub ignores the parameter, it only makes a
-changed image a new URL. `null` when no source has an image. Every
+`ETag` without quotes; a changed image is a new URL, and the hub reads
+the parameter only to choose the caching ("Who may read an image",
+below). `null` when no source has an image. Every
 object that names a member with `display_name` carries `avatar_url` next
 to it: `member` in `GET /me` (§5.1), `me` in the resume packet (§5.2),
 the member view and its admin `owner` (§6.2), the agent profile (§6.3),
@@ -9008,11 +9010,21 @@ the image gets `not_found`, never `304`. The answer has the headers of a
 logo (§11.2) — `Content-Type: image/png`, `X-Content-Type-Options:
 nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
 `Cross-Origin-Resource-Policy: same-origin`, `ETag` — except the
-caching: `Cache-Control: private, no-cache`. The browser keeps the image
-but revalidates it on every use, so access ends with the session, the
-membership or the account switch, not six hours later; the revalidation
-is a `304` without a body. It is served from what the hub stored and
-never reads through to the forge.
+caching. A request whose one `v` is the stored image's current digest,
+the `v` of its `avatar_url`, at any `s` (Sizes, below), is answered
+`Cache-Control: private, max-age=31536000, immutable`: that address
+names this picture and no other, so the reader's browser keeps it for
+good and does not ask again, and no shared cache keeps it. Any other
+request — without `v`, with an old digest, with a size's own `ETag` or
+with `v` more than once — is answered `Cache-Control: private,
+no-cache`: the browser keeps the image but revalidates it on every use;
+the revalidation is a `304` without a body. Neither widens who may read
+the image: the hub answers only the callers above. A browser that
+already holds a picture under its current address may still show its
+copy after the session, the membership or the account switch ends, until
+the picture changes and its `avatar_url` with it; it never gets a new
+picture, nor this one again from the hub. It is served from what the hub
+stored and never reads through to the forge.
 
 **A public picture.** A picture a public page shows is anyone's to read
 (§16.9, the maintainer's decision of 2026-11-05): a human's while the hub
