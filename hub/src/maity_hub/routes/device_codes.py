@@ -155,7 +155,9 @@ def create_code(request: Request, caller: AnyCaller) -> JSONResponse:
 @router.get("/device-codes/{code_id}")
 async def get_code(code_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     session_hash = _creator(caller)
-    _require_enabled(request)
+    # Off the event loop (hub/context/persistence.md, tests/test_no_sync_db_on_loop.py), in the
+    # same place, so the checks keep their order.
+    await run_in_threadpool(_require_enabled, request)
     wait = wait_of(request)
     engine = engine_of(request)
 
@@ -283,7 +285,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
 @router.get("/device-login")
 async def watch_redemption(request: Request) -> JSONResponse:
     anonymous.entry(request)
-    _require_enabled(request)
+    await run_in_threadpool(_require_enabled, request)  # off the event loop, as in get_code
     wait = wait_of(request)
     pending = request.cookies.get(PENDING_COOKIE)
     engine = engine_of(request)

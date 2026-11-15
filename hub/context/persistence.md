@@ -1238,15 +1238,20 @@ aiosqlite keeps SQLite on the same code path as the servers.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-pzex5cpkv6tx, 2026-11-15: web-e2e on #1843 (CI run 43712574171) got 503 from
-`POST /api/v1/admin/reports/{id}/resolve` after `total_ms=5014`, `loop_late_max_ms=4925`
+`POST /api/v1/admin/reports/{id}/resolve` after `total_ms=5014`, `loop_late_max_ms=4925`; the
+review of #1845 (A637: the helper the guard did not follow)
 **See:** persistence.md — 66f0bcf9-cb6f-4993-81de-541d13f0c942 — as of 2026-11-15
 
 A sync engine's transaction (`with engine.begin()` / `.connect()`, `events.transaction`,
 `idempotency.run`, `retrying`) never starts on the loop's thread: an `async def` route hands it to
 `run_in_threadpool`, as `routes/auth.py` does, or the route stays a plain `def`.
+That holds for a call of a sync helper that opens one, too (`device_codes._require_enabled`).
 `hub/tests/test_no_sync_db_on_loop.py` scans every `async def` in the package for those calls
-outside a nested function and names file, line and function. `routes/reports.py` (`file_report`,
-`resolve_report`) and `routes/email_sign_in.py` (`complete_link`) broke the rule and were moved.
+outside a nested function, and for unawaited calls of the package's module-level sync functions
+that open one, transitively, and names file, line and function. Startup and shutdown
+(`app.lifespan`) are exempt: no request holds the lock then. `routes/reports.py` (`file_report`,
+`resolve_report`), `routes/email_sign_in.py` (`complete_link`) and `routes/device_codes.py`
+(`get_code`, `watch_redemption`) broke the rule and were moved.
 
 **Reason:** on SQLite every transaction begins IMMEDIATE, and every request's authentication
 (`deps.authenticated`) is an async-engine transaction that holds the write lock across awaits. A
