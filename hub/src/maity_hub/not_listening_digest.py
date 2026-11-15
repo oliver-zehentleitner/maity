@@ -33,7 +33,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, and_, case, func, insert, select, update
 
-from maity_hub import clock, maintenance, worker_runs
+from maity_hub import clock, maintenance, worker_runs, write_guard
 from maity_hub import tables as t
 from maity_hub.cards import SOME_INSTANCE, open_claims
 from maity_hub.events import lock_project, transaction
@@ -505,9 +505,17 @@ def _inbox(conn: Connection, owner_id: str, now: datetime | None) -> None:
 
 def reconcile(conn: Connection, owner_id: str, now: datetime | None = None) -> None:
     """Bring one owner's record and requests in line with their mode and their away
-    instances. The old per-episode requests go first, under their projects' locks; then the
-    owner's row is locked, the order every path takes (project, then human), so two passes
-    over the same owner run one after the other and the second sees what the first wrote."""
+    instances. The owner's account lock comes first, shared, as every write of the account
+    takes it (`write_guard.share`): the pass has no caller, and a deletion of the account takes
+    it exclusively before anything else, so the two run one after the other, and a deleted
+    owner is left alone. The old per-episode requests go next, under their projects' locks;
+    then the owner's row is locked, the order every path takes (project, then human), so two
+    passes over the same owner run one after the other and the second sees what the first
+    wrote."""
+    write_guard.share(conn, owner_id)
+    deleted = conn.execute(select(t.human.c.deleted_at).where(t.human.c.id == owner_id)).first()
+    if deleted is None or deleted.deleted_at is not None:
+        return
     withdraw_episode_requests(conn, owner_id)
     records.lock_human(conn, owner_id)
     mode = preferences.preferences(conn, owner_id)["not_listening"]["mode"]
