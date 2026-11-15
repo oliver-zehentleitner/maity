@@ -217,8 +217,8 @@ DEFAULTS = (
     ("harness.<id>.binary", "the harness's usual command, resolved on agent_path"),
     (
         "harness.<id>.require_sandbox",
-        "unset: claude-code with bwrap and socat refused below version 2.1.295 or unknown;"
-        " false: never refused for the sandbox",
+        "unset: claude-code with bwrap and socat refused below version 2.1.295 or unknown,"
+        " other harnesses start without their sandbox; false: never refused for the sandbox",
     ),
     ("harness.<id>.env_file", "unset"),
     (
@@ -385,6 +385,8 @@ def _check_harness(
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
         _check_claude_code(report, harness, as_user, agent_path, found.version)
+    if harness.id == "antigravity":
+        _check_antigravity(report, harness, as_user, agent_path)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -392,6 +394,97 @@ def _check_harness(
         login = Path(own or home / ".codex") / "auth.json"
         if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
+
+
+def _check_antigravity(
+    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
+    where: str = "",
+) -> None:  # fmt: skip
+    """agy's sandbox (reported off; the namespaces it needs as a diagnostic), its sign-in,
+    and what of the agents' user's own agy settings every agent inherits (§15.3)."""
+    here = not where  # an ssh host is Linux
+    if here and not capabilities.agy_sandbox_platform():
+        report.warn(f"{where}harness antigravity: no terminal sandbox on this platform")
+    elif capabilities.agy_namespaces(agent_path, as_user):
+        report.ok(
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs start; "
+            "agy's sandbox start not verified"
+        )
+    else:
+        report.warn(
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs do not "
+            "start (or no `unshare`); agy would run commands unsandboxed"
+        )
+    line = (
+        f"{where}harness antigravity: sandbox reported off: the runner has not seen agy's "
+        "sandbox start; agents run as `sandbox_unavailable`"
+    )
+    refused = capabilities.sandbox_refused(harness, False, False)
+    if refused:
+        report.error(line + ", and require_sandbox = true refuses them")
+    else:
+        report.warn(line)
+    try:
+        login = capabilities.agy_login(as_user)
+        signed_in = as_user.exists(login, "-f")
+    except (OSError, KeyError):
+        login, signed_in = None, False
+    if not signed_in and harness.env_file is None:
+        report.warn(
+            f"{where}harness antigravity: no sign-in at {login or '~/.gemini'}; sign in "
+            "once with `agy` as the agents' user, or agents start without one"
+        )
+    _check_agy_settings(report, as_user, where)
+
+
+def _check_agy_settings(report: Report, as_user: AsUser, where: str) -> None:
+    """The agents' user's own agy settings, which agy merges into every agent's session:
+    their allow rules widen every grant, and global MCP servers run outside the sandbox."""
+    try:
+        home = as_user.home()
+    except (OSError, KeyError):
+        return
+    try:
+        path = home / ".gemini" / "antigravity-cli" / "settings.json"
+        settings = _json_bytes(as_user.read_whole(path, SETTINGS_MAX, under=home))
+    except OSError:
+        settings = None
+    permissions = settings.get("permissions") if settings else None
+    allow = permissions.get("allow") if isinstance(permissions, dict) else None
+    if isinstance(allow, list) and allow:
+        report.warn(
+            f"{where}harness antigravity: ~/.gemini/antigravity-cli/settings.json allows "
+            f"{len(allow)} rule(s) of its own; every agent this runner starts inherits them"
+        )
+    try:
+        path = home / ".gemini" / "config" / "mcp_config.json"
+        servers = as_user.read_whole(path, SETTINGS_MAX, under=home).strip()
+    except OSError:
+        servers = b""
+    if servers and servers not in (b"{}", b'{"mcpServers": {}}', b'{"mcpServers":{}}'):
+        report.warn(
+            f"{where}harness antigravity: ~/.gemini/config/mcp_config.json is not "
+            "empty; agy starts its MCP servers for every agent, outside its sandbox"
+        )
+
+
+def _check_agy_workspaces(report: Report, root: Path, as_user: AsUser, where: str = "") -> None:
+    """The runner refuses an antigravity start in a workspace folder inside a git work tree
+    (§15.3): a `.git` in the workspaces root or above it refuses every one of them."""
+    start = root.resolve() if as_user.here else root
+    for directory in (start, *start.parents):
+        git = directory / ".git"
+        try:
+            found = as_user.exists(git) or as_user.exists(git, "-L")
+        except OSError:
+            found = False
+        if found:
+            report.error(
+                f"{where}harness antigravity: {directory} has an entry .git, so every workspace "
+                f"folder under {root} lies inside a git work tree and every antigravity start "
+                "is refused (workspace_in_repository); move the workspaces out of it"
+            )
+            return
 
 
 def _check_claude_code(
@@ -529,6 +622,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 (report.error if refused else report.warn)(line)
             elif harness.id == "claude-code":
                 _check_claude_hooks(report, as_user, f"{name}: ")
+            if harness.id == "antigravity":
+                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -537,6 +632,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
         report.ok(f"{name}: workspaces {root}")
     if "claude-code" in cfg.harnesses:
         _check_claude_settings(report, as_user, f"{name}: ")
+    if "antigravity" in cfg.harnesses:
+        _check_agy_workspaces(report, root, as_user, f"{name}: ")
     if as_user.run(["sudo", "-n", "true"]).returncode == 0:
         report.warn(f"{name}: the remote user has sudo without a password; agents have it too")
 
@@ -598,6 +695,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
             _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
+        if "antigravity" in cfg.harnesses:
+            _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
