@@ -1,7 +1,8 @@
 """docs/api.md §16.9, "What visitors read in the dashboard": what a project's and an agent's
 `data` add for the pages' design (tsk-h822960mytm9): each member's picture as their own page
 shows it, the role and an agent's harness, the Members figure, the online pictures, the
-owner's picture and a merge entry's facts as fields."""
+owner's picture and a merge entry's facts as fields; and the Team tab's pictures by the same
+rule (tsk-9482zxza3gs3)."""
 
 from __future__ import annotations
 
@@ -138,6 +139,54 @@ def test_a_new_picture_reaches_every_page_that_names_it_at_once(world: World) ->
     new_bot = put_agent(world.bot, image(size=(80, 80))).json()["avatar_url"]
     (bot,) = snapshot(world)["agents"]
     assert bot["picture"] != old_bot and bot["picture"].endswith(digest(new_bot))
+
+
+def team_tab(world: World) -> dict[str, dict[str, Any]]:
+    got = world.anyone.get(f"/api/v1/public/pages{BASE}/team")
+    assert got.status_code == 200, got.text
+    return by_handle(got.json()["data"]["shown"])
+
+
+def test_the_team_tab_names_each_one_with_the_picture_their_page_shows(world: World) -> None:
+    """The project page's rule (`public_projects.member_pictures`): a person's picture only while
+    their `public_profile` is on, an agent's always (§16.9, `team`)."""
+    _fresh()
+    assert world.owner.patch("/me", {"public_profile": True}).status_code == 200
+    assert world.anna.patch("/me", {"public_profile": False}).status_code == 200
+    url = put_human(world.owner, "/me/avatar", image()).json()["avatar_url"]
+    put_human(world.anna, "/me/avatar", image(size=(90, 90)))
+    team = team_tab(world)
+    assert set(team["maintainer"]) == {"name", "handle", "page", "picture", "trust", "role"}
+    assert team["maintainer"]["picture"].endswith(digest(url))
+    assert team["anna"]["picture"] is None  # her profile is off: her page shows none
+    bot = team[bot_handle(world)]
+    assert bot["picture"] and bot["picture"] == snapshot(world)["agents"][0]["picture"]
+    people = by_handle(snapshot(world)["people"])
+    assert {h: team[h]["picture"] for h in people} == {h: people[h]["picture"] for h in people}
+    for picture in (team["maintainer"]["picture"], bot["picture"]):
+        assert world.anyone.get(picture.split("?")[0]).status_code == 200
+    # Turning the profile off takes the picture off the Team tab at once.
+    assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
+    assert team_tab(world)["maintainer"]["picture"] is None
+
+
+def test_a_new_picture_renders_the_team_tab_at_once(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Team tab names the picture's public address, which answers `not_found` from a change
+    on: the change renders it again at once, as it does the project page (§16.9, "The picture")."""
+    _fresh()
+    assert world.owner.patch("/me", {"public_profile": True}).status_code == 200
+    first = put_human(world.owner, "/me/avatar", image()).json()["avatar_url"]
+    assert team_tab(world)["maintainer"]["picture"].endswith(digest(first))
+    rendered = count_renders(monkeypatch)
+    second = put_human(world.owner, "/me/avatar", image(size=(90, 90))).json()["avatar_url"]
+    assert ("project_views", world.project_id) in rendered
+    assert team_tab(world)["maintainer"]["picture"].endswith(digest(second))
+    rendered.clear()
+    new_bot = put_agent(world.bot, image(size=(80, 80))).json()["avatar_url"]
+    assert ("project_views", world.project_id) in rendered
+    assert team_tab(world)[bot_handle(world)]["picture"].endswith(digest(new_bot))
 
 
 def test_a_merge_entry_carries_its_facts_as_fields(world: World) -> None:

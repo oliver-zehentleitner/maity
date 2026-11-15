@@ -121,6 +121,22 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
     return humans, shown
 
 
+def member_pictures(
+    conn: Connection, humans: list[tuple[str, bool]], agents: list[str]
+) -> dict[str, str | None]:
+    """The picture of each member as their own page shows it (§16.9), by human or agent id:
+    a person's (`humans`, each with their `public_profile`) only while their profile is on,
+    `None` otherwise; an agent's always. The one rule of every page whose `data` names members
+    with a picture: the project page and its Team tab."""
+    from maity_hub import avatars
+
+    pictures: dict[str, str | None] = dict.fromkeys(human_id for human_id, _ in humans)
+    pictures |= avatars.public_urls(
+        conn, [*(human_id for human_id, shown in humans if shown), *agents]
+    )
+    return pictures
+
+
 def team_details(
     conn: Connection, project_id: str, humans: list[Any], agents: list[Any]
 ) -> tuple[dict[str, str | None], dict[str, str], dict[str, str | None]]:
@@ -128,11 +144,11 @@ def team_details(
     own page shows (none while their `public_profile` is off; an agent always has one), the role
     of the membership in this project, as the Team tab shows it, and an agent's harness, as its
     own page shows it."""
-    from maity_hub import avatars, public_agents
+    from maity_hub import public_agents
 
-    shown_people = [h.id for h in humans if h.public_profile]
-    pictures: dict[str, str | None] = dict.fromkeys(h.id for h in humans)
-    pictures |= avatars.public_urls(conn, [*shown_people, *(a.id for a in agents)])
+    pictures = member_pictures(
+        conn, [(h.id, bool(h.public_profile)) for h in humans], [a.id for a in agents]
+    )
     m = t.membership.c
     roles: dict[str, str] = {}
     for human_id, agent_id, role in conn.execute(
@@ -251,8 +267,9 @@ def _statistics_html(stats: dict[str, Any]) -> str:
 
 
 def pages_with_picture(conn: Connection, owner_id: str) -> list[tuple[str, str]]:
-    """The project pages that show a member's picture (§16.9, `project`): those of the public
-    projects where the person or the agent is an active member, in its team and in `online`."""
+    """The project pages that show a member's picture (§16.9, `project` and `team`): the page
+    and the views (its Team tab) of each public project where the person or the agent is an
+    active member, in its team and in `online`."""
     m = t.membership.c
     ids = conn.execute(
         select(t.project.c.id)
@@ -265,7 +282,7 @@ def pages_with_picture(conn: Connection, owner_id: str) -> list[tuple[str, str]]
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    return [(KIND, project_id) for project_id in ids]
+    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)]
 
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:

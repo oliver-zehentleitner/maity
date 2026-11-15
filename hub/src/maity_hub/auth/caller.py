@@ -26,6 +26,7 @@ from maity_hub import availability, clock, timing
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id_query
 from maity_hub.auth import credentials, nonces, verifiers
+from maity_hub.auth.permitted import Calls
 from maity_hub.cards import open_claims
 from maity_hub.config import DEFAULT_CLI_INSTALL
 from maity_hub.errors import ApiError, unauthenticated
@@ -517,12 +518,12 @@ def _refuse_revoked(row: Any) -> None:
 
 # The two calls an isolated agent may still make, so that it learns why (§6.2), and
 # `GET /bootstrap`, whose parts are refused one by one as their single routes are (§5.4,
-# `refuse_isolated`).
-ISOLATED_MAY = {
-    ("GET", b"/api/v1/me"),
-    ("POST", b"/api/v1/me/resume"),
-    ("GET", b"/api/v1/bootstrap"),
-}
+# `refuse_isolated`). Read on the raw request path, so `/api/v1/m%65` is not `/me`.
+ISOLATED_MAY = Calls(
+    ("GET", "/me"),
+    ("POST", "/me/resume"),
+    ("GET", "/bootstrap"),
+)
 
 
 def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) -> None:
@@ -531,7 +532,7 @@ def refuse_isolated(conn: Connection, caller: Caller, method: str, path: str) ->
     own transaction."""
     if caller.kind != "agent" or caller.membership_id is None:
         return
-    if (method, path.encode()) in ISOLATED_MAY:
+    if ISOLATED_MAY.admits_api(method, path):
         return
     row = conn.execute(
         select(
@@ -558,7 +559,9 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
             "it uses the credential you already have",
             {"cli": cli_install, "then": "maity resume"},
         )
-    if row.isolated_since is not None and (facts.method, facts.raw_path) not in ISOLATED_MAY:
+    if row.isolated_since is not None and not ISOLATED_MAY.admits_api(
+        facts.method, facts.raw_path.decode("latin-1")  # byte for byte
+    ):
         # Before any side effect, as for a required signature (§6.2, "Isolation").
         from maity_hub import isolation
 

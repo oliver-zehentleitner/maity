@@ -31,7 +31,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.public_projects import served
+from maity_hub.public_projects import member_pictures, served
 
 KIND = "project_views"
 # Apart from the members' cache, which may have read with an owner's grant: what the public
@@ -52,6 +52,7 @@ class Person:
         human: bool,
         address: str | None = None,
         presence_named: bool = True,
+        profile_on: bool = True,
     ) -> None:
         self.address = address  # the member's own page: a person's, or the agent's under its owner
         self.id = row.id
@@ -63,6 +64,10 @@ class Person:
         self.human = human
         # Named and counted as online on a public page: off by a person's `public_presence` (§16.9).
         self.presence_named = presence_named
+        # The person or the agent, and whether their own page shows their picture (§16.9): a
+        # person's `public_profile`; an agent's page always shows one.
+        self.principal: str = row.human_id or row.agent_id
+        self.profile_on = profile_on
 
     @property
     def shown(self) -> bool:
@@ -115,6 +120,7 @@ def members(
                 True,
                 f"/{human.handle}" if ok else None,
                 bool(human.public_presence),
+                bool(human.public_profile),
             )
         else:
             agent = agents[row.agent_id]
@@ -268,10 +274,25 @@ def _other_roles(who: dict[int, Person]) -> dict[str, int]:
     return counts
 
 
-def members_data(who: dict[int, Person]) -> dict[str, Any]:
+def members_data(conn: Connection, who: dict[int, Person]) -> dict[str, Any]:
+    """The Team tab's `data` (§16.9, `team`): each one shown with the picture their own page
+    shows, by the project page's rule (`public_projects.member_pictures`)."""
     shown = sorted((p for p in who.values() if p.shown), key=lambda p: (p.handle or "", p.id))
+    pictures = member_pictures(
+        conn,
+        [(p.principal, p.profile_on) for p in shown if p.human],
+        [p.principal for p in shown if not p.human],
+    )
     return {
-        "shown": [{**(_shown(p) or {}), "trust": p.trust, "role": p.role} for p in shown],
+        "shown": [
+            {
+                **(_shown(p) or {}),
+                "picture": pictures.get(p.principal),
+                "trust": p.trust,
+                "role": p.role,
+            }
+            for p in shown
+        ],
         "others": [{"role": r, "count": n} for r, n in sorted(_other_roles(who).items())],
     }
 
@@ -437,7 +458,7 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     why = why_data(conn, project, f"/{full}/why", by_instance)
     views = (
         ("board", "Board", board_html(columns, who, gone, full), board_data(columns, who, gone)),
-        ("team", "Team", members_html(who), members_data(who)),
+        ("team", "Team", members_html(who), members_data(conn, who)),
         ("organisation", "Organisation", organisation_html(who), organisation_data(who)),
         ("why", "Why", why_html(why), why),
     )
