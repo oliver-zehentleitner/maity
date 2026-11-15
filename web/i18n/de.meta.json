@@ -5540,8 +5540,8 @@
     "text": "2f5968cd9eee9b49"
   },
   "inbox.chat_access.human": {
-    "en": "9ba2f2a1f3fbc485",
-    "text": "13bf1fd64fe8a040"
+    "en": "a54821c2d0298179",
+    "text": "41fdfb3d9c7bcc4d"
   },
   "inbox.chat_access.human_hint": {
     "en": "1e578de7d28c0d49",
@@ -5552,16 +5552,24 @@
     "text": "c0091236d5650548"
   },
   "inbox.chat_access.legend": {
-    "en": "45241b561f526ec3",
-    "text": "6d603372ad787d11"
+    "en": "06002bd1ab3408e8",
+    "text": "6dec14595677057b"
   },
   "inbox.chat_access.none": {
     "en": "9108684fdfc8e60a",
     "text": "c31185000006dc99"
   },
+  "inbox.chat_access.their_agents": {
+    "en": "4b4c2572ef20d124",
+    "text": "9889f4015df3fa31"
+  },
   "inbox.chat_access.waiting": {
     "en": "97c51d0448d1e7af",
     "text": "5731d5910272527d"
+  },
+  "inbox.chat_access.with_legend": {
+    "en": "87826e9cfb3fa855",
+    "text": "a3799047e03fdcab"
   },
   "inbox.chat_with": {
     "en": "08d2ac3fa99907ab",
