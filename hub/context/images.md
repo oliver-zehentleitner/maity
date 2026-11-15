@@ -58,7 +58,8 @@ route's own value when that value is on its list (`ROUTE_CACHE`: the images'
 `private, max-age=21600` on the image and on its `304`, the avatars' and attachments'
 `private, no-cache`, the dashboard's files' `no-cache` (serving.md c6768529), and a few more), or the request is a `GET` or `HEAD` on the public host (never
 the join host) of a path a visitor may cache: `PUBLIC_PATHS` (`public, max-age=60`), a public
-avatar, `robots.txt` and the sitemaps, the landing page's files, and a stored public page (§16.9),
+avatar, a member's picture under its current version (`private, max-age=31536000, immutable`,
+which only `routes.avatars.get_avatar` sets), `robots.txt` and the sitemaps, the landing page's files, and a stored public page (§16.9),
 each list with its own value. A route with a new value must add it there, or it is served `no-store`.
 The body cap is 64 KiB except for image uploads (logo, banner and avatars: 1 MiB, a larger
 body answers `invalid` with `fields.body: too_large`, as §11.2 says, rather than 413),
