@@ -348,14 +348,13 @@ def test_a_body_full_of_fake_credentials_costs_one_bounded_lookup(
 ) -> None:
     from sqlalchemy import event as sa_event
 
+    client = make_client()  # its start reads the credentials once (`verifiers.check_at_startup`)
     statements: list[str] = []
     listener = lambda *args: statements.append(args[2])  # noqa: E731
     sa_event.listen(migrated, "before_cursor_execute", listener)
     try:
         fakes = " ".join(f"mty1.crd-{i}.x" for i in range(6000))
-        response = make_client().post(
-            "/api/v1/auth/login", json={"email": "x", "password": fakes[:60000]}
-        )
+        response = client.post("/api/v1/auth/login", json={"email": "x", "password": fakes[:60000]})
     finally:
         sa_event.remove(migrated, "before_cursor_execute", listener)
     assert response.headers["Maity-Error"] == "credential_in_payload"

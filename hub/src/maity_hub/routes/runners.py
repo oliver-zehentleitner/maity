@@ -33,7 +33,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
-from maity_hub.auth import credentials, second_factor
+from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
@@ -509,7 +509,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, li
         insert(t.runner_credential).values(
             id=credential_id,
             runner_id=runner_id,
-            verifier=verifier,
+            verifier=verifiers.stored("runner_credential", credential_id, verifier),
             enrollment_id=row.id,
             client=client,
             created_at=now,

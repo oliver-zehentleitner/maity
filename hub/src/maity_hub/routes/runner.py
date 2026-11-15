@@ -55,7 +55,16 @@ router = APIRouter()
 Text = Annotated[str, StringConstraints(max_length=200, pattern=r"^[\x20-\x7e]*$")]
 Name = Annotated[str, StringConstraints(min_length=1, max_length=200, pattern=r"^[\x20-\x7e]+$")]
 Harness = Literal[
-    "claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub"
+    "claude-code",
+    "codex",
+    "opencode",
+    "antigravity",
+    "pi",
+    "hermes",
+    "kimi",
+    "cline",
+    "omp",
+    "stub",
 ]
 Mode = Literal["interactive", "supervised"]
 REPORTED_STATES = Literal[

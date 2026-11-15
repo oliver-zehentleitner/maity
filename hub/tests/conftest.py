@@ -412,7 +412,7 @@ def _fresh_process_state() -> Iterator[None]:
         shared_budget,
         shared_counts,
     )
-    from maity_hub.auth import caller
+    from maity_hub.auth import caller, verifiers
     from maity_hub.auth.credentials import NonceWindow
     from maity_hub.routes import badges, device_codes
 
@@ -420,6 +420,7 @@ def _fresh_process_state() -> Iterator[None]:
     # are emptied between tests anyway, and the next app configures its own.
     shared_counts.configure(None)
     shared_budget.configure(None)
+    verifiers.configure(None)  # a credential written outside an app is stored plain
     listening.stop(every=True)  # a test's apps left on PostgreSQL share nothing with the next
     listening.reset()
     # The limits are the module's, set by the last app built: back to the defaults, so a test
