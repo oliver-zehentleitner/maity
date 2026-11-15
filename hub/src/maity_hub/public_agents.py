@@ -166,7 +166,9 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     )
     owner_link = f'<a href="/{escape(owner.handle, quote=True)}">{escape(owner.display_name)}</a>'
     # An agent always has a picture (§6.10), shown as a person's page shows theirs (§16.9).
-    picture = avatars.public_urls(conn, [agent.id])[agent.id]
+    # The owner's picture as their own page shows it: only while their `public_profile` is on.
+    pictures = avatars.public_urls(conn, [agent.id, *([owner.id] if owner.public_profile else [])])
+    picture = pictures[agent.id]
     path = f"/{owner.handle}/agents/{agent.handle}"
     content = (
         f'<p class="eyebrow">{escape(owner.handle)}/agents/{escape(agent.handle)}</p>'
@@ -186,7 +188,12 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         "name": agent.display_name,
         "handle": agent.handle,
         "picture": picture,
-        "owner": {"name": owner.display_name, "handle": owner.handle, "page": f"/{owner.handle}"},
+        "owner": {
+            "name": owner.display_name,
+            "handle": owner.handle,
+            "page": f"/{owner.handle}",
+            "picture": pictures.get(owner.id),
+        },
         "projects": [
             {"name": p.name, "full_name": full, "role": p.member_role} for p, full in listed
         ],
