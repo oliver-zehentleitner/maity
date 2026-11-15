@@ -1032,8 +1032,10 @@ picture by the same rule. `members` is the length of the Team tab's list, both t
 counts, and stands next to `statistics`, not inside it. Each ticker entry gets `merge`: `{pr, title, author,
 areas}` read from the event's own facts, or `null`. `avatars._touch_page` renders, besides the owner's page, every
 public project page with the member (`public_projects.pages_with_picture`) and, for a person, their agents'
-pages, through `others`, so no card page is rendered for it. `test_public_page_data.py` holds the shapes and the
-renders.
+pages, through `others`, so no card page is rendered for it. The Team and Organisation tabs' `data` take the
+picture by the same rule (`public_projects.member_pictures`, one call per render of the views,
+`public_project_views.shown_pictures`; tsk-9482zxza3gs3), and `pages_with_picture` names the views with the page.
+`test_public_page_data.py` holds the shapes and the renders.
 
 **Reason:** the design draws a team of avatar cards, a "Right now" stack and an "Agent of [picture] name" line.
 Without these fields it would need a second request per member, or would parse `text`. A picture follows the rule

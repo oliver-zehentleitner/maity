@@ -86,6 +86,10 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
     assert all(
         set(n) == {"index", "person", "role", "reports_to"} for n in organisation["data"]["nodes"]
     )
+    assert all(
+        n["person"] is None or set(n["person"]) == PERSON | {"picture"}
+        for n in organisation["data"]["nodes"]
+    )
 
     person = read(world, "maintainer")
     assert person["kind"] == "person"
