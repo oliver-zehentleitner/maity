@@ -76,6 +76,9 @@ class Keeper:
     held: set[str] = field(default_factory=set)
     # The binaries running sessions started from; None when one of them is not known.
     binaries_in_use: Callable[[], set[str] | None] = lambda: set()
+    # The supervisor's lock, under which its start gate reads probes, sandbox and held: the
+    # three change together, never half seen (supervisor.GateView).
+    guard: threading.RLock = field(default_factory=threading.RLock)
     now: Callable[[], float] = time.time
     pause: Callable[[float], None] = time.sleep
     lock: threading.RLock = field(default_factory=threading.RLock)
@@ -134,13 +137,15 @@ class Keeper:
             harness, self.agent_path, self.as_user, self.cfg.tools_dir
         )
         on = tools_ok and capabilities.sandbox_version_ok(harness.id, found.version)
-        changed = self.probes.get(harness.id) != found or self.sandbox.get(harness.id) != on
-        self.probes[harness.id] = found
-        self.sandbox[harness.id] = on
-        if capabilities.sandbox_held(harness.id, tools_ok, found.version):
-            self.held.add(harness.id)
-        else:
-            self.held.discard(harness.id)
+        held = capabilities.sandbox_held(harness.id, tools_ok, found.version)
+        with self.guard:
+            changed = self.probes.get(harness.id) != found or self.sandbox.get(harness.id) != on
+            self.probes[harness.id] = found
+            self.sandbox[harness.id] = on
+            if held:
+                self.held.add(harness.id)
+            else:
+                self.held.discard(harness.id)
         for entry in self.advertised.get("harnesses", []):
             if entry.get("id") == harness.id:
                 entry.update(
@@ -236,7 +241,16 @@ class Keeper:
             if state.update_requested_at == requested_at:
                 continue
             if state.version is None and not asked.install:
-                continue  # `install = false`: Update now updates, it never installs
+                # `install = false`: Update now updates, it never installs. The report names
+                # the request as settled, so the hub drops it rather than keep it standing.
+                with tools.locked(self.cfg.tools_dir, tool_id):
+                    state = tools.load(self.cfg.tools_dir, tool_id)
+                    state.update_requested_at = requested_at
+                    tools.save(self.cfg.tools_dir, tool_id, state)
+                self.log(f"tools: {tool_id}: Update now of {requested_at} skipped, not installed"
+                         " and install = false")  # fmt: skip
+                self.publish()
+                continue
             self.take(asked, requested_at=requested_at)
 
     def run(self, stopping: threading.Event) -> None:

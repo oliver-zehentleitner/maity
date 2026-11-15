@@ -3189,10 +3189,12 @@ in his words are this design's (inferred).
   and an install and a rollback hold the tool's lock across processes,
   so neither overwrites the other's `state.json` (a4xv's review).
 - **"Update now" is read, not pushed.** The hub stores the owner's
-  request on the runner, and the runner reads `GET /runner` after every
-  wake of its event wait. Every event belongs to a project, and a runner
-  without an attached project would never hear one; the wait's own
-  fallback brings the read within a minute anyway. The hub drops a
+  request on the runner, and the runner's tool thread reads `GET /runner`
+  at most once a minute while a tool is updated daily, apart from the
+  event wait so an install of minutes never holds it up. Every event
+  belongs to a project, and a runner without an attached project would
+  never hear one, so a poll within a minute is what an event would give
+  anyway. The hub drops a
   request only when the report that ends the attempt names it, its
   `requested_at` exactly as the runner read it, as a removal by hand is
   closed (161d5507). Rejected: dropping it once a report shows a check at

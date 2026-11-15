@@ -18516,7 +18516,7 @@ Runner credential, signed (§15.1).
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
 | POST | `/runner/placements/{id}/usage` | `{run, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same body; supervised placements only, for the placement's open `run` (`run_closed` otherwise); no `Idempotency-Key`: the `run` is its key; §15.15 |
 | PATCH | `/runner` | `{capabilities}` | `200`, the runner view; updates what it advertises (a configuration reload, a target becoming unreachable, a tool's version or state, §15.16). `Idempotency-Key` required |
-| GET | `/runner` | — | `200`, `{update_requests: [{tool, requested_at}]}`: the owner's open `Update now` requests (§15.16). Read after every wake of the event wait |
+| GET | `/runner` | — | `200`, `{update_requests: [{tool, requested_at}]}`: the owner's open `Update now` requests (§15.16). Read by the runner's tool thread at most once a minute, while a tool is updated daily |
 
 ```json
 {
@@ -20288,9 +20288,12 @@ time in milliseconds, made strictly later than the last request the hub
 issued for that tool on that runner, settled or dropped ones included, so
 no two requests for a tool are the same string; nothing a runner reports
 moves that floor. The runner reads its requests with
-`GET /runner` (§15.8) after every wake of its event wait, so a request
-reaches it within a minute; a runner that is offline reads it when it is
-back. It carries out a request with the same rules as the daily check.
+`GET /runner` (§15.8) at most once a minute while one of its tools is
+updated daily, so a request reaches it within a minute; a runner that is
+offline reads it when it is back. It carries out a request with the same
+rules as the daily check. A request for a tool that is missing and has
+`install = false` is not carried out, since an update never installs;
+the runner reports it as settled at once, with the tool `missing`.
 The attempt is done when the tool's `state` is no longer `installing`
 or `updating`, whatever the outcome; the runner sends that report with
 `update_requested_at` naming the request, its `requested_at` exactly as

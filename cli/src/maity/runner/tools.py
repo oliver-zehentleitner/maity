@@ -245,6 +245,8 @@ def _take(
         latest = installer.latest()
     except InstallError as error:
         return _failed(tools_dir, tool_id, state, error.reason, now)
+    except Exception:  # noqa: BLE001 - an installer's slip still ends the attempt as failed
+        return _failed(tools_dir, tool_id, state, "installer_failed", now)
     state.latest, state.checked_at = latest, now
     if latest == state.version or latest in state.skipped or not newer(latest, state.version):
         state.state = "rolled_back" if latest in state.skipped and state.version else "current"
@@ -262,14 +264,21 @@ def _take(
     except OSError:
         shutil.rmtree(staging, ignore_errors=True)
         return _failed(tools_dir, tool_id, state, "no_space", now)
-    answered = installer.version_of(found)
+    except Exception:  # noqa: BLE001 - never left `installing` with a half-filled staging
+        shutil.rmtree(staging, ignore_errors=True)
+        return _failed(tools_dir, tool_id, state, "installer_failed", now)
+    # Checked before anything runs it: a binary outside its directory is never started.
+    if not found.is_relative_to(staging):  # an installer must stay in its directory
+        shutil.rmtree(staging, ignore_errors=True)
+        return _failed(tools_dir, tool_id, state, "installer_failed", now)
+    try:
+        answered = installer.version_of(found)
+    except Exception:  # noqa: BLE001 - a binary that cannot answer did not answer
+        answered = None
     if answered != latest:
         shutil.rmtree(staging, ignore_errors=True)
         state.skipped.append(latest)
         return _failed(tools_dir, tool_id, state, "version_failed", now)
-    if not found.is_relative_to(staging):  # an installer must stay in its directory
-        shutil.rmtree(staging, ignore_errors=True)
-        return _failed(tools_dir, tool_id, state, "installer_failed", now)
     (staging / BINARY_FILE).write_text(str(found.relative_to(staging)) + "\n", encoding="utf-8")
     shutil.rmtree(target, ignore_errors=True)
     staging.rename(target)
