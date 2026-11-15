@@ -738,19 +738,10 @@ def test_needs_in_session_names_a_session_of_that_member(
 
 
 def _statements(engine: Engine, call: Any) -> int:
-    from sqlalchemy import event
+    """The route's own statements on `engine`, as `test_notifications._statements` counts."""
+    from tests.statements import count_statements
 
-    seen = [0]
-
-    def counted(*_: Any) -> None:
-        seen[0] += 1
-
-    event.listen(engine, "before_cursor_execute", counted)
-    try:
-        call()
-    finally:
-        event.remove(engine, "before_cursor_execute", counted)
-    return seen[0]
+    return count_statements(engine, call, async_engines=False)
 
 
 def test_a_listing_costs_its_page_not_every_request(
