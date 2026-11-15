@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, sign, state
-from . import capabilities, config, supervisor, targets
+from . import capabilities, config, keeper, supervisor, targets
 
 EXIT_CONFIG = 78  # EX_CONFIG; RestartPreventExitStatus in the unit
 POLL_WAIT = 55
@@ -103,6 +103,7 @@ class Service:
     last_read: float = 0.0
     connected: bool = False
     supervisor: supervisor.Supervisor | None = None
+    keeper: keeper.Keeper | None = None
 
     # --- one connection --------------------------------------------------------------------
 
@@ -320,7 +321,10 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     else:
         path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
         as_user = supervisor.agents_user(cfg)
-        probes = {h.id: capabilities.probe(h, path, as_user) for h in cfg.harnesses.values()}
+        probes = {
+            h.id: capabilities.probe(h, path, as_user, cfg.tools_dir)
+            for h in cfg.harnesses.values()
+        }
         for harness_id, found in probes.items():
             if not found.available:
                 log(f"harness {harness_id} is advertised as unavailable ({found.reason})")
@@ -333,6 +337,24 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     )
     service.reconcile, service.actual = sup.update, sup.actual
     service.supervisor = sup
+    if found_targets is None:
+        # Its own client: an install takes minutes and never holds up the event wait.
+        service.keeper = keeper.Keeper(
+            cfg,
+            hub.Client(base, key),
+            log,
+            probes,
+            service.advertised,
+            capabilities.agent_path(cfg, os.environ.get("PATH", "")),
+            supervisor.agents_user(cfg),
+            sessions_on=sup.sessions_on,
+            advertise=sup.advertise_now,
+            sandbox=sup.targets["local"].sandbox if "local" in sup.targets else {},
+            held=sup.targets["local"].held if "local" in sup.targets else set(),
+            binaries_in_use=sup.binaries_in_use,
+            guard=sup.lock,
+        )
+        service.advertised["tools"] = service.keeper.entries()
     return service
 
 
@@ -360,6 +382,10 @@ def serve(config_path: Path) -> int:
     if service.supervisor is not None:
         threading.Thread(
             target=service.supervisor.run, args=(stopping,), daemon=True, name="maity-supervisor"
+        ).start()
+    if service.keeper is not None:
+        threading.Thread(
+            target=service.keeper.run, args=(stopping,), daemon=True, name="maity-tools"
         ).start()
     with stop_on_signals():
         try:

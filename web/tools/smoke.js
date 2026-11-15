@@ -8145,7 +8145,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Uploaded logo removed; the forge's logo, or a monogram, shows again."), "images: the removal is said too");
   await projectSettings(); await tick();
   win.Maity.api.putImage = realPut; win.Maity.api.del = realDel;
-  // The repository in Project settings (docs/api.md §6.1): https only here, the hub checks the forge.
+  // The repository in Project settings (docs/api.md §6.1): https only here, the hub checks the rest.
   const repoPatches = [];
   const repoRealPatch = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { if ("repository" in b) repoPatches.push(b); return repoRealPatch(p, b); };
@@ -8156,8 +8156,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   repoIn().value = "http://github.com/a/b"; await repoSave();
   expect(!repoPatches.length && text(byId("repo-url-error")).startsWith("Must be https://") && repoIn().getAttribute("aria-invalid") === "true",
     "repository: anything but an https forge URL is refused at its field, nothing sent");
-  repoIn().value = "https://gitlab.com/a/b"; await repoSave();
-  expect(repoPatches.length === 1 && text(byId("repo-url-error")).startsWith("Must be https://"), "repository: the hub's not_a_configured_forge is said at the field");
+  repoIn().value = "https://localhost/a/b"; await repoSave();
+  expect(repoPatches.length === 1 && text(byId("repo-url-error")).startsWith("Must be https://"), "repository: the hub's not_a_repository_url is said at the field");
   let repoAsked = null;
   win.confirm = (q) => { repoAsked = q; return true; };
   repoIn().value = "https://github.com/acme/widget/"; await repoSave();
@@ -8168,6 +8168,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   repoIn().value = ""; await repoSave();
   expect(JSON.stringify(repoPatches[2]) === JSON.stringify({ repository: null }) && (await win.Maity.api.get("/projects/maintainer/maity")).repository === null
     && repoAsked.startsWith("Remove the repository?"), "repository: emptied, it is removed after asking");
+  // Any forge host, a GitLab group path too (tsk-rzhydxnsav4m): stored without the clone suffix, its
+  // kind from the host, linked only; the header links the forge's merge requests.
+  await projectSettings();
+  repoIn().value = "https://GitLab.Example.com/Group/sub/api.git/"; await repoSave();
+  const repoLab = (await win.Maity.api.get("/projects/maintainer/maity")).repository;
+  expect(JSON.stringify(repoPatches[3]) === JSON.stringify({ repository: { url: "https://GitLab.Example.com/Group/sub/api.git" } })
+    && repoLab.url === "https://gitlab.example.com/Group/sub/api" && repoLab.forge === "gitlab" && repoLab.probe_configured === false,
+    "repository: a self-hosted GitLab with a group path is taken, stored as the hub stores it, forge gitlab, no probe");
+  await go("#/maintainer/maity/inbox"); await tick();
+  expect(header.querySelectorAll("a.header-link").some((a) => a.getAttribute("href") === "https://gitlab.example.com/Group/sub/api/-/merge_requests"),
+    "repository: the header links a GitLab project's merge requests");
+  expect((await win.Maity.api.patch("/projects/maintainer/maity", { repository: { url: "https://git.corp.example/team/tool" } })).repository.forge === "other",
+    "repository: a host that names no known forge is other, still taken");
+  const repoRefused = async (url) => {
+    const e = await win.Maity.api.patch("/projects/maintainer/maity", { repository: { url } }).catch((x) => x);
+    return e.status === 400 && e.details.fields["repository.url"] === "not_a_repository_url";
+  };
+  expect(await repoRefused("https://gitlab.\u212Aorp.example/a/b") && await repoRefused("https://dev.localhost/a/b"),
+    "repository: a host with a non-ASCII letter (a Kelvin sign that lower-cases to k) or under .localhost is refused, as the hub refuses it");
+  const repoBefore = repoPatches.length;
+  await projectSettings();
+  repoIn().value = "https://github.com/acme/widget//"; await repoSave();
+  expect(repoPatches.length === repoBefore && text(byId("repo-url-error")).startsWith("Must be https://"),
+    "repository: only one trailing slash comes off at the field; with a second it is refused there, nothing sent");
   win.confirm = () => true;
   await repoRealPatch("/projects/maintainer/maity", { repository: { url: "https://github.com/oliver-zehentleitner/maity" } });
   win.Maity.api.patch = repoRealPatch;
@@ -10600,9 +10624,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!posts.length && fieldError("project-slug") === "Lowercase letters, digits and -, 2–63 characters, starting with a letter or digit." && byId("project-slug").getAttribute("aria-invalid") === "true",
     "a malformed slug is refused next to the field, nothing sent");
   byId("project-slug").value = "maity";
-  byId("project-repository").value = "https://gitlab.example/a/b";
+  byId("project-repository").value = "https://gitlab.example/a/b.atom";
   main.querySelector("form").dispatch("submit"); await tick(); await tick();
-  expect(fieldError("project-slug").includes("already") && fieldError("project-repository").includes("forge"),
+  expect(fieldError("project-slug").includes("already") && fieldError("project-repository").startsWith("Must be https://<host>/<owner>/<name>"),
     "the hub's invalid fields shown next to slug and repository");
   byId("project-slug").value = "dogfood"; byId("project-repository").value = "https://github.com/example/dogfood";
   // Project memory (§6.1, §6.21): Keep the Why preselected, its five setup options ticked beneath it, the dashboard's Path under it.
