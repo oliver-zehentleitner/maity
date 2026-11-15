@@ -70,6 +70,9 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
     settings_row = preferences.verified_row(conn, human_id)
     if settings_row is None:
         raise ApiError(409, "address_unverified", "the human has no verified address")
+    # The human's account lock before their factor's row, as against a deletion: the
+    # admin's own write guard holds only the admin's.
+    write_guard.share(conn, human_id)
     factor = second_factor.factor_of(conn, human_id, lock=True)
     if not second_factor.enrolled(factor):
         raise ApiError(409, "conflict", "no second factor is enrolled")
@@ -192,6 +195,7 @@ def operator_reset(conn: Connection, handle: str) -> bool:
     human_id = handles.human_id_of(conn, handle)  # the handle or an alias (§6.24)
     if human_id is None:
         raise not_found()
+    write_guard.share(conn, human_id)  # before any other, as against a deletion
     if not second_factor.enrolled(second_factor.factor_of(conn, human_id, lock=True)):
         return False
     _reset(conn, human_id, "operator")

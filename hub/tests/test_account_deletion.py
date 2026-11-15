@@ -1146,134 +1146,234 @@ def test_a_profile_delete_racing_the_deletion_does_not_deadlock(
     assert deleted_at(migrated, pat.id) is not None
 
 
-def test_a_reset_by_mail_racing_the_deletion_does_not_deadlock(
-    make_client: ClientFactory, migrated: Engine, moment: Clock
-) -> None:
-    """The reset link holds the human's row when the confirmation starts. With one lock order
-    both take the account lock first: the confirmation waits for it, the reset withdraws the
-    pending deletion and commits, and the link then deletes nothing (PostgreSQL, MariaDB)."""
-    from maity_hub.auth import password_resets
-    from maity_hub.routes import password_reset
-    from tests.concurrency import finished, race, waiting
+# --- the anonymous mail links and the operator against the deletion (one lock order) -----------
 
-    admin_first(migrated, moment)
-    pat = person(make_client, migrated, moment)
-    token = requested(pat, migrated)
-    hub = mail_env()
-    assert hub.mail.signing_key is not None
+
+def reset_link(migrated: Engine, hub: Any, human_id: str) -> str:
+    """A live password reset link of the human (§2.10)."""
+    from maity_hub.auth import password_resets
+
     with migrated.begin() as conn:
         issued = password_resets.issue(
-            conn, human_id=pat.id, source="198.51.100.7", requested_at=clock.now()
+            conn, human_id=human_id, source="198.51.100.7", requested_at=clock.now()
         )
         assert issued is not None
         generation = conn.execute(
-            select(t.human.c.password_generation).where(t.human.c.id == pat.id)
+            select(t.human.c.password_generation).where(t.human.c.id == human_id)
         ).scalar_one()
         epoch = conn.execute(
             select(t.notification_settings.c.epoch).where(
-                t.notification_settings.c.human_id == pat.id
+                t.notification_settings.c.human_id == human_id
             )
         ).scalar_one()
-    link = password_resets.token(hub.mail.signing_key, pat.id, issued, generation, epoch)
-    body = password_reset.ResetComplete(token=link, new="a brand new passphrase")
-    with race(migrated) as r:
-        reset, deletion = r.first, r.second
-        assert password_reset._live(reset, hub, link, lock=True) is not None
-        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
-        assert waiting(step)  # on the account lock, holding nothing the reset needs
-        assert password_reset._complete(reset, hub, body, "198.51.100.7", None, None)
-        reset.commit()
-        assert finished(step) is None  # the reset withdrew the request
-        deletion.commit()
-    assert deleted_at(migrated, pat.id) is None
+    return password_resets.token(hub.mail.signing_key, human_id, issued, generation, epoch)
 
 
-def test_an_unlock_link_racing_the_deletion_does_not_deadlock(
-    make_client: ClientFactory, migrated: Engine, moment: Clock
-) -> None:
-    """The link that lifts the daily cap (§2.8.6) holds the factor's row when the
-    confirmation starts. With one lock order both take the account lock first: the
-    confirmation waits for it, the cap is lifted and committed, then the account is deleted
-    (PostgreSQL, MariaDB)."""
+def unlock_link(migrated: Engine, hub: Any, human_id: str) -> str:
+    """The link that lifts the human's daily cap (§2.8.6), the cap reached and alerted."""
     from maity_hub.auth import second_factor
-    from tests.concurrency import finished, race, waiting
 
-    admin_first(migrated, moment)
-    pat = person(make_client, migrated, moment)
-    token = requested(pat, migrated)
-    hub = mail_env()
-    assert hub.mail.signing_key is not None
     day = second_factor._today()
     with migrated.begin() as conn:
-        conn.execute(insert(t.second_factor).values(human_id=pat.id))
+        conn.execute(insert(t.second_factor).values(human_id=human_id))
         conn.execute(
             insert(t.second_factor_day).values(
-                human_id=pat.id, day=day, wrong_codes=50, unlocks=0, alerted=True
+                human_id=human_id, day=day, wrong_codes=50, unlocks=0, alerted=True
             )
         )
         generation = conn.execute(
-            select(t.human.c.password_generation).where(t.human.c.id == pat.id)
+            select(t.human.c.password_generation).where(t.human.c.id == human_id)
         ).scalar_one()
-    link = second_factor.unlock_token(hub.mail.signing_key, pat.id, day, 0, generation)
-    with race(migrated) as r:
-        unlock, deletion = r.first, r.second
-        assert second_factor._unlockable(unlock, hub, link, lock=True) is not None
-        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
-        assert waiting(step)  # on the account lock, holding nothing the link needs
-        assert second_factor.unlock(unlock, hub, link)
-        unlock.commit()
-        assert finished(step) == "deleted"
-        deletion.commit()
-    assert deleted_at(migrated, pat.id) is not None
+    return second_factor.unlock_token(hub.mail.signing_key, human_id, day, 0, generation)
 
 
-def test_an_admins_second_factor_reset_link_racing_the_deletion_does_not_deadlock(
-    make_client: ClientFactory, migrated: Engine, moment: Clock
-) -> None:
-    """The link of an admin's second-factor reset (§2.8.3) holds the factor's and the reset's
-    rows when the confirmation starts. With one lock order both take the account lock first:
-    the confirmation waits for it, the reset takes effect and commits, then the account is
-    deleted (PostgreSQL, MariaDB)."""
+def enrolled_factor(migrated: Engine, human_id: str) -> None:
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.second_factor).values(
+                human_id=human_id, secret=b"sealed", enrolled_at=clock.now(), generation=0
+            )
+        )
+
+
+def admin_reset_link(migrated: Engine, hub: Any, human_id: str, admin: str) -> str:
+    """A live link of an admin's second-factor reset (§2.8.3), the human enrolled."""
     from maity_hub.auth import second_factor_reset
     from maity_hub.notifications import tokens
-    from tests.concurrency import finished, race, waiting
 
-    admin = admin_first(migrated, moment)
-    pat = person(make_client, migrated, moment)
-    token = requested(pat, migrated)
-    hub = mail_env()
-    assert hub.mail.signing_key is not None
+    enrolled_factor(migrated, human_id)
     now = clock.now()
     expires = now + timedelta(hours=1)
     with migrated.begin() as conn:
         conn.execute(
-            insert(t.second_factor).values(
-                human_id=pat.id, secret=b"sealed", enrolled_at=now, generation=0
-            )
-        )
-        conn.execute(
             insert(t.second_factor_reset).values(
-                id=second_factor_reset._nonce_id("n0nce"), human_id=pat.id, generation=0,
+                id=second_factor_reset._nonce_id("n0nce"), human_id=human_id, generation=0,
                 requested_by=admin, reason="lost the phone", created_at=now, expires_at=expires,
             )
         )  # fmt: skip
-    link = tokens.make(
+    return tokens.make(
         hub.mail.signing_key,
         {
-            "h": pat.id,
+            "h": human_id,
             "p": second_factor_reset.PURPOSE,
             "n": "n0nce",
             "g": 0,
             "x": int(expires.timestamp()),
         },
     )
+
+
+def link_parts(kind: str, migrated: Engine, hub: Any, pat: flow.Human, admin: str) -> Any:
+    """`(hold, press)` of one mail link: what its `POST` locks before it changes anything,
+    and the whole `POST` (True when it changed something), each on the given connection."""
+    from maity_hub.auth import second_factor, second_factor_reset
+    from maity_hub.routes import password_reset
+
+    if kind == "password_reset":
+        link = reset_link(migrated, hub, pat.id)
+        body = password_reset.ResetComplete(token=link, new="a brand new passphrase")
+        return (
+            lambda conn: password_reset._live(conn, hub, link, lock=True),
+            lambda conn: password_reset._complete(conn, hub, body, "198.51.100.7", None, None),
+        )
+    if kind == "unlock":
+        link = unlock_link(migrated, hub, pat.id)
+        return (
+            lambda conn: second_factor._unlockable(conn, hub, link, lock=True),
+            lambda conn: second_factor.unlock(conn, hub, link),
+        )
+    link = admin_reset_link(migrated, hub, pat.id, admin)
+    return (
+        lambda conn: second_factor_reset._alive(conn, hub, link, lock=True),
+        lambda conn: second_factor_reset.take_effect(conn, hub, link),
+    )
+
+
+LINKS = ["password_reset", "unlock", "admin_second_factor_reset"]
+
+
+@pytest.mark.parametrize("kind", LINKS)
+def test_a_mail_link_pressed_first_runs_before_the_deletion(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, kind: str
+) -> None:
+    """The link's `POST` holds what it locks when the confirmation starts. Both take the
+    account lock first, so the confirmation waits for it, the link commits, and then the
+    confirmation goes on: a password reset has withdrawn the pending deletion, which then
+    deletes nothing; after the other links the account is deleted (PostgreSQL, MariaDB)."""
+    from tests.concurrency import finished, race, waiting
+
+    admin = admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    hold, press_link = link_parts(kind, migrated, hub, pat, admin)
     with race(migrated) as r:
-        reset, deletion = r.first, r.second
-        assert second_factor_reset._alive(reset, hub, link, lock=True) is not None
+        link, deletion = r.first, r.second
+        assert hold(link) is not None
         step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
         assert waiting(step)  # on the account lock, holding nothing the link needs
-        assert second_factor_reset.take_effect(reset, hub, link)
-        reset.commit()
+        assert press_link(link)
+        link.commit()
+        outcome = finished(step)
+        deletion.commit()
+    if kind == "password_reset":
+        assert outcome is None  # the reset withdrew the request
+        assert deleted_at(migrated, pat.id) is None
+    else:
+        assert outcome == "deleted"
+        assert deleted_at(migrated, pat.id) is not None
+
+
+@pytest.mark.parametrize("kind", LINKS)
+def test_a_mail_link_pressed_second_waits_and_then_does_nothing(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, kind: str
+) -> None:
+    """The confirmation holds the account lock when the link's `POST` comes: the link waits
+    on it, and once the deletion commits it finds nothing left to change (PostgreSQL,
+    MariaDB)."""
+    from tests.concurrency import finished, race, waiting
+
+    admin = admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    _, press_link = link_parts(kind, migrated, hub, pat, admin)
+    with race(migrated) as r:
+        deletion, link = r.first, r.second
+        assert account_deletion.confirm(deletion, hub, token) == "deleted"
+        step = r.run(link, lambda: press_link(link))
+        assert waiting(step)  # on the account lock the deletion holds
+        deletion.commit()
+        assert finished(step) is False
+        link.commit()
+    assert deleted_at(migrated, pat.id) is not None
+
+
+def paused(monkeypatch: pytest.MonkeyPatch, owner: Any, name: str) -> tuple[Any, Any]:
+    """Stop `owner.name` at its call until `go` is set; `reached` says it got there. The
+    call runs on once `go` is set."""
+    import threading
+
+    from tests.concurrency import FINISH_WITHIN
+
+    reached, go = threading.Event(), threading.Event()
+    original = getattr(owner, name)
+
+    def held(*args: Any, **kwargs: Any) -> Any:
+        reached.set()
+        go.wait(FINISH_WITHIN)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(owner, name, held)
+    return reached, go
+
+
+@pytest.mark.parametrize("who", ["admin", "operator"])
+def test_a_second_factor_reset_by_the_admin_or_the_operator_runs_before_the_deletion(
+    make_client: ClientFactory,
+    migrated: Engine,
+    moment: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    who: str,
+) -> None:
+    """An admin's request for a reset link (§2.8.3) and the operator's reset lock another
+    human's factor: each takes that human's account lock first, so a confirmation that
+    starts while they hold the factor waits for them. Each is stopped right after its factor
+    lock, before the writes that cross the deletion's (PostgreSQL, MariaDB)."""
+    from types import SimpleNamespace
+
+    from maity_hub.auth import second_factor_reset
+    from tests.concurrency import FINISH_WITHIN, finished, race, waiting
+
+    admin = admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    enrolled_factor(migrated, pat.id)
+    if who == "admin":
+        reached, go = paused(monkeypatch, second_factor_reset.BY_HUMAN, "hit")
+        caller = SimpleNamespace(kind="human", human_session=None, principal_id=admin)
+
+        def reset(conn: Any) -> Any:
+            return second_factor_reset.request(conn, hub, caller, pat.id, "lost the phone")
+
+    else:
+        reached, go = paused(monkeypatch, second_factor_reset, "_reset")
+
+        def reset(conn: Any) -> Any:
+            return second_factor_reset.operator_reset(conn, "pat")
+
+    with race(migrated) as r:
+        first, deletion = r.first, r.second
+        resetting = r.run(first, lambda: reset(first))
+        try:
+            assert reached.wait(FINISH_WITHIN)  # the factor is locked
+            step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+            assert waiting(step)  # on the account lock, holding nothing the reset needs
+        finally:
+            go.set()
+        assert finished(resetting)
+        first.commit()
         assert finished(step) == "deleted"
         deletion.commit()
     assert deleted_at(migrated, pat.id) is not None

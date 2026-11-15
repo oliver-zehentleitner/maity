@@ -797,33 +797,40 @@ outlive the human's change of it.
 text differs (every other session ends, not every one), and the bell and the mail name what the
 human did in the account apart from a reset by mail.
 
-## The anonymous mail links that change an account take its account lock first, as its deletion does
+## The mail links and the second-factor resets of another human take that human's account lock first, as the deletion does
 
 **Id:** 8dfeeba9-9c68-4fab-a06c-3cc457abdd49
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-a9jk1ec1frgk, from review A319 of #1756, 2026-11-14; all three deadlocks reproduced on PostgreSQL by `test_account_deletion.py` `…_racing_the_deletion_does_not_deadlock`; `write_guard.share`, `routes/password_reset._live`, `auth/second_factor._unlockable`, `auth/second_factor_reset._alive`
-**Revisit when:** a mail link changes an account without the account lock, or the deletion stops taking `account_lock` before everything else
+**Source:** card tsk-a9jk1ec1frgk, from review A319 of #1756, 2026-11-14, and review A543 of #1827, 2026-11-15; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_mail_link_pressed_first_…`, `test_a_second_factor_reset_by_the_admin_or_the_operator_…`); `write_guard.share`, `routes/password_reset._live`, `auth/second_factor._unlockable`, `auth/second_factor_reset._alive`, `request`, `operator_reset`
+**Revisit when:** a path locks a human's factor, human or day row without that human's account lock, or the deletion stops taking `account_lock` before everything else
 **See:** auth.md#the-daily-cap-of-wrong-second-factor-codes-is-a-row-per-human-and-utc-day-refuses-before-the-compare-and-its-alert-mail-carries-the-one-link-that-lifts-it — bdb3d207-90bb-4f5c-999c-110a8a9f10fb — as of 2026-11-15
 
 The `POST` of a password reset link (§2.10), of the link that lifts the daily cap (§2.8.6) and
 of an admin's second-factor reset link (§2.8.3) takes the human's `account_lock` shared
 (`write_guard.share`) before any other lock, as the address's confirmation link already did.
-One order for every path: the account lock, then the factor, the human, the day. The deletion's
-confirmation takes the account lock exclusively before anything else (`lock_account`), so a
-link and a deletion run one after the other: a link that came first commits (a reset withdraws
-the pending deletion, which then deletes nothing), a link that came second finds the account
-gone and does nothing.
+So do an admin's request for that link and the operator's reset (`maity-hub second-factor
+reset`), before they lock the other human's factor: the admin's own write guard holds only the
+admin's account lock, the operator's command none. One order for every path: the account lock,
+then the factor, the human, the day. The deletion's confirmation takes the account lock
+exclusively before anything else (`lock_account`), so these paths and a deletion run one after
+the other. A path that came first commits, and the deletion then goes on: after a password reset
+it deletes nothing, since the reset withdrew the pending deletion; after the unlock link or a
+second-factor reset it deletes the account. A link that came second waits for the deletion's
+commit and then finds nothing left to change (its `POST` answers as a dead link).
 
-**Reason:** these links carry no session, so the write guard took no account lock for them, and
-the deletion's later locks crossed theirs. The reset link held the factor and the human and
-then withdrew the pending deletion, whose row the confirmation held while it waited for the
-human; the unlock link held the factor and then wrote the day's row, which the deletion had
-already deleted on its way to the factor; the admin's reset link held the factor and its reset
-row and then wrote the human's record, while the deletion held the human and waited for that
-row. All three deadlocked on PostgreSQL. A lock in front of
-both sides removes every such crossing at once, whatever the deletion locks later.
+**Reason:** these paths ran without the human's account lock (the links carry no session, the
+admin's guard is the admin's, the command has none), and the deletion's later locks crossed
+theirs. The reset link held the factor and the human and then withdrew the pending deletion,
+whose row the confirmation held while it waited for the human; the unlock link held the factor
+and then wrote the day's row, which the deletion had already deleted on its way to the factor;
+the admin's reset link held the factor and its reset row and then wrote the human's record,
+while the deletion held the human and waited for that row; the admin's request and the
+operator's reset held the factor and then wrote rows that wait for the human's row or its
+sessions, which the deletion held while it waited for the factor. Each deadlocked on PostgreSQL.
+A lock in front of both sides removes every such crossing at once, whatever the deletion locks
+later.
 
 **Rejected alternatives:**
 - The deletion locking the factor's row right after the account lock, so it follows "the factor,
