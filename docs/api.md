@@ -11707,7 +11707,8 @@ organisation owns:
   `org_owner` falls to `false`, and each membership the hub created for
   them ends as a removal does (§6.2). A membership they held before
   stays, with the trust it had then: one raised by the hub returns to
-  its earlier trust, one that held trust `owner` of its own keeps it.
+  its earlier trust as a change of `trust` does (§6.2, with the rules
+  version §6.9), one that held trust `owner` of its own keeps it.
 - "The namespace owner stays an owner" (§6.25) holds for the
   organisation's owners collectively: while a human is an owner of the
   organisation, no call demotes them below trust `owner` in one of its
