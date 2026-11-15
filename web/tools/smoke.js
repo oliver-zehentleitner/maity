@@ -120,6 +120,14 @@ class El extends Node_ {
 }
 const header = new El("header"); header.id = "header";
 const head = new El("head");
+{
+  // As the hub's shell links one where it carries a page in the dashboard's design (§16.9,
+  // tsk-zhyqdtt5v59c): js/site-chrome.js takes it over when it first enters the frame, not loaded again.
+  const shellSheet = new El("link");
+  shellSheet.setAttribute("rel", "stylesheet");
+  shellSheet.setAttribute("href", "/assets/landing/public-sections.css?v=0123456789abcdef");
+  head.appendChild(shellSheet);
+}
 const main = new El("main"); main.id = "main";
 const productLine = new El("footer"); productLine.id = "product-line";
 // The page's body holds them as index.html does: the frame of the pages without a session
@@ -9862,10 +9870,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && frCols() === "Platform:#/login?lang=en=Sign in,#/register?lang=en=Create your account | Legal:/impressum?lang=en=Imprint | Follow:https://social.example/@example=Mastodon"
     && !main.querySelector(".legal-links"),
     "landing: the root without a session is the login page, the landing never read here; the frame's footer names the legal pages set " + (frFoot() ? frCols() : null));
-  expect(header.hidden === true && frOn() && frSheets().map((l) => l.getAttribute("href") + ":" + l.disabled).join() === "/assets/landing/landing.css:false,/assets/landing/public-pages.css:false,/assets/landing/public-sections.css:false"
+  expect(header.hidden === true && frOn() && frSheets().map((l) => l.getAttribute("href") + ":" + l.disabled).sort().join() === "/assets/landing/landing.css:false,/assets/landing/public-pages.css:false,/assets/landing/public-sections.css?v=0123456789abcdef:false"
     && frHead().querySelector("a.signin").getAttribute("aria-current") === "page" && frHead().querySelector("a.brand").getAttribute("href") === "/"
     && !frHead().querySelector(".btn-primary") && frHead().querySelector("button.theme-toggle"),
-    "frame: the hub's three stylesheets on, the app's bar hidden, sign in marked as this page, no call to action without a hero");
+    "frame: the hub's three stylesheets on, the one the shell linked taken over, the app's bar hidden, sign in marked as this page, no call to action without a hero");
   // The page's one h1 is the form's heading: the lockup in the hidden bar is none.
   expect(main.all().filter((x) => x.tagName === "H1").length === 1 && main.querySelector(".door-page") && main.querySelector(".door-page").firstChild.matches("aside.door-panel") && main.querySelector(".door-form").all().some((x) => x.tagName === "H1")
     && !header.all().some((x) => x.tagName === "H1") && main.querySelector(".door-form form.login button.btn.btn-primary"),

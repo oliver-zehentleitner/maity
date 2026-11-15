@@ -14,6 +14,8 @@ window.Maity = window.Maity || {};
   const { h, append } = M.dom;
   // Asked without ?v=<digest>: the hub then answers the current file with no-cache and an ETag
   // (hub/src/maity_hub/landing_files.py), so a revalidation costs no body and never goes stale.
+  // Where the hub's shell already links one with its digest (a stored page in the dashboard's
+  // design, §16.9), that link is taken over instead, so the file is loaded once.
   // The third is the public pages' design (the project's hero, its figures band, its tab bar, the
   // sections), the hub's own as it stores those pages in it (§16.9); it builds on the landing's
   // tokens and classes, so it comes last.
@@ -27,7 +29,10 @@ window.Maity = window.Maity || {};
 
   function sheets(on) {
     if (on && !links.length) {
+      const linked = Array.from(document.head.querySelectorAll("link")).filter((l) => l.getAttribute("rel") === "stylesheet");
       links = SHEETS.map((href) => {
+        const had = linked.find((l) => (l.getAttribute("href") || "").split("?")[0] === href);
+        if (had) return had;
         const link = document.createElement("link");
         link.setAttribute("rel", "stylesheet");
         link.setAttribute("href", href);

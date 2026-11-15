@@ -655,7 +655,7 @@ the stored page alone (the bare page's policy allows no script, and the row woul
 **Evidence:** confirmed
 **Source:** the card tsk-777vkhtzmq6f (the maintainer saw the old layout for about a second on prod after the redesign of tsk-9482zxza3gs3, 2026-11-15); the lead's choice of 2026-11-15 between the options the card's coder put
 **See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-15
-**Revisit when:** the hub renders a public page in the same design as the dashboard, or the dashboard's first view of a public page takes longer than about 3 s
+**Revisit when:** the person, agent and organisation pages are rendered in the dashboard's design too (tsk-2t7efzj1p8zt), or the dashboard's first view of a public page takes longer than about 3 s
 
 The redesign drew a signed-out public page in the dashboard only (`web/js/visitor.js`), while the stored row,
 which the shell carries for crawlers and readers without scripts, kept the plain layout. A visitor saw that
@@ -672,6 +672,31 @@ tsk-zhyqdtt5v59c, and this delay is the fix until it lands; the stored
 page shown in the landing's stylesheets at once (a project's page would still change from the stored layout to
 the hero, and the dashboard's frame adds and removes those stylesheets itself); hiding it with no time limit (a
 page whose script fails would stay empty).
+
+Since PR 3 of tsk-zhyqdtt5v59c (2026-11-15) this holds only for a page not yet in the dashboard's design;
+one in it stands in the shell at once (2388f990).
+
+## A page in the dashboard's design stands in the shell at once
+
+**Id:** 2388f990-a551-4e46-ba59-a24540facba7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 3 of 4, 2026-11-15); contract `docs/api.md` §16.9 ("the frame's stylesheets (§16.7.5) linked there too") and §16.7.5; `shell.page_in_shell`, `render.frame_sheets`, `render.designed`, `web/js/site-chrome.js` (`sheets`); `hub/tests/test_public_pages.py`, `web/tools/e2e.py` (`public_first_paint_round`), `web/tools/smoke.js` (the skeleton comparison)
+**See:** public-pages.md#the-hub-renders-the-public-project-pages-in-the-dashboards-design-as-a-pure-function-of-their-data-one-stylesheet-home-a-format-guard — 5262b6b7-c4bf-472e-9a05-06f1a139a177 — as of 2026-11-15
+
+Once the hub stores a page in the dashboard's design (5262b6b7), the shell carries it as the first paint
+instead of hiding it: `page_in_shell` leaves out the `.hub-page` wrapper for such a page, links the frame's
+three stylesheets by their versioned addresses in the head and marks the root `public-frame`, as
+`site-chrome.js` does when it enters the frame. The dashboard then takes those links over instead of adding
+its own (it adds one only where the head has none for that file), so each sheet loads once, and draws the same
+structure over the page; smoke compares that structure with the hub's skeletons, element by element. A page
+not in that design keeps the 3 s wait of 6fae1f6f.
+
+**Rejected:** dropping the wait for every page at once (the person, agent and organisation pages are still
+in the old layout until tsk-2t7efzj1p8zt, so they would flash again); the dashboard asking for the sheets
+without `?v` as before, beside the shell's versioned links (each sheet loaded twice, and the rules of two
+copies applied in turn).
 
 ## The public Why is a stored row, an exception to "the export stays in memory"
 

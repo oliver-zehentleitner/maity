@@ -421,6 +421,31 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
         b'<main id="main" data-public-page><div class="hub-page"><h1>Text</h1></div></main>' in made
     )
     assert b'src="js/app.js"' in made and b'content="x"' not in made
+    # Not in the dashboard's design: no frame sheets, the root not marked as in the frame.
+    assert b"/assets/landing/" not in made and b"public-frame" not in made
+    # In the dashboard's design: it stands as it is, the frame's stylesheets in the head and the
+    # root marked as in the frame, so the first paint is the page drawn over it (tsk-zhyqdtt5v59c).
+    designed = render.page_document(
+        lang="en",
+        title="T",
+        canonical="https://hub.example/t",
+        content='<section class="view-visitor public-view" data-kind="board"><h1>T</h1></section>',
+        styled=False,
+    )
+    shown = shell_module.page_in_shell(shell, designed)
+    assert shown is not None
+    assert (
+        b'<main id="main" data-public-page><section class="view-visitor public-view"' in shown
+        and b"hub-page" not in shown
+    )
+    head = shown.split(b"</head>")[0]
+    sheets = [s for s in head.split(b'<link rel="stylesheet" href="')[1:]]
+    assert [s.split(b"?v=")[0] for s in sheets] == [
+        b"/assets/landing/landing.css",
+        b"/assets/landing/public-pages.css",
+        b"/assets/landing/public-sections.css",
+    ]
+    assert shown.startswith(b'<html class="public-frame">')
     social = shell_module.page_in_shell(
         b'<html><title>M</title><meta property="og:title" content="Maity">'
         b'<meta property="og:description" content="Old"><main id="main"></main></html>',

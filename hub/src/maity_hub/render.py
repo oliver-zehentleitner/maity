@@ -915,6 +915,27 @@ def chrome(
     return _frame(setting, legal, chosen, drawn, tags)
 
 
+def frame_sheets() -> str:
+    """The `<link>`s of the frame's stylesheets (§16.7.5), by their versioned addresses: every page
+    in the frame links them, and so does the app shell carrying a stored page (`shell`), which
+    the dashboard then takes over as its own. The public pages' design (§16.9) comes last: it
+    builds on the other two's tokens and classes."""
+    return "".join(
+        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">'
+        for sheet in _frame_sheet_urls()
+        if sheet
+    )
+
+
+def _frame_sheet_urls() -> list[str | None]:
+    """The frame's stylesheets' versioned addresses, None for one the hub was built without."""
+    return [
+        landing_files.url("landing.css"),
+        landing_files.url("public-pages.css"),
+        landing_files.url("public-sections.css"),
+    ]
+
+
 class Frame(NamedTuple):
     """The frame of a public page the hub renders itself (§16.7.5): the landing page's header
     and footer from the frame's model, and the `<head>` links of the stylesheets that draw them,
@@ -949,15 +970,8 @@ def public_frame(
     if model["language"] != lang:
         header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
         footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
-    # The public pages' design (§16.9) comes last: it builds on the other two's tokens and classes.
-    sheets = [
-        landing_files.url("landing.css"),
-        landing_files.url("public-pages.css"),
-        landing_files.url("public-sections.css"),
-    ]
-    head = "".join(
-        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
-    )
+    sheets = _frame_sheet_urls()
+    head = frame_sheets()
     script = landing_files.url("landing.js") if theme else None
     if script:
         head += f'<script src="{escape(script, quote=True)}" defer></script>'
@@ -1196,10 +1210,16 @@ def stored_in_frame(
 _DESIGNED = '<section class="view-visitor public-view"'
 
 
+def designed(main: str) -> bool:
+    """Whether a stored page's content is in the dashboard's design (§16.9): the structure the
+    dashboard draws over it, styled by the frame's stylesheets alone."""
+    return main.startswith(_DESIGNED)
+
+
 def _framed_main(main: str) -> str:
     """The stored content as `<main>` holds it in the frame: a page in the dashboard's design as
     it is, where the dashboard puts it too; any other in the stored pages' column."""
-    if main.startswith(_DESIGNED):
+    if designed(main):
         return main
     return f'<div class="stored-page"><div class="wrap">{main}</div></div>'
 
