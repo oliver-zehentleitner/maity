@@ -1230,3 +1230,31 @@ aiosqlite keeps SQLite on the same code path as the servers.
   out on the runner, and it would still see such a stall only from 150 ms over its own lag, which
   no run has measured. The CPU time per callback catches it from 50 ms, with the reference in the
   process.
+
+## An `async def` runs no sync transaction on the event loop
+
+**Id:** 09716491-b10a-4c73-bf6e-cfe0eabba8ba
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pzex5cpkv6tx, 2026-11-15: web-e2e on #1843 (CI run 43712574171) got 503 from
+`POST /api/v1/admin/reports/{id}/resolve` after `total_ms=5014`, `loop_late_max_ms=4925`
+**See:** persistence.md — 66f0bcf9-cb6f-4993-81de-541d13f0c942 — as of 2026-11-15
+
+A sync engine's transaction (`with engine.begin()` / `.connect()`, `events.transaction`,
+`idempotency.run`, `retrying`) never starts on the loop's thread: an `async def` route hands it to
+`run_in_threadpool`, as `routes/auth.py` does, or the route stays a plain `def`.
+`hub/tests/test_no_sync_db_on_loop.py` scans every `async def` in the package for those calls
+outside a nested function and names file, line and function. `routes/reports.py` (`file_report`,
+`resolve_report`) and `routes/email_sign_in.py` (`complete_link`) broke the rule and were moved.
+
+**Reason:** on SQLite every transaction begins IMMEDIATE, and every request's authentication
+(`deps.authenticated`) is an async-engine transaction that holds the write lock across awaits. A
+sync transaction on the loop waits for that lock and blocks the loop its holder needs to commit,
+so it waits the whole busy timeout (5 s) and answers 503. On the server databases it costs the
+loop the statement's time, which the loop-lag guard watches only for the hot families.
+
+**Rejected alternatives:**
+- A timing test of the deadlock (an async holder and a sync write on the loop): it needs the 5 s
+  busy timeout per run and shows only the families it calls; the scan covers every route at no
+  cost.
