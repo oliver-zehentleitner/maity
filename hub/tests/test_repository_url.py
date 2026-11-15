@@ -306,6 +306,10 @@ def test_the_downgrade_refuses_a_url_the_old_column_cannot_hold(
     )
     assert response.status_code == 201, response.text
     assert len(response.json()["repository"]["url"]) == 300
+    # Down to this migration first, so that the refused step is the only one left: a later
+    # revision on top would otherwise be undone or not depending on whether the engine runs
+    # DDL in a transaction (PostgreSQL does, SQLite and MariaDB do not under alembic).
+    downgrade(migrated, "20261114130000_repo_url_2048")
     with pytest.raises(RuntimeError, match="longer than 255"):
         downgrade(migrated, "20261114100000_runner_updates")
     assert current_revision(migrated) == "20261114130000_repo_url_2048"

@@ -528,7 +528,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -599,7 +602,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -1944,7 +1950,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/conversations/{group}/messages": {
@@ -1965,7 +1974,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/tasks": {

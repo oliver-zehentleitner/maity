@@ -2134,6 +2134,28 @@ conversation_meat_proxy = Table(
     **MYSQL_TABLE,
 )
 
+VERDICT_SENTENCE = 500  # Unicode code points, docs/api.md §9.7
+
+# A human's current verdict on a chat message (docs/api.md §9.7): one row per message and human,
+# replaced by a new one and deleted when taken back. `set_seq` is the `chat_verdict` event that
+# set it. Kept apart from the events because a redacted event loses its payload, and the verdict
+# it set must stay (hub/context/events.md). The projects' record, kept with a deleted account.
+chat_verdict = Table(
+    "chat_verdict",
+    metadata,
+    Column("message_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("value", String(8), nullable=False),
+    Column("sentence", String(VERDICT_SENTENCE)),
+    Column("set_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("message_seq", "human_id"),
+    CheckConstraint("value IN ('agree', 'disagree')", name="value"),
+    **MYSQL_TABLE,
+)
+
 # A human's allow and deny entries for their agents (docs/api.md §9.6, "The lists"): who may
 # chat with them. `human_id` keeps the list; only that human reads and changes it. An allow
 # names a side (`owner_id`, with `their_agents` and `their_human`) or a project; a deny names
