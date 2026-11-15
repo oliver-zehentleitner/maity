@@ -333,3 +333,21 @@ def test_an_older_version_goes_once_no_session_runs_it(tmp_path: Path, fake: Fak
     keep.step()
     assert not Path(first).exists()
     assert "tools: codex: 1.0.0 removed, no session uses it" in published
+
+
+def test_update_now_for_a_tool_it_may_not_install_is_settled_at_once(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    """`install = false` and missing: Update now is not carried out, and the report names it,
+    so the hub drops it instead of keeping it standing for good."""
+    keep, client, published = make(tmp_path, '\n[harness.codex]\nupdate = "daily"\n')
+    keep.step()
+    client.view = {"update_requests": [{"tool": "codex", "requested_at": "2026-11-14T09:00:00Z"}]}
+    keep.step()
+    assert fake.installed == []
+    entry = tool(keep, "codex")
+    assert (entry["state"], entry["update_requested_at"]) == ("missing", "2026-11-14T09:00:00Z")
+    assert "PATCH" in published
+    published.clear()
+    keep.step()  # the same request until the hub has read the report: not again
+    assert not any("skipped" in line for line in published) and "PATCH" not in published

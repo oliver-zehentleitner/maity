@@ -251,3 +251,43 @@ def test_tools_are_managed_on_the_local_single_layout_only(fake: FakeInstaller) 
     found = problems(BASE + shared + 'agent_user = "maity-agents"\n' + managed)
     assert any("not available in the agent_user layout" in p for p in found), found
     assert parse(BASE + shared + 'agent_user = "maity-agents"\n' + "\n[harness.codex]\n")
+
+
+def test_an_installer_that_raises_anything_ends_as_failed(
+    tmp_path: Path, fake: FakeInstaller
+) -> None:
+    """A body cut short (IncompleteRead) or any other slip of an installer: the attempt is
+    failed, nothing half-installed stays, and the next round does not see `installing`."""
+    import http.client
+
+    def cut_short(version: str, into: Path) -> Path:
+        (into / "part").write_text("x")
+        raise http.client.IncompleteRead(b"x", 10)
+
+    fake.install = cut_short  # type: ignore[method-assign]
+    state = tools.take(tmp_path, "codex", fake, "t1")
+    assert (state.state, state.reason, state.version) == ("failed", "installer_failed", None)
+    assert tools.load(tmp_path, "codex").state == "failed"
+    assert list((tmp_path / "codex" / "versions").iterdir()) == []
+
+    def no_answer() -> str:
+        raise RuntimeError("the vendor's page changed")
+
+    fake.latest = no_answer  # type: ignore[method-assign]
+    assert tools.take(tmp_path, "codex", fake, "t2").reason == "installer_failed"
+
+
+def test_a_binary_outside_its_directory_is_never_run(tmp_path: Path, fake: FakeInstaller) -> None:
+    outside = tmp_path / "elsewhere"
+    outside.write_text("#!/bin/sh\necho 1.0.0\n")
+    asked: list[Path] = []
+    fake.install = lambda version, into: outside  # type: ignore[method-assign]
+
+    def answer(binary: Path) -> str:
+        asked.append(binary)
+        return "1.0.0"
+
+    fake.version_of = answer  # type: ignore[method-assign]
+    state = tools.take(tmp_path, "codex", fake, "t")
+    assert (state.state, state.reason) == ("failed", "installer_failed")
+    assert asked == []  # refused before its version answer runs it

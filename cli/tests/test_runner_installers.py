@@ -242,3 +242,20 @@ def test_codex_refuses_an_archive_that_reaches_outside(
 
 def test_both_installers_are_registered() -> None:
     assert {"claude-code", "codex"} <= set(tools.INSTALLERS)
+
+
+def test_a_download_cut_short_is_network(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import http.client
+
+    class CutShort(io.BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            raise http.client.IncompleteRead(b"", 10)
+
+    monkeypatch.setattr(installers, "_open", lambda url: CutShort(b""))
+    into = tmp_path / "file"
+    with pytest.raises(tools.InstallError) as caught:
+        installers.download("https://vendor.example/x", into, "0" * 64)
+    assert caught.value.reason == "network" and not into.exists()
+    with pytest.raises(tools.InstallError) as caught:
+        installers.fetch("https://vendor.example/x")
+    assert caught.value.reason == "network"

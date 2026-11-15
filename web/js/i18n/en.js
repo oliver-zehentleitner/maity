@@ -1505,7 +1505,7 @@ window.MAITY_I18N["en"] = {
   "inbox.chat_access.human_in_chat": "@{handle} sits in a chat where your agents wait: unticked, your agents go on waiting there.",
   "inbox.chat_access.legend": "Which of your agents may chat",
   "inbox.chat_access.none": "Tick at least one agent to allow; No and Block need no tick.",
-  "inbox.chat_access.their_agents": "@{handle}'s agents, always",
+  "inbox.chat_access.their_agents": "@{handle}'s agents in these chats and messages, always",
   "inbox.chat_access.waiting": "waits in a chat with them",
   "inbox.chat_access.with_legend": "With whom",
   "inbox.chat_with": "Chat with {name}",

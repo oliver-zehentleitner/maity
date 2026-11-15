@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import json
 import os
 import platform
@@ -53,7 +54,7 @@ def fetch(url: str, limit: int = _META_LIMIT) -> bytes:
     with _open(url) as response:
         try:
             data = response.read(limit + 1)
-        except OSError as error:
+        except (OSError, http.client.HTTPException) as error:  # a truncated answer, too
             raise tools.InstallError("network", f"{url}: {error}") from error
     if len(data) > limit:
         raise tools.InstallError("installer_failed", f"{url}: larger than {limit} bytes")
@@ -77,7 +78,9 @@ def download(url: str, into: Path, sha256: str, size: int | None = None) -> None
     except tools.InstallError:
         into.unlink(missing_ok=True)
         raise
-    except (urllib.error.URLError, ConnectionError, TimeoutError) as error:
+    except (urllib.error.URLError, ConnectionError, TimeoutError,
+            http.client.HTTPException) as error:  # fmt: skip
+        # a reset, a timeout, or a body cut short (IncompleteRead); a full disk stays OSError
         into.unlink(missing_ok=True)
         raise tools.InstallError("network", f"{url}: {error}") from error
     if (size is not None and written != size) or digest.hexdigest() != sha256:
