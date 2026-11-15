@@ -731,7 +731,7 @@ the owner.
 **Evidence:** inferred
 **Source:** card tsk-vgce05kdmk2x and the coordinator's go-ahead, 2026-11-15, first for dropping exact grants and then, once the same exposure was confirmed for prefix grants, for dropping those too (two stacked pull requests on the one card); agy 1.5.9's command matching read from its binary (terminal.extractSimpleCommands, terminal.isEnvAssignmentToken, terminal.isCommandWrapper, terminal.canonicalCommandName, shared.coversCommand, commandutils.MatchesConfigAny; the raw-line matcher commandutils.MatchesConfigAnyRaw and terminal.RequiresExactMatch on the whole-line path); agy's permissions documentation
 **See:** runner.md#agy-grants-are-exact-as-for-claude-code-a-deny-for-each-exact-entrys-longer-forms — f0ef544a-a531-4073-9572-af946f5475b2 — as of 2026-11-15
-**Revisit when:** an agy release changes how it reads the invoked command from a line, or gives `command(...)` rules a way to match a whole line or an exact form; a sound way to keep a prefix grant for agy is found; or a signed-in agy session is allowed and shows a granted command matching differently
+**Revisit when:** an agy release changes how it reads the invoked command from a line, gives `command(...)` rules a way to match a whole line or an exact form, or forbids a leading assignment or wrapper on an allowed command; a sound way to keep a prefix grant, or to tighten the `command(maity)` grant, for agy is found; tsk-zjv2xyhyggnm confines `maity` at the OS level; or a signed-in agy session is allowed and shows a granted command matching differently
 
 Neither an exact `allow` entry `a b` (no `*`) nor a ` *` prefix entry `a b *`
 is given to agy as a rule: each is left out, named by `maity runner check`,
@@ -771,6 +771,25 @@ command that needs to run outside agy's sandbox through the `allow` list no
 longer can — arrange it another way, or run it under Claude Code or Codex;
 docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
 other harnesses.
+
+**Limit:** one command grant remains that agy cannot be given more tightly —
+`command(maity)`. The runner must let the session reach the hub, so `maity`
+runs outside agy's sandbox (as for every harness), and agy applies
+`command(maity)` the same way it applies any command rule, reading the invoked
+command past a leading assignment or wrapper; so for agy that grant is not as
+tight a boundary as Claude Code's `Bash(maity *)`. No agy setting closes this,
+confirmed by reading agy 1.5.9's binary: the stepping in extractSimpleCommands
+is unconditional, the whole-line path (commandutils.MatchesConfigAnyRaw, gated
+by terminal.RequiresExactMatch) is never taken for a plain leading assignment
+or wrapper, and `--settings` has no match-mode key and refuses unknown ones.
+There is likewise no sound invocation path for `maity` the runner can arrange
+at the settings level (a launcher or absolute path is matched the same way,
+and the attacker's environment loads into the launcher process itself before
+any re-exec). So the `command(maity)` grant keeps one command reachable
+outside agy's sandbox. This is why agy stays `sandbox: off` and off every
+runner for real work until `maity` is confined at the OS level; that
+confinement is the follow-up card tsk-zjv2xyhyggnm. Stated plainly in
+docs/runners.md, with no example.
 
 **Rejected alternatives:**
 - Keeping the allow+deny pair for exact entries (f0ef544a): a line with a
