@@ -1287,7 +1287,7 @@ def _named_elsewhere(conn: Connection, placement: Any) -> bool:
 def _revoke_removed(conn: Connection, placement: Any, actor: Actor) -> None:
     """`revoked_reason: workspace_removed` (§10), told like any revocation (§15.10). The
     placement is not stopped by it: a start that came in meanwhile joins anew (`rejoin`)."""
-    from maity_hub.auth.leaks import revoke
+    from maity_hub.auth.revocation import revoke
 
     if not revoke(conn, placement.credential_id, "workspace_removed", None, stops_placements=False):
         return

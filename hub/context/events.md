@@ -533,14 +533,14 @@ both. Nothing changes an agent's owner yet, so `owner_id` holds the rule for whe
 or a closed card can be reopened
 
 `holder_stalled` is emitted in `hub/src/maity_hub/holder_stalled.py` from three hooks:
-`auth.leaks.revoke`, the one function every revocation passes, when its update won and its
+`auth.revocation.revoke`, the one function every revocation passes, when its update won and its
 caller does not say `holder_moves`: a replacement (the claims move to the new instance) and a
 member's removal (it releases them in the same transaction, so nobody is left to re-route) say
 so. The removal is the hub's reading of §6.5, which names only the replacement. The replacement
 moves the claims before it revokes (`_move_to_replacement` in
 `hub/src/maity_hub/routes/joins.py`), so the old instance holds no open card by then and its
 `holder_moves` guards against a reordering; this is why `hub/tests/test_holder_stalled.py` tests
-`leaks.revoke` with the flag directly. The reason text never decides: the revoke route passes
+`revocation.revoke` with the flag directly. The reason text never decides: the revoke route passes
 the human's own words, which can be `replaced` too;
 `availability.set_agent_limit`, only when no limit ran before (a moved `until` is no start);
 and `not_listening.check`, in the transaction that starts the episode. `claim_expired` is a pass
@@ -567,7 +567,7 @@ worker already runs per project under a claim. A column on the card keeps "once 
 restarts and replicas without a table.
 
 **Rejected alternatives:**
-- Hooking each revoke route: a new path to revoke would forget it; `leaks.revoke` is where all end.
+- Hooking each revoke route: a new path to revoke would forget it; `revocation.revoke` is where all end.
 - Deciding the silence by the reason (`replaced`, `member_removed`): a human revoking by hand can
   write either word, and the holder then stops unreported.
 - A table of reported expiries: more than one row per card is never needed.
@@ -896,7 +896,7 @@ the database.
 **Source:** card tsk-0f7nbt07f98r (part 2), building docs/api.md §8.3 and §16.8 `suspend`; the way there is the implementer's
 **Revisit when:** a held wait's pass comes to cost more than the one look, or an agent's `active` off without a revocation is to end its own wait
 
-A revocation (`leaks.revoke`, so a replacement and a suspension too) and the end of a
+A revocation (`revocation.revoke`, so a replacement and a suspension too) and the end of a
 dashboard session (`sessions.end_where`) end the open waits of that credential or session
 through `longpoll.registry.end_keys_after`, once the transaction commits: through
 `events.on_commit`, and on a plain `engine.begin()` (the sign-out, password and session
