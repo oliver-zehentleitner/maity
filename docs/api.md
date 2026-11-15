@@ -17907,9 +17907,12 @@ owner choose):
     rule still asks, which headless is a refusal (deny before ask before
     allow); the sandbox on; the workspace folder trusted,
     so an interactive start shows no trust question; the file tools
-    denied the clone's `.git/maity`; `maity` and the repository's `allow`
-    list allowed, each entry as exactly as for Claude Code: an entry
-    without `*` is allowed with a deny rule for its longer forms. A command an allow rule matches may run outside the
+    denied the clone's `.git/maity`; `maity` and the ` *` prefix entries
+    of the repository's `allow` list allowed: an entry ending in ` *` is
+    allowed as its leading words with any arguments, as for Claude Code; an
+    entry without `*` is not applied to agy (agy does not match it the way
+    Claude Code does), so it is left out, named by `maity runner check`, and
+    runs in the sandbox like an unlisted command. A command an allow rule matches may run outside the
     sandbox. `maity` has to, for its credential and the network; outside
     the sandbox any allowed command can read the credential, as with
     Claude Code.
