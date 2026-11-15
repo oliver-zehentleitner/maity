@@ -78,7 +78,7 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
 
     members = read(world, f"{BASE}/team")
     assert members["kind"] == "team" and set(members["data"]) == {"shown", "others"}
-    assert all(set(p) == PERSON | {"trust", "role"} for p in members["data"]["shown"])
+    assert all(set(p) == PERSON | {"picture", "trust", "role"} for p in members["data"]["shown"])
     assert all(set(o) == {"role", "count"} for o in members["data"]["others"])
 
     organisation = read(world, f"{BASE}/organisation")
