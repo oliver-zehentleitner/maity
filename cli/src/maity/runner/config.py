@@ -29,14 +29,18 @@ DEFAULT_WORKSPACES = "~/maity-workspaces"
 DEFAULT_GIT_NAME = "Maity agent"
 DEFAULT_GIT_EMAIL = "maity-agent@invalid"
 
-HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
+HARNESSES = (
+    "claude-code", "codex", "opencode", "antigravity", "pi", "hermes", "kimi", "cline", "omp",
+    "stub",
+)  # fmt: skip
 # No command allowlist in their own configuration (runner design §6.3): refused unless they
 # run in a pod and the operator says so for each.
 NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
 # Built but not offered: the maintainer decides on these when the runner goes into use.
 NOT_OFFERED_YET = ("opencode",)
-BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode", "pi": "pi",
-            "hermes": "hermes", "kimi": "kimi", "cline": "cline", "omp": "omp"}  # fmt: skip
+BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode",
+            "antigravity": "agy", "pi": "pi", "hermes": "hermes", "kimi": "kimi", "cline": "cline",
+            "omp": "omp"}  # fmt: skip
 MODES = ("interactive", "supervised")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 # A project as the hub names it (§6.25): the namespace owner's handle and the slug.
@@ -663,7 +667,8 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         )
     elif name in NOT_OFFERED_YET:
         problems.append(
-            f"{where}: not offered yet; for now the runner runs claude-code and codex (and stub)"
+            f"{where}: not offered yet; for now the runner runs claude-code, codex and antigravity"
+            " (and stub)"
         )
     modes = tuple(
         table.get(
