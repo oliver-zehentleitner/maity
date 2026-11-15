@@ -3588,6 +3588,7 @@ window.MAITY_I18N["ja"] = {
   "prefs.versions.reading": "読み取っています…",
   "prefs.versions.title": "以前のバージョン",
   "product.bug": "バグを見つけましたか？",
+  "product.discord": "Discord でチャットしましょう",
   "product.love": "愛",
   "product.made_by": "{name} が {github} & {maity} で {heart} を込めて作りました",
   "product.security": "脆弱性を見つけましたか？",

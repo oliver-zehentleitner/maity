@@ -337,7 +337,9 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     )
     service.reconcile, service.actual = sup.update, sup.actual
     service.supervisor = sup
-    if found_targets is None:
+    if found_targets is None and any(keeper.managed(h) for h in cfg.harnesses.values()):
+        # Only a runner that manages a tool advertises `tools` (§15.16): a hub from before
+        # them refuses the field, and a runner that manages none stays as it was for it.
         # Its own client: an install takes minutes and never holds up the event wait.
         service.keeper = keeper.Keeper(
             cfg,

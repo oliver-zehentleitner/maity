@@ -1198,6 +1198,30 @@ def test_running_reports_the_sandbox_the_start_was_given(
     assert (rec.state, rec.detail) == ("running", None if at_start else "sandbox_unavailable")
 
 
+def test_the_version_warning_names_the_version_that_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The warning after a start reads the gate's view, not the tool in use by the time the
+    session is up: a swap during the start changes nothing it says."""
+    monkeypatch.setitem(capabilities.CHECKED, "antigravity", "1.5.7")
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    recorded_folder(sup.cfg)
+    start = backend.start
+
+    def start_then_swap(*args: Any, **kwargs: Any) -> Any:
+        done = start(*args, **kwargs)
+        sup.targets["local"].probes["antigravity"] = capabilities.Probe(
+            "/usr/bin/agy-new", "1.6.0", None
+        )  # the keeper's update, landing while the session comes up
+        return done
+
+    monkeypatch.setattr(backend, "start", start_then_swap)
+    sup.update([placement()])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    assert not any("sandbox was checked with" in line for line in logs), logs
+
+
 # --- removal and claim ------------------------------------------------------------------------
 
 

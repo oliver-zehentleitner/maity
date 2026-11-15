@@ -46,6 +46,10 @@ log = logging.getLogger(__name__)
 # The first with an image wins: `forge` for a human, `motif` and `generated` for an agent.
 SOURCES = ("uploaded", "forge", "motif", "generated")
 HEADERS = {**images.HEADERS, "Cache-Control": "private, no-cache"}
+# A request whose `v` is the stored image's digest, the one its `avatar_url` carries (§6.10):
+# that address only ever names this picture, so the reader's browser keeps it for good.
+# `private`: the answer went to a caller `may_read` let through, never to a shared cache.
+VERSIONED_HEADERS = {**images.HEADERS, "Cache-Control": "private, max-age=31536000, immutable"}
 # A picture a public page shows (§6.10): the URL is versioned, so a browser keeps it a day; a
 # shared cache keeps it no longer than a public page (§16.9), so it leaves a proxy within a
 # minute once it stops being public.

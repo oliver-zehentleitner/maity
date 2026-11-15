@@ -117,7 +117,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   registration's, §2.7.1) answer with the frame's policy (§16.7.5). The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
-  by `ETag`, the project
+  by `ETag` (an avatar asked for under its current digest is
+  `private, max-age=31536000, immutable`, §6.10), the project
   badge (§6.20), with a public cache (`public, max-age=60`) because it
   carries nothing but a count, a public picture (§6.10, `public,
   max-age=86400, s-maxage=60` at its address by digest, which names no
@@ -8949,8 +8950,9 @@ generated avatar the client draws.
 
 **`avatar_url`** is a path on the hub's own origin, versioned:
 `/api/v1/avatars/{id}?v=<digest>`, where `<digest>` is the stored image's
-`ETag` without quotes; the hub ignores the parameter, it only makes a
-changed image a new URL. `null` when no source has an image. Every
+`ETag` without quotes; a changed image is a new URL, and the hub reads
+the parameter only to choose the caching ("Who may read an image",
+below). `null` when no source has an image. Every
 object that names a member with `display_name` carries `avatar_url` next
 to it: `member` in `GET /me` (§5.1), `me` in the resume packet (§5.2),
 the member view and its admin `owner` (§6.2), the agent profile (§6.3),
@@ -9008,11 +9010,21 @@ the image gets `not_found`, never `304`. The answer has the headers of a
 logo (§11.2) — `Content-Type: image/png`, `X-Content-Type-Options:
 nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
 `Cross-Origin-Resource-Policy: same-origin`, `ETag` — except the
-caching: `Cache-Control: private, no-cache`. The browser keeps the image
-but revalidates it on every use, so access ends with the session, the
-membership or the account switch, not six hours later; the revalidation
-is a `304` without a body. It is served from what the hub stored and
-never reads through to the forge.
+caching. A request whose one `v` is the stored image's current digest,
+the `v` of its `avatar_url`, at any `s` (Sizes, below), is answered
+`Cache-Control: private, max-age=31536000, immutable`: that address
+names this picture and no other, so the reader's browser keeps it for
+good and does not ask again, and no shared cache keeps it. Any other
+request — without `v`, with an old digest, with a size's own `ETag` or
+with `v` more than once — is answered `Cache-Control: private,
+no-cache`: the browser keeps the image but revalidates it on every use;
+the revalidation is a `304` without a body. Neither widens who may read
+the image: the hub answers only the callers above. A browser that
+already holds a picture under its current address may still show its
+copy after the session, the membership or the account switch ends, until
+the picture changes and its `avatar_url` with it; it never gets a new
+picture, nor this one again from the hub. It is served from what the hub
+stored and never reads through to the forge.
 
 **A public picture.** A picture a public page shows is anyone's to read
 (§16.9, the maintainer's decision of 2026-11-05): a human's while the hub
@@ -17929,9 +17941,9 @@ owner choose):
   limited to those the caller is a member of.
 - `tools` is what the runner manages of its harness tools and of `maity`
   itself, and `update_requests` (top level of the runner view) the
-  owner's open `Update now` requests (§15.16; the hub stores and shows
-  them, the runner does not report them yet, tsk-29nmydbzrg5z). Absent
-  from a runner that does not report them.
+  owner's open `Update now` requests (§15.16). Absent from a runner that
+  manages no tool (no `install` or `update` set), so such a runner's
+  `hello` stays what a hub from before §15.16 accepts.
 - `handover_key` is the runner's public X25519 key for a `full`
   replacement (§15.14), `public` base64url without padding, 32 bytes;
   `fingerprint` is computed by the hub, never taken from the runner.
@@ -20247,7 +20259,11 @@ update = "daily"    # maity itself; default "never"
   refuses `install` and `update` there.
 
 **What the runner reports.** `capabilities.tools` (§15.3), one entry
-per harness tool the configuration lists, and one for `maity`:
+per harness tool the configuration lists, and one for `maity`, once the
+configuration manages at least one tool (`install` or `update` set). A
+runner that manages none leaves `tools` out, so it keeps working with a
+hub from before this section, which refuses the field; managing a tool
+needs a hub that has it:
 
 ```json
 "tools": [
@@ -23058,7 +23074,7 @@ it off, and it is no part of the landing setting or of the frame of
 §16.7.5.
 
 ```
-[Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability?
+[Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability? · Chat with us on Discord
 ```
 
 **The parts**, in this order, separated by ` · ` (the credit right after
@@ -23086,13 +23102,17 @@ the year is the maintainer's order of 2026-11-05):
 - **Found a vulnerability?**, a link to
   `https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md`,
   which says how to report one privately, never as a public issue (the
-  maintainer's addition of 2026-11-04).
+  maintainer's addition of 2026-11-04);
+- **Chat with us on Discord**, a link to `https://discord.gg/VRWUe7zKzp`,
+  the project's Discord server, the address the README, the docs and the
+  issue chooser name. It is text, with no icon (the maintainer's decision
+  of 2026-11-15).
 
 **At phone width**, a viewport at most 600 CSS pixels wide, the line is
 only its first part: the icon, `Maity` and the year. The separators and
-the other three parts are not shown. The maintainer's request of
+the other four parts are not shown. The maintainer's request of
 2026-11-08 is "on every page (global), only 'maity 2026'": the full line
-wrapped over three rows on a phone. From 601 pixels on, all four parts
+wrapped over three rows on a phone. From 601 pixels on, all five parts
 show as above. This holds on every page with the line, the dashboard's
 and the hub's own.
 
@@ -23137,17 +23157,18 @@ icon is GitHub's mark from Octicons (MIT), the same path the dashboard
 already draws for a GitHub repository, in `currentColor`, so it follows
 the line's text colour on every page.
 
-**Words.** "Found a bug?", "Found a vulnerability?", the sentence "Made
-with ♥ by … on … & …" and "love" are translated as the rest of the page
+**Words.** "Found a bug?", "Found a vulnerability?", "Chat with us on
+Discord", the sentence "Made with ♥ by … on … & …" and "love" are translated as the rest of the page
 is, in every language each catalogue has, under the same keys in the
 dashboard's (`web/i18n/<lang>.json`, with its metadata) and the hub's
 (`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
-`product.security` ("Found a vulnerability?"), `product.made_by`
+`product.security` ("Found a vulnerability?"), `product.discord` ("Chat
+with us on Discord"), `product.made_by`
 ("Made with {heart} by {name} on {github} & {maity}") and `product.love`
 ("love"). The word `on` and the `&` are part of the
 translated sentence, so a language uses its natural preposition and may
-put the placeholders in its own order. `Maity`, `GitHub` and the name are
-never translated. The line is in the language of the page it ends.
+put the placeholders in its own order. `Maity`, `GitHub`, `Discord` and
+the name are never translated. The line is in the language of the page it ends.
 
 The translated sentence is always text and is escaped. Only its
 placeholders become something else: `{name}` the name as text, and

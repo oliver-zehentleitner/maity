@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "Este buzón también es tu segundo factor, así que quien lo lea puede restablecer tu contraseña e iniciar sesión. Configura una app de autenticación en Seguridad, en tu cuenta: así un restablecimiento también necesitará su código.\n\n",
   "password_reset.subject": "[Maity] Restablece tu contraseña",
   "product.bug": "¿Has encontrado un error?",
+  "product.discord": "Chatea con nosotros en Discord",
   "product.love": "amor",
   "product.made_by": "Hecho con {heart} por {name} en {github} & {maity}",
   "product.security": "¿Has encontrado una vulnerabilidad?",
