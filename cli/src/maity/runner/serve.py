@@ -352,6 +352,7 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
             sandbox=sup.targets["local"].sandbox if "local" in sup.targets else {},
             held=sup.targets["local"].held if "local" in sup.targets else set(),
             binaries_in_use=sup.binaries_in_use,
+            guard=sup.lock,
         )
         service.advertised["tools"] = service.keeper.entries()
     return service
