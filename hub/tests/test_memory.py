@@ -285,6 +285,40 @@ def test_the_packet_reads_many_tiny_entries_in_batches(
     assert len(team["items"]) == team["total"] and team["items"][0]["text"] == "e59"
 
 
+def test_entry_views_cost_the_same_for_3_entries_and_for_20(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The listing and the packet build their entries in batches: the memberships and the
+    handles once, never four to six lookups per entry."""
+    from tests.statements import count_statements
+
+    agent = flow.agent(make_client, owner)
+
+    def grow(n: int) -> None:
+        for i in range(n):
+            added(agent, f"team {i}")  # an agent author
+            assert owner.post(M, {"store": "community", "text": f"c{i}"}).status_code == 201
+        gone = added(agent, f"gone {n}")
+        assert remove(agent, gone["id"]).status_code == 200  # a tombstone with its `by`
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    where = t.memory_entry.c.project_id == project_id
+
+    def costs() -> tuple[int, int]:
+        listing = count_statements(migrated, lambda: owner.get(f"{M}?deleted=true&limit=200"))
+        with migrated.connect() as conn:
+            packet = count_statements(migrated, lambda: memory._compact(conn, where))
+        return listing, packet
+
+    grow(3)
+    few = costs()
+    grow(17)  # 40 live entries: one of the packet's batches of PACKET_BATCH, as for 6
+    many = costs()
+    assert len(owner.get(f"{M}?deleted=true&limit=200").json()["items"]) == 42
+    assert many == few, (few, many)
+
+
 def test_soul_changed_reaches_every_project_and_the_owner_outside_it(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
