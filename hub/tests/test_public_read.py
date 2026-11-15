@@ -332,8 +332,8 @@ def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) 
     """A stored page's body also stands inside the app shell for a visitor (§16.11), whose policy
     (`default-src 'self'`) refuses every inline style: the per-day bars of a project's page and
     the placeholder of a person without a picture were drawn so, and not shown (tsk-8fk897a9tan8).
-    Every kind there is: a project and its views, a card, a person without a picture, their agents
-    page and an agent's page."""
+    Every kind there is: a project and its views, a card, a person without a picture (with their
+    agents) and an agent's page."""
     publish_profile(world, world.owner, public_bio="I build.")
     card = world.card(status="open", title="Next up", label="idea")
     world.touch()
@@ -342,7 +342,7 @@ def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) 
     with migrated.connect() as conn:
         rows = conn.execute(select(t.public_page.c.path, t.public_page.c.body)).all()
     kinds = {read(world, path.lstrip("/"))["kind"] for path, _ in rows}
-    assert {"project", "board", "card", "person", "person_agents", "agent"} <= kinds, kinds
+    assert {"project", "board", "card", "person", "agent"} <= kinds, kinds
     assert 'class="pic none size-128"' in next(body for path, body in rows if path == "/maintainer")
     assert '<svg class="per-day"' in next(body for path, body in rows if path == f"/{BASE}")
     styled = [path for path, body in rows if re.search(r"\sstyle=", body)]

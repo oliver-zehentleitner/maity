@@ -383,9 +383,8 @@ def test_the_pages_draw_the_pictures_from_their_public_addresses(world: World) -
     handle = bot["handle"]
     agent_page = main(world.anyone, f"/maintainer/agents/{handle}")
     assert f'src="{bot_public}?s=128"' in agent_page and bot["id"] not in agent_page
-    agents = main(world.anyone, "/maintainer/agents")
-    assert f'src="{bot_public}?s=64"' in agents
-    assert "<img" not in html.split("<h2>Agents</h2>")[1]  # the profile shows no agent's picture
+    # The person's one page shows each listed agent's picture at 64 (§16.9, "A person's agents").
+    assert f'src="{bot_public}?s=64"' in html.split("<h2>Agents</h2>")[1]
     data = world.anyone.get(f"/api/v1/public/pages/maintainer/agents/{handle}").json()["data"]
     assert data["picture"] == bot_public
     person = world.anyone.get("/api/v1/public/pages/maintainer").json()["data"]
@@ -397,7 +396,8 @@ def test_a_private_profile_shows_the_placeholder(world: World) -> None:
     world.owner.patch("/me", {"public_profile": False})
     html = main(world.anyone, "/maintainer")
     assert '<span class="pic none size-128" aria-hidden="true"></span>' in html
-    assert "<img" not in html
+    # No picture of the person; their agents' pictures stay (§16.9, "A person's agents").
+    assert "<img" not in html.split("<h2>Agents</h2>")[0]
     assert world.anyone.get("/api/v1/public/pages/maintainer").json()["data"]["picture"] is None
 
 
@@ -408,7 +408,7 @@ def test_a_new_picture_renders_the_pages_again(world: World) -> None:
     assert digest(bot["avatar_url"]) in main(world.anyone, f"/maintainer/agents/{handle}")
     new = put_agent(world.bot, image()).json()["avatar_url"]
     assert digest(new) in main(world.anyone, f"/maintainer/agents/{handle}")
-    assert digest(new) in main(world.anyone, "/maintainer/agents")
+    assert digest(new) in main(world.anyone, "/maintainer")
     old = put_human(world.owner, "/me/avatar", image()).json()["avatar_url"]
     assert digest(old) in main(world.anyone, "/maintainer")
     world.owner.delete("/me/avatar")

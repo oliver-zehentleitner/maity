@@ -55,13 +55,12 @@ def test_a_card_page_carries_the_link_to_its_own_address(world: World) -> None:
     assert link(path) in page(world, path)
 
 
-def test_a_person_and_an_agent_carry_it_and_the_agents_page_does_not(world: World) -> None:
+def test_a_person_and_an_agent_carry_it(world: World) -> None:
     assert link("/maintainer") in page(world, "/maintainer")
     with world.migrated.connect() as conn:
         handle = conn.execute(select(t.agent_profile.c.handle)).scalar_one()
     path = f"/maintainer/agents/{handle}"
     assert link(path) in page(world, path)
-    assert "report-link" not in page(world, "/maintainer/agents")
 
 
 def test_the_link_is_no_part_of_the_page_description(world: World) -> None:
