@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import json
 import os
 import shlex
@@ -145,11 +146,25 @@ def test_an_os_uuid_v4_source_is_allowed_for_the_allowlist_harnesses(tmp_path: P
         rule
         in adapters.claude_settings(context(tmp_path / "s", sandbox=True))["permissions"]["allow"]
     )
-    # opencode allows it, and no later deny (git/gh/maity) overrides it (last match wins).
+    # opencode resolves a command by the LAST rule in the map whose glob matches (§6.1), so
+    # check the whole map in order, not only the dict value: the bare command is allowed, and
+    # the exact rule is not reached around by a line that chains it with another command — only
+    # the catch-all `*` deny matches that, so it stays denied.
     bash = adapters.opencode_config(context(tmp_path / "o", harness_id="opencode"))["permission"][
         "bash"
     ]
+
+    def resolve(command: str) -> str:
+        verdict = "deny"
+        for pattern, value in bash.items():
+            if fnmatch.fnmatchcase(command, pattern):
+                verdict = value
+        return verdict
+
     assert bash[adapters.UUID_COMMAND] == "allow"
+    assert resolve(adapters.UUID_COMMAND) == "allow"
+    assert resolve(f"{adapters.UUID_COMMAND} && id") == "deny"
+    assert resolve(f"{adapters.UUID_COMMAND}; rm -rf /") == "deny"
 
 
 def test_claude_code_grant(tmp_path: Path) -> None:

@@ -385,10 +385,11 @@ agents outlive it.
 **Id:** 0a639f39-f76c-4a77-ac43-ae8ce1d42434
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** card tsk-bj6fs628q6pd (a placed runner agent's field report that the sandbox refuses every OS UUID v4 source); the Keep the Why skill 0.20.3 (`SKILL.md`, the `Id` rule) and `AGENTS.md` (every entry's Id is made by an OS command, never from memory)
+**Verification:** corroborated — the allowlist mechanism is read from `adapters.py` and `docs/runners.md`; the live-session efficacy is not yet observed
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-15
-**Revisit when:** `/proc/sys/kernel/random/uuid` stops being the skill's preferred source, the skill drops the OS-command Id rule, or a harness changes how its command allowlist matches an exact command
+**Revisit when:** `/proc/sys/kernel/random/uuid` stops being a usable OS UUID v4 source, the skill drops the OS-command Id rule, or a harness changes how its command allowlist matches an exact command
 
 The runner allows exactly one command for making a UUID v4,
 `cat /proc/sys/kernel/random/uuid`, for the harnesses that gate
@@ -396,17 +397,25 @@ commands with a deny-by-default allowlist: Claude Code (a `Bash(...)`
 rule in `permissions.allow`, with `defaultMode: dontAsk`) and opencode
 (a `bash` rule, the catch-all being `deny`). It is the one source
 (`adapters.UUID_COMMAND`); the rule is unconditional, not from a grant.
+The allowlist mechanism and that these two harnesses refuse unlisted
+commands are **confirmed** from the code and `docs/runners.md`; that a
+live Claude Code or opencode session now makes its UUID with the
+allowed command, and that Codex and agy run it inside their own
+sandbox, is **inferred** and not yet observed in a placed session —
+the weaker grade is why this entry's Evidence is `inferred`.
 
 **Reason:** every Keep the Why entry an agent writes needs an `Id` made
 by an OS command — never composed from memory — so a session that
 cannot run one records no reasoning at all. Under the allowlist the
-skill's usual sources are all refused: `uuidgen`, `node`, and `od` on
+skill's named sources are all refused: `uuidgen`, `node`, and `od` on
 `/dev/urandom` are unlisted commands, denied before they run. The
-kernel's generator was chosen because it needs no package installed
-(`uuidgen` ships in util-linux, which a minimal host may lack) and
-reads a fresh lowercase v4 directly, so no `tr 'A-F' 'a-f'` step is
-needed (the skill lowercases macOS's `uuidgen`). A single exact
-command is a tighter allow than a program with free arguments.
+skill names `uuidgen` first and `cat /proc/sys/kernel/random/uuid`
+second; the kernel path was chosen — not because the skill prefers it —
+because it needs no package installed (`uuidgen` ships in util-linux,
+which a minimal host may lack) and reads a fresh lowercase v4 directly,
+so no `tr 'A-F' 'a-f'` step is needed (the skill lowercases macOS's
+`uuidgen`). A single exact command is a tighter allow than a program
+with free arguments.
 
 **Rejected alternatives:**
 - Allowing `uuidgen` instead: an acceptable fallback, but it depends on
