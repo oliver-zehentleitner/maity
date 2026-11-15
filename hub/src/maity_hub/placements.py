@@ -32,7 +32,10 @@ from maity_hub.runners import attached_project_ids, human_actor, live_credential
 from maity_hub.runners import audience as runner_audience
 from maity_hub.views import principal_id, ts
 
-HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
+HARNESSES = (
+    "claude-code", "codex", "opencode", "antigravity", "pi", "hermes", "kimi", "cline", "omp",
+    "stub",
+)  # fmt: skip
 MODES = ("interactive", "supervised")
 STATES = (
     "pending",
