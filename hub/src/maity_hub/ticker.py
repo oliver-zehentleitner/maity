@@ -284,6 +284,7 @@ def write(
     broadcast: bool = True,
     facts: dict[str, Any] | None = None,
     held: Sequence[str] = (),
+    people: Sequence[Member] | None = None,
 ) -> int | None:
     """Emit one item; `None` when its dedupe key is taken (the first item stands, §17.7).
 
@@ -292,12 +293,16 @@ def write(
     request readers). Only members with a waking reason get a `member:` token beside
     `all`; the actor is never woken by its own item. `held` names the agents a manual
     post's `to` was held for (§9.6, `gate_manual`): `held:<id>` each, which keeps `all`
-    from reaching them and lets their owner read it along."""
+    from reaching them and lets their owner read it along. `people` is the project's
+    active members as the caller has just read them; without it they are read here, and only
+    when the audience names anyone."""
     events.lock_project(conn, project_id)
     if dedupe_key is not None and existing(conn, project_id, dedupe_key) is not None:
         return None
     # The hub wakes no human (§17.10): for a human the item is "for me", never a wake.
-    humans = {m.principal for m in members(conn, project_id) if m.kind == "human"}
+    if people is None and audience.entries:
+        people = members(conn, project_id)
+    humans = {m.principal for m in people or () if m.kind == "human"}
     for principal, entry in audience.entries.items():
         if principal in humans:
             entry.wake = False
@@ -447,6 +452,7 @@ def on_request_answered(
             },
             "tasks": [request.task_id] if request.task_id else [],
         },
+        people=people,
     )
 
 
@@ -475,6 +481,7 @@ def on_release_done(
         subject=("task", card.id),
         dedupe_key=f"release:{version}",
         facts={"release": {"task_id": card.id, "version": version}, "tasks": [card.id]},
+        people=people,
     )
 
 
@@ -999,15 +1006,23 @@ def write_merge(
             "contract": contract,
             "tasks": [c.id for c in cards],
         },
+        people=people,
     )
 
 
+URL_MAX = 2048
+_HTTPS = re.compile(r"https://\S+", re.IGNORECASE)  # fullmatch; the scheme in any case
+
+
+def https_url(value: Any) -> bool:
+    """One absolute https URL of at most URL_MAX characters (§17.1): an item's `url` and a
+    deploy's `log_url`, whether a forge or a manual post names it."""
+    return isinstance(value, str) and len(value) <= URL_MAX and _HTTPS.fullmatch(value) is not None
+
+
 def _https_or_none(value: Any) -> str | None:
-    """A forge's URL as an item's `url`: one absolute https URL of at most 2048 characters,
-    else none (§17.1)."""
-    if isinstance(value, str) and len(value) <= 2048 and re.fullmatch(r"https://\S+", value):
-        return value
-    return None
+    """A forge's URL as an item's `url`, or none (§17.1)."""
+    return value if https_url(value) else None
 
 
 def write_deploy(
