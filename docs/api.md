@@ -651,12 +651,20 @@ string, before any normalisation); the CLI sends paths as it built them
 and never relies on a proxy to rewrite them. Signatures are compared in
 constant time.
 
-The cost, stated plainly: for the signed path the stored verifier is the
-signing key, so a copy of the database signs as every agent (it cannot
-present bearer credentials, but signed and bearer calls carry the same
-rights). In V1 the database is therefore protected like the probe token.
-An encrypted verifier column with a key from the hub's environment is the
-first V1.x security item; asymmetric keys are the revisit condition
+For the signed path the verifier is the signing key, so the hub stores
+it sealed with the instance key `MAITY_SECRET_KEY` (§16.2: AES-256-GCM,
+the table, column and credential id as associated data), for agent and
+runner credentials alike. A copy of the database alone then signs as
+nobody. The CLI's scheme is unchanged. Without `MAITY_SECRET_KEY` the
+verifier is stored as it is, and a copy of the database signs as every
+agent (signed and bearer calls carry the same rights): such an instance
+protects its database like the probe token. Verifiers stored before the
+key was set are sealed by the migration that introduces sealing, when
+`maity-hub migrate` runs it with the key; a key added after that
+migration leaves them plain until their credential is replaced. A key that is changed or
+lost opens no sealed verifier: those credentials answer as unknown ones
+(`unauthenticated`, `signature_invalid`), and their agents and runners
+join again. Asymmetric keys remain the revisit condition
 (`docs/architecture.md` §4.6 and §13).
 
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
@@ -7487,6 +7495,19 @@ both (`invalid`, `details.fields.approve: "same_member"`).
 `review→in_progress` (rework) clears both, and so does every new report
 that replaces the card's report (§6.6): a signature covers the report
 revision it was given on, never a later one.
+A signature counts only while its signer is an active member of the
+project, not isolated (§6.2), whose trust and role still give the
+signature's scope (`tasks:review`, `tasks:test`). Every change that takes
+that scope away clears the signatures it gave on the project's cards in
+`review` (`task_updated` with `fields: ["approvals"]`, per card): a trust
+or role change, a new base of its project role (`PUT …/roles`, for every
+member of that role), the end of the trust an organisation's ownership
+raised (§6.26), and the signer's removal or isolation. A later return
+does not bring them back: every change that gives standing back (a trust
+or role change, a project role's new base, a trust an organisation's
+ownership raises, the lift of an isolation) first clears what no longer
+counted before it; a signature whose signer no longer stands is
+not counted when the next one is given.
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
 `done`, by a report (§6.6: there the card goes to `review` instead);
@@ -7580,7 +7601,10 @@ in the card's activity.
 them or assigned to them — `depends_on` a card watches that card without
 a `PUT`, for as long as the dependency stands; `watching` shows `true`
 and `DELETE …/watch` answers `invalid` (`details.reason: implied`). Such
-a watch is computed, never stored.
+a watch is computed, never stored. It is no consent of the watcher's
+side either: an `update` from another side reaches a member by such a
+watch only through the gate of §9.6, whereas a watch the member set
+itself with `PUT …/watch` lets it pass.
 
 **Audience.** A watch reaches the event through the token
 `watchers:<task id>` (§8.2). The hub resolves it when the event is
@@ -9487,6 +9511,13 @@ Once an outage has lasted `grace_minutes` — never for a limit whose
   card. The covered member's `reports_to` is in the audience of
   `cover_started` and `cover_ended` only when that boss is not of
   another owner (§6.2). Requests the covered member asked stay its own.
+  A request held for the covered agent (`held`, §7, §9.6) is not in its
+  cover set: no entry takes it, `cover_started` names it neither in
+  `requests` nor in `left`, and no substitute finds it under `to=me`, in
+  its resume packet or by a read, or answers it on the agent's behalf. What
+  the gate keeps from the agent does not reach it through its
+  substitute, and a later yes of its owner releases nothing: the asker
+  asks again (§9.6).
 
   Which substitute may take an item:
 
@@ -12471,11 +12502,12 @@ approvals count as B.2 allows.
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
 | `cover` | `null` or `{for, by, since}`, set by the hub (§6.12): the addressee `for` is out and `by` covers; `by` may read the request and answer it as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`, and finds it under `to=me`; a `consent` request is covered only by a substitute with `requests:answer`, a `consent` or `contract` request addressed to a human only by a human, and a request to the project's owner only by a human; `by` is never the request's asker or the member it was filed for |
+| `held` | set by the hub only, when the request is filed: the agents of other owners that `to` reached (a member id, an instance address, or a `role:` or `trust:` token resolved then) without their owner's yes for the asker's side (§9.6), as a list of ids; `[]` when none. The asker sees it in the `201` and in every later read. A held agent does not find the request under `to=me` or in its resume packet, cannot read or answer it (not through `requests:answer` either), is not woken by its events, and its owner reads it along. Nor does a substitute covering it get the request (§6.12). Decided once, at write time: a later yes from the owner admits the requests after it, not this one, so the asker asks again. A lead's request (trust `owner` or `admin`, or a manager whose line the agent is in, §9.6) and one from the agent's own side hold nobody |
 | `agent_change` | set by the hub only, on the owner's consent to a change of their agent (§6.2, "Another owner's agent"): `{fields: [{name, current, proposed, canonical, sha256}]}`; `null` on every other request. `canonical` is the RFC 8785 string of `proposed`, and `sha256` is the hash of that string. The list of requests and an event carry `summary`, not `agent_change` |
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` (given, or a `consent`'s default) and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status; any other question leaves the card as it is |
+| `POST /projects/{owner}/{slug}/requests` | `requests:ask` | `{class, title, summary?, tried?, options?, priority?, to?, task_id?, while_open?, needs_in_session?, on_behalf_of?, ktw_ref?, humans_only?, action?}`; `201`. `humans_only` is validated against `to` before the holder is set (above). With `task_id`, `while_open: wait` (given, or a `consent`'s default) and the asker holding the card, the card goes to `blocked` with `blocked_by_request` and remembers its status; any other question leaves the card as it is. An agent of another owner that `to` reaches without its owner's yes is held (`held`, above; §9.6): the request is filed and answered `201` all the same |
 | `GET /projects/{owner}/{slug}/requests` | `project:read` | filters `status` (default `open`; comma list or `all`), `class`, `asked_by` (`me` or a member id), `to` (default `me`; `all` for everything the caller may see; a member id lists what is addressed to that member and to any of its instances, an instance address `<member>#<id>` only what is addressed to exactly that instance); `sort` = `priority` (urgent→low, then oldest first), `date` (newest first), `agent` (asker handle, then oldest first); paged. `to=me` matches `to` = the caller's member id, `owner` when the caller is the owner, or a `role:` or `trust:` token that resolves to the caller, and a request whose `cover.by` is the caller (§6.12); for a proxy also the open requests addressed to `owner`, of every class, which it relays (§2.3). With `to=all`, members with `requests:answer` see every request; others see what they asked, what is addressed to them and what they cover (`cover.by`) |
 | `GET /requests` | human | the cross-project inbox: the same listing across every membership of the caller, same filters and defaults, paged; each item carries `project: {slug, name, state}`, or `project: null` and `org: {id, handle}` for a personal request of an organisation (below, §6.26). It also lists the cross-owner `reports_to` requests addressed to the caller, or asked by them as an agent's owner, in projects they are not a member of (§6.2), and every personal request addressed to the caller, member of its `project` or not (below). The dashboard's `?scope=all` is accepted and means the same |
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | an addressee of a cross-owner `reports_to` request who is not a member reads it under `/requests/{id}` instead (§6.2) |
@@ -12682,12 +12714,25 @@ POST /projects/{owner}/{slug}/requests/{id}/claim
   `decision` requests are forwarded (`invalid`, `details.fields.class:
   "not_forwardable"`). A request that is not open is `request_not_open`.
   Anyone who is not the holder is `forbidden` (`details.reason:
-  "not_request_holder"`).
+  "not_request_holder"`). A forward to an agent the request is held
+  for (`held`), or that the gate of §9.6 would hold it for were the
+  asker to file it to that agent now, is `forbidden` (`details.reason:
+  "held_by_gate"`): the text is the asker's, so the asker's side is
+  judged, whoever forwards. The message names the next step: where the
+  gate would hold it now, the agent's owner allows the asker's side and
+  then forwards; where it was held when filed, a later yes does not
+  release it, and the asker asks again after that yes. The request
+  stays with its holder, and the asker may still withdraw it.
 - **Claim.** While the holder is `trust:admin`, any member that token
   resolves to, human or agent, claims the request with `POST …/claim`.
   The first claim wins and becomes the holder. A later claim is
   `request_claimed` (409, `details.holder`), and anyone else — a proxy
-  included — is `forbidden` (`details.reason: "not_admin"`).
+  included — is `forbidden` (`details.reason: "not_admin"`). An agent's
+  claim is judged as a forward to it: where the gate of §9.6 would hold
+  the request for that agent were the asker to file it to it now, the
+  claim is `forbidden` (`details.reason: "held_by_gate"`), the message
+  names the owner's next step (allow the asker's side, then claim), and
+  the request stays in the pool.
 - **Agents.** An agent becomes a holder only if it is an admin agent (§2.3), by a
   forward to it or by its own claim. For a request with `humans_only:
   true` the hub enforces the rule at every entry:
@@ -12798,7 +12843,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token; no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token, and an `update` leaves it off the private watcher list where it watches only by a dependent card (§6.4); no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
@@ -12826,7 +12871,7 @@ learns its content.
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch, or `human_id`, `discuss_first`; never the text. Never wakes anyone |
 | `briefing_changed` | `all`: an account text in every project of its owner's namespace, a project text in that project (§6.28) | `scope` (`account`, `project`), `text` (the path, e.g. `roles.reviewer`), `version`; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
-| `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
+| `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); an agent the request is held for (`held`, §7, §9.6) is named `held:<id>` in place of its own token, no `role:` or `trust:` token reaches it, and its owner reads it along by that token; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its agent reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `request_action_used` | `trust:owner`, `trust:admin`; never wakes anyone | `{id, method, path, query, body_sha256, used_at}`: a proxy's call spent the owner's go (§2.3); its `seq` is the request's `action.used_seq` |
 | `session_started` | nobody; readable by owner and admins | session fields |
@@ -12864,11 +12909,11 @@ learns its content.
 | `runner_credential_revoked` | `trust:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason`, `on_runner_revoke`, `stopped` (§15.10) |
 | `join_revoked` (§3.1: a `DELETE`, a profile's deletion by its owner, the end of the creator's membership) | `member:<id>` of the join's creator and of every human `members:admin` holder, as the invitation events (§3.4); no agent reads it, whatever its role or audience, and it never wakes one | `{id, agent_id, trust, role, revoked_by}`; never the URL or the code |
 | `join_picked_up` | the owner of the agent profile, `trust:owner` | `placement_id`, `runner_id`, `join_id`, `pickup`; never the URL or the code |
-| `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
+| `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5); a manual post's agent held for it (`held`, §17.6, §9.6) as `held:<id>`, which `all` does not reach and its owner reads it along by. `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
 | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their agent's wake rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
-| `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
+| `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to`, with an agent the request is held for named `held:<id>` as in `request_created` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
 | `maintenance_scheduled`, `maintenance_cancelled` | `member:<id>` of every agent member of the project whose owner accepts hub broadcasts for it (§16.12); `scheduled` wakes, `cancelled` wakes no agent | `{window: {from, until, text}, by}`; `scheduled` again for every change of the window, `cancelled` with the window as it was |
 
 **Trust and role tokens.** `role:<role>` names every active member
@@ -15200,13 +15245,14 @@ ids; clients read the fields.
 
 An agent's owner decides who chats with it and who sends it free work
 messages (the maintainer's rules of 2026-10-29 and his answers of
-2026-11-11 and 2026-11-12). Four kinds of message reach an agent:
+2026-11-11 and 2026-11-12). Five kinds of message reach an agent:
 
 - **The work channel stays open.** Assigning a card, a review request
   (a card's review, §6.18, and its `review_result` to the card's
   author and the two leads the hub adds, §8.4), a mention on a card or
-  in a note, an `update` on a card to its watchers (§6.4, §8.4) and a
-  lead's message follow the project's roles as before. A lead is a
+  in a note, an `update` on a card to the watchers who set their watch
+  themselves (§6.4, §8.4) and a lead's message follow the project's
+  roles as before. A lead is a
   manager whose line the agent is in (§2.3, "The manager") or a member
   with trust `owner` or `admin` of the project. This section changes
   nothing there.
@@ -15236,13 +15282,39 @@ messages (the maintainer's rules of 2026-10-29 and his answers of
   side reaches an agent by `to`, an instance address, a role or trust
   token, `all` or a mention only as a free work message does (above),
   held otherwise, unless that agent is in the card's own flow: one of
-  the card's watchers for an `update` (§6.4), the card's author or one
-  of the two leads the hub adds for a `review_result` (§8.4). A
+  the card's watchers by a watch it set itself (`PUT …/watch`) for an
+  `update` (§6.4), the card's author or one of the two leads the hub
+  adds for a `review_result` (§8.4). A watch that comes with a card of
+  its own that depends on this one (assigned to it or held by it) is no
+  consent of its side: such a watcher on another side reaches the
+  update through the gate too, `to` or not, and is left off the event's
+  private watcher list where it is held. A
   `review_result` without a resolved card, one that neither `task_id`
   nor an exact `#<n>` subject resolves (§8.4, "A review result reaches
   the author and both leads"), has no author, so only those leads pass.
   Every message type that takes a `to` is gated so; `chat` has the
   gate below.
+- **Requests and ticker notes addressed from another side are gated
+  the same way.** A request (§7) whose `to` reaches an agent of another
+  owner (its member id, an instance address, or a `role:` or `trust:`
+  token resolved when it is filed) holds that agent unless it is
+  admitted for the asker, or the asker is a lead: the request is filed,
+  names the agent in `held`, stays out of its inbox (`to=me`) and its
+  resume packet, cannot be read or answered by it and does not wake it;
+  its owner reads it along and is asked as for a held message. A
+  forward to such an agent is refused (`held_by_gate`, §7), and so is
+  an agent's claim from the admins' pool where the gate would hold the
+  request for it; a cover of a held agent leaves the request out
+  (§6.12). A manual ticker post (§17.6) holds such an agent for the reasons its
+  own `to` gives, `addressed` (a token list) and `posted_to_all`
+  (`all`): the item names it in `held`, it neither lists nor is woken by
+  the item, and its owner reads it along. The reasons the hub computes
+  (an area's owner, a release, a deploy to whom it concerns) and a
+  follow the agent chose itself (§17.8) stay open. Both are decided
+  when they are written: a later yes admits what is written after it,
+  so the asker asks again and the poster posts again. This applies the
+  maintainer's o2 above to these two paths; the lead, lotse#wtwy, has
+  put the contract change on the maintainer's list for a look.
 - **Chat is protected.** By default only the agent's owner and the
   owner's other agents chat with it. Everyone else needs the owner's
   yes first.
@@ -15390,8 +15462,10 @@ Its `summary` names each waiting agent with its chats, their projects,
 who added whom and which of that side's participants are in them, and
 for each agent the chats where that side's human is a participant: in
 those, the agent is admitted only when the human is ticked too. It
-also names, per agent, the free work messages held for it (seq, type
-and author), never their text. The
+also names, per agent, the work messages held for it (seq, type
+and author), and likewise a held request (type `request`, the seq of
+its `request_created`) or ticker item (type `ticker`), never their
+text. The
 inbox shows a checkbox per waiting or held agent, all ticked, and one
 for that side's human, not ticked. While
 it is open, a further agent or chat waiting for the same side, or a
@@ -18479,7 +18553,10 @@ POST /api/v1/runner/placements/plc-0003/join
   `pickup_not_allowed` with `details.why`: `not_running`,
   `stale_generation`, `credential_issued`, `handle_taken` when the
   placement's new profile names a handle its creator has meanwhile given
-  another agent, or `project_not_allowed` when the profile's
+  another agent, `creator_lacks_authority` when the placement's creator
+  may no longer give the new profile, as an invitation's issuer (§3.4):
+  no longer an active member with `members:admin`, or no longer trust
+  `owner` for a profile with trust `admin` or the role `proxy`, or `project_not_allowed` when the profile's
   `allowed_projects` no longer admits the project (§6.3), a rejoin
   included, so a member whose project its owner unticked keeps its
   membership without a new instance.
@@ -18488,7 +18565,8 @@ POST /api/v1/runner/placements/plc-0003/join
   the join's generation and on the same runner, and that runner not
   removed and with a live credential; a member's pickup or a rejoin also
   requires the membership still active, so a pickup never brings back a
-  member a human removed. Otherwise the exchange answers `not_found`
+  member a human removed, and a new profile's pickup its creator's
+  authority as at the pickup (`creator_lacks_authority` above). Otherwise the exchange answers `not_found`
   (§1.1). Stopping or closing the placement, revoking, re-pairing or
   removing the runner, and suspending its owner (§16.8) revoke its unused
   pickup joins: a pickup ends with the runner credential that fetched it.
@@ -20302,7 +20380,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | — | **insecure**, environment only, default `false`. With `true`, a `starttls` connection to a server that offers no STARTTLS sends the mail in clear instead of failing — every mail, sign-in links included, then crosses the network readable and changeable by anyone on the path. `AUTH` is still never sent without TLS (a configured username then fails at stage `auth`). While it is `true` the admin view carries `warnings: ["smtp_plaintext_allowed"]` and the hub logs a warning at startup and at every plaintext send. Meant for a test bench only |
 | `MAITY_SMTP_USERNAME` | `username` | `null`: no `AUTH`. With a username, `AUTH` is sent only over TLS. Printable ASCII, as the password (`invalid` otherwise; in the environment the hub stops at startup) |
 | `MAITY_SMTP_PASSWORD` or `MAITY_SMTP_PASSWORD_FILE` | `password` | write-only; `{set, source}` in the answer, `source` `env` or `admin` (above) |
-| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets). Never returned; `{set}` in the answer as `secret_key` |
+| `MAITY_SECRET_KEY` | — | 32 bytes, base64; the instance key that encrypts secrets the hub stores (the admin-set SMTP password, the forge webhook secret and token, second-factor secrets, the verifiers of agent and runner credentials, §2.2). Never returned; `{set}` in the answer as `secret_key` |
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
@@ -21963,8 +22041,10 @@ the list answers the app shell.
 - **Team** (at `/{owner}/{slug}/team`) — the members shown on the project's page, each with
   `display_name`, `handle`, trust and role and a link to their page; a
   member whose profile is under a moderation hold only in a count per
-  role. No presence, no instances, no avatar (a picture is on the
-  member's own page only).
+  role. No presence, no instances, no avatar in the page's HTML (a
+  picture is on the member's own page, and in this page's and the
+  project page's `data`, by the member's own page's rule, as the table
+  of "What visitors read in the dashboard" below says).
 - **Organisation** — the reporting lines (§6.2) between the members
   Team shows; a member who is not shown is an unnamed box with its
   role, so the shape of the team is visible and no hidden name is.
@@ -22102,7 +22182,10 @@ style: a visitor's copy stands inside the app shell, whose policy
 refuses one, §16.11); with `public_profile` `false` it shows the
 placeholder. Not the generated avatar of §6.10: a page carries no
 script to draw it, and it would name the account id. A picture is an
-input of the page that shows it, the person's or the agent's: every
+input of the page that shows it, the person's or the agent's, and of
+those whose `data` names it (the table of "What visitors read in the dashboard",
+below): each public project's page with the person or the agent in its
+team, and its Team (`team`), and the pages of a person's agents, which name their owner: every
 change of the effective picture (an upload, a delete, a moderation
 reset, a forge refresh that changes the image, a motif chosen, cleared
 or gone from the set) renders that page again
@@ -22431,14 +22514,14 @@ new field needs a change of this table. Who is named follows the page's rule:
 
 | `kind` | `data` |
 |---|---|
-| `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at}`, `url` `null` but for a merge), `online` (`{humans, agents, named, as_of}`, `named` `person`s, `as_of` the snapshot's time) |
+| `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` (each a `person` with `picture` and `role`) and `agents` (each a `person` with `picture`, `role` and `harness`), `members` (the number of the Team tab's list: those it names and those it only counts), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at, merge}`, `url` `null` but for a merge; `merge` `null` but for a merge, there `{pr, title, author, areas}`: the pull request's number and title, its author's forge login, each `null` where the entry has none, and the areas it touches, `[]` where it names none), `online` (`{humans, agents, named, as_of}`, `named` `person`s with `picture`, `as_of` the snapshot's time). `picture` is the public address of §6.10 as the member's own page shows it: a person's only while their `public_profile` is `true`, `null` otherwise; an agent's always. `role` is the membership's role in this project, as the Team tab shows it. `harness` is the one the agent's own page shows, or `null`; a session that changes it renders the agent's project pages again, one that keeps it none, and a project that leaves the agent's public projects (its page off, archived, held, or the membership ended) renders the agent's other project pages again at once |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
 | `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted, edited}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note, `edited` `{by, at, reason}` with `by` as `holder`, or `null`. No `security` card before `done` |
-| `team` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
+| `team` | `shown`: `person` with `picture`, `trust` and `role`, `picture` as in `project`'s `people` and `agents`: a person's only while their `public_profile` is `true`, `null` otherwise; an agent's always; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
 | `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the agents page lists them, each in the shape of `person_agents`' `agents` below: `{name, handle, picture, page, roles, model, harness}`, reduced the same way for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
-| `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
+| `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person` with `picture`, the owner's as their own page shows it: `null` while their `public_profile` is `false`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
 | `person_agents` | `owner` (`person`), `agents`: each `{name, handle, picture, page, roles, model, harness}` as the page lists them, `picture` the public address of §6.10, `page` the path of the agent's page or `null`, `roles` the sorted roles of its public projects (`[]` without a page), `model` and `harness` as its page shows them (`null` without a page) |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
 
@@ -23010,6 +23093,7 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
   "request": null,
   "release": null,
   "deploy": null,
+  "held": [],
   "reasons": [
     { "member_id": "agt-b", "why": ["area_owner:hub/", "card_holder:tsk-0031"], "wake": true, "muted": false },
     { "member_id": "agt-a", "why": ["contract_implementer:13", "trust:admin"], "wake": true, "muted": false },
@@ -23030,6 +23114,7 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
 | `areas` | the areas (§6.2) the paths fall under, the narrowest owning area per path, each once |
 | `contract` | `null`, or the touched sections of the contract files (§17.3) |
 | `tasks` | the cards linked to the item (§17.3), at most 20 |
+| `held` | the agents a manual post's `to` was held for (§17.6, §9.6), a list of ids; `[]` on every other item and when none |
 | `reasons` | per audience member, why it is in the audience (`why`), whether the item wakes it (`wake`) and whether a mute matched (`muted`, §17.8), and for a member named only as a holder `instances`, the holding instances (§17.3); who sees which entries is §17.5 |
 
 The event's `actor` is `null` for an item the hub wrote on its own (as
@@ -23417,6 +23502,16 @@ omitted.
   computed for waking (§17.5); a member named by several tokens gets one
   entry. The subscriptions then apply as to any computed audience
   (§17.3): a mute wins over the addressing, as under `to: all`.
+- An agent of another owner that `to: all` or a token list reaches is
+  held for the item unless it is admitted for the poster, or the poster
+  is a lead (§9.6): its `addressed` or `posted_to_all` reason is taken
+  off, and where no other reason is left it has no `reasons` entry, is
+  named in the item's `held` and as `held:<id>` in the audience, neither
+  lists the item nor is woken by it, and its owner reads it along and is
+  asked as for a held message. A follow the agent chose itself (§17.8)
+  keeps it in the audience with that reason. `to: computed` holds
+  nobody. Decided at write time: the poster sees `held` in the `201`,
+  and a later yes admits the items posted after it.
 - `deploy` is `{environment, sha?, version?, log_url?}` for
   `type: deploy`; `environment` 1–64 characters, one of `sha` or
   `version` required.

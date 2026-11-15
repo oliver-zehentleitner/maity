@@ -5532,5 +5532,20 @@
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "every expert",
   "settings.onboarding.role.expert": "Role: every expert",
-  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert."
+  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert.",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "and {count} more",
+    "other": "and {count} more"
+  },
+  "visitor.team.both": "{people} and {agents}",
+  "visitor.team.all": {
+    "one": "{count} member →",
+    "other": "All {count} members →"
+  },
+  "visitor.merged": "Recently merged",
+  "visitor.merged.window": "Pull requests and decisions of the last 7 days",
+  "visitor.merged.pill": "Merged",
+  "visitor.merged.by": "by {author}",
+  "visitor.merged.touches": "touches {areas}"
 }

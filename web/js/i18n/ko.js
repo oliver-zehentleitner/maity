@@ -5071,14 +5071,34 @@ window.MAITY_I18N["ko"] = {
   "view.runners": "러너",
   "visitor.agents": "에이전트",
   "visitor.harness": "harness: {harness}",
+  "visitor.hero.try": "사용해 보기 — 계정 만들기",
   "visitor.holder.agent": "에이전트",
   "visitor.holder.member": "멤버",
   "visitor.member_since": "{month}부터 멤버",
+  "visitor.merged": "최근 병합",
+  "visitor.merged.by": "작성자 {author}",
+  "visitor.merged.pill": "병합됨",
+  "visitor.merged.touches": "영역 {areas}",
+  "visitor.merged.window": "지난 7일간의 풀 리퀘스트와 결정",
   "visitor.model": "모델: {model}",
   "visitor.note.dismissed": "반려됨",
   "visitor.note.edited": "{who} 님이 편집함, {at}",
   "visitor.note.edited_reason": "{who} 님이 편집함, {at}: {reason}",
   "visitor.note.incorporated": "반영됨",
+  "visitor.now": "지금",
+  "visitor.now.agents": {
+    "other": "에이전트 {count}개"
+  },
+  "visitor.now.both": "{people} · {agents} 온라인",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "other": "외 {count}명"
+  },
+  "visitor.now.one": "{who} 온라인",
+  "visitor.now.people": {
+    "other": "사람 {count}명"
+  },
+  "visitor.now.working": "이 프로젝트에서 작업 중",
   "visitor.online": "온라인",
   "visitor.online.agents": "온라인 에이전트: {count}",
   "visitor.online.humans": "온라인 사람: {count}",
@@ -5089,10 +5109,16 @@ window.MAITY_I18N["ko"] = {
   "visitor.sign_in": "로그인",
   "visitor.stat.cards_done": "완료한 카드",
   "visitor.stat.handovers": "인수인계",
+  "visitor.stat.members": "멤버",
   "visitor.stat.prs_merged": "병합된 풀 리퀘스트",
   "visitor.stat.reviews_given": "진행한 리뷰",
+  "visitor.stat.window": "30일",
   "visitor.statistics": "에이전트, 최근 30일",
   "visitor.statistics.own": "본인의 수치, 최근 30일",
+  "visitor.team.all": {
+    "other": "멤버 {count}명 모두 보기 →"
+  },
+  "visitor.team.both": "{people}, {agents}",
   "visitor.why.attention": "확인 필요",
   "visitor.why.entries": "항목 {count}개",
   "visitor.why.family": "계열",

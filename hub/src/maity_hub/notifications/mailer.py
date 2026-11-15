@@ -410,6 +410,37 @@ def _mark(conn: Connection, human_id: str, chosen: list[Item]) -> None:
 # --- the mails -----------------------------------------------------------------------
 
 
+def _footer(
+    words: dict[str, str],
+    public_url: str,
+    stops: dict[str, str] | None = None,
+    *,
+    settings: bool = True,
+) -> str:
+    """The closing lines of a mail to a known human, from the catalog's `mail` section: one
+    unsubscribe line per kind in `stops` (kind → link), the settings link unless `settings`
+    is off, and the line that names the only host Maity links to."""
+    lines = [words["stop"].format(kind=kind, url=url) for kind, url in (stops or {}).items()]
+    if settings:
+        lines.append(words["settings"].format(url=f"{public_url}/account/notifications"))
+    closing = "\n" + "\n".join(lines) if lines else ""
+    return closing + "\n\n" + words["only"].format(url=public_url) + "\n"
+
+
+def _unsubscribe_headers(link: str) -> dict[str, str]:
+    """The one-click unsubscribe pair of RFC 8058 for `link` (§18.6)."""
+    return {
+        "List-Unsubscribe": f"<{link}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+
+
+def _record(conn: Connection, item: Item, local: datetime) -> tuple[str, dict[str, Any]]:
+    """A record item's time in the mail's zone, and the record's data."""
+    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    return record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"), record.data or {}
+
+
 def _send(
     conn: Connection,
     row: Any,
@@ -428,9 +459,7 @@ def _send(
         for kind in kinds
     }
     links = {kind: f"{public_url}/mail/unsubscribe/{token}" for kind, token in tokens.items()}
-    body += "\n" + "\n".join(words["stop"].format(kind=k, url=links[k]) for k in kinds)
-    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
-    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    body += _footer(words, public_url, links)
     outbox.enqueue(
         conn,
         kind="notification",
@@ -439,8 +468,7 @@ def _send(
         subject=subject,
         body=body,
         extra_headers={
-            "List-Unsubscribe": f"<{links[kinds[0]]}>",
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            **_unsubscribe_headers(links[kinds[0]]),
             outbox.MEMBERSHIPS_MARK: _memberships_of(where, chosen),
         },
     )
@@ -531,21 +559,19 @@ def _sign_in_mail(
     """Time, method, browser, system and address of the new session, and where to end
     it; never a session id, a code or a link that signs anyone in (§2.6.5)."""
     words = catalog.section("mail", prefs["language"])
-    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
-    data = record.data or {}
+    time, data = _record(conn, item, local)
     token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
     stop = f"{public_url}/mail/unsubscribe/{token}"
     body = words["sign_in_body"].format(
         url=public_url,
-        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
+        time=time,
         method=data.get("method"),
         browser=data.get("browser") or "?",
         os=data.get("os") or "?",
         ip=data.get("ip") or "?",
         sessions=f"{public_url}/account/sessions",
     )
-    body += "\n" + words["stop"].format(kind="security", url=stop)
-    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    body += _footer(words, public_url, {"security": stop}, settings=False)
     outbox.enqueue(
         conn,
         kind="security",
@@ -553,10 +579,7 @@ def _sign_in_mail(
         to=row.address,
         subject=f"[Maity] {words['sign_in']}",
         body=body,
-        extra_headers={
-            "List-Unsubscribe": f"<{stop}>",
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
+        extra_headers=_unsubscribe_headers(stop),
     )
 
 
@@ -574,15 +597,12 @@ def _two_factor_mail(
     is the daily cap's (§2.8.6): it lifts the cap for the rest of that day, once. No mode turns
     it off, so it carries no unsubscribe link (§18.4)."""
     words = catalog.section("mail", prefs["language"])
-    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
+    time, data = _record(conn, item, local)
     body = words["two_factor_body"].format(
-        title=item.title,
-        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
-        security=f"{public_url}/account/security",
+        title=item.title, time=time, security=f"{public_url}/account/security"
     )
-    data = record.data or {}
     if (
-        record.type == "second_factor_failed"
+        item.record_type == "second_factor_failed"
         and data.get("method") == second_factor.DAILY_LIMIT
         and signing_key is not None
         and isinstance(data.get("day"), str)
@@ -595,8 +615,7 @@ def _two_factor_mail(
         body += "\n" + words["two_factor_unlock"].format(
             link=f"{public_url}/mail/second-factor-unlock/{token}"
         )
-    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
-    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    body += _footer(words, public_url)
     outbox.enqueue(
         conn,
         kind="security",
@@ -619,19 +638,17 @@ def _password_mail(
     sessions have ended, and what to do if it was not the human. At once whatever the mode, so
     no unsubscribe link."""
     words = catalog.section("mail", prefs["language"])
-    record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
-    data = record.data or {}
+    time, data = _record(conn, item, local)
     unknown = catalog.section("notify", prefs["language"])
-    kind = str(record.type)  # `password_reset` or `password_changed`
+    kind = str(item.record_type)  # `password_reset` or `password_changed`
     body = words[f"{kind}_body"].format(
-        time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
+        time=time,
         browser=data.get("browser") or unknown["a_browser"],
         os=data.get("os") or unknown["unknown_os"],
         ip=data.get("ip") or "?",
         agents=f"{public_url}/agents",
     )
-    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
-    body += "\n\n" + words["only"].format(url=public_url) + "\n"
+    body += _footer(words, public_url)
     outbox.enqueue(
         conn,
         kind="security",

@@ -33,7 +33,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.access import membership
-from maity_hub.auth import credentials, second_factor
+from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
 from maity_hub.auth.leaks import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
@@ -56,6 +56,7 @@ from maity_hub.runners import (
     runner_view,
     visible_to,
 )
+from maity_hub.runners import lock as lock_runners
 from maity_hub.scopes import has_scope
 
 router = APIRouter(route_class=ProjectRoute)
@@ -492,14 +493,10 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, li
         runner_id = _create_runner(conn, row.created_by, row.name)
     else:
         runner_id = row.runner_id
-        # The row lock orders two re-pairs of one runner: one live credential (§15.1).
-        runner = conn.execute(
-            select(t.runner.c.id)
-            .where(t.runner.c.id == runner_id, t.runner.c.active.is_(True))
-            .with_for_update()
-        ).first()
-        if runner is None:  # removed since the enrollment was created
-            raise not_found()
+        # The row lock orders two re-pairs of one runner: one live credential (§15.1). The
+        # live credential is locked before it, as every runner call takes them.
+        if not lock_runners(conn, t.runner.c.id == runner_id, t.runner.c.active.is_(True)):
+            raise not_found()  # removed since the enrollment was created
         previous = live_credential_id(conn, runner_id)
         if previous is not None:
             revoke_runner_credential(conn, previous, "repaired", by=row.created_by, replaced=True)
@@ -509,7 +506,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, li
         insert(t.runner_credential).values(
             id=credential_id,
             runner_id=runner_id,
-            verifier=verifier,
+            verifier=verifiers.stored("runner_credential", credential_id, verifier),
             enrollment_id=row.id,
             client=client,
             created_at=now,
@@ -569,11 +566,15 @@ def _visible_runner(conn: Connection, caller: Caller, runner_id: str) -> Any:
 
 
 def _own_runner(conn: Connection, caller: Caller, runner_id: str, *, lock: bool = False) -> Any:
-    """The caller's runner; `lock` orders a change with a concurrent re-pair (`_consume`)."""
-    query = select(t.runner).where(
-        t.runner.c.id == runner_id, t.runner.c.owner_id == caller.principal_id
-    )
-    row = conn.execute(query.with_for_update() if lock else query).first()
+    """The caller's runner; `lock` orders a change with a concurrent re-pair (`_consume`),
+    taking the live credential first, then the row (`runners.lock`), as the runner's own
+    calls do."""
+    mine = (t.runner.c.id == runner_id, t.runner.c.owner_id == caller.principal_id)
+    if lock:
+        rows = lock_runners(conn, *mine)
+        row = rows[0] if rows else None
+    else:
+        row = conn.execute(select(t.runner).where(*mine)).first()
     if row is None:
         raise not_found()
     return row
