@@ -185,7 +185,7 @@ def list_memory(
             rows = [r for r in conn.execute(query).all() if _matches(r, q)][: limit + 1]
         page = rows[:limit]
         next_cursor = paging.cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
-        items = [memory.entry_view(conn, r) for r in page]
+        items = memory.entry_views(conn, page)
         return JSONResponse({"items": items, "next_cursor": next_cursor})
 
 

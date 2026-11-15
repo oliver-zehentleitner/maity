@@ -292,9 +292,10 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
         return None
     human_id = str(payload.get("h"))
     # The account's lock before any other (`write_guard`): every transaction of the
-    # human's own calls (a newer request, a password or address change) and an address's
-    # confirmation link hold it shared before their first lock, so each either commits
-    # before this one (and this link may be dead) or waits for it. The human row needs
+    # human's own calls (a newer request, a password or address change), an address's
+    # confirmation link and the mail links of a password reset, the daily cap's unlock and
+    # an admin's second-factor reset hold it shared before their first lock, so each either
+    # commits before this one (and this link may be dead) or waits for it. The human row needs
     # no lock of its own here: ordinary work locks it after project locks, and taking
     # it before the projects would invert that order.
     lock_account(conn, human_id)

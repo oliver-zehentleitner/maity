@@ -570,9 +570,9 @@ def _touch_page(conn: Connection, owner_id: str) -> None:
     """The picture is an input of the pages that show it (§16.9): the person's page and the
     pages of their agents (each names its owner with the picture), or the agent's page and its
     owner's agents page; and the page of each public project with the member in its team and
-    `online`, with its Team tab (`public_projects.pages_with_picture`). Rendered again at once,
-    so a stored page names the current public address and never the old one, which answers
-    `not_found` from now on."""
+    `online`, with its Team and Organisation tabs (`public_projects.pages_with_picture`). Rendered
+    again at once, so a stored page names the current public address and never the old one,
+    which answers `not_found` from now on."""
     from maity_hub import public_agents, public_pages, public_people, public_projects
 
     if owner_id.startswith("hum-"):

@@ -127,7 +127,7 @@ def member_pictures(
     """The picture of each member as their own page shows it (§16.9), by human or agent id:
     a person's (`humans`, each with their `public_profile`) only while their profile is on,
     `None` otherwise; an agent's always. The one rule of every page whose `data` names members
-    with a picture: the project page and its Team tab."""
+    with a picture: the project page and its Team and Organisation tabs."""
     from maity_hub import avatars
 
     pictures: dict[str, str | None] = dict.fromkeys(human_id for human_id, _ in humans)
@@ -267,9 +267,9 @@ def _statistics_html(stats: dict[str, Any]) -> str:
 
 
 def pages_with_picture(conn: Connection, owner_id: str) -> list[tuple[str, str]]:
-    """The project pages that show a member's picture (§16.9, `project` and `team`): the page
-    and the views (its Team tab) of each public project where the person or the agent is an
-    active member, in its team and in `online`."""
+    """The project pages that show a member's picture (§16.9, `project`, `team` and
+    `organisation`): the page and the views (its Team and Organisation tabs) of each public
+    project where the person or the agent is an active member, in its team and in `online`."""
     m = t.membership.c
     ids = conn.execute(
         select(t.project.c.id)

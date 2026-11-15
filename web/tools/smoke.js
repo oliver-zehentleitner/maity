@@ -15321,6 +15321,75 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         && h3.querySelector("div.cta a.btn.btn-primary") && text(h3.querySelector("div.cta a.btn.btn-primary")) === "Try it — create your account"
         && h3.querySelector("p.report-row a.report-open") && !h3.querySelector("a.btn-secondary") && !h3.querySelector("p.plinks") && !h3.querySelector("div.ph-live"),
       "visitor: without a session, a project's tab has the hero with its crumb linking the Overview, Try it and Report, no Overview parts, no band, the bar with its tab current");
+      // The Board, Team, Organisation and Why tabs in the Overview's section style (part 3, README point 10):
+      // one section across the page under the bar, its h2 and line, then cards and chips; the same content.
+      const tabParts = () => viView().childNodes.map((x) => x.className);
+      const tabSec = (kind) => viView().querySelector("section.tab-sec." + kind + "-sec");
+      const t3 = tabSec("team");
+      const t3Cards = t3 ? t3.querySelectorAll("div.mgrid a.mcard").map((c) => [(c.getAttribute("href") || "").replace(/^#/, ""), text(c.querySelector(".mc-t b")), text(c.querySelector(".mc-t small")),
+        text(c.querySelector(".chip.role")), c.firstChild.className]) : [];
+      const t3Others = t3 ? t3.querySelectorAll("ul.role-counts li").map((li) => [text(li.querySelector("b")), text(li.querySelector(".chip.role"))]) : [];
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec team-sec"])
+        && text(t3.querySelector(".sec-h h2")) === "Team" && text(t3.querySelector(".sec-h p")) === "1 person"
+        && JSON.stringify(t3Cards) === JSON.stringify([["/sam", "Sam", "@sam", "Coder", "av hu av-44 ini"]])
+        && text(t3.querySelector("h3")) === "Others" && JSON.stringify(t3Others) === JSON.stringify([["2", "Reviewer"]]) && !viView().querySelector(".stored-page"),
+      "visitor: without a session, the Team tab is a section of member cards, those only counted as chips with their number " + JSON.stringify([tabParts(), t3Cards, t3Others]));
+      const tabPages = {
+        "/public/pages/stranger/tool/team": { path: "/stranger/tool/team", kind: "team", data: { shown: [
+          { name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", trust: "member", role: "reviewer" },
+          { name: "Sam", handle: "sam", page: "/sam", picture: null, trust: "owner", role: "coder" }], others: [] } },
+        "/public/pages/stranger/tool/organisation": { path: "/stranger/tool/organisation", kind: "organisation", data: { nodes: [
+          { index: 0, person: { name: "Sam", handle: "sam", page: "/sam", picture: null }, role: "coder", reports_to: null },
+          { index: 1, person: { name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000" }, role: "reviewer", reports_to: 0 },
+          { index: 2, person: null, role: "tester", reports_to: 1 },
+          { index: 3, person: null, role: "coder", reports_to: 2 }] } },
+        "/public/pages/stranger/tool/why": { path: "/stranger/tool/why", kind: "why", data: { readable: true, observed_at: "2026-11-02T08:00:00Z", summary: { entries: 12 },
+          family: [{ name: "Hub", path: "hub", dashboard_url: "https://example.org/ktw/hub" }, { name: null, path: "web", dashboard_url: "javascript:alert(1)" }],
+          attention: [{ title: "A <b>stale</b> entry", link: "https://example.org/ktw/hub#a", status: "needs-review" }] } },
+      };
+      const tabKept = {};
+      Object.keys(tabPages).forEach((k) => { tabKept[k] = viPages[k]; viPages[k] = tabPages[k]; });
+      await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
+      const t4Cards = tabSec("team").querySelectorAll("div.mgrid a.mcard").map((c) => [text(c.querySelector(".mc-t b")), c.firstChild.className,
+        c.firstChild.tagName === "IMG" ? c.firstChild.getAttribute("src") : text(c.firstChild)]);
+      expect(text(tabSec("team").querySelector(".sec-h p")) === "1 person and 1 agent" && !tabSec("team").querySelector("ul.role-counts") && !tabSec("team").querySelector("b b")
+        && JSON.stringify(t4Cards) === JSON.stringify([["Sam", "av hu av-44 ini", "S"], ["Bot <b>one</b>", "av ag av-44", "/api/v1/avatars/public/abc00000000000000000000000000000?s=128"]]),
+      "visitor: without a session, the Team tab's cards carry the picture from its data, the people first, an agent square " + JSON.stringify(t4Cards));
+      await go("#/stranger/tool/organisation"); for (let k = 0; k < 4; k++) await tick();
+      const o3 = tabSec("organisation");
+      const o3Nodes = o3 ? o3.querySelectorAll(".otree li").map((li) => { const n = li.firstChild;
+        return [n.tagName, n.className, (n.getAttribute("href") || "").replace(/^#/, ""), text(n.querySelector(".chip.role")), n.querySelector(".av") ? n.querySelector(".av").className : null]; }) : [];
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec organisation-sec"])
+        && text(o3.querySelector(".sec-h h2")) === "Organisation" && text(o3.querySelector(".sec-h p")) === "1 person and 1 agent"
+        && o3.querySelectorAll(".otree ul").length === 4 && !o3.querySelector("b b")
+        && JSON.stringify(o3Nodes) === JSON.stringify([["A", "onode", "/sam", "Coder", "av hu av-30 ini"], ["A", "onode", "/stranger/agents/bot", "Reviewer", "av ag av-30"],
+          ["SPAN", "onode anon", "", "Tester", null], ["SPAN", "onode anon", "", "Coder", null]]),
+      "visitor: without a session, the Organisation tab is the same tree of small cards, a named member with picture or letter and a link, one not named only its role " + JSON.stringify(o3Nodes));
+      await go("#/stranger/tool/why"); for (let k = 0; k < 4; k++) await tick();
+      const w3 = tabSec("why");
+      const w3Kin = w3 ? w3.querySelectorAll("div.mgrid .mcard").map((c) => [c.tagName, c.getAttribute("href"), text(c.querySelector(".pmark")), text(c.querySelector(".mc-t b")),
+        c.querySelector(".mc-t small") ? text(c.querySelector(".mc-t small")) : null]) : [];
+      const w3Att = w3 ? w3.querySelectorAll("ul.dec.att li").map((li) => [text(li.querySelector(".chip")), text(li.querySelector("a")), li.querySelector("a").getAttribute("rel")]) : [];
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec why-sec"])
+        && text(w3.querySelector(".sec-h h2")) === "Why" && text(w3.querySelector(".sec-h p")) === "12 entries"
+        && JSON.stringify(w3.querySelectorAll("h3").map(text)) === JSON.stringify(["Family", "Needs attention"])
+        && JSON.stringify(w3Kin) === JSON.stringify([["A", "https://example.org/ktw/hub", "H", "Hub", "hub"], ["DIV", null, "W", "web", null]])
+        && JSON.stringify(w3Att) === JSON.stringify([["needs review", "A <b>stale</b> entry", "nofollow ugc"]])
+        && !w3.querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")),
+      "visitor: without a session, the Why tab's count beside its heading, the family as cards, what needs attention as lines with a chip " + JSON.stringify([w3Kin, w3Att]));
+      viPages["/public/pages/stranger/tool/why"] = { path: "/stranger/tool/why", kind: "why", data: { readable: false } };
+      await go("#/stranger/tool/why"); for (let k = 0; k < 4; k++) await tick();
+      expect(tabSec("why") && text(tabSec("why").querySelector("p.muted")) === "The Keep the Why of this project is not public, or not read yet." && !tabSec("why").querySelector(".sec-h p"),
+        "visitor: without a session, an unread Why says so in its section");
+      await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+      const b3 = tabSec("board");
+      const b3Card = b3 && b3.querySelector(".columns section.column article.card");
+      expect(JSON.stringify(tabParts()) === JSON.stringify(["phero hero dz", "ptabs", "sec tab-sec board-sec"])
+        && text(b3.querySelector(".sec-h h2")) === "Board" && text(b3.querySelector(".sec-h p")) === "1 card"
+        && text(b3.querySelector("section.column h3")) === "Open (1)" && b3Card && text(b3Card.querySelector("h4")) === "A <b>card</b>"
+        && text(b3Card.querySelector("span.chip.label")) === "bug" && !b3Card.querySelector(".label-tag") && b3Card.querySelector("a.card-id"),
+      "visitor: without a session, the Board tab is a section of its columns, a column an h3, a card's title an h4 and its label a chip");
+      Object.keys(tabKept).forEach((k) => { if (tabKept[k]) viPages[k] = tabKept[k]; else delete viPages[k]; });
       win.Maity.api.get = ppGet;
       await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
     }

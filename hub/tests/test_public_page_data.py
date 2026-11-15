@@ -2,7 +2,7 @@
 `data` add for the pages' design (tsk-h822960mytm9): each member's picture as their own page
 shows it, the role and an agent's harness, the Members figure, the online pictures, the
 owner's picture and a merge entry's facts as fields; and the Team tab's pictures by the same
-rule (tsk-9482zxza3gs3)."""
+rule, and the Organisation tab's (tsk-9482zxza3gs3)."""
 
 from __future__ import annotations
 
@@ -187,6 +187,37 @@ def test_a_new_picture_renders_the_team_tab_at_once(
     new_bot = put_agent(world.bot, image(size=(80, 80))).json()["avatar_url"]
     assert ("project_views", world.project_id) in rendered
     assert team_tab(world)[bot_handle(world)]["picture"].endswith(digest(new_bot))
+
+
+def organisation_tab(world: World) -> dict[str, dict[str, Any]]:
+    got = world.anyone.get(f"/api/v1/public/pages{BASE}/organisation")
+    assert got.status_code == 200, got.text
+    return by_handle([n["person"] for n in got.json()["data"]["nodes"] if n["person"]])
+
+
+def test_the_organisation_tab_names_each_one_with_the_team_tabs_picture(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A named node's `person` carries the picture as the Team tab does: a person's only while
+    their `public_profile` is on, an agent's always (§16.9, `organisation`); a new one renders
+    the tab again at once."""
+    _fresh()
+    assert world.owner.patch("/me", {"public_profile": True}).status_code == 200
+    assert world.anna.patch("/me", {"public_profile": False}).status_code == 200
+    put_human(world.owner, "/me/avatar", image())
+    put_human(world.anna, "/me/avatar", image(size=(90, 90)))
+    org = organisation_tab(world)
+    team = team_tab(world)
+    assert set(org["maintainer"]) == {"name", "handle", "page", "picture"}
+    assert org["maintainer"]["picture"] and org["anna"]["picture"] is None
+    assert {h: p["picture"] for h, p in org.items()} == {h: team[h]["picture"] for h in org}
+    assert org[bot_handle(world)]["picture"]
+    rendered = count_renders(monkeypatch)
+    second = put_human(world.owner, "/me/avatar", image(size=(80, 80))).json()["avatar_url"]
+    assert ("project_views", world.project_id) in rendered
+    assert organisation_tab(world)["maintainer"]["picture"].endswith(digest(second))
+    assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
+    assert organisation_tab(world)["maintainer"]["picture"] is None
 
 
 def test_a_merge_entry_carries_its_facts_as_fields(world: World) -> None:
