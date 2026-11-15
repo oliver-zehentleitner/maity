@@ -16,7 +16,8 @@ from maity_hub.routes.runner import Confinement
 
 ROOT = Path(__file__).parents[2]
 CAPABILITIES = ROOT / "cli/src/maity/runner/capabilities.py"
-CONTRACT = ROOT / "docs/api.md"
+# Written as "docs" / "api.md", so that the hub-contract job of CI finds this file (ci.yml).
+CONTRACT = ROOT / "docs" / "api.md"
 
 
 def _cli_confinements() -> set[str]:
