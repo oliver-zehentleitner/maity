@@ -7,7 +7,7 @@ reports a request carried out, or the tool is no longer updated, the hub marks t
 strictly later `requested_at`.
 
 Revision ID: 20261114100000_runner_updates
-Revises: 20261114020000_sealed_verifiers
+Revises: 20261114120000_request_held
 Create Date: 2026-11-14
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from maity_hub.types import JSON_VALUE
 
 revision: str = "20261114100000_runner_updates"
-down_revision: str | None = "20261114020000_sealed_verifiers"
+down_revision: str | None = "20261114120000_request_held"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
