@@ -5019,6 +5019,8 @@ def public_first_paint_round(run: Run, browser) -> None:
             assert first is not None and first[0] == "visible" and first[1] == "rgb(11, 15, 20)", (
                 f"{path}: the hub's stored page before the redraw: {first!r}"
             )
+            # Kept, so the dashboard's drawing is told from the hub's page of the same structure.
+            page.evaluate("() => { window.__hubPage = document.querySelector('main > section.view-visitor'); }")
         else:
             stored = page.evaluate(
                 "() => { const p = document.querySelector('main > .hub-page');"
@@ -5028,9 +5030,15 @@ def public_first_paint_round(run: Run, browser) -> None:
         for route in held:  # answered before the handler goes: a removed one passes them on itself
             route.continue_()
         page.unroute("**/api/v1/public/pages/**")
-        expect(page.locator(f"main .view-visitor[data-kind='{kind}']")).to_be_visible()
+        # The dashboard's view, not the hub's page standing in for it (in `.hub-page`, or the same
+        # structure kept above).
+        expect(page.locator(f"main .view-visitor[data-kind='{kind}']:not(.hub-page *)")).to_be_visible()
         expect(page.locator("main .hub-page")).to_have_count(0)
         if kind == "project":
+            page.wait_for_function(
+                "() => { const v = document.querySelector('main > section.view-visitor');"
+                " return v && v !== window.__hubPage; }"
+            )
             # The drawing over it: the same name in the same column, and each sheet linked once.
             left = page.locator("main section.phero h1").evaluate("h => Math.round(h.getBoundingClientRect().left)")
             assert left == first[2], f"{path}: the name moved from {first[2]} to {left} px"
