@@ -680,7 +680,7 @@ one's deny refuses the longer one, so the shorter one is left out.
 The env-assignment and redirect cases in **Revisit when** are open: both
 need a signed-in agy, which has not been allowed for a test run.
 
-**Limit:** agy cannot tell an extra empty argument apart; it is allowed.
+**Limit (superseded):** agy cannot tell an extra empty argument apart; it is allowed.
 `a b ''`, `a b ""`, `a b $''`, `a b ' '` and `a '' b` run as `a b`,
 outside the sandbox, though the shell passes one argument more. No rule
 can catch it (review order A587 on #1828, agy 1.5.9 read from its
@@ -788,10 +788,14 @@ There is likewise no sound invocation path for `maity` the runner can arrange
 at the settings level (a launcher or absolute path is matched the same way,
 and the attacker's environment loads into the launcher process itself before
 any re-exec). So the `command(maity)` grant keeps one command reachable
-outside agy's sandbox. This is why agy stays `sandbox: off` and off every
-runner for real work until `maity` is confined at the OS level; that
-confinement is the follow-up card tsk-zjv2xyhyggnm. Stated plainly in
-docs/runners.md, with no example.
+outside agy's sandbox. This is why the runner does not offer antigravity:
+`antigravity` is in `config.NOT_OFFERED_YET`, so a configuration naming
+`[harness.antigravity]` is refused — `maity runner check` and `serve` say it
+is held back until its command grants are confined at the OS level — and no
+antigravity placement runs. That confinement is the follow-up card
+tsk-zjv2xyhyggnm; dropping `antigravity` from `NOT_OFFERED_YET` re-offers it
+once that lands. The agy adapter code stays, so it is ready when re-offered.
+Stated plainly in docs/runners.md, with no example.
 
 **Rejected alternatives:**
 - Keeping the allow+deny pair for exact entries (f0ef544a): a line with a
