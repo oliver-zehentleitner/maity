@@ -15,7 +15,7 @@ from sqlalchemy import Engine, update
 
 from maity_hub import clock, events, longpoll, moderation
 from maity_hub import tables as t
-from maity_hub.auth import leaks, sessions
+from maity_hub.auth import revocation, sessions
 from maity_hub.routes import events as events_route
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -64,7 +64,7 @@ def test_a_revoked_credential_ends_its_open_wait_at_once(
     _until_waiting(reader.credential_id)
     with events.transaction(migrated) as conn:
         if how == "revoked":
-            leaks.revoke(conn, reader.credential_id, "test", None)
+            revocation.revoke(conn, reader.credential_id, "test", None)
         else:
             moderation.suspend(conn, owner.id, "rpt-000000000000")
     _ended_soon(waiting, began)
