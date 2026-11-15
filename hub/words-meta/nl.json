@@ -175,6 +175,22 @@
     "en": "9d1a4d7e2b6e1f5d",
     "text": "f40395844acf931d"
   },
+  "mail.address_changed_body": {
+    "en": "219a6f021ae9f584",
+    "text": "4d4766c377ec6d0e"
+  },
+  "mail.address_from": {
+    "en": "047165494d34f84b",
+    "text": "328fcb205b1c32ef"
+  },
+  "mail.address_removed_body": {
+    "en": "032acd3da7bab9bb",
+    "text": "7a58373aa7e61728"
+  },
+  "mail.address_subject": {
+    "en": "db411d71ce3e92da",
+    "text": "f5d3359fce1857a6"
+  },
   "mail.more": {
     "en": "a1cd32796e7e9005",
     "text": "555c05a04cea5c5e"
@@ -211,9 +227,21 @@
     "en": "dfaef747e184ddf6",
     "text": "01c5000103663239"
   },
+  "mail.unknown_ip": {
+    "en": "e56c65d7188c79cc",
+    "text": "9face2142762848e"
+  },
   "mail.updates": {
     "en": "ee72d97604a9a40d",
     "text": "ee72d97604a9a40d"
+  },
+  "mail.verify_body": {
+    "en": "dbf48469793468cf",
+    "text": "51bebe3fb8da6246"
+  },
+  "mail.verify_subject": {
+    "en": "749bdc78cabbe4a2",
+    "text": "0245e95dd2967bc0"
   },
   "mail.wrote": {
     "en": "3cff4d92714ec5c4",
