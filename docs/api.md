@@ -21137,7 +21137,7 @@ same header and footer (§16.7.5).
   stylesheets `/assets/landing/public-pages.css` and
   `/assets/landing/public-sections.css` (§16.7.5; the second holds the
   public pages' design, §16.9, which the dashboard links too) are served the
-  same way, and the two pictures it names under
+  same way, and the two pictures `public-pages.css` names under
   `/assets/landing/brand/` without a digest, answered `no-cache`. The page is
   complete without the script: all text is in the HTML, every section
   shows its end state, and the FAQ opens without it. The stylesheet
@@ -21164,8 +21164,8 @@ same header and footer (§16.7.5).
   and answer with `default-src 'none'; style-src 'self' 'unsafe-inline';
   font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors
   'none'`: they load the landing page's
-  `landing.css`, `public-pages.css` and fonts under `/assets/landing/`
-  for the frame (§16.7.5), and `img-src 'self'` covers the browser's own
+  frame's stylesheets and fonts under `/assets/landing/` (§16.7.5),
+  and `img-src 'self'` covers the browser's own
   favicon request (the page links no icon) and the pictures
   `public-pages.css` names; the page's text has no image.
   Both replace §1.1's `default-src 'self'` for these documents only.
@@ -21600,6 +21600,17 @@ the others in the app shell. So the hub computes the frame once, as a model: it
 renders its own pages from that model, and hands the same model to the
 dashboard. The rules stay in one place: which sections are a link, which
 legal pages exist, which social link a column above already has.
+
+The frame's stylesheets are `landing.css`, `public-pages.css` and
+`public-sections.css` under `/assets/landing/` (§16.7), in that order:
+the last holds the design of the public pages (§16.9) and builds on the
+other two. Every page the hub renders in the frame links all three, the
+legal pages, the mail link pages, the join page and `/explore` included,
+each by the address with its `?v=<digest>` (§16.7). The dashboard links
+the same three, by the same addresses, while it draws a page in the frame
+(above), and takes them off again when it draws a page outside it, as with
+a session; so a page the hub served signed out, which the dashboard then
+draws again, loads each of them once.
 
 ```
 GET /site/chrome?lang=<tag>
@@ -22303,8 +22314,8 @@ picture**: while `public_profile` is `true` the page shows the person's
 picture at 128 × 128 pixels (`<img>` from its public address with
 `?s=128`, §6.10, never the `avatar_url` that names the account; an
 empty `alt` since the name follows), and a neutral
-placeholder of the same size, drawn by a size class of the page's
-stylesheet and no image, when the person has none (never an inline
+placeholder of the same size, drawn by a size class of the frame's
+stylesheets (§16.7.5) and no image, when the person has none (never an inline
 style: a visitor's copy stands inside the app shell, whose policy
 refuses one, §16.11); with `public_profile` `false` it shows the
 placeholder. Not the generated avatar of §6.10: a page carries no
@@ -22551,9 +22562,16 @@ of this hub (§6.10; the hub has no other public image store, §16.7): the perso
 agent's picture on their own page, the pictures of the agents a person's agents page lists
 ("A person's agents", above), and on a project's pages the pictures of the members they name,
 each by the member's own page's rule. Its fixed words are English, as its other fixed text. A
-page rendered by an earlier version of the hub never replaces one a later version rendered,
-and a page of an earlier version is rendered again, so a hub being upgraded serves the new
-design everywhere once it runs only the new version.
+page rendered by an earlier version of the hub never replaces one a later version rendered.
+Where an earlier version would render a target one of whose pages a later version rendered
+(its start, a change of the target's inputs, the worker's pass), it deletes the target's
+pages instead, as for a removal above: the reader gets the app shell until a process of the
+later version renders the target, which it does first, as every target without a stored
+page. A page of an earlier version is rendered again at the next render of its target, the
+start of a process of the later version included, so a hub being upgraded serves the new
+design everywhere once it runs only the new version. The rule holds from the version that
+brought the dashboard's design on; a hub from before it, still running beside a newer one
+during an upgrade, may replace the newer pages until it stops.
 Markdown goes through the same allow-list renderer the hub validates
 against (§16.7), a third renderer kept in step with the other two:
 text nodes and links only, `href` values escaped as attributes and
@@ -22588,8 +22606,8 @@ is never a `304`,
 `Content-Security-Policy: default-src 'none'; script-src 'self';
 style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self';
 base-uri 'none'; frame-ancestors 'none'` (the frame's stylesheets,
-fonts and its one script; `img-src` for the pictures of a person's and
-an agent's page, §6.10; `unsafe-inline` for the maintenance banner,
+fonts and its one script; `img-src` for the pictures of this hub the
+stored page shows, §6.10; `unsafe-inline` for the maintenance banner,
 §16.12; the stored page itself carries no inline style), `X-Content-Type-Options: nosniff`, and never a
 cookie, and `Vary: Cookie, Accept-Language` (`Vary: Cookie` is on every
 answer on these addresses, the app shell's included, §16.11). When a page stops being public for any
