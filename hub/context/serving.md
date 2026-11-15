@@ -489,8 +489,9 @@ still be on its way.
 **Source:** the maintainer's decision on card tsk-h238y7cpk23m and the plan the team lead approved, 2026-11-04 (confirmed: no general budget in the hub, an emergency limit per route by configuration, no runtime setting yet, the public read limits kept and configurable); reading the routes from the router rather than from the OpenAPI document came from the review of the first version, where a path converter matched one segment only (reproduced by a test, red before and green after); that `iter_route_contexts` yields the routes in the router's order is inferred from FastAPI matching with the same walk, and is checked by one test on a literal route ahead of a template
 **Revisit when:** a runtime setting for route limits is built, `fastapi.routing.iter_route_contexts` changes or goes away, or the deployments' ingress limit has been tested and the public read limits are reassessed
 
-The hub has no general request budget; the ingress holds the limit per
-client. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API for an
+The hub has no general request budget per client address; the ingress
+holds that limit. Since 2026-11-14 a signed-in credential's reads have a
+limit of their own (aaf47866 below). `MAITY_ROUTE_LIMITS` sets limits on single routes of the API for an
 emergency, `<METHOD> <route> = <count>/<seconds>` with the route as
 `/api/v1/openapi.json` lists it. When the app is built, each entry is checked
 against that document, and one the document does not list with that method
@@ -722,3 +723,48 @@ c6768529 left one revalidation per file: after #1518, a warm load of a signed-in
 - `404` for a version this hub does not have: a page from the other pod would lose that script outright instead of running the file this pod has.
 - Session affinity during a deploy, to keep a browser on one pod: an ingress setting for a once-per-deploy case that `no-cache` already covers.
 - Taking the version from the request without comparing it with the body: a stale or foreign version would be cached for good with the wrong file.
+
+## A signed-in credential's reads have a limit per minute, and a project may cap open claims per member; both settings
+
+**Id:** aaf47866-499a-46f5-be4c-51319a781dd9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by lotse#wtwy (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5
+**Revisit when:** the hub runs several replicas and a per-process count lets a credential through too often, a deployment's agents meet 600 reads a minute in normal work, or plans set limits per account
+**See:** serving.md#an-emergency-limit-on-single-routes-comes-from-the-environment-and-counts-in-each-process-the-public-read-limits-stay-configurable — f3198c35-b163-4fce-b3ad-683d8b825555 — as of 2026-11-14
+
+The 2026-11-04 decision left the hub without a general request budget:
+the ingress limits per client address, and the hub only single routes.
+That changes for signed-in callers. `max_reads_per_minute` (instance
+setting, §16.5, default 600) limits the `GET` and `HEAD` calls of the API
+per credential; a project may set a lower value for its agents'
+credentials (`policy.max_reads_per_minute`, §6.1), never a higher one.
+Past it a read is `rate_limited` with `Retry-After`, checked once the
+credential is known and before the side effects of §2.4. The count is per
+process, as `MAITY_ROUTE_LIMITS`'s. `policy.max_open_claims` (§6.1,
+default `null`, no cap) caps the claims one member holds in a project,
+refused as `claim_limit` (409, `details.limit`, `details.count`), counted
+with the claim in one atomic step.
+
+**Reason:** the ingress counts per address, and every agent on one machine
+shares that address, so its limit has to be high and does nothing against
+one credential that reads without pause; that credential's reads cost the
+hub database work every time. A limit per credential names the caller the
+ingress cannot see. The defaults are generous so that normal work never
+meets them; a project tightens rather than loosens, because the instance's
+value protects the server all projects share. The claim cap is a project's
+policy, like `max_placements`, and is off by default because nothing has
+needed it so far. Counting per process keeps the limit from adding a write
+to every read, the cost the emergency route limits avoid for the same
+reason.
+
+**Rejected alternatives:**
+- **Only the ingress's limit per address:** see above; a credential is
+  invisible to it.
+- **Counting reads in the shared counts:** a database write per read, on
+  exactly the load the limit sheds.
+- **A project value above the instance's:** the project's admin would lift
+  the operator's protection of the whole server.
+- **A fixed limit in code:** the owner chose a setting with a generous
+  default.

@@ -128,12 +128,16 @@ def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> boo
 
 
 def issuer_holds(conn: Connection, row: Any) -> bool:
-    """Whether the issuer is still an active human member with the authority it needs."""
+    """Whether the issuer is still an active human member with the authority it needs, and
+    an account not suspended (§16.8)."""
     issuer = conn.execute(
-        select(t.membership.c.trust, t.membership.c.role_base).where(
+        select(t.membership.c.trust, t.membership.c.role_base)
+        .join(t.human, t.human.c.id == t.membership.c.human_id)
+        .where(
             t.membership.c.project_id == row.project_id,
             t.membership.c.human_id == row.created_by,
             t.membership.c.active.is_(True),
+            t.human.c.suspended_at.is_(None),
         )
     ).first()
     return issuer is not None and may_issue(row.trust, row.role, issuer.trust, issuer.role_base)

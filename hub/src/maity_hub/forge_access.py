@@ -293,6 +293,10 @@ class ForgeAccess:
         owner's account record once (§11.4). Only the very token that was refused: one
         replaced since, or the token of whoever owns the project now, stays as it is."""
         with self.engine.begin() as conn:
+            # The owner's account lock first, shared, before the token's row: the record locks
+            # the owner's row, and a deletion of the account takes the lock exclusively before
+            # anything else, so the two run one after the other (`write_guard.share`).
+            write_guard.share(conn, owner_id)
             row = conn.execute(
                 select(t.forge_token).where(t.forge_token.c.human_id == owner_id).with_for_update()
             ).first()

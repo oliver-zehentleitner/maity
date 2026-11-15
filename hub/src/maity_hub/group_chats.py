@@ -50,10 +50,11 @@ def find(conn: Connection, project_id: str, conversation_id: str) -> Any:
 
 
 def stays(conn: Connection, conversation_id: str, *, current: bool = True) -> list[Any]:
-    """The chat's stays, oldest join first: the current ones, or every one."""
+    """The chat's stays, oldest join first: the current ones, or every one. While the agent
+    firewall is off no stay waits, whatever is stored (`chat_gate.stay_columns`)."""
     query = (
         select(
-            t.conversation_participant,
+            *chat_gate.stay_columns(),
             t.membership.c.agent_id,
             t.membership.c.human_id,
         )
@@ -69,7 +70,7 @@ def stays(conn: Connection, conversation_id: str, *, current: bool = True) -> li
 def stay(conn: Connection, conversation_id: str, membership_id: int) -> Any:
     """The member's current stay in the chat, or None."""
     return conn.execute(
-        select(t.conversation_participant).where(
+        select(*chat_gate.stay_columns()).where(
             t.conversation_participant.c.conversation_id == conversation_id,
             t.conversation_participant.c.membership_id == membership_id,
             t.conversation_participant.c.here.is_(True),
@@ -87,7 +88,8 @@ def windows(conn: Connection, membership_id: int) -> dict[str, int]:
         ).where(
             t.conversation_participant.c.membership_id == membership_id,
             t.conversation_participant.c.here.is_(True),
-            t.conversation_participant.c.waiting.is_(False),  # it reads nothing yet (§9.6)
+            # it reads nothing yet (§9.6)
+            chat_gate.not_waiting(t.conversation_participant.c.waiting),
         )
     ).all()
     return {r.conversation_id: int(r.window_after) for r in rows}

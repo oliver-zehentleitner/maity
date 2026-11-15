@@ -673,6 +673,15 @@ def not_your_bridge() -> ApiError:
     )
 
 
+def _carries(conn: Connection, bridge: int | None, served_owner: str | None) -> bool:
+    """A connection carries only while the bridge member is no guest and the served agent's
+    owner is not suspended (§2.3, §16.8): checked at every call, whatever path changed it."""
+    from maity_hub import moderation
+
+    trust = conn.execute(select(t.membership.c.trust).where(t.membership.c.id == bridge)).scalar()
+    return trust not in (None, "guest") and not moderation.suspended(conn, served_owner)
+
+
 def carry(
     conn: Connection,
     caller: Caller,
@@ -712,6 +721,8 @@ def carry(
         raise not_your_bridge()
     if found.isolated_since is not None:
         raise refusal(found)
+    if not _carries(conn, caller.membership_id, found.served_owner):
+        raise not_your_bridge()
     if renew_leases:
         _renew_carried(conn, found.id, caller.project_id)
     assert caller.membership_id is not None and caller.agent_id is not None

@@ -17,6 +17,9 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 # and path, its reason on the same line: a pull request adding or removing an entry touches only
 # its own line, so parallel ones conflict here only when they change neighbouring lines.
 NOT_ROUTED = {
+    ("DELETE", "/projects/{}/{}/conversations/{}/messages/{}/verdict"),  # tsk-55x4f398dttv
+    ("DELETE", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("DELETE", "/projects/{}/{}/outsiders/{}/block"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
     ("DELETE", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("GET", "/agents/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
@@ -26,23 +29,27 @@ NOT_ROUTED = {
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
+    ("GET", "/projects/{}/{}/contribution"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/members/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
+    ("GET", "/projects/{}/{}/outsiders"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/tasks/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
-    ("GET", "/runner"),  # no route yet: tsk-29nmydbzrg5z, tool updates
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),  # no route yet: tsk-r97n4e6v4kaz
+    ("PATCH", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/agents/{}/soul/rollback"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("POST", "/projects/{}/{}/claims/renew"),  # no route yet: tsk-p55zyn4pz0wd
     ("POST", "/projects/{}/{}/forge/webhook"),  # before the router: no credential, no CSRF (§17.4)
     ("POST", "/projects/{}/{}/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/nudge"),  # no route yet: tsk-j9e0yapj21wj
     ("POST", "/projects/{}/{}/placements/{}/replace"),  # no route yet: tsk-j9e0yapj21wj
+    ("POST", "/projects/{}/{}/tasks/{}/claim/confirm"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("POST", "/projects/{}/{}/tasks/{}/claim/decline"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/runner/placements/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
-    ("POST", "/runners/{}/updates"),  # no route yet: tsk-29nmydbzrg5z, tool updates
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
+    ("PUT", "/projects/{}/{}/conversations/{}/messages/{}/verdict"),  # tsk-55x4f398dttv
     ("PUT", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
 }
 

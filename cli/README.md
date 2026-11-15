@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a11 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a12 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -1214,6 +1214,31 @@ project's own harness configuration is never loaded:
   and the repository's `allow` list; deny `webfetch` and directories
   outside the clone. `AGENTS.md` is named as
   an instruction.
+- **Antigravity** (`agy`) starts in a workspace folder the runner makes
+  per placement, `<workspaces>/<project id>/<clone>`, with the clone as
+  `repo` in it, never in the clone: agy loads its start directory's own
+  configuration, hooks and MCP servers included, and those run outside
+  its sandbox. Before every start the runner refuses a folder that holds
+  anything besides `repo` (`workspace_not_bare`), lies inside a git work
+  tree or is not at its real path (`workspace_in_repository`), and deletes
+  nothing there. Each session gets runner-written `--settings`: the
+  default agent mode (not `auto`), `proceed-in-sandbox`, the terminal
+  sandbox on, the folder trusted, the file tools denied `.git/maity`,
+  writes to `.git/config` and `.git/hooks`, the other clones'
+  credentials, the runner's state and the listed home secrets with agy's
+  sign-in; `maity`, the repository's `allow` list (exact, as for
+  Claude Code: a deny rule for each exact entry's longer forms) and the
+  hub's, forge's and `network` hosts allowed. An allowed command may
+  leave agy's sandbox. agy also merges the agents' user's own
+  `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
+  continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.
+  Its sandbox is advertised `off` until the runner can see agy's own
+  sandbox start (`sandbox_unavailable`; `require_sandbox = true` refuses
+  it); `maity runner check` reports whether the namespaces it needs start
+  for the agents' user, as a diagnostic. The workspace folder is checked
+  before every start and before every run of the supervised loop.
+  [`docs/runners.md`](../docs/runners.md#antigravity-agy)
+  has the details.
 
 `stub` (no model, for tests) runs as before.
 
@@ -1253,7 +1278,8 @@ Only the listed paths in the agents' home are hidden: `~/.ssh`,
 `~/.gnupg`, `~/.codex`, `~/.claude`, `~/.claude.json`,
 `~/.git-credentials`, `~/.netrc`, `~/.aws`, `~/.azure`,
 `~/.config/gcloud`, `~/.kube`, `~/.docker`, opencode's login and
-configuration, and the runner's own configuration and state. Any other
+configuration, `~/.gemini` (for agy itself only its sign-in), and the
+runner's own configuration and state. Any other
 secret there, such as an `.env` file of your own, stays readable. On
 macOS the list does not cover the Keychain, where Claude Code and, by
 default, `gh` keep their logins: a sandboxed command may reach it
@@ -1394,6 +1420,21 @@ maity runner stop-all [--grace 30]     # end every agent; refused while the serv
 maity runner gc --revoked [--yes]      # workspaces whose credential is revoked: list, then remove
 maity runner workspace claim prj-7k2m9q/agent-h --agent agt-h   # record a clone made by hand
 ```
+
+A placement's log holds at most `limits.log_keep_bytes` (10 MiB by
+default); when it is full, its older half is dropped and the newest output
+stays. `logs --follow` starts again at the log's beginning when that
+happens. The log is written only by the runner's log writer, which the
+agent's tmux pane feeds; it checks the file's real size before each
+write and when the pane ends, so bytes anything else appends are counted
+at its next write too. Whatever the runner reads from the agents' side (a
+clone's `.git/config`, a log, the loop's limit file) it reads as a
+regular file only, reached from the clone or the agents' directory
+without following a link at any step on the way, never waiting on a
+FIFO, up to a fixed size; it reads a clone only while it starts an agent
+there, never while it decides what to start or stop. An ssh host needs
+`maity` of the same version as the runner for these reads: with an older
+one, an existing clone there is refused as `origin_mismatch`.
 
 `gc` asks the hub through each clone's own `maity`, so the runner never
 holds an agent's credential, and asks the hub which placements are active,

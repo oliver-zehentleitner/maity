@@ -775,7 +775,7 @@ def load_project(conn: Connection, project_id: str, request: Request) -> dict[st
     return _view(conn, _load(conn, project_id), request)
 
 
-idempotency.LOADERS["project"] = load_project
+idempotency.register("project", load_project, idempotency.in_project(idempotency.the_project))
 
 
 @router.get("/projects")
@@ -1061,6 +1061,8 @@ def patch_project(
             if body.public_page != project.public_page:
                 if body.public_page == "on":  # a hidden or removed project stays so (§16.8)
                     moderation.refuse_held(conn, "project", project.id)
+                    if project.owner_org_id is not None:  # and so does a suspended org's
+                        moderation.refuse_held(conn, "org", project.owner_org_id, "suspend")
                 values["public_page"] = body.public_page
                 # What the forge said belongs to the time the page was on: asked again.
                 values["repository_public"] = None

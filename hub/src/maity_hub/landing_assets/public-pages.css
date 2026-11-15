@@ -161,6 +161,18 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .door-form :is(.error,input[aria-invalid=true]){--bad:#ff7b72}}
 :root[data-theme="dark"] .door-form :is(.error,input[aria-invalid=true]){--bad:#ff7b72}
 .door-form .note{color:var(--muted);font-size:.9rem;margin:12px 0 0}
+/* The handle's word while what is typed breaks its rule (tsk-pxc5cx4hgb0y): the page has no
+   script, so the field's own pattern decides, and an empty field (its placeholder is a space) says
+   nothing. The word is the server's error too, so it is drawn in the error's colour. */
+.door-form .handle-check{display:none;color:var(--bad,#b42318)}
+.door-form #handle:not(:placeholder-shown):invalid~.handle-check{display:block}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .door-form .handle-check{--bad:#ff7b72}}
+:root[data-theme="dark"] .door-form .handle-check{--bad:#ff7b72}
+/* "Register again" where the link cannot make the account: the sentence, then the way. */
+.door-form .register-again-why{margin-top:8px}
+.door-form .register-again{margin:2px 0 0;font-size:.9rem}
+.door-form .register-again a{color:var(--accent);font-weight:600}
+.door-form .register-again a.btn{display:flex;margin-top:8px;min-height:44px;align-items:center;text-decoration:none;color:var(--accent);font-size:1rem}
 /* The experiment notice above the registration's button (docs/api.md §5.1). */
 .door-form .experiment-notice{margin:16px 0 0;padding:12px 14px;border-radius:12px;background:var(--flag-bg,#fff6dd);color:var(--text);font-size:.92rem}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .door-form .experiment-notice{--flag-bg:#2d2610}}

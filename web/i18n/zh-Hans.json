@@ -1126,9 +1126,6 @@
   "error.upload_expired": "上传耗时过长。请重新发送该文件。",
   "error.version_exists": "已存在使用此版本号的发布。",
   "error.webhook_signature": "代码托管平台的推送没有有效签名。",
-  "experiment.not_saved": "未保存： {reason}",
-  "experiment.notice": "Maity 是一个处于早期阶段的公开实验。你的智能体以你授予的权限行事。请想清楚它们可以做什么，尤其是面对陌生人时：它们读取、写入、运行和转交什么。不要给它们你承受不起失去的访问权限。功能和数据可能会变化。",
-  "experiment.understood": "我已了解",
   "forge.app.hint": "在你的 GitHub 账户上安装该 App，并选择它可以读取的仓库。之后它会为你拥有的、仓库在其范围内的每个项目提供服务。",
   "forge.app.missing": "此实例未配置 GitHub App；请在下方存储你自己的令牌。",
   "forge.app.none": "没有关联任何安装。",
@@ -2835,6 +2832,8 @@
   "mine.title": "你在 {name} 的设置",
   "mine.use_default": "使用我的默认值",
   "name_rules.handle": "小写字母、数字和 -，2–31 个字符，以字母或数字开头。",
+  "name_rules.handle_bad": "还不是有效的用户名：{rule}",
+  "name_rules.handle_lowercase": "只能用小写：用户名不能有大写字母。",
   "name_rules.slug": "小写字母、数字和 -，2–63 个字符，以字母或数字开头。",
   "names.aliases": "曾用名，仍指向此处：{names}。",
   "names.current": "此项目是 {name}。",
@@ -4501,8 +4500,11 @@
   "settings.state.released": "自 {day} 起永久发布：接口只在有版本管理和明确过渡期的情况下才会更改，迁移保持向后兼容，并且必须执行发布检查清单。",
   "settings.state.saved": "状态已保存。",
   "settings.state.title": "项目状态",
+  "settings.tab.general": "常规",
+  "settings.tab.members": "成员与智能体",
   "settings.tab.mine": "我的",
-  "settings.tab.project": "项目",
+  "settings.tab.moderation": "内容管理",
+  "settings.tab.work": "工作方式",
   "settings.title": "设置",
   "sf.elsewhere": "请在你登录时使用的浏览器中打开此链接，或在那里输入这封邮件中的验证码。",
   "sf.elsewhere.dashboard": "前往控制台",
@@ -5227,5 +5229,31 @@
   "mine.start_tab.label": "启动时作为标签页打开",
   "mine.start_tab.hint": "适用于尚无自己标签页的浏览器，例如在新设备上首次登录时。浏览器打开了哪些标签页，只保留在该浏览器中。",
   "mine.start_tab.saved_on": "已保存：此项目启动时会作为标签页打开。",
-  "mine.start_tab.saved_off": "已保存：此项目启动时不再作为标签页打开。"
+  "mine.start_tab.saved_off": "已保存：此项目启动时不再作为标签页打开。",
+  "visitor.hero.try": "试一试 — 创建你的账户",
+  "visitor.now": "此刻",
+  "visitor.now.both": "{people} · {agents} 在线",
+  "visitor.now.one": "{who} 在线",
+  "visitor.now.working": "正在参与此项目",
+  "visitor.stat.members": "成员",
+  "visitor.stat.window": "30 天",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "other": "还有 {count} 位"
+  },
+  "visitor.team.both": "{people}，{agents}",
+  "visitor.team.all": {
+    "other": "全部 {count} 位成员 →"
+  },
+  "visitor.merged": "最近合并",
+  "visitor.merged.window": "最近 7 天的拉取请求和决定",
+  "visitor.merged.pill": "已合并",
+  "visitor.merged.by": "作者 {author}",
+  "visitor.merged.touches": "涉及 {areas}",
+  "visitor.now.people": {
+    "other": "{count} 个人"
+  },
+  "visitor.now.agents": {
+    "other": "{count} 个智能体"
+  }
 }
