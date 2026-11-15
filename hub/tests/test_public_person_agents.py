@@ -242,9 +242,7 @@ def test_under_all_an_agent_held_by_moderation_is_not_listed(
     assert hidden in [a["handle"] for a in listed(world, "maintainer")]
 
 
-def test_the_snapshot_renders_the_page_of_an_owner_who_is_no_member(
-    world: World, hub: Any
-) -> None:
+def test_the_snapshot_renders_the_page_of_an_owner_who_is_no_member(world: World, hub: Any) -> None:
     olga = factory.human(world.migrated, "olga")  # owns an agent in the project, no member
     bot = factory.agent(world.migrated, world.project_id, olga, role="coder")
     with world.migrated.begin() as conn:
