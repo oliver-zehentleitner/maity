@@ -770,7 +770,7 @@ window.Maity = window.Maity || {};
       personal: to !== "owner", humans_only: true, priority: "normal", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
       asked_by: { member_id: who.id, display_name: who.display_name, role: mine.role || "member", trust: mine.trust || "member",
         instance: null, session_id: null, avatar_url: null },
-      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], jour_fixe: null, ktw_ref: null,
+      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], held: [], jour_fixe: null, ktw_ref: null,
       mentions: [], needs_in_session: null, on_behalf_of: null, placement: null, report: null, takeover_id: null, task: null, task_id: null,
       tried: null, while_open: "wait", created_at: nowIso() };
   }
