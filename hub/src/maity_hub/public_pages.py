@@ -58,6 +58,8 @@ BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 # row of a later format is never replaced by this process, and a row of an earlier one is
 # rendered again (`refresh`; hub/context/public-pages.md).
 FORMAT = 2
+# What `public_page.inputs` holds (hub/src/maity_hub/tables.py).
+INPUTS_LENGTH = 64
 
 
 def format_of(inputs: str | None) -> int:
@@ -69,8 +71,11 @@ def format_of(inputs: str | None) -> int:
 
 
 def stamped(digest: str) -> str:
-    """The `inputs` of a row this hub writes: its format, then the digest of the page's inputs."""
-    return f"f{FORMAT}:{digest}"
+    """The `inputs` of a row this hub writes: its format, then the digest of the page's inputs,
+    cut to what the column holds (`public_page.inputs`, 64 characters; 61 hex digits of a
+    sha256 still tell a change from none)."""
+    head = f"f{FORMAT}:"
+    return head + digest[: INPUTS_LENGTH - len(head)]
 
 
 def etag_of(body: str) -> str:

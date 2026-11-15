@@ -5796,10 +5796,9 @@ across the page (`nav.ptabs`), and the view itself stands under it in the stored
 The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
 are `public-sections.css`, one file for the project, person and agent pages (the hub's
 `/assets/landing/public-sections.css` since tsk-zhyqdtt5v59c, 2026-11-15; `web/css/` before).
-`index.html` names it as a disabled `<link>`, so the shell gives it its version as every file
-of the dashboard (§16.11, the warm load asks for none again); `js/site-chrome.js` moves it behind
+It is the hub's third frame sheet (§16.7.5): `js/site-chrome.js` links it in `SHEETS` behind
 `landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
-with them. A name the dashboard's `app.css` also
+with them; `index.html` no longer names it. A name the dashboard's `app.css` also
 uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
 
 **Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,

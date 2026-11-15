@@ -1132,7 +1132,8 @@ under `/assets/landing/`, linked by `render.public_frame` and by `web/js/site-ch
 (`?as=public`) such a page stands in `<main>` as it is, where the dashboard puts its view, not in the stored
 pages' column. What the old pages showed beyond the design (the per-day bars, the medians, the per-agent table)
 stays in `data` only. Each row's `inputs` is written `f<FORMAT>:<digest>` (`FORMAT = 2`; a row without the prefix
-is format 1). `refresh` takes every page of a target off when one of them is of a later format and renders none,
+is format 1), the digest cut from the end so the whole stays within the column's 64 characters: widening the column
+would have cost a migration for a value that only tells a change from none, and 61 hex digits of a sha256 still do. `refresh` takes every page of a target off when one of them is of a later format and renders none,
 so the later version renders it first as a target without a page (deafb243); a row of an earlier format has
 other `inputs` and is rendered again. The person, agent and organisation pages keep their old HTML and `STYLE`
 for now (tsk-2t7efzj1p8zt). `test_public_skeletons.py` records the elements and classes of each kind for
