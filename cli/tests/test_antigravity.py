@@ -6,8 +6,11 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
+import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -162,6 +165,7 @@ def test_the_settings_profile(tmp_path: Path) -> None:
                 *(f"write_file({git_dir / name})" for name in adapters.GIT_PROTECTED),
                 "command(git -c)", "command(git --config-env)", "command(git --exec-path)",
                 "command(gh)",
+                "command(regex:make test .*)",
             ],
         },
     }  # fmt: skip
@@ -177,19 +181,178 @@ def test_agys_own_directory_stays_readable_but_its_login(tmp_path: Path) -> None
     assert f"read_file({home / '.gemini' / adapters.AGY_LOGIN.relative_to('.gemini')})" in deny
 
 
-@pytest.mark.parametrize(
-    ("rule", "prefix"),
-    [
-        ("python3 -m pytest *", "python3 -m pytest"),
-        ("ruff *", "ruff"),
-        ("make test", "make test"),  # agy matches by prefix: arguments are allowed as well
-        ("npm run test:*", None),  # no prefix form: it runs in the sandbox, as unlisted ones
-        ("foo *.py", None),
-        ("*", None),
-    ],
-)
-def test_a_grant_as_agys_command_prefix(rule: str, prefix: str | None) -> None:
-    assert adapters.agy_grant(rule) == prefix
+# --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
+
+
+def _agy_rule_matches(rule: str, command: str) -> bool:
+    """agy's documented `command(...)` match for a simple command, as agy 1.5.9 does it: the
+    rule split into words like a shell line; more words than the command, no match; else the
+    command's first words, each equal to the rule's, or for `regex:` each matched as
+    `^(?:word)$`, where a word that does not compile matches nothing."""
+    target = rule.removeprefix("command(").removesuffix(")")
+    if target == "*":
+        return True
+    regex = target.startswith("regex:")
+    words = shlex.split(target.removeprefix("regex:"))
+    line = shlex.split(command)
+    if len(words) > len(line):
+        return False
+    for word, given in zip(words, line, strict=False):
+        if not regex:
+            if word != given:
+                return False
+            continue
+        try:
+            if re.fullmatch(f"(?:{word})", given) is None:
+                return False
+        except re.error:
+            return False
+    return True
+
+
+def agy_decides(settings: dict[str, Any], command: str) -> str:
+    """What agy does with `command` under these settings: deny beats allow; a command no rule
+    names runs in the sandbox (`proceed-in-sandbox`), never with the grant's reach."""
+    rules = settings["permissions"]
+    for decision, kind in (("denied", "deny"), ("allowed", "allow")):
+        named = [rule for rule in rules[kind] if rule.startswith("command(")]
+        if any(_agy_rule_matches(rule, command) for rule in named):
+            return decision
+    return "sandbox"
+
+
+def agy_settings(tmp_path: Path, *allow: str) -> dict[str, Any]:
+    return adapters.antigravity_settings(
+        context(tmp_path, grant=config.RepositoryGrant(allow=allow))
+    )
+
+
+def test_the_matcher_models_agys_prefix_match(tmp_path: Path) -> None:
+    """The counter-check: an allow rule alone, as before, lets every longer form through,
+    and a deny that does not compile denies nothing."""
+    bare = {"permissions": {"allow": ["command(make test)"], "deny": []}}
+    assert agy_decides(bare, "make test --anything") == "allowed"
+    assert agy_decides(bare, "make") == "sandbox"
+    broken = {
+        "permissions": {"allow": ["command(make test)"], "deny": ["command(regex:make (test .*)"]}
+    }
+    assert agy_decides(broken, "make test --anything") == "allowed"
+
+
+def test_an_exact_grant_allows_exactly_that_command(tmp_path: Path) -> None:
+    settings = agy_settings(tmp_path, "git status")
+    assert agy_decides(settings, "git status") == "allowed"
+    assert agy_decides(settings, "git  status") == "allowed"  # the same words
+    assert agy_decides(settings, "git status --anything") == "denied"
+    assert agy_decides(settings, "git status ''") == "denied"  # an empty word is one too
+    assert agy_decides(settings, "git status -s --porcelain") == "denied"
+    assert agy_decides(settings, "git log") == "sandbox"  # unrelated: not granted
+    assert agy_decides(settings, "git statusx") == "sandbox"
+    assert agy_decides(settings, "git") == "sandbox"
+    assert agy_decides(settings, "maity status") == "allowed"  # maity stays a prefix
+
+
+def test_a_grant_ending_in_a_star_stays_a_prefix(tmp_path: Path) -> None:
+    settings = agy_settings(tmp_path, "python3 -m pytest *", "ruff *")
+    assert agy_decides(settings, "python3 -m pytest") == "allowed"
+    assert agy_decides(settings, "python3 -m pytest tests/x.py -k y") == "allowed"
+    assert agy_decides(settings, "ruff check .") == "allowed"
+    assert agy_decides(settings, "python3 -m pip install x") == "sandbox"
+    assert not [rule for rule in settings["permissions"]["deny"] if "regex:" in rule]
+
+
+def test_a_star_inside_a_grant_is_left_out_as_before(tmp_path: Path) -> None:
+    found = adapters.agy_grants(["npm run test:*", "foo *.py", "*"])
+    assert found == adapters.AgyGrants()  # no rule and nothing named: as documented
+    assert agy_decides(agy_settings(tmp_path, "npm run test:*"), "npm run test:unit") == "sandbox"
+
+
+@pytest.mark.parametrize("rule", ["python3 tests/x.py", "make c++", "pytest -k a.b", "ls ~/x"])
+def test_an_exact_grant_with_an_unsafe_word_is_left_out_and_named(
+    tmp_path: Path, rule: str
+) -> None:
+    """A regex word agy could misread fails open: no deny is generated for it, and without one
+    the allow would be a prefix, so the entry is left out and runs in the sandbox."""
+    found = adapters.agy_grants([rule])
+    assert found.allow == () and found.deny == ()
+    assert [left for left, _ in found.left_out] == [rule]
+    settings = agy_settings(tmp_path, rule) if config.plain_command(rule) else None
+    if settings is not None:
+        assert agy_decides(settings, rule) == "sandbox"
+        assert agy_decides(settings, rule + " --more") == "sandbox"
+
+
+def test_grants_that_share_a_start_leave_the_shorter_one_out(tmp_path: Path) -> None:
+    """The deny for `git status` would refuse `git status --short`: no such deny is written;
+    the shorter entry is left out and named, the longer one stays exact."""
+    found = adapters.agy_grants(["git status", "git status --short"])
+    assert found.allow == ("command(git status --short)",)
+    assert found.deny == ("command(regex:git status --short .*)",)
+    assert found.left_out[0][0] == "git status" and "'git status --short'" in found.left_out[0][1]
+    settings = agy_settings(tmp_path, "git status", "git status --short")
+    assert agy_decides(settings, "git status --short") == "allowed"
+    assert agy_decides(settings, "git status --short -v") == "denied"
+    assert agy_decides(settings, "git status") == "sandbox"
+    # A longer prefix entry and a starred one count as well: each may allow a longer form.
+    for other in ("git status --short *", "git status --format=*"):
+        left = adapters.agy_grants(["git status", other]).left_out
+        assert [rule for rule, _ in left] == ["git status"]
+
+
+def test_an_exact_grant_a_prefix_grant_covers_is_dropped_silently(tmp_path: Path) -> None:
+    found = adapters.agy_grants(["git log -1", "git log *", "git log"])
+    assert found == adapters.AgyGrants(allow=("command(git log)",))
+    settings = agy_settings(tmp_path, "git log -1", "git log *")
+    assert agy_decides(settings, "git log -1 --stat") == "allowed"
+
+
+def test_every_generated_deny_has_one_more_word_and_compiles(tmp_path: Path) -> None:
+    rules = ("make test", "cargo build --release", "go test ./...", "git status",
+             "git status --short", "npm ci", "tox -e py311,lint", "x --opt=a:b@c%d/e")  # fmt: skip
+    found = adapters.agy_grants(rules)
+    for allow, deny in zip(found.allow, found.deny, strict=True):
+        words = allow.removeprefix("command(").removesuffix(")").split(" ")
+        assert deny == f"command(regex:{' '.join(words)} .*)"
+        for word in deny.removeprefix("command(regex:").removesuffix(")").split(" "):
+            re.compile(word)
+        assert all(adapters.AGY_SAFE_WORD.fullmatch(w) for w in words)
+    granted = {a.removeprefix("command(").removesuffix(")") for a in found.allow}
+    left = {rule for rule, _ in found.left_out}
+    assert granted | left == set(rules) and not granted & left
+
+
+def test_check_names_the_grants_left_out_for_antigravity() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["git status", "git status --short", "pytest tests/x.py", "make test",'
+        ' "npm run test:*"]\n'
+    )
+    text = CHECK_CONFIG + grant
+    report = commands.Report()
+    commands._check_repositories(report, config.parse(tomllib.loads(text), Path("runner.toml")))
+    texts = [text for level, text in report.lines if level == "warn"]
+    assert not report.failed and len(texts) == 2
+    assert "'git status' is left out for antigravity" in texts[0]
+    assert "'pytest tests/x.py' is left out" in texts[1] and "agy's sandbox" in texts[1]
+    without = text.replace("[harness.antigravity]\n", "")
+    quiet = commands.Report()
+    commands._check_repositories(quiet, config.parse(tomllib.loads(without), Path("runner.toml")))
+    assert quiet.lines == []
+
+
+CHECK_CONFIG = """\
+[hub]
+url = "https://hub.example"
+state_dir = "/srv/state"
+
+[limits]
+projects = ["oliver/maity"]
+repositories = ["github.com/oliver-zehentleitner/maity"]
+
+[harness.stub]
+
+[harness.antigravity]
+"""
 
 
 def test_no_granted_rule_with_something_in_front_reaches_agy(tmp_path: Path) -> None:
