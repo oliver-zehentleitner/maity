@@ -7,27 +7,21 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Engine, event, insert, select
+from sqlalchemy import Engine, insert, select
 
 from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.statements import count_statements
 
 
 def _statements(engine: Engine, call: Callable[[], Any]) -> int:
-    seen = [0]
-
-    def count(*_args: Any) -> None:
-        seen[0] += 1
-
-    event.listen(engine, "before_cursor_execute", count)
-    try:
-        response = call()
-    finally:
-        event.remove(engine, "before_cursor_execute", count)
-    assert response.status_code == 200, response.text
-    return seen[0]
+    """The route's own statements on `engine`, as `test_notifications._statements` counts."""
+    answered: list[Any] = []
+    seen = count_statements(engine, lambda: answered.append(call()), async_engines=False)
+    assert answered[0].status_code == 200, answered[0].text
+    return seen
 
 
 def _grow(engine: Engine, project_id: str, owner: int, agents: list[factory.Agent], n: int) -> None:
