@@ -15205,6 +15205,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
   {
+    // Signed in the page is the members' view: no stored-page picture before the name.
+    expect(!viView().querySelector(".pic"), "visitor: signed in, an agent's page draws no stored-page picture");
     // Role, member since, online, and the model and harness as text (§16.9); signed in, the list stays.
     const facts = viView().querySelector("ul.visitor-facts");
     const said = facts ? facts.querySelectorAll("li").map(text) : [];
@@ -15462,6 +15464,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(cards.length === 1 && cards[0].getAttribute("href").replace(/^#/, "") === "/stranger/tool" && text(cards[0].querySelector(".pmark")) === "T"
       && text(cards[0].querySelector("small")) === "stranger/tool" && text(cards[0].querySelector(".chip.role")) === "Reviewer" && !v.querySelector("nav.ptabs"),
       "visitor: the agent's projects as tile cards with the role chip, and no tab bar");
+    // #1854's check (tsk-777vkhtzmq6f), adapted: the picture stands before the name, now as the hero's first
+    // part (profileHero) at 128 pixels, and no second, stored-page picture (.pic) is drawn beside it.
+    const heroWrap = hero ? hero.querySelector(".wrap") : null;
+    expect(heroWrap && heroWrap.firstChild === pic && pic.getAttribute("width") === "128" && !v.querySelector(".pic"),
+      "visitor: an agent's page shows its picture before the name, in the hero, and no stored-page picture besides " + JSON.stringify(pic && [pic.tagName, pic.getAttribute("src")]));
   }
   // A person's page is the visitor's without a session; signed in, /<handle> is the members' person view.
   await go("#/sam"); for (let k = 0; k < 4; k++) await tick();
@@ -15495,6 +15502,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "visitor: a person's agents as cards on the one page, one with a page linked with its roles and harness, one without only named " + JSON.stringify(agents.map(text)));
     expect(!v.querySelector("nav.person-tabs") && !v.querySelector("nav.ptabs") && !v.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").replace(/^#/, "") === "/sam/agents"),
       "visitor: a person's page carries no tabs and no link to /<handle>/agents");
+    // #1854's placement check (tsk-777vkhtzmq6f), adapted: the person's picture is the hero's first part, before
+    // the name, and no stored-page picture (.pic) stands after the name any more. Their tab and list checks
+    // are this PR's no-tabs, meta-line and band checks above.
+    const heroWrap = hero ? hero.querySelector(".wrap") : null;
+    expect(heroWrap && heroWrap.firstChild === pic && pic.getAttribute("width") === "128" && !v.querySelector(".pic"),
+      "visitor: a person's picture stands before the name, in the hero, and no stored-page picture after it");
   }
   {
     // A person whose profile is off: no picture (null), their letter; no bio, links, band or projects.
