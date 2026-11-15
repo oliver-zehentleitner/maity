@@ -1,4 +1,5 @@
-"""docs/api.md §2.2, §16.2: a credential's verifier is stored sealed with the instance key."""
+"""docs/api.md §2.2, §16.2: with MAITY_SEAL_VERIFIERS on, a credential's verifier is stored
+sealed with the instance key; off (the default) it is stored plain, and sealed rows still read."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import logging
 import re
 import secrets
 from dataclasses import dataclass, replace
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
@@ -36,7 +38,7 @@ class Holder:
 
 @pytest.fixture
 def settings(settings: Settings) -> Settings:
-    return replace(settings, secret_key=KEY)
+    return replace(settings, secret_key=KEY, seal_verifiers=True)
 
 
 @pytest.fixture
@@ -58,6 +60,13 @@ def _stored(engine: Engine, holder: Holder) -> str:
             select(table.c.verifier).where(table.c.id == holder.credential_id)
         ).scalar_one()
     return value
+
+
+def _sealing_off(make_client: ClientFactory) -> ClientFactory:
+    def off(**overrides: object) -> Any:
+        return make_client(**{"seal_verifiers": False, **overrides})
+
+    return off
 
 
 def _me(make_client: ClientFactory, holder: Holder, **overrides: object) -> tuple[int, int]:
@@ -166,8 +175,14 @@ def test_a_plain_row_still_verifies_with_a_key_and_is_counted(
     agent = factory.agent(migrated, project_id, human)  # written plain, outside an app
     assert _me(make_client, Holder(agent.credential_id, agent.value)) == (200, 200)
     with caplog.at_level(logging.WARNING, logger="maity_hub.auth.verifiers"):
+        assert verifiers.check_at_startup(migrated, KEY, seal=True) == (0, 1)
+    assert "1 live credential verifier(s) are stored unsealed; sealing is on" in caplog.text
+    assert "maity-hub seal-verifiers" in caplog.text
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="maity_hub.auth.verifiers"):
         assert verifiers.check_at_startup(migrated, KEY) == (0, 1)
-    assert "1 live credential verifier(s) are stored unsealed" in caplog.text
+    assert "1 live credential verifier(s) are stored unsealed; sealing is off" in caplog.text
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_a_sealed_credential_in_a_payload_is_revoked(
@@ -191,3 +206,50 @@ def test_a_sealed_credential_in_a_payload_is_revoked(
             )
         ]
     assert reasons == ["leaked_in_payload", "leaked_in_payload"]
+
+
+def test_with_sealing_off_and_a_key_the_verifier_is_stored_plain(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """The default: the key is set, MAITY_SEAL_VERIFIERS is not; joins and pairings write hex
+    as before sealing existed."""
+    off = _sealing_off(make_client)
+    agent = _joined(off, owner)
+    runner = paired(off, owner)
+    assert HEX.fullmatch(_stored(migrated, agent))
+    assert HEX.fullmatch(_stored(migrated, Holder(runner.credential_id, runner.value)))
+    assert _me(off, agent) == (200, 200)
+    assert call(off(), runner, "GET", RUNNER_ROUTE).status_code == 200
+
+
+def test_a_sealed_row_still_verifies_after_sealing_is_switched_off(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """Switching the setting off again locks no one out while the key stays; without the key
+    a sealed row verifies nothing, whatever the setting."""
+    agent = _joined(make_client, owner)
+    runner = paired(make_client, owner)
+    assert _stored(migrated, agent).startswith("s1:")
+    assert _me(make_client, agent, seal_verifiers=False) == (200, 200)
+    off = make_client(seal_verifiers=False)
+    assert call(off, runner, "GET", RUNNER_ROUTE).status_code == 200
+    assert _me(make_client, agent, seal_verifiers=False, secret_key=None) == (401, 401)
+
+
+def test_seal_plain_seals_only_the_plain_rows_and_a_second_run_nothing(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    sealed_before = _joined(make_client, owner)
+    off = _sealing_off(make_client)
+    plain_agent = _joined(off, owner)
+    plain_runner = paired(off, owner)
+    kept = _stored(migrated, sealed_before)
+    assert verifiers.seal_plain(migrated, KEY) == {"credential": 1, "runner_credential": 1}
+    assert _stored(migrated, sealed_before) == kept
+    for holder in (plain_agent, Holder(plain_runner.credential_id, plain_runner.value)):
+        assert _stored(migrated, holder).startswith("s1:")
+    assert _me(make_client, plain_agent) == (200, 200)
+    assert _me(off, plain_agent) == (200, 200)
+    assert call(make_client(), plain_runner, "GET", RUNNER_ROUTE).status_code == 200
+    assert verifiers.seal_plain(migrated, KEY) == {"credential": 0, "runner_credential": 0}
+    assert verifiers.check_at_startup(migrated, KEY, seal=True) == (0, 0)

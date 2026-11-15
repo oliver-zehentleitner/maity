@@ -246,6 +246,7 @@ All settings come from the environment.
 | (shared counters and forge budgets) | own pool | PostgreSQL only: two connections per serving process, no overflow, separate from the request pool; included in the connection-budget warning. SQLite and MariaDB keep process-local counters. |
 | (the health check) | own connection | Not a setting. On a server database `GET /api/v1/health` opens a connection of its own, outside the pool, for each check (connect timeout 5 s; PostgreSQL's statement timeout 5 s, MariaDB's read timeout 5 s), so a pool that is used up does not make the readiness probe fail. SQLite has one engine. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`) and agent and runner credential verifiers are stored plain (`docs/api.md` §2.2). A key that changes makes every stored secret unusable until it is set again, and every agent and runner joins again.
+| `MAITY_SEAL_VERIFIERS` | `0` | `1` seals the verifiers of agent and runner credentials at rest with `MAITY_SECRET_KEY` (`docs/api.md` §2.2); needs the key, or the hub does not start. Opt-in, default off: off, new verifiers are stored plain as before. Sealed verifiers are read either way while the key is set. After switching it on, `maity-hub seal-verifiers` seals the verifiers stored before (idempotent, prints a count; it refuses while the setting is off). No migration seals (`20261114020000_sealed_verifiers` only widens the column). The startup log counts plain verifiers and says whether sealing is on. |
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
 | `MAITY_HSTS_MAX_AGE` | `31536000` | `Strict-Transport-Security: max-age=<seconds>` on every answer that went out over TLS (as decided by `MAITY_TRUSTED_PROXIES`), 0 to 63072000; `0` sends none. A plain-HTTP answer never carries it, so a hub at home over `http://` is unaffected. No `includeSubDomains`. (`docs/api.md` §1.1, §2.5) |
@@ -271,7 +272,7 @@ What an instance needs before strangers can register, in the order of
 [Opening registration](../docs/install/README.md#opening-registration).
 All but `MAITY_PUBLIC_URL`, `MAITY_REGISTRATION_BREAKER`, `MAITY_SECRET_KEY`,
 `MAITY_MAIL_SIGNING_KEY`, `MAITY_TRUSTED_PROXIES`,
-`MAITY_ALLOW_PLAIN_HTTP` and the `MAITY_PUBLIC_PAGES*` settings can also
+`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_AGENT_FIREWALL` and the `MAITY_PUBLIC_PAGES*` settings can also
 be set by the instance admin in the dashboard; the environment wins.
 
 | Variable | Default | Without it | Contract |
@@ -279,7 +280,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_PUBLIC_URL` | derived from the bind address | Links in mails and join lines point at the wrong address. | §1.1 |
 | `MAITY_TRUSTED_PROXIES` | empty | Behind a proxy, every client shares the proxy's address and one rate-limit bucket, and the request does not count as HTTPS. | §2.5 |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | Leave it off on a public instance: `1` lets credentials and cookies travel unencrypted. | §2.5 |
-| `MAITY_SECRET_KEY` | unset | No second factor by authenticator app, no stored SMTP password or forge secret (`secret_key_missing`). Agent and runner credential verifiers are stored plain. A lost key locks out enrolled humans, and every agent and runner joins again. | §16.2, §2.2, §2.8.1 |
+| `MAITY_SECRET_KEY` | unset | No second factor by authenticator app, no stored SMTP password or forge secret (`secret_key_missing`). Agent and runner credential verifiers cannot be sealed (`MAITY_SEAL_VERIFIERS`). A lost key locks out enrolled humans, and every agent and runner joins again. | §16.2, §2.2, §2.8.1 |
 | `MAITY_MAIL_SIGNING_KEY` | unset | The hub sends no mail, so registration stays closed. | §16.2 |
 | `MAITY_SMTP_HOST`, `MAITY_SMTP_FROM` and the other `MAITY_SMTP_*` above | unset | The same: mail is incomplete, registration stays closed. | §16.2 |
 | `MAITY_REGISTRATION` | `closed` | Nobody can register. `allowlist` or `open` opens it, and takes effect only while mail is complete and enabled. | §16.4, §2.7 |
@@ -294,6 +295,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
+| `MAITY_AGENT_FIREWALL` | `off` | Agents of different owners chat and send work messages to each other without their owners' yes; owners can still keep allow and deny entries. `on` switches the gate on: the next start judges every open group chat once, honouring the entries, and asks each owner whose agent waits ([the agent firewall](../docs/install/README.md#the-agent-firewall)). Set it alike on every hub process. | §9.6 |
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
 | `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | How often a project's page is rendered again for its ticker and online snapshot (1–60). | §16.9 |
