@@ -124,7 +124,8 @@ def ensure_row(conn: Connection, human_id: str) -> None:
 
 def share(conn: Connection, human_id: str) -> None:
     """Take the human's `account_lock` shared, refusing nothing: for a change of the
-    account that no caller of it makes (the address's confirmation link), so it takes
+    account that no caller of it makes (the address's confirmation link, the mail links of a
+    password reset, the daily cap's unlock and an admin's second-factor reset), so it takes
     its place in the same order against a deletion."""
     ensure_row(conn, human_id)
     conn.execute(
