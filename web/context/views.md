@@ -5860,10 +5860,65 @@ merge facts as fields so that no client parses `text`.
 - Merges and decisions mixed in one list, as before: the mockup splits them, a merge has facts a
   decision has not.
 - Restyling the Board, Team, Organisation and Why tabs in the same PR (README point 10): the Team
-  tab's answer carries no pictures, and the lead asked for small PRs; a later part.
+  tab's answer carried no pictures, and the lead asked for small PRs; done in part 3
+  (703f091b-fa40-47f9-9c02-b0a8036ea48f).
 
 **Revisit when:** the Team tab's answer carries pictures (it can then draw the same cards), or the
 ticker's limit of 20 changes.
+
+## A visitor's Board, Team, Organisation and Why tabs are sections across the page in the Overview's style, their content unchanged
+
+**Id:** 703f091b-fa40-47f9-9c02-b0a8036ea48f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3, part 3 (the lead's cut, seq 134942 and 135122: the tabs in the section style, with the members' pictures in the Organisation tab by the Team tab's rule, seq 135036); the designer's approved mockup's README, point 10 ("their content stays as it is today … drawn in the same section style (cards, chips). They are not mocked separately"); docs/api.md §16.9 (`team`, `organisation` with `picture`); `web/js/visitor.js`, `web/css/public-sections.css`, 2026-11-15
+**See:** views.md#a-visitors-project-page-shows-twelve-team-cards-and-eight-faces-a-letter-where-no-picture-is-merges-as-cards-and-decisions-as-lines — d0565716-aca3-48f1-8168-4752e733ca3a — as of 2026-11-15
+
+Signed out, each of a project's Board, Team, Organisation and Why tabs (`js/visitor.js`) draws one
+section across the page under the tab bar (`section.sec.tab-sec`), as the Overview's Team and
+Recently merged do: an h2 with the tab's name and a line beside it, then the tab's parts. A card's
+own page keeps the stored pages' column.
+
+- Board: the same columns (the app's grid, sideways on a phone; the empty board's focusable region
+  kept), each a panel; a column's name is an h3 and a card's title an h4 under the section's h2; a
+  card's label a chip. The line counts the cards shown.
+- Team: every member the tab names as the Overview's card (picture or letter, name, `@handle`,
+  role chip), the people first, then the agents; those it only counts as their number beside a
+  role chip. No online dot and no harness: the tab's answer has neither, and the Overview's cards
+  are one click away.
+- Organisation: the same tree and the same rule against a line back to a node already drawn, each
+  node a small card (a 30 px picture or letter, name, `@handle`, role chip) that links the member's
+  page; a node the page does not name is only its role chip, in a dashed box. The lines to those
+  who report to a node are a border at their left, indented less on a phone.
+- Why: the entries' count beside the heading; the family as cards with the name's first letter
+  (the project tile's rule), each a link to its published dashboard where one is safe; what needs
+  attention as lines with its status as a chip. An unread Why says so in the section.
+- Whether a member is an agent is read from its page, `/<owner>/agents/<handle>`, as the hub builds
+  it; the Team and Organisation answers carry no other mark.
+- Signed in, a non-member's view keeps its lists and headings: `css/public-sections.css` is off
+  there, and `framed` is false.
+
+**Reason:** the README asks for the tabs in the same section style without a mockup of their own and
+with their content unchanged, so each tab reuses the Overview's parts (the section head, `.mgrid`
+and `.mcard`, the faces, the chips, the `.dec` lines) instead of new shapes; a reader moving
+between the tabs sees one page. Pictures in the Organisation tab come from its own answer, by the
+Team tab's rule, so the tab needs no second read.
+
+**Rejected alternatives:**
+- The tabs in the stored pages' narrow column, restyled there: the Overview's sections run across
+  the page and the bar above both is as wide as the window; a narrow column under it read as a
+  different page.
+- The Organisation as a drawn chart (boxes side by side joined by lines): a wide team would scroll
+  sideways on a phone; the indented tree, as the signed-in Organisation tab (`js/org.js`) draws
+  it, keeps the hub's order and wraps.
+- Telling an agent from a person by `trust` in the Team tab's answer: `trust` is the membership's
+  trust level, not a kind, and the Organisation's answer has none.
+- New words for the lines beside the headings: the Overview's ("3 people and 26 agents"), the
+  board's "N cards" and the Why's "N entries" exist in every language already.
+
+**Revisit when:** the mockup draws these tabs itself, or the Team or Organisation answer gains
+presence or a harness.
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 

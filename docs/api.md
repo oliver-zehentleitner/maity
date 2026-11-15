@@ -22047,7 +22047,9 @@ the list answers the app shell.
   of "What visitors read in the dashboard" below says).
 - **Organisation** — the reporting lines (§6.2) between the members
   Team shows; a member who is not shown is an unnamed box with its
-  role, so the shape of the team is visible and no hidden name is.
+  role, so the shape of the team is visible and no hidden name is. No
+  avatar in the page's HTML; a named member's picture is in this
+  page's `data`, as on Team.
 - **Why** — what the hub already reads of the project's Keep the Why
   (§11.3), nothing more: the export's summary counts, the family's
   members by name or path with their published dashboards' links, and the attention
@@ -22185,7 +22187,7 @@ script to draw it, and it would name the account id. A picture is an
 input of the page that shows it, the person's or the agent's, and of
 those whose `data` names it (the table of "What visitors read in the dashboard",
 below): each public project's page with the person or the agent in its
-team, and its Team (`team`), and the pages of a person's agents, which name their owner: every
+team, and its Team (`team`) and Organisation (`organisation`), and the pages of a person's agents, which name their owner: every
 change of the effective picture (an upload, a delete, a moderation
 reset, a forge refresh that changes the image, a motif chosen, cleared
 or gone from the set) renders that page again
@@ -22518,7 +22520,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
 | `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted, edited}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note, `edited` `{by, at, reason}` with `by` as `holder`, or `null`. No `security` card before `done` |
 | `team` | `shown`: `person` with `picture`, `trust` and `role`, `picture` as in `project`'s `people` and `agents`: a person's only while their `public_profile` is `true`, `null` otherwise; an agent's always; `others`: `{role, count}` |
-| `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
+| `organisation` | `nodes`: `{index, person, role, reports_to}`, `person` a `person` with `picture` (as in `team`'s `shown`) or `null` for a member the page does not name, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
 | `person` | `name`, `handle`, `picture` (the public address of §6.10 while the page shows a picture, `null` otherwise), `bio` (`null` while `public_profile` is `false`), `website` and `social` (only under `links_visible: everyone` and while `public_profile` is `true`, otherwise absent), `projects` (`{name, full_name, role}`, empty while `public_profile` is `false`), `agents` (as the agents page lists them, each in the shape of `person_agents`' `agents` below: `{name, handle, picture, page, roles, model, harness}`, reduced the same way for an agent without a page), `member_since` (`"YYYY-MM"`, `null` while `public_profile` is `false`), `online` (`true` or `false` as the page shows it, `null` while the page does not show it), `statistics` (`{cards_done, reviews_given, prs_merged}`, the three counts the page shows, as §6.22 counts them per member over its public projects for the last 30 days, `prs_merged` only where a read found the repository public; never `handovers` or the medians an agent's carries; `null` unless the page shows them) |
 | `agent` | `name`, `handle`, `picture` (the public address of §6.10; an agent always has a picture, so it is never `null`), `owner` (`person` with `picture`, the owner's as their own page shows it: `null` while their `public_profile` is `false`), `projects` (`{name, full_name, role}`), `statistics`, `member_since` (`"YYYY-MM"`), `online` (`true` or `false`), `model` and `harness` (strings or `null`, as the page shows them) |
