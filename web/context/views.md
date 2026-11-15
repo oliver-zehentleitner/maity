@@ -1489,7 +1489,8 @@ refuse are left out too, and with none left the section says why.
 
 **Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Evidence:** confirmed
 **Source:** the maintainer's feedback of 2026-10-25 ("project settings da oben ist komisch, das muss eher runter auf die projekt ebene, z.B. nach Runners und Why ein Settings wäre logischer", tsk-r7qja01wwzvv) and bug report (a save in Project settings landed on the inbox, tsk-t407bnycxera); the dashboard's implementation, 2026-10-25
 **Revisit when:** the settings grow enough to need sub-pages, or the designer renames the tab
@@ -4077,7 +4078,8 @@ for want of `review`.
 
 **Id:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Evidence:** confirmed
 **Source:** the maintainer's wish for only one Settings in a project (relayed on the card tsk-wzqeneerfacp, 2026-10-30); docs/api.md §16.11 after the contract #741 (the `settings` view with two tabs, the project's at `settings` for `project:admin`, the caller's own at `settings/mine` for every member, a caller without `project:admin` at `settings` gets `settings/mine`; `my-settings` is no project view any more); the alpha rule, no redirect from the old path
 **Revisit when:** a member without `project:admin` needs to read a project setting the overview does not show, or one's own settings for a project grow into a page of their own
@@ -4102,6 +4104,70 @@ Project tab read only, as before: the contract shows it to admins only,
 and what a member may read of it (language, memory) is on the overview
 or in the project's files. A redirect from `my-settings`: the alpha
 rule, no route kept for an old address.
+
+## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation and Mine
+
+**Id:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request on the card tsk-chtvqs62cd10, 2026-11-13 (sub-tabs instead of one long page, an address per tab, General the default, only the tabs with something for the reader, presentation only, the dashboard's existing tab pattern, and a proposed grouping open to review); where Keep the Why personal settings and the sections the card did not list went is the implementer's, 2026-11-13
+**Revisit when:** the review rules (tsk-kymz2pdrf85k), the rule settings (tsk-z5h7h1v7kmjd) or outsider removal (tsk-yr3ckca01b9q) land, a tab grows into a long page again, or the maintainer moves a section
+**See:** views.md#a-project-has-one-settings-view-project-for-its-admins-mine-at-settingsmine-for-every-human-member — f37bbdb4-2ad3-432e-babf-dd58f6e3ff79 — as of 2026-11-13
+**See:** views.md#project-settings-are-the-projects-last-tab-not-a-panel-from-the-gear-menu — ecbeaecb-2dcf-45ff-ae44-d8b2b455e218 — as of 2026-11-14
+
+The project's **Settings** view is a row of tabs, drawn by the same
+`M.tabBar` as the Team and Agents pages (links in a `nav`, the shown one
+`aria-current="page"`), each tab at its own address: **General** at
+`settings`, **Members and agents** at `settings/members`, **Way of
+working** at `settings/work`, **Moderation** at `settings/moderation` and
+**Mine** at `settings/mine`. One table in `js/app.js`
+(`SETTINGS_SECTIONS`) names every section once with its tab and the rule
+of who gets it, the rule each section had on the one page; a tab is shown
+where one of its sections is, the project's tabs only to `project:admin`,
+Mine to every human. An address of a tab the reader is not shown (a
+member without the right at `settings`, the restricted-access notice's
+`settings/members`) leads on to the first tab they are shown, as
+`settings` led such a member to `settings/mine` before; `settings/general`
+leads to `settings`. Each section keeps its form, words and checks; a save
+redraws the tab it was made on.
+
+Grouping: General holds what the project is and where it lives (state,
+language, repository and its grant, links, name and transfer, public
+page, badge, ticker and webhook, logo and banner, the runners link);
+Members and agents who joins on what terms and who reads what (members'
+own agents, agents of owners who are not members, onboarding, restricted
+access, signing); Way of working how work is done and kept (who closes a
+card, the memory provider, the Keep the Why commitment, Keep the Why
+personal settings, the jour fixe link); Moderation the reported-message
+removal and everyone's pending uploads; Mine one's own settings, leaving
+the project, and the owner's absence.
+
+Settings stays the project's last tab, never a panel from the gear menu,
+and a save stays on it (ecbeaecb, whose revisit condition, sub-pages,
+this meets). An agent neither admin nor owner is offered no Settings in
+the project's row, as before, and a typed settings address is the
+page-not-found page; the view itself falls back to Mine and its
+humans-only sentence should no tab be offered, never an empty page.
+
+**Reason:** the one page had grown to some twenty sections, and an admin
+looking for one scrolled through all of them. An address per tab keeps a
+link, a reload and Back on the tab, as the account's and the Overview's
+tabs already do. Keep the Why personal settings went to Way of working,
+not to Mine as the card proposed: the form sets the project's policy
+`keep_the_why_defaults` (whether a joining agent adopts the project's
+defaults), with a reason, for every member's agents, not the reader's own
+setting; it stands beside the commitment it belongs with. The memory
+provider goes there too, since the commitment follows it.
+
+**Rejected alternative:** the one long page with a list of anchors at
+its top: a place on a page is a route and one checked anchor
+(web/context/routing.md), and the page would stay as long. Tabs switched
+in the page without an address: the card asks that a link, a reload and
+Back land on the same tab. A tab bar of its own with arrow-key roving
+(`role="tablist"`): the dashboard's view tabs are links, and the card asks
+for the existing pattern. Keep the Why personal settings on Mine, as
+proposed: see the reason.
 
 ## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
 
@@ -5690,6 +5756,169 @@ built for the sign-in, so the visitor's page reuses it rather than a third desig
   between the landing's header and footer, unlike the stored pages it stands beside.
 - A Sign in without `?next=`: the visitor would land on their own start after signing in, not on
   the page they were reading.
+
+## A visitor's project page has the mockup's hero, band and tab bar; their rules are one stylesheet of the dashboard, loaded with the frame's
+
+**Id:** ceca5e16-eb8f-4936-b15d-c4e75333959c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3 and the lead's cut of it (PR 1: the parts that need no new data; the shared rules into web/css once, for the person and agent pages too); the designer's approved mockup (project.html, pp.css, README points 3, 5 and 8; the maintainer's approval in group chat seq 118113, 2026-11-12); `web/js/visitor.js`, `web/js/site-chrome.js`, `web/css/public-sections.css`, 2026-11-14
+**See:** views.md#a-visitors-public-page-stands-in-the-landings-frame-the-apps-bar-only-where-the-frame-cannot-be-read — 6d168e98-d442-4a3a-bd1c-57158eeeb273 — as of 2026-11-14
+
+Signed out, a project's page and its views (`js/visitor.js`) open with the dark page hero of the
+landing (`section.phero.hero.dz`): the crumb `owner / slug`, the project's tile, the title and, on
+the Overview, the state chip, the about text, the hero's buttons, the project's links as one row
+and who is online. The Overview adds a band of figures; every view then has the views as a bar
+across the page (`nav.ptabs`), and the view itself stands under it in the stored pages' look.
+
+- The tile is the project's first letter, as the hub's `/explore` draws it (`monogram` in
+  `public_projects.py`, mirrored in the dashboard): projects have no picture.
+- The members figure is the project's `members` (§16.9, the Team tab's count, those it names and
+  those it only counts; since part 2, tsk-h822960mytm9 brought the field); the other figures are
+  `statistics.totals`. A figure that is 0 or `null` is left out.
+- "Try it" goes where the header's call to action goes (the frame model's `header.cta`, the
+  landing hero's primary button), filled in once the frame is read: where the header has none,
+  neither has the hero.
+- A tab's own answer has no state, about, links or figures, so its hero has the crumb, the tile
+  (from the slug), the slug, "Try it" and Report; the Overview's parts are not read a second
+  time for it. "Try it" and Report stay on every view: the README (point 10) puts every tab under
+  the same project hero, and Report stands under the title of every public page (§16.8).
+- The about text's Markdown can use the dashboard's own tokens, which the dark zone does not set:
+  `--surface-2` under a fenced code block (`.md-code`) and its Copy button, `--ok` for "Copied".
+  The hero maps them to dark values. Inline code gets no ground there (the about text is
+  `.sub.about`, not `.md`, so `.md code` does not apply): it stays on the hero's ground in the
+  text's muted colour, which passes on the dark zone.
+
+The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
+are `web/css/public-sections.css`, one file for the project, person and agent pages.
+`index.html` names it as a disabled `<link>`, so the shell gives it its version as every file
+of the dashboard (§16.11, the warm load asks for none again); `js/site-chrome.js` moves it behind
+`landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
+with them. A name the dashboard's `app.css` also
+uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
+
+**Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,
+`.stat`), which exist only while the frame's stylesheets are on; loaded after them, the same
+selectors win without `!important`, and off the frame nothing of the app can be restyled. One
+file keeps the person and agent pages that follow on the same rules instead of copies.
+
+**Rejected alternatives:**
+- The rules in `css/app.css`: they would apply signed in too, where the landing's tokens are
+  absent, and load before `landing.css`, which then wins every rule of equal weight.
+- The rules in the hub's `public-pages.css`: the hub's stored pages do not draw these parts yet,
+  and the lead asked for them in `web/css`; the shared `.sec` and `.pmark` stay there, used by
+  `/explore`.
+- A link in `index.html` that stays where it is and always on: before the frame's stylesheets in
+  the cascade, and on in the signed-in app.
+- A `<link>` the frame adds by its own name: the shell versions only the files `index.html` names
+  (and lists `brand/`, `js/i18n/`, `vendor/` for scripts), so it would be named without a version.
+
+**Revisit when:** the hub's stored pages (`?as=public`) draw the same hero and band, so the rules
+belong with `public-pages.css`; or the signed-in frame gets the same look.
+
+## A visitor's project page shows twelve team cards and eight faces, a letter where no picture is, merges as cards and decisions as lines
+
+**Id:** d0565716-aca3-48f1-8168-4752e733ca3a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3, part 2 (the parts that needed tsk-h822960mytm9's data, #1816); the designer's approved mockup (project.html: twelve cards, "All 29 members →", nine faces and "+12", PR cards over a decision list; README points 3, 5 and 6; the maintainer's approval in group chat seq 118113, 2026-11-12); docs/api.md §16.9 (`people`, `agents`, `members`, `ticker[].merge`, `online.named` with `picture`); `web/js/visitor.js`, 2026-11-15
+**See:** views.md#a-visitors-project-page-has-the-mockups-hero-band-and-tab-bar-their-rules-are-one-stylesheet-of-the-dashboard-loaded-with-the-frames — ceca5e16-eb8f-4936-b15d-c4e75333959c — as of 2026-11-15
+
+Signed out, a project's Overview (`js/visitor.js`) draws under the tab bar two sections across the
+page, in the mockup's section style: **Team** and **Recently merged**. The hero's **Right now**
+shows who is online as faces.
+
+- Team: the people, then the agents, in the hub's order, the first 12 as cards (picture, name,
+  `@handle`, role chip, an agent's harness, a dot while the member is in `online.named`). The line
+  beside the heading counts the listed people and agents; the link "All N members →" leads to the
+  Team tab and names `members`, so a member the page only counts is there too.
+- Right now: the first 8 of `online.named` as a stack of faces, each a link to the member's page
+  named by its `aria-label`, then "+N" for the rest of the named.
+- A picture is the public address the hub sends, asked at the size it serves (`?s=64` for the
+  stack's 30 px, `?s=128` for a card's 44 px). Where the hub sends none (a person whose profile is
+  off), the address is not the hub's own, or the image does not load, the face is the member's
+  first letter, the same rule as the project's tile. A person is round, an agent a rounded square.
+- Recently merged: the ticker's `merge` entries as pull request cards from `merge`'s fields
+  (number, "Merged", time, title, author, areas), each a link to the pull request; every other
+  entry (a decision) as a line in a list under the cards. Without a merge the heading reads
+  "Recently". All entries the hub sends are drawn: §16.9 caps them at 20 of the last 7 days, the
+  sentence under the heading says so.
+- Signed in, a non-member's view keeps its lists: `css/public-sections.css` is off there.
+
+**Reason:** the mockup shows 12 cards and a stack of 9 faces in a hero panel that must not wrap on a
+phone (8 faces + "+N" fit 390 px); a page of 30 cards would push what happened lately far down,
+and the Team tab already lists everyone. The letter keeps a card the same size whatever the
+profile says, and needs no account id, which the generated identicon would (§6.10). The hub sends
+merge facts as fields so that no client parses `text`.
+
+**Rejected alternatives:**
+- The dashboard's identicon (`M.avatar`) as the placeholder: it is built from a member id the
+  public data does not carry, and would differ from the hub's own pages.
+- Every member as a card: long for a team of agents, and the Team tab is one click away.
+- Merges and decisions mixed in one list, as before: the mockup splits them, a merge has facts a
+  decision has not.
+- Restyling the Board, Team, Organisation and Why tabs in the same PR (README point 10): the Team
+  tab's answer carried no pictures, and the lead asked for small PRs; done in part 3
+  (703f091b-fa40-47f9-9c02-b0a8036ea48f).
+
+**Revisit when:** the Team tab's answer carries pictures (it can then draw the same cards), or the
+ticker's limit of 20 changes.
+
+## A visitor's Board, Team, Organisation and Why tabs are sections across the page in the Overview's style, their content unchanged
+
+**Id:** 703f091b-fa40-47f9-9c02-b0a8036ea48f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3, part 3 (the lead's cut, seq 134942 and 135122: the tabs in the section style, with the members' pictures in the Organisation tab by the Team tab's rule, seq 135036); the designer's approved mockup's README, point 10 ("their content stays as it is today … drawn in the same section style (cards, chips). They are not mocked separately"); docs/api.md §16.9 (`team`, `organisation` with `picture`); `web/js/visitor.js`, `web/css/public-sections.css`, 2026-11-15
+**See:** views.md#a-visitors-project-page-shows-twelve-team-cards-and-eight-faces-a-letter-where-no-picture-is-merges-as-cards-and-decisions-as-lines — d0565716-aca3-48f1-8168-4752e733ca3a — as of 2026-11-15
+
+Signed out, each of a project's Board, Team, Organisation and Why tabs (`js/visitor.js`) draws one
+section across the page under the tab bar (`section.sec.tab-sec`), as the Overview's Team and
+Recently merged do: an h2 with the tab's name and a line beside it, then the tab's parts. A card's
+own page keeps the stored pages' column.
+
+- Board: the same columns (the app's grid, sideways on a phone; the empty board's focusable region
+  kept), each a panel; a column's name is an h3 and a card's title an h4 under the section's h2; a
+  card's label a chip. The line counts the cards shown.
+- Team: every member the tab names as the Overview's card (picture or letter, name, `@handle`,
+  role chip), the people first, then the agents; those it only counts as their number beside a
+  role chip. No online dot and no harness: the tab's answer has neither, and the Overview's cards
+  are one click away.
+- Organisation: the same tree and the same rule against a line back to a node already drawn, each
+  node a small card (a 30 px picture or letter, name, `@handle`, role chip) that links the member's
+  page; a node the page does not name is only its role chip, in a dashed box. The lines to those
+  who report to a node are a border at their left, indented less on a phone.
+- Why: the entries' count beside the heading; the family as cards with the name's first letter
+  (the project tile's rule), each a link to its published dashboard where one is safe; what needs
+  attention as lines with its status as a chip. An unread Why says so in the section.
+- Whether a member is an agent is read from its page, `/<owner>/agents/<handle>`, as the hub builds
+  it; the Team and Organisation answers carry no other mark.
+- Signed in, a non-member's view keeps its lists and headings: `css/public-sections.css` is off
+  there, and `framed` is false.
+
+**Reason:** the README asks for the tabs in the same section style without a mockup of their own and
+with their content unchanged, so each tab reuses the Overview's parts (the section head, `.mgrid`
+and `.mcard`, the faces, the chips, the `.dec` lines) instead of new shapes; a reader moving
+between the tabs sees one page. Pictures in the Organisation tab come from its own answer, by the
+Team tab's rule, so the tab needs no second read.
+
+**Rejected alternatives:**
+- The tabs in the stored pages' narrow column, restyled there: the Overview's sections run across
+  the page and the bar above both is as wide as the window; a narrow column under it read as a
+  different page.
+- The Organisation as a drawn chart (boxes side by side joined by lines): a wide team would scroll
+  sideways on a phone; the indented tree, as the signed-in Organisation tab (`js/org.js`) draws
+  it, keeps the hub's order and wraps.
+- Telling an agent from a person by `trust` in the Team tab's answer: `trust` is the membership's
+  trust level, not a kind, and the Organisation's answer has none.
+- New words for the lines beside the headings: the Overview's ("3 people and 26 agents"), the
+  board's "N cards" and the Why's "N entries" exist in every language already.
+
+**Revisit when:** the mockup draws these tabs itself, or the Team or Organisation answer gains
+presence or a harness.
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 

@@ -168,6 +168,78 @@ takes locks the deletion already holds.
 the set of placements read before the lock could still miss one the
 exchange was changing; locking first leaves one read that is right.
 
+## Every change of a runner locks its live credential before its row
+
+**Id:** d4a8c42e-5a12-4e72-a16e-efc7b4c88d57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8s3fgn5bsyjr, from the review of pull request #1768 (the revoke route locked the runner row before its credential), 2026-11-14; the review of pull request #1823 (1020 on MariaDB 11.8 from the credential lock through a subquery), 2026-11-15; `hub/tests/test_runner_revoke.py`: `test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking`
+**See:** reports.md#a-suspension-takes-the-account-lock-first-every-issue-waits-for-it — 525c4922-109b-418f-82e2-0b02b285b946 — as of 2026-11-14
+**Revisit when:** a runner's own call stops writing its credential's row before the runner's, or a new path locks a runner row and then writes its credential, or MariaDB stops failing a locking read whose subquery saw an older row (1020)
+
+Every authenticated runner call writes its credential's row and then the
+runner's (`auth/caller.py`, and `hello` again in its own transaction). Every
+change of a runner that goes on to revoke or rewrite the credential takes
+the two in the same order through one helper, `runners.lock`: the
+unrevoked credentials first, then the runner rows, each in the order of
+their ids. Its users are the owner's revoke and removal (`_own_runner`
+with `lock`), a re-pair's exchange (`_consume`), the account's deletion
+and the suspension. The project locks of an owner's stop follow both.
+
+`hello` also runs its transaction again after a deadlock (`db.retrying`),
+as the authentication before it and the owner's routes (`idempotency.run`)
+do. A credential that turns live between the
+change's credential lock and its row lock (a re-pair whose new key
+committed in between) is still written under the row lock, out of the
+order; the retry covers that window.
+
+`runners.lock` reads the runners' ids first, without a lock, and locks
+the credentials by that list of ids, not through a subquery of the
+runners. On MariaDB with `innodb_snapshot_isolation` (on by default
+since 11.6, off on CI's 11.4) the subquery reads the runners in a
+snapshot taken when the statement starts; when the statement waits for a
+runner's call that then writes its runner row and commits, the locking
+read fails with 1020 (record changed since last read), which no retry
+covers. A literal list has no snapshot to compare with. The last read
+locks the runner rows by `where` again, not by the list: a runner that
+`where` selects only after the first read is still locked and returned,
+only without its credential locked first. Of the callers, the owner's
+revoke and removal and a re-pair select one runner by its id, which no
+other transaction creates, so for them the two reads choose the same
+runner. The account's deletion and the suspension select every runner of
+the account; a runner a concurrent first pair creates in between is
+still removed or stopped, and its credential is written out of the
+order, which at worst is a deadlock that the retry covers.
+
+The suspension locks, for its runners, exactly what the owner's stop locks
+(`runner_revoke.projects_to_lock`), plus the projects of the account's own
+live agent credentials. Its own list also took every project where a
+runner ever had a placement. A placement whose clone was reported removed
+gives the stop nothing to close or revoke there, so nothing in the
+suspension writes in such a project.
+
+**Reason:** two writers that take the same two rows in opposite orders
+can each hold one and wait for the other; PostgreSQL and MariaDB then
+abort one of them. The route retried, but `hello` failed with an error.
+The runner's call cannot take the runner row first without a lock on
+every call, and the credential is the row each call already writes first.
+
+**Rejected alternatives:**
+- Only giving `hello` the retry: the inversion stays, and every new
+  caller of the two rows has to remember to retry.
+- Locking the credentials through a subquery of the runners (the first
+  version of `runners.lock`): one statement, but 1020 on MariaDB 11.6
+  and later, which every caller would have to retry.
+- Adding 1020 to `db.TRANSIENT`: it would retry every 1020, also one that
+  is a lost update in code that read before it locked, and the shape
+  that avoids it costs one plain read.
+- Re-reading the live credential after the row lock and locking a new one
+  then: that lock is out of the order again; one retried transaction is
+  simpler.
+- Keeping the suspension's wider project list: a second copy of the rule
+  that drifts from `apply`'s, and locks taken for projects nobody writes.
+
 ## `runner_revoke.due` reads two kinds of credential row, so its `getattr` stays
 
 **Id:** 8fc1bde8-a4d6-48ce-8da5-5339f81f6e5c
@@ -231,9 +303,9 @@ placement must still be active, approved, `desired: running`, at the
 join's generation and on the same runner. The runner must not be
 removed and must hold a live credential. A member's pickup, or a rejoin,
 also needs the membership still active. Otherwise the answer is
-`not_found`. Stopping or closing the placement, and revoking or removing
-the runner, also revoke its unused pickup joins
-(`placements.revoke_unused_joins`). A rejoin refuses an instance that
+`not_found`. Stopping or closing the placement, and revoking,
+re-pairing or removing the runner or suspending its owner, also revoke
+its unused pickup joins (`placements.revoke_unused_joins`). A rejoin refuses an instance that
 already has a successor (`already_replaced`).
 
 **Reason:** a profile created at pickup time would exist before any agent
@@ -261,6 +333,47 @@ keep a live join code in the database.
   whoever holds the link that the human has an agent of that name. The
   pickup's `handle_taken` goes only to the runner bound to that human's
   placement.
+
+## Every runner credential revocation carries its consequences; a re-pair keeps what is closing
+
+**Id:** e0dcc15d-55a3-4503-b3bc-8707d12c1bc4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit's finding on runner credentials (tsk-mrt77xgrexx4), the lead's answers to its open questions and the review of pull request #1768, 2026-11-13
+**Revisit when:** a runner credential is revoked on a new path, the re-pair stops handing the placements over to the new credential, or the "revoke and tell" helper of the runner clean-up lands
+
+`revoke_runner_credential` calls `placements.runner_credential_gone`
+itself: the runner's unused pickups are revoked, and its closing
+placements close at once, since no live credential is left to report
+their end. A re-pair passes `replaced=True`: the pickups still end with
+the credential that fetched them, but a closing placement stays closing,
+because the new credential takes over the same placements (§15.3) and
+reports the end. A suspension of the owner also stops each of the owner's
+runners as the owner's `agents: "stop"` does, whatever the projects'
+`on_runner_revoke`, like the deletion of the account. It revokes the
+account's own agent credentials first (`suspended`), so the stop reaches
+only other humans' agents (`runner_revoked`), with no human named as
+having revoked them (`by` None): the hub acts, not the suspended person.
+
+**Reason:** before, each caller had to remember the second call. The
+revoke route and the leak path did; the suspension and the re-pair did
+not, so a closing placement stayed closing until someone deleted it, and
+a pickup fetched with the old credential stayed usable after a re-pair.
+One call in the function every path uses cannot be forgotten. A
+suspension ends everything the account holds at once, as its deletion
+does, so the runners' placements end with it, not by each project's rule.
+
+**Rejected alternatives:**
+- Keeping the separate call and adding it to the two missing callers:
+  the next new path would miss it again.
+- Closing the closing placements on a re-pair too: the new credential
+  can still report their end, and §15.3 says the re-pair hands the same
+  placements over.
+- Leaving the re-pair's pickups alive: the contract and the docstring
+  say a pickup ends with the credential that fetched it.
+- Applying each project's rule on a suspension: under `keep` the
+  placements on the suspended account's runners would run on.
 
 ## A supervised session's long-poll is not woken by what only `all` names
 
@@ -578,3 +691,80 @@ removes nothing a person might still need, and the question stays open:
   placement.** The clock runs on after the close, and a change of the
   time moves the deadline; any other change there stays
   `invalid_transition`.
+
+## A new profile's placement re-checks its creator at the pickup and the exchange
+
+**Id:** ac153895-7fbe-49a5-adad-6e5403d4fd6f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-rk6k5qz2qr3t (hardening: grants follow the member's current standing), which offers both ways; the invitation rule of docs/api.md §3.4 (`invitations.issuer_holds`)
+**Revisit when:** placements gain a creator other than a project member (an org-level placement), or the invitation rule (§3.4) changes
+
+A placement that creates a new agent profile stores the profile's trust
+and role when it is made, and the runner's pickup mints the join from
+them with the placement's creator as `created_by`. At the pickup and
+again at the exchange the hub asks `invitations.issuer_holds` of that
+creator and profile, as for an invitation: an active member with
+`members:admin`, and trust `owner` for trust `admin` or the role
+`proxy`. A pickup refused this way is `creator_lacks_authority`; an
+exchange answers `not_found` as every join that no longer works. A
+signature on a card follows the same idea (`cards.standing`): it counts
+while its signer may give it, and `cards.drop_signatures` clears it on
+every path that lowers a member's standing: a trust or role change, a
+project role's new base, the end of an organisation's raised trust, a
+removal or an isolation. Every path that gives standing back also
+clears before it writes (the members PATCH, a role's new base, the
+trust an organisation's ownership raises, the lift of an isolation),
+so a raise never counts a signature some other path left behind.
+
+**Reason:** a grant should not outlive the authority that made it; the
+invitation already behaves this way, and one predicate keeps the two
+paths alike.
+
+**Rejected alternatives:** closing such placements when the creator's
+trust or role changes (the card's other option): it needs a hook in
+every path that lowers a member's standing (patch, removal, isolation,
+suspension, organisation changes), and a path missed would leave the
+grant open, while a check at use covers them all. A placement that
+names an existing member is not re-checked: it creates nothing, and the
+member's own standing is the membership's. For signatures, one shared setter
+for trust, role and role base: the writes differ too much (one member,
+every member of a role, the hub's own change) for one function to carry
+them, so each calls the same clearing step instead.
+
+## Who revoked decides with the reason whether anyone but the owner may rejoin
+
+**Id:** 44fe553d-74c0-495d-80c4-e1af00a65f57
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-8hq77ns50kyf (the lead's security review of 2026-11-13: "a revocation by a person, or because of a leak, is never undone by anyone else"); the contract's restart row (docs/api.md §15.6)
+**Revisit when:** a new revocation reason is added that the hub sets without a person, or the member routes stop taking a free-text reason
+
+A rejoin (`restart` with `rejoin: true`) gives the agent a new credential.
+The agent profile's owner may ask for one after any revocation. Anyone else
+with the restart's right, the runner's owner or a proposing agent, may only
+after a revocation no person chose for that agent: the hub's own after the
+runner removed the clone (`workspace_removed` with `revoked_by` null) or the
+runner owner's revocation of the runner (`runner_revoked` with `revoked_by`
+that owner). Everything else is `forbidden` with `details.reason:
+"owner_only"` (`routes/placements._undone_by_anyone`). The check runs on
+every start that carries a rejoin out, not only on `rejoin: true`: a
+`rejoin` stored on the placement by the clone's removal is carried out by a
+`restart` with `{}` or a `PATCH desired: running` too
+(`routes/placements._check_rejoin`).
+
+**Reason:** a revocation is how a person stops their agent, and a leak's
+revocation ends a credential someone else may hold. Undoing either by a new
+credential is the owner's decision, as every new instance passes a human.
+
+**Rejected alternatives:** deciding by `revoked_reason` alone: a person
+revoking through the member routes writes the reason freely, so
+`"workspace_removed"` typed by a person would pass. Letting only the owner
+rejoin after any revocation: a removed clone revokes the credential on the
+runner's own report, and its placement is meant to join anew at its next
+start (§15.5) without waiting for the owner. Not storing `rejoin` on the
+removal when the credential was already revoked otherwise: the owner's
+next plain start should still join anew, and a check at the start covers
+every way a start comes.

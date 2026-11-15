@@ -11,7 +11,7 @@ from fastapi import APIRouter, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, select, true, update
 from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
@@ -19,6 +19,7 @@ from maity_hub import (
     CLI_VERSION,
     attachment_store,
     attachments,
+    card_watches,
     chat_gate,
     chat_request,
     clock,
@@ -216,21 +217,69 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         # A bridge's read for an agent (`for`); without it, `head_body` above (§8.3).
         return answer([], after, superseded=False)
 
+    def live_column() -> Any:
+        """True while the caller's credential is not revoked and its dashboard session not
+        ended, as one scalar for the look (`quiet`); `gone` reads the same for the read."""
+        held = []
+        if caller.credential_id is not None:
+            held.append(
+                select(t.credential.c.id)
+                .where(
+                    t.credential.c.id == caller.credential_id,
+                    t.credential.c.revoked_at.is_(None),
+                )
+                .exists()
+            )
+        if caller.human_session is not None:
+            held.append(
+                select(t.human_session.c.id_hash)
+                .where(
+                    t.human_session.c.id_hash == caller.human_session,
+                    t.human_session.c.ended_at.is_(None),
+                )
+                .exists()
+            )
+        return and_(true(), *held)
+
+    def gone(conn: Connection) -> bool:
+        """The caller's credential was revoked or replaced, or its dashboard session ended
+        (a sign-out, a suspension), since the call began: the wait reads nothing more,
+        on every replica, not only the one whose registry ended it (§8.3)."""
+        if caller.credential_id is not None:
+            revoked = conn.execute(
+                select(t.credential.c.revoked_at).where(t.credential.c.id == caller.credential_id)
+            ).scalar()
+            if revoked is not None:
+                return True
+        if caller.human_session is not None:
+            ended = conn.execute(
+                select(t.human_session.c.ended_at).where(
+                    t.human_session.c.id_hash == caller.human_session
+                )
+            ).first()
+            if ended is None or ended.ended_at is not None:
+                return True
+        return False
+
     def read(waking: bool, since: int) -> tuple[list[dict[str, Any]], int] | None:
         """The events after `since` and the new cursor; None when a bridge's connection
         ended or the bridge was isolated or removed since the call began (§2.3)."""
         with engine.begin() as conn:
             if carried and not _still_carried(conn, reader):
                 return None
-            row = mine.row
-            if caller.kind == "agent":
-                # As of now, not as of the call's start: an isolation that committed since
-                # reads nothing more (§6.2, "Isolation").
-                row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
-                if waking and events.is_isolated(row):
-                    # Ended here too, not only by the process that isolated it: that one's
-                    # registry holds only its own waits (hub/context/replicas.md).
-                    return None
+            # As of now, not as of the call's start: an isolation, a revoked credential, an
+            # ended session or a human's removal that committed since reads nothing more
+            # (§6.2, "Isolation", §8.3). An agent's removal revokes its credentials; `active`
+            # off alone is no end of an agent's own wait. Ended here too, not only by the
+            # process that made the change: that one's registry holds only its own waits
+            # (hub/context/replicas.md).
+            now_row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).first()
+            row = mine.row if now_row is None else now_row
+            left = caller.kind != "agent" and row.active is not True
+            if waking and (left or gone(conn)):
+                return None
+            if caller.kind == "agent" and waking and events.is_isolated(row):
+                return None
             if waking:
                 rows, examined = events.read_waking(
                     conn,
@@ -273,15 +322,26 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 .where(t.event.c.project_id == mine.project.id)
                 .scalar_subquery()
             )
+            # In the same statement, so the look stays one: the caller's credential or
+            # session still holds (`gone`), not null where it does.
+            live = live_column()
             if caller.kind == "agent":
                 found = conn.execute(
-                    select(t.membership, head.label("head")).where(t.membership.c.id == mine.id)
+                    select(t.membership, head.label("head"), live.label("live")).where(
+                        t.membership.c.id == mine.id
+                    )
                 ).first()
-                if found is None or events.is_isolated(found):
+                if found is None or not found.live or events.is_isolated(found):
                     return False
-                top = found.head
             else:
-                top = conn.execute(select(head)).scalar()
+                found = conn.execute(
+                    select(t.membership.c.active, head.label("head"), live.label("live")).where(
+                        t.membership.c.id == mine.id
+                    )
+                ).first()
+                if found is None or not found.live or found.active is not True:
+                    return False
+            top = found.head
             return top is None or top <= since
 
     if wait == 0:
@@ -675,12 +735,34 @@ def post_message(
                 pinged[token] = m["member_id"]
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
         audience = list(dict.fromkeys([*audience, *pinged]))
+    # The card's own flow stays open (§9.6, "The work channel stays open"): an update's
+    # watchers by a watch of their own, a review result's author and two leads (§8.4). `to`
+    # and a mention reach anyone else only through the gate below.
+    passes: list[str] = []
+    # An update's watchers are read once: `events.emit` stores this same list as the event's
+    # private watcher list (§6.4), and only a watcher on it passes, so a watch or unwatch
+    # committed meanwhile cannot leave an agent exempt but unlisted.
+    watching: list[int] | None = None
+    # Its watchers by a watch that comes with a dependent card (§6.4): no consent of their
+    # side, so they reach it through the gate, and leave the list where it holds them.
+    derived: dict[str, int] = {}
     if review is not None:
-        audience = _deliver_review(conn, mine, body.task_id, review, audience)
+        audience, passes = _deliver_review(conn, mine, body.task_id, review, audience)
+    elif body.type == "update" and body.task_id is not None:
+        watching = card_watches.at_write(conn, body.task_id)
+        agents = _watching_agents(conn, watching)
+        own = card_watches.own(conn, body.task_id)
+        passes = [a for a, m in agents.items() if m in own]
+        derived = {a: m for a, m in agents.items() if m not in own}
     if body.type == "chat":  # where a chat text may cross the owner boundary (§9.6)
         chat_gate.boundary(conn, mine.project.id, me, body.body, sides)
-    # A free work message from another side reaches an agent only on its owner's yes (§9.6).
-    audience, held = chat_gate.hold(conn, mine.project.id, mine, body.type, audience)
+    # A work message from another side reaches an agent only on its owner's yes (§9.6).
+    audience, held = chat_gate.hold(
+        conn, mine.project.id, mine, body.type, audience, passes, derived
+    )
+    if watching is not None and held:
+        dropped = {derived[a] for a in held if a in derived}
+        watching = [m for m in watching if m not in dropped]
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -707,15 +789,28 @@ def post_message(
         actor=caller.actor(mine.id),
         subject=("task", body.task_id) if body.task_id else None,
         conversation_id=body.conversation_id,
+        card_watchers=watching,
     )
     attachments.attach(conn, named, seq)
     if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
-        author = (me, "agent" if mine.row.agent_id else "human")
-        side = chat_gate.owners_of(conn, [me]).get(me, me) if mine.row.agent_id else me
-        chat_request.note_held(conn, mine.project.id, seq, body.type, author, side, held)
+        chat_request.note_held_by(conn, mine, seq, body.type, held)
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
     return load_event(conn, str(seq), mine)
+
+
+def _watching_agents(conn: Connection, watching: list[int]) -> dict[str, int]:
+    """The agents among an update's watchers (§6.4, `card_watches.at_write`), the list
+    `events.emit` stores for it, each with its membership."""
+    if not watching:
+        return {}
+    m = t.membership.c
+    return {
+        str(a): int(i)
+        for a, i in conn.execute(
+            select(m.agent_id, m.id).where(m.id.in_(watching), m.agent_id.is_not(None))
+        ).all()
+    }
 
 
 def _deliver_review(
@@ -724,14 +819,16 @@ def _deliver_review(
     task_id: str | None,
     review: dict[str, Any],
     audience: list[str],
-) -> list[str]:
-    """A review result's author and both leads (§8.4). The author's instance takes the place
-    of the author's `member:` token that `to` or a mention put in the audience, and is added
-    unless the audience holds that same instance token. A member token (a lead, or an author whose
-    card was claimed for the team) is added unless `to` or a mention reaches the member
-    already: one of its role or trust tokens, or a token of its own. `all` counts for
-    neither: it does not wake a supervised member, and beside it an added token wakes
-    only such a one. One that then reaches nobody but its sender is `invalid`."""
+) -> tuple[list[str], list[str]]:
+    """A review result's author and both leads (§8.4), and those members: the card's own flow,
+    which the §9.6 gate leaves open; without a resolved card (neither `task_id` nor the
+    exact-PR subject names one, §8.4) only the leads. The author's instance takes
+    the place of the author's `member:` token that `to` or a mention put in the audience, and is
+    added unless the audience holds that same instance token. A member token (a lead, or an
+    author whose card was claimed for the team) is added unless `to` or a mention reaches the
+    member already: one of its role or trust tokens, or a token of its own. `all` counts for
+    neither: it does not wake a supervised member, and beside it an added token wakes only such
+    a one. One that then reaches nobody but its sender is `invalid`."""
     sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
     found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
     for r in found:
@@ -761,7 +858,7 @@ def _deliver_review(
     audience = list(dict.fromkeys([*audience, *added]))
     if set(audience) <= {f"member:{mine.principal_id}"}:
         raise invalid({"to": "required"}, "a review result that reaches nobody but its sender")
-    return audience
+    return audience, [r.member_id for r in found]
 
 
 def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:

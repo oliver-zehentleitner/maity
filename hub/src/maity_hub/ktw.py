@@ -61,7 +61,8 @@ _CONTROL = re.compile(
 )
 
 
-def _now() -> float:
+def now() -> float:
+    """The monotonic clock every hold and age here is measured on (ktw_reads too)."""
     return time.monotonic()
 
 
@@ -346,7 +347,7 @@ def digest(data: Any, link_base: str) -> Read:
     return Read(summary, entries, skipped)
 
 
-_REFUSALS = {
+REFUSALS = {
     "address_refused": "address_refused",
     "redirect_refused": "redirect_refused",
     "timeout": "timeout",
@@ -356,18 +357,29 @@ _REFUSALS = {
 }
 
 
-def read_state(url: str) -> Read:
-    """GET a member's `state.json` under the transport rule and digest it."""
+def fetch_json(url: str, cap: int) -> Any:
+    """GET a published JSON file under the transport rule (§11.1) and parse it;
+    `MemberError` for a refused read, a status other than 200, or a body that is no JSON."""
     try:
-        answer = outbound.read(url, cap=STATE_CAP, headers={"Accept": "application/json"})
+        answer = outbound.read(url, cap=cap, headers={"Accept": "application/json"})
     except outbound.Refused as refused:
-        raise MemberError(_REFUSALS.get(refused.reason, "unavailable")) from None
+        raise MemberError(REFUSALS.get(refused.reason, "unavailable")) from None
     if answer.status != 200:
         raise MemberError("http_status", status=answer.status)
-    data = parse(answer.body)
+    return parse(answer.body)
+
+
+def fetch_state(url: str) -> tuple[Read, Raw]:
+    """A member's `state.json`, digested (§11.3's checks: version and shape) and kept in
+    RAW: the digest for §11.3, the kept file for the views (§11.5)."""
+    data = fetch_json(url, STATE_CAP)
     found = digest(data, dashboard_url(url))
-    RAW.keep_state(url, data)
-    return found
+    return found, RAW.keep_state(url, data)
+
+
+def read_state(url: str) -> Read:
+    """GET a member's `state.json` under the transport rule and digest it."""
+    return fetch_state(url)[0]
 
 
 def _no_constant(name: str) -> Any:
@@ -415,7 +427,7 @@ class Raw:
     url: str
     body: bytes
     digest: str
-    at: float  # _now() of the read
+    at: float  # now() of the read
     observed_at: str
     bodies: str | None = None  # a lean state's `bodies` value, as published
 
@@ -443,16 +455,20 @@ class RawStore:
     def mark(self, kind: str, url: str) -> None:
         """Records a read of the file, made or begun now."""
         with self.guard:
-            self.read_at[(kind, url)] = _now()
-            self.read_at.move_to_end((kind, url))
-            while len(self.read_at) > HELD_KEPT:
-                self.read_at.popitem(last=False)
+            self._touch(kind, url, now())
+
+    def _touch(self, kind: str, url: str, at: float) -> None:
+        """`read_at` for the file, the newest last, at most HELD_KEPT. The caller holds `guard`."""
+        self.read_at[(kind, url)] = at
+        self.read_at.move_to_end((kind, url))
+        while len(self.read_at) > HELD_KEPT:
+            self.read_at.popitem(last=False)
 
     def held(self, kind: str, url: str) -> bool:
         """Whether the file was read less than FORCE_INTERVAL ago."""
         with self.guard:
             at = self.read_at.get((kind, url))
-        return at is not None and _now() - at < FORCE_INTERVAL
+        return at is not None and now() - at < FORCE_INTERVAL
 
     def get(self, kind: str, url: str) -> Raw | None:
         with self.guard:
@@ -465,13 +481,10 @@ class RawStore:
         # ASCII with escapes: a lone surrogate, which UTF-8 cannot encode, stays `\ud800`
         body = json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode()
         raw = Raw(
-            url, body, hashlib.sha256(body).hexdigest(), _now(), clock.rfc3339(clock.now()), bodies
+            url, body, hashlib.sha256(body).hexdigest(), now(), clock.rfc3339(clock.now()), bodies
         )
         with self.guard:
-            self.read_at[(kind, url)] = raw.at
-            self.read_at.move_to_end((kind, url))
-            while len(self.read_at) > HELD_KEPT:
-                self.read_at.popitem(last=False)
+            self._touch(kind, url, raw.at)
             old = self.files.pop((kind, url), None)
             if old is not None:
                 self.size -= len(old.body)
@@ -534,7 +547,7 @@ def _error(reason: str, **details: Any) -> dict[str, Any]:
 def walk(reader: forge.Forge, repository: str, deadline: float | None = None) -> Family:
     """The family's members in order, depth first, with their config read; the exports are
     read afterwards. `NotConfigured`/`RootUnavailable` for the root. A child whose config
-    would be read after `deadline` (`_now()`) is listed with `timeout`, not read."""
+    would be read after `deadline` (`now()`) is listed with `timeout`, not read."""
     members: list[Member] = []
     seen: set[str] = set()
     truncated = False
@@ -595,7 +608,7 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
             if depth + 1 > MAX_DEPTH:
                 truncated = True
                 continue
-            if deadline is not None and _now() >= deadline:
+            if deadline is not None and now() >= deadline:
                 members.append(Member(path=target, name=clean_name, error=_error("timeout")))
                 continue
             try:
@@ -652,7 +665,7 @@ def _read_exports(family: Family, deadline: float) -> None:
         futures = {pool.submit(_one_export, m.state_url or ""): m for m in readable}
         for future, member in futures.items():
             try:
-                found = future.result(timeout=max(deadline - _now(), 0.0))
+                found = future.result(timeout=max(deadline - now(), 0.0))
             except FutureTimeout:
                 found = _error("timeout")
             if isinstance(found, Read):
@@ -750,7 +763,7 @@ class Snapshot:
 @dataclass
 class _Entry:
     snapshot: Snapshot | None  # None: the project is not configured
-    at: float  # _now() of the read
+    at: float  # now() of the read
     repository_url: str | None
 
 
@@ -856,7 +869,7 @@ class Cache:
                 if (
                     entry is not None
                     and entry.repository_url == repository_url
-                    and _now() - entry.at < max(max_age, FORCE_INTERVAL)
+                    and now() - entry.at < max(max_age, FORCE_INTERVAL)
                 ):
                     return entry, False
                 entry = self._read(reader, project_id, repository_url, entry)
@@ -875,24 +888,24 @@ class Cache:
     def _read(
         self, reader: forge.Forge, project_id: str, repository_url: str | None, last: _Entry | None
     ) -> _Entry:
-        now = _now()
+        read_at = now()
         observed = clock.rfc3339(clock.now())
         if forge.kind_of(repository_url) != "github" or repository_url is None:
-            return _Entry(None, now, repository_url)
+            return _Entry(None, read_at, repository_url)
         repository = forge.repository_of(repository_url)
-        deadline = _now() + FAMILY_DEADLINE
+        deadline = now() + FAMILY_DEADLINE
         reader = reader.for_project(project_id)  # the source that covers it (§11.4)
         try:
             family = walk(reader, repository, deadline)
         except NotConfigured:
-            return _Entry(None, now, repository_url)
+            return _Entry(None, read_at, repository_url)
         except RootUnavailable as failed:
             previous = last.snapshot if last and last.repository_url == repository_url else None
             error = _error("forge_unavailable")
             if previous is None:
                 return _Entry(
                     Snapshot(observed, [], False, error, failed.not_covered, failed.retry_at),
-                    now,
+                    read_at,
                     repository_url,
                 )
             kept = Snapshot(
@@ -903,7 +916,7 @@ class Cache:
                 failed.not_covered,
                 failed.retry_at,
             )
-            return _Entry(kept, now, repository_url)
+            return _Entry(kept, read_at, repository_url)
         _read_exports(family, deadline)
         for member in family.members:
             if (member.error or {}).get("reason") == "location_not_followed":
@@ -914,7 +927,7 @@ class Cache:
                     self.last_good[key] = (member.read, member.observed_at)
                 elif member.error is not None and key in self.last_good:
                     member.read, _at = self.last_good[key]
-        return _Entry(Snapshot(observed, family.members, family.truncated), now, repository_url)
+        return _Entry(Snapshot(observed, family.members, family.truncated), read_at, repository_url)
 
 
 CACHE = Cache()
@@ -939,7 +952,7 @@ def export_for_view(
     stale = (
         entry is None
         or entry.repository_url != repository_url
-        or _now() - entry.at >= DEFAULT_MAX_AGE
+        or now() - entry.at >= DEFAULT_MAX_AGE
     )
     if stale and forge.kind_of(repository_url) == "github":
         _refresh_later(reader, project_id, repository_url, schedule)
@@ -963,8 +976,10 @@ def _refresh_in_background(
     def run() -> None:
         try:
             CACHE.get(reader, project_id, repository_url)
-        except Exception:  # a failed background read leaves the cache as it was
-            pass
+        except (Busy, forge.ForgeUnavailableError):
+            pass  # expected: another read holds the family, or the forge did not answer
+        except Exception:  # a bug in walk or digest: the cache stays as it was, the log says why
+            log.warning("a background Keep the Why read failed", exc_info=True)
         finally:
             with _pending_lock:
                 _pending.discard(project_id)

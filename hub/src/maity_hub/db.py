@@ -461,11 +461,15 @@ def migrate(
     lock_timeout: float = MIGRATE_LOCK_TIMEOUT,
     attempts: int = MIGRATE_ATTEMPTS,
     pause: float = MIGRATE_PAUSE,
+    secret_key: bytes | None = None,
 ) -> None:
+    """`secret_key` is the instance key a migration may need; no upgrade seals anything
+    (`20261114020000_sealed_verifiers` only widens), its downgrade opens sealed values."""
     from maity_hub.errors import driver_code, driver_fields
 
     config = alembic_config(engine)
     config.attributes["lock_timeout"] = lock_timeout
+    config.attributes["secret_key"] = secret_key
     for attempt in range(attempts):
         try:
             command.upgrade(config, revision)
@@ -480,8 +484,10 @@ def migrate(
             time.sleep(pause * 2**attempt)
 
 
-def downgrade(engine: Engine, revision: str = "base") -> None:
-    command.downgrade(alembic_config(engine), revision)
+def downgrade(engine: Engine, revision: str = "base", secret_key: bytes | None = None) -> None:
+    config = alembic_config(engine)
+    config.attributes["secret_key"] = secret_key
+    command.downgrade(config, revision)
 
 
 def head_revision(engine: Engine) -> str | None:

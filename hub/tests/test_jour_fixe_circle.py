@@ -547,7 +547,8 @@ def test_only_a_reader_of_an_owners_rounds_goes_on_its_list(circle: Circle) -> N
 
 def test_to_owner_is_personal_once_the_circle_owner_left(circle: Circle) -> None:
     """§20.6 (b): a round runs to its end after its owner left; their decision comes as a
-    personal request."""
+    personal request. The owner leaving ends their agent's moderator right (§20.2), so the
+    hub builds the report from the statement."""
     circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
     circle.tick()
     with circle.engine.begin() as conn:
@@ -556,13 +557,16 @@ def test_to_owner_is_personal_once_the_circle_owner_left(circle: Circle) -> None
             .where(t.membership.c.human_id == circle.friend.id)
             .values(active=None)
         )
-    done = _report(circle)
-    assert done.status_code == 200, done.text
-    [request_id] = done.json()["requests"]
+    refused = _report(circle)  # the sweep in between ended the right
+    assert refused.json()["error"]["details"]["reason"] == "not_moderator", refused.text
+    circle.now[0] += timedelta(hours=13)  # past report_due_at
+    worker.sweep(circle.engine)
     with circle.engine.connect() as conn:
-        asked = conn.execute(select(t.request).where(t.request.c.id == request_id)).one()
+        [asked] = conn.execute(
+            select(t.request).where(t.request.c.to_human == circle.friend.id)
+        ).all()
     assert (asked.to_kind, asked.to_human, asked.personal) == ("human", circle.friend.id, True)
-    assert circle.friend.get(f"/requests/{request_id}").status_code == 200
+    assert circle.friend.get(f"/requests/{asked.id}").status_code == 200
 
 
 def _agent() -> Any:
@@ -775,3 +779,48 @@ def test_an_owners_round_thread_shows_a_bridge_across_owners_as_observer(
     [entry] = [c for c in listed["items"] if c["id"] == circle.thread]
     assert entry["observers"] == [helper.id]
     assert other.get(f"{BASE}/conversations/{circle.thread}").status_code == 404
+
+
+def test_a_moderator_whose_right_ended_no_longer_reads_the_owners_round(circle: Circle) -> None:
+    """§20.2, §20.7: the round's stored moderator reads it only while it holds the right."""
+    with circle.engine.begin() as conn:  # the project's owner moderates `friend`'s round
+        member = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == circle.owner.id)
+        ).scalar_one()
+        conn.execute(
+            t.jour_fixe_moderator.insert().values(
+                series_id=circle.series,
+                membership_id=member,
+                state="active",
+                granted_by=circle.owner.id,
+                granted_at=clock.now(),
+                owner_consent=True,
+                keeper_consent=True,
+            )
+        )
+        conn.execute(
+            update(t.jour_fixe_round)
+            .where(t.jour_fixe_round.c.id == circle.id)
+            .values(moderator={"member_id": circle.owner.id, "instance": None})
+        )
+    assert circle.owner.get(_rounds(circle.id)).status_code == 200
+    ended = circle.owner.delete(
+        f"{BASE}/jour-fixe/series/{circle.series}/moderators/{circle.owner.id}"
+    )
+    assert ended.status_code == 200, ended.text
+    assert circle.owner.get(_rounds(circle.id)).status_code == 404
+    assert circle.owner.get(_rounds()).json()["items"] == []
+
+
+def test_an_admin_deleting_an_owners_series_is_told_only_that_it_existed(circle: Circle) -> None:
+    """§20.1, "Who sees a series": the deletion's answer shows what the admin may see."""
+    deleted = circle.owner.client.request(
+        "DELETE",
+        f"/api/v1{BASE}/jour-fixe/series/{circle.series}",
+        json={"reason": "t"},
+        headers=_headers(circle.owner),
+    )
+    assert deleted.status_code == 200, deleted.text
+    final = deleted.json()
+    assert final["id"] == circle.series and final["circle_owner"] == circle.friend.id
+    assert "topic" not in final and "moderators" not in final and "created_by" not in final

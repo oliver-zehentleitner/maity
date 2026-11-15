@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import __version__, clonecheck, hub, onboarding, state
+from .. import __version__, hub, onboarding, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
@@ -115,10 +115,15 @@ def run_join(
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
+# The harnesses whose run without their OS sandbox is reported (`sandbox_unavailable`): those
+# whose allowlist relies on it. Codex's sandbox is its whole confinement and is checked apart.
+UNCONFINED_REPORTED = ("claude-code", "antigravity")
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
 APPROVED_FILE = "approved.json"
 LOGS = "logs"
+# The agent-side state the runner reads after a join (its member id): far below this.
+STATE_MAX = 64 * 1024
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
 # The idle check of an interactive session (§15.14): a pane is read at most once per IDLE_EVERY;
@@ -523,8 +528,8 @@ class Supervisor:
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
-                unconfined = p["harness"] == "claude-code" and not target.sandbox.get(
-                    "claude-code", False
+                unconfined = p["harness"] in UNCONFINED_REPORTED and not target.sandbox.get(
+                    p["harness"], False
                 )
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
@@ -586,6 +591,11 @@ class Supervisor:
         if code == loop.EXIT_HOT_LOOP:
             rec.limits_unknown = 0
             rec.enter(now, "failed", "crash_loop", detail="hot_loop", exit_code=code, retry_at=None)
+            return
+        folder = next((d for d, c in loop.EXIT_FOLDER.items() if c == code), None)
+        if folder is not None:  # the loop's check before a run (§15.5): as before a start
+            rec.enter(now, "failed", "workspace_in_use", detail=folder, exit_code=code,
+                      retry_at=None)  # fmt: skip
             return
         if code in (loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN):
             if code == loop.EXIT_RATE_LIMITED_AFTER_CLEAN:
@@ -762,16 +772,18 @@ class Supervisor:
         side, which may have written or replaced it: a regular file only, never followed
         through a link, at most limitread.LIMIT_BYTES, and nothing but a plain exit code taken."""
         path, as_user = self._limit_file(pid, target), target.as_user
+        assert target.agent_files is not None  # noqa: S101 - connected before a launch
+        under = str(target.agent_files)  # the agents' directory: read from it down
         try:
             if not as_user.direct:  # the agents' user, or the ssh host's
                 # Read there by the runner's own module (limitread): opened without following
                 # a link and without blocking on a FIFO, so a file swapped after any check
                 # cannot hold the read. A host's `maity` without it reads nothing: no code.
-                done = as_user.run([*as_user.runner_module("limitread"), str(path)],
-                                   env={"PATH": target.agent_path})  # fmt: skip
+                argv = [*as_user.runner_module("limitread"), "--under", under, str(path)]
+                done = as_user.run(argv, env={"PATH": target.agent_path})
                 raw = done.stdout if done.returncode == 0 else ""
             else:
-                raw = limitread.read(str(path)) or ""
+                raw = limitread.read(str(path), under=under) or ""
             data = json.loads(raw)
         except Exception:  # noqa: BLE001 - whatever the agents' side left there, no exit code
             return None
@@ -837,18 +849,27 @@ class Supervisor:
         agent = p.get("agent") or {}
         try:
             place = workspace.locate(
-                target.workspaces, p["project_id"], p["workspace"]["clone"], target.host
-            )
+                target.workspaces, p["project_id"], p["workspace"]["clone"], target.host,
+                folder=workspace.uses_folder(harness.id),
+            )  # fmt: skip
         except workspace.Refused as refused_:
             rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
             return 0
         owner = agent.get("id") or agent.get("handle") or ""
-        repository = p["workspace"].get("repository") or ""
         if agent.get("id") and agent.get("handle"):  # recorded under the handle before a join
             workspace.rebind(self.cfg.state_dir, place, agent["handle"], agent["id"])
-        if as_user.exists(place.path):
-            try:  # an existing directory that is not this agent's comes before its credential
-                workspace.inspect(self.cfg, place, repository, owner, p["id"], as_user)
+        if as_user.exists(place.path) and (
+            not place.folder
+            or as_user.exists(place.repo)
+            or place.key in workspace.records(self.cfg.state_dir)
+        ):
+            # An existing directory that is not this agent's comes before its credential. Only
+            # the runner's record here: the clone itself is read in the start task, outside the
+            # lock this runs under (workspace.prepare). A workspace folder without its clone and
+            # without a record is one a failed clone left, or a stray one: `prepare` takes it
+            # when empty and refuses it otherwise (workspace_not_bare).
+            try:
+                workspace.owned(self.cfg, place, owner, p["id"])
             except workspace.Refused as refused_:
                 rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
                 return 0
@@ -903,17 +924,14 @@ class Supervisor:
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"), as_user,
             )  # fmt: skip
-            # An earlier session of the agent may have planted what git follows elsewhere (a
-            # `commondir`, `worktrees/`): nothing starts in such a clone, so neither the agent
-            # nor a person's later git in it lands where the plant points (§15.7).
-            finding = clonecheck.not_inspectable(place.path, as_user)
-            if finding is not None:
-                raise workspace.Refused("workspace_in_use", "not_a_plain_clone", why=finding)
+            # agy loads what lies in its start directory and above it: a workspace folder holds
+            # the clone and nothing else, outside any work tree, at its real path (§15.5).
+            workspace.check_folder(place, as_user)
             if join:
                 self._join(p, place, owner, rejoin, target)
                 with self.lock:
                     rec.joined_generation = p["generation"]
-            if workspace.stale_index_lock(place.path, as_user=as_user):
+            if workspace.stale_index_lock(place.repo, as_user=as_user):
                 with self.lock:
                     rec.detail = "stale_index_lock"
             if not self._wants(p["id"], p["generation"]):  # the clone took a while
@@ -1003,7 +1021,8 @@ class Supervisor:
             raise workspace.Refused("join_failed", why)
         try:
             if not as_user.direct:
-                found = json.loads(as_user.read(place.credential.parent / state.STATE_FILE))
+                path = place.credential.parent / state.STATE_FILE
+                found = json.loads(as_user.read_whole(path, STATE_MAX, under=place.path))
                 member = found.get("member_id") if isinstance(found, dict) else None
             else:
                 member = state.load_state(place.credential.parent).get("member_id")
@@ -1032,7 +1051,8 @@ class Supervisor:
             placement=p,
             harness=harness,
             binary=found.path if found else None,
-            clone=place.path,
+            clone=place.repo,
+            folder=place.path if place.folder else None,
             agent_dir=agent_dir,
             grant=self.cfg.repositories.get(repository, config.RepositoryGrant()),
             restart=self.cfg.limits.restart,
@@ -1060,17 +1080,17 @@ class Supervisor:
         as_user = target.as_user
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
         try:
-            others = other_credentials(target.workspaces, place.path, as_user)
+            others = other_credentials(target.workspaces, place.repo, as_user)
         except workspace.Refused:
             self.log(f"{place.path.name}: not every clone under {target.workspaces} on "
                      f"{target.name} could be listed; not starting an agent whose sandbox "
                      "might read another's credential")  # fmt: skip
             raise
         if not as_user.here:  # an ssh host: its home was read on connecting
-            return private_paths(None, target.agent_files.parent, place.path, others,
+            return private_paths(None, target.agent_files.parent, place.repo, others,
                                  (target.agent_files,), here=False)  # fmt: skip
         home = config.home_of(as_user.user) if as_user.user else Path.home()
-        return private_paths(self.cfg.state_dir, home, place.path, others,
+        return private_paths(self.cfg.state_dir, home, place.repo, others,
                              (self.cfg.path, target.agent_files))  # fmt: skip
 
     @property
@@ -1216,7 +1236,7 @@ class Supervisor:
 HOME_SECRETS = (
     ".ssh", ".gnupg", ".codex", ".claude", ".claude.json", ".git-credentials", ".netrc",
     ".config/maity-runner", ".local/state/maity-runner", ".aws", ".azure", ".config/gcloud",
-    ".kube", ".docker", ".local/share/opencode", ".config/opencode",
+    ".kube", ".docker", ".local/share/opencode", ".config/opencode", ".gemini",
 )  # fmt: skip
 
 
@@ -1240,7 +1260,8 @@ def private_paths(
 
 
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
-    """The credential directories of the other clones under `workspaces` as they stand now
+    """The credential directories of the other clones under `workspaces` as they stand now,
+    a workspace folder's clone `repo` included
     (a clone made later is covered from the agent's next start), listed as the agents' user,
     who owns them and may be the only one able to list them. A listing that is not complete
     fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
@@ -1252,14 +1273,17 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
         try:
             for project in root.iterdir() if root.is_dir() else ():
                 if project.is_dir() and not project.is_symlink():
-                    found += [d / ".git" / "maity" for d in project.iterdir()
-                              if (d / ".git" / "maity").is_dir()]  # fmt: skip
+                    found += [c / ".git" / "maity" for d in project.iterdir()
+                              for c in (d, d / workspace.REPO)
+                              if (c / ".git" / "maity").is_dir()]  # fmt: skip
         except OSError as exc:
             raise refused from exc
     elif not as_user.exists(root, "-d"):
         found = []  # no clone yet: nothing to hide
     else:
-        done = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "4", "-type", "d",
+        # Depth 4 for a clone, 5 for the clone `repo` in a workspace folder (§15.5); a nested
+        # repository's at depth 5 in a plain clone is listed too, which only hides more.
+        done = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "5", "-type", "d",
                             "-path", "*/.git/maity", "-print0"])  # fmt: skip
         if done.returncode != 0:  # some directory could not be read: the list may be short
             raise refused

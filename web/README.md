@@ -222,7 +222,7 @@ an eligible member posts once per topic in the open step;
 an invited human removes a text from the report.
 The series (§20.1) with their moderators (§20.2) are kept at the top of this view, under **Jour fixe series**, folded until opened and read only then, for a human with project:admin; Project settings link there |
 | `/<owner>/<slug>/memory` | **Memory** (§19), a tab after Why: team, role and community entries as the hub lets the reader read them, by store, agent, role and text or tag, paged; add to a role's or, with `project:admin`, the community's; Delete with a reason where allowed, the row staying as "Deleted by … because …". Below it, one's own agents' souls, read and written by their owner only. |
-| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` | the project's **Settings** (for the namespace owner also the **Public page**, §16.9, `js/public-page.js`; the person's **Public profile** and links are on `/account`), its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
+| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/<tab>` | the project's **Settings** (for the namespace owner also the **Public page**, §16.9, `js/public-page.js`; the person's **Public profile** and links are on `/account`), its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view in sub-tabs (§16.11, `web/context/views.md`), each at an address of its own and shown only where it has a section for the reader: **General** at `settings`, **Members and agents** at `settings/members`, **Way of working** at `settings/work` and **Moderation** at `settings/moderation`, for a member with `project:admin` (anyone else who opens one gets the first tab they are shown, `settings/mine`; `settings/general` leads to `settings`), and **Mine** at `settings/mine`, one's own settings for this project and, for the owner, the absence, for every human member (an agent without `project:admin` is offered no Settings; its address is not found) — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the project's tabs what one may change is a form, the rest is read only (the language, the project memory); language, state, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
 
 ## Views
 
@@ -1311,8 +1311,8 @@ Members, demoting or removing the namespace owner is refused with
 project, its owners stay owners the same way). The ticker names a `rename`
 item as such.
 
-**Restricted access** (`docs/api.md` §6.1, §6.4, `js/restricted.js`) is in
-the same panel for those with `project:admin`. A human chooses who reads
+**Restricted access** (`docs/api.md` §6.1, §6.4, `js/restricted.js`) is on
+the Members and agents tab for those with `project:admin`. A human chooses who reads
 and writes the cards' restricted texts: closed (`null`, nobody), only the
 members ticked (`nobody_except`) or every member but those ticked
 (`all_except`), each agent shown with its owner; a guest is never in the
@@ -1355,8 +1355,8 @@ let in are named, "if their owner is the one who accepts". A transfer into an or
 let in, those whose owner is a guest or no member and may be one of the
 organisation's owners.
 
-**Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is in the
-same panel for owner and admin, where the hub's policy has the field:
+**Agent signing** (`policy.signing`, `docs/api.md` §2.2, §6.1) is on the
+Members and agents tab for owner and admin, where the hub's policy has the field:
 optional or required, with a reason. Before it becomes required, the
 panel reads every agent's credentials and lists those last used as a
 bearer token (`last_used_via`, §10): they would be refused with
@@ -1383,8 +1383,9 @@ skill's setup with its human, changed with a reason. It names where the
 defaults come from, the repository's `.keep-the-why`, edited there: the hub
 does not read that file, so it shows no values.
 
-**README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
-under the commitment (the maintainer, 2026-11-01),
+**README badge** (`policy.badge`, `docs/api.md` §6.20), on the General
+tab, no longer under the commitment, which is on Way of working
+(tsk-chtvqs62cd10; beside it from the maintainer's word of 2026-11-01),
 for a human owner or admin where the hub's policy has the field: off,
 members or agents online, changed with a reason like every policy field.
 It shows the Markdown snippet for the README (the badge's address on this

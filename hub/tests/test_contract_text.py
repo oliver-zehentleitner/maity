@@ -288,8 +288,10 @@ def test_a_moved_file_or_a_new_commit_is_never_answered_from_an_older_read(
     reads = len([c for c in github.calls if "/contents/" in c])
     assert read(owner, card_id).status_code == 200  # within 60 s: the kept read
     assert len([c for c in github.calls if "/contents/" in c]) == reads
-    # A new commit on the default branch: read again, at that commit.
+    # A new commit on the default branch, seen once the kept head is past HEAD_AGE: read
+    # again, at that commit.
     github.branch("main", OTHER)
+    age_heads(contract_text.HEAD_AGE)
     put(github, "docs/api.md", "## 6.2 Members, rewritten\n", ref=OTHER)
     again = read(owner, card_id).json()
     assert (again["ref"], again["heading"]) == (OTHER, "## 6.2 Members, rewritten")
@@ -299,6 +301,12 @@ def test_a_moved_file_or_a_new_commit_is_never_answered_from_an_older_read(
     )
     github.answers[f"/repos/acme/maity/contents/docs/moved.md?ref={OTHER}"] = None
     assert error(read(owner, card_id))[2] == {"contract.path": "not_found_on_forge"}
+
+
+def age_heads(seconds: float) -> None:
+    """Every kept branch head read `seconds` earlier than it was."""
+    for key, (at, head) in list(contract_text._heads.items()):
+        contract_text._heads[key] = (at - seconds, head)
 
 
 def test_concurrent_reads_ask_the_forge_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -393,3 +401,94 @@ def test_the_text_is_cut_on_a_character_boundary() -> None:
     assert found.truncated is True
     assert len(found.text.encode()) <= contract_text.TEXT_CAP
     assert found.text.startswith("## 6.2 Big\n") and found.text.endswith("ä")
+
+
+# --- the default branch's head, kept ------------------------------------------------------
+
+
+class Heads:
+    """`forge.Forge.branch` counted per (token, repository, branch); `down` makes it fail
+    as a spent budget does."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.calls: list[tuple[str | None, str, str]] = []
+        self.down = False
+        heads = self
+
+        def branch(fg: forge.Forge, repository: str, name: str) -> dict[str, Any]:
+            if heads.down:
+                raise forge.ForgeUnavailableError("spent", rate_limited=True)
+            heads.calls.append((fg.token, repository, name))
+            return {"name": name, "head_sha": SHA, "found": True}
+
+        monkeypatch.setattr(forge.Forge, "branch", branch)
+        monkeypatch.setattr(forge.Forge, "file_at", lambda *_a: API.encode())
+
+
+def section(fg: forge.Forge, repository: str = "acme/maity", branch: str = "main") -> Any:
+    return contract_text.read(fg, repository, branch, "docs/api.md", "6.2")
+
+
+def test_two_reads_within_the_head_age_ask_for_the_branch_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    heads = Heads(monkeypatch)
+    fg = forge.Forge(TOKEN)
+    assert section(fg) == section(fg)
+    assert heads.calls == [(TOKEN, "acme/maity", "main")]
+
+
+def test_a_kept_head_answers_while_the_forge_does_not(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A spent budget of the source does not refuse a read that a kept head and a kept
+    text answer: nothing is asked of the forge."""
+    heads = Heads(monkeypatch)
+    fg = forge.Forge(TOKEN)
+    first = section(fg)
+    heads.down = True
+    assert section(fg) == first
+    age_heads(contract_text.HEAD_AGE)
+    with pytest.raises(forge.ForgeUnavailableError):
+        section(fg)  # past its age the head is asked for again, and that read is not kept
+    heads.down = False
+    assert section(fg) == first
+
+
+@pytest.mark.parametrize(
+    ("token", "repository", "branch"),
+    [
+        ("other-token", "acme/maity", "main"),
+        (TOKEN, "acme/other", "main"),
+        (TOKEN, "acme/maity", "dev"),
+    ],
+)
+def test_another_reader_repository_or_branch_shares_no_head(
+    monkeypatch: pytest.MonkeyPatch, token: str, repository: str, branch: str
+) -> None:
+    heads = Heads(monkeypatch)
+    section(forge.Forge(TOKEN))
+    section(forge.Forge(token), repository, branch)
+    assert heads.calls == [(TOKEN, "acme/maity", "main"), (token, repository, branch)]
+
+
+def test_a_head_past_its_age_is_read_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    heads = Heads(monkeypatch)
+    fg = forge.Forge(TOKEN)
+    section(fg)
+    age_heads(contract_text.HEAD_AGE - 1)
+    section(fg)
+    assert len(heads.calls) == 1, "within its age"
+    age_heads(1)
+    section(fg)
+    assert len(heads.calls) == 2, "past its age"
+
+
+def test_the_kept_heads_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    heads = Heads(monkeypatch)
+    monkeypatch.setattr(contract_text, "HEADS_KEPT", 3)
+    fg = forge.Forge(TOKEN)
+    for n in range(5):
+        section(fg, branch=f"b{n}")
+    assert len(contract_text._heads) == 3
+    assert [key[2] for key in contract_text._heads] == ["b2", "b3", "b4"]
+    section(fg, branch="b0")  # dropped: read again
+    assert len(heads.calls) == 6

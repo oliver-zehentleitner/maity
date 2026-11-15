@@ -188,13 +188,18 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
     return found
 
 
-def rebase(conn: Connection, project: Any, new: list[dict[str, Any]]) -> None:
+def rebase(conn: Connection, project: Any, new: list[dict[str, Any]], actor: Any) -> None:
     """The memberships of a role whose base a `PUT` changed take the new base, in the
-    same transaction (§2.3)."""
+    same transaction (§2.3); a signature a new base no longer gives goes (§6.4)."""
     old = {r["name"]: r["base"] for r in of(project)}
     moved = [r for r in new if r["name"] in old and old[r["name"]] != r["base"]]
     if not moved:
         return
+    from maity_hub import cards
+
+    # A signature that stopped counting before this change goes first, so that a base
+    # given back never brings it back (§6.4); the one the new base ends goes below.
+    cards.drop_signatures(conn, project.id, None, actor)
     conn.execute(
         update(t.membership)
         .where(
@@ -203,6 +208,7 @@ def rebase(conn: Connection, project: Any, new: list[dict[str, Any]]) -> None:
         )
         .values(role_base=_case(moved))
     )
+    cards.drop_signatures(conn, project.id, None, actor)
 
 
 def _case(moved: list[dict[str, Any]]) -> Any:

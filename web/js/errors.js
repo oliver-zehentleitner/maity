@@ -36,6 +36,7 @@ window.Maity = window.Maity || {};
     assign_only: () => M.tOwn("error.assign_only"),
     attachment_quota: () => M.tOwn("error.attachment_quota"),
     attachments_not_configured: () => M.tOwn("error.attachments_not_configured"),
+    claim_limit: () => M.tOwn("error.claim_limit"),
     code_invalid: () => M.tOwn("error.code_invalid"),
     conflict: () => M.tOwn("error.conflict"),
     conversation_closed: () => M.tOwn("error.conversation_closed"),

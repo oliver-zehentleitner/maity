@@ -6,7 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select, text, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -536,3 +536,75 @@ def test_two_deletions_with_clones_in_each_others_namespace_do_not_deadlock(
         second.commit()
     assert error(setup.agent.get("/me")) == "credential_revoked"
     assert error(their_agent.get("/me")) == "credential_revoked"
+
+
+# --- the owner's change and the runner's own call: credential, then runner -------------------
+
+
+@pytest.mark.parametrize("change", ["revoke", "remove", "repair"])
+def test_a_change_of_the_runner_waits_for_its_call_instead_of_deadlocking(
+    setup: Setup, change: str
+) -> None:
+    """A runner's call takes its credential's row, then the runner's (`auth/caller.py`,
+    `hello`). The owner's revoke and removal, and a re-pair's exchange, take the two in the
+    same order (`runners.lock`), so one that starts while a call holds the credential waits
+    for the call, instead of holding the runner row the call needs next (PostgreSQL,
+    MariaDB). On MariaDB both sides run with `innodb_snapshot_isolation`, the default since
+    11.6, so that the wait also may not end in 1020 (record changed since last read), which
+    no retry covers: a lock taken through a subquery of the runners did (`runners.lock`)."""
+    from types import SimpleNamespace
+
+    from maity_hub.auth.leaks import revoke_runner_credential
+    from maity_hub.routes import runners as runner_routes
+    from maity_hub.runners import live_credential_id
+    from tests.concurrency import finished, race, waiting
+    from tests.test_runners import enroll
+
+    owner: Any = SimpleNamespace(principal_id=setup.owner.id)
+    runner_id = setup.runner.id
+    token = enroll(setup.owner, name=None, runner_id=runner_id)["pair_url"].rsplit("/", 1)[1]
+
+    def owners_change(conn: Any) -> None:
+        if change == "repair":
+            runner_routes._consume(conn, runner_routes._usable(conn, token), "maity-cli/0.3.0")
+            return
+        runner_routes._own_runner(conn, owner, runner_id, lock=True)
+        if change == "remove":
+            runner_routes.remove(
+                conn, runner_id, agents="keep", instance_rule="keep", by=owner.principal_id
+            )
+            return
+        live = live_credential_id(conn, runner_id)
+        assert live == setup.runner.credential_id
+        revoke_runner_credential(conn, live, "revoked", by=owner.principal_id)
+
+    with race(setup.engine) as r:
+        call, changing = r.first, r.second
+        for conn in (call, changing):
+            snapshot_isolation(conn)
+        now = clock.now()
+        call.execute(
+            update(t.runner_credential)
+            .where(t.runner_credential.c.id == setup.runner.credential_id)
+            .values(last_used_at=now)
+        )
+        step = r.run(changing, lambda: owners_change(changing))
+        assert waiting(step)  # on the credential the call holds, not yet on the runner row
+        call.execute(update(t.runner).where(t.runner.c.id == runner_id).values(last_seen_at=now))
+        call.commit()
+        finished(step)
+        changing.commit()
+    assert error(hello(setup.client, setup.runner)) == "credential_revoked"
+
+
+def snapshot_isolation(conn: Any) -> None:
+    """MariaDB's `innodb_snapshot_isolation` for the connection's session, where the server
+    has it (10.6.18, 10.11.8, 11.4.2 and later; on by default since 11.6, off on CI's 11.4).
+    PostgreSQL has no such setting. The connection leaves the pool, so that the setting ends
+    with it and never reaches another test."""
+    if conn.dialect.name not in ("mysql", "mariadb"):
+        return
+    if conn.execute(text("SHOW VARIABLES LIKE 'innodb_snapshot_isolation'")).first() is None:
+        return
+    conn.detach()
+    conn.execute(text("SET SESSION innodb_snapshot_isolation = ON"))

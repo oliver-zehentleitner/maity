@@ -38,6 +38,7 @@ from maity_hub import (
     placements,
     public_pages,
     runner_revoke,
+    runners,
     wakeups,
     write_guard,
 )
@@ -152,12 +153,12 @@ def _lock_namespace(conn: Connection, human_id: str) -> None:
     runner from being attached anywhere new meanwhile."""
     namespace = conn.execute(select(t.project.c.id).where(t.project.c.owner_id == human_id))
     found = set(namespace.scalars())
-    runners = conn.execute(
+    owned = conn.execute(
         select(t.runner.c.id).where(
             t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None)
         )
     ).scalars()
-    for runner_id in list(runners):
+    for runner_id in list(owned):
         found.update(runner_revoke.projects_to_lock(conn, runner_id))
     for project_id in sorted(found):
         lock_project(conn, project_id)
@@ -291,9 +292,10 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
         return None
     human_id = str(payload.get("h"))
     # The account's lock before any other (`write_guard`): every transaction of the
-    # human's own calls (a newer request, a password or address change) and an address's
-    # confirmation link hold it shared before their first lock, so each either commits
-    # before this one (and this link may be dead) or waits for it. The human row needs
+    # human's own calls (a newer request, a password or address change), an address's
+    # confirmation link and the mail links of a password reset, the daily cap's unlock and
+    # an admin's second-factor reset hold it shared before their first lock, so each either
+    # commits before this one (and this link may be dead) or waits for it. The human row needs
     # no lock of its own here: ordinary work locks it after project locks, and taking
     # it before the projects would invert that order.
     lock_account(conn, human_id)
@@ -334,16 +336,13 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
 
     now = clock.now()
     # Its runners, as `DELETE /runners/{id}` with `agents: stop` (§15.3): placements
-    # closed, the agents' credentials revoked at once, the runner credential revoked.
-    for runner_id in _ids(
-        conn,
-        select(t.runner.c.id)
-        .where(t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None))
-        .order_by(t.runner.c.id)
-        .with_for_update(),
+    # closed, the agents' credentials revoked at once, the runner credential revoked. Each
+    # live credential is locked before its runner, as the runner's own calls take them.
+    for runner in runners.lock(
+        conn, t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None)
     ):
         runner_routes.remove(
-            conn, runner_id, agents="stop", instance_rule=hub.on_runner_revoke, by=human_id
+            conn, runner.id, agents="stop", instance_rule=hub.on_runner_revoke, by=human_id
         )
     # Its unused runner enrollments (§15.2) and agent joins (§3.1).
     conn.execute(
@@ -555,6 +554,8 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
             wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
+    # The day's wrong second-factor codes (§2.8.6).
+    conn.execute(delete(t.second_factor_day).where(t.second_factor_day.c.human_id == human_id))
     # Open reset links and the day's wrong codes at resets (§2.10).
     conn.execute(delete(t.password_reset).where(t.password_reset.c.human_id == human_id))
     conn.execute(

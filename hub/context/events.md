@@ -859,3 +859,35 @@ or stopped), never one less for the entry's own change.
   entry"; it fills the packet with entries that say nothing, and §5.2 calls the field "the
   rules its owner set". The contract now says so (an open point of the PR for the
   maintainer).
+
+## A long-poll ends with its credential or session: at once in the process that ended it, at the next pass elsewhere, the check inside the look
+
+**Id:** 92ef7fa8-fc4f-4b96-8089-903b6ac959af
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0f7nbt07f98r (part 2), building docs/api.md §8.3 and §16.8 `suspend`; the way there is the implementer's
+**Revisit when:** a held wait's pass comes to cost more than the one look, or an agent's `active` off without a revocation is to end its own wait
+
+A revocation (`leaks.revoke`, so a replacement and a suspension too) and the end of a
+dashboard session (`sessions.end_where`) end the open waits of that credential or session
+through `longpoll.registry.end_keys_after`, once the transaction commits: through
+`events.on_commit`, and on a plain `engine.begin()` (the sign-out, password and session
+routes) through the connection's `commit` event. Every pass also reads the row: the read re-reads the
+credential and the session (`gone`), and the look of a skipped pass takes the same as one
+scalar (`live_column`) in its one statement. A human's wait also ends with the membership's
+`active`; an agent's does not, as before: removing an agent revokes its credentials.
+
+**Reason:** a registry holds only its own process's waits (hub/context/replicas.md), so the
+end at commit is fast only where the change was made; the row read makes every replica end
+the wait within one pass, and reading it inside the look keeps the cost the look's test pins.
+
+**Rejected alternatives:**
+- The registry end alone: a wait on another replica would keep delivering until its deadline.
+- Moving every session-ending route into `events.transaction`: nine routes and helpers
+  across auth, password reset and second factor for one hook; the connection's `commit`
+  event reaches them all from the one place that ends sessions.
+- A separate query per pass for the credential or session: one more statement on every pass
+  of every held wait, against the one look a pass the earlier entry above settled.
+- Ending an agent's own wait on `active` off: changes a behaviour a test pins on purpose,
+  and the removal that sets it revokes the credential, which ends the wait anyway.

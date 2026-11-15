@@ -1327,7 +1327,10 @@ def test_join_subagents_gives_coders_and_reviewers_their_owners_instruction(engi
         }
         joins = {
             row.id: (row.subagents, row.subagents_language)
-            for row in conn.execute(select(t.join_link))
+            # The columns of that revision only: later ones (`revoked_by`) are not there yet.
+            for row in conn.execute(
+                select(t.join_link.c.id, t.join_link.c.subagents, t.join_link.c.subagents_language)
+            )
         }
     assert members[coder.agent_id] == (True, "de", chosen)
     assert members[reviewer.agent_id] == (True, "fr", written)
@@ -1667,15 +1670,14 @@ def test_join_seq_fills_every_membership_in_batches_and_runs_again(engine: Engin
     assert stored() == expected
 
 
-def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Engine) -> None:
-    """§9.6, "this section ships": after the upgrade every agent in an open group chat with
-    someone of another side waits for that side, whatever entries exist; a human, an agent of
-    the chat's only side and a closed chat's stays are left alone. The downgrade drops the
-    columns and nothing else: the stays, chats and entries are kept, and upgrading again
-    makes the same agents wait."""
+def test_firewall_waiting_is_schema_only(engine: Engine) -> None:
+    """§9.6, "The switch" (req-5tngzfgp3nne o2): the revision adds the columns and the index
+    and marks no one, even an agent in an open group chat with someone of another side; who
+    waits is the hub's to write once the switch is on (`chat_gate.switch_on`). The downgrade
+    drops the columns and nothing else: the stays, chats and entries are kept."""
     from datetime import UTC, datetime
 
-    from sqlalchemy import func, insert, select, text
+    from sqlalchemy import func, insert, inspect, select, text
 
     from maity_hub import tables as t
     from tests import factory
@@ -1738,10 +1740,104 @@ def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Eng
         }
     assert found == {
         ("cnv-mixed", a): (None, False),
-        ("cnv-mixed", agent_a.agent_id): ([b], True),
-        ("cnv-mixed", agent_b.agent_id): ([a], True),
+        ("cnv-mixed", agent_a.agent_id): (None, False),
+        ("cnv-mixed", agent_b.agent_id): (None, False),
         ("cnv-alone", a): (None, False),
         ("cnv-alone", agent_a.agent_id): (None, False),
         ("cnv-closed", a): (None, False),
         ("cnv-closed", agent_b.agent_id): (None, False),
     }
+    assert "ix_chat_access_until" in {i["name"] for i in inspect(engine).get_indexes("chat_access")}
+    assert "lapsed_at" in {c["name"] for c in inspect(engine).get_columns("chat_access")}
+
+
+def test_sealed_verifiers_only_widens_and_the_downgrade_opens_sealed_rows(engine: Engine) -> None:
+    """The upgrade only widens: with the instance key given the rows stay plain. Rows sealed
+    later (`maity-hub seal-verifiers`) the downgrade opens with the key and writes the same hex
+    back, next to plain ones; it refuses without the key or with another."""
+    from sqlalchemy import insert, select, update
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from maity_hub.auth import credentials, verifiers
+    from tests import factory
+
+    revision = "20261114020000_sealed_verifiers"
+    key, other = bytes(range(32)), bytes(32)
+    migrate(engine)
+    project_id = factory.project(engine)
+    human = factory.human(engine)
+    factory.membership(engine, project_id, human_id=human)
+    agent = factory.agent(engine, project_id, human)
+    _, runner_verifier = credentials.issue("rcrd-migration")
+    now = clock.now()
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.runner).values(
+                id="rnr-migration", owner_id=human, name="laptop", created_at=now, updated_at=now
+            )
+        )
+        conn.execute(
+            insert(t.runner_enrollment).values(
+                id="renr-migration",
+                name="laptop",
+                attach=[],
+                token_hash="a" * 64,
+                code_hash="b" * 64,
+                created_by=human,
+                created_at=now,
+                expires_at=now,
+                failed_attempts=0,
+            )
+        )
+        conn.execute(
+            insert(t.runner_credential).values(
+                id="rcrd-migration",
+                runner_id="rnr-migration",
+                verifier=runner_verifier,
+                enrollment_id="renr-migration",
+                created_at=now,
+            )
+        )
+    plain = {agent.credential_id: agent.verifier, "rcrd-migration": runner_verifier}
+
+    def stored() -> dict[str, str]:
+        with engine.connect() as conn:
+            rows = [
+                *conn.execute(select(t.credential.c.id, t.credential.c.verifier)),
+                *conn.execute(select(t.runner_credential.c.id, t.runner_credential.c.verifier)),
+            ]
+        return {row.id: row.verifier for row in rows}
+
+    before = _before(engine, revision)
+    downgrade(engine, before)
+    migrate(engine, secret_key=key)  # with the key: widened, the rows stay plain
+    assert stored() == plain
+    downgrade(engine, before)  # only plain rows: no key needed
+    assert stored() == plain
+    migrate(engine)
+    assert stored() == plain
+    assert verifiers.seal_plain(engine, key) == {"credential": 1, "runner_credential": 1}
+    sealed = stored()
+    assert all(value.startswith("s1:") for value in sealed.values())
+    assert not set(sealed.values()) & set(plain.values())
+    for refused_with in (None, other):
+        with pytest.raises(RuntimeError, match="sealed verifiers|does not open"):
+            downgrade(engine, before, secret_key=refused_with)
+        if engine.dialect.name in ("mariadb", "mysql"):
+            migrate(engine, secret_key=key)  # it stays at the refusing revision there
+        assert stored() == sealed
+    downgrade(engine, before, secret_key=key)
+    assert stored() == plain
+    migrate(engine, secret_key=key)
+    assert stored() == plain  # the upgrade run again seals nothing either
+    # A mix of sealed and plain rows: the sealed one is opened, the plain one kept.
+    verifiers.seal_plain(engine, key)
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == agent.credential_id)
+            .values(verifier=agent.verifier)
+        )
+    downgrade(engine, before, secret_key=key)
+    assert stored() == plain

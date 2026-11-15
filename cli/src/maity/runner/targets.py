@@ -48,6 +48,7 @@ class Target:
     backend: Tmux | None = None
     reachable: bool = True
     unreachable_since: float | None = None
+    log_keep: int = 10 * 1024 * 1024  # limits.log_keep_bytes
 
     @property
     def remote(self) -> bool:
@@ -85,6 +86,7 @@ class Target:
             agent_path=self.agent_path,
             logs=self.agent_files / LOGS,
             as_user=self.as_user,
+            log_keep=self.log_keep,
         )
 
 
@@ -111,6 +113,7 @@ def local(
             agent_path=path,
             logs=cfg.local.agent_files / LOGS,
             as_user=as_user,
+            log_keep=cfg.limits.log_keep_bytes,
         )
     return Target(
         name="local",
@@ -146,11 +149,13 @@ def ssh_hosts(cfg: config.Config) -> list[Target]:
                 known_hosts=cfg.ssh.known_hosts,
                 identity=cfg.ssh.identity,
                 control_dir=control,
+                agent_path=host.agent_path,
             ),
             workspaces=host.workspaces,
             agent_path=host.agent_path,
             max_agents=host.max_agents,
             reachable=False,
+            log_keep=cfg.limits.log_keep_bytes,
         )
         for host in cfg.ssh.hosts
     ]
@@ -211,7 +216,9 @@ def probe_remote(
     sandbox: dict[str, bool] = {}
     held: set[str] = set()
     for harness in harnesses.values():
-        if harness.id == "codex":  # tried on the host, as the local target tries it here
+        if harness.id == "antigravity":  # off until agy's own sandbox is seen starting
+            sandbox[harness.id] = False  # (capabilities.sandbox_available)
+        elif harness.id == "codex":  # tried on the host, as the local target tries it here
             codex = found[harness.id].path
             sandbox[harness.id] = (
                 codex is not None
