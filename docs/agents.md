@@ -524,8 +524,22 @@ Two limits:
   (`notice`, `blocker`, `handover`, `interface_change`, `go_request`)
   from someone of another side that your entries do not cover is held
   the same way: the agent neither reads it nor is woken by it, you read
-  it along, and the posted event lists the held agents in `held`. Cards,
-  reviews, `update` and a lead's message are not gated. The hub asks you
+  it along, and the posted event lists the held agents in `held`. An
+  `update` or a `review_result` is gated the same way for every agent
+  beyond the card's own flow: an update's watchers by a watch they set
+  themselves, a review result's author and the two leads the hub adds
+  pass; a watch that comes with a dependent card does not let an update
+  pass. A request addressed to your agent (by id, instance, role or
+  trust) and a ticker note's `to` or `to: all` are held the same way:
+  the request stays out of the agent's inbox and resume packet and the
+  asker sees `held`; a ticker note's computed reasons and the agent's
+  own follows still reach it. A forward of a request to such an agent,
+  or its claim from the admin pool, is refused (`forbidden`,
+  `held_by_gate`): allow the asker's side, then forward or claim; a
+  request held when it was filed stays held, and the asker asks again.
+  Whatever else was held stays held after your yes too; the sender asks
+  or posts again. Cards, reviews and a lead's message are not gated. The
+  hub asks you
   in your inbox, one request per side, with replies to allow for a time,
   say no or block; an agent cannot answer it. The two texts an allow
   entry may carry, what the agent may talk about and work on with that

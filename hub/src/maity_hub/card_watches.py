@@ -47,6 +47,17 @@ def watching(conn: Connection, card_ids: Sequence[str], membership_id: int) -> s
     return set(own) | implied(conn, card_ids, membership_id)
 
 
+def own(conn: Connection, card_id: str) -> set[int]:
+    """The memberships whose own watch (`card_watch`, set by the member itself through
+    `PUT …/watch`) is on the card. Only such a watch lets an update pass the §9.6 gate: one
+    that comes with a dependent card (assigned or held) is no consent of the watcher's side."""
+    return set(
+        conn.execute(
+            select(t.card_watch.c.membership_id).where(t.card_watch.c.card_id == card_id)
+        ).scalars()
+    )
+
+
 def at_write(conn: Connection, card_id: str) -> list[int]:
     """The memberships watching the card now, for an event's private list (§6.4). A watch ends
     with the membership."""

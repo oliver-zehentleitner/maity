@@ -89,3 +89,30 @@ shows it.
   closes would each have needed it too.
 - Storing `takeover_id` only inside `request.proposal` — the contract
   shows it on every request.
+
+## The receiver is checked when the takeover opens and again when it moves
+
+**Id:** becc45c4-b62c-4f76-a818-42da5c3a219a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-etcv35n9s1zy (hardening: work state ends with the role that allowed it); `docs/api.md` §2.3, §6.2, §6.19
+
+A takeover names its receiver when it opens, and the card moves up to an
+hour later. Opening refuses a receiver that takes no cards (an expert, a
+guest, an isolated member) or one paused; `transfer` checks the receiver
+again under the project lock (`_takes_cards`, `_paused`) and ends the takeover
+`cancelled` without a move when it no longer takes cards or new work. A drop to
+`guest` and an isolation also end the member's open takeovers at once
+(`membership_removed`), as a removal does, and release its claims.
+
+**Reason:** the receiver's standing can change during the window; only a
+check at the move itself holds for every path that changes it, while the
+cancels on the guest and isolation paths make the board show the end at
+once rather than at the next settle.
+
+**Rejected alternatives:** checking only at open — a demotion or an
+isolation inside the window would still hand the card over. Refusing
+the holder's `accept` instead of cancelling — the holder cannot fix the
+receiver's standing, and the takeover would stay open with nobody able
+to end it but a withdrawal.

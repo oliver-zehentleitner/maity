@@ -19,6 +19,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     bridges,
+    chat_gate,
     chat_request,
     clock,
     cover,
@@ -441,6 +442,7 @@ def _view(conn: Connection, row: Any, known: _Known) -> dict[str, Any]:
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
+        "held": list(row.held or []),  # the agents `to` reached without their owner's yes
         "action": _action_view(row),
         "report": _report_view(known, row),  # set by the hub only (§16.8)
     }
@@ -782,6 +784,11 @@ def create_request(
             ).first()
             if card is None:
                 raise invalid({"task_id": "unknown_task"})
+        # An agent of another owner that `to` reaches without its owner's yes is held (§9.6):
+        # decided now, for good; a later yes admits the next request, not this one.
+        audience, held = chat_gate.gate(
+            conn, mine.project.id, mine, _addressee_audience(conn, mine, to)
+        )
         # Links only: a mention in a request pings nobody (§8.6).
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
             mentions.resolve(conn, mine.project.id, body.tried, "tried")
@@ -813,6 +820,7 @@ def create_request(
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
                     "action": _action_stored(body.action),
+                    "held": held or None,
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -842,15 +850,17 @@ def create_request(
             )
             blocked = card.id
         view = request_view(conn, _row(conn, request_id))
-        emit(
+        seq = emit(
             conn,
             mine.project.id,
             "request_created",
-            _addressee_audience(conn, mine, to),
+            audience,
             view,
             actor=caller.actor(mine.id),
             subject=("request", request_id),
         )
+        if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "request", held)
         _status_moved(conn, blocked, caller.actor(mine.id))
         return idempotency.Outcome(201, "request", request_id, view)
 
@@ -1569,7 +1579,22 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
             )
         ).scalars()
         return [f"member:{h}" for h in humans]
-    return _addressee_audience(conn, mine, inbox.addressee_of(row))
+    return _filed_audience(conn, mine, row)
+
+
+def _filed_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
+    """`to` as filed, as an audience, with each agent it was held for (§9.6) named
+    `held:<id>` in place of its own tokens, as the request's first event named it."""
+    audience = _addressee_audience(conn, mine, inbox.addressee_of(row))
+    held = list(row.held or [])
+    if not held:
+        return audience
+    kept = [
+        x
+        for x in audience
+        if not any(x == f"member:{a}" or x.startswith(f"instance:{a}#") for a in held)
+    ]
+    return [*kept, *(f"held:{a}" for a in held)]
 
 
 def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after: Any) -> list[str]:
@@ -1580,7 +1605,7 @@ def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after:
                 *_asker_audience(conn, before),
                 *_holder_audience(conn, mine, before),
                 *_holder_audience(conn, mine, after),
-                *_addressee_audience(conn, mine, inbox.addressee_of(before)),
+                *_filed_audience(conn, mine, before),
             ]
         )
     )
@@ -1641,6 +1666,45 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     return row
 
 
+def _refuse_held(
+    conn: Connection, mine: Membership, row: Any, target: Any, then: str = "forward"
+) -> None:
+    """`forbidden` (`held_by_gate`) for a forward to an agent the request is held for, or
+    that the gate of §9.6 would hold it for were the asker to file it to that agent now: the
+    text is the asker's, so the asker's side is judged, whoever forwards it. The forward would
+    otherwise hand the request to a holder that may not read it. A claim from the pool is
+    judged the same way, with the claiming agent as the target (`then`: `claim`)."""
+    if target.agent_id is None:
+        return
+    if target.agent_id in (row.held or []):
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 held this request for that agent when it was filed, and a later yes"
+            " does not release it. Its owner can allow the asker's side, and the asker then asks"
+            " again",
+            {"reason": "held_by_gate"},
+        )
+    if row.asked_by is None:
+        return
+    asker = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
+    kind = "agent" if asker.agent_id is not None else "human"
+    _, held_now = chat_gate.gate(
+        conn,
+        mine.project.id,
+        Membership(mine.project, asker, kind),
+        [f"member:{target.agent_id}"],
+    )
+    if target.agent_id in held_now:
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 holds this request for that agent: its owner has not said yes"
+            f" to the asker's side. The owner can allow the asker's side and then {then}",
+            {"reason": "held_by_gate"},
+        )
+
+
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/forward")
 def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
@@ -1685,6 +1749,8 @@ def forward(
                 raise invalid({"to": "owners_round"}, "this goes to one human, the owner's choice")
             # Nor to someone the proposal's kind would not let answer it (§6.19).
             _refuse_by_kind(conn, row, target)
+            # Nor to an agent the gate holds the request for (§9.6): refused, never dropped.
+            _refuse_held(conn, mine, row, target)
             target_id = target.id
             values = {"holder_member": target.id, "holder_pool": None}
         action_name = "opened" if target_id is None else "forwarded"
@@ -1729,6 +1795,8 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
         _refuse_by_kind(conn, row, mine)  # a holder that may not answer would strand it
         if inbox.is_asker(row, mine):
             raise invalid({"to": "self"}, "nobody holds a request it asked")
+        # Nor an agent the gate holds the request for (§9.6), as for a forward to it.
+        _refuse_held(conn, mine, row, mine.row, then="claim")
         won = conn.execute(
             update(t.request)
             .where(t.request.c.id == row.id, _pool_open())

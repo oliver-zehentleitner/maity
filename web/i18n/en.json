@@ -1132,6 +1132,7 @@
   "error.assign_only": "Cards in this project are assigned; they cannot be claimed.",
   "error.attachment_quota": "There is not enough room left for this attachment.",
   "error.attachments_not_configured": "This hub does not store attachments.",
+  "error.claim_limit": "Whoever would hold this card already holds as many cards as this project allows.",
   "error.code_invalid": "That code is wrong or was already used.",
   "error.conflict": "This changed in the meantime. Reload and try again.",
   "error.conversation_closed": "This group chat is closed.",
@@ -5312,6 +5313,21 @@
   "visitor.member_since": "Member since {month}",
   "visitor.model": "Model: {model}",
   "visitor.harness": "Harness: {harness}",
+  "visitor.hero.try": "Try it — create your account",
+  "visitor.now": "Right now",
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  },
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.people": {
+    "one": "{count} person",
+    "other": "{count} people"
+  },
+  "visitor.now.working": "working on this project",
+  "visitor.stat.members": "Members",
+  "visitor.stat.window": "30 days",
   "waiting.mark_all": "Mark all read",
   "waiting.mark_all.hint": "Mark all read leaves security alerts unread: mark each one read on its own.",
   "waiting.mark_read": "Mark read",
@@ -5516,5 +5532,20 @@
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "every expert",
   "settings.onboarding.role.expert": "Role: every expert",
-  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert."
+  "members.refused.holds_cards": "This member holds cards or has cards on the way to it; settle them before the role is expert.",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "and {count} more",
+    "other": "and {count} more"
+  },
+  "visitor.team.both": "{people} and {agents}",
+  "visitor.team.all": {
+    "one": "{count} member →",
+    "other": "All {count} members →"
+  },
+  "visitor.merged": "Recently merged",
+  "visitor.merged.window": "Pull requests and decisions of the last 7 days",
+  "visitor.merged.pill": "Merged",
+  "visitor.merged.by": "by {author}",
+  "visitor.merged.touches": "touches {areas}"
 }

@@ -16,12 +16,13 @@ from typing import Any
 
 from .. import clonecheck, hub, onboarding, state
 from ..redact import without_userinfo
-from . import config, serve, supervisor, targets, workspace
+from . import config, limitread, serve, supervisor, targets, workspace
 from .asuser import RUNNER, AsUser
 from .tmux import Session, Tmux, TmuxError
 
 STOP_ALL_GRACE = 30
 FOLLOW_EVERY = 1.0
+LOG_CHUNK = 1024 * 1024
 # git run by the operator in an agent's clone: nothing the agent wrote may run (§7.5). The
 # overrides below are a second line; the first is `not_inspectable`.
 SAFE_GIT = [
@@ -114,10 +115,18 @@ def cmd_logs(cfg: config.Config, args: argparse.Namespace) -> int:
 
     shown = 0
     while True:
-        data = as_user.read(path, shown)  # only what is new: the agent sets the log's size
+        try:  # only what is new, a chunk at a time: the agent sets the log's size
+            data = as_user.read(path, shown, limit=LOG_CHUNK, under=target.agent_files)
+        except limitread.Behind:  # the log was cut to its kept tail (logcap): from its start
+            shown = 0
+            continue
+        except OSError as exc:
+            raise Refused(f"the log for {pid} cannot be read: {exc}") from None
         if data:
             emit(data)
             shown += len(data)
+            if len(data) == LOG_CHUNK:
+                continue  # more may follow at once
         if not args.follow:
             return 0
         time.sleep(FOLLOW_EVERY)
@@ -325,14 +334,16 @@ def _collect(
 ) -> bool:
     """One workspace: listed when its credential is revoked; removed (True) only when its
     path is the one its record implies, no placement uses it, and git could say what is in
-    it."""
+    it. A workspace folder (§15.5) goes as a whole: its entries besides the clone are listed
+    with git's, as unsaved work, and the operator's `--yes` takes them too."""
     assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
     if not isinstance(record, dict):
         return False
     path = Path(path_text)
     as_user = _as_user(cfg)
     try:
-        expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name)
+        expected = workspace.locate(cfg.local.workspaces, str(record.get("project")), path.name,
+                                    folder=workspace.recorded_layout(record))  # fmt: skip
     except workspace.Refused:
         return False
     if str(expected.path) != path_text or as_user.exists(path, "-L"):
@@ -344,13 +355,20 @@ def _collect(
     if not credential_revoked(expected, as_user):
         return False
     print(f"{path}  agent {onboarding.inline(record.get('agent'))}  credential revoked")
-    reason = not_inspectable(path, as_user)
-    work = None if reason else unsaved_work(path, as_user)
+    extra = workspace.beside(expected, as_user)
+    if extra is None or workspace.REPO in extra:  # unreadable, or `repo` is not a directory
+        print(f"  not inspected (the workspace folder holds no plain clone {workspace.REPO}); "
+              "not removed")  # fmt: skip
+        return False
+    reason = not_inspectable(expected.repo, as_user)
+    work = None if reason else unsaved_work(expected.repo, as_user)
     if reason or work is None:
         print(f"  not inspected ({reason or 'git failed'}); not removed")
         return False
     for line in work:
         print(f"  {line}")
+    for name in extra:
+        print(f"  {onboarding.inline(name)} (beside the clone)")
     if not remove:
         return False
     try:
@@ -375,12 +393,17 @@ def cmd_workspace_claim(cfg: config.Config, args: argparse.Namespace) -> int:
         place = workspace.locate(cfg.local.workspaces, project, clone)
     except workspace.Refused:
         raise Refused(f"not <project id>/<clone>: {onboarding.inline(args.where)}") from None
-    if not _as_user(cfg).exists(place.path / ".git", "-d"):
-        raise Refused(f"{place.path} is not a clone")
+    as_user = _as_user(cfg)
+    if not as_user.exists(place.path / ".git", "-d"):
+        # A workspace folder (§15.5) holds the clone as `repo`, and is recorded as one.
+        folder = workspace.locate(cfg.local.workspaces, project, clone, folder=True)
+        if as_user.exists(folder.path / ".git") or not as_user.exists(folder.repo / ".git", "-d"):
+            raise Refused(f"{place.path} is not a clone, nor a workspace folder with one")
+        place = folder
     if str(place.path) in workspace.records(cfg.state_dir) and not args.force:
         raise Refused(f"{place.path} is recorded already; --force to record it again")
     workspace.record(cfg.state_dir, place, args.agent, args.placement or "")
-    origin = workspace.origin(place.path, _as_user(cfg))
+    origin = workspace.origin(place.repo, as_user)
     shown = without_userinfo(origin) if origin else origin
     print(f"recorded {place.path} for {onboarding.inline(args.agent)} (origin {shown})")
     return 0

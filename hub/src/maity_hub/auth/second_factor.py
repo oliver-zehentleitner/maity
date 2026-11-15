@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import re
 import secrets
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
@@ -25,10 +24,11 @@ from maity_hub import admin, clock, secretbox, shared_counts
 from maity_hub import tables as t
 from maity_hub.auth import mail_factor, passwords, sessions, totp
 from maity_hub.auth.caller import Caller, session_expires_at
+from maity_hub.auth.permitted import API, Calls
 from maity_hub.auth.sign_in_settings import second_factor_policy
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, rate_limited, unauthenticated
-from maity_hub.notifications import records
+from maity_hub.notifications import preferences, records, tokens
 from maity_hub.ratelimit import Attempt, Limiter
 
 SECOND_STEP = timedelta(minutes=5)  # a second-factor session's life
@@ -45,6 +45,11 @@ WRONG_PER_SESSION = 5
 WRONG_BY_HUMAN = Limiter(10, 15 * 60, name="auth.second_factor.WRONG_BY_HUMAN")
 
 
+# The method of the `second_factor_failed` written when a human's wrong codes reach the daily cap
+# (§2.8.6); its mail carries the link that lifts the cap (`UNLOCK_PURPOSE`, §18.6).
+DAILY_LIMIT = "daily_limit"
+UNLOCK_PURPOSE = "second_factor_unlock"
+
 ENROLMENTS_BY_HUMAN = Limiter(5, 60 * 60, name="auth.second_factor.ENROLMENTS_BY_HUMAN")
 # Wrong codes per second-factor session: (count, first seen), pruned once a session's
 # five minutes are over.
@@ -55,24 +60,23 @@ SECRET_FIELD = "second_factor.secret"
 _CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"
 _CROCKFORD_READ = str.maketrans({"i": "1", "l": "1", "o": "0"})
 
-# What a second-factor and an enrolment session may call (§2.8.2, §2.8.5), below
-# `/api/v1`.
-SECOND_STEP_CALLS = {
+# What a second-factor and an enrolment session may call (§2.8.2, §2.8.5).
+SECOND_STEP_CALLS = Calls(
     ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/second-factor/verify"),
     ("POST", "/auth/second-factor/email"),  # under `via: email` (§2.8.8)
     ("POST", "/auth/logout"),
-}
+)
 # A session in good standing that was full before it was held at enrolment keeps the
 # decisions its standing allows, "This was me" on a sign-in alert among them (§2.8.5): the
 # list that shows the alert, the call that marks it and the confirm itself.
-MOVED_ENROLMENT_CALLS = {
+MOVED_ENROLMENT_CALLS = Calls(
     ("GET", "/me/notifications"),
     ("POST", "/me/notifications/read"),
-}
-MOVED_ENROLMENT_CONFIRM = re.compile(r"/auth/sessions/[^/]+/confirm")
-ENROLMENT_CALLS = {
+    ("POST", "/auth/sessions/{public_id}/confirm"),
+)
+ENROLMENT_CALLS = Calls(
     ("GET", "/bootstrap"),  # its parts are gated one by one (§5.4)
     ("GET", "/auth/session"),
     ("POST", "/auth/logout"),
@@ -80,7 +84,7 @@ ENROLMENT_CALLS = {
     ("GET", "/auth/second-factor"),
     ("POST", "/auth/second-factor/totp"),
     ("POST", "/auth/second-factor/totp/confirm"),
-}
+)
 
 
 # --- reading -------------------------------------------------------------------------
@@ -223,25 +227,23 @@ def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str
     if current in ("ended", "expired"):
         by = "expired" if current == "expired" else "second_factor_disabled"
         raise SessionEnded(row.id_hash, by)
-    call = (method, path.removeprefix("/api/v1"))
-    if current == "second_factor" and call not in SECOND_STEP_CALLS:
+    # A path without `/api/v1` is read as one below it; only API routes come here.
+    below = path.removeprefix(API)
+    if current == "second_factor" and not SECOND_STEP_CALLS.admits(method, below):
         raise refused("second_factor_required", "this session owes the second factor")
-    if current == "enrolment" and _moved_call(row, call):
+    if current == "enrolment" and _moved_call(row, method, below):
         return  # a session in good standing moved into enrolment keeps "This was me" (§2.8.5)
-    if current == "enrolment" and call not in ENROLMENT_CALLS:
+    if current == "enrolment" and not ENROLMENT_CALLS.admits(method, below):
         raise refused("second_factor_enrolment_required", "set up the second factor first")
 
 
-def _moved_call(row: Any, call: tuple[str, str]) -> bool:
-    """Whether `call` is one a session moved into enrolment keeps (§2.8.5): only a session
+def _moved_call(row: Any, method: str, path: str) -> bool:
+    """Whether the call is one a session moved into enrolment keeps (§2.8.5): only a session
     whose sign-in was complete before it was moved (a fresh enrolment sign-in is not), and
     only while it is in good standing."""
     if not row.sign_in_complete or not sessions.good_standing(row):
         return False
-    method, path = call
-    return call in MOVED_ENROLMENT_CALLS or (
-        method == "POST" and MOVED_ENROLMENT_CONFIRM.fullmatch(path) is not None
-    )
+    return MOVED_ENROLMENT_CALLS.admits(method, path)
 
 
 def _session(conn: Connection, id_hash: str) -> Any:
@@ -427,17 +429,20 @@ def check(
     *,
     code: str | None,
     recovery_code: str | None,
+    seen: tuple[str | None, str | None, str | None] = (None, None, None),
 ) -> str | None:
     """Check one code of an enrolled human: `totp` or `recovery_code` when right, None
-    when wrong (counted against the human's limit). `rate_limited` once the limit is
-    spent, before anything is checked (§2.8.6)."""
+    when wrong (counted against the human's limits). `rate_limited` once a limit is
+    spent, before anything is checked (§2.8.6). `seen` is the caller's address, browser and
+    system, for the alert at the daily cap."""
     with Attempt(WRONG_BY_HUMAN, human_id) as attempt:
         # The factor's row first, locked to the end of the transaction: a confirmation, a
         # reset or new recovery codes (which lock it first too) wait for this check, in one
-        # lock order with the recovery codes below.
+        # lock order with the recovery codes below, and so does the day's count.
         factor = factor_of(conn, human_id, lock=True)
         if not enrolled(factor):
             return None
+        refuse_over_day(conn, hub, human_id)
         if code is not None and _consume_totp(conn, hub, factor, code):
             return "totp"
         if recovery_code is not None and _consume_recovery(conn, hub, human_id, recovery_code):
@@ -450,7 +455,167 @@ def check(
             )
             return "recovery_code"
         attempt.wrong()
+        _count_day(conn, hub, human_id, seen)
         return None
+
+
+# --- the daily cap (§2.8.6) -----------------------------------------------------------------
+
+
+def _today() -> str:
+    return clock.now().astimezone(UTC).date().isoformat()
+
+
+def _until_tomorrow() -> int:
+    """Seconds until the UTC day ends, when the day's count no longer applies."""
+    now = clock.now().astimezone(UTC)
+    tomorrow = datetime.combine(now.date() + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
+    return max(1, int((tomorrow - now).total_seconds()) + 1)
+
+
+def _day(conn: Connection, human_id: str, day: str) -> Any:
+    return conn.execute(
+        select(t.second_factor_day).where(
+            t.second_factor_day.c.human_id == human_id, t.second_factor_day.c.day == day
+        )
+    ).first()
+
+
+def daily_limited() -> ApiError:
+    return ApiError(
+        429,
+        "rate_limited",
+        "too many wrong second-factor codes today",
+        {"reason": DAILY_LIMIT},
+        headers={"Retry-After": str(_until_tomorrow())},
+    )
+
+
+def refuse_over_day(conn: Connection, hub: Settings, human_id: str) -> None:
+    """`rate_limited` (`reason: daily_limit`) while the human's wrong codes of the UTC day are
+    at the cap and the human was told so, before a code is compared: a right one is refused
+    too. A count at a cap lowered during the day that was never told lets one more code be
+    compared, whose wrong answer writes the alert with its link (`_count_day`): nobody is
+    refused without a way back. The caller holds the factor's row."""
+    row = _day(conn, human_id, _today())
+    if row is not None and row.alerted and row.wrong_codes >= hub.second_factor_wrong_per_day:
+        raise daily_limited()
+
+
+def _count_day(
+    conn: Connection,
+    hub: Settings,
+    human_id: str,
+    seen: tuple[str | None, str | None, str | None],
+) -> None:
+    """One more wrong code today, under the factor's row lock; the first one at or over the
+    cap since the day began or the cap was last lifted writes `second_factor_failed`
+    (`method: daily_limit`), whose mail carries the link that lifts the cap. The record names
+    the human's password generation, which the link carries: a password change kills it.
+    Earlier days of the human go: nothing reads them.
+
+    The human's row is locked before the day's: the alert's record locks it too, and a
+    password change locks it before it clears `alerted` (`password_resets.password_changed`),
+    so every path takes the human before the day row. The factor's row comes before both:
+    `check` holds it here, and a reset by mail locks it before the human's
+    (`routes/password_reset._live`)."""
+    records.lock_human(conn, human_id)
+    day = _today()
+    row = _day(conn, human_id, day)
+    if row is None:
+        conn.execute(
+            delete(t.second_factor_day).where(
+                t.second_factor_day.c.human_id == human_id, t.second_factor_day.c.day != day
+            )
+        )
+        conn.execute(
+            insert(t.second_factor_day).values(
+                human_id=human_id, day=day, wrong_codes=1, unlocks=0, alerted=False
+            )
+        )
+        wrong, unlocks, alerted = 1, 0, False
+    else:
+        wrong, unlocks, alerted = row.wrong_codes + 1, row.unlocks, bool(row.alerted)
+    alert = not alerted and wrong >= hub.second_factor_wrong_per_day
+    conn.execute(
+        update(t.second_factor_day)
+        .where(t.second_factor_day.c.human_id == human_id, t.second_factor_day.c.day == day)
+        .values(wrong_codes=wrong, alerted=alerted or alert)
+    )
+    if alert:
+        generation = conn.execute(
+            select(t.human.c.password_generation).where(t.human.c.id == human_id)
+        ).scalar_one()
+        ip, browser, os = seen
+        failed(
+            conn,
+            human_id,
+            DAILY_LIMIT,
+            ip,
+            browser,
+            os,
+            day=day,
+            unlocks=unlocks,
+            password_generation=generation,
+        )
+
+
+def unlock_token(key: bytes, human_id: str, day: str, unlocks: int, generation: int) -> str:
+    """The link's token: the human, the day, how often the cap was lifted that day and the
+    password generation at the alert, so it works once, only that day, and not after a
+    password change (§18.6)."""
+    return tokens.make(
+        key, {"h": human_id, "p": UNLOCK_PURPOSE, "d": day, "g": unlocks, "w": generation}
+    )
+
+
+def _unlockable(conn: Connection, hub: Settings, token: str, *, lock: bool) -> Any | None:
+    """The day row the link lifts while the link still works, else None: signed by the hub,
+    for today, not used, the alert written, and the password unchanged since."""
+    payload = tokens.read(hub.mail.signing_key, token)
+    if payload is None or payload.get("p") != UNLOCK_PURPOSE:
+        return None
+    human_id, day = payload.get("h"), payload.get("d")
+    unlocks, generation = payload.get("g"), payload.get("w")
+    if not isinstance(human_id, str) or day != _today():
+        return None
+    if not all(isinstance(n, int) and not isinstance(n, bool) for n in (unlocks, generation)):
+        return None
+    if lock:
+        factor_of(conn, human_id, lock=True)  # the lock order of every check
+    row = _day(conn, human_id, day)
+    current = conn.execute(
+        select(t.human.c.password_generation).where(t.human.c.id == human_id)
+    ).scalar()
+    if row is None or row.unlocks != unlocks or not row.alerted or current != generation:
+        return None
+    return row
+
+
+def unlock_page(conn: Connection, hub: Settings, token: str) -> str | None:
+    """The human's language while the link works, else None; changes nothing."""
+    row = _unlockable(conn, hub, token, lock=False)
+    if row is None:
+        return None
+    return preferences.text_language(conn, row.human_id)
+
+
+def unlock(conn: Connection, hub: Settings, token: str) -> bool:
+    """The human pressed the button: today's count starts again from zero. Once per link: the
+    update takes only the row at the link's count of lifts."""
+    row = _unlockable(conn, hub, token, lock=True)
+    if row is None:
+        return False
+    done = conn.execute(
+        update(t.second_factor_day)
+        .where(
+            t.second_factor_day.c.human_id == row.human_id,
+            t.second_factor_day.c.day == row.day,
+            t.second_factor_day.c.unlocks == row.unlocks,
+        )
+        .values(wrong_codes=0, unlocks=row.unlocks + 1, alerted=False)
+    )
+    return done.rowcount == 1
 
 
 def _check_mail(
@@ -551,7 +716,14 @@ def verify(
             email_token if second_step else None,
         )
     else:
-        used = check(conn, hub, human_id, code=code, recovery_code=recovery_code)
+        used = check(
+            conn,
+            hub,
+            human_id,
+            code=code,
+            recovery_code=recovery_code,
+            seen=(row.ip, row.browser, row.os),
+        )
     if used is None:
         if second_step:
             wrong = _count_wrong(row.id_hash)
@@ -832,12 +1004,13 @@ def failed(
     ip: str | None,
     browser: str | None,
     os: str | None,
+    **extra: Any,
 ) -> None:
     records.write(
         conn,
         human_id,
         "second_factor_failed",
-        {"method": method, "ip": ip, "browser": browser, "os": os},
+        {"method": method, "ip": ip, "browser": browser, "os": os, **extra},
     )
 
 
