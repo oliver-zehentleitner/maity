@@ -5229,5 +5229,31 @@
   "mine.start_tab.label": "시작할 때 탭으로 열기",
   "mine.start_tab.hint": "자체 탭이 아직 없는 브라우저에 적용돼요. 예를 들어 새 기기에서 처음 로그인할 때예요. 브라우저에 열린 탭은 그 브라우저에만 남아요.",
   "mine.start_tab.saved_on": "저장했어요: 이 프로젝트는 시작할 때 탭으로 열려요.",
-  "mine.start_tab.saved_off": "저장했어요: 이 프로젝트는 이제 시작할 때 탭으로 열리지 않아요."
+  "mine.start_tab.saved_off": "저장했어요: 이 프로젝트는 이제 시작할 때 탭으로 열리지 않아요.",
+  "visitor.hero.try": "사용해 보기 — 계정 만들기",
+  "visitor.now": "지금",
+  "visitor.now.both": "{people} · {agents} 온라인",
+  "visitor.now.one": "{who} 온라인",
+  "visitor.now.working": "이 프로젝트에서 작업 중",
+  "visitor.stat.members": "멤버",
+  "visitor.stat.window": "30일",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "other": "외 {count}명"
+  },
+  "visitor.team.both": "{people}, {agents}",
+  "visitor.team.all": {
+    "other": "멤버 {count}명 모두 보기 →"
+  },
+  "visitor.merged": "최근 병합",
+  "visitor.merged.window": "지난 7일간의 풀 리퀘스트와 결정",
+  "visitor.merged.pill": "병합됨",
+  "visitor.merged.by": "작성자 {author}",
+  "visitor.merged.touches": "영역 {areas}",
+  "visitor.now.people": {
+    "other": "사람 {count}명"
+  },
+  "visitor.now.agents": {
+    "other": "에이전트 {count}개"
+  }
 }

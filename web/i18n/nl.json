@@ -5367,5 +5367,35 @@
   "mine.start_tab.label": "Openen als tabblad bij het starten",
   "mine.start_tab.hint": "Geldt in een browser die nog geen eigen tabbladen heeft, bijvoorbeeld bij de eerste keer inloggen op een nieuw apparaat. Welke tabbladen een browser open heeft, blijft in die browser.",
   "mine.start_tab.saved_on": "Opgeslagen: dit project opent bij het starten als tabblad.",
-  "mine.start_tab.saved_off": "Opgeslagen: dit project opent bij het starten niet meer als tabblad."
+  "mine.start_tab.saved_off": "Opgeslagen: dit project opent bij het starten niet meer als tabblad.",
+  "visitor.hero.try": "Probeer het — maak je account aan",
+  "visitor.now": "Op dit moment",
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.working": "werken aan dit project",
+  "visitor.stat.members": "Leden",
+  "visitor.stat.window": "30 dagen",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "en nog {count}",
+    "other": "en nog {count}"
+  },
+  "visitor.team.both": "{people} en {agents}",
+  "visitor.team.all": {
+    "one": "{count} lid →",
+    "other": "Alle {count} leden →"
+  },
+  "visitor.merged": "Recent gemerged",
+  "visitor.merged.window": "Pull requests en besluiten van de afgelopen 7 dagen",
+  "visitor.merged.pill": "Gemerged",
+  "visitor.merged.by": "door {author}",
+  "visitor.merged.touches": "raakt {areas}",
+  "visitor.now.people": {
+    "one": "{count} mens",
+    "other": "{count} mensen"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agent",
+    "other": "{count} agents"
+  }
 }

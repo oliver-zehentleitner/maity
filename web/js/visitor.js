@@ -134,19 +134,99 @@ window.Maity = window.Maity || {};
     return found ? (found[1] + found[2]).replace(/\/+$/, "") : url;
   }
 
-  // Who is online, as the hub counts them (`online`), and who of them it names. The pictures of
-  // the mockup's stack need data the project's page does not carry yet (tsk-h822960mytm9).
-  function rightNow(online) {
+  // A member's picture from its public address (§6.10) at the size the hub serves for it, or
+  // their letter where the hub sends none (a person whose profile is off) or it does not load.
+  // `kind`: "hu" a round person, "ag" an agent's rounded square, as the mockup draws them. The
+  // name always stands beside it or in its link, so the picture itself says nothing (alt="").
+  function face(p, kind, px) {
+    const cls = `av ${kind} av-${px}`;
+    const letter = () => h("span", { class: `${cls} ini`, "aria-hidden": "true" }, monogram(p.name, p.handle));
+    const pic = typeof p.picture === "string" && p.picture ? `${p.picture}${p.picture.includes("?") ? "&" : "?"}s=${px > 32 ? 128 : 64}` : null;
+    if (!pic) return letter();
+    try {
+      const img = h("img", { class: cls, src: pic, alt: "", width: String(px), height: String(px), decoding: "async" });
+      img.addEventListener("error", () => { if (img.parentNode) img.parentNode.replaceChild(letter(), img); });
+      return img;
+    } catch (refused) {
+      return letter(); // not an address the page may load (h() allows only the hub's own images)
+    }
+  }
+  // Whether a member of the project's lists is an agent: by its page, which the hub builds.
+  const agentPages = (d) => new Set((d.agents || []).map((a) => a.page));
+
+  // Who is online, as the hub counts them (`online`), and who of them it names: their pictures as
+  // a stack, the first STACK of them, and how many more.
+  const STACK = 8;
+  function rightNow(d) {
+    const online = d.online;
     if (!online || !(online.humans > 0 || online.agents > 0)) return null;
     const people = M.t("visitor.now.people", { count: online.humans });
     const agents = M.t("visitor.now.agents", { count: online.agents });
     const said = online.humans > 0 && online.agents > 0 ? M.t("visitor.now.both", { people, agents })
       : M.t("visitor.now.one", { who: online.humans > 0 ? people : agents });
+    const named = online.named || [];
+    const bots = agentPages(d);
+    const more = named.length - STACK;
     return h("div", { class: "ph-live" },
       h("p", { class: "eyebrow" }, M.t("visitor.now")),
       h("p", { class: "big" }, h("i", { class: "dot", "aria-hidden": "true" }), said),
-      online.named && online.named.length ? h("p", { class: "ph-named" }, online.named.flatMap((p, i) => (i ? [", ", who(p)] : [who(p)]))) : null,
+      named.length ? h("div", { class: "stack" }, named.slice(0, STACK).map((p) => {
+        const pic = face(p, bots.has(p.page) ? "ag" : "hu", 30);
+        return M.route.isRoute(p.page) ? h("a", { href: p.page, title: p.name, "aria-label": p.name }, pic)
+          : h("span", { role: "img", title: p.name, "aria-label": p.name }, pic);
+      }), more > 0 ? h("span", { class: "more", title: M.t("visitor.now.more.label", { count: more }) }, M.t("visitor.now.more", { count: more })) : null) : null,
       h("p", { class: "muted" }, M.t("visitor.now.working")));
+  }
+
+  // The team as cards (the mockup's Team section): the people, then the agents, as the hub lists
+  // them, the first TEAM_CARDS; each with the picture, name, handle, role, an agent's harness and
+  // a dot while online. The whole list, the counted members too, is the Team tab's.
+  const TEAM_CARDS = 12;
+  function memberCard(p, kind, online) {
+    const facts = [p.role ? h("span", { class: "chip role" }, M.trust.roleLabel(p.role)) : null,
+      kind === "ag" && p.harness ? h("span", { class: "h" }, p.harness) : null].filter(Boolean);
+    const inner = [face(p, kind, 44),
+      h("span", { class: "mc-t" }, h("b", null, p.name), h("small", null, "@" + p.handle), facts.length ? h("span", { class: "mc-m" }, facts) : null),
+      online ? h("i", { class: "dot", role: "img", "aria-label": M.t("visitor.online"), title: M.t("visitor.online") }) : null];
+    return M.route.isRoute(p.page) ? h("a", { class: "mcard", href: p.page }, inner) : h("div", { class: "mcard" }, inner);
+  }
+  function teamSection(d, base) {
+    const all = d.people.map((p) => [p, "hu"]).concat(d.agents.map((a) => [a, "ag"]));
+    if (!all.length) return null;
+    const up = new Set(((d.online && d.online.named) || []).map((p) => p.page));
+    const people = d.people.length ? M.t("visitor.now.people", { count: d.people.length }) : null;
+    const agents = d.agents.length ? M.t("visitor.now.agents", { count: d.agents.length }) : null;
+    return h("section", { class: "sec team-cards" }, h("div", { class: "wrap" },
+      h("div", { class: "sec-h" }, h("h2", null, M.t("nav.members")),
+        h("p", { class: "muted" }, people && agents ? M.t("visitor.team.both", { people, agents }) : people || agents),
+        typeof d.members === "number" ? h("a", { class: "more-l", href: base + "/team" }, M.t("visitor.team.all", { count: d.members })) : null),
+      h("div", { class: "mgrid" }, all.slice(0, TEAM_CARDS).map(([p, kind]) => memberCard(p, kind, up.has(p.page))))));
+  }
+
+  // What happened lately (the ticker of §16.9: the last 7 days, at most 20 entries): the merges as
+  // pull request cards with their facts, the decisions as a list under them.
+  const when = (at) => h("time", { datetime: at }, M.dom.formatTime(at));
+  function prCard(e) {
+    const m = e.merge || {};
+    const url = e.url ? safeUrl(e.url) : null;
+    const facts = [m.author ? M.t("visitor.merged.by", { author: m.author }) : null,
+      Array.isArray(m.areas) && m.areas.length ? M.t("visitor.merged.touches", { areas: m.areas.join(", ") }) : null].filter(Boolean);
+    const inner = [
+      h("span", { class: "pr-h" }, typeof m.pr === "number" ? h("span", { class: "num" }, "#" + m.pr) : null,
+        h("span", { class: "merged" }, M.t("visitor.merged.pill")), when(e.at)),
+      h("b", null, m.title || e.text),
+      facts.length ? h("small", null, facts.join(" · ")) : null];
+    return url ? h("a", { class: "pr", href: url, rel: "nofollow ugc" }, inner) : h("div", { class: "pr" }, inner);
+  }
+  function recently(ticker) {
+    if (!ticker || !ticker.length) return null;
+    const merges = ticker.filter((e) => e.type === "merge");
+    const others = ticker.filter((e) => e.type !== "merge");
+    return h("section", { class: "sec alt recently" }, h("div", { class: "wrap" },
+      h("div", { class: "sec-h" }, h("h2", null, merges.length ? M.t("visitor.merged") : M.t("visitor.recently")),
+        h("p", { class: "muted" }, M.t("visitor.merged.window"))),
+      merges.length ? h("div", { class: "prgrid" }, merges.map(prCard)) : null,
+      others.length ? h("ul", { class: "dec" }, others.map((e) => h("li", null, when(e.at), h("span", null, e.text)))) : null));
   }
 
   // The dark hero: the crumb `owner / slug`, the tile, the title and the state; on the Overview
@@ -177,14 +257,14 @@ window.Maity = window.Maity || {};
         h("div", { class: "cta" }, cta, repoButton),
         links.length ? h("p", { class: "plinks" }, links.flatMap((a, i) => (i ? [" · ", a] : [a]))) : null,
         reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null),
-      overview ? rightNow(d.online) : null));
+      overview ? rightNow(d) : null));
   }
 
-  // The figures band: the members, counted from the project's own lists (§16.9 names every
-  // member), and the agents' four counts of the last 30 days. A figure that is 0 or that the hub
+  // The figures band: the members, as many as the Team tab lists (`members`, §16.9: those it
+  // names and those it only counts), and the agents' four counts of the last 30 days. A figure that is 0 or that the hub
   // left empty is not shown (the mockup's README, decided by the marketing head); none, no band.
   function band(d) {
-    const figures = [[M.t("visitor.stat.members"), d.people.length + d.agents.length, false]]
+    const figures = [[M.t("visitor.stat.members"), d.members, false]]
       .concat(Object.keys(COUNTERS).map((key) => [COUNTERS[key], d.statistics.totals[key], true]))
       .filter(([, n]) => typeof n === "number" && n > 0);
     if (!figures.length) return null;
@@ -203,23 +283,23 @@ window.Maity = window.Maity || {};
 
   const draw = {
     // `framed`: signed out, in the landing's frame, where the hero and the band already show the
-    // state, the about text, the links, who is online and the figures.
+    // state, the about text, the links, who is online and the figures; the team and what happened
+    // lately follow as the mockup's sections, each across the page.
     project(d, base, framed) {
+      if (framed) return [teamSection(d, base), recently(d.ticker)];
       return [
-        framed ? null : [
-          h("p", { class: "muted" }, M.dom.word("project", d.state)),
-          d.about ? h("div", { class: "about" }, M.markdown(d.about)) : null,
-          d.repository_url ? h("p", null, external(d.repository_url)) : null,
-          d.links.map((url) => h("p", null, external(url)))],
+        h("p", { class: "muted" }, M.dom.word("project", d.state)),
+        d.about ? h("div", { class: "about" }, M.markdown(d.about)) : null,
+        d.repository_url ? h("p", null, external(d.repository_url)) : null,
+        d.links.map((url) => h("p", null, external(url))),
         d.people.length ? [h("h2", null, M.t("visitor.people")), names(d.people)] : null,
         d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
         d.ticker && d.ticker.length ? [h("h2", null, M.t("visitor.recently")), h("ul", { class: "visitor-ticker" }, d.ticker.map((e) => h("li", null,
           h("span", { class: "muted" }, M.dom.formatTime(e.at)), " ", (e.url && external(e.url, e.text)) || e.text)))] : null,
-        framed ? null : [
-          d.online ? [h("h2", null, M.t("visitor.online")),
-            h("p", null, M.t("visitor.online.humans", { count: d.online.humans }), " · ", M.t("visitor.online.agents", { count: d.online.agents })),
-            d.online.named.length ? names(d.online.named) : null] : null,
-          h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals)],
+        d.online ? [h("h2", null, M.t("visitor.online")),
+          h("p", null, M.t("visitor.online.humans", { count: d.online.humans }), " · ", M.t("visitor.online.agents", { count: d.online.agents })),
+          d.online.named.length ? names(d.online.named) : null] : null,
+        h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals),
       ];
     },
     board(d, base) {
@@ -391,8 +471,9 @@ window.Maity = window.Maity || {};
         hero(answer, d, base, reporting, cta),
         answer.kind === "project" ? band(d) : null,
         tabBar(answer, base, title),
-        h("div", { class: "stored-page" }, h("div", { class: "wrap" },
-          draw[answer.kind] ? draw[answer.kind](d, base, true) : null))));
+        // The Overview's own sections run across the page; every other view in the stored pages' column.
+        answer.kind === "project" ? draw.project(d, base, true)
+          : h("div", { class: "stored-page" }, h("div", { class: "wrap" }, draw[answer.kind] ? draw[answer.kind](d, base, true) : null))));
       document.title = title;
       // The hero's "Try it" leads where the header's call to action does (§16.7.5, the landing
       // hero's primary button): its address from the frame's model, and none where it has none.

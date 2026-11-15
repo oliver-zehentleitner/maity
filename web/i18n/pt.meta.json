@@ -19191,6 +19191,10 @@
     "en": "b3ae7ee4d934d009",
     "text": "b3ae7ee4d934d009"
   },
+  "visitor.hero.try": {
+    "en": "a934f2e0ccd4a613",
+    "text": "0e4fd71f3a446a80"
+  },
   "visitor.holder.agent": {
     "en": "aec70cfd47032616",
     "text": "8f8965a819c48481"
@@ -19202,6 +19206,26 @@
   "visitor.member_since": {
     "en": "068cef0810198a3d",
     "text": "ce46a80c3c5f369e"
+  },
+  "visitor.merged": {
+    "en": "20a2d9635951284d",
+    "text": "88076405381d3f98"
+  },
+  "visitor.merged.by": {
+    "en": "760db489ae38e56d",
+    "text": "02d884f770caa11b"
+  },
+  "visitor.merged.pill": {
+    "en": "63f7ea9a67b1918b",
+    "text": "3893d39f13ad86bd"
+  },
+  "visitor.merged.touches": {
+    "en": "9f96cbfe3aefbe09",
+    "text": "120975f65b895cc6"
+  },
+  "visitor.merged.window": {
+    "en": "527e74a00a093185",
+    "text": "25f396c33f1f58d7"
   },
   "visitor.model": {
     "en": "00d5d0c26a1a0925",
@@ -19222,6 +19246,38 @@
   "visitor.note.incorporated": {
     "en": "65ed0630ec44c3b1",
     "text": "acee869ab3a007b0"
+  },
+  "visitor.now": {
+    "en": "6daba6e18d19bb49",
+    "text": "a0aa0ee19c4e77bd"
+  },
+  "visitor.now.agents": {
+    "en": "37be5bf9ee1b4228",
+    "text": "a65828157a2ff5d5"
+  },
+  "visitor.now.both": {
+    "en": "063bd57eebf6f866",
+    "text": "063bd57eebf6f866"
+  },
+  "visitor.now.more": {
+    "en": "ef1401d515ebac72",
+    "text": "ef1401d515ebac72"
+  },
+  "visitor.now.more.label": {
+    "en": "737c4c28d6c824c1",
+    "text": "57bd6119576d63e6"
+  },
+  "visitor.now.one": {
+    "en": "ffec9d158f4f123c",
+    "text": "ffec9d158f4f123c"
+  },
+  "visitor.now.people": {
+    "en": "fd5ff2a1c5aa16bf",
+    "text": "6de32880d1f35e13"
+  },
+  "visitor.now.working": {
+    "en": "4bbfd3742efe22a2",
+    "text": "3305cc9165edacab"
   },
   "visitor.online": {
     "en": "b11148e2002ef092",
@@ -19263,6 +19319,10 @@
     "en": "0b6b9f7e499ac5f6",
     "text": "bca0b54b78a3bf2b"
   },
+  "visitor.stat.members": {
+    "en": "6bbc51529519435c",
+    "text": "cece7a58d2622573"
+  },
   "visitor.stat.prs_merged": {
     "en": "631e272f82e120d7",
     "text": "58055b0d9d4c2a9e"
@@ -19271,6 +19331,10 @@
     "en": "c3839ae79e842a97",
     "text": "71cf3b4d18e6f737"
   },
+  "visitor.stat.window": {
+    "en": "6dce96dd18a540d7",
+    "text": "db1123f7c76f0a51"
+  },
   "visitor.statistics": {
     "en": "f7e895590e4ed336",
     "text": "22143f191e10a2cb"
@@ -19278,6 +19342,14 @@
   "visitor.statistics.own": {
     "en": "068dce52f609b9c3",
     "text": "3663246658698582"
+  },
+  "visitor.team.all": {
+    "en": "3d29f2722dcf9dab",
+    "text": "15be685853ee21fa"
+  },
+  "visitor.team.both": {
+    "en": "45a4ef43d5d36042",
+    "text": "5008aa569767db33"
   },
   "visitor.why.attention": {
     "en": "f98f532ad04f9c38",

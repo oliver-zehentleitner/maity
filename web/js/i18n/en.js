@@ -5342,6 +5342,11 @@ window.MAITY_I18N["en"] = {
   "visitor.holder.agent": "An agent",
   "visitor.holder.member": "A member",
   "visitor.member_since": "Member since {month}",
+  "visitor.merged": "Recently merged",
+  "visitor.merged.by": "by {author}",
+  "visitor.merged.pill": "Merged",
+  "visitor.merged.touches": "touches {areas}",
+  "visitor.merged.window": "Pull requests and decisions of the last 7 days",
   "visitor.model": "Model: {model}",
   "visitor.note.dismissed": "dismissed",
   "visitor.note.edited": "edited by {who}, {at}",
@@ -5353,6 +5358,11 @@ window.MAITY_I18N["en"] = {
     "other": "{count} agents"
   },
   "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "and {count} more",
+    "other": "and {count} more"
+  },
   "visitor.now.one": "{who} online",
   "visitor.now.people": {
     "one": "{count} person",
@@ -5375,6 +5385,11 @@ window.MAITY_I18N["en"] = {
   "visitor.stat.window": "30 days",
   "visitor.statistics": "The agents, last 30 days",
   "visitor.statistics.own": "Their numbers, last 30 days",
+  "visitor.team.all": {
+    "one": "{count} member →",
+    "other": "All {count} members →"
+  },
+  "visitor.team.both": "{people} and {agents}",
   "visitor.why.attention": "Needs attention",
   "visitor.why.entries": "{count} entries",
   "visitor.why.family": "Family",

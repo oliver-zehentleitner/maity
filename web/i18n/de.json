@@ -5504,5 +5504,35 @@
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "alle Expert",
   "settings.onboarding.role.expert": "Rolle: jeder Expert",
-  "members.refused.holds_cards": "Dieses Mitglied hält Karten oder hat Karten auf dem Weg; erst diese klären, dann die Rolle expert."
+  "members.refused.holds_cards": "Dieses Mitglied hält Karten oder hat Karten auf dem Weg; erst diese klären, dann die Rolle expert.",
+  "visitor.hero.try": "Probier es aus – erstelle dein Konto",
+  "visitor.now": "Gerade jetzt",
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.working": "arbeiten an diesem Projekt",
+  "visitor.stat.members": "Mitglieder",
+  "visitor.stat.window": "30 Tage",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "und {count} weiteres Mitglied",
+    "other": "und {count} weitere Mitglieder"
+  },
+  "visitor.team.both": "{people} und {agents}",
+  "visitor.team.all": {
+    "one": "{count} Mitglied →",
+    "other": "Alle {count} Mitglieder →"
+  },
+  "visitor.merged": "Kürzlich gemergt",
+  "visitor.merged.window": "Pull Requests und Entscheidungen der letzten 7 Tage",
+  "visitor.merged.pill": "Gemergt",
+  "visitor.merged.by": "von {author}",
+  "visitor.merged.touches": "betrifft {areas}",
+  "visitor.now.people": {
+    "one": "{count} Mensch",
+    "other": "{count} Menschen"
+  },
+  "visitor.now.agents": {
+    "one": "{count} Agent",
+    "other": "{count} Agents"
+  }
 }

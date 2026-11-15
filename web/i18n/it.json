@@ -5367,5 +5367,35 @@
   "mine.start_tab.label": "Apri in una scheda all'avvio",
   "mine.start_tab.hint": "Vale in un browser che non ha ancora schede proprie, per esempio al primo accesso da un nuovo dispositivo. Le schede aperte in un browser restano in quel browser.",
   "mine.start_tab.saved_on": "Salvato: questo progetto si apre in una scheda all'avvio.",
-  "mine.start_tab.saved_off": "Salvato: questo progetto non si apre più in una scheda all'avvio."
+  "mine.start_tab.saved_off": "Salvato: questo progetto non si apre più in una scheda all'avvio.",
+  "visitor.hero.try": "Provalo: crea il tuo account",
+  "visitor.now": "In questo momento",
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.working": "lavorano a questo progetto",
+  "visitor.stat.members": "Membri",
+  "visitor.stat.window": "30 giorni",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "e {count} altro",
+    "other": "e altri {count}"
+  },
+  "visitor.team.both": "{people} e {agents}",
+  "visitor.team.all": {
+    "one": "{count} membro →",
+    "other": "Tutti i {count} membri →"
+  },
+  "visitor.merged": "Merge recenti",
+  "visitor.merged.window": "Pull request e decisioni degli ultimi 7 giorni",
+  "visitor.merged.pill": "Merge eseguito",
+  "visitor.merged.by": "di {author}",
+  "visitor.merged.touches": "tocca {areas}",
+  "visitor.now.people": {
+    "one": "{count} persona",
+    "other": "{count} persone"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agente",
+    "other": "{count} agenti"
+  }
 }

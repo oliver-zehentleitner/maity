@@ -5367,5 +5367,35 @@
   "mine.start_tab.label": "Abrir em uma aba ao iniciar",
   "mine.start_tab.hint": "Vale em um navegador que ainda não tem abas próprias, por exemplo no primeiro login em um dispositivo novo. As abas abertas em um navegador ficam nesse navegador.",
   "mine.start_tab.saved_on": "Salvo: este projeto abre em uma aba ao iniciar.",
-  "mine.start_tab.saved_off": "Salvo: este projeto não abre mais em uma aba ao iniciar."
+  "mine.start_tab.saved_off": "Salvo: este projeto não abre mais em uma aba ao iniciar.",
+  "visitor.hero.try": "Experimente — crie sua conta",
+  "visitor.now": "Agora mesmo",
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.working": "trabalham neste projeto",
+  "visitor.stat.members": "Membros",
+  "visitor.stat.window": "30 dias",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "e mais {count}",
+    "other": "e mais {count}"
+  },
+  "visitor.team.both": "{people} e {agents}",
+  "visitor.team.all": {
+    "one": "{count} membro →",
+    "other": "Todos os {count} membros →"
+  },
+  "visitor.merged": "Merges recentes",
+  "visitor.merged.window": "Pull requests e decisões dos últimos 7 dias",
+  "visitor.merged.pill": "Merge feito",
+  "visitor.merged.by": "por {author}",
+  "visitor.merged.touches": "afeta {areas}",
+  "visitor.now.people": {
+    "one": "{count} pessoa",
+    "other": "{count} pessoas"
+  },
+  "visitor.now.agents": {
+    "one": "{count} agente",
+    "other": "{count} agentes"
+  }
 }

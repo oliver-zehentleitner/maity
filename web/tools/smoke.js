@@ -14969,9 +14969,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       { name: "Overview <b>bot</b>", handle: "overview", picture: "/api/v1/avatars/public/def", page: "/stranger/agents/overview", roles: ["coder", "reviewer"], model: "model-one", harness: "harness-x" }] } },
     "/public/pages/stranger/tool/team": { path: "/stranger/tool/team", kind: "team", data: { shown: [{ name: "Sam", handle: "sam", page: "/sam", trust: "owner", role: "coder" }], others: [{ role: "reviewer", count: 2 }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
-    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
-      ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
-      online: { humans: 1, agents: 2, named: [{ name: "Sam", handle: "sam", page: "/sam" }], as_of: "2026-11-02T08:05:00Z" } } },
+    // §16.9's project data: a person whose profile is off has no picture, an agent always one; `members` the Team tab's count.
+    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [],
+      people: [{ name: "Sam", handle: "sam", page: "/sam", picture: null, role: "coder" }],
+      agents: [{ name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", role: "reviewer", harness: "harness-<b>x</b>" }],
+      members: 4, statistics: { totals: { cards_done: 3, prs_merged: null } },
+      ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z", merge: { pr: 1, title: "A <b>title</b>", author: "sam-gh", areas: ["hub", "web"] } },
+        { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z", merge: null }],
+      online: { humans: 1, agents: 2, named: [{ name: "Sam", handle: "sam", page: "/sam", picture: null }, { name: "Bot <b>one</b>", handle: "bot", page: "/stranger/agents/bot", picture: "/api/v1/avatars/public/abc00000000000000000000000000000" }], as_of: "2026-11-02T08:05:00Z" } } },
   };
   const viAll = [];
   win.Maity.api.get = (p) => {
@@ -15162,7 +15167,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const vfOn = () => (document.documentElement.className || "").split(" ").includes("public-frame");
     const vfIn = vfHead() && vfHead().querySelector("a.signin");
     expect(vfOn() && vfHead() && vfFoot() && header.hidden === true && viView().classList.contains("public-view")
-      && viView().querySelector("div.stored-page div.wrap")
+      && viView().querySelector("section.team-cards div.wrap") && !viView().querySelector("div.stored-page")
       && vfIn && vfIn.getAttribute("href") === "#/login?lang=en&next=" + encodeURIComponent("/stranger/tool/overview") && !vfIn.getAttribute("aria-current"),
       "visitor: without a session, the page stands in the landing's frame, Sign in coming back to it " + (vfIn ? vfIn.getAttribute("href") : null));
     // The approved mockup's project page (tsk-9482zxza3gs3): the dark hero with the crumb, the
@@ -15182,8 +15187,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(hero && hero.className === "phero hero dz" && text(hero.querySelector("p.crumb")) === "stranger / tool"
         && text(hero.querySelector("span.pmark")) === "T" && hero.querySelector("span.pmark").getAttribute("aria-hidden") === "true"
         && text(hero.querySelector("h1")) === "Tool" && text(hero.querySelector("span.chip.state")) === "active"
-        && JSON.stringify(parts) === JSON.stringify(["phero hero dz", "band", "ptabs", "stored-page"])
-        && JSON.stringify(figures) === JSON.stringify([["1", "Members", null], ["3", "Cards done", "30 days"]])
+        && JSON.stringify(parts) === JSON.stringify(["phero hero dz", "band", "ptabs", "sec team-cards", "sec alt recently"])
+        && JSON.stringify(figures) === JSON.stringify([["4", "Members", null], ["3", "Cards done", "30 days"]])
         && JSON.stringify(current) === JSON.stringify(["/stranger/tool"]) && bar.querySelectorAll("a.view-tab").length === 5
         && tryIt && text(tryIt) === "Try it — create your account" && tryIt.getAttribute("href") === "#/register?lang=de",
       "visitor: without a session, a project's page has the hero (crumb, tile, title, state), the figures band without an empty one, the views as a bar, Try it from the frame "
@@ -15191,9 +15196,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       // Its unsafe repository is no button; who is online stands in the hero, the figures no longer as a list below.
       const live = hero && hero.querySelector("div.ph-live");
       expect(!hero.querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && !hero.querySelector("a.btn-secondary")
-        && live && text(live.querySelector("p.big")) === "1 person · 2 agents online" && live.querySelector("p.ph-named a")
-        && !viView().querySelector("ul.visitor-stats") && !text(viView().querySelector("div.stored-page")).includes("Humans online"),
+        && live && text(live.querySelector("p.big")) === "1 person · 2 agents online"
+        && !viView().querySelector("ul.visitor-stats") && !text(viView()).includes("Humans online"),
       "visitor: without a session, an unsafe repository is no button, Right now counts who is online, the figures are not repeated below " + (live ? text(live) : null));
+      // Right now's stack: each one online as their picture, or their letter where the hub sends none,
+      // linked to their page and named there; a person round, an agent square (tsk-9482zxza3gs3, part 2).
+      const stack = live && live.querySelector("div.stack");
+      const faces = stack ? stack.querySelectorAll("a").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-label"), a.firstChild.tagName, a.firstChild.className, a.firstChild.tagName === "IMG" ? a.firstChild.getAttribute("src") : text(a.firstChild)]) : [];
+      expect(JSON.stringify(faces) === JSON.stringify([["/sam", "Sam", "SPAN", "av hu av-30 ini", "S"],
+        ["/stranger/agents/bot", "Bot <b>one</b>", "IMG", "av ag av-30", "/api/v1/avatars/public/abc00000000000000000000000000000?s=64"]])
+        && !stack.querySelector("span.more") && stack.querySelector("img").getAttribute("alt") === "" && !live.querySelector("b"),
+      "visitor: without a session, Right now stacks who is online, a picture or the letter, each a named link " + JSON.stringify(faces));
+      // The team as cards: picture or letter, name, @handle, role, an agent's harness, the dot while online;
+      // the line counts people and agents, the link names the Team tab's figure.
+      const team = viView().querySelector("section.team-cards");
+      const cards = team ? team.querySelectorAll("div.mgrid a.mcard").map((c) => [(c.getAttribute("href") || "").replace(/^#/, ""), text(c.querySelector(".mc-t b")), text(c.querySelector(".mc-t small")),
+        c.querySelector(".chip.role") ? text(c.querySelector(".chip.role")) : null, c.querySelector(".mc-m .h") ? text(c.querySelector(".mc-m .h")) : null,
+        c.firstChild.className, c.querySelector("i.dot") ? c.querySelector("i.dot").getAttribute("aria-label") : null]) : [];
+      const all = team && team.querySelector("a.more-l");
+      expect(team && text(team.querySelector("h2")) === "Team" && text(team.querySelector(".sec-h p")) === "1 person and 1 agent"
+        && all && text(all) === "All 4 members →" && (all.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool/team"
+        && JSON.stringify(cards) === JSON.stringify([["/sam", "Sam", "@sam", "Coder", null, "av hu av-44 ini", "Online"],
+          ["/stranger/agents/bot", "Bot <b>one</b>", "@bot", "Reviewer", "harness-<b>x</b>", "av ag av-44", "Online"]])
+        && team.querySelector("img").getAttribute("src").endsWith("?s=128") && !team.querySelector("b b"),
+      "visitor: without a session, the team as cards with picture or letter, handle, role, harness and the online dot, All N members to the Team tab " + JSON.stringify([cards, all && text(all)]));
+      // What happened lately: a merge as a pull request card from its facts, a decision in the list under the cards.
+      const lately = viView().querySelector("section.recently");
+      const pr = lately && lately.querySelector("div.prgrid a.pr");
+      const decided = lately ? lately.querySelectorAll("ul.dec li").map((li) => text(li.querySelector("span"))) : [];
+      expect(lately && text(lately.querySelector("h2")) === "Recently merged" && text(lately.querySelector(".sec-h p")) === "Pull requests and decisions of the last 7 days"
+        && pr && pr.getAttribute("href") === "https://github.com/s/t/pull/1" && pr.getAttribute("rel") === "nofollow ugc"
+        && text(pr.querySelector(".num")) === "#1" && text(pr.querySelector(".merged")) === "Merged" && pr.querySelector("time").getAttribute("datetime") === "2026-11-02T08:00:00Z"
+        && text(pr.querySelector("b")) === "A <b>title</b>" && text(pr.querySelector("small")) === "by sam-gh · touches hub, web"
+        && lately.querySelectorAll("a.pr").length === 1 && JSON.stringify(decided) === '["Decided: tsk-1"]',
+      "visitor: without a session, a merge is a pull request card from its facts, a decision a line under the cards " + JSON.stringify([pr && text(pr), decided]));
       // A GitHub repository is a GitHub button; the project's links one row of short words, a page of the
       // repository by the dashboard's word and any other by host and path; nobody online, no Right now;
       // a tab's hero has only its crumb, tile and slug, and no band.
@@ -15226,6 +15262,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(/<link rel="stylesheet" href="css\/public-sections\.css" id="public-sections" disabled>/.test(ppIndex)
         && ppSheets && !/"(?:brand|css|js|vendor)\//.test(ppSheets[1]) && ppChrome.includes('const OWN_SHEET = "public-sections"'),
       "visitor: the sections' stylesheet is named in index.html, disabled, for the shell's version; the frame adds no dashboard file by a name of its own " + (ppSheets && ppSheets[1]));
+      // Ten online: the stack shows eight and how many more; a picture from elsewhere is the letter (h() refuses it), one that
+      // does not load turns into the letter; a team of people alone counts only them, past twelve only twelve cards; a ticker of
+      // decisions alone is "Recently", with no cards.
+      const many = Array.from({ length: 14 }, (_, i) => ({ name: "P" + i, handle: "p" + i, page: "/p" + i, picture: "/api/v1/avatars/public/" + String(i).padStart(32, "0"), role: null }));
+      viPages["/public/pages/stranger/tool"] = { path: "/stranger/tool", kind: "project", data: Object.assign({}, plain.data, {
+        people: [Object.assign({}, many[0], { picture: "https://elsewhere.example/p.png" })].concat(many.slice(1)), agents: [], members: 14,
+        ticker: [plain.data.ticker[1]], online: { humans: 10, agents: 0, named: many.slice(0, 10), as_of: "2026-11-02T08:05:00Z" } }) };
+      await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+      const st = viView().querySelector("div.ph-live div.stack");
+      const more = st && st.querySelector("span.more");
+      const firstCard = viView().querySelector("a.mcard");
+      const failing = viView().querySelectorAll("a.mcard")[1].querySelector("img");
+      if (failing) failing.dispatch("error");
+      const failed = viView().querySelectorAll("a.mcard")[1].firstChild;
+      const t4 = viView().querySelector("section.team-cards");
+      const r4 = viView().querySelector("section.recently");
+      expect(st && st.querySelectorAll("a").length === 8 && more && text(more) === "+2" && more.getAttribute("title") === "and 2 more"
+        && firstCard.firstChild.tagName === "SPAN" && text(firstCard.firstChild) === "P" && !firstCard.querySelector(".mc-m")
+        && failed.tagName === "SPAN" && failed.className === "av hu av-44 ini" && text(failed) === "P"
+        && text(t4.querySelector(".sec-h p")) === "14 people" && t4.querySelectorAll("a.mcard").length === 12 && text(t4.querySelector("a.more-l")) === "All 14 members →"
+        && text(r4.querySelector("h2")) === "Recently" && !r4.querySelector("div.prgrid") && r4.querySelectorAll("ul.dec li").length === 1,
+      "visitor: without a session, eight faces and +N, a picture from elsewhere or one that fails is the letter, twelve cards, decisions alone are Recently "
+        + JSON.stringify([st && st.querySelectorAll("a").length, more && text(more), t4 && text(t4.querySelector(".sec-h p")), r4 && text(r4.querySelector("h2"))]));
       viPages["/public/pages/stranger/tool"] = plain;
       await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
       const h3 = viView().querySelector("section.phero");
