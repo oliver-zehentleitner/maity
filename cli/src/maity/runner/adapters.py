@@ -702,8 +702,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
     `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
     the sandbox without asking; the sandbox on; the workspace folder trusted, so an
-    interactive start asks nothing. Allowed: `maity`, the repository's `allow` list, and URLs
-    of the hub, the forge and the grant's `network` hosts. Denied to the file tools: the
+    interactive start asks nothing. Allowed: `maity`, the ` *` prefix entries of the
+    repository's `allow` list (an exact entry is left out, named by `maity runner check`), and
+    URLs of the hub, the forge and the grant's `network` hosts. Denied to the file tools: the
     clone's credential, what makes git run something (GIT_PROTECTED), the other clones'
     credentials and the runner's private paths. agy merges these with the agents' user's
     own settings (cli/context/runner.md)."""
