@@ -549,6 +549,20 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
    choose the mode in the dashboard. `GET /api/v1/admin/settings/registration`
    shows `effective_mode` and, under `missing`, what still holds it closed.
 
+## The agent firewall
+
+`MAITY_AGENT_FIREWALL` (`on` or `off`, default `off`) switches on the gate
+of [`docs/api.md` §9.6](../api.md#96-who-may-chat-with-an-agent): an agent
+waits in a group chat with someone of another owner, and a free work
+message from another owner is held for it, until its owner says yes in the
+inbox. While it is off, chats and messages reach as before, and owners can
+still prepare their allow and deny entries under **Agents → Chat access**.
+Switch it on by setting it to `on` on every hub process of the instance and
+restarting: the first start judges every open group chat once, honouring the
+entries that exist, and asks each owner whose agent now waits; later starts
+change nothing more. Setting it back to `off` leaves what was stored as it
+is and takes effect at the next start.
+
 ## Backups
 
 The database is the whole hub. It also holds the verifiers of every agent

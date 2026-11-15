@@ -23,6 +23,7 @@ from maity_hub import (
     attachment_store,
     attachments,
     availability,
+    chat_gate,
     commitment,
     cross_owner,  # noqa: F401  (registers the cross-owner consent proposal)
     errors,
@@ -275,6 +276,13 @@ def start_once(engine: Engine, settings: Settings) -> None:
         # A second factor the environment switched off is told, once (§2.8.5).
         source = sign_in.resolve(conn, settings)["second_factor"][1]
         sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
+    # The agent firewall switched on (MAITY_AGENT_FIREWALL, §9.6, "The switch"): every open
+    # group chat judged once, with the owners' allow entries, and each owner whose agent waits
+    # asked; a no-op the second time and safe for pods starting together (`chat_gate.switch_on`).
+    chat_gate.configure(settings.agent_firewall)
+    if settings.agent_firewall:
+        settled = chat_gate.switch_on(engine)
+        log.info("agent firewall on: %d open group chats settled", settled)
 
 
 def check_web_dir(settings: Settings) -> None:
@@ -338,6 +346,7 @@ def create_app(
     known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
     # Reads sealed verifiers with the key; seals new ones only with MAITY_SEAL_VERIFIERS (§2.2).
     verifiers.configure(settings.secret_key, settings.seal_verifiers)
+    chat_gate.configure(settings.agent_firewall)  # MAITY_AGENT_FIREWALL (§9.6, "The switch")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

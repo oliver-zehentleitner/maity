@@ -172,6 +172,11 @@ class Settings:
     public_pages_snapshot_minutes: int = 5
     public_pages_startup_seconds: int = 30
     public_pages_render_seconds: int = 2
+    # MAITY_AGENT_FIREWALL (`on`/`off`, §9.6, "The switch"): whether the agent firewall's gate
+    # holds an agent of one side back from a group chat or a work message of another until its
+    # owner's yes; off (the default), chats and messages reach as before the gate, while the
+    # allow and deny entries stay editable (req-5tngzfgp3nne o2).
+    agent_firewall: bool = False
     # MAITY_ROUTE_LIMITS: limits on single routes the operator sets in an emergency, counted per
     # client address in each process; empty, no route has one beyond its own (§1.7).
     route_limits: tuple[RouteLimit, ...] = ()
@@ -299,6 +304,7 @@ class Settings:
                 env, "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT", 1024**2, 1024**5
             ),
             max_aliases=parse_alias_limit(env),
+            agent_firewall=parse_choice(env, "MAITY_AGENT_FIREWALL", ("on", "off"), "off") == "on",
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
