@@ -6778,7 +6778,7 @@ took the keyboard focus off its link (third review of #1716).
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13
+**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13; the owner's feedback of 2026-11-15 on the two parts, relayed by the lead on card tsk-3b2znzcw4rxv (seq 137594, 137612)
 **Revisit when:** the request view carries what an answer ticked, the reach on the other side (`their_agents`) is wanted in the inbox, or the hub accepts an allow with no agent as a no
 
 The inbox draws the request's boxes from `chat_access_request`, which the
@@ -6797,11 +6797,19 @@ is needed; No and Block stay. The reach on the other side is not offered:
 the hub's default (that side's agents in the chats and the authors of the
 held messages) goes, and a narrower one is set through the API.
 
+The form has two parts (the owner's feedback of 2026-11-15): first "Which
+of your agents may chat", the boxes of one's own agents alone; then "With
+whom", a line naming that side's agents in these chats and messages as always included, and the box
+for that side's human, "Also @… in person", with its hint.
+
 **Reason:** an allow with no agent writes no entry, and the hub files a
 new request at once: the owner's click would seem to do nothing. The
 human's box covers the human's own free work messages too, not only the
 chats, so it is shown even where the human is in no chat. An empty rule
-sent as `""` would be stored as a rule saying nothing.
+sent as `""` would be stored as a rule saying nothing. The two parts say
+which side is which: in one list, the other side's person read as one of
+one's own agents, and the list did not say who is the source and who the
+target.
 
 **Alternatives considered:**
 - Sending an allow with no agent and letting the hub ask again: rejected
@@ -6811,6 +6819,9 @@ sent as `""` would be stored as a rule saying nothing.
 - A field for the reach (`their_agents`): left out of this part; the
   default covers what the request names, and the lists page is where an
   entry is narrowed.
+- The human's box as one more line in the list of one's agents (the form
+  until 2026-11-15): rejected by the owner, it read as one of one's own
+  agents.
 ## Who may chat with one's agents is a tab of /agents; whom an entry names is chosen among the members of one's projects
 
 **Id:** 5be40abe-674f-412a-b4a4-7cfec2ff960d

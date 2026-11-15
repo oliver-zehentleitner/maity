@@ -4,6 +4,7 @@ in one transaction."""
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import re
 from datetime import timedelta
@@ -1601,6 +1602,62 @@ def test_the_hourly_digest_pass_runs_before_the_deletion(
     assert deleted_at(migrated, pat.id) is not None
 
 
+@pytest.mark.parametrize("mode", ["bell", "inbox"])
+def test_the_hourly_pass_leaves_an_owner_deleted_after_it_was_collected_alone(
+    make_client: ClientFactory,
+    migrated: Engine,
+    moment: Clock,
+    mode: str,
+) -> None:
+    """The opposite order of the test above: the hourly pass (§5.3) collects pat, whose agent
+    instance is away, and the deletion commits before the pass reaches pat. The episode is
+    still read after the deletion, but the pass finds the owner deleted under the account lock
+    and leaves them alone: no digest request is filed and no record is written for them."""
+    from datetime import timedelta
+
+    from maity_hub import events, not_listening_digest
+    from tests.test_not_listening_digest import _agent, _episode
+
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    member_of_a_project(make_client, migrated, pat)
+    assert (
+        pat.patch("/me/notification-settings", {"not_listening": {"mode": mode}}).status_code == 200
+    )
+    agent = _agent(make_client, pat)
+    _episode(migrated, agent, timedelta(hours=2))
+    token = requested(pat, migrated)
+    reached: list[str] = []
+
+    class DeletedFirst:
+        """The pass asks before each owner's transaction whether to stop: the first time, once
+        the owners are collected, the deletion commits."""
+
+        def is_set(self) -> bool:
+            if not reached:
+                reached.append(pat.id)
+                with events.transaction(migrated) as conn:
+                    assert account_deletion.confirm(conn, mail_env(), token) == "deleted"
+            return False
+
+    not_listening_digest.run(migrated, stop=DeletedFirst())
+    assert reached == [pat.id]
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        assert (
+            conn.execute(
+                select(t.account_record).where(t.account_record.c.human_id == pat.id)
+            ).all()
+            == []
+        )
+        open_ = conn.execute(
+            select(t.request.c.id).where(
+                t.request.c.to_human == pat.id, t.request.c.status == "open"
+            )
+        ).all()
+        assert open_ == []
+
+
 def worker_parts(kind: str, migrated: Engine, pat: flow.Human) -> tuple[Any, Any]:
     """`(owner, name)` of the call to stop a worker's write at, after it locked a row of
     pat's that the deletion removes and before it writes pat's record; and the write, on the
@@ -1694,3 +1751,344 @@ def test_a_worker_writing_the_humans_record_runs_before_the_deletion(
         assert finished(step) == "deleted"
         deletion.commit()
     assert deleted_at(migrated, pat.id) is not None
+
+
+# --- the writers that hold a project's or an organisation's lock, then the human's row ----------
+
+
+def personal_request(migrated: Engine, project_id: str, to_human: str, asker: str) -> str:
+    """An open personal request to `to_human` in the project, as a human outside it asks one."""
+    from maity_hub.ids import new_id
+
+    request_id = new_id("request")
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.request).values(
+                id=request_id, project_id=project_id, **{"class": "question"}, title="Q",
+                summary="-", options=[], priority="normal", to_kind="human", to_human=to_human,
+                personal=True, asked_by=None, asked_by_human=asker, while_open="wait",
+                status="open", created_at=clock.now(),
+            )
+        )  # fmt: skip
+    return request_id
+
+
+def paused_after_first_record(
+    monkeypatch: pytest.MonkeyPatch, human_id: str
+) -> tuple[Any, Any, list[str]]:
+    """Stop the deletion right after it wrote the human's record for the first request it
+    withdrew: it holds the human's row from there on. `reached`, `go` as `paused`; the list
+    gets that request's id."""
+    import threading
+
+    from maity_hub.notifications import records
+    from tests.concurrency import FINISH_WITHIN
+
+    reached, go = threading.Event(), threading.Event()
+    first: list[str] = []
+    original = records.personal_request
+
+    def held(conn: Any, request: Any) -> None:
+        original(conn, request)
+        if not first and request.to_human == human_id and request.status == "withdrawn":
+            first.append(request.id)
+            reached.set()
+            go.wait(FINISH_WITHIN)
+
+    monkeypatch.setattr(records, "personal_request", held)
+    return reached, go, first
+
+
+def two_projects(make_client: ClientFactory, migrated: Engine) -> tuple[flow.Human, str, str]:
+    """An owner with two projects, `first` and `second`, in the order of their ids."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "one")
+    flow.project(owner, "two")
+    with migrated.connect() as conn:
+        ids = sorted(conn.execute(select(t.project.c.id)).scalars())
+    return owner, ids[0], ids[1]
+
+
+def project_writer(
+    kind: str,
+    make_client: ClientFactory,
+    migrated: Engine,
+    owner: flow.Human,
+    pat: Any,
+    project: str,
+) -> Any:
+    """What `kind` writes to pat under the project's lock, ready to run on a connection: the
+    project's lock first, then the write that locks pat's row."""
+    from types import SimpleNamespace
+
+    from maity_hub import chat_request, restricted
+    from maity_hub.jourfixe import moderators
+    from maity_hub.routes.requests import file_to_human_outside
+
+    if kind == "personal_request":
+        caller = SimpleNamespace(human_id=owner.id, via=None)
+
+        def file_personal(conn: Any) -> None:
+            lock_project(conn, project)
+            file_to_human_outside(
+                conn, project, caller, pat.id, "Boss", "-",  # type: ignore[arg-type]
+                {"kind": "cross_owner_reports_to", "requests": []},
+            )  # fmt: skip
+
+        return file_personal
+    if kind == "chat_request":
+        writer = factory.human(migrated, "writer")
+        factory.membership(migrated, project, "member", human_id=writer)
+        made = pat.post("/agents", {"handle": "pats-agent", "display_name": "Pat's agent"})
+        assert made.status_code == 201, made.text
+        theirs = made.json()["id"]  # pat's agent, no member of `project`
+
+        def note_held(conn: Any) -> None:
+            lock_project(conn, project)
+            chat_request.note_held(conn, project, 1, "notice", (writer, "human"), writer, [theirs])
+
+        return note_held
+    if kind == "restricted_notice":
+        ended = factory.membership(migrated, project, "member", human_id=pat.id)
+        with migrated.begin() as conn:  # on the card's list, its membership ended since
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == ended)
+                .values(active=None, removed_at=clock.now())
+            )
+
+        def notify(conn: Any) -> None:
+            lock_project(conn, project)
+            restricted._notify(conn, project, None, 1, [ended], set())
+
+        return notify
+    assert kind == "jour_fixe"
+    asker = factory.membership(migrated, project, "admin", human_id=factory.human(migrated, "jf"))
+    series = SimpleNamespace(id="jfs-test", project_id=project)
+    proposal = {"kind": moderators.KIND, "series_id": series.id, "membership_id": asker,
+                "side": "owner", "requests": []}  # fmt: skip
+
+    def file_jour_fixe(conn: Any) -> None:
+        lock_project(conn, project)
+        moderators._file_by_hub(
+            conn, series, SimpleNamespace(id=asker), pat.id, "Moderator", "-", proposal
+        )
+
+    return file_jour_fixe
+
+
+PROJECT_WRITERS = ["personal_request", "chat_request", "restricted_notice", "jour_fixe"]
+
+
+@pytest.mark.parametrize("kind", PROJECT_WRITERS)
+def test_a_writer_holding_a_project_lock_meets_the_deletion_in_its_first_pass(
+    make_client: ClientFactory,
+    migrated: Engine,
+    moment: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    """The deletion withdraws pat's open personal requests one by one, and each writes pat's
+    record (pat's row locked). A write in the second request's project that holds the project's
+    lock and then locks pat's row (a personal request filed to pat, a chat request, a restricted
+    card's notice, a jour fixe filing) deadlocked with the deletion's later lock of that project.
+    The deletion locks every project it locks later in its first pass: stopped after the first
+    record, it holds the second project already, so the write waits for its commit
+    (PostgreSQL, MariaDB)."""
+    from tests.concurrency import FINISH_WITHIN, finished, race, waiting
+
+    admin_first(migrated, moment)
+    owner, first, second = two_projects(make_client, migrated)
+    pat = person(make_client, migrated, moment)
+    personal_request(migrated, first, pat.id, owner.id)
+    moment.move(seconds=1)
+    personal_request(migrated, second, pat.id, owner.id)
+    write = project_writer(kind, make_client, migrated, owner, pat, second)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    reached, go, _ = paused_after_first_record(monkeypatch, pat.id)
+    with race(migrated) as r:
+        writer, deletion = r.first, r.second
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        try:
+            assert reached.wait(FINISH_WITHIN)  # pat's row locked, the second project next
+            writing = r.run(writer, lambda: write(writer))
+            assert waiting(writing)  # on the second project's lock the deletion holds
+        finally:
+            go.set()
+        assert finished(step) == "deleted"
+        deletion.commit()
+        finished(writing)
+        writer.commit()
+    assert deleted_at(migrated, pat.id) is not None
+
+
+def test_an_organisations_invitation_meets_the_deletion_in_its_first_pass(
+    make_client: ClientFactory,
+    migrated: Engine,
+    moment: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two organisations invite pat. The deletion withdraws the invitations one by one, writing
+    pat's record for each; a revocation of the other one holds its organisation's lock and the
+    invitation's row and then locks pat's row, and deadlocked with the deletion's later update
+    of that row. The deletion locks the organisations of the invitations to pat in its first
+    pass, so the revocation waits for its commit and then finds nothing to revoke
+    (PostgreSQL, MariaDB)."""
+    from maity_hub import org_invitations, orgs
+    from maity_hub.errors import ApiError
+    from tests.concurrency import FINISH_WITHIN, finished, race, waiting
+    from tests.test_orgs import make_org
+
+    admin_first(migrated, moment)
+    owner = flow.human(make_client, migrated)
+    made = [make_org(owner, handle, handle.title()) for handle in ("org-one", "org-two")]
+    pat = person(make_client, migrated, moment)
+    for org in made:
+        sent = owner.post(
+            f"/orgs/{org['handle']}/members/invitations", {"handle": "pat", "role": "member"}
+        )
+        assert sent.status_code == 202, sent.text
+    with migrated.connect() as conn:
+        invited = {
+            row.request_id: row
+            for row in conn.execute(
+                select(t.org_invitation).where(t.org_invitation.c.live.is_(True))
+            )
+        }
+    token = requested(pat, migrated)
+    hub = mail_env()
+    reached, go, first = paused_after_first_record(monkeypatch, pat.id)
+
+    def revoke_the_other(conn: Any) -> None:
+        [other] = [row for request_id, row in invited.items() if request_id != first[0]]
+        org = orgs.lock(conn, other.org_id)
+        with contextlib.suppress(ApiError):  # withdrawn by the deletion meanwhile
+            org_invitations.revoke(conn, org, "owner", other.id)
+
+    with race(migrated) as r:
+        revoker, deletion = r.first, r.second
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        try:
+            assert reached.wait(FINISH_WITHIN)  # pat's row locked, the other invitation next
+            revoking = r.run(revoker, lambda: revoke_the_other(revoker))
+            assert waiting(revoking)  # on the organisation's lock the deletion holds
+        finally:
+            go.set()
+        assert finished(step) == "deleted"
+        deletion.commit()
+        finished(revoking)
+        revoker.commit()
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        closed = conn.execute(select(t.org_invitation.c.closed_by)).scalars().all()
+    assert sorted(closed) == ["invitee_deleted", "invitee_deleted"]
+
+
+def test_a_sign_in_ending_the_presented_session_meets_the_deletion_first(
+    make_client: ClientFactory,
+    migrated: Engine,
+    moment: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Someone signs in in a browser that still holds pat's live session: the sign-in ends that
+    session and writes pat's record (`auth.end_presented`). The deletion, past pat's first
+    record, ends pat's sessions later; the two deadlocked on the session's row and pat's row.
+    The sign-in takes pat's account lock shared before it touches the session, so it waits for
+    the deletion, finds the session ended and signs in (PostgreSQL, MariaDB)."""
+    from tests.concurrency import FINISH_WITHIN, finished, race, waiting
+
+    admin_first(migrated, moment)
+    owner, first, _ = two_projects(make_client, migrated)
+    pat = person(make_client, migrated, moment)  # pat's browser holds pat's live session
+    factory.human(migrated, "quinn")
+    personal_request(migrated, first, pat.id, owner.id)
+    token = requested(pat, migrated)
+    hub = mail_env()
+    reached, go, _ = paused_after_first_record(monkeypatch, pat.id)
+    with race(migrated) as r:
+        other, deletion = r.first, r.second
+        step = r.run(deletion, lambda: account_deletion.confirm(deletion, hub, token))
+        try:
+            assert reached.wait(FINISH_WITHIN)  # pat's row locked, the sessions not ended yet
+            signing_in = r.run(other, lambda: factory.login_handle(pat.client, "quinn").status_code)
+            assert waiting(signing_in)  # on pat's account lock the deletion holds
+        finally:
+            go.set()
+        assert finished(step) == "deleted"
+        deletion.commit()
+        assert finished(signing_in) == 200
+    assert deleted_at(migrated, pat.id) is not None
+    with migrated.connect() as conn:
+        ended = conn.execute(
+            select(t.human_session.c.ended_by).where(t.human_session.c.human_id == pat.id)
+        ).scalars()
+        assert set(ended) == {"account_deleted"}
+
+
+def test_the_deletion_takes_no_project_or_organisation_lock_after_its_first_pass(
+    make_client: ClientFactory, migrated: Engine, moment: Clock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every project and organisation the deletion locks, it locks in its first pass
+    (`account_deletion.lock_first`): the world's project with pat's membership, agent, runner,
+    invitation and held decision, and further projects with personal requests to pat, an
+    invitation by handle to pat and a repository pat confirmed, and organisations pat belongs
+    to or is invited to. Read off the statements, so it holds on every database."""
+    from sqlalchemy import event
+
+    from maity_hub import events
+    from tests.test_orgs import make_org
+
+    w = world(make_client, migrated, moment)
+    pat, owner = w["pat"], w["owner"]
+    for slug in ("asks", "invites", "confirmed"):
+        flow.project(owner, slug)
+    with migrated.connect() as conn:
+        slugs = dict(conn.execute(select(t.project.c.slug, t.project.c.id)).all())
+    personal_request(migrated, slugs["asks"], pat.id, owner.id)
+    sent = owner.post("/projects/maintainer/invites/invitations", {"handle": "pat"})
+    assert sent.status_code in (201, 202), sent.text
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == slugs["confirmed"])
+            .values(repository_owner_confirmed=True, repository_confirmed_by=pat.id)
+        )
+    org = make_org(owner, "org-invites", "Org Invites")
+    sent = owner.post(
+        f"/orgs/{org['handle']}/members/invitations", {"handle": "pat", "role": "member"}
+    )
+    assert sent.status_code == 202, sent.text
+    token = requested(pat, migrated)
+    locked: list[tuple[str, str]] = []
+
+    def seen(conn: Any, clause: Any, *args: Any) -> None:
+        if getattr(clause, "_for_update_arg", None) is None:
+            return
+        tables = {f.name for f in clause.get_final_froms() if hasattr(f, "name")}
+        for name in ("project", "org"):
+            if name in tables:
+                params = clause.compile().params
+                locked.append((name, str(next(v for k, v in params.items() if k.startswith("id")))))
+
+    original = account_deletion.lock_first
+
+    def marked(conn: Any, human_id: str) -> None:
+        original(conn, human_id)
+        locked.append(("pass", "end"))
+
+    monkeypatch.setattr(account_deletion, "lock_first", marked)
+    event.listen(migrated, "before_execute", seen)
+    try:
+        with events.transaction(migrated) as conn:
+            assert account_deletion.confirm(conn, mail_env(), token) == "deleted"
+    finally:
+        event.remove(migrated, "before_execute", seen)
+    end = locked.index(("pass", "end"))
+    first, later = set(locked[:end]), set(locked[end + 1 :])
+    assert later, "the deletion locked nothing after its pass: the world is too small"
+    assert later <= first, sorted(later - first)
+    assert {("project", slugs[s]) for s in ("asks", "invites", "confirmed")} <= first
+    assert ("org", org["id"]) in first
+    projects = [v for k, v in locked[:end] if k == "project"]
+    assert projects == sorted(projects)

@@ -427,6 +427,31 @@ def test_an_old_or_unknown_claude_code_is_refused_by_default_where_its_sandbox_c
     assert (found == ("harness_refused", None)) is refused
 
 
+def test_the_launch_uses_the_binary_and_sandbox_the_gate_decided_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The keeper may swap a tool (a rollback) between the start gate and the launch: the
+    launch keeps the gate's binary and sandbox, never the new binary under the old answer."""
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    p = placement(harness="claude-code")
+    view = supervisor.GateView.of(target, "claude-code")
+    assert view == supervisor.GateView(capabilities.Probe("/usr/bin/claude", "2.1.325", None),
+                                       True, False)  # fmt: skip
+    # the rollback, as Keeper.refresh writes it
+    target.probes["claude-code"] = capabilities.Probe("/old/claude", "2.1.294", None)
+    target.sandbox["claude-code"] = False
+    target.held.add("claude-code")
+    assert sup._refusal(p, target, view) is None  # the gate's view
+    assert sup._refusal(p, target) == ("harness_refused", None)  # a new look refuses
+    place = workspace.Workspace(tmp_path / "ws" / "c", "maity", "c")
+    harness = sup.cfg.harnesses["claude-code"]
+    ctx = sup._context(p, harness, place, target, view=view)
+    assert (ctx.binary, ctx.sandbox) == ("/usr/bin/claude", True)
+    later = sup._context(p, harness, place, target)
+    assert (later.binary, later.sandbox) == ("/old/claude", False)
+
+
 @pytest.mark.parametrize("extra", ["", "require_sandbox = false\n"])
 def test_a_sandboxed_start_is_refused_while_settings_switch_hooks_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: str
@@ -2456,9 +2481,9 @@ def test_a_new_generation_does_not_resume_the_hung_session(
     seen: list[bool] = []
     context = sup._context
 
-    def spy(*args: Any) -> Any:
+    def spy(*args: Any, **kwargs: Any) -> Any:
         seen.append(args[-1])
-        return context(*args)
+        return context(*args, **kwargs)
 
     monkeypatch.setattr(sup, "_context", spy)
     sup.update([placement(mode="interactive", health=HEALTH, generation=2)])
