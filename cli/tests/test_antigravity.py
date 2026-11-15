@@ -197,10 +197,44 @@ def _go_regex(word: str) -> str:
     return word
 
 
+# Go's strings.TrimSpace for ASCII; a non-ASCII space sends agy to its whole-line match.
+_GO_ASCII_SPACE = " \t\n\v\f\r"
+
+
+def _drop_dollar_quotes(line: str) -> str:
+    """mvdan/sh reads `$'…'` and `$"…"` as quotes with a `Dollar` flag, and agy's wordLiteral
+    takes their raw text, flag ignored: the same as without the `$`."""
+    out: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if quote == "'":
+            quote = "" if c == "'" else quote
+        elif c == "\\":
+            out.append(line[i : i + 2])
+            i += 2
+            continue
+        elif quote == '"':
+            quote = "" if c == '"' else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "$" and line[i + 1 : i + 2] in ("'", '"'):
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def _agy_words(line: str) -> list[str]:
-    """A line split into words like a shell line, as agy does with mvdan/sh; agy drops a word
-    that comes out empty (`''`), so `git status ''` is `git status`."""
-    return [word for word in shlex.split(line) if word]
+    """A line split into words like a shell line, as agy 1.5.9 does with mvdan/sh: each word's
+    text without its quotes, trimmed at both edges (terminal.wordLiteral ends in
+    strings.TrimSpace), and a word that comes out empty dropped (extractSimpleCommands.func1
+    skips it). So `git status ''` is `git status` for agy, though the shell passes the
+    command one argument more."""
+    words = (word.strip(_GO_ASCII_SPACE) for word in shlex.split(_drop_dollar_quotes(line)))
+    return [word for word in words if word]
 
 
 def _agy_exact(command: str) -> bool:
@@ -277,9 +311,6 @@ def test_an_exact_grant_allows_exactly_that_command(tmp_path: Path) -> None:
     assert agy_decides(settings, "git status") == "allowed"
     assert agy_decides(settings, "git  status") == "allowed"  # the same words
     assert agy_decides(settings, "git status --anything") == "denied"
-    # agy drops an empty word, so this is `git status` itself, allowed as Claude Code allows
-    # `Bash(git status)` for it: the shell passes no further argument either.
-    assert agy_decides(settings, "git status ''") == "allowed"
     assert agy_decides(settings, "git status -s --porcelain") == "denied"
     assert agy_decides(settings, "git log") == "sandbox"  # unrelated: not granted
     assert agy_decides(settings, "git statusx") == "sandbox"
@@ -287,11 +318,41 @@ def test_an_exact_grant_allows_exactly_that_command(tmp_path: Path) -> None:
     assert agy_decides(settings, "maity status") == "allowed"  # maity stays a prefix
 
 
-@pytest.mark.parametrize("extra", ["a\nb", "a\rb", "a\u2028b", "a\u2029b", "\n", " "])
+@pytest.mark.parametrize(
+    "line",
+    ["git status ''", 'git status ""', "git status $''", 'git status $""', "git status ''\"\"",
+     "git status ' '", "git status '\t'", "git status '\n'", "git '' status"],
+)  # fmt: skip
+def test_an_extra_empty_or_blank_argument_is_allowed_as_agy_cannot_see_it(
+    tmp_path: Path, line: str
+) -> None:
+    """The documented limit of agy's exact grants (docs/runners.md): the shell passes one
+    argument more than granted, but agy 1.5.9 never sees it. Such a line does not make agy
+    match the whole line (terminal.RequiresExactMatch: no NUL, no non-ASCII control or space
+    character, it parses, and its walker accepts single and double quotes, `$` forms
+    included), so agy matches words; terminal.wordLiteral takes a quoted word's raw text and
+    trims it with strings.TrimSpace, and extractSimpleCommands.func1 skips a word that is
+    then empty, before any allow or deny rule is compared. No rule can catch it."""
+    settings = agy_settings(tmp_path, "git status")
+    assert len(shlex.split(_drop_dollar_quotes(line))) == 3  # the shell: one more argument
+    assert agy_decides(settings, line) == "allowed"
+    assert agy_decides(settings, line + " -s") == "denied"  # a real one is still refused
+
+
+def test_agy_trims_a_quoted_argument_at_its_edges(tmp_path: Path) -> None:
+    """The same wordLiteral trim: blanks at the edges of a quoted word are gone for agy, so
+    a quoted granted word with a space in front counts as the granted word."""
+    settings = agy_settings(tmp_path, "git status")
+    assert agy_decides(settings, "git ' status'") == "allowed"
+    assert agy_decides(settings, "git status ' x'") == "denied"
+
+
+@pytest.mark.parametrize("extra", ["a\nb", "a\rb", "a\u2028b", "a\u2029b", "\u2028"])
 def test_the_deny_covers_an_extra_argument_with_a_line_break(tmp_path: Path, extra: str) -> None:
-    """A quoted further argument holding a line break is still a longer form: refused. A line
-    feed stays in agy's word (Go's `.` does not match it); U+2028 and U+2029 make agy match the
-    whole line, which the deny matches as well."""
+    """A quoted further argument holding a line break and more is still a longer form:
+    refused. A line feed inside the word stays in agy's word (Go's `.` does not match it);
+    U+2028 and U+2029 make agy match the whole line, which the deny matches as well. A word
+    of nothing but ASCII blanks is gone for agy (the test above)."""
     settings = agy_settings(tmp_path, "echo hello")
     assert agy_decides(settings, f"echo hello {shlex.quote(extra)}") == "denied"
     assert agy_decides(settings, f"echo hello -n {shlex.quote(extra)}") == "denied"
@@ -389,13 +450,34 @@ def test_check_names_the_grants_left_out_for_antigravity() -> None:
     report = commands.Report()
     commands._check_repositories(report, config.parse(tomllib.loads(text), Path("runner.toml")))
     texts = [text for level, text in report.lines if level == "warn"]
-    assert not report.failed and len(texts) == 2
+    assert not report.failed and len(texts) == 3
     assert "'git status' is left out for antigravity" in texts[0]
     assert "'pytest tests/x.py' is left out" in texts[1] and "agy's sandbox" in texts[1]
+    # One line per repository with exact entries for agy: the extra blank argument it allows.
+    assert "extra empty or blank argument" in texts[2] and "cannot tell it apart" in texts[2]
     without = text.replace("[harness.antigravity]\n", "")
     quiet = commands.Report()
     commands._check_repositories(quiet, config.parse(tomllib.loads(without), Path("runner.toml")))
     assert quiet.lines == []
+
+
+def test_check_names_the_blank_argument_limit_only_with_exact_agy_entries() -> None:
+    """Prefix entries, left-out entries and none at all: agy gets no exact entry, so there is
+    nothing to say about one; each repository with one gets the line once."""
+    repo = '\n[repositories."github.com/oliver-zehentleitner/{}"]\nallow = [{}]\n'
+    lines = {"a": '"make test", "git log -1"', "b": '"ruff *", "pytest tests/x.py"', "c": ""}
+    text = CHECK_CONFIG.replace(
+        'repositories = ["github.com/oliver-zehentleitner/maity"]',
+        "repositories = ["
+        + ", ".join(f'"github.com/oliver-zehentleitner/{n}"' for n in lines)
+        + "]",
+    ) + "".join(repo.format(name, allow) for name, allow in lines.items())
+    report = commands.Report()
+    commands._check_repositories(report, config.parse(tomllib.loads(text), Path("runner.toml")))
+    blank = [text for _, text in report.lines if "extra empty or blank argument" in text]
+    assert len(blank) == 1 and blank[0].startswith(
+        "repositories.github.com/oliver-zehentleitner/a:"
+    )
 
 
 CHECK_CONFIG = """\

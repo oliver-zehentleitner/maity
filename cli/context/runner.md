@@ -637,9 +637,9 @@ Details of the settings §15.3 describes, chosen in the code:
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source
+**Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source; review order A587 on #1828 (the empty argument), with agy's terminal.RequiresExactMatch, its walker, terminal.wordLiteral and extractSimpleCommands.func1 read from the binary
 **See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
-**Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match or adds an exact form
+**Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match, keeps an empty word, or adds an exact form
 
 An exact `allow` entry `a b` (no `*`) becomes the allow rule
 `command(a b)` plus the deny rule
@@ -671,12 +671,29 @@ without the `s` flag), where `.` matches every character but a line
 feed, so `.*` did not cover a quoted argument holding one. The class
 holds no backslash, quote, parenthesis or `|`, which agy's shell split
 of the rule would take apart or reject; it reaches the regex compiler
-unchanged on every path of that split. agy drops an empty word, so
-`a b ''` is `a b` and allowed. Two exact entries that
+unchanged on every path of that split. Two exact entries that
 share a start cannot both stay exact with one deny each: the shorter
 one's deny refuses the longer one, so the shorter one is left out.
 The env-assignment and redirect cases in **Revisit when** are open: both
 need a signed-in agy, which has not been allowed for a test run.
+
+**Limit:** agy cannot tell an extra empty argument apart; it is allowed.
+`a b ''`, `a b ""`, `a b $''`, `a b ' '` and `a '' b` run as `a b`,
+outside the sandbox, though the shell passes one argument more. No rule
+can catch it (review order A587 on #1828, agy 1.5.9 read from its
+binary): such a line does not make agy match the whole line, since
+`terminal.RequiresExactMatch` fires only on a NUL, a non-ASCII control,
+format or space character, a parse error or a construct its walker
+refuses, and the walker accepts `*syntax.SglQuoted` (with or without
+`$`) and a `*syntax.DblQuoted` of literals; so agy matches words, and
+`terminal.wordLiteral` takes a quoted word's raw text and ends in
+`strings.TrimSpace`, and `extractSimpleCommands.func1` skips a word
+whose text is then empty, before `shared.coversCommand` hands the words
+to `MatchesConfigAny`. `MatchesConfigAnyRaw`, the only matcher that sees
+the raw line, runs only on the whole-line path. The same trim makes
+`a ' b'` count as `a b`. `maity runner check` names the limit once per
+repository with exact entries for agy, and docs/runners.md says it to
+the owner.
 
 **Rejected alternatives:**
 - Keeping the prefix match as a recorded difference: one harness would
@@ -700,6 +717,10 @@ need a signed-in agy, which has not been allowed for a test run.
   the backslash, and the parentheses are shell syntax, so the word
   would reach the compiler only through agy's fallback for a line that
   does not parse; the bracket class needs no such fallback.
+- A deny that catches an empty quoted word after an exact entry (review
+  order A587's option (a)): agy drops the word before any rule is
+  compared, and `MatchesConfigAnyRaw` sees the raw line only on the
+  whole-line path, which such a line never takes; no rule can say it.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 

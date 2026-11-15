@@ -651,7 +651,8 @@ AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
 # nothing, so a deny it could misread would fail open (the agy grants entry in
 # cli/context/runner.md). `.` and `+` are left out on purpose: in a regex they match more.
 AGY_SAFE_WORD = re.compile(r"[A-Za-z0-9_/=:@%,-]+")
-# The deny's last word: any further word, whatever it holds. agy compiles each word of a
+# The deny's last word: any further word agy sees (it drops an empty or blank one before
+# matching, which no rule can catch; docs/runners.md). agy compiles each word of a
 # `regex:` rule with Go's regexp.Compile (syntax.Perl, no DotNL), where `.` matches every
 # character but a line feed, so `.*` missed a quoted argument holding one. A bracket class of
 # all ASCII and all non-ASCII matches every character, `\n` included, and needs neither a
