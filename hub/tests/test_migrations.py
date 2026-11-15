@@ -1670,15 +1670,14 @@ def test_join_seq_fills_every_membership_in_batches_and_runs_again(engine: Engin
     assert stored() == expected
 
 
-def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Engine) -> None:
-    """§9.6, "this section ships": after the upgrade every agent in an open group chat with
-    someone of another side waits for that side, whatever entries exist; a human, an agent of
-    the chat's only side and a closed chat's stays are left alone. The downgrade drops the
-    columns and nothing else: the stays, chats and entries are kept, and upgrading again
-    makes the same agents wait."""
+def test_firewall_waiting_is_schema_only(engine: Engine) -> None:
+    """§9.6, "The switch" (req-5tngzfgp3nne o2): the revision adds the columns and the index
+    and marks no one, even an agent in an open group chat with someone of another side; who
+    waits is the hub's to write once the switch is on (`chat_gate.switch_on`). The downgrade
+    drops the columns and nothing else: the stays, chats and entries are kept."""
     from datetime import UTC, datetime
 
-    from sqlalchemy import func, insert, select, text
+    from sqlalchemy import func, insert, inspect, select, text
 
     from maity_hub import tables as t
     from tests import factory
@@ -1741,13 +1740,15 @@ def test_firewall_waiting_lets_every_agent_meeting_another_side_wait(engine: Eng
         }
     assert found == {
         ("cnv-mixed", a): (None, False),
-        ("cnv-mixed", agent_a.agent_id): ([b], True),
-        ("cnv-mixed", agent_b.agent_id): ([a], True),
+        ("cnv-mixed", agent_a.agent_id): (None, False),
+        ("cnv-mixed", agent_b.agent_id): (None, False),
         ("cnv-alone", a): (None, False),
         ("cnv-alone", agent_a.agent_id): (None, False),
         ("cnv-closed", a): (None, False),
         ("cnv-closed", agent_b.agent_id): (None, False),
     }
+    assert "ix_chat_access_until" in {i["name"] for i in inspect(engine).get_indexes("chat_access")}
+    assert "lapsed_at" in {c["name"] for c in inspect(engine).get_columns("chat_access")}
 
 
 def test_sealed_verifiers_seals_with_the_key_and_the_downgrade_opens_them(engine: Engine) -> None:
