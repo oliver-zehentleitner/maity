@@ -42,7 +42,7 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
 
     import maity_hub.cli
 
-    def deadlocked(_engine: object) -> None:
+    def deadlocked(_engine: object, **_options: object) -> None:
         raise OperationalError("ALTER TABLE", {}, Exception("deadlock detected"))
 
     monkeypatch.setattr(maity_hub.cli, "migrate", deadlocked)
@@ -50,6 +50,22 @@ def test_a_migrate_that_gives_up_says_where_the_schema_stays(
     err = capsys.readouterr().err.splitlines()
     assert err[0] == f"maity-hub: schema stays at empty, head {head()} not reached"
     assert err[1].endswith(": deadlock detected")
+
+
+def test_migrate_hands_the_instance_key_to_the_migrations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The migration that seals the credentials' verifiers needs the key (docs/api.md §2.2)."""
+    import base64
+
+    import maity_hub.cli
+
+    key = bytes(range(32))
+    handed: list[object] = []
+    monkeypatch.setenv("MAITY_SECRET_KEY", base64.b64encode(key).decode())
+    monkeypatch.setattr(
+        maity_hub.cli, "migrate", lambda _engine, **options: handed.append(options["secret_key"])
+    )
+    assert main(["migrate"]) == 0
+    assert handed == [key]
 
 
 @pytest.mark.wheel
