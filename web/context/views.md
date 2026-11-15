@@ -5757,6 +5757,65 @@ built for the sign-in, so the visitor's page reuses it rather than a third desig
 - A Sign in without `?next=`: the visitor would land on their own start after signing in, not on
   the page they were reading.
 
+## A visitor's project page has the mockup's hero, band and tab bar; their rules are one stylesheet of the dashboard, loaded with the frame's
+
+**Id:** ceca5e16-eb8f-4936-b15d-c4e75333959c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3 and the lead's cut of it (PR 1: the parts that need no new data; the shared rules into web/css once, for the person and agent pages too); the designer's approved mockup (project.html, pp.css, README points 3, 5 and 8; the maintainer's approval in group chat seq 118113, 2026-11-12); `web/js/visitor.js`, `web/js/site-chrome.js`, `web/css/public-sections.css`, 2026-11-14
+**See:** views.md#a-visitors-public-page-stands-in-the-landings-frame-the-apps-bar-only-where-the-frame-cannot-be-read — 6d168e98-d442-4a3a-bd1c-57158eeeb273 — as of 2026-11-14
+
+Signed out, a project's page and its views (`js/visitor.js`) open with the dark page hero of the
+landing (`section.phero.hero.dz`): the crumb `owner / slug`, the project's tile, the title and, on
+the Overview, the state chip, the about text, the hero's buttons, the project's links as one row
+and who is online. The Overview adds a band of figures; every view then has the views as a bar
+across the page (`nav.ptabs`), and the view itself stands under it in the stored pages' look.
+
+- The tile is the project's first letter, as the hub's `/explore` draws it (`monogram` in
+  `public_projects.py`, mirrored in the dashboard): projects have no picture.
+- The members figure counts the project's own `people` and `agents`, which name every member
+  (§16.9); the other figures are `statistics.totals`. A figure that is 0 or `null` is left out.
+- "Try it" goes where the header's call to action goes (the frame model's `header.cta`, the
+  landing hero's primary button), filled in once the frame is read: where the header has none,
+  neither has the hero.
+- A tab's own answer has no state, about, links or figures, so its hero has the crumb, the tile
+  (from the slug), the slug, "Try it" and Report; the Overview's parts are not read a second
+  time for it. "Try it" and Report stay on every view: the README (point 10) puts every tab under
+  the same project hero, and Report stands under the title of every public page (§16.8).
+- The about text's Markdown can use the dashboard's own tokens, which the dark zone does not set:
+  `--surface-2` under a fenced code block (`.md-code`) and its Copy button, `--ok` for "Copied".
+  The hero maps them to dark values. Inline code gets no ground there (the about text is
+  `.sub.about`, not `.md`, so `.md code` does not apply): it stays on the hero's ground in the
+  text's muted colour, which passes on the dark zone.
+
+The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
+are `web/css/public-sections.css`, one file for the project, person and agent pages.
+`index.html` names it as a disabled `<link>`, so the shell gives it its version as every file
+of the dashboard (§16.11, the warm load asks for none again); `js/site-chrome.js` moves it behind
+`landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
+with them. A name the dashboard's `app.css` also
+uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
+
+**Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,
+`.stat`), which exist only while the frame's stylesheets are on; loaded after them, the same
+selectors win without `!important`, and off the frame nothing of the app can be restyled. One
+file keeps the person and agent pages that follow on the same rules instead of copies.
+
+**Rejected alternatives:**
+- The rules in `css/app.css`: they would apply signed in too, where the landing's tokens are
+  absent, and load before `landing.css`, which then wins every rule of equal weight.
+- The rules in the hub's `public-pages.css`: the hub's stored pages do not draw these parts yet,
+  and the lead asked for them in `web/css`; the shared `.sec` and `.pmark` stay there, used by
+  `/explore`.
+- A link in `index.html` that stays where it is and always on: before the frame's stylesheets in
+  the cascade, and on in the signed-in app.
+- A `<link>` the frame adds by its own name: the shell versions only the files `index.html` names
+  (and lists `brand/`, `js/i18n/`, `vendor/` for scripts), so it would be named without a version.
+
+**Revisit when:** the hub's stored pages (`?as=public`) draw the same hero and band, so the rules
+belong with `public-pages.css`; or the signed-in frame gets the same look.
+
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
 **Id:** 71dc43d7-fef5-4123-83de-841dcc06c2bd
