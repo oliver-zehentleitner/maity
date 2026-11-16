@@ -21,6 +21,7 @@ NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/outsiders/{}/block"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
     ("DELETE", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
+    ("GET", "/admin/instance"),  # no route yet: tsk-f87sx61wbfdj, the instance's settings
     ("GET", "/agents/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings

@@ -17294,6 +17294,7 @@ and `resolveEntry`, and any write.
 | GET, PUT, DELETE | `/admin/maintenance` | instance admin, human only | 16.12 |
 | POST | `/admin/maintenance/end` | instance admin, human only | 16.12 |
 | GET | `/admin/maintenance/changes` | instance admin, human only | 16.12 |
+| GET | `/admin/instance` | instance admin, human only | 16.14 |
 | GET, PATCH | `/me/broadcasts` | human | 16.12 |
 
 `DELETE` answers `200` with the resource in its final state. A call that
@@ -20366,6 +20367,9 @@ attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLI
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
 §2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_KTW_SKILL_SOURCE` and `MAITY_KTW_SKILL_GUIDE` §6.23, `MAITY_SMTP_*`,
 `MAITY_MAIL_SIGNING_KEY` and `MAITY_SECRET_KEY` §16.2).
+All of them, with the value in effect and where it came from, secrets
+only as set or not set, are listed read-only in `GET /admin/instance`
+(§16.14).
 
 **Sign-in methods** — device codes and sign-in links by mail — are
 switched by the instance admin or the environment (`MAITY_SIGN_IN_*`,
@@ -23264,6 +23268,77 @@ settles them: the line is centred, the year's icon is decorative, the
 links carry no query of their own, the icons' accessible names are
 `GitHub` and `Maity`, and under the signed-out sign-in the frame of §16.7.5
 stands in its place (above, since req-5k1gvfsmcg9k).
+
+### 16.14 The instance's settings
+
+The admin area's section "Instance": how this hub is configured, at a
+glance, so an instance admin does not have to read the startup log or
+the deployment to know whether the agent firewall is on or the
+verifiers are sealed. It only shows; nothing can be changed here.
+
+```
+GET /admin/instance
+```
+
+Scope `instance:admin`, human only (§16.1).
+
+```json
+{ "version": "0.1.0a15",
+  "schema": { "revision": "20261115000000_address_where", "head": "20261115000000_address_where" },
+  "settings": [
+    { "name": "MAITY_AGENT_FIREWALL", "group": "agents", "source": "environment",
+      "value": "on", "secret": false, "admin": null },
+    { "name": "MAITY_REGISTRATION", "group": "registration", "source": "default",
+      "value": "closed", "secret": false, "admin": "16.4" },
+    { "name": "MAITY_SECRET_KEY", "group": "security", "source": "environment",
+      "value": null, "secret": true, "set": true, "admin": null }
+  ],
+  "docs": "hub/README.md#configuration" }
+```
+
+- `version` is the hub's version, `schema` the database's migration
+  revision and the head this hub expects, as `GET /health` reads them.
+- `settings` holds **every** `MAITY_*` setting the hub reads from its
+  environment, switches, modes, numbers and limits alike, ordered by
+  `group` in this order and by `name` within one: `address`,
+  `database`, `processes`, `security`, `sign_in`, `registration`,
+  `mail`, `agents`, `limits`, `attachments`, `public_pages`, `forge`.
+  A setting the hub reads only in a certain mode (`MAITY_ATTACHMENT_S3_*`
+  only with the `s3` store) is listed all the same.
+- `source` is `environment` when the environment sets the variable to
+  a value that is not empty, `default` otherwise. With a `default`,
+  `value` is the default the hub uses, a derived one included (the
+  public URL from the bind address); `null` when the setting has none,
+  that is when it is off by being unset.
+- `value` is written as the environment writes it (`on`, `16`,
+  `starttls`), as the answering process read it at its start: the hub
+  reads its environment only when it starts, so a change takes effect
+  with the next start, and this answer says what runs now.
+- **A secret never appears.** For a key, a password, a token, a
+  private key, an access key or client id and secret, a user name, and
+  for a URL that can carry credentials (`MAITY_DATABASE_URL`,
+  `MAITY_DIRECT_DATABASE_URL`, `MAITY_ATTACHMENT_S3_ENDPOINT`), `secret`
+  is `true`, `value` is `null`, not even a host, and `set` says whether
+  the environment sets it. A `_FILE` variant (`MAITY_SMTP_PASSWORD_FILE`)
+  is a setting of its own and as secret as the one it holds. When it is
+  unclear whether a value can carry a credential, it counts as secret.
+  The public URL, the join URL, the terms URL and the skill's addresses
+  are shown: the hub publishes them anyway.
+- `admin` names the section where the instance admin can set the same
+  value in the dashboard (`2.6.6` sign-in, `16.2` mail, `16.4`
+  registration, `16.5` limits), `null` for a setting only the
+  environment sets. There the environment wins (§16.2): a setting with
+  `source: environment` is fixed, one with `source: default` shows the
+  hub's default, and the admin's own value, where one is stored, is read
+  in that section.
+- **How a setting changes** is the same for all: in the hub's
+  environment, and with the Helm chart through its values where it
+  names the setting, else through `extraEnv`
+  (`deploy/helm/maity-hub/README.md`). `docs` is the page that
+  describes every setting, a path in the repository.
+- Nothing else of the deployment is listed: what is not a `MAITY_*`
+  variable (the chart's ingress, resources, the database server's own
+  settings) the hub cannot see.
 
 ## 17. The change ticker
 
