@@ -11054,6 +11054,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(vField() && vField().value === "half typed", "group chat: a sentence being typed survives another's verdict arriving");
     btn(vNow(), "Cancel").click(); await tick();
     expect(!vField(), "group chat: Cancel closes the sentence field");
+    // A send while the list is drawn again (here a removal event for 5015): the form drawn anew shows
+    // the same send under way and sends nothing a second time; the answer reaches the drawing on screen.
+    btn(vNow(), "Disagree").click(); await tick();
+    vField().value = "sent once"; vField().dispatch("input");
+    const vPut = win.Maity.api.put;
+    const vPuts = [];
+    let vAnswer = null;
+    win.Maity.api.put = (p, b) => {
+      if (!p.endsWith("/messages/" + vSeq + "/verdict")) return vPut(p, b);
+      vPuts.push(b);
+      return new Promise((res) => { vAnswer = () => vPut(p, b).then(res); });
+    };
+    vNow().querySelector(".verdict-form").dispatch("submit"); await tick();
+    gcFeed = [{ seq: 9108, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 5015, reason: "a key" } }];
+    await fireIntervals(); await tick(); await tick();
+    expect(vField() && vField().value === "sent once" && text(vNow()).includes("Saving…"),
+      "group chat: a list drawn again during a send shows the same form, the send under way " + text(vNow().querySelector(".msg-verdicts")));
+    vNow().querySelector(".verdict-form").dispatch("submit"); await tick();
+    expect(vPuts.length === 1, "group chat: a second submit during the send sends nothing " + vPuts.length);
+    vAnswer(); for (let k = 0; k < 4; k++) await tick();
+    expect(!vField() && text(vNow().querySelector(".verdict-list") || { textContent: "" }).includes("Maintainer disagrees: sent once"),
+      "group chat: the answer closes the form on screen and draws the verdict there " + text(vNow().querySelector(".msg-verdicts")));
+    win.Maity.api.put = vPut;
+    // Taken back for the cases below, past gcWrites: they count the chat's own writes.
+    const vDel = win.Maity.api.del;
+    win.Maity.api.del = gcDel;
+    btn(vNow(), "Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.del = vDel;
   }
   // A direct chat takes a removal the same way.
   await go("#/maintainer/maity/chat/agt-a");
