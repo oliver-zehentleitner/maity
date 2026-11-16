@@ -1345,9 +1345,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "header.away_until": "离开至 {time}",
   "header.brand.signed_in": "Maity：所有等你处理的事项",
   "header.brand.signed_out": "Maity：首页",
-  "header.count.mentions": {
-    "other": "{count} 条提及"
-  },
   "header.count.open": "{count} 个待处理",
   "header.count.unread": "{count} 条未读",
   "header.count.unread_chats": "聊天中 {count} 条未读",
@@ -1355,9 +1352,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "header.fixtures.title": "数据来自 web/fixtures/，而非 hub。更改仅保留在此标签页中。",
   "header.instance_admin": "实例管理",
   "header.invitations": "邀请",
-  "header.mentions.unread": {
-    "other": "{count} 条未读提及"
-  },
   "header.new": "新建项目",
   "header.observe": "旁听",
   "header.orgs": "组织",

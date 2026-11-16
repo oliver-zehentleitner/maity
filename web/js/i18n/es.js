@@ -1377,10 +1377,6 @@ window.MAITY_I18N["es"] = {
   "header.away_until": "Fuera hasta {time}",
   "header.brand.signed_in": "Maity: todo lo que te espera",
   "header.brand.signed_out": "Maity: inicio",
-  "header.count.mentions": {
-    "one": "{count} mención",
-    "other": "{count} menciones"
-  },
   "header.count.open": "{count} abiertas",
   "header.count.unread": "{count} sin leer",
   "header.count.unread_chats": "{count} sin leer en chats",
@@ -1388,10 +1384,6 @@ window.MAITY_I18N["es"] = {
   "header.fixtures.title": "Datos de web/fixtures/, no del hub. Los cambios se conservan solo en esta pestaña.",
   "header.instance_admin": "Administración de la instancia",
   "header.invitations": "Invitaciones",
-  "header.mentions.unread": {
-    "one": "{count} mención sin leer",
-    "other": "{count} menciones sin leer"
-  },
   "header.new": "Nuevo proyecto",
   "header.observe": "Leer en paralelo",
   "header.orgs": "Organizaciones",

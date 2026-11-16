@@ -185,6 +185,13 @@ def test_resume_prints_the_ticker_section_and_not_the_events_twice() -> None:
     assert "#4302" not in text  # the ticker event is not among the missed events
 
 
+def test_negative_ticker_counts_read_zero() -> None:
+    ticker = {"items": [MERGE], "for_me": -2, "others": -3, "truncated": False}
+    text = onboarding.render(packet(ticker=ticker))
+    assert "Ticker (0 for you, 0 others)\n" in text
+    assert "Ticker (-" not in text
+
+
 def test_no_ticker_section_without_items() -> None:
     assert "Ticker (" not in onboarding.render(packet())
 

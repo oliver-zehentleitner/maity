@@ -5107,10 +5107,6 @@
     "en": "6c766b1018c179d8",
     "text": "d5fcdf47b81a886f"
   },
-  "header.count.mentions": {
-    "en": "24b912e1a3ad331c",
-    "text": "22da102554fa063e"
-  },
   "header.count.open": {
     "en": "feb2993006f30945",
     "text": "22c473e4f6daab15"
@@ -5138,10 +5134,6 @@
   "header.invitations": {
     "en": "ffd43aec8d1dbaa4",
     "text": "958b0531fa62b2c7"
-  },
-  "header.mentions.unread": {
-    "en": "6e0d1153c40edb16",
-    "text": "2879bf7dce8f8a6b"
   },
   "header.new": {
     "en": "008df04307a93de8",

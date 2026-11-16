@@ -23,10 +23,10 @@ _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 _HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]|$)")
 _RAN = re.compile(r"^ {0,3}(#{1,6})[ \t]+ran[ \t]*(?:#+[ \t]*)?$", re.IGNORECASE)
 _TICKS = re.compile(r"`+")
-# Form 1: a path whose last part has an extension, then `:` and a line or a range.
-_FILE_LINE = re.compile(
-    r"(?<![\w./-])((?:[\w-][\w.-]*/)*[\w-][\w-]*(?:\.[\w-]+)*\.[A-Za-z0-9]+):(\d+)(?:-(\d+))?(?!\w)"
-)
+# A path whose last part has an extension, not inside a longer path or word.
+_PATH = r"(?<![\w./-])((?:[\w-][\w.-]*/)*[\w-][\w-]*(?:\.[\w-]+)*\.[A-Za-z0-9]+)"
+# Form 1: such a path, then `:` and a line or a range.
+_FILE_LINE = re.compile(_PATH + r":(\d+)(?:-(\d+))?(?!\w)")
 # A Keep-the-Why id is the full UUID. A hyphenated shorter form is a prefix, not an id.
 _UUID_AT = re.compile(
     r"(?<![0-9A-Za-z])([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})(?![0-9A-Za-z])"
@@ -38,7 +38,6 @@ _TEST_NAME = re.compile(r"test_[A-Za-z0-9_]+")
 # Form 3: lowercase hex as a word bounded by anything but letters, digits, `_` and `-`.
 _HEX = re.compile(r"(?<![A-Za-z0-9_-])[0-9a-f]{7,40}(?![A-Za-z0-9_-])")
 _HUB_ID = re.compile(r"[a-z]+-[0-9a-z]{12}")
-_UUID = re.compile(r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}")
 _CORE = re.compile(r"[A-Za-z_][A-Za-z0-9_./-]{2,}")
 _SKIP_CHARS = set("#@{}<>")
 # Form 4: a quotation, between "…" or “…”, of four words or more.
@@ -54,9 +53,7 @@ _AFTER_GAP = re.compile(r"[ \t]*\n?[ \t]*\([ \t]*`?")
 _QUOTE_WORDS = 4
 _CUT = re.compile(r"…|\.\.\.")
 _HEADING_TEXT = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*(?:#+[ \t]*)?$")
-_PATH_IN_HEADING = re.compile(
-    r"(?<![\w./-])((?:[\w-][\w.-]*/)*[\w-][\w-]*(?:\.[\w-]+)*\.[A-Za-z0-9]+)"
-)
+_PATH_IN_HEADING = re.compile(_PATH)
 _DEFAULT_BRANCH = "origin/HEAD"
 
 
@@ -139,7 +136,7 @@ def _skipped(span: str) -> bool:
         return True
     if _SKIP_CHARS & set(span):
         return True
-    if _HUB_ID.fullmatch(span) or _UUID.fullmatch(span):
+    if _HUB_ID.fullmatch(span) or _UUID_AT.fullmatch(span):
         return True
     if not re.search(r"[A-Za-z]", span):
         return True  # digits and punctuation only

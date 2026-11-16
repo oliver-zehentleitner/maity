@@ -1377,10 +1377,6 @@ window.MAITY_I18N["nl"] = {
   "header.away_until": "Afwezig tot {time}",
   "header.brand.signed_in": "Maity: alles wat op je wacht",
   "header.brand.signed_out": "Maity: start",
-  "header.count.mentions": {
-    "one": "{count} vermelding",
-    "other": "{count} vermeldingen"
-  },
   "header.count.open": "{count} open",
   "header.count.unread": "{count} ongelezen",
   "header.count.unread_chats": "{count} ongelezen in chats",
@@ -1388,10 +1384,6 @@ window.MAITY_I18N["nl"] = {
   "header.fixtures.title": "Gegevens uit web/fixtures/, niet van de hub. Wijzigingen blijven alleen in dit tabblad bewaard.",
   "header.instance_admin": "Beheer van de instantie",
   "header.invitations": "Uitnodigingen",
-  "header.mentions.unread": {
-    "one": "{count} ongelezen vermelding",
-    "other": "{count} ongelezen vermeldingen"
-  },
   "header.new": "Nieuw project",
   "header.observe": "Meelezen",
   "header.orgs": "Organisaties",

@@ -1455,10 +1455,6 @@ window.MAITY_I18N["de"] = {
   "header.away_until": "Abwesend bis {time}",
   "header.brand.signed_in": "Maity: alles, was auf dich wartet",
   "header.brand.signed_out": "Maity: Startseite",
-  "header.count.mentions": {
-    "one": "{count} Erwähnung",
-    "other": "{count} Erwähnungen"
-  },
   "header.count.open": "{count} offen",
   "header.count.unread": "{count} ungelesen",
   "header.count.unread_chats": "{count} ungelesen in Chats",
@@ -1466,10 +1462,6 @@ window.MAITY_I18N["de"] = {
   "header.fixtures.title": "Daten aus web/fixtures/, nicht vom Hub. Änderungen bleiben nur in diesem Tab erhalten.",
   "header.instance_admin": "Instanzverwaltung",
   "header.invitations": "Einladungen",
-  "header.mentions.unread": {
-    "one": "{count} ungelesene Erwähnung",
-    "other": "{count} ungelesene Erwähnungen"
-  },
   "header.new": "Neues Projekt",
   "header.observe": "Mitlesen",
   "header.orgs": "Organisationen",

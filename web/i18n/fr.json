@@ -1355,14 +1355,6 @@
   "header.away_until": "En absence jusqu'à {time}",
   "header.brand.signed_in": "Maity : tout ce qui vous attend",
   "header.brand.signed_out": "Maity : accueil",
-  "header.count.mentions": {
-    "one": "{count} mention",
-    "other": "{count} mentions"
-  },
-  "header.mentions.unread": {
-    "one": "{count} mention non lue",
-    "other": "{count} mentions non lues"
-  },
   "header.count.open": "{count} ouvertes",
   "header.count.unread": "{count} non lus",
   "header.count.unread_chats": "{count} non lus dans les discussions",
