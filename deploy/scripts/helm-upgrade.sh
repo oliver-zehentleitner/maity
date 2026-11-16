@@ -85,10 +85,11 @@ case "${NO_DUMP:-0}" in
   *) echo "NO_DUMP must be 1 (no dump first) or unset, not '${NO_DUMP}'; nothing was changed" >&2; restored=1; exit 1;;
 esac
 
-# The signing identity of published images: the same issuer and regexp as the README's `cosign verify`
-# (test-helm-upgrade.sh holds them equal).
+# The signing identity of releases: the same issuer and regexp as the README's `cosign verify`
+# (test-helm-upgrade.sh holds them equal). Only a `v*` tag's publish-image run passes; an image
+# built by hand from main is signed as refs/heads/main and refused.
 ISSUER='https://token.actions.githubusercontent.com'
-IDENTITY='^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+IDENTITY='^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/tags/v[^/]+$'
 COSIGN=${COSIGN:-cosign}
 if [ "${NO_SIGNATURE_CHECK:-0}" = 1 ]; then
   echo "WARNING: NO_SIGNATURE_CHECK=1: the image's signature is not checked" >&2
