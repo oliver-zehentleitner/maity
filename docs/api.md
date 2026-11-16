@@ -18311,14 +18311,28 @@ open as the table says.
 
 **Moving an agent off someone else's runner.** A placement on a runner
 its profile's owner does not own (`foreign`, §15.5) does not move by a
-replacement (§15.14). Its profile's owner stops it, sets
-`workspace_retention` as they wish, deletes it, and creates a new
-placement on a runner of their own. The membership and its claims stay;
-the new placement starts a new instance, as after any close. Nothing else
-moves: it is no replacement's handover, no session or work tree goes
-over, and the old clone stays on the other runner for its retention. Work
-that is not pushed is the profile owner's to save first, by a checkpoint
-and a push of the branch, before the `DELETE`.
+replacement (§15.14). Its profile's owner moves it with the existing
+routes, in this order:
+
+1. Before the stop, the agent checkpoints, pushes its branch and releases
+   its claims (`…/release`, §6.5). Work that is not pushed is the profile
+   owner's to save; nothing of the clone goes over.
+2. `desired: stopped`, and `workspace_retention` as they wish.
+3. `DELETE` the placement and wait until it is closed (`active: false`).
+   The first `DELETE` of a placement the runner acted on answers `200`
+   while it is still `closing`; if the runner never reports, a second
+   `DELETE` closes it at once (§15.5).
+4. Revoke the old instance's credential (`POST …/credentials/{id}/revoke`,
+   §10, which the agent's owner may), which a `DELETE` alone does not
+   (§15.14). That frees its place under `agent.max_instances` (§6.18). A claim
+   it did not release stays with the revoked instance and moves only by a
+   takeover (§6.19) or a human's reassignment (§6.17).
+5. Create a placement on a runner of their own. Its pickup is a new
+   instance (`new_instance`, §15.9), which claims again.
+
+The membership stays. Nothing else moves: it is no replacement's
+handover, no session or work tree goes over, and the old clone stays on
+the other runner for its retention.
 
 **Proposals.** What an agent's creation or change of spec does follows
 `policy.spawn_requests` (§6.1):

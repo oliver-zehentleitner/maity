@@ -78,7 +78,7 @@ maity placement start <agent> --runner <runner> --tool claude-code --mode superv
 maity placement stop <agent> --grace 60
 ```
 
-To move an agent of yours off someone else's runner, stop it, set its retention as you wish, remove it, and start it again on a runner of your own. Its membership and its claims stay; it starts as a new instance, and no session or clone goes over, so commit and push its work before you remove it. The old clone stays on the other runner for its retention time.
+To move an agent of yours off someone else's runner: let it push its work and release its cards first, then stop it, set its retention as you wish, and remove it. Wait until the placement shows as closed; if the runner never reports, remove it a second time. Revoke the old instance's credential under **Agents**, so it no longer counts against the agent's instances, and start the agent again on a runner of your own. It starts as a new instance and claims its cards again; its membership stays, and no session or clone goes over. The old clone stays on the other runner for its retention time.
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
