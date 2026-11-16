@@ -112,6 +112,11 @@ def test_an_escape_that_does_not_decode_leaves_the_segment_as_sent() -> None:
     assert paths._segment("%C3%28") == "%C3%28"
     assert paths._segment("%zz") == "%zz"
     assert paths._segment("caf%C3%A9") == "café"
+    # Strict like the dashboard: a valid escape beside one that is none decodes neither.
+    assert paths._segment("%61b%zz") == "%61b%zz"
+    assert paths._segment("%77hy%zz") == "%77hy%zz"
+    assert paths._segment("a%2") == "a%2"
+    assert paths._segment("%61b") == "ab"
 
 
 def test_no_lookup_decides_it_and_a_session_changes_nothing(
