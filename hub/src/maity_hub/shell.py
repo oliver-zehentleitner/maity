@@ -411,7 +411,9 @@ class ShellRoute(BaseRoute):
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         response: Response | None
         if scope["method"] in ("GET", "HEAD"):
-            raw = scope.get("raw_path")  # split as sent, an encoded slash in its segment
+            # Split as sent, an encoded slash in its segment. A server without `raw_path` (uvicorn
+            # always sends it) falls back to the decoded path, where `%2F` would split.
+            raw = scope.get("raw_path")
             if paths.never_a_page(raw.decode("latin-1") if raw else scope.get("path", "")):
                 # No page has such an address, whatever exists: `404`, the shell as the body, so
                 # that the dashboard still draws its "not found" (§16.11).

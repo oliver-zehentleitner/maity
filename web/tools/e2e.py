@@ -5088,8 +5088,11 @@ def report_pages_round(run: Run, browser) -> None:
     card = "/" + card.split("://", 1)[-1].split("/", 1)[-1] if "://" in card else card
     assert re.fullmatch(r"/owner/e2e-alpha/tasks/tsk-[a-z0-9]+", card), card
     # Signed out, /<handle>/agents names nothing since the agents stand on the person's page
-    # (§16.9, tsk-2t7efzj1p8zt): the dashboard's not found at the same address, no redirect.
-    page.goto(f"{run.base}/owner/agents")
+    # (§16.9, tsk-2t7efzj1p8zt): the dashboard's not found at the same address, no redirect, and
+    # the hub's `404` with the shell, an address that can never be a page (§16.11).
+    got = page.goto(f"{run.base}/owner/agents")
+    assert got is not None and got.status == 404, got and got.status
+    run.problems[:] = [p for p in run.problems if p != "GET /owner/agents answered 404"]
     expect(page.locator("section.view-not-found")).to_contain_text("This page does not exist, or it is not public.")
     expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/agents$"))
     context.close()

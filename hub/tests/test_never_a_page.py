@@ -7,8 +7,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from sqlalchemy import Engine
 
-from maity_hub import paths
+from maity_hub import paths, public_pages
+from tests import flow
 from tests.conftest import ClientFactory
 
 SHELL = '<!doctype html><title>shell</title><main id="main"></main>'
@@ -110,3 +112,21 @@ def test_an_escape_that_does_not_decode_leaves_the_segment_as_sent() -> None:
     assert paths._segment("%C3%28") == "%C3%28"
     assert paths._segment("%zz") == "%zz"
     assert paths._segment("caf%C3%A9") == "café"
+
+
+def test_no_lookup_decides_it_and_a_session_changes_nothing(
+    make_client: ClientFactory, migrated: Engine, web_dir: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The words alone: no public page is looked up, and a member's session gets the same `404`
+    as a visitor (§16.11)."""
+    (web_dir / "index.html").write_text(SHELL, encoding="utf-8")
+    member = flow.human(make_client, migrated)
+
+    def looked_up(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("a public page was looked up")
+
+    monkeypatch.setattr(public_pages, "answer", looked_up)
+    visitor = make_client()
+    for path in NEVER:
+        assert visitor.get(path, follow_redirects=False).status_code == 404, path
+        assert member.client.get(path, follow_redirects=False).status_code == 404, path
