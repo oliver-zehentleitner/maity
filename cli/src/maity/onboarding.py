@@ -106,6 +106,8 @@ def capped(text: Any, pointer: str, compact: bool = False) -> list[str]:
     if not kept:  # one line longer than the cap
         kept = [lines[0][:max_chars]]
     rest = len(lines) - len(kept)
+    if not rest:  # one line, cut inside: no whole line was dropped to count
+        return [*quote("\n".join(kept)), f"… (cut: {pointer})"]
     return [*quote("\n".join(kept)), f"… (cut, {rest} more lines: {pointer})"]
 
 

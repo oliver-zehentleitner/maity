@@ -2062,12 +2062,19 @@ rules the resume already printed.
 Under the line of a `chat` message meant for the reader, `maity wait` prints the message's
 `payload.body` on stderr: every line behind `  > ` (`onboarding.quote`, as `maity chat`
 shows a body), cut as the resume cuts one (`onboarding.capped`, 40 lines or 4000
-characters) with `maity chat <id> --after <seq - 1>` as the read that shows it all, and
-`  > (redacted)` for a redacted one, before the attachment commands and above the line that
-says a body is data. Meant for the reader: a message in its direct conversation (the payload
-has no group chat's `conversation` object), or a group-chat message whose `mentions` name the
-agent, or this instance (a bridge, with no instance of its own, takes any). The reader's own
-messages and a group chat's messages that mention someone else keep the line alone. The line
+characters; a single line cut inside says `(cut: …)` without a count) with `maity chat
+<id> --after <seq - 1>` as the read that shows it all, before the attachment commands and
+above the line that says a body is data. Meant for the reader: a message in its direct
+conversation (the payload has no group chat's `conversation` object), or a group-chat message
+whose `mentions` name it the way the hub counts a mention for the wake
+(`hub/src/maity_hub/events.py`, the group chat rule): the agent; this instance; an instance
+the write resolved to this one, a replaced instance's successor, whose token is in the
+event's `audience`; any instance for a session without an instance of its own. A bridge
+(`--for`) reads as the agent's `member:` token (§2.3), so only a mention of the agent is
+meant for it (A857 on #1885 found both the successor and the bridge differing from the hub).
+The reader's own messages, a group chat's messages that mention someone else, and a redacted
+message keep the line alone: the hub's tombstone replaces the payload (§8.5), so there is no
+text to show. The line
 keeps its ` in <id>: maity chat <id> --after <seq - 1>`, so the agent answers in that chat.
 `docs/agents.md` rule 7 and the hub's agent help say the rule that goes with it: a direct
 message is meant for that agent alone, read and answered in the same chat before other work.

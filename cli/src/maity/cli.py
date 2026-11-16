@@ -776,11 +776,17 @@ def _chat_command(event: dict[str, Any]) -> str | None:
     return f"maity chat {chat} --after {seq - 1}"
 
 
-def _meant_for(event: dict[str, Any], member: str | None, instance: str | None) -> bool:
+def _meant_for(
+    event: dict[str, Any], member: str | None, instance: str | None, carried: bool = False
+) -> bool:
     """Whether a chat message is meant for this reader: one in its direct conversation (§9.1;
     a group chat's payload carries `conversation`, a direct one's does not), or in a group chat
-    one whose `mentions` (§8.6) name the agent, or this instance; a bridge, which has no
-    instance of its own, takes any instance of the agent it serves. Never the reader's own."""
+    one whose `mentions` (§8.6) name it as the hub counts a mention for its wake
+    (`hub/src/maity_hub/events.py`, the group chat rule): the agent; this instance; any
+    instance when the reader has no instance and is no bridge; or another instance whose
+    mention the write resolved to this one, a replaced instance's successor, whose token is
+    then in the event's `audience` (§8.2). A bridge (`carried`, `--for`) reads as the agent's
+    `member:` token, so an instance mention is not meant for it. Never the reader's own."""
     if not member or _chat_id(event) is None:
         return False
     if onboarding.get(event, "actor", "member_id") == member:
@@ -788,27 +794,41 @@ def _meant_for(event: dict[str, Any], member: str | None, instance: str | None) 
     group = onboarding.get(event, "payload", "conversation")
     if not isinstance(group, dict) or group.get("kind") == "direct":
         return True
+    audience = event.get("audience")
+    resolved = (
+        instance is not None
+        and isinstance(audience, list)
+        and f"instance:{member}#{instance}" in audience
+    )
     mentions = onboarding.get(event, "payload", "mentions")
     return any(
         isinstance(m, dict)
         and m.get("member_id") == member
-        and (m.get("instance") is None or instance is None or m.get("instance") == instance)
+        and (
+            m.get("instance") is None
+            or (instance is None and not carried)
+            or m.get("instance") == instance
+            or resolved
+        )
         for m in (mentions if isinstance(mentions, list) else [])
     )
 
 
-def _chat_body_lines(event: dict[str, Any], member: str | None, instance: str | None) -> list[str]:
+def _chat_body_lines(
+    event: dict[str, Any], member: str | None, instance: str | None, carried: bool = False
+) -> list[str]:
     """Under the event line, the text of a chat message meant for this reader (`_meant_for`),
     every line quoted as `maity chat` quotes a body and cut as the resume cuts one, with the
     read that shows it all (tsk-kk0ay1an04cf): it is not in `maity messages`, and an agent
     that saw only the line missed its owner's direct messages for hours. Data, as
     `DATA_NOTE` says below it; attachments stay metadata, named on the line. Empty for any
-    other event, a group chat's message that does not mention the reader included."""
-    if not _meant_for(event, member, instance):
+    other event, a group chat's message that does not mention the reader included, and for a
+    redacted one: its tombstone carries no text (§8.5)."""
+    if not _meant_for(event, member, instance, carried):
         return []
     body = onboarding.get(event, "payload", "body")
     if event.get("redacted") or not isinstance(body, str):
-        return ["  > (redacted)"]
+        return []
     pointer = _chat_command(event) or "maity chats"
     return ["  " + line for line in onboarding.capped(body, pointer)]
 
@@ -1100,7 +1120,8 @@ def cmd_wait(args: argparse.Namespace) -> int:
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
                 # Its text, when the message is meant for this agent: a direct chat, a mention.
-                for line in _chat_body_lines(event, session.me, session.my_instance):
+                carried = session.for_member is not None
+                for line in _chat_body_lines(event, session.me, session.my_instance, carried):
                     print(line, file=sys.stderr)  # quoted, no `maity:` prefix: the author's text
                 for line in _attachment_lines(event):  # part of the message: open them first
                     print(line, file=sys.stderr)  # no `maity:` prefix: the line is the command

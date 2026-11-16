@@ -111,27 +111,48 @@ def test_a_long_text_is_cut_with_the_command_that_reads_it_all() -> None:
     assert lines[-1] == "  … (cut, 60 more lines: maity chat agt-b --after 141687)"
 
 
-def test_a_redacted_message_says_so() -> None:
+def test_one_line_over_the_cap_is_cut_without_a_line_count() -> None:
+    event = _chat(conversation_id="agt-b", body="x" * 5000)
+    lines = cli._chat_body_lines(event, "agt-b", None)
+    assert lines == ["  > " + "x" * 4000, "  … (cut: maity chat agt-b --after 141687)"]
+
+
+def test_a_redacted_message_prints_no_text() -> None:
+    """The hub's tombstone replaces the payload (§8.5): no text to show, and no `chat` type."""
     event = _chat(conversation_id="agt-b", body=None)
     event["redacted"] = True
-    assert cli._chat_body_lines(event, "agt-b", None) == ["  > (redacted)"]
+    assert cli._chat_body_lines(event, "agt-b", None) == []
 
 
 @pytest.mark.parametrize(
-    ("mention", "instance", "shown"),
+    ("mention", "instance", "carried", "shown"),
     [
-        (_mention("agt-b"), "k7mq", True),  # the agent: every instance reads it
-        (_mention("agt-b", "k7mq"), "k7mq", True),  # this instance
-        (_mention("agt-b", "wqe2"), "k7mq", False),  # another instance of the agent
-        (_mention("agt-b", "wqe2"), None, True),  # a bridge: no instance of its own
+        (_mention("agt-b"), "k7mq", False, True),  # the agent: every instance reads it
+        (_mention("agt-b", "k7mq"), "k7mq", False, True),  # this instance
+        (_mention("agt-b", "wqe2"), "k7mq", False, False),  # another instance of the agent
+        (_mention("agt-b", "wqe2"), None, False, True),  # a session without an instance
+        (_mention("agt-b", "wqe2"), None, True, False),  # a bridge reads as `member:`
+        (_mention("agt-b"), None, True, True),  # ...and so takes a mention of the agent
     ],
-    ids=["agent", "this instance", "other instance", "bridge"],
+    ids=["agent", "this instance", "other instance", "no instance", "bridge", "bridge agent"],
 )
-def test_an_instance_mention_is_shown_to_that_instance(
-    mention: dict[str, Any], instance: str | None, shown: bool
+def test_an_instance_mention_is_shown_as_the_hub_counts_it(
+    mention: dict[str, Any], instance: str | None, carried: bool, shown: bool
 ) -> None:
     event = _chat(conversation_id=GROUP["id"], conversation=GROUP, mentions=[mention])
-    assert bool(cli._chat_body_lines(event, "agt-b", instance)) is shown
+    assert bool(cli._chat_body_lines(event, "agt-b", instance, carried)) is shown
+
+
+def test_a_mention_of_a_replaced_instance_is_shown_to_its_successor() -> None:
+    """The write resolves a mention of a replaced instance to the one that replaced it and puts
+    that one's token in the audience (§8.2); the hub counts it for the successor's wake."""
+    event = _chat(
+        conversation_id=GROUP["id"], conversation=GROUP, body="@agent-b#wqe2 still there?",
+        mentions=[_mention("agt-b", "wqe2")],
+    )  # fmt: skip
+    event["audience"] = ["member:hum-1", "member:agt-b", "instance:agt-b#k7mq"]
+    assert cli._chat_body_lines(event, "agt-b", "k7mq") == ["  > @agent-b#wqe2 still there?"]
+    assert cli._chat_body_lines(event, "agt-b", "m3np") == []  # a sibling it did not resolve to
 
 
 @pytest.mark.parametrize(
