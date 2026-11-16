@@ -2018,8 +2018,11 @@ an item read confirms nothing: a sign-in is no item, it is confirmed
 with **This was me** under Sessions. An id the hub skips
 (`skipped`) is said, and its row stays unread. The address may carry a
 filter, `?kind=<kind>` (one kind of §18.2) and `?project=<owner>/<slug>`
-(one of the human's projects), as the mention line beside a project's tabs
-sends it: the hub is asked for that kind and project only, the heading
+(one of the human's projects), given in the address itself, as in
+`/notifications?kind=mention&project=<owner>/<slug>` for one project's
+mentions (no page of the dashboard links to a filtered address; the
+bell's **All notifications** leads to the whole list): the hub is asked
+for that kind and project only, the heading
 names the filter ("Mentions in Maity"), **All notifications** leads back
 to the whole list, and **Mark all read** marks that kind and project only
 (§18.3). Anything else in the address is no filter.
