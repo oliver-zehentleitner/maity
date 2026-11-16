@@ -10,9 +10,9 @@ the hub tells them apart by the id, a client by `kind`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Path, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import Field, StrictBool, ValidationInfo, field_validator
 from pydantic_core import PydanticCustomError
@@ -23,6 +23,7 @@ from maity_hub import (
     chat_gate,
     chat_meat_proxy,
     chat_rules,
+    chat_verdicts,
     conversation_list,
     events,
     group_chats,
@@ -179,6 +180,8 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
     senders = principal_ids(conn, [r.actor_membership for r in rows])
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
+    # Each human's current verdict, none on a redacted message (§9.7).
+    verdicts = chat_verdicts.of_messages(conn, rows)
     # A deleted account among the mentions is shown as one (§2.9).
     payloads = attachments.with_tombstones(
         conn, shape_deleted(conn, [r.payload or {} for r in rows])
@@ -211,6 +214,7 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
             "redaction": _redaction(
                 row, reader, readers.get(row.conversation_id) if group else None
             ),
+            "verdicts": verdicts.get(row.seq, []),
         }
         views.append(view)
     return views
@@ -945,11 +949,28 @@ def _reads_message(conn: Connection, mine: Membership, seq: str) -> bool:
     return conversation_id is None or reads_messages(conn, mine, conversation_id)
 
 
-idempotency.register(
-    "message",
-    idempotency.plain(load_message),
-    idempotency.in_project(idempotency.column_of(t.event, by="seq", key=int), _reads_message),
+_MESSAGE_IN_PROJECT = idempotency.in_project(
+    idempotency.column_of(t.event, by="seq", key=int), _reads_message
 )
+
+
+def _sees_message(conn: Connection, seq: str, caller: Any) -> bool:
+    """A member who reads the conversation, or an owner outside the project who reads its
+    group chat along: a verdict's retry by them finds the message, as its first call did
+    (§9.2, §9.7)."""
+    if _MESSAGE_IN_PROJECT(conn, seq, caller):
+        return True
+    row = conn.execute(
+        select(t.event.c.project_id, t.event.c.conversation_id).where(t.event.c.seq == int(seq))
+    ).first()
+    if row is None or row.conversation_id is None or not group_chats.is_group(row.conversation_id):
+        return False  # an outsider reads group chats only
+    # An outsider passes where a member does, as `_reader` hands one to the read routes.
+    mine: Any = outsider(conn, caller, namespace.name_of(conn, row.project_id))
+    return mine is not None and reads_messages(conn, mine, row.conversation_id)
+
+
+idempotency.register("message", idempotency.plain(load_message), _sees_message)
 
 
 @router.post("/projects/{owner}/{slug}/conversations/{conversation_id}/messages")
@@ -983,3 +1004,129 @@ def send_message(
         )
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+# --- verdicts (§9.7) -------------------------------------------------------------------------
+
+
+class VerdictIn(Strict):
+    """👍 or 👎 on a message; a sentence only with `disagree`, plain text that resolves no
+    mention (§8.6), trimmed, an empty one read as none."""
+
+    value: Literal["agree", "disagree"]
+    sentence: str | None = None
+
+    @field_validator("sentence")
+    @classmethod
+    def _sentence(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value is None or not value.strip():
+            return None
+        if info.data.get("value") == "agree":
+            raise PydanticCustomError("agree_has_none", "a sentence goes with disagree only")
+        value = value.strip()
+        if len(value) > t.VERDICT_SENTENCE:  # code points
+            raise PydanticCustomError(
+                "string_too_long",
+                "String should have at most {max_length} characters",
+                {"max_length": t.VERDICT_SENTENCE},
+            )
+        return value
+
+
+def _verdict(
+    slug: str,
+    conversation_id: str,
+    seq: int,
+    request: Request,
+    caller: Caller,
+    body: VerdictIn | None,
+) -> JSONResponse:
+    """`PUT` (`body`) or `DELETE` (None) of the caller's verdict on one message (§9.7)."""
+    if caller.kind != "human" or caller.human_id is None or caller.bridge is not None:
+        raise humans_only("only a human gives a verdict; an agent answers in text")
+    human_id = caller.human_id
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        # Everything as of the project's lock: a leave, a close or a redaction that commits
+        # first is seen, and the audience is the chat's participants at the write (§9.2).
+        events.lock_project(conn, _reader(conn, caller, slug).project.id)
+        mine = _reader(conn, caller, slug)
+        if group_chats.is_group(conversation_id):
+            group, _ = _group(conn, mine, conversation_id)  # a participant or an observer
+            group_chats.refuse_closed(group)
+            current = group_chats.stays(conn, group.id)
+            audience = group_chats.audience(current)  # a waiting agent reads none (§9.6)
+            conversation = {"id": group.id, "kind": "group", "title": group.title}
+            sides = chat_gate.sides_of(conn, current)
+        elif isinstance(mine, Outsider):  # an outsider reads group chats only
+            raise not_found()
+        else:  # a cross-project chat's id is none of this project's: not_found (§9.5)
+            _party(conn, mine, conversation_id, hidden=True)
+            _, owner = chat_parties(conn, mine, conversation_id)
+            audience = [f"member:{conversation_id}", f"member:{owner.human_id}"]
+            conversation = {"id": conversation_id, "kind": "direct", "title": None}
+            sides = [owner.human_id]
+        row = conn.execute(
+            _messages(mine.project.id, conversation_id, getattr(mine, "row", None)).where(
+                t.event.c.seq == seq
+            )
+        ).first()
+        if row is None:
+            raise not_found()
+        if row.redacted:
+            raise invalid({"seq": "redacted"}, "a redacted message takes no verdict")
+        author = principal_id(conn, row.actor_membership)
+        if author == human_id:
+            raise invalid({"seq": "own_message"}, "a verdict is on someone else's message")
+        value = body.value if body is not None else None
+        sentence = body.sentence if body is not None else None
+        if sentence is not None:  # a text of its author in that chat (§9.6)
+            chat_gate.boundary(conn, mine.project.id, human_id, sentence, sides)
+        actor = (
+            events.Actor(
+                None,
+                session_id=caller.session_id,
+                credential_id=caller.credential_id,
+                via=caller.via,
+                human_id=human_id,
+            )
+            if isinstance(mine, Outsider)
+            else caller.actor(mine.id)
+        )
+        chat_verdicts.change(
+            conn,
+            row,
+            human_id,
+            value,
+            sentence,
+            conversation=conversation,
+            author=author,
+            audience=audience,
+            actor=actor,
+        )
+        return idempotency.Outcome(200, "message", str(seq), message_view(conn, row, mine))
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+@router.put("/projects/{owner}/{slug}/conversations/{conversation_id}/messages/{seq}/verdict")
+def put_verdict(
+    slug: str,
+    conversation_id: str,
+    seq: Annotated[int, Path(ge=1, le=SEQ_MAX)],
+    body: VerdictIn,
+    request: Request,
+    caller: AnyCaller,
+) -> JSONResponse:
+    return _verdict(slug, conversation_id, seq, request, caller, body)
+
+
+@router.delete("/projects/{owner}/{slug}/conversations/{conversation_id}/messages/{seq}/verdict")
+def delete_verdict(
+    slug: str,
+    conversation_id: str,
+    seq: Annotated[int, Path(ge=1, le=SEQ_MAX)],
+    request: Request,
+    caller: AnyCaller,
+) -> JSONResponse:
+    return _verdict(slug, conversation_id, seq, request, caller, None)

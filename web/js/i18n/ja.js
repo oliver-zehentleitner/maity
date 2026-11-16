@@ -4198,6 +4198,8 @@ window.MAITY_I18N["ja"] = {
   "runners.tool.not_installed": "{tool} は {runner} にインストールされていません",
   "runners.tool.or": "、または ",
   "runners.tool.pod": "コマンドの許可リストなし: ポッドだけが境界です",
+  "runners.tool.sandbox_off": "コマンドの許可リストなし、OS サンドボックスもオフです",
+  "runners.tool.sandbox_on": "コマンドの許可リストなし: OS サンドボックスだけが境界です",
   "runners.tool.sandboxed": "{bounds}、OS のサンドボックス内",
   "runners.tool.stub": "テスト用ツール",
   "runners.tool.tests_only": "テスト専用",

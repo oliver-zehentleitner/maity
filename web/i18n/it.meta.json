@@ -15935,6 +15935,14 @@
     "en": "56be784490660ce9",
     "text": "f9f1d9ca8dc6cad2"
   },
+  "runners.tool.sandbox_off": {
+    "en": "d68b744295663ec1",
+    "text": "076115144c97379c"
+  },
+  "runners.tool.sandbox_on": {
+    "en": "63a0cf1774b3eb81",
+    "text": "6cf84d4479f8177b"
+  },
   "runners.tool.sandboxed": {
     "en": "c9836cf5e769461d",
     "text": "e48cf2782d4c2097"

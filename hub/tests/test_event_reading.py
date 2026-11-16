@@ -238,11 +238,20 @@ def test_the_conversation_list_with_renew_true_renews(
 
 @pytest.mark.parametrize("value", ["False", "0", "no", ""])
 def test_the_conversation_list_takes_renew_true_or_false_only(
-    owner: flow.Human, value: str
+    owner: flow.Human, make_client: ClientFactory, value: str
 ) -> None:
-    refused = owner.get(f"/projects/maintainer/maity/conversations?renew={value}")
+    """A refused read renews as an ordinary call does: only `false` withholds (§9.3)."""
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    card = task(owner)
+    _claim(agent, card)
+    before = _lease(owner, card)
+    later = clock.now() + timedelta(hours=1)
+    clock.set_source(lambda: later)
+    refused = agent.get(f"/projects/maintainer/maity/conversations?renew={value}")
     assert refused.headers["Maity-Error"] == "invalid"
     assert refused.json()["error"]["details"]["fields"] == {"renew": "not_a_boolean"}
+    assert _lease(owner, card) != before
 
 
 def test_a_dashboard_session_may_long_poll(owner: flow.Human, make_client: ClientFactory) -> None:

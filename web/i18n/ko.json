@@ -4176,6 +4176,8 @@
   "runners.tool.not_installed": "{tool}이(가) {runner}에 설치되어 있지 않아요",
   "runners.tool.or": "; 또는 ",
   "runners.tool.pod": "명령 허용 목록 없음: 파드가 유일한 경계예요",
+  "runners.tool.sandbox_off": "명령 허용 목록 없음, OS 샌드박스도 꺼져 있어요",
+  "runners.tool.sandbox_on": "명령 허용 목록 없음: OS 샌드박스가 유일한 경계예요",
   "runners.tool.sandboxed": "{bounds}, OS 샌드박스 안에서",
   "runners.tool.stub": "테스트용 도구",
   "runners.tool.tests_only": "테스트 전용",

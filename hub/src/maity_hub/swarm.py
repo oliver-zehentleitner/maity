@@ -460,9 +460,6 @@ def whole(found: Window, folded: dict[str, Any], days: int) -> dict[str, Any]:
     beside `fold`'s totals; a public page never gets it."""
     shown, inside = _window_days(found, days)
 
-    def per_day(days_of: list[date]) -> list[dict[str, Any]]:
-        return _per_day(shown, days_of)
-
     messages = dict.fromkeys((*CHAT_TYPES, "other"), 0)
     for kind, day in found.messages:
         if inside(day):
@@ -470,8 +467,8 @@ def whole(found: Window, folded: dict[str, Any], days: int) -> dict[str, Any]:
     merged = folded["totals"]["prs_merged"]
     return {
         "cards_created": sum(1 for d in found.created if inside(d)),
-        "cards_created_per_day": per_day(found.created),
-        "prs_merged_per_day": per_day([d for _members, d in found.prs]),
+        "cards_created_per_day": _per_day(shown, found.created),
+        "prs_merged_per_day": _per_day(shown, [d for _members, d in found.prs]),
         "messages": messages,
         "review_results_per_pr": (round(messages["review_result"] / merged, 1) if merged else None),
     }
