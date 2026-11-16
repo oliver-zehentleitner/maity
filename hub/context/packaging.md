@@ -285,9 +285,9 @@ This is not the explanation of the 32 MiB an hour seen in production: that is ab
 **Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04; plan approved by the team lead); `.github/workflows/publish-image.yml`, `deploy/helm/maity-hub/README.md`
 **Revisit when:** the image is pushed with a token that only the `ghcr` environment holds, or the chart starts checking signatures itself
 
-`publish-image.yml` runs on a `v*` tag and by hand. Its build job stops
-unless the ref is a `v*` tag or `main`; the signing job runs only after
-it. Both run in the environment `ghcr`, which the repository's
+`publish-image.yml` runs on a `v*` tag alone (until 2026-11-16 also by
+hand from `main`, 5b3e0b46). Its build job stops unless the ref is a
+`v*` tag; the signing job runs only after it. Both run in the environment `ghcr`, which the repository's
 settings open to `main` and `v*` tags only; who may create or move those tags is a repository rule. Both
 the `if` and the environment are in the workflow file, so they keep
 this file from running elsewhere, not a changed copy of it on a branch:
