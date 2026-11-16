@@ -172,12 +172,14 @@ Until the counts are read, the switcher counts the open requests from
 `/me`. A failed read is said in the notice and does not stop the page. Mail settings come with the hub's mail (stage 3).
 
 Every route is a path (`docs/api.md` §16.11): the hub answers the app
-shell for every path that is not one of its own, and the dashboard
-routes with the History API and shows its own "not found" for a path it
-does not know (`js/not-found.js`): signed in inside the app, without a
-session in the frame of the sign-in at a handle or a project's word that is
-no view, while an address under one of the dashboard's own first words keeps
-the sign-in, which leads on there. A click on a link to `/`, `/explore` or
+shell for every path that is not one of its own (`404` at an address that
+can never be a page), and the dashboard routes with the History API and
+shows its own "not found" for a path it does not know (`js/not-found.js`):
+signed in inside the app, without a session in the frame of the sign-in at
+an address that can never be a page (`neverAPage` in `js/app.js`, the
+hub's rule), a handle or a project's word that is no view, while an address
+under one of the dashboard's own first words keeps the sign-in, which leads
+on there. A click on a link to `/`, `/explore` or
 `/for/<slug>` is a page load (`js/route.js`), because the hub draws those
 pages itself where it serves them. There are no `#/` routes and no redirects from them.
 

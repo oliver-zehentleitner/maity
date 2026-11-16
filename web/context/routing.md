@@ -237,7 +237,8 @@ where the hub answers the shell anyway.
 
 **Id:** 51873531-fa92-4281-b935-066b6e73944f
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 4062e001-9683-4a81-b1f1-c88dcb38374f
 **Evidence:** confirmed
 **Source:** the card tsk-h1e5zmq1wnhj (an unknown address showed the sign-in form) and the lead's approval of the plan, 2026-11-07; docs/api.md §16.11; web/js/not-found.js; web/js/app.js `showsVisitorNothing`; the not-found cases in web/tools/smoke.js
 **See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-07
@@ -278,6 +279,50 @@ status.
 
 The page's link to `/explore` is a page load, as every link there is
 (`M.route.listen`, entry b8377791 below).
+
+## An address that can never be a page says "not found" with the hub's 404; one that shows nothing keeps the words that never tell whether a name exists
+
+**Id:** 4062e001-9683-4a81-b1f1-c88dcb38374f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-07 (req-0d6vhrr0xqh8) and its boundary in docs/api.md §16.11, "Addresses that can never be a page" (card tsk-85dc596aty5w, the maintainer's look at it: "paßt danke!"); the hub's `paths.never_a_page`; web/js/app.js `neverAPage`, `segmentOf`, `showsVisitorNothing`; the never-a-page cases in web/tools/smoke.js
+**See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-16
+**Revisit when:** a route deeper than 6 segments is added (the bound moves in §16.11, the hub and here together), or the dashboard learns, without asking the hub, whether a name exists
+
+`parseRoute` first asks `neverAPage`, the same rule as the hub's `404`
+(§16.11): a first segment that is no handle, a reserved first word
+without a route, more than 6 segments outside a project's Why, a
+project's view word that is none of `NAV`'s, and `/<handle>/agents`.
+Such an address is the scope `never`: a visitor gets `M.notFound.page`
+in the sign-in's frame, a signed-in reader `M.notFound.view`, and no
+public page is read. The path is split at its slashes before a segment
+is decoded (`segmentOf`); an escape that does not decode leaves the
+segment as sent, where it used to throw a URIError and draw the failed
+page.
+
+The rest of 51873531 stands: a handle without a stored public page and
+a project address whose view word is none of `NAV`'s say "This page
+does not exist, or it is not public.", with the sign-in, the start page
+and `/explore` linked. An address under one of the dashboard's own first
+words (`/inbox/x`, `/requests/<id>`, `/sign-in/code`) keeps the sign-in,
+which leads on there, as long as it is no deeper than 6 segments.
+
+**Reason:** the hub now answers these addresses `404` with the shell as
+the body, so the dashboard has to draw "not found" there, not the
+sign-in form. Taking the same rule from the path's words keeps the two
+answers alike without a read, and a read would be the one thing that
+could tell a stranger whether a name exists (e34ae588). Answering a
+broken escape like any other segment follows the contract's reading of
+a path, and a mistyped link gets "not found" in place of an error page.
+
+**Rejected alternatives:**
+- Reading the status of the page load: a script cannot read the status
+  of the document it runs in, and a navigation inside the dashboard
+  makes no request at all.
+- A marker the hub puts into the `404` shell: it would hold only for
+  the first load, and the dashboard needs the rule for its own links
+  anyway.
 
 ## An event's page opens the event where it lives, the place's address with `#seq-<n>`; a 404 says "not visible"
 
