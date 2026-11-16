@@ -740,9 +740,9 @@ too.
    keeps its text and focus when another's verdict redraws the message's verdicts. In a group
    chat it also outlives a new or removed message that redraws the whole list, its caret too,
    and a send under way then stays one send. Chats are also reachable from inbox entries and
-   agent cards. Every
-   message, in a group chat too, shows its seq after its time (`19:04 · #54306`), small and muted, so
-   that a message an agent cites by its seq can be found; the "#" is the stylesheet's, so selecting
+   agent cards. Every message, in a group chat too, shows its seq after its time
+   (`19:04 · #54306`), small and muted, so that a message an agent cites by its seq can be
+   found; the "#" is the stylesheet's, so selecting
    the number copies the number alone. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
    announces a delivery, so while one is pending, the agent's next event

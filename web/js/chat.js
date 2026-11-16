@@ -352,6 +352,9 @@ window.Maity = window.Maity || {};
       if (forms) forms.set(msg.seq, st);
     }
     const status = st.status;
+    // The message of the newest drawing: a re-read from outside the project draws fresh objects,
+    // and the answer to a send belongs on the one shown.
+    st.msg = msg;
     const mayGive = !!o.verdictPath && !own && ctx.me.kind === "human";
     const url = () => o.verdictPath + "/" + encodeURIComponent(msg.seq) + "/verdict";
     // The drawing on screen: a redraw of the list may have replaced this one meanwhile.
@@ -364,6 +367,7 @@ window.Maity = window.Maity || {};
       try {
         const fresh = value === null ? await M.api.del(url()) : await M.api.put(url(), sentence ? { value, sentence } : { value });
         msg.verdicts = fresh.verdicts || [];
+        if (st.msg) st.msg.verdicts = msg.verdicts;
         st.asking = false;
         st.draft = null;
         status.done();
