@@ -3253,7 +3253,7 @@ named in the digest can be resumed or ended only from one's agents.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11
+**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11, the tab taken back for the card tsk-2t7efzj1p8zt, 2026-11-15
 **Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
 
 `/<handle>` (one segment, not one of the dashboard's own words) is the
@@ -3270,14 +3270,12 @@ Overview, any other to its public page. An alias answers with the
 current handle and the address follows it; `not_found` says that there
 is nobody to see, as for an unknown name.
 
-A person's view has two tabs, **Profile** at `/<handle>` and **Agents**
-at `/<handle>/agents` (card tsk-zrjxhxanfwzd, 2026-11-11: the public
-agents page existed, the signed-in address showed nothing). The Agents
-tab draws the same answer's `agents` (§6.27), as the public agents page
-lists them (§16.9); it does not read `GET /public/pages/<handle>/agents`
-signed in. Signed out, the dashboard's copy of that page
-(`person_agents`, `js/visitor.js`) draws its list with the same helper
-and carries the same tabs, so the address shows one list either way.
+A person's view lists the same answer's `agents` (§6.27) under the
+projects, as their public page lists them (§16.9). From 2026-11-11 (card
+tsk-zrjxhxanfwzd) to 2026-11-15 they were a tab **Agents** at
+`/<handle>/agents`; the maintainer took the tab back (root
+`context/members.md`, "A person's agents stand on their one page"), and
+that address is now the dashboard's "not found", read from nothing.
 
 **Reason:** what a reader may see of another person (the bio only while
 the page is public, the links by `links_visible`, a picture by §6.10)
@@ -3293,7 +3291,8 @@ shares no project with, and no organisation for a non-member. A
 generated avatar from the handle: it would differ from the one every
 other view draws for the same person, and change with a rename. Hiding
 the picture's place: the layout would jump from one person to the next.
-For the Agents tab, reading the visitors' route signed in as well: §6.27
+For the person's agents (once a tab, on the page itself since
+tsk-2t7efzj1p8zt), reading the visitors' route signed in as well: §6.27
 names `GET /people` as the dashboard's read of a person, and gives the
 same list there (the hub's `listed_agents` serves both), so a second
 route would add a read without adding anything to see.
@@ -4472,7 +4471,7 @@ the window, so the input sat past the bottom edge and the page had to be scrolle
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
 At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
-- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other three parts and the separators are not shown.
+- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other four parts and the separators are not shown (re-checked 2026-11-15, when "Chat with us on Discord" became the fifth part, tsk-01tt7j11yx3w: the rule hides every part after the first, so this holds).
 - A group chat shows no "In it: …" line over the messages. Its participants stay under Manage.
 - The composer's label ("Message (@handle reaches someone in the chat)") is out of sight but still the field's label. A reader still hears what the field is for.
 
@@ -4547,7 +4546,7 @@ The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New
 **Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
 
-The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 40px)` on `.switcher` in a row with the menu), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 24px - 0.88rem)` on `.switcher` in a row with the menu, the menu's own width at any root font size), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
 
 **Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
 
@@ -5641,8 +5640,13 @@ reset.
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
 `GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
 and take the frame's language from its answer. While the page stands, the hub's
-`/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
-the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
+`/assets/landing/landing.css`, `public-pages.css` and `public-sections.css` are linked (the third, the
+public pages' design, was the dashboard's own `css/public-sections.css` until 2026-11-15, tsk-zhyqdtt5v59c):
+the links the hub's shell already put at the head's end with their `?v`, after `css/app.css` as appended
+ones stand, where it carries a page in the dashboard's design (hub/context/public-pages.md 2388f990), else
+without `?v`, so the hub answers the current file with an ETag; and `html` carries `public-frame`. Leaving
+the frame turns the sheets off, the shell's too where the frame was never entered (a failed page, a session
+found after all). The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
 `render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
 The sign-in stands in the frame wherever it is drawn without a session: `/login`, the root after a
@@ -5791,11 +5795,11 @@ across the page (`nav.ptabs`), and the view itself stands under it in the stored
   text's muted colour, which passes on the dark zone.
 
 The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
-are `web/css/public-sections.css`, one file for the project, person and agent pages.
-`index.html` names it as a disabled `<link>`, so the shell gives it its version as every file
-of the dashboard (§16.11, the warm load asks for none again); `js/site-chrome.js` moves it behind
+are `public-sections.css`, one file for the project, person and agent pages (the hub's
+`/assets/landing/public-sections.css` since tsk-zhyqdtt5v59c, 2026-11-15; `web/css/` before).
+It is the hub's third frame sheet (§16.7.5): `js/site-chrome.js` links it in `SHEETS` behind
 `landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
-with them. A name the dashboard's `app.css` also
+with them; `index.html` no longer names it. A name the dashboard's `app.css` also
 uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
 
 **Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,
@@ -5845,7 +5849,7 @@ shows who is online as faces.
   entry (a decision) as a line in a list under the cards. Without a merge the heading reads
   "Recently". All entries the hub sends are drawn: §16.9 caps them at 20 of the last 7 days, the
   sentence under the heading says so.
-- Signed in, a non-member's view keeps its lists: `css/public-sections.css` is off there.
+- Signed in, a non-member's view keeps its lists: `public-sections.css` is off there.
 
 **Reason:** the mockup shows 12 cards and a stack of 9 faces in a hero panel that must not wrap on a
 phone (8 faces + "+N" fit 390 px); a page of 30 cards would push what happened lately far down,
@@ -5865,6 +5869,58 @@ merge facts as fields so that no client parses `text`.
 
 **Revisit when:** the Team tab's answer carries pictures (it can then draw the same cards), or the
 ticker's limit of 20 changes.
+
+## A visitor's person and agent pages have the mockup's hero, band and cards; a missing picture is the letter, the networks are built as the hub builds them
+
+**Id:** ef3a254d-6ab5-419a-9dd1-cda1f9381821
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2t7efzj1p8zt (the person page without tabs, the agents as cards; the owner's picture null while the owner's profile is off drawn as a placeholder; the stored first paint changed as little as possible, the hub's skeleton rendering of these pages a later PR); the designer's approved mockup (overview.png, README-public-pages.md); docs/api.md §16.9 (`person`, `agent`); `web/js/visitor.js`, `web/css/public-sections.css`, 2026-11-15
+**See:** views.md#a-visitors-project-page-shows-twelve-team-cards-and-eight-faces-a-letter-where-no-picture-is-merges-as-cards-and-decisions-as-lines — d0565716-aca3-48f1-8168-4752e733ca3a — as of 2026-11-15
+
+Signed out, a person's page (`/<handle>`) and an agent's page (`/<owner>/agents/<handle>`)
+(`js/visitor.js`) stand in the landing's frame as a project's page does, with the same
+stylesheet (`/assets/landing/public-sections.css`, the hub's since tsk-zhyqdtt5v59c,
+`section.profile-view`):
+
+- Hero (`section.uhero.hero.dz`): the 128 px picture (96 px on a phone, stacked above the name),
+  the crumb Person or Agent, the h1, a meta line (`@handle`, Online, member since). A person's
+  bio, website and networks as chips (`.socs`); an agent's "Agent of" its owner with the owner's
+  22 px picture, and its harness and model as facts (`dl.facts`). The Report link under them.
+- Band: the figures of the last 30 days, three for a person, four for an agent (with handovers).
+  A 0 is drawn, as the mockup draws it; a figure the hub does not send is left out.
+- The public projects as tile cards with the role (`.pgrid`, three columns, one on a phone); on a
+  person's page the agents as the project page's member cards (picture, roles, harness).
+- A picture the hub sends as null (the person's own, or an agent's owner while the owner's
+  public profile is off) is the first letter, the project page's rule.
+- A network link is built in the SPA by the same rules as the hub's stored page
+  (`public_people.person_links`: github, gitlab, x, mastodon `@user@host`, bluesky, linkedin;
+  discord as text), `rel="me nofollow"`.
+- Signed in, a non-member's view keeps its lists; the stored first paint keeps its simpler
+  column, only its content changed (agents with pictures, no tabs).
+
+The classes are the contract the hub's later skeleton rendering of these pages copies, so they
+are kept stable.
+
+**Reason:** one look for all public pages, light and dark, desktop and phone, from the stylesheet
+the project page already loads. A 0 on a person's band says "nothing this month", which is a
+fact about the person; on a project's band an empty figure was hidden because a project has more
+figures than room. The letter keeps the owner line and the hero the same size whatever the
+profile says and needs no account id. Building the network addresses in the client needs no
+contract change: §16.9 sends the handles, and the hub's stored page already has the rules.
+
+**Rejected alternatives:**
+- The hub sending finished network URLs in `social`: a contract change for addresses both sides
+  can build from the handle; open if a network's address rule ever becomes non-trivial.
+- Hiding a 0 on the profile band as on the project's: the mockup draws it, and three or four
+  figures always fit.
+- Redesigning the stored first paint in the same PR: the hub's skeleton rendering is planned as
+  its own PR that copies this markup; changing it twice would collide.
+- The dashboard's identicon as placeholder: see d0565716-aca3-48f1-8168-4752e733ca3a.
+
+**Revisit when:** the hub renders these pages from the same markup (the stored paint then follows
+this entry), or §16.9's `social` changes shape.
 
 ## A visitor's Board, Team, Organisation and Why tabs are sections across the page in the Overview's style, their content unchanged
 
@@ -5896,7 +5952,7 @@ own page keeps the stored pages' column.
   attention as lines with its status as a chip. An unread Why says so in the section.
 - Whether a member is an agent is read from its page, `/<owner>/agents/<handle>`, as the hub builds
   it; the Team and Organisation answers carry no other mark.
-- Signed in, a non-member's view keeps its lists and headings: `css/public-sections.css` is off
+- Signed in, a non-member's view keeps its lists and headings: `public-sections.css` is off
   there, and `framed` is false.
 
 **Reason:** the README asks for the tabs in the same section style without a mockup of their own and
@@ -6778,7 +6834,7 @@ took the keyboard focus off its link (third review of #1716).
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13
+**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13; the owner's feedback of 2026-11-15 on the two parts, relayed by the lead on card tsk-3b2znzcw4rxv (seq 137594, 137612)
 **Revisit when:** the request view carries what an answer ticked, the reach on the other side (`their_agents`) is wanted in the inbox, or the hub accepts an allow with no agent as a no
 
 The inbox draws the request's boxes from `chat_access_request`, which the
@@ -6797,11 +6853,19 @@ is needed; No and Block stay. The reach on the other side is not offered:
 the hub's default (that side's agents in the chats and the authors of the
 held messages) goes, and a narrower one is set through the API.
 
+The form has two parts (the owner's feedback of 2026-11-15): first "Which
+of your agents may chat", the boxes of one's own agents alone; then "With
+whom", a line naming that side's agents in these chats and messages as always included, and the box
+for that side's human, "Also @… in person", with its hint.
+
 **Reason:** an allow with no agent writes no entry, and the hub files a
 new request at once: the owner's click would seem to do nothing. The
 human's box covers the human's own free work messages too, not only the
 chats, so it is shown even where the human is in no chat. An empty rule
-sent as `""` would be stored as a rule saying nothing.
+sent as `""` would be stored as a rule saying nothing. The two parts say
+which side is which: in one list, the other side's person read as one of
+one's own agents, and the list did not say who is the source and who the
+target.
 
 **Alternatives considered:**
 - Sending an allow with no agent and letting the hub ask again: rejected
@@ -6811,6 +6875,9 @@ sent as `""` would be stored as a rule saying nothing.
 - A field for the reach (`their_agents`): left out of this part; the
   default covers what the request names, and the lists page is where an
   entry is narrowed.
+- The human's box as one more line in the list of one's agents (the form
+  until 2026-11-15): rejected by the owner, it read as one of one's own
+  agents.
 ## Who may chat with one's agents is a tab of /agents; whom an entry names is chosen among the members of one's projects
 
 **Id:** 5be40abe-674f-412a-b4a4-7cfec2ff960d
@@ -6983,3 +7050,61 @@ and a phone on a slow line meets the same cut tab.
   but not before the first drawing for sure, so the race stays.
 - A looser measure in the e2e step: rejected, the tab really ends
   outside its row, and a longer label (another language) cuts more of it.
+
+## A verdict is taken back with its own button, and a pressed Disagree opens its sentence again
+
+**Id:** 8fd2e947-88f1-4cfa-8505-311211f2f833
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.7 (one verdict per human and message, `PUT` replaces it, `DELETE` takes it back, the sentence only with `disagree`); the card tsk-3d0wm9mh2f03, the web part of tsk-55x4f398dttv; web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** the contract lets a verdict's sentence change without a `PUT` of its value, or the buttons become a toggle elsewhere in the dashboard
+
+Under someone else's chat message stand **Agree** and **Disagree**, both
+with `aria-pressed` for the reader's current verdict, and **Take back**
+only while the reader has one. A pressed **Agree** is disabled. A pressed
+**Disagree** opens its sentence field again, filled with the sentence
+given, so that the sentence is changed by a `PUT` that replaces the
+verdict.
+
+**Reason:** the sentence goes with Disagree alone, and changing it is a
+`PUT` with the same value. One gesture must therefore reach the sentence
+of a verdict already given, and a separate button keeps taking it back
+from happening by accident.
+
+**Alternatives considered:**
+- Pressing a pressed button again takes the verdict back (a toggle):
+  rejected, a pressed Disagree would then either take back or open the
+  sentence, and a reader who wanted to change the sentence would lose the
+  verdict, which wakes the agent with a taken-back event.
+- No way to change the sentence but Take back and Disagree again:
+  rejected, that writes two events and wakes the agent twice for one
+  change of words.
+
+## An open verdict sentence outlives the list being drawn again, and a re-read takes verdicts over in place
+
+**Id:** 839d984c-980f-4d2c-859c-0fe03207b9c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-q8cd2hh4beq3 (the review A796 of #1874: an owner reading along from outside the project lost a sentence being typed at the 30-second re-read); web/js/group-chat.js `redraw` and the outsider re-read, web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** an observer from outside the project gets events, or the group chat stops drawing the whole list again
+
+An observer from outside the project gets no events, so its view reads
+the newest page again every 30 seconds. When only verdicts changed, they
+are taken over under their messages (`takeVerdicts`, as for an event);
+the list is not drawn again. When a message came or was removed, the
+list is drawn again, and an open sentence field comes back: what is typed
+is kept per message (`verdictForms`), and `redraw` gives the field its
+focus and caret back.
+
+**Reason:** the list is a live region, so drawing it again for a verdict
+alone would also announce every message once more. A new message still
+needs the whole list, and the reader may be typing then too.
+
+**Alternatives considered:**
+- Taking verdicts over in place only: rejected, a new message at the
+  re-read still cost the sentence, which A796 had found already at the
+  base of #1874.
+- Keeping the sentence across a redraw only: rejected, a verdict alone
+  would still draw the live region again and announce its messages anew.

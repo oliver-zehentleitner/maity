@@ -915,10 +915,31 @@ def chrome(
     return _frame(setting, legal, chosen, drawn, tags)
 
 
+def frame_sheets() -> str:
+    """The `<link>`s of the frame's stylesheets (§16.7.5), by their versioned addresses: every page
+    in the frame links them, and so does the app shell carrying a stored page (`shell`), which
+    the dashboard then takes over as its own. The public pages' design (§16.9) comes last: it
+    builds on the other two's tokens and classes."""
+    return "".join(
+        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">'
+        for sheet in _frame_sheet_urls()
+        if sheet
+    )
+
+
+def _frame_sheet_urls() -> list[str | None]:
+    """The frame's stylesheets' versioned addresses, None for one the hub was built without."""
+    return [
+        landing_files.url("landing.css"),
+        landing_files.url("public-pages.css"),
+        landing_files.url("public-sections.css"),
+    ]
+
+
 class Frame(NamedTuple):
     """The frame of a public page the hub renders itself (§16.7.5): the landing page's header
     and footer from the frame's model, and the `<head>` links of the stylesheets that draw them,
-    `landing.css` and `public-pages.css`. `style` is the inline fallback while a stylesheet is
+    `landing.css`, `public-pages.css` and `public-sections.css`. `style` is the inline fallback while a stylesheet is
     missing (a hub built without the landing assets), else empty."""
 
     header: str
@@ -949,10 +970,8 @@ def public_frame(
     if model["language"] != lang:
         header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
         footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
-    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
-    head = "".join(
-        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
-    )
+    sheets = _frame_sheet_urls()
+    head = frame_sheets()
     script = landing_files.url("landing.js") if theme else None
     if script:
         head += f'<script src="{escape(script, quote=True)}" defer></script>'
@@ -1181,12 +1200,28 @@ def stored_in_frame(
         title=unescape(found["title"]),
         description="",
         head=head,
-        body=frame.header
-        + f'<main><div class="stored-page"><div class="wrap">{found["main"]}</div></div></main>'
-        + frame.footer,
+        body=frame.header + f"<main>{_framed_main(found['main'])}</main>" + frame.footer,
         languages=[],
         style=frame.style,
     )
+
+
+# A page in the dashboard's design (`public_design`) draws its own sections across the page.
+_DESIGNED = '<section class="view-visitor public-view"'
+
+
+def designed(main: str) -> bool:
+    """Whether a stored page's content is in the dashboard's design (§16.9): the structure the
+    dashboard draws over it, styled by the frame's stylesheets alone."""
+    return main.startswith(_DESIGNED)
+
+
+def _framed_main(main: str) -> str:
+    """The stored content as `<main>` holds it in the frame: a page in the dashboard's design as
+    it is, where the dashboard puts it too; any other in the stored pages' column."""
+    if designed(main):
+        return main
+    return f'<div class="stored-page"><div class="wrap">{main}</div></div>'
 
 
 # --- a public page (§16.9) --------------------------------------------------------------------
@@ -1201,7 +1236,12 @@ def text_of(html: str) -> str:
 
 
 # The report link's paragraph (`report_link`): no part of a page's description (§16.9).
-_REPORT_LINK = re.compile(r'<p class="report-link">.*?</p>')
+# The report control, and a letter drawn beside a name (`aria-hidden`): no words of the page's
+# own for its description.
+_REPORT_LINK = re.compile(
+    r'<p class="report-(?:link|row)">.*?</p>(?:<div class="report-slot"></div>)?'
+    r'|<(span|i) [^>]*aria-hidden="true"[^>]*>[^<]*</\1>'
+)
 
 
 def report_link(path: str) -> str:
@@ -1214,12 +1254,20 @@ def report_link(path: str) -> str:
 
 
 def page_document(
-    *, lang: str, title: str, canonical: str, content: str, indexed: bool = True
+    *,
+    lang: str,
+    title: str,
+    canonical: str,
+    content: str,
+    indexed: bool = True,
+    styled: bool = True,
 ) -> str:
     """A public page: its own `<title>`, a `<meta name="description">` from the first 160
     characters of its text (cut first, then escaped), the Report link left out, and the absolute
     canonical link (§16.9); `indexed=False` adds `noindex`. `content` is the HTML of the page's
-    body, already made of escaped text and elements."""
+    body, already made of escaped text and elements. `styled=False` leaves out the inline
+    stylesheet: a page in the dashboard's design (`public_design`) is styled by the frame's
+    stylesheets only; the person, agent and organisation pages keep `STYLE` for now."""
     description = text_of(_REPORT_LINK.sub("", content))[:DESCRIPTION_MAX]
     robots = "" if indexed else '<meta name="robots" content="noindex">'
     return _document(
@@ -1229,4 +1277,5 @@ def page_document(
         head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">{robots}',
         body=f'<main class="wrap">{content}</main>',
         languages=[],
+        style=STYLE if styled else "",
     )

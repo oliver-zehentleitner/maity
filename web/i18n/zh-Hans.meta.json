@@ -3271,6 +3271,54 @@
     "en": "3a26dc0879f9a035",
     "text": "d8f2af5807edd803"
   },
+  "chat.verdict.agree": {
+    "en": "08c068ceec37bae5",
+    "text": "b23c18e30aaa9a6f"
+  },
+  "chat.verdict.agrees": {
+    "en": "5f4feafd8adc2f71",
+    "text": "fb3d2595254d38f7"
+  },
+  "chat.verdict.busy": {
+    "en": "4e65400e023b52a3",
+    "text": "95fb4d2033a3088f"
+  },
+  "chat.verdict.cancel": {
+    "en": "c0774c185060fc13",
+    "text": "4fa6cdbf13079926"
+  },
+  "chat.verdict.disagree": {
+    "en": "58c2c949322ab752",
+    "text": "d2aa17f686127119"
+  },
+  "chat.verdict.disagrees": {
+    "en": "3223e4971a407bc1",
+    "text": "fa6416abb9ca4122"
+  },
+  "chat.verdict.disagrees_because": {
+    "en": "3a39b4da351eda7b",
+    "text": "929e652a58fedebf"
+  },
+  "chat.verdict.failed": {
+    "en": "831641bc8e3a7e90",
+    "text": "c31a441132dec6cc"
+  },
+  "chat.verdict.list": {
+    "en": "f73a01919cade3a4",
+    "text": "84707be2dfca3118"
+  },
+  "chat.verdict.send": {
+    "en": "58c2c949322ab752",
+    "text": "d2aa17f686127119"
+  },
+  "chat.verdict.sentence": {
+    "en": "bb8ec57024c8c5d0",
+    "text": "255c65ce6b2970c2"
+  },
+  "chat.verdict.take_back": {
+    "en": "5ecd7560aa5038c4",
+    "text": "3eac0cfee071f567"
+  },
   "chat.who.agent": {
     "en": "7649b444a37e5ea5",
     "text": "7ca84dc4f04aac65"
@@ -12655,22 +12703,6 @@
     "en": "622f06cbcd2e7e61",
     "text": "47bd7680349c3ef2"
   },
-  "person.tab.agents": {
-    "en": "21cf98a292e94015",
-    "text": "7ca84dc4f04aac65"
-  },
-  "person.tab.profile": {
-    "en": "96ad4bd0f7baa40e",
-    "text": "a9aa6b8db7077ac8"
-  },
-  "person.tabs.label": {
-    "en": "16a03e3aa01e736f",
-    "text": "7bcbf1acfeab6e24"
-  },
-  "person.title.agents": {
-    "en": "dd81b03eabf89b55",
-    "text": "7719f5b1a97547be"
-  },
   "person.view_public": {
     "en": "8164ca72067a45c7",
     "text": "fb0f335deedb5ccb"
@@ -13599,6 +13631,10 @@
     "en": "191903c61492ea38",
     "text": "23559cc5ea4cfa56"
   },
+  "product.discord": {
+    "en": "eda6e32290d46f17",
+    "text": "81557403227e6660"
+  },
   "product.love": {
     "en": "96fa5228627bef6a",
     "text": "f693dd139913a023"
@@ -14004,16 +14040,12 @@
     "text": "b365cb294a8bc1e6"
   },
   "public_profile.agents": {
-    "en": "08ca4775200498d5",
-    "text": "dbe47380827479ec"
+    "en": "037fc250741007c7",
+    "text": "5065e794fd5be50c"
   },
   "public_profile.agents.hint": {
-    "en": "fc0119a6483447aa",
-    "text": "7e7ab453adca0883"
-  },
-  "public_profile.agents.view": {
-    "en": "303db7c3e82264e5",
-    "text": "5cc82b13693c8672"
+    "en": "9d844fb44b4f1a84",
+    "text": "5b23c69b87d43391"
   },
   "public_profile.bio": {
     "en": "906fa76e4230938a",
@@ -15958,6 +15990,14 @@
   "runners.tool.pod": {
     "en": "56be784490660ce9",
     "text": "08f915528a273a5d"
+  },
+  "runners.tool.sandbox_off": {
+    "en": "d68b744295663ec1",
+    "text": "839f5db1ff0f556d"
+  },
+  "runners.tool.sandbox_on": {
+    "en": "63a0cf1774b3eb81",
+    "text": "023c923d08ed9570"
   },
   "runners.tool.sandboxed": {
     "en": "c9836cf5e769461d",
@@ -19191,9 +19231,33 @@
     "en": "9aa56c3dab3c6957",
     "text": "f1e0d8bbdd499626"
   },
+  "visitor.agent_of": {
+    "en": "dd1cdef1343c9440",
+    "text": "a69e1367e68cc911"
+  },
   "visitor.agents": {
     "en": "21cf98a292e94015",
     "text": "7ca84dc4f04aac65"
+  },
+  "visitor.agents_of": {
+    "en": "322890cb2964c51f",
+    "text": "8490f4892eab73e3"
+  },
+  "visitor.crumb.agent": {
+    "en": "aa7e6ee1e235416d",
+    "text": "7ca84dc4f04aac65"
+  },
+  "visitor.crumb.person": {
+    "en": "2f988527ec2fcdb9",
+    "text": "eb3db181781ef259"
+  },
+  "visitor.fact.harness": {
+    "en": "167f756ba15dfc08",
+    "text": "77e2d3fdeec02378"
+  },
+  "visitor.fact.model": {
+    "en": "9c16c09f0c180580",
+    "text": "20478f60269006b7"
   },
   "visitor.harness": {
     "en": "b3ae7ee4d934d009",
@@ -19326,6 +19390,10 @@
   "visitor.stat.handovers": {
     "en": "0b6b9f7e499ac5f6",
     "text": "cac4685bcdf37dd4"
+  },
+  "visitor.stat.last_days": {
+    "en": "db41c93615929f02",
+    "text": "4713af0f000e9a60"
   },
   "visitor.stat.members": {
     "en": "6bbc51529519435c",

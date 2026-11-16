@@ -529,7 +529,10 @@ under the same version. Per deploy:
    commit and for hub-mariadb on the same hub files. Both also refuse a
    version without its complete upgrade page (`tools/release_gate.py
    --upgrade-page`).
-4. Ops deploys the image that tag built, pinned by its digest.
+4. Ops deploys the image that tag built, pinned by its digest, after
+   checking its signature as the chart README shows. That check accepts
+   only a `v*` tag's signature: an image built by hand from `main` is not
+   deployed.
 
 The deployment itself is unchanged: manual approvals, on the maintainer's
 command.

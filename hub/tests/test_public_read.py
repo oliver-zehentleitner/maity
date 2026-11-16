@@ -332,8 +332,9 @@ def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) 
     """A stored page's body also stands inside the app shell for a visitor (§16.11), whose policy
     (`default-src 'self'`) refuses every inline style: the per-day bars of a project's page and
     the placeholder of a person without a picture were drawn so, and not shown (tsk-8fk897a9tan8).
-    Every kind there is: a project and its views, a card, a person without a picture, their agents
-    page and an agent's page."""
+    The bars are gone with the dashboard's design (tsk-zhyqdtt5v59c).
+    Every kind there is: a project and its views, a card, a person without a picture (with their
+    agents) and an agent's page."""
     publish_profile(world, world.owner, public_bio="I build.")
     card = world.card(status="open", title="Next up", label="idea")
     world.touch()
@@ -341,12 +342,20 @@ def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) 
         public_pages.touch(conn, "card", card)
     with migrated.connect() as conn:
         rows = conn.execute(select(t.public_page.c.path, t.public_page.c.body)).all()
-    kinds = {read(world, path.lstrip("/"))["kind"] for path, _ in rows}
-    assert {"project", "board", "card", "person", "person_agents", "agent"} <= kinds, kinds
+    kind_of = {path: read(world, path.lstrip("/"))["kind"] for path, _ in rows}
+    kinds = set(kind_of.values())
+    assert {"project", "board", "card", "person", "agent"} <= kinds, kinds
     assert 'class="pic none size-128"' in next(body for path, body in rows if path == "/maintainer")
-    assert '<svg class="per-day"' in next(body for path, body in rows if path == f"/{BASE}")
+    assert '<section class="view-visitor public-view" data-kind="project">' in next(
+        body for path, body in rows if path == f"/{BASE}"
+    )
     styled = [path for path, body in rows if re.search(r"\sstyle=", body)]
     assert not styled, styled
+    # The pages in the dashboard's design take their look from the frame's stylesheets alone
+    # (§16.9): no stylesheet of their own either.
+    designed = {"project", "board", "team", "organisation", "why", "card"}
+    own = [path for path, body in rows if kind_of[path] in designed and "<style" in body]
+    assert not own, own
 
 
 def test_explore_says_so_when_no_project_has_a_page(world: World) -> None:

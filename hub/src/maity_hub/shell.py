@@ -342,6 +342,8 @@ _SHELL_MAIN = re.compile(rb'<main id="main">.*?</main>', re.DOTALL)
 _SHELL_OG_TITLE = re.compile(rb'<meta property="og:title"[^>]*>')
 _SHELL_OG_DESCRIPTION = re.compile(rb'<meta property="og:description"[^>]*>')
 _CONTENT = re.compile(r'content="([^"]*)"')
+# The shell's root element without a class (web/index.html), to be marked as in the frame.
+_SHELL_HTML = re.compile(rb"<html(?![^>]*\sclass=)(?=[\s>])")
 
 
 def page_in_shell(shell: bytes, body: str) -> bytes | None:
@@ -361,8 +363,24 @@ def page_in_shell(shell: bytes, body: str) -> bytes | None:
     words = _CONTENT.search(found["meta"] or "")
     og_text = f'<meta property="og:description" content="{words[1]}">'.encode() if words else b""
     done = _SHELL_OG_DESCRIPTION.sub(lambda _: og_text, done, count=1)
+    # A page in the dashboard's design stands as the dashboard draws it over it, styled by the
+    # frame's stylesheets linked in the head (§16.9, tsk-zhyqdtt5v59c): the first paint is the
+    # final page. Any other is in its own `.hub-page`, which css/app.css keeps invisible until
+    # the dashboard replaces it, or shows after 3 s when no script does (tsk-777vkhtzmq6f). A
+    # crawler reads the text either way.
+    if render.designed(found["main"]):
+        inner = found["main"].encode()
+        # At the head's end, after the dashboard's own sheets, where js/site-chrome.js appends
+        # them: landing.css sets the root's and the body's type as css/app.css does, and the
+        # later one wins, so a page has the same type however the visitor came to it.
+        sheets = render.frame_sheets().encode()
+        done = _HEAD_END.sub(lambda _: sheets + b"</head>", done, count=1)
+        # Marked as the dashboard marks a page in the frame (js/site-chrome.js), so the shell's
+        # own `<main>` has the frame's measures (css/app.css, `.public-frame #main`) at once.
+        done = _SHELL_HTML.sub(lambda _: b'<html class="public-frame"', done, count=1)
+    else:
+        inner = b'<div class="hub-page">' + found["main"].encode() + b"</div>"
     done = _SHELL_TITLE.sub(lambda _: title + head, done, count=1)
-    inner = found["main"].encode()
     return _SHELL_MAIN.sub(
         lambda _: b'<main id="main" data-public-page>' + inner + b"</main>", done, count=1
     )

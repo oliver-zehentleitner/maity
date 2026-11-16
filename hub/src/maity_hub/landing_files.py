@@ -1,14 +1,15 @@
 """The files of the landing page's progressive enhancement (docs/api.md §16.7).
 
-`/assets/landing/landing.css`, `landing.js`, `public-pages.css` (the frame of the legal pages and of
-the dashboard's sign-in pages, §16.7.5) and the self-hosted fonts under `fonts/` belong to
-the hub's code, the same for every instance, and are never read from the database. They live in
-this package (`landing_assets/`), so a hub answers them whether or not it has a dashboard
-directory. The page names each with `?v=<digest>` of the file; a request that carries the
-digest it should is answered `immutable`, any other is answered the current file with
-`no-cache`, so a stale link repairs itself. The stylesheet holds `{font:<file>}` where a font
-is named; they are replaced by the font's own versioned URL, so the fonts are cached for good as
-well. The two pictures of the design and the logo are inline SVG in the page (`svg`).
+`/assets/landing/landing.css`, `landing.js`, `public-pages.css` (the frame of the legal pages
+and of the dashboard's sign-in pages, §16.7.5), `public-sections.css` (the public pages'
+design, §16.9) and the self-hosted fonts under `fonts/` belong to the hub's code, the same for
+every instance, and are never read from the database. They live in this package
+(`landing_assets/`), so a hub answers them whether or not it has a dashboard directory. The
+page names each with `?v=<digest>` of the file; a request that carries the digest it should is
+answered `immutable`, any other is answered the current file with `no-cache`, so a stale link
+repairs itself. The stylesheet holds `{font:<file>}` where a font is named; they are replaced
+by the font's own versioned URL, so the fonts are cached for good as well. The two pictures of
+the design and the logo are inline SVG in the page (`svg`).
 """
 
 from __future__ import annotations
@@ -99,6 +100,11 @@ def _assets() -> dict[str, Asset]:
     pages = ROOT / "public-pages.css"
     if pages.is_file():
         add("public-pages.css", pages.read_bytes())
+    # The public pages' design (§16.9), which the hub's stored pages and the dashboard's visitor
+    # view both draw: one file, linked after the two above.
+    sections = ROOT / "public-sections.css"
+    if sections.is_file():
+        add("public-sections.css", sections.read_bytes())
     return found
 
 

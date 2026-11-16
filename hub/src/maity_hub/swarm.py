@@ -17,6 +17,7 @@ import re
 import statistics
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -370,6 +371,29 @@ def median_of(values: list[int]) -> int | None:
     return int(statistics.median(values)) if len(values) >= MIN_SAMPLES else None
 
 
+def _window_days(found: Window, days: int) -> tuple[list[date], Callable[[date], bool]]:
+    """The UTC days a page shows, oldest first and ending on `as_of`'s day, and whether a
+    fact's day is one of them: `fold` and `whole` cut the window here, in one place."""
+    today = utc_day(found.as_of)
+    shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
+    cut = shown[0]
+
+    def inside(day: date) -> bool:
+        # A fact written after `as_of` may fall on the next UTC day: it is not shown.
+        return cut <= day <= today
+
+    return shown, inside
+
+
+def _per_day(shown: list[date], days_of: list[date]) -> list[dict[str, Any]]:
+    """`{date, count}` for every shown day, oldest first; a day outside them counts nowhere."""
+    counted = dict.fromkeys(shown, 0)
+    for day in days_of:
+        if day in counted:
+            counted[day] += 1
+    return [{"date": d.isoformat(), "count": n} for d, n in counted.items()]
+
+
 def fold(
     found: Window,
     members: dict[int, dict[str, Any]],
@@ -383,13 +407,7 @@ def fold(
     the totals only when `include` admits `None`. `public_only` is the page without sign-in
     (§11.4): only merges read as public, and `prs_merged` is None when there is none, since a
     0 would claim that nothing was merged."""
-    today = utc_day(found.as_of)
-    shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
-    cut = shown[0]
-
-    def inside(day: date) -> bool:
-        # A fact written after `as_of` may fall on the next UTC day: it is not shown.
-        return cut <= day <= today
+    shown, inside = _window_days(found, days)
 
     reviews_known = found.reviews_since is not None
     done = [(m, d) for m, d in found.done if inside(d)]
@@ -424,12 +442,8 @@ def fold(
         for membership_id, person in members.items()
         if include(membership_id)
     ]
-    per_day = {d: 0 for d in shown}
-    for m, day in done:
-        if include(m):
-            per_day[day] += 1
     totals = counts(None)
-    totals["cards_done_per_day"] = [{"date": d.isoformat(), "count": n} for d, n in per_day.items()]
+    totals["cards_done_per_day"] = _per_day(shown, [day for m, day in done if include(m)])
     return {
         "as_of": clock.rfc3339(found.as_of),
         "window_days": days,
@@ -444,20 +458,7 @@ def fold(
 def whole(found: Window, folded: dict[str, Any], days: int) -> dict[str, Any]:
     """The members' page only (§6.22): the swarm as a whole over the last `days` days,
     beside `fold`'s totals; a public page never gets it."""
-    today = utc_day(found.as_of)
-    shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
-    cut = shown[0]
-
-    def inside(day: date) -> bool:
-        # A fact written after `as_of` may fall on the next UTC day: it is not shown.
-        return cut <= day <= today
-
-    def per_day(days_of: list[date]) -> list[dict[str, Any]]:
-        counted = {d: 0 for d in shown}
-        for day in days_of:
-            if inside(day):
-                counted[day] += 1
-        return [{"date": d.isoformat(), "count": n} for d, n in counted.items()]
+    shown, inside = _window_days(found, days)
 
     messages = dict.fromkeys((*CHAT_TYPES, "other"), 0)
     for kind, day in found.messages:
@@ -466,8 +467,8 @@ def whole(found: Window, folded: dict[str, Any], days: int) -> dict[str, Any]:
     merged = folded["totals"]["prs_merged"]
     return {
         "cards_created": sum(1 for d in found.created if inside(d)),
-        "cards_created_per_day": per_day(found.created),
-        "prs_merged_per_day": per_day([d for _members, d in found.prs]),
+        "cards_created_per_day": _per_day(shown, found.created),
+        "prs_merged_per_day": _per_day(shown, [d for _members, d in found.prs]),
         "messages": messages,
         "review_results_per_pr": (round(messages["review_result"] / merged, 1) if merged else None),
     }

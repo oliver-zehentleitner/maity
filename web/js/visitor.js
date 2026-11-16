@@ -18,6 +18,8 @@ window.Maity = window.Maity || {};
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
   const PROJECT_KINDS = ["project", "board", "team", "organisation", "why", "card"];
+  // A person's and an agent's page, signed out in the mockup's layout (profileHero, below).
+  const PROFILE_KINDS = ["person", "agent"];
   // The project's views that, signed out, draw sections across the page (the rest a column).
   const ACROSS = ["project", "board", "team", "organisation", "why"];
   const COUNTERS = {
@@ -91,7 +93,8 @@ window.Maity = window.Maity || {};
   // ---- the project's hero, figures and tab bar, signed out (tsk-9482zxza3gs3) ------------
   // The approved mockup's project page (project.html, pp.css): a dark hero in the landing's dark
   // zone, the figures in a band under it, the views as a full-width bar under both. The rules are
-  // css/public-sections.css, on with the frame's stylesheets (js/site-chrome.js).
+  // /assets/landing/public-sections.css (the hub's, hub/src/maity_hub/landing_assets), on with the
+  // frame's stylesheets (js/site-chrome.js).
 
   // The project's tile: it has no picture, so its letter in the accent colour, the first letter of
   // its name or else the first character of its slug, as the hub's /explore draws it
@@ -300,6 +303,118 @@ window.Maity = window.Maity || {};
     }, v.label))));
   }
 
+  // ---- a person's and an agent's page, signed out (tsk-2t7efzj1p8zt) ----------------------
+  // The approved mockup's person.html and agent.html: the same dark hero as a project's with the
+  // picture beside the name, the figures in a band, the projects as cards and, for a person, their
+  // agents as the Overview's member cards. Rules: /assets/landing/public-sections.css (.uhero and on).
+
+  // A person's networks, linked as the hub links them on the stored page
+  // (hub/src/maity_hub/person_links.py, §16.9 "A person's links"): the data carries the name only.
+  // Discord has no public profile address and stays text; a name of an unexpected form is text too.
+  const SOCIAL = {
+    github: (n) => "https://github.com/" + encodeURIComponent(n),
+    gitlab: (n) => "https://gitlab.com/" + n.split("/").map(encodeURIComponent).join("/"),
+    x: (n) => "https://x.com/" + encodeURIComponent(n),
+    mastodon: (n) => {
+      const found = /^@([^@/]+)@([a-z0-9.-]+)$/i.exec(n);
+      return found ? "https://" + found[2] + "/@" + encodeURIComponent(found[1]) : null;
+    },
+    bluesky: (n) => "https://bsky.app/profile/" + encodeURIComponent(n),
+    linkedin: (n) => "https://www.linkedin.com/in/" + encodeURIComponent(n),
+  };
+  // The networks in the order the dashboard names them (js/person.js), each by its own word.
+  const NETWORKS = [["github", () => M.t("person.network.github")], ["gitlab", () => M.t("person.network.gitlab")],
+    ["x", () => M.t("person.network.x")], ["mastodon", () => M.t("person.network.mastodon")],
+    ["bluesky", () => M.t("person.network.bluesky")], ["linkedin", () => M.t("person.network.linkedin")],
+    ["discord", () => M.t("person.network.discord")]];
+  const REL_ME = ["me", "nofollow"].join(" ");
+  function socials(social) {
+    if (!social || typeof social !== "object") return null;
+    const chips = NETWORKS.filter(([net]) => typeof social[net] === "string" && social[net]).map(([net, label]) => {
+      const name = social[net];
+      const inner = [h("span", { class: "net" }, label()), h("span", null, name)];
+      const url = SOCIAL[net] ? safeUrl(SOCIAL[net](name) || "") : null;
+      return url ? h("a", { class: "soc", href: url, rel: REL_ME }, inner) : h("span", { class: "soc" }, inner);
+    });
+    return chips.length ? h("div", { class: "socs" }, chips) : null;
+  }
+
+  // The hero: the picture (a person's round, an agent's a rounded square, the letter where the
+  // hub sends none), the crumb Person or Agent, the name, the meta line (@handle, Online, member
+  // since); a person's bio, website and networks; an agent's owner and its harness and model.
+  function profileHero(kind, d, reporting) {
+    const agent = kind === "agent";
+    const meta = [h("span", { class: "hdl" }, "@" + d.handle),
+      d.online === true ? h("span", { class: "on" }, h("i", { class: "dot", "aria-hidden": "true" }), M.t("visitor.online")) : null,
+      d.member_since ? h("span", null, M.t("visitor.member_since", { month: month(d.member_since) })) : null].filter(Boolean);
+    const website = !agent && d.website ? safeUrl(d.website) : null;
+    const owner = agent && d.owner ? h("p", { class: "owner" }, M.t("visitor.agent_of"), " ",
+      M.route.isRoute(d.owner.page) ? h("a", { href: d.owner.page }, face(d.owner, "hu", 22), h("b", null, d.owner.name))
+        : h("span", null, face(d.owner, "hu", 22), h("b", null, d.owner.name))) : null;
+    const facts = agent ? [[() => M.t("visitor.fact.harness"), d.harness], [() => M.t("visitor.fact.model"), d.model]].filter(([, v]) => v)
+      .map(([label, v]) => h("div", null, h("dt", null, label()), h("dd", null, h("b", null, v)))) : [];
+    return h("section", { class: "uhero hero dz" }, h("div", { class: "wrap" },
+      face(d, agent ? "ag" : "hu", 128),
+      h("div", { class: "uh-main" },
+        h("p", { class: "crumb" }, agent ? M.t("visitor.crumb.agent") : M.t("visitor.crumb.person")),
+        h("h1", null, d.name),
+        h("p", { class: "meta" }, meta),
+        owner,
+        !agent && d.bio ? h("p", { class: "sub bio" }, d.bio) : null,
+        website ? h("a", { class: "web", href: website, rel: REL_ME }, website.replace(/^https:\/\//, "").replace(/\/$/, "")) : null,
+        agent ? null : socials(d.social),
+        facts.length ? h("dl", { class: "facts" }, facts) : null,
+        reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null)));
+  }
+
+  // The figures of the last 30 days, as the hub sends them: a person's three only while they show
+  // them (`statistics` null otherwise), an agent's four. A 0 is a figure here, as the mockup draws
+  // it; a count the hub leaves empty (pull requests without a public repository) is not.
+  function profileBand(kind, d) {
+    const totals = d.statistics;
+    if (!totals) return null;
+    const keys = kind === "agent" ? ["cards_done", "reviews_given", "prs_merged", "handovers"] : ["cards_done", "reviews_given", "prs_merged"];
+    const figures = keys.filter((key) => typeof totals[key] === "number");
+    if (!figures.length) return null;
+    return h("section", { class: "band" }, h("div", { class: "wrap" },
+      h("p", { class: "eyebrow" }, M.t("visitor.stat.last_days")),
+      h("div", { class: "stats4" }, figures.map((key) => h("div", { class: "stat" },
+        h("b", null, M.fmt.number(totals[key])), h("span", { class: "label" }, COUNTERS[key]))))));
+  }
+
+  // The public projects as cards: the tile, the name, owner/slug and the member's role there.
+  function projectCards(projects) {
+    if (!projects || !projects.length) return null;
+    return h("section", { class: "sec profile-projects" }, h("div", { class: "wrap" },
+      h("div", { class: "sec-h" }, h("h2", null, M.t("visitor.projects"))),
+      h("div", { class: "pgrid" }, projects.map((p) => {
+        const slug = String(p.full_name || "").split("/")[1];
+        return h("a", { class: "pcard", href: "/" + p.full_name },
+          h("span", { class: "pmark sm", "aria-hidden": "true" }, monogram(p.name, slug)),
+          h("span", { class: "mc-t" }, h("b", null, p.name), h("small", null, p.full_name)),
+          p.role ? h("span", { class: "chip role" }, M.trust.roleLabel(p.role)) : null);
+      }))));
+  }
+
+  // A person's agents as the Overview's member cards (§16.9, "A person's agents"): picture, name,
+  // @handle, each role once and the harness; one without a page of its own is no link and shows
+  // nothing but its picture, name and handle, as the hub sends it.
+  function agentCards(d) {
+    const agents = d.agents || [];
+    if (!agents.length) return null;
+    return h("section", { class: "sec alt profile-agents" }, h("div", { class: "wrap" },
+      h("div", { class: "sec-h" }, h("h2", null, M.t("visitor.agents")),
+        h("p", { class: "muted" }, M.t("visitor.agents_of", { count: agents.length, name: d.name }))),
+      h("div", { class: "mgrid" }, agents.map((a) => {
+        const facts = (Array.isArray(a.roles) ? a.roles : []).map((role) => h("span", { class: "chip role" }, M.trust.roleLabel(role)))
+          .concat(a.harness ? [h("span", { class: "h" }, a.harness)] : []);
+        const inner = [face(a, "ag", 44),
+          h("span", { class: "mc-t" }, h("b", null, a.name), h("small", null, "@" + a.handle), facts.length ? h("span", { class: "mc-m" }, facts) : null)];
+        return M.route.isRoute(a.page) ? h("a", { class: "mcard", href: a.page, "data-agent": a.handle }, inner)
+          : h("div", { class: "mcard", "data-agent": a.handle }, inner);
+      }))));
+  }
+
   const draw = {
     // `framed`: signed out, in the landing's frame, where the hero and the band already show the
     // state, the about text, the links, who is online and the figures; the team and what happened
@@ -449,11 +564,6 @@ window.Maity = window.Maity || {};
         h("h2", null, M.t("visitor.statistics")), statistics(d.statistics),
       ];
     },
-    // A person's agents (§16.9, "A person's agents"): drawn as the signed-in person view draws
-    // the same list (js/person.js), a sentence where none is listed.
-    person_agents(d) {
-      return [h("h2", null, M.t("person.tab.agents")), M.person.agentList(d.agents)];
-    },
     organisation_page(d) {
       return d.projects.length ? [h("h2", null, M.t("visitor.projects")), projectList(d.projects)] : null;
     },
@@ -465,7 +575,8 @@ window.Maity = window.Maity || {};
   // Whether the address can name a stored page at all: the hub is not asked for the rest.
   function canBePublic(where, path) {
     const parts = path.split("/").filter(Boolean);
-    if (where.scope === "person") return parts.length === 1 || (parts.length === 2 && where.tab === "agents");
+    // A person's agents stand on their one page; /<handle>/agents names nothing (§16.9).
+    if (where.scope === "person") return parts.length === 1;
     if (where.scope !== "project") return false;
     if (parts[1] === "agents") return parts.length === 3;
     if (parts[2] === "tasks") return parts.length === 4;
@@ -527,11 +638,7 @@ window.Maity = window.Maity || {};
       const signIn = h("a", { class: "visitor-sign-in", href: M.withNext("/login", path) }, M.t("visitor.sign_in"));
       append(clear(header), h("div", { class: "bar" }, brand, signIn, tools));
     }
-    // A person's two pages carry the tabs Profile and Agents (§16.9), as the person view does.
-    const personTab = { person: "profile", person_agents: "agents" }[answer.kind] || null;
-    const title = answer.kind === "card" ? d.title
-      : answer.kind === "person_agents" ? M.t("person.title.agents", { name: (d.owner && d.owner.name) || base.split("/")[1] })
-        : d.name || base.slice(1);
+    const title = answer.kind === "card" ? d.title : d.name || base.slice(1);
     // Report what this page shows (§16.8, tsk-7ze5w6ymf7bw), named as the page names it: a person by
     // the handle, an agent by its global name `<owner>/<handle>`, a project by its full name, a card by
     // its id with the project. Signed out, a link to the sign-in that comes back with the form open.
@@ -559,6 +666,17 @@ window.Maity = window.Maity || {};
       if (reporting && reporting.open && M.report.asked()) reporting.open();
       return true;
     }
+    if (!signedIn && PROFILE_KINDS.includes(answer.kind)) {
+      // Signed out, a person's or an agent's page in the approved mockup's layout (person.html,
+      // agent.html; tsk-2t7efzj1p8zt): the hero, the figures, then the projects and a person's agents.
+      append(clear(main), h("section", { class: "view-visitor public-view profile-view", "data-kind": answer.kind },
+        profileHero(answer.kind, d, reporting), profileBand(answer.kind, d),
+        projectCards(d.projects), answer.kind === "person" ? agentCards(d) : null));
+      document.title = title;
+      M.siteChrome.enter(path, null, { next: path });
+      if (reporting && reporting.open && M.report.asked()) reporting.open();
+      return true;
+    }
     const content = [
       h("h1", null, title),
       reporting ? [h("p", { class: "report-row" }, reporting.button), reporting.slot] : null,
@@ -568,7 +686,6 @@ window.Maity = window.Maity || {};
         // A card's page belongs to the Board, the tab it is reached from.
         "aria-current": base + v.path === answer.path || (answer.kind === "card" && v.path === "/board") ? "page" : null,
       }, v.label))) : null,
-      personTab ? M.person.tabs(answer.path.split("/").filter(Boolean)[0], personTab) : null,
       draw[answer.kind] ? draw[answer.kind](d, base) : null];
     // Signed out the page stands in the landing's frame (§16.7.5), as the hub's stored pages do:
     // its header and footer around it, the content in the stored pages' look (public-pages.css,

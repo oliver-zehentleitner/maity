@@ -30,6 +30,18 @@ def link(path: str) -> str:
     return f'<p class="report-link"><a href="{href}" rel="nofollow">Report</a></p>'
 
 
+def row(path: str, what: str = "project") -> str:
+    """The same link in a page of the dashboard's design (§16.9): where the dashboard has its report
+    row, in its words, with the form's empty slot after it."""
+    back = quote(f"{path}?report", safe="")
+    href = f"/login?next={back}&amp;lang=en"
+    return (
+        f'<p class="report-row"><a class="button small report-open" href="{href}" rel="nofollow"'
+        f' title="Report this {what} to the instance&#x27;s admins">Sign in to report</a></p>'
+        '<div class="report-slot"></div>'
+    )
+
+
 def page(world: World, path: str) -> str:
     got = world.anyone.get(path)
     assert got.status_code == 200, got.text
@@ -40,11 +52,11 @@ def page(world: World, path: str) -> str:
 def test_the_project_page_and_each_public_view_carry_the_link_under_the_title(world: World) -> None:
     for path in (BASE, f"{BASE}/board", f"{BASE}/team", f"{BASE}/organisation", f"{BASE}/why"):
         text = page(world, path)
-        assert link(path) in text, path
-        assert text.index("</h1>") < text.index(link(path)), path
-    assert link(BASE) == (
-        '<p class="report-link"><a href="/login?next=%2Fmaintainer%2Fmaity%3Freport&amp;lang=en"'
-        ' rel="nofollow">Report</a></p>'
+        assert row(path) in text, path
+        assert text.index("</h1>") < text.index(row(path)), path
+    assert row(BASE).startswith(
+        '<p class="report-row"><a class="button small report-open"'
+        ' href="/login?next=%2Fmaintainer%2Fmaity%3Freport&amp;lang=en" rel="nofollow"'
     )
 
 
@@ -52,16 +64,15 @@ def test_a_card_page_carries_the_link_to_its_own_address(world: World) -> None:
     made = world.owner.post(TASKS, {"title": "Fix the pager"})
     assert made.status_code == 201, made.text
     path = f"{BASE}/tasks/{made.json()['id']}"
-    assert link(path) in page(world, path)
+    assert row(path, "card") in page(world, path)
 
 
-def test_a_person_and_an_agent_carry_it_and_the_agents_page_does_not(world: World) -> None:
+def test_a_person_and_an_agent_carry_it(world: World) -> None:
     assert link("/maintainer") in page(world, "/maintainer")
     with world.migrated.connect() as conn:
         handle = conn.execute(select(t.agent_profile.c.handle)).scalar_one()
     path = f"/maintainer/agents/{handle}"
     assert link(path) in page(world, path)
-    assert "report-link" not in page(world, "/maintainer/agents")
 
 
 def test_the_link_is_no_part_of_the_page_description(world: World) -> None:

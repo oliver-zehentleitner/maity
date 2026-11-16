@@ -53,6 +53,22 @@
               "local"
             ],
             "confinement": "allowlist",
+            "sandbox": "on"
+          },
+          {
+            "id": "codex",
+            "version": "0.156.1",
+            "available": true,
+            "reason": null,
+            "modes": [
+              "supervised"
+            ],
+            "default_mode": "supervised",
+            "models": [],
+            "targets": [
+              "local"
+            ],
+            "confinement": "sandbox",
             "sandbox": "off"
           },
           {
@@ -152,7 +168,7 @@
               "build-1",
               "build-2"
             ],
-            "confinement": "allowlist",
+            "confinement": "sandbox",
             "sandbox": "on"
           }
         ],

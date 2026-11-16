@@ -647,6 +647,60 @@ pages without a session, no longer bare. The answer inside the shell is unchange
 **Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
 the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
 
+## Inside the shell the stored page waits invisible for the dashboard's page, at most 3 s
+
+**Id:** 6fae1f6f-c1c2-46b2-9d72-03efbfea5417
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-777vkhtzmq6f (the maintainer saw the old layout for about a second on prod after the redesign of tsk-9482zxza3gs3, 2026-11-15); the lead's choice of 2026-11-15 between the options the card's coder put
+**See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-15
+**Revisit when:** the person, agent and organisation pages are rendered in the dashboard's design too (tsk-2t7efzj1p8zt), or the dashboard's first view of a public page takes longer than about 3 s
+
+The redesign drew a signed-out public page in the dashboard only (`web/js/visitor.js`), while the stored row,
+which the shell carries for crawlers and readers without scripts, kept the plain layout. A visitor saw that
+layout first and the page in its frame after the reads of the first view. `page_in_shell` now puts the row's
+text in a `.hub-page` that `web/css/app.css` keeps invisible; the first view replaces it. Where nothing replaces
+it (no script, or a failed read keeps the hub's page), it shows after 3 s, by a CSS delay that needs no script.
+3 s lies above the first view's usual time (about a second on prod) and below a wait a reader would take for
+a broken page. The text stays in the HTML, so a crawler reads what it read before. The price is an empty area
+for that moment instead of the flash.
+
+**Rejected:** the hub rendering the new design itself, so the first paint is the final page (the design twice,
+in Python and in the dashboard, kept in step), for now: the maintainer chose it on 2026-11-15 as its own card,
+tsk-zhyqdtt5v59c, and this delay is the fix until it lands; the stored
+page shown in the landing's stylesheets at once (a project's page would still change from the stored layout to
+the hero, and the dashboard's frame adds and removes those stylesheets itself); hiding it with no time limit (a
+page whose script fails would stay empty).
+
+Since PR 3 of tsk-zhyqdtt5v59c (2026-11-15) this holds only for a page not yet in the dashboard's design;
+one in it stands in the shell at once (2388f990).
+
+## A page in the dashboard's design stands in the shell at once
+
+**Id:** 2388f990-a551-4e46-ba59-a24540facba7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 3 of 4, 2026-11-15); contract `docs/api.md` §16.9 ("the frame's stylesheets (§16.7.5) linked there too") and §16.7.5; `shell.page_in_shell`, `render.frame_sheets`, `render.designed`, `web/js/site-chrome.js` (`sheets`); `hub/tests/test_public_pages.py`, `web/tools/e2e.py` (`public_first_paint_round`), `web/tools/smoke.js` (the skeleton comparison)
+**See:** public-pages.md#the-hub-renders-the-public-project-pages-in-the-dashboards-design-as-a-pure-function-of-their-data-one-stylesheet-home-a-format-guard — 5262b6b7-c4bf-472e-9a05-06f1a139a177 — as of 2026-11-15
+**See:** public-pages.md#inside-the-shell-the-stored-page-waits-invisible-for-the-dashboards-page-at-most-3-s — 6fae1f6f-c1c2-46b2-9d72-03efbfea5417 — as of 2026-11-16
+
+Once the hub stores a page in the dashboard's design (5262b6b7), the shell carries it as the first paint instead
+of hiding it: `page_in_shell` leaves out the `.hub-page` wrapper for such a page, links the frame's three
+stylesheets by their versioned addresses at the head's end, after the dashboard's own sheets where
+`site-chrome.js` appends them too, and marks the root `public-frame`, as `site-chrome.js` does when it enters
+the frame. The dashboard then takes those links over instead of adding its own (it adds one only where the head
+has none for that file), so each sheet loads once; leaving the frame, even before it ever entered it, turns the
+shell's links off with its own, since landing.css styles the whole document. It draws the same structure over
+the page; smoke compares that structure with the hub's skeletons, element by element. A page not in that design
+keeps the 3 s wait of 6fae1f6f.
+
+**Rejected:** dropping the wait for every page at once (the person, agent and organisation pages are still
+in the old layout until tsk-2t7efzj1p8zt, so they would flash again); the dashboard asking for the sheets
+without `?v` as before, beside the shell's versioned links (each sheet loaded twice, and the rules of two
+copies applied in turn).
+
 ## The public Why is a stored row, an exception to "the export stays in memory"
 
 **Id:** aed779e9-be9c-40d2-a7ea-217cee06e470
@@ -973,6 +1027,8 @@ The placeholder is `pic none size-<side>`, with the sizes in `render.STYLE` and 
 (`public_people.PICTURE_SIDES`). `test_no_stored_page_carries_an_inline_style` reads every row of `public_page`.
 The end-to-end round `stored_pages_policy_round` opens every page the sitemap lists, plus a person's agents
 pages, at both addresses, and fails on any refusal.
+Since 2026-11-15 (5262b6b7) a project's stored page is in the dashboard's design, which draws no per-day bars:
+the SVG has left it, and the rule (no inline style, the guard and the run) holds for that design as before.
 
 **Reason:** the shell's policy is the dashboard's and protects it. A page that renders the same everywhere without
 an exception in that policy is the fix that cannot come back by a new inline style; the test guards the store, the
@@ -1056,3 +1112,49 @@ the public set renders them at once, so none keeps a harness from a session it n
   `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, while the agent's own page shows the new one at once.
 - Touching the person's page with its dependents for a new picture: those include every card page that names them,
   and no card page shows a picture.
+
+## The hub renders the public project pages in the dashboard's design, as a pure function of their data; one stylesheet home; a format guard
+
+**Id:** 5262b6b7-c4bf-472e-9a05-06f1a139a177
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's choice on req-nsstqtq7za1t (2026-11-15) and the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 2 of 4); contract `docs/api.md` §16.9 and §16.7.5 as changed by PR 1 of that card; `public_design.page`, `public_pages.FORMAT`, `public_pages.refresh`, `render.stored_in_frame`, `landing_assets/public-sections.css`; `hub/tests/test_public_skeletons.py`, `hub/tests/test_public_page_format.py`
+**See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-15
+**See:** public-pages.md#a-stored-page-carries-no-inline-style-the-per-day-bars-are-an-svg-sized-by-attributes-the-placeholder-a-class — a08a0c0d-ded2-483c-b509-19bfe49c3705 — as of 2026-11-15
+**Revisit when:** the dashboard gets a build step that could run one template on both sides, or the person, agent and organisation pages are redesigned (tsk-2t7efzj1p8zt) and join `public_design`
+
+The stored pages of a project (Overview, Board, Team, Organisation, Why) and of a card are HTML in the
+structure `web/js/visitor.js` draws for a visitor without a session: the same elements, classes, order,
+`data-kind` and static `aria` attributes, English words from `web/i18n/en.json` under the same keys
+(`public_design.WORDS`). Each renderer builds the page's `data` first, then the HTML with
+`public_design.page(kind, data, path)`, which reads nothing else; `inputs` stays the digest of the rendered
+content. These pages carry no `<style>` (`page_document(styled=False)`): their look is the frame's stylesheets
+only. `public-sections.css` moved from the dashboard to `landing_assets/` and is the frame's third stylesheet
+under `/assets/landing/`, linked by `render.public_frame` and by `web/js/site-chrome.js`. In the frame
+(`?as=public`) such a page stands in `<main>` as it is, where the dashboard puts its view, not in the stored
+pages' column. What the old pages showed beyond the design (the per-day bars, the medians, the per-agent table)
+stays in `data` only. Each row's `inputs` is written `f<FORMAT>:<digest>` (`FORMAT = 2`; a row without the prefix
+is format 1), the digest cut from the end so the whole stays within the column's 64 characters: widening the column
+would have cost a migration for a value that only tells a change from none, and 61 hex digits of a sha256 still do. `refresh` takes every page of a target off when one of them is of a later format and renders none,
+so the later version renders it first as a target without a page (deafb243); a row of an earlier format has
+other `inputs` and is rendered again. The person, agent and organisation pages keep their old HTML and `STYLE`
+for now (tsk-2t7efzj1p8zt). `test_public_skeletons.py` records the elements and classes of each kind for
+`web/tools/public-pages-fixture.json` in `web/tools/public-skeletons.json` (`make -C web skeletons`), the file
+the dashboard's side is compared with.
+
+**Reason:** a crawler, a reader without script and the first paint before the dashboard draws should see the
+page in its final design, and the dashboard then draws the same structure over it. With the HTML a pure function
+of `data`, the two cannot show different things; with one stylesheet, served by the hub, the two sides cannot
+style it differently. During an upgrade several versions render the same rows: without the guard an old process
+would put the old design back over the new one until the next pass.
+
+**Rejected alternatives:**
+- A shared template that both the hub and the dashboard interpret: the dashboard has no build step, so it would
+  need an interpreter of its own, and the drift would move into the two interpreters.
+- The dashboard parsing the hub's stored HTML: rejected earlier (eb7fd1c7), a page's markup would become an
+  interface.
+- Keeping the old design in the stored page and letting the dashboard replace it after a wait of up to 3 s (the short-term fix 6fae1f6f, which PR 3 of the card narrows to the pages not yet in this design): every reader saw the page change its design, and a
+  crawler and a reader without script never saw the design at all.
+- Keeping an old-format row while a newer one exists, or replacing a newer row: either serves a design, or a
+  removal, that the running version did not make; taking the target off is what a missing page already means.

@@ -31,6 +31,7 @@ from . import (
     stub,
     supervisor,
     targets,
+    tools,
     trust,
 )
 from .asuser import RUNNER, AsUser
@@ -266,10 +267,9 @@ def _check_config_file(report: Report, path: Path) -> None:
 def _check_repositories(report: Report, cfg: config.Config) -> None:
     """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
     `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). With
-    antigravity configured, an exact entry agy cannot be given exactly (adapters.agy_grants)
-    is named too, and a repository with exact entries for agy gets one line on what agy cannot
-    see: an extra argument that is empty or blank. Said, never an error, so a restart before
-    the table is edited keeps every placement running."""
+    antigravity configured, a command grant is not applied to agy (adapters.agy_grants): it is
+    named as left out and runs in agy's sandbox like an unlisted command. Said, never an
+    error, so a restart before the table is edited keeps every placement running."""
     for name, grant in cfg.repositories.items():
         if grant.refused:
             listed = ", ".join(repr(rule) for rule in grant.refused)
@@ -279,20 +279,13 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                 "with `maity gh pr create`"
             )
         if "antigravity" in cfg.harnesses:
-            # agy matches by prefix; an exact entry it cannot make exact is left out for it.
+            # agy reads the command past a leading assignment/wrapper; no command grant is
+            # applied to it, exact or prefix, so each is left out and runs sandboxed.
             plain = [rule for rule in grant.allow if config.plain_command(rule)]
-            granted = adapters.agy_grants(plain)
-            for rule, why in granted.left_out:
+            for rule, why in adapters.agy_grants(plain).left_out:
                 report.warn(
                     f"repositories.{name}: allow {rule!r} is left out for antigravity and runs "
                     f"in agy's sandbox like an unlisted command: {why}"
-                )
-            if granted.deny:
-                # agy drops a word that is empty once quotes and edge blanks are gone.
-                report.warn(
-                    f"repositories.{name}: for antigravity, an exact allow entry also allows "
-                    "the command with an extra empty or blank argument (`''`, `\" \"`): agy "
-                    "drops such an argument before it matches and cannot tell it apart"
                 )
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
@@ -382,12 +375,24 @@ def _existing_parent(path: Path) -> Path:
 
 
 def _check_harness(
-    report: Report, harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER
+    report: Report,
+    harness: config.Harness,
+    agent_path: str,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
         return
-    found = capabilities.probe(harness, agent_path, as_user)
+    found = capabilities.probe(harness, agent_path, as_user, tools_dir)
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.install:
+        report.ok(f"harness {harness.id}: not installed yet; `serve` installs it (§15.16)")
+        return
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.update != "never":
+        report.error(
+            f"harness {harness.id}: no version installed by the runner; set install = true"
+        )
+        return
     if found.reason == "binary_not_found":
         report.error(f"harness {harness.id}: `{harness.binary}` not found on {agent_path}")
         return
@@ -714,7 +719,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         else:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
+            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
     if not args.offline:
@@ -751,6 +756,46 @@ def _alive(pid: Any) -> bool:
     except OSError:
         return True  # no /proc: the signal check is all there is
     return b"runner" in command and b"serve" in command
+
+
+def cmd_tools(args: argparse.Namespace) -> int:
+    """The tools this runner installs and updates (§15.16), from its tools directory only;
+    `rollback` makes the kept version the one new sessions start with. Never contacts the
+    hub: a running `serve` notices within a minute and tells the hub."""
+    cfg = config.load(config.path_of(args.config))
+    managed = {h.id: h for h in cfg.harnesses.values() if h.install or h.update != "never"}
+    if getattr(args, "tools_action", None) == "rollback":
+        if args.tool not in managed:
+            print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
+            return 1
+        try:
+            done = tools.rollback(cfg.tools_dir, args.tool)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(
+            f"{args.tool}: new sessions start with {done.version}; {done.previous_version} "
+            "stays for a second rollback; running sessions keep the version they started with"
+        )
+        return 0
+    rows = [
+        tools.report(cfg.tools_dir, h.id, install=h.install, update=h.update,
+                     sessions_on_older=0)  # fmt: skip
+        for h in managed.values()
+    ]
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("no tool is installed or updated by this runner (harness install / update)")
+    for row in rows:
+        state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        print(
+            f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"checked {row['checked_at'] or 'never'}"
+        )
+    return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -949,6 +994,29 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--json", action="store_true", help="print it as JSON")
     r.set_defaults(handler=cmd_status)
+
+    r = rsub.add_parser(
+        "tools",
+        help="the tools this runner installs and updates; `rollback <tool>` goes back",
+        description="List the harness tools this runner installs or updates (harness "
+        "install / update): the version new sessions start with, the one kept, the latest "
+        "found. `rollback <tool>` swaps the two for new sessions; a second rollback swaps "
+        "back. Reads the tools directory only; a running serve picks the change up.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.set_defaults(handler=cmd_tools)
+    tsub = r.add_subparsers(dest="tools_action")
+    rb = tsub.add_parser(
+        "rollback",
+        help="new sessions start with the kept version",
+        description="Make the kept version the one new sessions start with (§15.16).",
+        formatter_class=fmt,
+    )
+    rb.add_argument("tool", help="a harness id, e.g. codex")
+    rb.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    rb.set_defaults(handler=cmd_tools, json=False)
 
     r = rsub.add_parser(
         "unit",

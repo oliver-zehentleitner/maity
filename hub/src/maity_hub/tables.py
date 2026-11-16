@@ -649,7 +649,8 @@ project = Table(
     Column("state_changed_at", UtcDateTime, nullable=False),
     # Set once, when the probe first finds a release's tag; never cleared (§6.1).
     Column("released_at", UtcDateTime),
-    Column("repository_url", String(255)),
+    # 2048 is the contract's maximum for a stored repository URL (§6.1).
+    Column("repository_url", String(2048)),
     Column("repository_default_branch", String(255)),
     # The one check that says a commit is good (§6.1 `repository.required_check`), or null.
     Column("repository_required_check", String(200)),
@@ -2133,6 +2134,28 @@ conversation_meat_proxy = Table(
     **MYSQL_TABLE,
 )
 
+VERDICT_SENTENCE = 500  # Unicode code points, docs/api.md §9.7
+
+# A human's current verdict on a chat message (docs/api.md §9.7): one row per message and human,
+# replaced by a new one and deleted when taken back. `set_seq` is the `chat_verdict` event that
+# set it. Kept apart from the events because a redacted event loses its payload, and the verdict
+# it set must stay (hub/context/events.md). The projects' record, kept with a deleted account.
+chat_verdict = Table(
+    "chat_verdict",
+    metadata,
+    Column("message_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("value", String(8), nullable=False),
+    Column("sentence", String(VERDICT_SENTENCE)),
+    Column("set_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("message_seq", "human_id"),
+    CheckConstraint("value IN ('agree', 'disagree')", name="value"),
+    **MYSQL_TABLE,
+)
+
 # A human's allow and deny entries for their agents (docs/api.md §9.6, "The lists"): who may
 # chat with them. `human_id` keeps the list; only that human reads and changes it. An allow
 # names a side (`owner_id`, with `their_agents` and `their_human`) or a project; a deny names
@@ -2646,7 +2669,10 @@ mail_delivery = Table(
 # as one JSON value, beside the address and its verification. `pending_nonce` makes the
 # newest verification link the only valid one; `epoch` moves when the address changes or
 # is removed, which voids every unsubscribe link (§18.6). `address_change` is a change
-# held for approval (§18.4).
+# held for approval (§18.4). `pending_browser`, `pending_os` and `pending_ip` are the
+# requesting session's, for the notice to the old address once the new one is verified
+# (§2.6.3, §18.4); they go with the pending address: at its verification, when it is
+# replaced, removed or voided, and once it expired (`notifications/retention`).
 notification_settings = Table(
     "notification_settings",
     metadata,
@@ -2663,6 +2689,9 @@ notification_settings = Table(
     Column("pending_address", String(254)),
     Column("pending_nonce", String(32)),
     Column("pending_expires_at", UtcDateTime),
+    Column("pending_browser", String(64)),
+    Column("pending_os", String(64)),
+    Column("pending_ip", String(64)),
     Column("epoch", Integer, nullable=False),
     Column("hard_failures", Integer, nullable=False),
     Column("disabled_at", UtcDateTime),

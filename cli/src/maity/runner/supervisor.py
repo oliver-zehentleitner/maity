@@ -192,6 +192,25 @@ def stamp(moment: float | None) -> str | None:
     return datetime.fromtimestamp(moment, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+@dataclass(frozen=True)
+class GateView:
+    """What the start gate decided on for one harness: its probe and its sandbox. The
+    launch uses the same view, so a tool the keeper swaps in between (§15.16) never starts
+    under the other binary's sandbox decision."""
+
+    found: capabilities.Probe | None
+    sandbox: bool
+    held: bool
+
+    @staticmethod
+    def of(target: Target, harness_id: str) -> GateView:
+        return GateView(
+            target.probes.get(harness_id),
+            target.sandbox.get(harness_id, False),
+            harness_id in target.held,
+        )
+
+
 @dataclass
 class Record:
     """What the runner knows about one placement; persisted in actual.json."""
@@ -224,6 +243,9 @@ class Record:
     nudged_at: float | None = None
     hung_at: float | None = None
     hung_exits: list[float] = field(default_factory=list)  # for the crash cap (§15.14)
+    binary: str | None = None  # the harness binary this session started with (§15.16)
+    # Its OS sandbox as the start gate decided (GateView); None for a record from before.
+    sandbox: bool | None = None
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
@@ -528,9 +550,10 @@ class Supervisor:
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
-                unconfined = p["harness"] in UNCONFINED_REPORTED and not target.sandbox.get(
-                    p["harness"], False
-                )
+                on = rec.sandbox  # the start's own view, not the tool in use now (§15.16)
+                if on is None:
+                    on = target.sandbox.get(p["harness"], False)
+                unconfined = p["harness"] in UNCONFINED_REPORTED and not on
                 rec.enter(now, "running", detail="sandbox_unavailable" if unconfined else None)
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
@@ -793,7 +816,9 @@ class Supervisor:
 
     # --- starting --------------------------------------------------------------------------
 
-    def _refusal(self, p: dict[str, Any], target: Target) -> tuple[str, str | None] | None:
+    def _refusal(
+        self, p: dict[str, Any], target: Target, view: GateView | None = None
+    ) -> tuple[str, str | None] | None:
         limits = self.cfg.limits
         names = [p["project"], *p.get("project_aliases", [])]
         if not any(name in limits.projects for name in names):  # a renamed project stays in
@@ -809,7 +834,8 @@ class Supervisor:
         model = p.get("model")
         if model is not None and model not in harness.models:
             return ("harness_refused", "model_unsupported")
-        found = target.probes.get(harness.id)
+        view = view or GateView.of(target, harness.id)
+        found = view.found
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
@@ -818,8 +844,8 @@ class Supervisor:
             # Codex cannot honour a command allowlist, and its `maity` runs inside its
             # sandbox, where `maity gh` reaches neither gh's login nor the forge's API.
             return ("harness_refused", None)
-        on = target.sandbox.get(harness.id, False)
-        if capabilities.sandbox_refused(harness, on, harness.id in target.held):
+        on = view.sandbox
+        if capabilities.sandbox_refused(harness, on, view.held):
             return ("harness_refused", None)  # no run without it, or held back by its version
         if on and harness.id == "claude-code":
             # The sandboxed session relies on the runner's hook; settings that switch hooks
@@ -838,7 +864,8 @@ class Supervisor:
 
     def _launch(self, p: dict[str, Any], rec: Record, now: float, target: Target) -> int:
         name = session_name(p["project_id"], p["workspace"]["clone"])
-        refused = self._refusal(p, target)
+        view = GateView.of(target, p.get("harness") or "")  # under the lock the keeper takes
+        refused = self._refusal(p, target, view)
         if refused is not None:
             rec.enter(now, "failed", refused[0], detail=refused[1])
             return 0
@@ -885,11 +912,12 @@ class Supervisor:
         retrying = rec.state in ("exited", "rate_limited")
         rec.calm()
         rec.enter(now, "starting", retry_at=None, started_at=now)
+        rec.sandbox = view.sandbox
         if retrying:
             rec.restarts += 1
         task = threading.Thread(
             target=self._start,
-            args=(p, rec, place, name, harness, agent, join, rejoin, target),
+            args=(p, rec, place, name, harness, agent, join, rejoin, target, view),
             daemon=True,
             name=f"maity-start-{p['id']}",
         )  # fmt: skip
@@ -908,9 +936,10 @@ class Supervisor:
         join: bool = False,
         rejoin: bool = False,
         target: Target | None = None,
+        view: GateView | None = None,
     ) -> None:
         """The long part of a start, in its own thread: clone if missing, join if needed,
-        then tmux."""
+        then tmux; with the binary and sandbox the gate decided on (`view`)."""
         target = target or self.targets[self._default_target()]
         assert target.backend is not None  # noqa: S101 - connected before a launch
         as_user = target.as_user
@@ -938,7 +967,8 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            launch = adapters.launch(self._context(p, harness, place, target, rec.resume))
+            context = self._context(p, harness, place, target, rec.resume, view=view)
+            launch = adapters.launch(context)
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
@@ -973,8 +1003,9 @@ class Supervisor:
         with self.lock:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
             rec.resume = False
+            rec.binary = context.binary
         self.log(f"{name}: started generation {p['generation']}")
-        found = target.probes.get(harness.id)
+        found = (view or GateView.of(target, harness.id)).found  # the version that started
         warning = capabilities.unchecked(harness.id, found.version if found else None)
         if warning is not None:
             self.log(f"{name}: {warning}")
@@ -1039,13 +1070,15 @@ class Supervisor:
         place: workspace.Workspace,
         target: Target | None = None,
         resume: bool = False,
+        view: GateView | None = None,
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
+        view = view or GateView.of(target, harness.id)
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
         agent_dir = target.agent_files / "agents" / p["id"]
         target.as_user.mkdir(agent_dir)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
-        found = target.probes.get(harness.id)
+        found = view.found
         private = self._private(target, place)
         return adapters.Context(
             placement=p,
@@ -1056,7 +1089,7 @@ class Supervisor:
             agent_dir=agent_dir,
             grant=self.cfg.repositories.get(repository, config.RepositoryGrant()),
             restart=self.cfg.limits.restart,
-            sandbox=target.sandbox.get(harness.id, False),
+            sandbox=view.sandbox,
             hosts=tuple(
                 h
                 for h in (
@@ -1139,6 +1172,33 @@ class Supervisor:
                 backend.terminate(session)
 
     # --- advertising -----------------------------------------------------------------------
+
+    def sessions_on(self, harness_id: str, binary: str | None) -> int:
+        """Running sessions of `harness_id` that started with another binary than `binary`
+        (`sessions_on_older`, §15.16); unknown binaries (started before this) count too."""
+        with self.lock:
+            harness_of = {p["id"]: p["harness"] for p in self.desired}
+            return sum(
+                1
+                for pid, rec in self.records.items()
+                if rec.state == "running"
+                and harness_of.get(pid) == harness_id
+                and rec.binary != binary
+            )
+
+    def binaries_in_use(self) -> set[str] | None:
+        """The harness binaries live sessions started from, so `tools.prune` keeps their
+        versions; None when a live session's binary is not known."""
+        with self.lock:
+            live = [r for r in self.records.values()
+                    if r.state in ("starting", "running", "stopping")]  # fmt: skip
+            if any(r.binary is None for r in live):
+                return None
+            return {r.binary for r in live if r.binary is not None}
+
+    def advertise_now(self) -> None:
+        """`PATCH /runner` at once: the capabilities themselves changed (a tool, §15.16)."""
+        self._advertise(None, self.now(), force=True)
 
     def _advertise(self, running: dict[str, int] | None, now: float, force: bool = False) -> None:
         """`PATCH /runner` with the targets' `running` and reachability: at most every
