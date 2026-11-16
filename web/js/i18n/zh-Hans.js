@@ -301,6 +301,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "attach.not_removed": "未移除： {reason}",
   "attach.not_shown": "{name}：无法显示。",
   "attach.off": "此实例未设置附件",
+  "attach.paste.not_image": "粘贴的图片不是 PNG、JPEG、WebP 或 GIF",
   "attach.pending": "待发送的文件",
   "attach.per_message": {
     "other": "每条消息最多 {count} 个文件"

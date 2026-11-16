@@ -11738,10 +11738,86 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Not attached: odd.png: the hub refused it as too large (the file is 2.0 KB)") && !text(main).includes("[object Object]"),
     "attachments: a non-string message is left out of the refusal");
   win.Maity.api.postRaw = (p, b, t) => { atCalls.push(["RAW", p, t, b.size]); return atRaw(p, b, t); };
+  // A pasted image (tsk-e40k9yxt574b) takes a chosen file's way: checked, uploaded at once,
+  // pending by name and size, under a name of its own; text in the same paste wins.
+  const atClip = (files, words) => ({ files, items: [], getData: (t) => (t === "text/plain" ? words || "" : "") });
+  const atPaste = async (field, data) => {
+    let stopped = false;
+    byId(field).dispatch("paste", { clipboardData: data, preventDefault() { stopped = true; } });
+    for (let k = 0; k < 8; k++) await tick();
+    return stopped;
+  };
+  const atRaws = () => atCalls.filter((c) => c[0] === "RAW");
+  const atJPEG = [0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1];
+  let atBefore = atRaws().length;
+  expect(!(await atPaste("chat-text", atClip([atFile("image.png", PNG, 2048, "image/png")], "A1\tB1"))) && atRaws().length === atBefore,
+    "attachments: a paste with text pastes the text and attaches no image");
+  expect(!(await atPaste("chat-text", atClip([], "just words"))) && atRaws().length === atBefore, "attachments: a paste of text alone is left to the field");
+  expect(await atPaste("chat-text", atClip([atFile("image.png", PNG, 2048, "image/png")])), "attachments: a pasted image is taken from the field");
+  const atPasted = atRaws().slice(atBefore);
+  expect(atPasted.length === 1 && /\/attachments\?name=pasted-image-\d{8}-\d{6}\.png$/.test(atPasted[0][1]) && atPasted[0][2] === "image/png"
+    && main.querySelectorAll(".attach-pending li").some((li) => /pasted-image-\d{8}-\d{6}\.png/.test(text(li)) && btn(li, "Remove")),
+    "attachments: a pasted image is uploaded at once as pasted-image-<time>.png and shown pending with Remove");
+  atBefore = atRaws().length;
+  const atItem = (f) => ({ kind: "file", type: f.type, getAsFile: () => f });
+  await atPaste("chat-text", { files: [], items: [atItem(atFile("image.png", PNG, 100, "image/png")), atItem(atFile("image.jpg", atJPEG, 100, "image/jpeg"))], getData: () => "" });
+  const atTwo = atRaws().slice(atBefore);
+  expect(atTwo.length === 2 && /name=pasted-image-\d{8}-\d{6}\.png$/.test(atTwo[0][1]) && /name=pasted-image-\d{8}-\d{6}-2\.jpg$/.test(atTwo[1][1]) && atTwo[1][2] === "image/jpeg",
+    "attachments: several images in one paste, read from the clipboard's items too, each named apart and typed by its bytes");
+  atBefore = atRaws().length;
+  expect(await atPaste("chat-text", atClip([atFile("image.bmp", [0x42, 0x4d, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 100, "image/bmp")])) && atRaws().length === atBefore
+    && text(main).includes("Not attached: a pasted image that is not a PNG, JPEG, WebP or GIF"), "attachments: a pasted image the hub keeps no image of is refused before uploading");
+  await atPaste("chat-text", atClip([atFile("image.png", PNG, 10 * 1024 * 1024 + 1, "image/png")]));
+  expect(atRaws().length === atBefore && /pasted-image-\d{8}-\d{6}\.png is larger than 10 MiB/.test(text(main)), "attachments: a pasted image over 10 MiB refused before uploading, by its name");
+  byId("chat-text").value = "pasted"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  const atPastedSent = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maintainer/maity/conversations/agt-b/messages").pop();
+  expect(atPastedSent && atPastedSent[2].body === "pasted" && atPastedSent[2].attachments.length === 3 && !main.querySelectorAll(".attach-pending li").length,
+    "attachments: the pasted images go with the message");
+  // While a pasted image's bytes are read the composer is busy, so a Send then does not go
+  // without it; it is sent with the message once read and uploaded.
+  const atPosts = () => atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maintainer/maity/conversations/agt-b/messages");
+  let atRelease = null;
+  const atSlow = Object.assign(atFile("image.png", PNG, 100, "image/png"), {
+    slice: (a, b) => ({ arrayBuffer: () => new Promise((ok) => { atRelease = () => ok(Uint8Array.from(PNG.slice(a, b)).buffer); }) }),
+  });
+  atBefore = atRaws().length;
+  let atPostsBefore = atPosts().length;
+  await atPaste("chat-text", atClip([atSlow]));
+  byId("chat-text").value = "while reading"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(atPosts().length === atPostsBefore && atRaws().length === atBefore && text(main).includes("Not sent: a file is still uploading"),
+    "attachments: a Send while a pasted image is still being read is held back as busy");
+  atRelease(); for (let k = 0; k < 8; k++) await tick();
+  main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(atRaws().length === atBefore + 1 && atPosts().length === atPostsBefore + 1 && atPosts().pop()[2].attachments.length === 1
+    && atPosts().pop()[2].body === "while reading", "attachments: once read and uploaded, the pasted image goes with that message");
+  // Bytes that cannot be read are said on the status line; the paste's other images still go.
+  const atUnreadable = Object.assign(atFile("image.png", PNG, 100, "image/png"), {
+    slice: () => ({ arrayBuffer: () => Promise.reject(new Error("NotReadableError")) }),
+  });
+  atBefore = atRaws().length;
+  await atPaste("chat-text", atClip([atUnreadable, atFile("image.png", PNG, 100, "image/png")]));
+  expect(atRaws().length === atBefore + 1 && main.querySelectorAll(".attach-pending li").length === 1
+    && text(main.querySelector(".attach")).includes("Not attached: the image could not be read"),
+    "attachments: an unreadable pasted image is said on the status line, and the paste's other image still goes");
+  // Only GIF87a or GIF89a is a GIF, as the hub sniffs it; any clipboard text wins, a space too.
+  atBefore = atRaws().length;
+  await atPaste("chat-text", atClip([atFile("image.gif", [0x47, 0x49, 0x46, 0x38, 0x58, 0x58, 0, 0, 0, 0, 0, 0], 100, "image/gif")]));
+  expect(atRaws().length === atBefore && text(main).includes("Not attached: a pasted image that is not a PNG, JPEG, WebP or GIF"),
+    "attachments: a pasted GIF8 without 7a or 9a is no GIF and refused");
+  expect(!(await atPaste("chat-text", atClip([atFile("image.png", PNG, 100, "image/png")], " "))) && atRaws().length === atBefore,
+    "attachments: a paste whose text is only a space pastes the text and attaches no image");
+  btn(main.querySelector(".attach-pending li"), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
   // A group chat: the participant attaches; a project message too.
   await go("#/maintainer/maity/chat/cnv-0007");
   expect(byId("group-files"), "attachments: a group chat's composer offers files");
+  atBefore = atRaws().length;
+  await atPaste("chat-text", atClip([atFile("image.png", PNG, 100, "image/png")]));
+  expect(atRaws().length === atBefore + 1 && main.querySelectorAll(".attach-pending li").length === 1, "attachments: an image pasted into a group chat is attached");
   await go("#/maintainer/maity/message");
+  atBefore = atRaws().length;
+  await atPaste("message-body", atClip([atFile("image.png", PNG, 100, "image/png")]));
+  expect(atRaws().length === atBefore + 1 && main.querySelectorAll(".attach-pending li").length === 1, "attachments: an image pasted into a project message is attached");
+  btn(main.querySelector(".attach-pending li"), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
   await atPick("message-files", [atFile("plan.pdf", [0x25, 0x50, 0x44, 0x46], 900, "application/pdf")]);
   byId("message-body").value = "the plan"; main.querySelector("form.message-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   const atEvent = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maintainer/maity/events").pop();
@@ -11801,6 +11877,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? atState(p).then((x) => Object.assign({}, x, { state: "archived" })) : atState(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-b");
   expect(!byId("chat-files") && main.querySelector("img.attach-image"), "attachments: a closed project offers no new file, and still shows the ones there");
+  atBefore = atRaws().length;
+  expect(!(await atPaste("chat-text", atClip([atFile("image.png", PNG, 100, "image/png")]))) && atRaws().length === atBefore,
+    "attachments: a closed project takes no pasted image either, and leaves the paste to the field");
   win.Maity.api.get = atState;
   // Only the hub's own attachment path is a link or an image source.
   let atForeign = null;

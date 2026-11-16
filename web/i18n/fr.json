@@ -307,6 +307,7 @@
   "attach.not_removed": "Non retiré : {reason}",
   "attach.not_shown": "{name} : n'a pas pu être affiché.",
   "attach.off": "les pièces jointes ne sont pas configurées sur cette instance",
+  "attach.paste.not_image": "une image collée qui n'est ni PNG, ni JPEG, ni WebP, ni GIF",
   "attach.pending": "Fichiers à envoyer",
   "attach.per_message": {
     "one": "{count} fichier au plus par message",

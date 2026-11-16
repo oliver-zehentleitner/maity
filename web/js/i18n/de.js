@@ -312,6 +312,7 @@ window.MAITY_I18N["de"] = {
   "attach.not_removed": "Nicht entfernt: {reason}",
   "attach.not_shown": "{name}: konnte nicht angezeigt werden.",
   "attach.off": "Anhänge sind auf dieser Instanz nicht eingerichtet",
+  "attach.paste.not_image": "ein eingefügtes Bild, das kein PNG, JPEG, WebP oder GIF ist",
   "attach.pending": "Zu sendende Dateien",
   "attach.per_message": {
     "one": "höchstens {count} Datei in einer Nachricht",
