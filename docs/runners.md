@@ -70,7 +70,7 @@ The first run on a real Mac is still to come; [`maity runner`](../cli/README.md#
 
 ## Start an agent on it
 
-A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Managed agents** (`/<owner>/<slug>/placements`). A project admin starts an agent on a runner of their own that is allowed in the project from **Join an agent** → **Start an agent on a runner** at the head of the page, and everyone in the project sees where its agents run; the agent's owner, or the runner's owner with admin rights in the project, stops and restarts them there. **Managed agents** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
+A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Managed agents** (`/<owner>/<slug>/placements`). A project admin starts an agent on a runner of their own that is allowed in the project from **Join an agent** → **Start an agent on a runner** at the head of the page, and everyone in the project sees where its agents run; the agent's owner or the runner's owner stops them there, and only the runner's owner starts and restarts them. Only you place agents on your runner: attaching it to a project lets nobody else start one on it, and an agent's proposal for it asks you in person. Your runner's own list shows every agent on it in any project, and you may stop or remove each of them, even in a project you are not a member of. **Managed agents** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
 
 ```sh
 maity runners

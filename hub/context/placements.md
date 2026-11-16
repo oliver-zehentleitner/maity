@@ -110,6 +110,7 @@ class of answerer, not one person.
 **Evidence:** confirmed
 **Source:** `docs/api.md` §15.6, the maintainer's decision of 2026-11-16 (tsk-qgmz0yrc3g5x)
 **See:** https://github.com/oliver-zehentleitner/maity — 320a6e51-5a65-4684-8da8-df911d4273c1 — as of 2026-11-16
+**See:** placements.md#a-placements-consent-needs-a-human-unless-the-project-says-otherwise — 22e17362-56cb-4bf7-94fa-c245119e6eac — as of 2026-11-16
 
 An agent's placement proposal under `consent` files a personal request to
 the runner's owner (`human:<id>`), answered only by that human directly

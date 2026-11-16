@@ -168,7 +168,8 @@ only a human with `members:admin` sets the policy.
 Attaching a runner to a project shows it there; it lets nobody but the
 runner's owner place agents on it. Only the runner's side — its owner and
 the agents whose profile that owner owns — creates a placement on it,
-changes a placement's spec, moves a placement onto it, or starts,
+changes a placement's spec, moves a placement onto it or off it by a
+replacement (the old runner runs the handover), or starts,
 restarts and nudges one there; anyone else is `forbidden` with
 `runner_owner_only`, whatever their trust. The go of an agent's proposal
 comes from the runner's owner alone, as a personal request, never from an
