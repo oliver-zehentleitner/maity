@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.notifications import preferences
 from maity_hub.routes import me
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -419,3 +420,30 @@ def test_the_public_profile_fields_are_in_the_export_public_stats_among_them(
         {},
         "private",
     )
+
+
+def test_where_a_pending_address_change_was_asked_from_stays_out(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    # A copy of the requesting session's browser, system and IP address, kept only until the
+    # change is verified or its link expires, for the notice to the old address (§18.4,
+    # context/notifications.md 569a1661-3a51-45bb-b7e3-47a3f4368354). The pending address is
+    # exported; the copy is not: the session list holds the browser and system.
+    with migrated.begin() as conn:
+        preferences.row_of(conn, owner.id, lock=True)
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == owner.id)
+            .values(
+                pending_address="new@example.org",
+                pending_nonce="n",
+                pending_expires_at=clock.now(),
+                pending_browser="Pending-Browser",
+                pending_os="Pending-OS",
+                pending_ip="198.51.100.77",
+            )
+        )
+    body = export(owner).text
+    assert "new@example.org" in body
+    for kept in ("Pending-Browser", "Pending-OS", "198.51.100.77", "pending_ip"):
+        assert kept not in body

@@ -42,6 +42,12 @@ CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
 APPROVER_AGE = timedelta(hours=24)
 HELD_FOR = timedelta(days=7)
+# The requesting session's data kept with a pending address, cleared with it.
+NO_PENDING_ORIGIN: dict[str, Any] = {
+    "pending_browser": None,
+    "pending_os": None,
+    "pending_ip": None,
+}
 READ_ONLY = (
     "address_status",
     "verified_at",
@@ -594,7 +600,9 @@ def apply_address(
 ) -> None:
     """Set the address to verify, or remove it. Setting it again, also the same one,
     sends a new link and voids the old one. A change or removal of the verified address
-    withdraws a pending deletion request (§2.9): its link went to that address."""
+    withdraws a pending deletion request (§2.9): its link went to that address. The
+    session's browser, system and IP address are kept with the pending address until it is
+    verified, replaced, voided or expired, for the notice to the old address."""
     from maity_hub import account_deletion
 
     now = clock.now()
@@ -613,6 +621,7 @@ def apply_address(
                 pending_address=None,
                 pending_nonce=None,
                 pending_expires_at=None,
+                **NO_PENDING_ORIGIN,
                 epoch=row.epoch + 1,
                 address_change=None,
                 updated_at=now,
@@ -630,6 +639,11 @@ def apply_address(
             pending_address=wanted,
             pending_nonce=nonce,
             pending_expires_at=now + VERIFY_FOR,
+            # Where the change was asked from, for the notice to the old address at its
+            # verification (§2.6.3, §18.4); a new request replaces it with its own.
+            pending_browser=session.browser,
+            pending_os=session.os,
+            pending_ip=session.ip,
             address_status=row.address_status if row.address else "pending",
             address=row.address,
             address_change=None,
@@ -712,6 +726,12 @@ def verify(
     if taken is not None:
         return False
     previous = row.address if row.address_status in ("verified", "disabled") else None
+    # Where the change was asked from; none for a request older than the hub's keeping it
+    # (migration 20261115000000_address_where), whose notice leaves the line out.
+    kept = (row.pending_browser, row.pending_os, row.pending_ip)
+    origin = None
+    if any(value is not None for value in kept):
+        origin = SimpleNamespace(browser=kept[0], os=kept[1], ip=kept[2])
     try:
         with conn.begin_nested():
             conn.execute(
@@ -726,6 +746,7 @@ def verify(
                     pending_address=None,
                     pending_nonce=None,
                     pending_expires_at=None,
+                    **NO_PENDING_ORIGIN,
                     hard_failures=0,
                     disabled_at=None,
                     epoch=row.epoch + (1 if previous and previous != row.pending_address else 0),
@@ -739,7 +760,7 @@ def verify(
         from maity_hub import account_deletion
 
         account_deletion.withdraw(conn, owner, "address")  # §2.9
-        _tell_old_address(conn, owner, previous, row.pending_address, None, public_url)
+        _tell_old_address(conn, owner, previous, row.pending_address, origin, public_url)
     return True
 
 
@@ -856,7 +877,9 @@ def _tell_old_address(
     public_url: str,
 ) -> None:
     """The old address hears once that the address was changed or removed, whatever the
-    security mode says, and the account records it (§18.4)."""
+    security mode says, and the account records it (§18.4). `session` is where the change
+    was asked from: the session itself for a removal, the browser, system and IP address
+    kept with the pending address for a verified change; None leaves the line out."""
     masked = None
     if new is not None:
         local, _, domain = new.partition("@")
@@ -912,6 +935,7 @@ def void_pending_address(conn: Connection, human_id: str) -> None:
             pending_address=None,
             pending_nonce=None,
             pending_expires_at=None,
+            **NO_PENDING_ORIGIN,
             updated_at=clock.now(),
         )
     )
