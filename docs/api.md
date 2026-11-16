@@ -23306,7 +23306,11 @@ Scope `instance:admin`, human only (§16.1).
   A setting the hub reads only in a certain mode (`MAITY_ATTACHMENT_S3_*`
   only with the `s3` store) is listed all the same.
 - `source` is `environment` when the environment sets the variable to
-  a value that is not empty, `default` otherwise. With a `default`,
+  a value that is not empty after the trimming its own parser does
+  (most trim surrounding spaces, so a value of only spaces is unset),
+  `default` otherwise. A secret counts as set as soon as its raw value
+  is not empty: the SMTP password and the forge token are taken as
+  written, spaces and all. With a `default`,
   `value` is the default the hub uses, a derived one included (the
   public URL from the bind address); `null` when the setting has none,
   that is when it is off by being unset.
@@ -23320,7 +23324,9 @@ Scope `instance:admin`, human only (§16.1).
   `MAITY_DIRECT_DATABASE_URL`, `MAITY_ATTACHMENT_S3_ENDPOINT`), `secret`
   is `true`, `value` is `null`, not even a host, and `set` says whether
   the environment sets it. A `_FILE` variant (`MAITY_SMTP_PASSWORD_FILE`)
-  is a setting of its own and as secret as the one it holds. When it is
+  is a setting of its own and as secret as the one it holds; when it is
+  set, it fixes its variable as the variable itself would, though that
+  variable's own row says `default`. When it is
   unclear whether a value can carry a credential, it counts as secret.
   The public URL, the join URL, the terms URL and the skill's addresses
   are shown: the hub publishes them anyway.

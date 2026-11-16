@@ -186,3 +186,24 @@ def test_every_setting_is_described_where_the_overview_points() -> None:
     text = README.read_text(encoding="utf-8").split("## Configuration", 1)[1].split("\n## ", 1)[0]
     for entry in settings_overview.ENTRIES:
         assert f"`{entry.name}`" in text, f"{entry.name} is not in hub/README.md, Configuration"
+
+
+def test_spaces_count_as_the_parsers_count_them(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A switch of only spaces is unset, as its parser reads it; a password of only spaces is
+    set, since the hub takes the SMTP password as written (§16.14, A895 N1)."""
+    env = {
+        "MAITY_SIGN_IN_DEVICE_CODE": "   ",
+        "MAITY_SMTP_PASSWORD": "   ",
+        "MAITY_AGENT_FIREWALL": " on ",
+    }
+    environment = Settings.from_env(env).environment
+    who = flow.human(lambda **kw: make_client(environment=environment, **kw), migrated)
+    rows = by_name(who.get(PATH).json())
+    assert rows["MAITY_SIGN_IN_DEVICE_CODE"]["source"] == "default"
+    assert rows["MAITY_SIGN_IN_DEVICE_CODE"]["value"] == "1"
+    assert rows["MAITY_SMTP_PASSWORD"]["set"] is True
+    assert rows["MAITY_SMTP_PASSWORD"]["source"] == "environment"
+    assert rows["MAITY_SMTP_PASSWORD"]["value"] is None
+    assert rows["MAITY_AGENT_FIREWALL"]["value"] == "on"

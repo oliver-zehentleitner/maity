@@ -80,7 +80,7 @@ def _async_pool(settings: Settings, _env: Mapping[str, str]) -> str:
 
 
 def _smtp_port(_settings: Settings, env: Mapping[str, str]) -> str:
-    tls = env.get("MAITY_SMTP_TLS") or str(mail_settings.DEFAULTS["tls"])
+    tls = env.get("MAITY_SMTP_TLS", "").strip() or str(mail_settings.DEFAULTS["tls"])
     return str(DEFAULT_PORTS.get(tls, DEFAULT_PORTS["starttls"]))
 
 
@@ -222,18 +222,20 @@ ENTRIES: tuple[Entry, ...] = (
 
 
 def _entry(entry: Entry, settings: Settings, env: Mapping[str, str]) -> dict[str, Any]:
-    raw = env.get(entry.name)
-    row: dict[str, Any] = {
-        "name": entry.name,
-        "group": entry.group,
-        "source": "environment" if raw else "default",
-    }
+    raw = env.get(entry.name, "")
+    row: dict[str, Any] = {"name": entry.name, "group": entry.group}
     if entry.secret:
-        # Never the value, nor a default: a secret is only there or not.
+        # Never the value, nor a default: a secret is only there or not. Set as soon as its
+        # raw value is not empty: the SMTP password and the forge token are taken as written,
+        # spaces and all, so a secret is never shown as unset while the hub uses it.
+        row |= {"source": "environment" if raw else "default"}
         row |= {"value": None, "secret": True, "set": bool(raw)}
     else:
+        # Every other setting's parser trims it: a value of only spaces is unset.
+        value = raw.strip()
         default = entry.default(settings, env) if callable(entry.default) else entry.default
-        row |= {"value": raw if raw else default, "secret": False}
+        row |= {"source": "environment" if value else "default"}
+        row |= {"value": value or default, "secret": False}
     row["admin"] = entry.admin
     return row
 

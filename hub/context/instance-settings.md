@@ -29,6 +29,11 @@ The admin needs to know that the key is there, never what it is.
   secret is simpler to keep than a parser per URL form.
 - A switch in the overview: two places to change a setting, one of them losing at the next start,
   would only mislead.
+- A field per setting naming the Helm chart's value that sets it: the hub would have to know the
+  chart's value names and keep them in step with it; every setting is changed the same way, in the
+  environment, and with the chart through its values or `extraEnv`, which the contract says once.
+  (This alternative was the author's call at the design; the review found it justified, and the
+  review lead confirmed recording it, 2026-11-16.)
 
 ## The overview reads the environment the process kept at its start, from one list of entries a test holds to the code
 
