@@ -1,5 +1,5 @@
-"""The skeletons of the public project pages the hub stores (docs/api.md §16.9), for the check
-that the dashboard draws the same structure over them (web/js/visitor.js).
+"""The skeletons of the public project, person and agent pages the hub stores (docs/api.md
+§16.9), for the check that the dashboard draws the same structure over them (web/js/visitor.js).
 
 Each page of web/tools/public-pages-fixture.json (an answer of `GET /public/pages/{path}`:
 `path`, `kind`, `data`) is rendered by `public_design.page`, and the content of its `<main>`
@@ -19,7 +19,8 @@ from typing import Any
 
 from maity_hub import public_design, render
 
-WEB_TOOLS = Path(__file__).resolve().parents[2] / "web" / "tools"
+WEB = Path(__file__).resolve().parents[2] / "web"
+WEB_TOOLS = WEB / "tools"
 FIXTURE = WEB_TOOLS / "public-pages-fixture.json"
 SKELETONS = WEB_TOOLS / "public-skeletons.json"
 VOID = {"area", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"}
@@ -70,7 +71,8 @@ def main_of(document: str) -> str:
 
 def test_the_skeletons_of_the_public_project_pages_are_recorded() -> None:
     pages = json.loads(FIXTURE.read_text())
-    assert sorted(p["kind"] for p in pages) == sorted(public_design.KINDS), "one page per kind"
+    kinds = public_design.KINDS + public_design.PROFILE_KINDS
+    assert sorted(p["kind"] for p in pages) == sorted(kinds), "one page per kind"
     recorded = {}
     for answer in pages:
         content = public_design.page(answer["kind"], answer["data"], answer["path"])
@@ -86,3 +88,10 @@ def test_the_skeletons_of_the_public_project_pages_are_recorded() -> None:
         " commit public-skeletons.json"
     )
     assert SKELETONS.exists() and SKELETONS.read_text() == text, stale
+
+
+def test_the_words_are_the_dashboards() -> None:
+    """Each fixed word of the stored pages is the dashboard's English word under the same key."""
+    english = json.loads((WEB / "i18n" / "en.json").read_text(encoding="utf-8"))
+    differ = {k: v for k, v in public_design.WORDS.items() if english.get(k) != v}
+    assert not differ, differ

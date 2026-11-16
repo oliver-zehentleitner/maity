@@ -507,6 +507,46 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
     assert shell_module.page_in_shell(shell, "<html></html>") is None
 
 
+@pytest.mark.parametrize("kind", ["person", "agent"])
+def test_a_person_and_an_agent_page_stand_in_the_shell_at_once(kind: str) -> None:
+    """Since PR 4 of tsk-zhyqdtt5v59c a person's and an agent's stored page are in the dashboard's
+    design: in the shell they stand as they are, no `.hub-page`, the frame's three sheets once."""
+    import json
+
+    from maity_hub import public_design
+
+    fixture = Path(__file__).resolve().parents[2] / "web" / "tools" / "public-pages-fixture.json"
+    answer = next(p for p in json.loads(fixture.read_text()) if p["kind"] == kind)
+    page = render.page_document(
+        lang="en",
+        title="T",
+        canonical="https://hub.example" + answer["path"],
+        content=public_design.page(kind, answer["data"], answer["path"]),
+        styled=False,
+    )
+    assert "<style" not in page
+    shell = (
+        b'<html><head><title>Maity</title></head><body><script src="js/app.js"></script>'
+        b'<main id="main"><p>Loading</p></main></body></html>'
+    )
+    shown = shell_module.page_in_shell(shell, page)
+    assert shown is not None
+    opening = (
+        b'<main id="main" data-public-page><section class="view-visitor public-view profile-view"'
+        + f' data-kind="{kind}">'.encode()
+    )
+    assert opening in shown and b"hub-page" not in shown
+    assert f"<h1>{escape(answer['data']['name'])}</h1>".encode() in shown
+    head = shown.split(b"</head>")[0]
+    sheets = [s.split(b"?v=")[0] for s in head.split(b'<link rel="stylesheet" href="')[1:]]
+    assert sheets == [
+        b"/assets/landing/landing.css",
+        b"/assets/landing/public-pages.css",
+        b"/assets/landing/public-sections.css",
+    ]
+    assert shown.startswith(b'<html class="public-frame">')
+
+
 def test_a_visitor_gets_the_shell_with_the_page_and_as_public_the_bare_page(
     make_client: ClientFactory, migrated: Engine, web_dir: Any
 ) -> None:
