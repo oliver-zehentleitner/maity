@@ -23306,16 +23306,18 @@ Scope `instance:admin`, human only (§16.1).
   A setting the hub reads only in a certain mode (`MAITY_ATTACHMENT_S3_*`
   only with the `s3` store) is listed all the same.
 - `source` is `environment` when the environment sets the variable to
-  a value that is not empty after the trimming its own parser does
-  (most trim surrounding spaces, so a value of only spaces is unset),
-  `default` otherwise. A secret counts as set as soon as its raw value
-  is not empty: the SMTP password and the forge token are taken as
-  written, spaces and all. With a `default`,
+  a value the hub's own parser takes, `default` otherwise. Most parsers
+  trim surrounding spaces, so a value of only spaces is unset; the hub
+  reads `MAITY_BIND`, `MAITY_PUBLIC_URL`, `MAITY_WEB_DIR`, the two
+  database URLs, `MAITY_SMTP_PASSWORD` and `MAITY_FORGE_GITHUB_TOKEN`
+  as written, spaces and all. A secret's `set` follows the same rule,
+  so it is `true` exactly when the hub runs with that secret. With a `default`,
   `value` is the default the hub uses, a derived one included (the
   public URL from the bind address); `null` when the setting has none,
   that is when it is off by being unset.
 - `value` is written as the environment writes it (`on`, `16`,
-  `starttls`), as the answering process read it at its start: the hub
+  `starttls`), trimmed where its parser trims it, as the answering
+  process read it at its start: the hub
   reads its environment only when it starts, so a change takes effect
   with the next start, and this answer says what runs now.
 - **A secret never appears.** For a key, a password, a token, a

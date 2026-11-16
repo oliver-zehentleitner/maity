@@ -50,7 +50,13 @@ never from `os.environ` at the time of the request: the hub reads its environmen
 process kept is what runs, and a test hands a client its own environment without touching the
 process's. `settings_overview.ENTRIES` names every setting once, with its group, its default
 (a constant of the module that owns the setting where one exists, a function for a derived one),
-whether it is secret and which admin section can set it too.
+whether it is secret and which admin section can set it too. Whether a setting counts as set
+follows the hub's own parser: most trim, a few read the value as written (`as_written`: the
+bind address, the public URL, the web directory, the database URLs, the SMTP password, the forge
+token). A test sets each to spaces and holds the flag to what `Settings.from_env` does with it,
+so a secret is shown set exactly when the hub runs with it. One rule for all secrets ("set when
+the raw value is not empty") was tried and dropped in review: it showed a trimmed key of only a
+newline as set while the hub ran without it.
 
 The guard test reads every `"MAITY_…"` literal under `hub/src/maity_hub`, not only `config.py`:
 mail, registration and the GitHub App read their settings in their own modules. A name found

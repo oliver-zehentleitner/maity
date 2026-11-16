@@ -223,19 +223,41 @@ def test_every_setting_is_described_where_the_overview_points() -> None:
 def test_spaces_count_as_the_parsers_count_them(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """A switch of only spaces is unset, as its parser reads it; a password of only spaces is
-    set, since the hub takes the SMTP password as written (§16.14, A895 N1)."""
+    """Set exactly when the hub runs with it: a password of only spaces is set (the hub takes
+    the SMTP password as written), a key or a switch of only spaces or a newline is not (their
+    parsers trim) (§16.14; A895 N1, A899 P2, A904)."""
     env = {
         "MAITY_SIGN_IN_DEVICE_CODE": "   ",
         "MAITY_SMTP_PASSWORD": "   ",
+        "MAITY_SECRET_KEY": "\n",
+        "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY": " ",
         "MAITY_AGENT_FIREWALL": " on ",
     }
-    environment = Settings.from_env(env).environment
-    who = flow.human(lambda **kw: make_client(environment=environment, **kw), migrated)
+    loaded = Settings.from_env(env)
+    assert loaded.secret_key is None and loaded.mail.password == "   "
+    who = flow.human(lambda **kw: make_client(environment=loaded.environment, **kw), migrated)
     rows = by_name(who.get(PATH).json())
     assert rows["MAITY_SIGN_IN_DEVICE_CODE"]["source"] == "default"
     assert rows["MAITY_SIGN_IN_DEVICE_CODE"]["value"] == "1"
     assert rows["MAITY_SMTP_PASSWORD"]["set"] is True
     assert rows["MAITY_SMTP_PASSWORD"]["source"] == "environment"
     assert rows["MAITY_SMTP_PASSWORD"]["value"] is None
+    for name in ("MAITY_SECRET_KEY", "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY"):
+        assert rows[name]["set"] is False, name
+        assert rows[name]["source"] == "default", name
     assert rows["MAITY_AGENT_FIREWALL"]["value"] == "on"
+
+
+def test_as_written_is_what_the_parsers_do() -> None:
+    """`as_written` is bound to the hub's own parsers: a setting of only spaces changes what
+    `Settings.from_env` loads (or stops the hub) exactly for the entries marked so, so a new
+    setting read as written cannot be shown unset while the hub runs with it (A904)."""
+    unset = Settings.from_env({})
+    taken = set()
+    for entry in settings_overview.ENTRIES:
+        try:
+            if Settings.from_env({entry.name: "  "}) != unset:
+                taken.add(entry.name)
+        except ValueError:  # ConfigError and the mail and registration errors: it was read
+            taken.add(entry.name)
+    assert taken == {e.name for e in settings_overview.ENTRIES if e.as_written}

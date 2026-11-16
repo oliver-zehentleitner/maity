@@ -57,6 +57,9 @@ class Entry:
     default: Default = None
     secret: bool = False
     admin: str | None = None
+    # The hub reads it as written, spaces and all (`config.Settings.from_env`), where every
+    # other setting's parser trims it: a value of only spaces is then set, not unset.
+    as_written: bool = False
 
 
 # Names the hub reads that are not settings of the overview, each with its reason. Empty today:
@@ -94,17 +97,17 @@ def _limit(field: str) -> str:
 
 ENTRIES: tuple[Entry, ...] = (
     # address
-    Entry("MAITY_BIND", "address", DEFAULT_BIND),
-    Entry("MAITY_PUBLIC_URL", "address", _public_url),
+    Entry("MAITY_BIND", "address", DEFAULT_BIND, as_written=True),
+    Entry("MAITY_PUBLIC_URL", "address", _public_url, as_written=True),
     Entry("MAITY_JOIN_URL", "address"),
     Entry("MAITY_TRUSTED_PROXIES", "address"),
     Entry("MAITY_ALLOW_PLAIN_HTTP", "address", "0"),
     Entry("MAITY_HSTS_MAX_AGE", "address", "31536000"),
-    Entry("MAITY_WEB_DIR", "address", _web_dir),
+    Entry("MAITY_WEB_DIR", "address", _web_dir, as_written=True),
     Entry("MAITY_CLI_INSTALL", "address", DEFAULT_CLI_INSTALL),
     # database: both URLs can carry a password
-    Entry("MAITY_DATABASE_URL", "database", secret=True),
-    Entry("MAITY_DIRECT_DATABASE_URL", "database", secret=True),
+    Entry("MAITY_DATABASE_URL", "database", secret=True, as_written=True),
+    Entry("MAITY_DIRECT_DATABASE_URL", "database", secret=True, as_written=True),
     Entry("MAITY_DB_POOL_SIZE", "database", "16"),
     Entry("MAITY_DB_MAX_OVERFLOW", "database", "16"),
     Entry("MAITY_DB_ASYNC_POOL_SIZE", "database", _async_pool),
@@ -149,7 +152,7 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("MAITY_SMTP_ALLOW_PLAINTEXT", "mail", "0"),
     Entry("MAITY_SMTP_CA_FILE", "mail"),
     Entry("MAITY_SMTP_USERNAME", "mail", secret=True, admin=MAIL),
-    Entry("MAITY_SMTP_PASSWORD", "mail", secret=True, admin=MAIL),
+    Entry("MAITY_SMTP_PASSWORD", "mail", secret=True, admin=MAIL, as_written=True),
     Entry("MAITY_SMTP_PASSWORD_FILE", "mail", secret=True, admin=MAIL),
     Entry("MAITY_SMTP_FROM", "mail", admin=MAIL),
     Entry("MAITY_SMTP_REPLY_TO", "mail", admin=MAIL),
@@ -211,7 +214,7 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("MAITY_PUBLIC_PAGES_STARTUP_SECONDS", "public_pages", "30"),
     Entry("MAITY_PUBLIC_PAGES_RENDER_SECONDS", "public_pages", "2"),
     # forge: the token, the App's client id and secret and its private key are secret
-    Entry("MAITY_FORGE_GITHUB_TOKEN", "forge", secret=True),
+    Entry("MAITY_FORGE_GITHUB_TOKEN", "forge", secret=True, as_written=True),
     Entry("MAITY_FORGE_INSTANCE_NAMESPACES", "forge"),
     Entry("MAITY_FORGE_GITHUB_APP_ID", "forge"),
     Entry("MAITY_FORGE_GITHUB_APP_SLUG", "forge"),
@@ -223,18 +226,16 @@ ENTRIES: tuple[Entry, ...] = (
 
 def _entry(entry: Entry, settings: Settings, env: Mapping[str, str]) -> dict[str, Any]:
     raw = env.get(entry.name, "")
+    # Set as the hub's own parser reads it: as written for the few read that way, else trimmed,
+    # so a secret is shown set exactly when the hub runs with it (A895 N1, A899 P2, A904).
+    value = raw if entry.as_written else raw.strip()
     row: dict[str, Any] = {"name": entry.name, "group": entry.group}
+    row["source"] = "environment" if value else "default"
     if entry.secret:
-        # Never the value, nor a default: a secret is only there or not. Set as soon as its
-        # raw value is not empty: the SMTP password and the forge token are taken as written,
-        # spaces and all, so a secret is never shown as unset while the hub uses it.
-        row |= {"source": "environment" if raw else "default"}
-        row |= {"value": None, "secret": True, "set": bool(raw)}
+        # Never the value, nor a default: a secret is only there or not.
+        row |= {"value": None, "secret": True, "set": bool(value)}
     else:
-        # Every other setting's parser trims it: a value of only spaces is unset.
-        value = raw.strip()
         default = entry.default(settings, env) if callable(entry.default) else entry.default
-        row |= {"source": "environment" if value else "default"}
         row |= {"value": value or default, "secret": False}
     row["admin"] = entry.admin
     return row
