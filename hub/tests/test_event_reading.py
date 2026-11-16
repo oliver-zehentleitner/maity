@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import CLI_VERSION, clock
+from maity_hub import CLI_VERSION, clock, listening
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -153,11 +153,23 @@ def test_listening_shows_while_a_long_poll_is_open(
     agent.resume()
     cursor = agent.get("/projects/maintainer/maity/events?after=latest").json()["cursor"]
     with ThreadPoolExecutor(max_workers=1) as pool:
-        waiting = pool.submit(agent.get, f"/projects/maintainer/maity/events?after={cursor}&wait=3")
-        time.sleep(0.5)
-        view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
+        waiting = pool.submit(
+            agent.get, f"/projects/maintainer/maity/events?after={cursor}&wait=20"
+        )
+        # The wait counts once the route has registered it (`longpoll.registry.enter`), after
+        # its own database round trips; under load that is later than any fixed sleep.
+        deadline = time.monotonic() + 10
+        while True:
+            view = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()
+            if view["session"]["listening"] is True:
+                break
+            assert not waiting.done(), f"the long poll ended before it showed: {view}"
+            assert time.monotonic() < deadline, f"no listening within 10 s of the wait: {view}"
+            time.sleep(0.05)
+        say(owner, agent.id, "wake up")  # ends the wait
         waiting.result(timeout=10)
-    assert view["session"]["listening"] is True and view["presence"] == "online"
+    assert view["presence"] == "online"
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     assert (
         owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["session"]["listening"]
         is False

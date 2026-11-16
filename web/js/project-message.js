@@ -58,6 +58,7 @@ window.Maity = window.Maity || {};
     const send = h("button", { type: "submit" }, M.t("projectmessage.send"));
     // Files go with the message (§8.7): a message with files may have no text.
     const files = M.attachments ? M.attachments.picker(ctx, "message") : null;
+    if (files) files.pasteInto(body);
     const result = h("div", { class: "message-result", "aria-live": "polite" });
 
     const form = h("form", {

@@ -138,6 +138,7 @@ def test_social_merges_by_network_and_a_null_clears_one(person: flow.Human) -> N
         "https://example.org",
         "https://example.org/path?q=1",
         "https://sub.example.org/x",
+        "https://xn--bcher-kva.example/a",
     ],
 )
 def test_a_website_is_an_https_url(person: flow.Human, url: str) -> None:
@@ -164,6 +165,9 @@ def test_a_website_is_an_https_url(person: flow.Human, url: str) -> None:
         ("https://127.0.0.1/", "format"),
         ("https://[::1]/", "format"),
         ("https://example.org./", "format"),
+        # A Unicode host, even one that lower-cases to ASCII (U+212A KELVIN SIGN -> "k").
+        ("https://K.example/a/b", "format"),
+        ("https://İ.example/a/b", "format"),
         ("https://" + "a" * 190 + ".org", "too_long"),
     ],
 )
