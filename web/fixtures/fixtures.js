@@ -6999,11 +6999,27 @@ window.MAITY_FIXTURES = {
                 "supervised"
               ],
               "reason": null,
-              "sandbox": "off",
+              "sandbox": "on",
               "targets": [
                 "local"
               ],
               "version": "2.1.308"
+            },
+            {
+              "available": true,
+              "confinement": "sandbox",
+              "default_mode": "supervised",
+              "id": "codex",
+              "models": [],
+              "modes": [
+                "supervised"
+              ],
+              "reason": null,
+              "sandbox": "off",
+              "targets": [
+                "local"
+              ],
+              "version": "0.156.1"
             },
             {
               "available": false,
@@ -7076,7 +7092,7 @@ window.MAITY_FIXTURES = {
           "harnesses": [
             {
               "available": true,
-              "confinement": "allowlist",
+              "confinement": "sandbox",
               "default_mode": "supervised",
               "id": "codex",
               "models": [

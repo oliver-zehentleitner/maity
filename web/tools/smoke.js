@@ -2093,7 +2093,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(srOpts("placement-new-agent")) === JSON.stringify(["A new agent", "Agent A (@agent-a)"])
     && JSON.stringify(srOpts("placement-new-runner")) === JSON.stringify(["home-laptop · online · 2 of 4 agents running"])
     && JSON.stringify(srOpts("placement-new-target")) === JSON.stringify(["Wherever the runner chooses", "local"])
-    && JSON.stringify(srOpts("placement-new-tool")) === JSON.stringify(["Claude Code 2.1.308"]) && byId("placement-new-mode").value === "interactive"
+    && JSON.stringify(srOpts("placement-new-tool")) === JSON.stringify(["Claude Code 2.1.308", "Codex 0.156.1"]) && byId("placement-new-mode").value === "interactive"
     && JSON.stringify(srOpts("placement-new-model")) === JSON.stringify(["The runner's default", "opus", "sonnet"])
     && !srBox().querySelector(".placement-new-profile").hidden,
     "placements: the form offers one's own unplaced agents or a new one, one's live runner here (not the revoked one), its targets, its installed tools, modes and models "
@@ -2430,13 +2430,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
   const laptop = text(card("home-laptop"));
   expect(laptop.includes("online") && laptop.includes("this machine") && laptop.includes("Allowed in maintainer/maity.")
-    && laptop.includes("Claude Code 2.1.308 · kept to its command allowlist · a session you can attach to (tmux); or woken by events, no open session (no tokens while idle)")
+    && laptop.includes("Claude Code 2.1.308 · kept to its command allowlist, in its OS sandbox · a session you can attach to (tmux); or woken by events, no open session (no tokens while idle)")
+    && laptop.includes("0.156.1 · without a command allowlist, and its OS sandbox is off")
     && laptop.includes("opencode is not installed on home-laptop")
     && laptop.includes("Agents on home-laptop run as one user, oliver, and can see each other's files, as the runner itself does.")
     && laptop.includes("Credential rcrd-0002-0001"), "runners: a local runner in plain words, its tools and who can see what");
   const box = text(card("build-box"));
   expect(box.includes("hosts build-1, build-2") && box.includes("host build-2: 0 of 2 agents running · unreachable since")
-    && box.includes("Each agent on build-1 runs as its own user") && box.includes("in its OS sandbox")
+    && box.includes("Each agent on build-1 runs as its own user") && box.includes("0.156.1 · without a command allowlist: its OS sandbox is the only boundary")
     && box.includes(". Every new agent waits for approval on that machine.") && box.includes("Not allowed in any project yet"),
     "runners: an ssh runner: hosts, an unreachable one, own users, local approval");
   const cluster = text(card("cluster"));
