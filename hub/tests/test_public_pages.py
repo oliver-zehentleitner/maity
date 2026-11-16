@@ -406,7 +406,7 @@ def test_a_slash_at_the_end_leads_a_visitor_to_the_page(
     assert client.get("/nobody/here/", follow_redirects=False).status_code != 308
 
 
-def test_the_frame_sheets_come_after_the_dashboards_own_in_the_real_shell(tmp_path: Path) -> None:
+def test_the_frame_sheets_come_after_the_dashboards_own_in_the_real_shell() -> None:
     """landing.css sets the root's and the body's type as css/app.css does, and the later one
     wins: the shell links the frame's sheets after the dashboard's own, where js/site-chrome.js
     appends them, so a page has the same type however the visitor came to it (tsk-zhyqdtt5v59c)."""
@@ -481,8 +481,6 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
         b"/assets/landing/public-sections.css",
     ]
     assert shown.startswith(b'<html class="public-frame">')
-    # After the dashboard's own sheets, where js/site-chrome.js appends them (A834 F1).
-    assert head.index(b"/assets/landing/") > head.index(b"<title>")
     social = shell_module.page_in_shell(
         b'<html><title>M</title><meta property="og:title" content="Maity">'
         b'<meta property="og:description" content="Old"><main id="main"></main></html>',
