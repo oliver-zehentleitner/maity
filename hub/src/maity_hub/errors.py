@@ -93,6 +93,22 @@ def probe_not_configured(reason: str | None) -> ApiError:
     )
 
 
+def ktw_not_configured() -> ApiError:
+    """The project's repository names no Keep the Why export (§11.3, §11.5)."""
+    return ApiError(
+        409,
+        "ktw_not_configured",
+        "the repository names no Keep the Why export (.keep-the-why, dashboard-state)",
+    )
+
+
+def ktw_unavailable(
+    reason: str, message: str = "the Keep the Why export could not be read", **details: Any
+) -> ApiError:
+    """A Keep the Why read that failed (§11.3, §11.5): `reason` first, then the details."""
+    return ApiError(503, "ktw_unavailable", message, {"reason": reason, **details})
+
+
 def rate_limited(retry_after: int) -> ApiError:
     return ApiError(
         429,

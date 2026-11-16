@@ -835,12 +835,17 @@ POLL_SLACK = 10.0  # seconds a long-poll leaves the hub to answer before the rea
 def _unread_note(session: Session, budget: float) -> None:
     """On a timeout, one line on stderr when chats hold unread messages: a group chat's
     messages wake nobody unless they mention you (§9.2), so a quiet wait can hide them. A
-    hint only, within what is left of --timeout: a hub that does not answer leaves it out."""
+    hint only, within what is left of --timeout: a hub that does not answer leaves it out.
+    `renew=false`: the read is part of waiting, so it renews no lease (§2.4, §9.3); a hub
+    that predates the parameter ignores it and renews as before."""
     if budget < 0.5:
         return
     try:
         page = session.client.call(
-            "GET", session.project_path("conversations"), query=[("limit", "50")], timeout=budget
+            "GET",
+            session.project_path("conversations"),
+            query=[("limit", "50"), ("renew", "false")],
+            timeout=budget,
         )
     except hub.HubError:
         return
@@ -4790,11 +4795,11 @@ def build_parser() -> argparse.ArgumentParser:
         "claim",
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
-        "agent makes except the events long-poll, the wait for events inside `maity wait`. The "
-        "unread-chats check `maity wait` makes on a timeout is an ordinary call and does renew "
-        "it. Nothing is released automatically, an expired lease included: the card stays yours "
-        "until you give it back or someone takes it over. In a project in plan or review, "
-        "--reason is required.",
+        "agent makes except the waits inside `maity wait`: the events long-poll and the "
+        "unread-chats check it makes on a timeout (a hub that predates that check's "
+        "`renew=false` ignores it and renews as before). Nothing is released automatically, an "
+        "expired lease included: the card stays yours until you give it back or someone takes "
+        "it over. In a project in plan or review, --reason is required.",
     )
     p.add_argument("card", type=_id, help="the card id, e.g. tsk-0004")
     p.add_argument("--reason", help="why, when the project is in plan or review")

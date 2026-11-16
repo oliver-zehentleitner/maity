@@ -86,6 +86,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "memberships",
         "messages",
         "chat_messages",
+        "chat_verdicts",
         "requests_asked",
         "answers_given",
         "cards_created",

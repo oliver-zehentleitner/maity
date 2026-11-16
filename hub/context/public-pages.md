@@ -647,6 +647,32 @@ pages without a session, no longer bare. The answer inside the shell is unchange
 **Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
 the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
 
+## Inside the shell the stored page waits invisible for the dashboard's page, at most 3 s
+
+**Id:** 6fae1f6f-c1c2-46b2-9d72-03efbfea5417
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-777vkhtzmq6f (the maintainer saw the old layout for about a second on prod after the redesign of tsk-9482zxza3gs3, 2026-11-15); the lead's choice of 2026-11-15 between the options the card's coder put
+**See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-15
+**Revisit when:** the hub renders a public page in the same design as the dashboard, or the dashboard's first view of a public page takes longer than about 3 s
+
+The redesign drew a signed-out public page in the dashboard only (`web/js/visitor.js`), while the stored row,
+which the shell carries for crawlers and readers without scripts, kept the plain layout. A visitor saw that
+layout first and the page in its frame after the reads of the first view. `page_in_shell` now puts the row's
+text in a `.hub-page` that `web/css/app.css` keeps invisible; the first view replaces it. Where nothing replaces
+it (no script, or a failed read keeps the hub's page), it shows after 3 s, by a CSS delay that needs no script.
+3 s lies above the first view's usual time (about a second on prod) and below a wait a reader would take for
+a broken page. The text stays in the HTML, so a crawler reads what it read before. The price is an empty area
+for that moment instead of the flash.
+
+**Rejected:** the hub rendering the new design itself, so the first paint is the final page (the design twice,
+in Python and in the dashboard, kept in step), for now: the maintainer chose it on 2026-11-15 as its own card,
+tsk-zhyqdtt5v59c, and this delay is the fix until it lands; the stored
+page shown in the landing's stylesheets at once (a project's page would still change from the stored layout to
+the hero, and the dashboard's frame adds and removes those stylesheets itself); hiding it with no time limit (a
+page whose script fails would stay empty).
+
 ## The public Why is a stored row, an exception to "the export stays in memory"
 
 **Id:** aed779e9-be9c-40d2-a7ea-217cee06e470
@@ -1012,3 +1038,47 @@ the policy admits only `'self'`.
   content's, and the pages' policy without script. It lost to the decision that the two frames be identical.
 - The language row leading to `?lang=` alone: the link would drop `as=public` and a signed-in reader would land in
   the app instead of the page they were reading.
+
+## A project's page data names its members with picture, role and harness; a new picture renders it at once
+
+**Id:** 0e401fc9-0080-4289-8488-cb4a6fb5ad8f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-h822960mytm9 and the lead's go on its shape (2026-11-14) (the data part of the approved mockups' design, its gap list against main
+8b7db15f); the mockups' README, point 3 ("add picture and harness to the project data, from the same source") and
+point 5; contract `docs/api.md` §16.9
+**See:** public-pages.md — 3ebf3861-2939-45c2-a459-1949ddcf1cef — as of 2026-11-14
+
+`public_projects.team_details` adds to each entry of `people` and `agents` the picture, the membership's role and,
+for an agent, the harness. The picture follows the member's own page: a person's only while `public_profile` is on,
+an agent's always. The role is the one the Team tab shows, and the harness is `public_agents.latest_session` over the
+agent's page's projects, the value its own page shows. `online.named` and the agent page's `owner` take the
+picture by the same rule. `members` is the length of the Team tab's list, both the members it names and those it only
+counts, and stands next to `statistics`, not inside it. Each ticker entry gets `merge`: `{pr, title, author,
+areas}` read from the event's own facts, or `null`. `avatars._touch_page` renders, besides the owner's page, every
+public project page with the member (`public_projects.pages_with_picture`) and, for a person, their agents'
+pages, through `others`, so no card page is rendered for it. The Team and Organisation tabs' `data` take the
+picture by the same rule (`public_projects.member_pictures`, one call per render of the views,
+`public_project_views.shown_pictures`; tsk-9482zxza3gs3), and `pages_with_picture` names the views with the page.
+`test_public_page_data.py` holds the shapes and the renders.
+
+**Reason:** the design draws a team of avatar cards, a "Right now" stack and an "Agent of [picture] name" line.
+Without these fields it would need a second request per member, or would parse `text`. A picture follows the rule
+of the page that already publishes it, so the data makes nothing public that was not public before. Its address
+answers `not_found` from a change on, so every stored `data` that names it is rendered again at once. A session
+start (`routes/me_session.py`) renders the agent's public project pages again only when it changes the harness
+their data shows (`removal=False`, `dependents=False`): agents resume often, and a render of every such page per
+resume costs the public routes their load. Since the harness comes from all of the agent's public projects, a
+project's dependents also hold the other public project pages of its agents (`_shared_agent_pages`): one leaving
+the public set renders them at once, so none keeps a harness from a session it no longer counts (review P2,
+2026-11-14).
+
+**Rejected alternatives:**
+- `members` inside `statistics`: that object is §6.22's, reduced, and the count is not one of its counters.
+- Rendering the project pages again at every session start, for the harness: a render per resume, most of them
+  for no change (the lead's condition, 2026-11-14).
+- Leaving the harness to the snapshot worker alone: the page would show the old harness for up to
+  `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES`, while the agent's own page shows the new one at once.
+- Touching the person's page with its dependents for a new picture: those include every card page that names them,
+  and no card page shows a picture.

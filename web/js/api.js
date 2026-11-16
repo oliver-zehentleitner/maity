@@ -770,7 +770,7 @@ window.Maity = window.Maity || {};
       personal: to !== "owner", humans_only: true, priority: "normal", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
       asked_by: { member_id: who.id, display_name: who.display_name, role: mine.role || "member", trust: mine.trust || "member",
         instance: null, session_id: null, avatar_url: null },
-      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], jour_fixe: null, ktw_ref: null,
+      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], held: [], jour_fixe: null, ktw_ref: null,
       mentions: [], needs_in_session: null, on_behalf_of: null, placement: null, report: null, takeover_id: null, task: null, task_id: null,
       tried: null, while_open: "wait", created_at: nowIso() };
   }
@@ -1806,6 +1806,34 @@ window.Maity = window.Maity || {};
   }
 
   const SLUG = /^[a-z0-9][a-z0-9-]{1,62}$/;
+  // A repository URL as the hub stores it, or null (hub/src/maity_hub/forge.py repository_url,
+  // §6.1 "The shape of `url`"), and its forge kind from the host alone (kind_of).
+  function repositoryUrl(raw) {
+    const m = /^([^:/]*):\/\/([^/]*)\/(.*)$/s.exec(raw);
+    if (!m || m[1].toLowerCase() !== "https") return null;
+    // ASCII before case-folding, as the hub (a Unicode host is refused, never folded into ASCII).
+    if (!/^[\x00-\x7f]*$/.test(m[2])) return null;
+    const host = m[2].toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost")) return null;
+    let path = m[3];
+    if (path.endsWith("/") && !path.endsWith("//")) path = path.slice(0, -1);
+    const segments = path.split("/");
+    if (segments[segments.length - 1].endsWith(".git")) segments[segments.length - 1] = segments[segments.length - 1].slice(0, -4);
+    const labels = host.split(".");
+    if (host.length > 253 || labels.length < 2
+      || !labels.every((l) => /^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,61}[a-z0-9])$/.test(l)) || /^[0-9]+$/.test(labels[labels.length - 1])) return null;
+    if (segments.some((x) => !/^[A-Za-z0-9._-]{1,255}$/.test(x) || x === "." || x === ".." || /\.(git|atom)$/i.test(x))) return null;
+    if (segments.length < 2 || segments.length > (host === "github.com" ? 2 : 22)) return null;
+    const stored = "https://" + host + "/" + segments.join("/");
+    return stored.length <= 2048 ? stored : null;
+  }
+  function forgeKind(url) {
+    const host = url.split("://")[1].split("/")[0];
+    const first = host.split(".")[0];
+    if (host === "github.com") return "github";
+    if (first === "gitlab" || first === "bitbucket") return first;
+    return host === "codeberg.org" || first === "gitea" || first === "forgejo" ? "gitea" : "other";
+  }
 
   // The policy fields each preset fills (docs/api.md §6.1); a missing
   // contract_arbiter is the owner.
@@ -3533,8 +3561,7 @@ window.Maity = window.Maity || {};
         : null;
       return req;
     }],
-    // The forge rule as the hub applies it, with github.com as the one
-    // configured forge.
+    // The repository rule as the hub applies it (§6.1, "The shape of `url`").
     ["POST", /^\/projects$/, (m, body, path) => {
       const fields = {};
       // §6.26: `owner` names an organisation the caller may create projects in;
@@ -3552,10 +3579,8 @@ window.Maity = window.Maity || {};
       else if (ROUTE_WORDS.includes(body.slug)) fields.slug = "reserved";
       else if (fixtures()[body.slug + "/project.json"] || slugOfFull(space + "/" + body.slug)) fields.slug = "taken";
       if (!body.name || !body.name.trim()) fields.name = "string_too_short";
-      const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
-      if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
-        fields["repository.url"] = "not_a_configured_forge";
-      }
+      const url = body.repository ? repositoryUrl(String(body.repository.url || "")) : null;
+      if (body.repository && url === null) fields["repository.url"] = "not_a_repository_url";
       const preset = body.policy && body.policy.preset ? body.policy.preset : "hierarchical";
       if (!PRESETS[preset]) fields["policy.preset"] = "unknown";
       // §6.1, §6.21: the provider and the options; the old boolean alias is a
@@ -3585,7 +3610,7 @@ window.Maity = window.Maity || {};
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", required_check: body.repository.required_check ?? null,
-          forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null,
+          forge: forgeKind(url), probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
@@ -3758,9 +3783,9 @@ window.Maity = window.Maity || {};
       }
       if ("repository" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
-        const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
-        if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
-          fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_configured_forge" } });
+        const url = body.repository ? repositoryUrl(String(body.repository.url || "")) : null;
+        if (body.repository && url === null) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_repository_url" } });
         }
         const same = p.repository && p.repository.url === url;
         // What the repository had, kept by its URL, comes back with it: the
@@ -3770,7 +3795,7 @@ window.Maity = window.Maity || {};
         p.repository = back ? Object.assign({}, back.repository, { owner_confirmed: false, confirmed_by: null })
           // A changed URL is unconfirmed again and read with the instance token alone (§11.4).
           : url ? (same ? Object.assign({}, p.repository)
-            : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
+            : { url, default_branch: "main", forge: forgeKind(url), probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (p.repository) {
           // §6.1: left out on the same URL it stays; another URL starts without one.
           const named = body.repository && "required_check" in body.repository;
