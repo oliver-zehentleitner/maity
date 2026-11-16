@@ -244,15 +244,21 @@ job's `make smoke` also runs `tools/run_slot.sh` (web/Makefile's `SLOT`), which 
 
 Three hub test files (`test_contract_routes.py`, `test_guide.py`, `test_paths.py`) read `docs/api.md`, but the `hub` part of the `changes` job
 did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
-part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+part `contract` (`docs/api.md` and `hub/*`; since 2026-11-16 also `cli/src/maity/runner/capabilities.py`, below) starts the job `hub-contract`: `make install` and every test file that builds
 the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
 `test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it too, beside the hub jobs that run the same files: it answers in a few minutes, while the database
-jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*`; a push to main and a change
+jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*` (the third pattern came with the review of #1872, below); a push to main and a change
 to the workflow start it like every other part.
 
 **Known gap (review of 2026-11-02):** hub tests also read files outside `hub/` and `docs/` (`web/tools/hub-shapes.json`,
 `web/tools/site-fixture.json`, `deploy/Dockerfile`, `cli/src/maity/__init__.py`, `README.md`); a pull request that changes only
 one of them starts neither the hub jobs nor this one. Not solved here; its own task.
+
+**One file of the gap now starts the job (2026-11-16, tsk-ag8rgjnzt0kg):** `hub/tests/test_runner_confinement.py` checks the
+hub's confinements against the CLI's `cli/src/maity/runner/capabilities.py` and builds the path `"docs" / "api.md"`, so
+`hub-contract` runs it. The `contract` part also lists `cli/src/maity/runner/capabilities.py`: a pull request that
+changes only that file would otherwise leave a confinement the hub refuses unseen until main (the finding H1 of review A783
+of #1872). Only this file, because the job runs it already; the other files of the gap stay open.
 
 **Rejected alternatives:**
 - `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
