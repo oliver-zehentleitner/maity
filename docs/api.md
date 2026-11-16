@@ -22851,26 +22851,30 @@ answers there as at any other address.
 2026-11-07: a `GET` or `HEAD` whose path is no hub path and has one of
 these shapes is answered `404`, with the app shell as its body and the
 shell's headers, so that the dashboard draws its "not found" and a
-crawler sees the status. A segment is a non-empty part of the path
-between slashes, after percent-decoding.
+crawler sees the status. The path is split at its slashes as it was
+sent, and then each segment is percent-decoded, as the dashboard reads
+it: an encoded slash (`%2F`) stays inside its segment, and an escape
+that does not decode leaves the segment as it was sent. A segment is a
+non-empty part between two slashes.
 
 - The first segment is no handle by the syntax of §6.24
   (`[a-z0-9][a-z0-9-]{1,30}`): an upper-case letter, a dot, an
-  underscore, one character, more than 31 (`/Oliver`, `/favicon.ico`,
-  `/.well-known/…`), at any depth.
+  underscore, a `%`, one character, more than 31 (`/Oliver`,
+  `/favicon.ico`, `/.well-known/…`), at any depth.
 - The first segment is a reserved word (below) that names no route:
   `components`, `health`, `imprint`, at any depth.
-- The path has more than 7 segments, the depth of the deepest route,
-  `/observe/<owner>/<slug>/team/<id>/sessions/<instance>`. Not below a
-  project's Why (`/<owner>/<slug>/why/…`, `/observe/<owner>/<slug>/why/…`):
-  there the path of a topic's file in the repository goes into the
-  address segment by segment, so the depth has no bound. A release that
-  adds a deeper route raises this number in the same change.
+- The path has more than 6 segments, the depth of the deepest route,
+  `/<owner>/<slug>/team/<id>/sessions/<instance>`. Not below a project's
+  Why (`/<owner>/<slug>/why/…`): there the path of a topic's file in
+  the repository goes into the address segment by segment, so the depth
+  has no bound. A release that adds a deeper route raises this number
+  in the same change.
 - A project's view word is none of the views below, `members` included:
-  `/<owner>/<slug>/<word>…` and `/observe/<owner>/<slug>/<word>…`, where
-  `<owner>` is no reserved word and `<slug>` is not `agents` (an agent's
-  page, §16.9), at any depth below the word; and `/<handle>/agents`,
-  which names nothing (§16.9, "A person's agents").
+  `/<owner>/<slug>/<word>…`, where `<owner>` is no reserved word and
+  `<slug>` is not `agents` (an agent's page, §16.9), at any depth below
+  the word; and `/<handle>/agents`, where `<handle>` is no reserved word,
+  which names nothing (§16.9, "A person's agents"). `/observe/<owner>/<slug>`
+  has no views: its one further segment is a chat's id.
 
 Each shape is read from the path's words alone, never from a lookup:
 the same address gets the same status whether or not a name exists, so
@@ -22902,7 +22906,8 @@ names:
 | `/settings/forge` | the account's forge settings (§11.4) |
 | `/agents`, `/agents/<id>`, `/agents/placements`, `/agents/maintenance` | the human's agent profiles across projects (§6.3), and one of them marked; and the page's two tabs: **Managed agents**, where the human's agents run in the projects the human reads (§15.6), and **Maintenance notices**, which of them the hub tells about a maintenance window (§16.12). `placements` and `maintenance` under `/agents/` are view names: the hub never issues either as an id |
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
-| `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
+| `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/inbox`, `/notifications` | the dashboard's own pages |
+| `/observe/<owner>/<slug>`, `/observe/<owner>/<slug>/<id>` | reading along in the group chats one's agents are in, in a project one is no member of (§9.2), and one of those chats by its id |
 | `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for every visitor with or without a session, under the public pages' `Cache-Control` and `nosniff` (§16.9), the policy of a stored page in its frame (§16.9) and `Vary: Cookie, Accept-Language`, without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below). A person's agents stand on it (§6.27, §16.9, "A person's agents"); `/<handle>/agents` names nothing: `404` with the shell (above), the dashboard's "not found", no redirect |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |

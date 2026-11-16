@@ -34,9 +34,11 @@ stays, because it needs no hub route.
 
 An address that can never be a page is told by its words alone: a
 first segment that is no handle by §6.24's syntax, a reserved first word
-that names no route (`components`, `health`, `imprint`), more than 7
-segments outside a project's Why, a project's view word that is no view,
-and `/<handle>/agents` (§16.11 has the exact shapes). The hub answers
+that names no route (`components`, `health`, `imprint`), more than 6
+segments (the deepest route, `/<owner>/<slug>/team/<id>/sessions/<instance>`)
+outside a project's Why, a project's view word that is no view, and
+`/<handle>/agents` (§16.11 has the exact shapes, and splits the path at
+its slashes before it decodes a segment, as the dashboard does). The hub answers
 those `404` with the shell as the body, so that the dashboard still draws
 its "not found" and a crawler sees the status. The boundary leaks
 nothing because no lookup decides it: an address gets the same status
