@@ -688,12 +688,12 @@ def test_opencode_is_not_offered_yet() -> None:
     assert any(p.startswith("harness.opencode: not offered yet") for p in found), found
 
 
-def test_antigravity_is_not_offered_yet() -> None:
-    found = problems(minimal(a="\n[harness.antigravity]\n"))
-    named = [p for p in found if p.startswith("harness.antigravity: not offered yet")]
-    assert named, found
-    # The refusal names why agy is held back, so the operator knows it is deliberate.
-    assert "confined at the OS level (tsk-zjv2xyhyggnm)" in named[0]
+def test_antigravity_is_offered() -> None:
+    # Re-offered (req-9spwe33neh1z): a configuration naming antigravity is accepted, no longer
+    # refused as "not offered yet" (cli/context/runner.md, 28ac82c8). The residual command(maity)
+    # risk is accepted by the owner; re-offering did not widen agy's grants.
+    cfg = parse(minimal(a="\n[harness.antigravity]\n"))
+    assert "antigravity" in cfg.harnesses
 
 
 @pytest.mark.parametrize(
