@@ -165,8 +165,55 @@ a.onode:hover { border-color: var(--muted); }
 .dec.att li { align-items: center; }
 .dec.att a { color: var(--text); }
 
+/* ---- a person's and an agent's page (tsk-2t7efzj1p8zt) ------------------------------- */
+/* The mockup's person.html and agent.html: the picture beside the name in the same dark hero, the
+   figures under it with their eyebrow, the projects as tile cards, a person's agents as the
+   Overview's member cards in the lighter section. */
+.av-22 { width: 22px; height: 22px; font-size: 10px; }
+.av-128 { width: 128px; height: 128px; font-size: 52px; }
+.uhero .wrap { display: flex; align-items: center; gap: 32px; padding-top: 56px; padding-bottom: 56px; }
+.uhero .wrap > .av { border: 3px solid rgba(255, 255, 255, .12); }
+.uh-main { min-width: 0; }
+.uhero .crumb { margin-bottom: 8px; }
+.uhero h1 { font-size: 3.2rem; line-height: 1.05; margin: 0; overflow-wrap: anywhere; }
+.uhero .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin: 12px 0 0; color: var(--muted); font-size: 14.5px; }
+.uhero .meta .hdl { font-family: var(--font-mono); }
+.uhero .meta .on { display: inline-flex; align-items: center; gap: 7px; color: var(--live); font-weight: 600; }
+.uhero .meta .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 3px var(--live-ring); }
+.uhero .owner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; color: var(--muted); font-size: 14.5px; }
+.uhero .owner a, .uhero .owner > span { display: inline-flex; align-items: center; gap: 8px; color: var(--text); text-decoration: none; }
+.uhero .owner a:hover b { text-decoration: underline; }
+.uhero .bio { margin: 16px 0 0; max-width: 42rem; font-size: 1.1rem; overflow-wrap: anywhere; }
+.uhero .web { display: inline-block; margin: 10px 0 0; color: var(--accent); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.uhero .web:hover { text-decoration: underline; }
+.socs { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+.soc { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--border);
+  background: rgba(255, 255, 255, .04); color: var(--text); font-size: 12.5px; text-decoration: none; overflow-wrap: anywhere; }
+.soc .net { color: var(--muted); font-weight: 600; }
+a.soc:hover { border-color: var(--muted); }
+.uhero .facts { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 14px 0 0; }
+.uhero .facts div { display: flex; gap: 8px; }
+.uhero .facts dt { color: var(--muted); }
+.uhero .facts dd { margin: 0; }
+.uhero .report-row { margin: 18px 0 0; }
+.uhero .report-row .report-open { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: transparent; color: var(--muted); font-size: 13px; text-decoration: none; }
+.uhero .report-row .report-open:hover { color: var(--text); border-color: var(--muted); }
+.profile-view .band .eyebrow { margin: 0; }
+/* projects as tile cards */
+.pgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.pcard { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); text-decoration: none; box-shadow: 0 1px 2px var(--shadow); min-width: 0; }
+.pcard .mc-t { flex: 1 1 auto; }
+.pcard .mc-t small { font-family: var(--font-mono); }
+a.pcard:hover { border-color: var(--muted); }
+
 /* ---- phone --------------------------------------------------------------------------- */
 @media (max-width: 760px) {
+  .uhero .wrap { flex-direction: column; align-items: flex-start; gap: 18px; padding-top: 28px; padding-bottom: 32px; }
+  .uhero h1 { font-size: 2.4rem; }
+  .av-128 { width: 96px; height: 96px; font-size: 40px; }
+  .pgrid { grid-template-columns: minmax(0, 1fr); }
   .phero .wrap { grid-template-columns: minmax(0, 1fr); gap: 22px; padding-top: 28px; padding-bottom: 32px; }
   .ph-title { gap: 12px; }
   .ph-title h1 { font-size: 2.5rem; }

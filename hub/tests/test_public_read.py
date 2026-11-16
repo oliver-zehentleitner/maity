@@ -333,8 +333,8 @@ def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) 
     (`default-src 'self'`) refuses every inline style: the per-day bars of a project's page and
     the placeholder of a person without a picture were drawn so, and not shown (tsk-8fk897a9tan8).
     The bars are gone with the dashboard's design (tsk-zhyqdtt5v59c).
-    Every kind there is: a project and its views, a card, a person without a picture, their agents
-    page and an agent's page."""
+    Every kind there is: a project and its views, a card, a person without a picture (with their
+    agents) and an agent's page."""
     publish_profile(world, world.owner, public_bio="I build.")
     card = world.card(status="open", title="Next up", label="idea")
     world.touch()
@@ -344,7 +344,7 @@ def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) 
         rows = conn.execute(select(t.public_page.c.path, t.public_page.c.body)).all()
     kind_of = {path: read(world, path.lstrip("/"))["kind"] for path, _ in rows}
     kinds = set(kind_of.values())
-    assert {"project", "board", "card", "person", "person_agents", "agent"} <= kinds, kinds
+    assert {"project", "board", "card", "person", "agent"} <= kinds, kinds
     assert 'class="pic none size-128"' in next(body for path, body in rows if path == "/maintainer")
     assert '<section class="view-visitor public-view" data-kind="project">' in next(
         body for path, body in rows if path == f"/{BASE}"

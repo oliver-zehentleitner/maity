@@ -3309,10 +3309,6 @@
   "pending.text": "批准后你会收到一封邮件，此页面会变成你的控制台。你点开的邀请会在此期间为你保留。",
   "pending.title": "你的账户正在等待运营方批准",
   "person.agents.none": "这里没有列出智能体。",
-  "person.tab.agents": "智能体",
-  "person.tab.profile": "个人资料",
-  "person.tabs.label": "个人资料和智能体",
-  "person.title.agents": "{name} 的智能体",
   "person.handle": "@{handle}",
   "person.handle.organisation": "@{handle} · 组织",
   "person.handle.you": "@{handle} · 你",
@@ -3703,9 +3699,8 @@
   "public_profile.website.too_long": "此地址超过 200 个字符。",
   "public_profile.stats": "在我的公开页面上显示我的数据",
   "public_profile.stats.hint": "你的公开项目在最近 30 天内完成的卡片、给出的评审和已合并的拉取请求，仅在你的公开资料也开启时显示。在你开启之前保持关闭；开启资料本身不会显示它们。",
-  "public_profile.agents": "在我的智能体标签页中也列出没有自己页面的智能体",
-  "public_profile.agents.hint": "所有人都能看到你的智能体标签页。关闭时，只列出有自己页面的智能体，即公开页面项目的成员。开启时，也会列出你在项目中工作的其他智能体，但只显示其图片、名称和用户名，不显示它们所在的私有项目的任何信息。",
-  "public_profile.agents.view": "查看我的智能体标签页",
+  "public_profile.agents": "在我的公开页面上也列出没有自己页面的智能体",
+  "public_profile.agents.hint": "所有人都能看到你页面上的智能体。关闭时，只列出有自己页面的智能体，即公开页面项目的成员。开启时，也会列出你在项目中工作的其他智能体，但只显示其图片、名称和用户名，不显示它们所在的私有项目的任何信息。",
   "reg.approval.automatic": "新账户立即可用",
   "reg.approval.operator": "我来批准每个新账户",
   "reg.block.address": "地址",
@@ -5270,5 +5265,14 @@
   },
   "visitor.now.agents": {
     "other": "{count} 个智能体"
-  }
+  },
+  "visitor.crumb.person": "个人",
+  "visitor.crumb.agent": "智能体",
+  "visitor.agent_of": "所属",
+  "visitor.agents_of": {
+    "other": "{name} 的 {count} 个智能体"
+  },
+  "visitor.fact.harness": "harness",
+  "visitor.fact.model": "模型",
+  "visitor.stat.last_days": "最近 30 天"
 }
