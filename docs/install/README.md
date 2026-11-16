@@ -205,12 +205,15 @@ ufw allow from 10.42.0.0/16 to any   # pods
 ufw allow from 10.43.0.0/16 to any   # services
 ```
 
-**2. k3s.** Download the installer, read it, then run it with a pinned
-version (tested: v1.36.5+k3s1). Then put the Traefik configuration where
-k3s watches for it:
+**2. k3s.** Download the installer of the pinned version (tested:
+v1.36.5+k3s1) from its release tag, check its checksum, read it, then run
+it with that version. The installer checks the k3s binary against the
+release's own checksums. Then put the Traefik configuration where k3s
+watches for it:
 
 ```sh
-curl -sfL -o k3s-install.sh https://get.k3s.io
+curl -sfL -o k3s-install.sh https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh
+echo "46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad  k3s-install.sh" | sha256sum -c
 INSTALL_K3S_VERSION=v1.36.5+k3s1 sh k3s-install.sh
 cp deploy/k3s-single/traefik-config.yaml /var/lib/rancher/k3s/server/manifests/
 ```
@@ -220,13 +223,27 @@ client addresses, and redirects plain HTTP to HTTPS at Traefik. Its syntax
 is Traefik chart v40's: `ports.web.http.redirections.entryPoint`.
 
 **3. cert-manager**, from its Helm chart with the CRDs, pinned (tested:
-v1.20.4):
+v1.20.4). The chart archive is checked against its checksum before it is
+installed, and its five images (controller, webhook, cainjector,
+startupapicheck, acmesolver) are pinned by the digest of their multi-arch
+index on quay.io, so a moved tag cannot change what runs:
 
 ```sh
 helm repo add jetstack https://charts.jetstack.io
-helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace \
-  --version v1.20.4 --set crds.enabled=true
+helm pull jetstack/cert-manager --version v1.20.4
+echo "aa916e8fb726ee573f8c2fbed6899de7dbb77a017ac1deef63fee91cc5bfcd03  cert-manager-v1.20.4.tgz" | sha256sum -c
+helm install cert-manager ./cert-manager-v1.20.4.tgz -n cert-manager --create-namespace \
+  --set crds.enabled=true \
+  --set image.digest=sha256:d4d576c7e6ed3cfe5730f5458fa096b7d8713368d2ccb7ff01b2951861483838 \
+  --set webhook.image.digest=sha256:303a962e77acbed075716379ed8045de65a72fdd5514f9367f449a1f9a907aa7 \
+  --set cainjector.image.digest=sha256:30c8617ebb3b4a9054da555ee9c6389a7faa464fffe3c7679f80892a9cfbf213 \
+  --set startupapicheck.image.digest=sha256:83e70f57255e133e2fff5129e8372ac493ca66e39446c536798b4742d95f9f49 \
+  --set acmesolver.image.digest=sha256:bbec214d3935cbbeb3ab88c57ee36e2b2511a0017e48ffc14a999e48fa30d3a2
 ```
+
+The images k3s brings itself (Traefik, CoreDNS, klipper, the metrics
+server and the local-path provisioner) are pulled by tag: k3s bundles
+them with its release, and this guide does not pin them.
 
 **4. Namespace and secrets.**
 - The values go through files made with `umask 077` and never appear on
