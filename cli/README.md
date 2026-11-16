@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a12 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a13 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -1239,10 +1239,10 @@ project's own harness configuration is never loaded:
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity`, the ` *` prefix entries of the repository's `allow`
-  list (an entry without `*` is left out and runs in agy's sandbox, named
-  by `maity runner check`) and the hub's, forge's and `network` hosts
-  allowed. An allowed command may
+  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  repository's `allow` command list is not applied to agy — each entry,
+  exact or ` *` prefix, is left out and runs in agy's sandbox, named by
+  `maity runner check`. An allowed command may
   leave agy's sandbox. agy also merges the agents' user's own
   `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
   continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.

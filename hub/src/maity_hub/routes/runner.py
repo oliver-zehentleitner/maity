@@ -71,6 +71,8 @@ Harness = Literal[
     "stub",
 ]
 Mode = Literal["interactive", "supervised"]
+# What bounds a harness's commands (§15.3); the CLI advertises these, test_runner_confinement.
+Confinement = Literal["allowlist", "sandbox", "pod", "none"]
 REPORTED_STATES = Literal[
     "pending", "starting", "running", "stopping", "stopped", "exited", "failed", "rate_limited"
 ]
@@ -100,7 +102,7 @@ class HarnessOffer(Strict):
     default_mode: Mode
     models: list[Name] = Field(max_length=50)
     targets: list[Name] = Field(max_length=50)
-    confinement: Literal["allowlist", "pod", "none"]
+    confinement: Confinement
     sandbox: Literal["on", "off", "n/a"]
 
     @model_validator(mode="after")

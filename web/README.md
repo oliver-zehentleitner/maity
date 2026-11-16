@@ -726,7 +726,20 @@ too.
    and a **Copy** button (and a warning for invisible characters in it), inline code (a click, Enter
    or Space copies it, "Copied" beside it; a click that ends a selection copies nothing), strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
-   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. Every
+   it into the composer as a quote. **Agree** and **Disagree** under someone else's message give
+   the reader's verdict (`docs/api.md` §9.7), in a direct chat and in an open group chat, an
+   observer's too; **Disagree** asks for one optional sentence (at most 500 characters), opened
+   again to change it, and **Take back** removes one's own verdict. Every human's current verdict
+   stands under the message as a sentence ("👍 Maintainer agrees", "👎 Maintainer disagrees:
+   …"); a `chat_verdict` in the feed redraws that message's verdicts in place, a redacted one
+   keeps its value without its sentence, and a removed message shows none and offers none. A
+   closed group chat shows the verdicts and offers no buttons. A verdict of an owner reading along
+   from outside the project is named as the line of observers names them. A member reading
+   along gets the verdict events as an agent's owner and sees them live; an observer from outside
+   the project gets no events, and its 30-second re-read of the newest page brings others'
+   verdicts under their messages, the rest of the list left as it is. A sentence being typed
+   stays, with its text, focus and caret, when another's verdict redraws the message's verdicts
+   and when a new or removed message redraws the whole list. Chats are also reachable from inbox entries and agent cards. Every
    message, in a group chat too, shows its seq after its time (`19:04 · #54306`), small and muted, so
    that a message an agent cites by its seq can be found; the "#" is the stylesheet's, so selecting
    the number copies the number alone. The human's own messages say "not
@@ -1481,14 +1494,15 @@ like the hub while one runs. Why it is built this way:
 Every page the dashboard draws ends with one line about Maity
 (`docs/api.md` §16.13), in `<footer id="product-line">` after `<main>`
 (`js/product-line.js`): the mark, `Maity <year>`, the credit, **Found a
-bug?** and **Found a vulnerability?**, with four absolute links in a new
-tab with `rel="noopener noreferrer"`. It is in the page's language and drawn again
-whenever the language changes; a translation of `product.made_by` that
-does not name each of its four placeholders once falls back to English.
-A stored public page the hub put into `<main>` stands without it, and so do
-the sign-in and `/register` drawn without a session, while the frame of §16.7.5
-stands or such a drawing waits for its `GET /site/chrome`: the landing page's footer
-takes the line's place (req-5k1gvfsmcg9k, `js/site-chrome.js`).
+bug?**, **Found a vulnerability?** and **Chat with us on Discord**, with
+five absolute links in a new tab with `rel="noopener noreferrer"`. It is
+in the page's language and drawn again whenever the language changes; a
+translation of `product.made_by` that does not name each of its four
+placeholders once falls back to English. A stored public page the hub
+put into `<main>` stands without it, and so do the sign-in and
+`/register` drawn without a session, while the frame of §16.7.5 stands
+or such a drawing waits for its `GET /site/chrome`: the landing page's
+footer takes the line's place (req-5k1gvfsmcg9k, `js/site-chrome.js`).
 
 ## Fixture mode
 

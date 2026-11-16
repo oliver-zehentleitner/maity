@@ -267,7 +267,7 @@ def _check_config_file(report: Report, path: Path) -> None:
 def _check_repositories(report: Report, cfg: config.Config) -> None:
     """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
     `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). With
-    antigravity configured, an exact entry is not applied to agy (adapters.agy_grants): it is
+    antigravity configured, a command grant is not applied to agy (adapters.agy_grants): it is
     named as left out and runs in agy's sandbox like an unlisted command. Said, never an
     error, so a restart before the table is edited keeps every placement running."""
     for name, grant in cfg.repositories.items():
@@ -279,7 +279,8 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                 "with `maity gh pr create`"
             )
         if "antigravity" in cfg.harnesses:
-            # agy matches by prefix; an exact entry is not applied to it and runs sandboxed.
+            # agy reads the command past a leading assignment/wrapper; no command grant is
+            # applied to it, exact or prefix, so each is left out and runs sandboxed.
             plain = [rule for rule in grant.allow if config.plain_command(rule)]
             for rule, why in adapters.agy_grants(plain).left_out:
                 report.warn(

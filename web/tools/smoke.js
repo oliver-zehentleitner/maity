@@ -314,15 +314,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(main.querySelector("section.view-all") && reads("maity") === 1 && reads("sample") === 1,
       "All projects reads each project's members once, for the Lead button and the inbox together " + JSON.stringify([reads("maity"), reads("sample")]));
   }
-  // The product line (docs/api.md §16.13) after <main>: the year, the credit with two icon links, the issues, the security policy.
+  // The product line (docs/api.md §16.13) after <main>: the year, the credit with two icon links, the issues, the security policy, Discord.
   {
     const links = productLine.querySelectorAll("a");
     const hrefs = links.map((a) => a.getAttribute("href"));
-    expect(text(productLine) === " Maity " + new Date().getFullYear() + " · Made with ♥ by Oliver Zehentleitner on & · Found a bug? · Found a vulnerability?",
-      "product line: Maity and the year, the credit with the name as plain text, Found a bug?, Found a vulnerability?");
+    expect(text(productLine) === " Maity " + new Date().getFullYear() + " · Made with ♥ by Oliver Zehentleitner on & · Found a bug? · Found a vulnerability? · Chat with us on Discord",
+      "product line: Maity and the year, the credit with the name as plain text, Found a bug?, Found a vulnerability?, Chat with us on Discord");
     expect(JSON.stringify(hrefs) === JSON.stringify(["https://github.com/oliver-zehentleitner", "https://maity.team/oliver-zehentleitner",
-      "https://github.com/oliver-zehentleitner/maity/issues", "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md"]),
-      "product line: four absolute links, the same on every instance, the Maity page without @");
+      "https://github.com/oliver-zehentleitner/maity/issues", "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
+      "https://discord.gg/VRWUe7zKzp"]),
+      "product line: five absolute links, the same on every instance, the Maity page without @, Discord as text");
     expect(links.every((a) => a.getAttribute("rel") === "noopener noreferrer" && a.getAttribute("target") === "_blank"),
       "product line: every link in a new tab with rel=noopener noreferrer");
     expect(links[0].getAttribute("aria-label") === "GitHub" && links[1].getAttribute("aria-label") === "Maity"
@@ -2100,7 +2101,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && JSON.stringify(srOpts("placement-new-agent")) === JSON.stringify(["A new agent", "Agent A (@agent-a)"])
     && JSON.stringify(srOpts("placement-new-runner")) === JSON.stringify(["home-laptop · online · 2 of 4 agents running"])
     && JSON.stringify(srOpts("placement-new-target")) === JSON.stringify(["Wherever the runner chooses", "local"])
-    && JSON.stringify(srOpts("placement-new-tool")) === JSON.stringify(["Claude Code 2.1.308"]) && byId("placement-new-mode").value === "interactive"
+    && JSON.stringify(srOpts("placement-new-tool")) === JSON.stringify(["Claude Code 2.1.308", "Codex 0.156.1"]) && byId("placement-new-mode").value === "interactive"
     && JSON.stringify(srOpts("placement-new-model")) === JSON.stringify(["The runner's default", "opus", "sonnet"])
     && !srBox().querySelector(".placement-new-profile").hidden,
     "placements: the form offers one's own unplaced agents or a new one, one's live runner here (not the revoked one), its targets, its installed tools, modes and models "
@@ -2437,13 +2438,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(plainTitle() === "Runners · Maity" && main.querySelectorAll("article.runner").length === 3, "runners: the view lists the runners");
   const laptop = text(card("home-laptop"));
   expect(laptop.includes("online") && laptop.includes("this machine") && laptop.includes("Allowed in maintainer/maity.")
-    && laptop.includes("Claude Code 2.1.308 · kept to its command allowlist · a session you can attach to (tmux); or woken by events, no open session (no tokens while idle)")
+    && laptop.includes("Claude Code 2.1.308 · kept to its command allowlist, in its OS sandbox · a session you can attach to (tmux); or woken by events, no open session (no tokens while idle)")
+    && laptop.includes("0.156.1 · without a command allowlist, and its OS sandbox is off")
     && laptop.includes("opencode is not installed on home-laptop")
     && laptop.includes("Agents on home-laptop run as one user, oliver, and can see each other's files, as the runner itself does.")
     && laptop.includes("Credential rcrd-0002-0001"), "runners: a local runner in plain words, its tools and who can see what");
   const box = text(card("build-box"));
   expect(box.includes("hosts build-1, build-2") && box.includes("host build-2: 0 of 2 agents running · unreachable since")
-    && box.includes("Each agent on build-1 runs as its own user") && box.includes("in its OS sandbox")
+    && box.includes("Each agent on build-1 runs as its own user") && box.includes("0.156.1 · without a command allowlist: its OS sandbox is the only boundary")
     && box.includes(". Every new agent waits for approval on that machine.") && box.includes("Not allowed in any project yet"),
     "runners: an ssh runner: hosts, an unreachable one, own users, local approval");
   const cluster = text(card("cluster"));
@@ -7026,6 +7028,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("chat-text").value.startsWith("> Agent A:\n> Endpoints for join, tasks and requests are drafted.\n> Messages and presence follow this afternoon.\n\n"),
     "chat: Quote puts the message into the composer as a quote");
   byId("chat-text").value = ""; byId("chat-text").dispatch("input");
+  // §9.7: Agree, Disagree with its sentence, and Take back, on the agent's message; one's own offers none.
+  {
+    const vIn = () => main.querySelector("li.msg.in");
+    const vBtn = (label) => vIn().querySelectorAll(".msg-verdicts button").find((b) => b.textContent === label);
+    const vList = () => vIn().querySelector(".verdict-list");
+    expect(vBtn("Agree") && vBtn("Disagree") && !vBtn("Take back") && !vList() && !main.querySelector("li.msg.out .msg-verdicts button"),
+      "verdict: Agree and Disagree under someone else's message only, nothing given yet");
+    vBtn("Agree").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(vList() && text(vList()).startsWith("👍 ") && text(vList()).endsWith(" agrees") && vBtn("Agree").getAttribute("aria-pressed") === "true" && vBtn("Take back"),
+      "verdict: Agree is given and said under the message, Take back offered " + (vList() ? text(vList()) : ""));
+    vBtn("Disagree").click(); await tick();
+    const vForm = vIn().querySelector("form.verdict-form");
+    expect(vForm && vForm.querySelector("label") && text(vForm.querySelector("label")) === "Why not? One sentence, if you like", "verdict: Disagree asks for its optional sentence");
+    vForm.querySelector("input").value = "  Not before the release.  ";
+    vForm.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(vList() && text(vList()).startsWith("👎 ") && text(vList()).endsWith(" disagrees: Not before the release.") && !vIn().querySelector("form.verdict-form")
+      && vBtn("Disagree").getAttribute("aria-pressed") === "true" && vBtn("Agree").getAttribute("aria-pressed") === "false",
+      "verdict: Disagree replaces Agree, its sentence trimmed " + (vList() ? text(vList()) : ""));
+    vBtn("Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!vList() && !vBtn("Take back") && vBtn("Agree").getAttribute("aria-pressed") === "false", "verdict: Take back leaves none");
+  }
   // The history: a day separator, the line before what was unread, the agent's picture.
   const histItems = main.querySelector("ol.messages").childNodes.map((li) => li.className);
   expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
@@ -9923,7 +9946,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("down"), { status: 503 })) : frGet(p));
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   win.Maity.api.get = frLineGet;
-  expect(!frFoot() && productLine.querySelectorAll("a").length === 4, "frame: a failed read after a frame takes it down and brings the product line back");
+  expect(!frFoot() && productLine.querySelectorAll("a").length === 5, "frame: a failed read after a frame takes it down and brings the product line back");
   // On the way in from another view, no frame yet: no product line under the form while the read waits either.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
   const frInHeld = [];
@@ -9946,7 +9969,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A model without its footer is no frame: the one standing goes, the app's bar comes back.
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(Object.assign(frModel({}), { footer: null })) : frGet(p));
   const frHalf = await win.Maity.siteChrome.enter("/login");
-  expect(frHalf === false && !frHead() && !frFoot() && header.hidden === false && productLine.querySelectorAll("a").length === 4,
+  expect(frHalf === false && !frHead() && !frFoot() && header.hidden === false && productLine.querySelectorAll("a").length === 5,
     "frame: a model without its footer draws none, takes down the one standing and brings the product line back");
   // The page's own language picker draws the login again without render() (app.js, renderLogin): a frame standing
   // and then a failed read leaves the page without the frame, ending with the product line
@@ -9959,7 +9982,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const frPick = byId("login-interface"), frPickStood = !!frFoot() && !productLine.querySelectorAll("a").length;
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
   if (frPick) { frPick.value = win.Maity.i18n.language; frPick.dispatch("change"); for (let k = 0; k < 8; k++) await tick(); }
-  expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-email") && productLine.querySelectorAll("a").length === 4,
+  expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-email") && productLine.querySelectorAll("a").length === 5,
     "frame: the picker's redraw with a failed read takes the frame down and brings the product line back " + [!!frPick, frPickStood, productLine.querySelectorAll("a").length]);
   // Picked again after that failure, its read held open: the line stays away while it waits, and once the frame stands
   // (maity-review-team-chatgpt#nyh5's review of #1287).
@@ -10012,20 +10035,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
   await go("#/all"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   const lpLegal = main.querySelector(".legal-links");
-  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-email") && productLine.querySelectorAll("a").length === 4
+  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-email") && productLine.querySelectorAll("a").length === 5
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
     "frame: a failed read draws the login without it, the app's bar shown, the legal pages linked under the form, the product line at the end");
   win.Maity.api.get = frGet;
   // Another view leaves it: stylesheets off, the class gone, the frame's elements gone.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
   expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 3 && frSheets().every((l) => l.disabled === true) && header.hidden === false
-    && productLine.querySelectorAll("a").length === 4,
+    && productLine.querySelectorAll("a").length === 5,
     "frame: an invitation's page has none, its stylesheets off, the product line back");
   // Without a session render() leaves the frame standing until the view decides, so every view that is not the
   // sign-in takes it down itself (lotse#wtwy on #1287). Each from the framed sign-in: the frame gone, the line back
   // (review of #1287 by maity-review-team-grok#spq4).
   const frLeft = () => !frHead() && !frFoot() && !frOn() && frSheets().every((l) => l.disabled === true) && header.hidden === false
-    && productLine.querySelectorAll("a").length === 4;
+    && productLine.querySelectorAll("a").length === 5;
   const frFromDoor = async (where) => {
     await go("#/login"); for (let k = 0; k < 6; k++) await tick();
     const stood = !!frFoot();
@@ -10080,7 +10103,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The token is in the path: the page sends no Referer (docs/api.md §16.13), and still ends with the product line.
   expect(head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer").length === 1,
     "invite: the page sets <meta name=referrer content=no-referrer>, once");
-  expect(productLine.querySelectorAll("a").length === 4, "invite: the page ends with the product line");
+  expect(productLine.querySelectorAll("a").length === 5, "invite: the page ends with the product line");
   // A token with a broken escape still gets the policy: the check decodes the first segment on its own and asks
   // only that a token follows, so a broken escape in the token does not undo it (web roll-up 3, nte-2e1kq5r85vaj);
   // before, parseRoute() threw on the whole path and the swallowed error set nothing.
@@ -11009,6 +11032,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick(); await tick();
   expect(text(main.querySelector(".group-chat .group-title")) === "Renamed by Ops" && byId("chat-text") === gcTyping,
     "group chat: someone else's rename is drawn in place, the composer untouched");
+  // §9.7: a verdict given elsewhere (another tab) arrives with the feed under its message; redacted, it keeps its
+  // value without the sentence; taken back, it is gone.
+  {
+    const vLi = gcList().querySelectorAll("li.msg.in").find((li) => !li.querySelector(".msg-redacted"));
+    const vSeq = Number(vLi.getAttribute("data-seq"));
+    const vNow = () => gcList().querySelectorAll("li.msg").find((li) => li.getAttribute("data-seq") === String(vSeq));
+    const vEvent = (seq, value, sentence) => ({ seq, kind: "chat_verdict", at: "2026-11-15T10:00:00Z", actor: { member_id: "hum-maintainer" },
+      payload: { conversation: { id: "cnv-0007", kind: "group", title: null }, message_seq: vSeq, author: "agt-a", value, previous: null, sentence } });
+    gcFeed = [vEvent(9104, "disagree", "Not before the release.")];
+    await fireIntervals(); await tick(); await tick();
+    expect(text(vNow().querySelector(".verdict-list") || { textContent: "" }) === "👎 Maintainer disagrees: Not before the release.", "group chat: a verdict is drawn under the message at once");
+    gcFeed = [{ seq: 9105, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 9104, reason: "a name" } }];
+    await fireIntervals(); await tick(); await tick();
+    const vText = text(vNow().querySelector(".verdict-list") || { textContent: "" });
+    expect(vText === "👎 Maintainer disagrees", "group chat: a redacted verdict keeps its value, not its sentence " + vText);
+    gcFeed = [vEvent(9106, null, null)];
+    await fireIntervals(); await tick(); await tick();
+    expect(!vNow().querySelector(".verdict-list") && text(vNow()).includes("Quote"), "group chat: a verdict taken back is gone, the message stays");
+    // An owner reading along from outside the project: the event names the human by id, not member_id (§8.2).
+    // It arrives while the reader types a sentence for Disagree: what is typed stays.
+    btn(vNow(), "Disagree").click(); await tick();
+    const vField = () => vNow().querySelector(".verdict-form input");
+    vField().value = "half typed"; vField().dispatch("input");
+    gcFeed = [Object.assign(vEvent(9107, "agree", null), { actor: { kind: "human", id: "hum-outside", handle: "outside" } })];
+    await fireIntervals(); await tick(); await tick();
+    expect(text(vNow().querySelector(".verdict-list") || { textContent: "" }) === "👍 an owner outside the project agrees",
+      "group chat: a verdict of an owner outside the project arrives and is named as the observers' line names them");
+    expect(vField() && vField().value === "half typed", "group chat: a sentence being typed survives another's verdict arriving");
+    btn(vNow(), "Cancel").click(); await tick();
+    expect(!vField(), "group chat: Cancel closes the sentence field");
+  }
   // A direct chat takes a removal the same way.
   await go("#/maintainer/maity/chat/agt-a");
   gcFeed = [{ seq: 9103, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 4202, reason: "pasted" } }];
@@ -11190,6 +11244,50 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && text(main.querySelector(".group-observers")).includes("you (owner of Spare)")
     && main.querySelector(".group-chat a.chat-back").getAttribute("href") === "#/observe/guest/guestlab" && main.querySelectorAll(".group-chat li.msg").length === 1
     && text(main.querySelector(".group-chat li.msg")).includes("@guest"), "read along: the chat read only, its people by handle");
+  // §9.7 from outside the project: the reader's own verdict under their own name, and others'
+  // verdicts taken over by the 30-second re-read (no event reaches an observer).
+  {
+    const voLi = () => main.querySelector(".group-chat li.msg");
+    btn(voLi(), "Agree").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(voLi().querySelector(".verdict-list") || { textContent: "" }) === "👍 Maintainer agrees",
+      "read along: an observer from outside gives a verdict, said under their own name " + text(voLi()));
+    win.Maity.api.get = (p) => (p.startsWith("/projects/guest/guestlab/conversations/cnv-0301/messages?")
+      ? gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m) => (m.seq === 7001
+        ? Object.assign({}, m, { verdicts: (m.verdicts || []).concat({ by: "hum-guest", value: "disagree", sentence: null, at: "2026-10-22T09:10:00Z", seq: 7100 }) }) : m)) }))
+      : gcOutGet(p));
+    await fireIntervals(); await tick(); await tick(); await tick();
+    const voText = text(voLi().querySelector(".verdict-list") || { textContent: "" });
+    expect(voText.includes("👍 Maintainer agrees") && voText.includes("👎 @guest disagrees"), "read along: the re-read brings a verdict given meanwhile " + voText);
+    // A sentence being typed for Disagree outlives the re-read: a verdict changed meanwhile is taken
+    // over under its message, a new message redraws the list; the field keeps its text and focus.
+    const voProto = Object.getPrototypeOf(main);
+    const voFocus = voProto.focus;
+    voProto.focus = function () { document.activeElement = this; };
+    btn(voLi(), "Disagree").click(); await tick();
+    const voField = () => voLi().querySelector(".verdict-form input");
+    voField().value = "half typed"; voField().dispatch("input");
+    const voTyped = voField();
+    const voItem = voLi();
+    const voWith = (extra) => (p) => (p.startsWith("/projects/guest/guestlab/conversations/cnv-0301/messages?")
+      ? gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m) => (m.seq === 7001
+        ? Object.assign({}, m, { verdicts: (m.verdicts || []).concat({ by: "hum-guest", value: "agree", sentence: null, at: "2026-10-22T09:12:00Z", seq: 7101 }) }) : m))
+        .concat(extra ? [Object.assign({}, r.items[r.items.length - 1], { seq: 7102, body: "one more line", verdicts: [] })] : []) }))
+      : gcOutGet(p));
+    win.Maity.api.get = voWith(false);
+    await fireIntervals(); await tick(); await tick(); await tick();
+    expect(text(voLi().querySelector(".verdict-list") || { textContent: "" }).includes("👍 @guest agrees") && voLi() === voItem
+      && voField() && voField().value === "half typed" && document.activeElement === voField(),
+      "read along: a verdict changed meanwhile is taken over in place, the sentence being typed untouched");
+    win.Maity.api.get = voWith(true);
+    await fireIntervals(); await tick(); await tick(); await tick();
+    expect(main.querySelectorAll(".group-chat li.msg").length === 2 && voLi() !== voItem && voField() && voField() !== voTyped
+      && voField().value === "half typed" && document.activeElement === voField(),
+      "read along: a new message redraws the list, the sentence being typed and its focus kept");
+    btn(voLi(), "Cancel").click(); await tick();
+    voProto.focus = voFocus; document.activeElement = undefined;
+    btn(voLi(), "Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.get = gcOutGet;
+  }
   // From outside: other observers neutrally, someone who left as a former participant, the access ending said.
   win.Maity.api.get = (p) => {
     gcOutGets.push(p);
@@ -15103,7 +15201,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
   // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
   // stored public page the hub put into <main> stands without it, the next view has it again.
-  expect(productLine.querySelectorAll("a").length === 4, "product line: under a public address the dashboard draws");
+  expect(productLine.querySelectorAll("a").length === 5, "product line: under a public address the dashboard draws");
   // From the framed sign-in to a public address: the frame stays (the visitor's page stands in it too, tsk-tp97v64vpy5z),
   // its footer in the product line's place.
   // Signed out for this step, as a visitor is: the sign-in in the frame first.
@@ -15184,7 +15282,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
   expect(!productLine.querySelectorAll("a").length, "product line: not under a stored public page the hub served");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
-  expect(productLine.querySelectorAll("a").length === 4, "product line: back with the next view");
+  expect(productLine.querySelectorAll("a").length === 5, "product line: back with the next view");
   delete main.hasAttribute;
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");

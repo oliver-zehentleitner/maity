@@ -380,6 +380,61 @@ agents outlive it.
 - A launchd agent in the same change: untested by the morning, and a
   service file that does not work reads as support.
 
+## The allowlist harnesses allow one OS UUID v4 source: the kernel's generator
+
+**Id:** 0a639f39-f76c-4a77-ac43-ae8ce1d42434
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bj6fs628q6pd (a placed runner agent's field report that the sandbox refuses every OS UUID v4 source); the Keep the Why skill 0.20.3 (`SKILL.md`, the `Id` rule) and `AGENTS.md` (every entry's Id is made by an OS command, never from memory)
+**Verification:** corroborated — the allowlist mechanism is read from `adapters.py` and `docs/runners.md`; the live-session efficacy is not yet observed
+**See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-15
+**Revisit when:** `/proc/sys/kernel/random/uuid` stops being a usable OS UUID v4 source, the skill drops the OS-command Id rule, or a harness changes how its command allowlist matches an exact command
+
+The runner allows exactly one command for making a UUID v4,
+`cat /proc/sys/kernel/random/uuid`, for the harnesses that gate
+commands with a deny-by-default allowlist: Claude Code (a `Bash(...)`
+rule in `permissions.allow`, with `defaultMode: dontAsk`) and opencode
+(a `bash` rule, the catch-all being `deny`). It is the one source
+(`adapters.UUID_COMMAND`); the rule is unconditional, not from a grant.
+The allowlist mechanism and that these two harnesses refuse unlisted
+commands are **confirmed** from the code and `docs/runners.md`; that a
+live Claude Code or opencode session now makes its UUID with the
+allowed command, and that Codex and agy run it inside their own
+sandbox, is **inferred** and not yet observed in a placed session —
+the weaker grade is why this entry's Evidence is `inferred`.
+
+**Reason:** every Keep the Why entry an agent writes needs an `Id` made
+by an OS command — never composed from memory — so a session that
+cannot run one records no reasoning at all. Under the allowlist the
+skill's named sources are all refused: `uuidgen`, `node`, and `od` on
+`/dev/urandom` are unlisted commands, denied before they run. The
+skill names `uuidgen` first and `cat /proc/sys/kernel/random/uuid`
+second; the kernel path was chosen — not because the skill prefers it —
+because it needs no package installed (`uuidgen` ships in util-linux,
+which a minimal host may lack) and reads a fresh lowercase v4 directly,
+so no `tr 'A-F' 'a-f'` step is needed (the skill lowercases macOS's
+`uuidgen`). A single exact command is a tighter allow than a program
+with free arguments.
+
+**Rejected alternatives:**
+- Allowing `uuidgen` instead: an acceptable fallback, but it depends on
+  util-linux being installed for the agents' user, which the sandbox
+  cannot add (it reaches only the hub, the forge and the grant's
+  hosts), and its output needs lowercasing on macOS.
+- Allowing the Read tool to read the file (`Read(//proc/...)`) rather
+  than a Bash command: the file reports size 0 and yields its bytes
+  only on read, which the Read tool is not built to handle; a plain
+  command is what the skill tells the agent to run.
+- A read-allow in Claude Code's OS `filesystem` sandbox: the block is
+  the command allowlist, not the OS sandbox (reads outside the denied
+  paths are already allowed), so widening the filesystem would not let
+  the command run; the allowlist is where it is gated (see 3c074f5a).
+- Codex and agy need no entry: neither has a per-command allowlist, so
+  an unlisted `cat /proc/sys/kernel/random/uuid` already runs inside
+  their own sandbox (Codex's `:workspace` profile, agy's
+  `proceed-in-sandbox`).
+
 ## The command allowlists are not a boundary until agents run as their own user
 
 **Id:** 2bdc5809-b08b-4fa2-97bc-004d37c4cddb
@@ -605,8 +660,10 @@ Details of the settings §15.3 describes, chosen in the code:
   without a word, so an unverified form (`regex:`) could silently match
   nothing. The cost: an entry without ` *` allowed any arguments.
   Superseded for entries without `*` by the exact grants below
-  (f0ef544a-a531-4073-9572-af946f5475b2), 2026-11-15; the closing ` *`
-  and the left-out entry with another `*` stay as described here.
+  (f0ef544a-a531-4073-9572-af946f5475b2), 2026-11-15, and for the closing
+  ` *` entries too — no command grant is given to agy any more — by
+  f8a7b727-8c1f-4df9-98eb-8f9ef8879352; the left-out entry with another
+  `*` stays as described here.
 - The file tools are denied the private paths every sandbox hides, but
   for `~/.gemini` only agy's sign-in file: agy's sandboxed commands use
   their scratch and artifact directories there. Other harnesses' sandboxes
@@ -678,7 +735,7 @@ one's deny refuses the longer one, so the shorter one is left out.
 The env-assignment and redirect cases in **Revisit when** are open: both
 need a signed-in agy, which has not been allowed for a test run.
 
-**Limit:** agy cannot tell an extra empty argument apart; it is allowed.
+**Limit (superseded):** agy cannot tell an extra empty argument apart; it is allowed.
 `a b ''`, `a b ""`, `a b $''`, `a b ' '` and `a '' b` run as `a b`,
 outside the sandbox, though the shell passes one argument more. No rule
 can catch it (review order A587 on #1828, agy 1.5.9 read from its
@@ -723,25 +780,24 @@ the owner.
   compared, and `MatchesConfigAnyRaw` sees the raw line only on the
   whole-line path, which such a line never takes; no rule can say it.
 
-## agy exact grants are dropped, not paired with a deny: agy reads the command past a leading assignment or wrapper
+## agy command grants are dropped, exact and prefix: agy reads the command past a leading assignment or wrapper
 
 **Id:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-vgce05kdmk2x and the coordinator's go-ahead for the drop, 2026-11-15; agy 1.5.9's command matching read from its binary (terminal.extractSimpleCommands, terminal.isEnvAssignmentToken, terminal.isCommandWrapper, terminal.canonicalCommandName, shared.coversCommand, commandutils.MatchesConfigAny; the raw-line matcher commandutils.MatchesConfigAnyRaw and terminal.RequiresExactMatch on the whole-line path); agy's permissions documentation
+**Source:** card tsk-vgce05kdmk2x and the coordinator's go-ahead, 2026-11-15, first for dropping exact grants and then, once the same exposure was confirmed for prefix grants, for dropping those too (two stacked pull requests on the one card); agy 1.5.9's command matching read from its binary (terminal.extractSimpleCommands, terminal.isEnvAssignmentToken, terminal.isCommandWrapper, terminal.canonicalCommandName, shared.coversCommand, commandutils.MatchesConfigAny; the raw-line matcher commandutils.MatchesConfigAnyRaw and terminal.RequiresExactMatch on the whole-line path); agy's permissions documentation
 **See:** runner.md#agy-grants-are-exact-as-for-claude-code-a-deny-for-each-exact-entrys-longer-forms — f0ef544a-a531-4073-9572-af946f5475b2 — as of 2026-11-15
-**Revisit when:** an agy release changes how it reads the invoked command from a line, or gives `command(...)` rules a way to match a whole line or an exact form; or a signed-in agy session is allowed and shows a granted command matching differently
+**Revisit when:** an agy release changes how it reads the invoked command from a line, gives `command(...)` rules a way to match a whole line or an exact form, or forbids a leading assignment or wrapper on an allowed command; a sound way to keep a prefix grant, or to tighten the `command(maity)` grant, for agy is found; tsk-zjv2xyhyggnm confines `maity` at the OS level; or a signed-in agy session is allowed and shows a granted command matching differently
 
-An exact `allow` entry `a b` (no `*`) is not given to agy as a rule: it is
-left out, named by `maity runner check`, and runs in agy's sandbox like
-every unlisted command. An entry ending in ` *` stays a plain prefix
-(`command(a b)` for `a b *`), and one with another `*` is left out without a
-word, both as before; an exact entry a ` *` prefix already covers is left out
-without a word too. So agy now gets only the prefix allows beside
-`command(maity)`, the `read_url` hosts and the file and command denies; no
-exact allow+deny pair is written any more, and `maity runner check` names
-each exact entry it leaves out.
+Neither an exact `allow` entry `a b` (no `*`) nor a ` *` prefix entry `a b *`
+is given to agy as a rule: each is left out, named by `maity runner check`,
+and runs in agy's sandbox like every unlisted command. An entry with another
+`*` (`a *.py`, `npm run test:*`) is left out without a word, as before, since
+a rule word is matched on its own. So agy now gets no `command(...)` allow
+from a grant's command list at all: only `command(maity)`, the `read_url`
+hosts and the file and command denies stand. The same `allow` command list
+reaches Claude Code and Codex unchanged.
 
 **Reason:** agy does not match a `command(...)` rule the way Claude Code
 matches `Bash(...)`. It reads the invoked command from the line first,
@@ -749,39 +805,73 @@ stepping over a leading environment assignment (terminal.isEnvAssignmentToken)
 and a command wrapper such as env, nohup, time, nice, sudo, xargs or timeout
 (terminal.isCommandWrapper), before any `command(...)` rule is compared; only
 the words that remain reach the matcher (shared.coversCommand →
-commandutils.MatchesConfigAny). A deny rule can only describe those remaining
-words, so it cannot describe a line that carries such a prefix: the one
-matcher that sees the raw line, commandutils.MatchesConfigAnyRaw, runs only on
-agy's whole-line path, and terminal.RequiresExactMatch takes that path only
-for a NUL, a non-ASCII control, format or space character, a parse error or a
-construct its walker refuses — not for a plain leading assignment or wrapper.
-The earlier allow+deny pair (f0ef544a) let an exact entry run outside agy's
-sandbox for the bare command and relied on the deny to refuse every longer
-form; but a line carrying such a prefix matches the bare allow with the prefix
-already stepped over, and no deny can refuse it, so the entry did not run as
-granted. A `command()`-level hard refusal of every such line is therefore not
-provably complete — the prefix is gone before any rule is compared, and the
-raw-line matcher is not on that path. Dropping the exact allow entirely is the
-only sound choice at the settings level: the entry then runs inside the
-sandbox, like an unlisted command. Prefix (` *`) entries are unchanged, since
-they already allow the words with any arguments. This narrows agy grants: a
-placement that relied on an exact grant running outside agy's sandbox must use
-a ` *` grant instead (docs/runners.md, CHANGELOG); the same `allow` list is
-unchanged for Claude Code and Codex.
+commandutils.MatchesConfigAny; terminal.canonicalCommandName canonicalises the
+program name). The one matcher that sees the raw line,
+commandutils.MatchesConfigAnyRaw, runs only on agy's whole-line path, and
+terminal.RequiresExactMatch takes that path only for a NUL, a non-ASCII
+control, format or space character, a parse error or a construct its walker
+refuses — not for a plain leading assignment or wrapper. So no `command(...)`
+rule can describe a line that carries such a prefix. This defeats both grant
+forms the same way: an exact entry's earlier allow+deny pair (f0ef544a) let
+the bare command run outside agy's sandbox and relied on the deny to refuse
+longer forms, but a line carrying the prefix matched the bare allow with the
+prefix already stepped over and no deny could refuse it; and a ` *` prefix
+entry, emitted as a bare `command(a b)` allow, matches such a line with the
+prefix stepped over just as directly, running the command outside the sandbox.
+A `command()`-level hard refusal of every assignment or wrapper line is
+therefore not provably complete — the prefix is gone before any rule is
+compared, and the raw-line matcher is not on that path — so there is no sound
+way at the settings level to keep either an exact or a prefix command grant
+for agy. Dropping both is the only sound choice: such a command then runs
+inside the sandbox, like an unlisted one. This narrows agy grants (a
+command that needs to run outside agy's sandbox through the `allow` list no
+longer can — arrange it another way, or run it under Claude Code or Codex;
+docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
+other harnesses.
+
+**Limit:** one command grant remains that agy cannot be given more tightly —
+`command(maity)`. The runner must let the session reach the hub, so `maity`
+runs outside agy's sandbox (as for every harness), and agy applies
+`command(maity)` the same way it applies any command rule, reading the invoked
+command past a leading assignment or wrapper; so for agy that grant is not as
+tight a boundary as Claude Code's `Bash(maity *)`. No agy setting closes this,
+confirmed by reading agy 1.5.9's binary: the stepping in extractSimpleCommands
+is unconditional, the whole-line path (commandutils.MatchesConfigAnyRaw, gated
+by terminal.RequiresExactMatch) is never taken for a plain leading assignment
+or wrapper, and `--settings` has no match-mode key and refuses unknown ones.
+There is likewise no sound invocation path for `maity` the runner can arrange
+at the settings level (a launcher or absolute path is matched the same way,
+and the attacker's environment loads into the launcher process itself before
+any re-exec). So the `command(maity)` grant keeps one command reachable
+outside agy's sandbox. This is why the runner does not offer antigravity:
+`antigravity` is in `config.NOT_OFFERED_YET`, so a configuration naming
+`[harness.antigravity]` is refused — `maity runner check` and `serve` say it
+is held back until its command grants are confined at the OS level — and no
+antigravity placement runs. That confinement is the follow-up card
+tsk-zjv2xyhyggnm; dropping `antigravity` from `NOT_OFFERED_YET` re-offers it
+once that lands. The agy adapter code stays, so it is ready when re-offered.
+Stated plainly in docs/runners.md, with no example.
 
 **Rejected alternatives:**
-- Keeping the allow+deny pair (f0ef544a): a line with a leading assignment or
-  wrapper matched the bare allow, which no deny could refuse, so the entry did
-  not run exactly as granted; this is what this decision supersedes.
+- Keeping the allow+deny pair for exact entries (f0ef544a): a line with a
+  leading assignment or wrapper matched the bare allow, which no deny could
+  refuse, so the entry did not run exactly as granted; this is what the drop
+  first replaced.
+- Keeping ` *` prefix grants (as the exact-grant drop first did): a prefix
+  entry is emitted as a bare `command(a b)` allow, which the same leading
+  assignment or wrapper matches with the prefix stepped over, so a prefix
+  grant has the same exposure as an exact one and cannot be kept soundly
+  either. agy differs from Claude Code here: Claude Code's `Bash(a b *)`
+  prefix-matches the literal command string, so a leading assignment keeps the
+  line from matching, but agy strips the prefix first. Confirmed against agy
+  1.5.9's binary.
 - A `command()`-level refusal of every assignment and wrapper line: agy reads
   the command past such a prefix before any rule is compared, and the raw-line
   matcher is not on that path, so no set of `command()` denies is provably
-  complete. Verified against agy 1.5.9's binary before the drop was chosen.
+  complete.
 - A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
-- Recording the prefix match as a difference from Claude Code: one harness
-  would get a wider grant than another from the same list.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
@@ -3259,6 +3349,17 @@ in his words are this design's (inferred).
   before the tmux start, refusing or retrying when it changed; it would
   add a second gate whose answer can differ from the first, for a
   window that ends in a consistent start either way (47me's review).
+- **Only a runner that manages a tool reports tools.** The runner sends
+  `capabilities.tools`, and runs its tool thread, only when its
+  configuration sets `install` or `update` for some harness. A hub from
+  before §15.16 refuses the unknown field and the runner would stop at
+  `hello`, and the CLI ships before such a hub is deployed everywhere;
+  a runner that manages nothing has nothing to report, so it stays as
+  it was. The lead chose this over waiting for the hub release
+  (confirmed, lotse 139517). Rejected: a retry of `hello` without
+  `tools` after the refusal, and reading the hub's version first; both
+  add a second path to every start for a gap that closes with the next
+  hub release.
 - **"Update now" is read, not pushed.** The hub stores the owner's
   request on the runner, and the runner's tool thread reads `GET /runner`
   at most once a minute while a tool is updated daily, apart from the

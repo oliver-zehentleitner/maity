@@ -150,7 +150,7 @@ window.Maity = window.Maity || {};
         await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason });
         // The answer is the event (§8.5); the message shows its tombstone.
         const at = all.findIndex((m) => m.seq === msg.seq);
-        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason } });
+        if (at >= 0) all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: ctx.me.id, reason }, verdicts: [] });
         redraw();
         status.done();
         append(status.el, h("span", { class: "ok" }, M.t("group.redact.done")));
@@ -167,7 +167,11 @@ window.Maity = window.Maity || {};
       text.focus();
     }
     // A human in the chat deletes a file of it, as it removes a message (§8.7).
-    const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed, target: M.route.seqTarget() };
+    // A human who reads the chat, an observer too, gives a verdict while it is open (§9.7).
+    const verdictDraws = new Map();
+    const verdictForms = new Map();
+    const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed, target: M.route.seqTarget(),
+      verdictPath: closed ? null : path, verdictDraws, verdictForms };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // At the newest unless the reader scrolled up; then a pill counts what came (js/chat.js).
     // Newest leaves the focus in the composer, or on the title where there is none.
@@ -176,6 +180,11 @@ window.Maity = window.Maity || {};
     // Drawn as one timeline (days, groups, the unread line); the earlier part
     // put before it means drawing it again.
     function redraw() {
+      // A sentence field being typed in keeps its focus and caret (its text is in verdictForms).
+      const active = document.activeElement;
+      const activeId = active && active.getAttribute ? active.getAttribute("id") || "" : "";
+      const typing = activeId.startsWith("verdict-sentence-") && messages.contains(active)
+        ? { id: activeId, start: active.selectionStart, end: active.selectionEnd } : null;
       draw = parts.timeline(ctx, new Map(), firstUnread, observer || closed ? null : quote, opts);
       clear(messages);
       if (!all.length) {
@@ -183,6 +192,11 @@ window.Maity = window.Maity || {};
           h("p", { class: "muted" }, earlier === null ? M.t("group.empty.none_hint") : M.t("group.empty.nothing_new_hint"))));
       } else {
         all.forEach((m) => append(messages, draw(m)));
+      }
+      const field = typing && Array.from(messages.querySelectorAll(".verdict-form input")).find((el) => el.getAttribute("id") === typing.id);
+      if (field) {
+        field.focus();
+        if (typeof typing.start === "number" && field.setSelectionRange) field.setSelectionRange(typing.start, typing.end);
       }
     }
     redraw();
@@ -263,6 +277,7 @@ window.Maity = window.Maity || {};
           page.items.forEach((m) => {
             const at = all.findIndex((x) => x.seq === m.seq);
             if (at >= 0 && parts.isRemoved(m) && !parts.isRemoved(all[at])) { all[at] = Object.assign({}, all[at], m); changed = true; }
+            else if (at >= 0) parts.takeVerdicts(all[at], m, verdictDraws);
             (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));
           });
           if (changed) { const top = messages.scrollTop; redraw(); messages.scrollTop = top; }
@@ -271,11 +286,14 @@ window.Maity = window.Maity || {};
         }
       }
       events.filter((e) => e.kind === "attachment_deleted" && e.payload).forEach((e) => M.attachments.markDeleted(messages, e.payload.attachment_id));
+      events.filter((e) => e.kind === "chat_verdict" && e.payload && e.payload.conversation && e.payload.conversation.id === id)
+        .forEach((e) => parts.applyVerdict(all, verdictDraws, e));
+      events.filter((e) => e.kind === "event_redacted" && e.payload).forEach((e) => parts.verdictRedacted(all, verdictDraws, e.payload.seq));
       const removedHere = events.filter((e) => e.kind === "event_redacted" && e.payload && all.some((m) => m.seq === e.payload.seq));
       if (removedHere.length) {
         removedHere.forEach((e) => {
           const at = all.findIndex((m) => m.seq === e.payload.seq);
-          all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: e.actor && e.actor.member_id, reason: e.payload.reason } });
+          all[at] = Object.assign({}, all[at], { body: null, redacted: true, redaction: { by: e.actor && e.actor.member_id, reason: e.payload.reason }, verdicts: [] });
         });
         const top = messages.scrollTop;
         redraw();
@@ -532,9 +550,12 @@ window.Maity = window.Maity || {};
             earlier = next[0].seq;
             drawEarlier();
           }
-          // Drawn again only on a change: the list is a live region.
+          // Drawn again only on a change: the list is a live region. A change of verdicts alone is
+          // taken over under its message, as an event's is; the rest of the list stays as it is.
           const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted]));
-          if (sig(next) !== sig(all)) {
+          if (sig(next) === sig(all)) {
+            next.forEach((m, i) => parts.takeVerdicts(all[i], m, verdictDraws));
+          } else {
             all.splice(0, all.length, ...next);
             if (all.length) cursor = Math.max(cursor, all[all.length - 1].seq);
             const top = messages.scrollTop;

@@ -4472,7 +4472,7 @@ the window, so the input sat past the bottom edge and the page had to be scrolle
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
 At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
-- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other three parts and the separators are not shown.
+- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other four parts and the separators are not shown (re-checked 2026-11-15, when "Chat with us on Discord" became the fifth part, tsk-01tt7j11yx3w: the rule hides every part after the first, so this holds).
 - A group chat shows no "In it: …" line over the messages. Its participants stay under Manage.
 - The composer's label ("Message (@handle reaches someone in the chat)") is out of sight but still the field's label. A reader still hears what the field is for.
 
@@ -4547,7 +4547,7 @@ The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New
 **Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
 
-The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 40px)` on `.switcher` in a row with the menu), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 24px - 0.88rem)` on `.switcher` in a row with the menu, the menu's own width at any root font size), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
 
 **Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
 
@@ -6997,3 +6997,61 @@ and a phone on a slow line meets the same cut tab.
   but not before the first drawing for sure, so the race stays.
 - A looser measure in the e2e step: rejected, the tab really ends
   outside its row, and a longer label (another language) cuts more of it.
+
+## A verdict is taken back with its own button, and a pressed Disagree opens its sentence again
+
+**Id:** 8fd2e947-88f1-4cfa-8505-311211f2f833
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.7 (one verdict per human and message, `PUT` replaces it, `DELETE` takes it back, the sentence only with `disagree`); the card tsk-3d0wm9mh2f03, the web part of tsk-55x4f398dttv; web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** the contract lets a verdict's sentence change without a `PUT` of its value, or the buttons become a toggle elsewhere in the dashboard
+
+Under someone else's chat message stand **Agree** and **Disagree**, both
+with `aria-pressed` for the reader's current verdict, and **Take back**
+only while the reader has one. A pressed **Agree** is disabled. A pressed
+**Disagree** opens its sentence field again, filled with the sentence
+given, so that the sentence is changed by a `PUT` that replaces the
+verdict.
+
+**Reason:** the sentence goes with Disagree alone, and changing it is a
+`PUT` with the same value. One gesture must therefore reach the sentence
+of a verdict already given, and a separate button keeps taking it back
+from happening by accident.
+
+**Alternatives considered:**
+- Pressing a pressed button again takes the verdict back (a toggle):
+  rejected, a pressed Disagree would then either take back or open the
+  sentence, and a reader who wanted to change the sentence would lose the
+  verdict, which wakes the agent with a taken-back event.
+- No way to change the sentence but Take back and Disagree again:
+  rejected, that writes two events and wakes the agent twice for one
+  change of words.
+
+## An open verdict sentence outlives the list being drawn again, and a re-read takes verdicts over in place
+
+**Id:** 839d984c-980f-4d2c-859c-0fe03207b9c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-q8cd2hh4beq3 (the review A796 of #1874: an owner reading along from outside the project lost a sentence being typed at the 30-second re-read); web/js/group-chat.js `redraw` and the outsider re-read, web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** an observer from outside the project gets events, or the group chat stops drawing the whole list again
+
+An observer from outside the project gets no events, so its view reads
+the newest page again every 30 seconds. When only verdicts changed, they
+are taken over under their messages (`takeVerdicts`, as for an event);
+the list is not drawn again. When a message came or was removed, the
+list is drawn again, and an open sentence field comes back: what is typed
+is kept per message (`verdictForms`), and `redraw` gives the field its
+focus and caret back.
+
+**Reason:** the list is a live region, so drawing it again for a verdict
+alone would also announce every message once more. A new message still
+needs the whole list, and the reader may be typing then too.
+
+**Alternatives considered:**
+- Taking verdicts over in place only: rejected, a new message at the
+  re-read still cost the sentence, which A796 had found already at the
+  base of #1874.
+- Keeping the sentence across a redraw only: rejected, a verdict alone
+  would still draw the live region again and announce its messages anew.

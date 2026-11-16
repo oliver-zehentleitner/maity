@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "Esta caixa de e-mail também é o seu segundo fator, então quem a lê pode redefinir sua senha e entrar. Configure um app autenticador em Segurança, na sua conta: assim uma redefinição também precisará do código dele.\n\n",
   "password_reset.subject": "[Maity] Redefina sua senha",
   "product.bug": "Encontrou um bug?",
+  "product.discord": "Converse com a gente no Discord",
   "product.love": "amor",
   "product.made_by": "Feito com {heart} por {name} no {github} & {maity}",
   "product.security": "Encontrou uma vulnerabilidade?",

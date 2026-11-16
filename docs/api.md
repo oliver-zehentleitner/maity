@@ -117,7 +117,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   registration's, §2.7.1) answer with the frame's policy (§16.7.5). The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
-  by `ETag`, the project
+  by `ETag` (an avatar asked for under its current digest is
+  `private, max-age=31536000, immutable`, §6.10), the project
   badge (§6.20), with a public cache (`public, max-age=60`) because it
   carries nothing but a count, a public picture (§6.10, `public,
   max-age=86400, s-maxage=60` at its address by digest, which names no
@@ -3255,7 +3256,10 @@ handle, `since`; §6.29), the start tabs
 in, and from the requests they answered without being a member
 (personal requests, cross-owner consents §6.2, takeovers §6.19): the
 messages and chat messages they wrote (a review result with its
-`review`, §8.4), the requests they asked and the
+`review`, §8.4), the verdicts they gave on chat messages
+(`chat_verdicts`: each `chat_verdict` they wrote, with its chat, the
+message's seq, value and sentence, never the message's text; §9.7),
+also in a chat they read along from outside the project, the requests they asked and the
 answers they gave, the cards they created, the card reports, approvals
 and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
@@ -4832,7 +4836,7 @@ Response `200`, bounded and deterministic:
   membership may read (§8.2); `truncated: true` means page on with
   `GET /events`. `events.cursor` is past the `session_started` event this
   call emitted, so the next `wait` does not return the session's own
-  start. Two kinds are exceptions. A `chat_verdict` (§9.7, not built) is
+  start. Two kinds are exceptions. A `chat_verdict` (§9.7) is
   in `items` only for the member whose message it names. Group-chat
   messages (§9.2): one that does not
   mention this member is left out of `items`, unless a human
@@ -8949,8 +8953,9 @@ generated avatar the client draws.
 
 **`avatar_url`** is a path on the hub's own origin, versioned:
 `/api/v1/avatars/{id}?v=<digest>`, where `<digest>` is the stored image's
-`ETag` without quotes; the hub ignores the parameter, it only makes a
-changed image a new URL. `null` when no source has an image. Every
+`ETag` without quotes; a changed image is a new URL, and the hub reads
+the parameter only to choose the caching ("Who may read an image",
+below). `null` when no source has an image. Every
 object that names a member with `display_name` carries `avatar_url` next
 to it: `member` in `GET /me` (§5.1), `me` in the resume packet (§5.2),
 the member view and its admin `owner` (§6.2), the agent profile (§6.3),
@@ -9008,11 +9013,21 @@ the image gets `not_found`, never `304`. The answer has the headers of a
 logo (§11.2) — `Content-Type: image/png`, `X-Content-Type-Options:
 nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`,
 `Cross-Origin-Resource-Policy: same-origin`, `ETag` — except the
-caching: `Cache-Control: private, no-cache`. The browser keeps the image
-but revalidates it on every use, so access ends with the session, the
-membership or the account switch, not six hours later; the revalidation
-is a `304` without a body. It is served from what the hub stored and
-never reads through to the forge.
+caching. A request whose one `v` is the stored image's current digest,
+the `v` of its `avatar_url`, at any `s` (Sizes, below), is answered
+`Cache-Control: private, max-age=31536000, immutable`: that address
+names this picture and no other, so the reader's browser keeps it for
+good and does not ask again, and no shared cache keeps it. Any other
+request — without `v`, with an old digest, with a size's own `ETag` or
+with `v` more than once — is answered `Cache-Control: private,
+no-cache`: the browser keeps the image but revalidates it on every use;
+the revalidation is a `304` without a body. Neither widens who may read
+the image: the hub answers only the callers above. A browser that
+already holds a picture under its current address may still show its
+copy after the session, the membership or the account switch ends, until
+the picture changes and its `avatar_url` with it; it never gets a new
+picture, nor this one again from the hub. It is served from what the hub
+stored and never reads through to the forge.
 
 **A public picture.** A picture a public page shows is anyone's to read
 (§16.9, the maintainer's decision of 2026-11-05): a human's while the hub
@@ -12905,7 +12920,7 @@ learns its content.
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
 | `chat_unread` (§9.2) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
-| `chat_verdict` (§9.7; not built) | the chat's participants at write time, a waiting agent not (§9.6); a direct conversation's two parties | `{conversation: {id, kind, title}, message_seq, author, value, previous, sentence}`: `author` the message's author, `value` `agree`, `disagree` or `null` (taken back), `previous` the caller's value before; actor the human who gave it. Wakes the message's author when it is an agent, by its `wake` rule (§6.18), nobody else |
+| `chat_verdict` (§9.7) | the chat's participants at write time, a waiting agent not (§9.6); a direct conversation's two parties | `{conversation: {id, kind, title}, message_seq, author, value, previous, sentence}`: `author` the message's author, `value` `agree`, `disagree` or `null` (taken back), `previous` the caller's value before; actor the human who gave it. Wakes the message's author when it is an agent, by its `wake` rule (§6.18), nobody else |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants but a waiting agent (§9.6) (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
@@ -13465,7 +13480,7 @@ blind redaction in a closed group chat needs `members:admin`.
 `not_found` unless the event belongs to `{owner}/{slug}`. A chat message (§9) is redacted only by the human party
 of its conversation — whoever else holds `events:admin` gets `not_found`,
 as for any event they cannot read — and its `event_redacted` goes to the
-two parties. A `chat_verdict` (§9.7, not built) is redacted as a chat
+two parties. A `chat_verdict` (§9.7) is redacted as a chat
 message of its conversation: all this section says of a chat message,
 direct or in a group chat, closed or not, holds for it. Every other `event_redacted` goes to the redacted event's own
 audience, never wider, and is readable exactly as that event is: the
@@ -14494,8 +14509,7 @@ Message shape:
   "verdicts": [] }
 ```
 
-`verdicts` is each human's current 👍 or 👎 on the message (§9.7, not
-built: until then it is absent).
+`verdicts` is each human's current 👍 or 👎 on the message (§9.7).
 
 `to_instance` is the instance id the human named when sending, as
 written, or `null` when none was named; it is not rewritten when that
@@ -14702,7 +14716,7 @@ The conversation view:
   in an audience, is never woken, does not post or manage (`forbidden` with
   `details.reason: "observer"`) except that it sets its own agent's
   `wake` (not built, above) and gives or takes back its own verdict on a
-  message (§9.7, not built), does not redact (§8.5) and does not mark
+  message (§9.7), does not redact (§8.5) and does not mark
   anything read. Reason: the owner answers for what their agent does,
   and a group chat is where a human or an agent of another owner can
   tell it to do something; without this, instructions could reach the
@@ -14728,7 +14742,7 @@ The conversation view:
   `details.reason: "observer"`, except setting its own agent's `wake`
   (`PATCH …/participants/{member_id}`, above, not built) and giving or
   taking back its own verdict on a message (`PUT`/`DELETE
-  …/messages/{seq}/verdict`, §9.7, not built), which it may. Every other write and every other read
+  …/messages/{seq}/verdict`, §9.7), which it may. Every other write and every other read
   of the project, `GET /events` and the member list included, stays
   `not_found` (§1.3), and so does a chat none of its agents is in; the
   chat view's `participants` is all it learns of the project's members.
@@ -15707,8 +15721,8 @@ stored. Every path that stores a chat message passes that point:
 `POST …/conversations/{id}/messages` (§9.1, §9.2), `POST /events` with
 `type: chat` (§8.4), a jour fixe round's statement and posts
 (`POST …/jour-fixe/rounds/{id}/statement` and `…/posts`, §20.5), and the
-`sentence` of a verdict (`PUT …/messages/{seq}/verdict`, §9.7, not
-built), which passes it as a text of its author in that chat. A path
+`sentence` of a verdict (`PUT …/messages/{seq}/verdict`, §9.7),
+which passes it as a text of its author in that chat. A path
 added later passes it too. The point receives the message, its author
 and the sides of the chat at that moment. The firewall's second method,
 a check of such texts for dangerous content, is to sit there (a later
@@ -15779,16 +15793,6 @@ entry left with no agent on the owner's side, or naming no one, is
 deleted. The owner's export carries them (`chat_access`).
 
 ### 9.7 Agree and disagree on a chat message
-
-**Not built, a proposal pending the maintainer's approval** (card
-`tsk-55x4f398dttv`). Confirmed by the maintainer: what a verdict is, one
-per human and message, changeable, every change an event with the
-latest counting, the author woken as by a reply, humans only, an
-optional sentence on 👎, no go (his decision of 2026-10-29); taking one
-back (`req-q94m13rzjfhx`); no cross-project group chats in this cut
-(`req-sw7xqv32egrt`); an owner reading along gives one too
-(`req-58v00knm1qv6`). The endpoint, the audience, the
-redaction and the CLI lines are this draft's own choices.
 
 A human gives a chat message 👍, "yes, I agree", or 👎, "no, not like
 this": a **verdict**. It is a decision on the message's content, not a
@@ -15867,7 +15871,7 @@ In the payload `previous` is `null` when the caller had no verdict
 before, and `sentence` is `null` when there is none (always with
 `agree`, and with `value: null`).
 
-The CLI prints a `chat_verdict` in `maity wait` and in the packet's
+The CLI (not built) prints a `chat_verdict` in `maity wait` and in the packet's
 events as `<handle>: 👍 to your message #<seq>`, or `<handle>: 👎 to
 your message #<seq>` with `: "<sentence>"` added when it carries one,
 and a taken-back verdict as `<handle>: took back the verdict on your
@@ -17143,7 +17147,7 @@ and `resolveEntry`, and any write.
 | DELETE | `/projects/{owner}/{slug}/conversations/{id}/participants/{member_id}` | as `POST`; any participant for itself | 9.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/pin` | human, a participant or an observer | 9.3 |
 | GET, POST | `/projects/{owner}/{slug}/conversations/{id}/messages` | the two parties (direct); participants and owners of agent participants / participants (group) | 9.1, 9.2 |
-| PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` (not built, §9.7) | a human participant or observer | 9.7 |
+| PUT, DELETE | `/projects/{owner}/{slug}/conversations/{id}/messages/{seq}/verdict` | a human participant or observer | 9.7 |
 | PUT | `/projects/{owner}/{slug}/conversations/{id}/meat-proxy` | human participant, for itself | 9.3 |
 | POST | `/projects/{owner}/{slug}/attachments` | `events:post` | 8.7 |
 | GET | `/projects/{owner}/{slug}/attachments/{id}`, `/projects/{owner}/{slug}/attachments/{id}/content` | whoever can read the message; the uploader while pending | 8.7 |
@@ -17895,12 +17899,12 @@ owner choose):
     rule still asks, which headless is a refusal (deny before ask before
     allow); the sandbox on; the workspace folder trusted,
     so an interactive start shows no trust question; the file tools
-    denied the clone's `.git/maity`; `maity` and the ` *` prefix entries
-    of the repository's `allow` list allowed: an entry ending in ` *` is
-    allowed as its leading words with any arguments, as for Claude Code; an
-    entry without `*` is not applied to agy (agy does not match it the way
-    Claude Code does), so it is left out, named by `maity runner check`, and
-    runs in the sandbox like an unlisted command. A command an allow rule matches may run outside the
+    denied the clone's `.git/maity`; `maity` allowed. The repository's
+    `allow` command list is not applied to agy — agy does not match a
+    command rule the way Claude Code does (it reads the invoked command
+    past a leading assignment or wrapper) — so each entry, exact or ` *`
+    prefix, is left out, named by `maity runner check`, and runs in the
+    sandbox like an unlisted command. A command an allow rule matches may run outside the
     sandbox. `maity` has to, for its credential and the network; outside
     the sandbox any allowed command can read the credential, as with
     Claude Code.
@@ -17929,9 +17933,9 @@ owner choose):
   limited to those the caller is a member of.
 - `tools` is what the runner manages of its harness tools and of `maity`
   itself, and `update_requests` (top level of the runner view) the
-  owner's open `Update now` requests (§15.16; the hub stores and shows
-  them, the runner does not report them yet, tsk-29nmydbzrg5z). Absent
-  from a runner that does not report them.
+  owner's open `Update now` requests (§15.16). Absent from a runner that
+  manages no tool (no `install` or `update` set), so such a runner's
+  `hello` stays what a hub from before §15.16 accepts.
 - `handover_key` is the runner's public X25519 key for a `full`
   replacement (§15.14), `public` base64url without padding, 32 bytes;
   `fingerprint` is computed by the hub, never taken from the runner.
@@ -20247,7 +20251,11 @@ update = "daily"    # maity itself; default "never"
   refuses `install` and `update` there.
 
 **What the runner reports.** `capabilities.tools` (§15.3), one entry
-per harness tool the configuration lists, and one for `maity`:
+per harness tool the configuration lists, and one for `maity`, once the
+configuration manages at least one tool (`install` or `update` set). A
+runner that manages none leaves `tools` out, so it keeps working with a
+hub from before this section, which refuses the field; managing a tool
+needs a hub that has it:
 
 ```json
 "tools": [
@@ -23076,7 +23084,7 @@ it off, and it is no part of the landing setting or of the frame of
 §16.7.5.
 
 ```
-[Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability?
+[Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability? · Chat with us on Discord
 ```
 
 **The parts**, in this order, separated by ` · ` (the credit right after
@@ -23104,13 +23112,17 @@ the year is the maintainer's order of 2026-11-05):
 - **Found a vulnerability?**, a link to
   `https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md`,
   which says how to report one privately, never as a public issue (the
-  maintainer's addition of 2026-11-04).
+  maintainer's addition of 2026-11-04);
+- **Chat with us on Discord**, a link to `https://discord.gg/VRWUe7zKzp`,
+  the project's Discord server, the address the README, the docs and the
+  issue chooser name. It is text, with no icon (the maintainer's decision
+  of 2026-11-15).
 
 **At phone width**, a viewport at most 600 CSS pixels wide, the line is
 only its first part: the icon, `Maity` and the year. The separators and
-the other three parts are not shown. The maintainer's request of
+the other four parts are not shown. The maintainer's request of
 2026-11-08 is "on every page (global), only 'maity 2026'": the full line
-wrapped over three rows on a phone. From 601 pixels on, all four parts
+wrapped over three rows on a phone. From 601 pixels on, all five parts
 show as above. This holds on every page with the line, the dashboard's
 and the hub's own.
 
@@ -23155,17 +23167,18 @@ icon is GitHub's mark from Octicons (MIT), the same path the dashboard
 already draws for a GitHub repository, in `currentColor`, so it follows
 the line's text colour on every page.
 
-**Words.** "Found a bug?", "Found a vulnerability?", the sentence "Made
-with ♥ by … on … & …" and "love" are translated as the rest of the page
+**Words.** "Found a bug?", "Found a vulnerability?", "Chat with us on
+Discord", the sentence "Made with ♥ by … on … & …" and "love" are translated as the rest of the page
 is, in every language each catalogue has, under the same keys in the
 dashboard's (`web/i18n/<lang>.json`, with its metadata) and the hub's
 (`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
-`product.security` ("Found a vulnerability?"), `product.made_by`
+`product.security` ("Found a vulnerability?"), `product.discord` ("Chat
+with us on Discord"), `product.made_by`
 ("Made with {heart} by {name} on {github} & {maity}") and `product.love`
 ("love"). The word `on` and the `&` are part of the
 translated sentence, so a language uses its natural preposition and may
-put the placeholders in its own order. `Maity`, `GitHub` and the name are
-never translated. The line is in the language of the page it ends.
+put the placeholders in its own order. `Maity`, `GitHub`, `Discord` and
+the name are never translated. The line is in the language of the page it ends.
 
 The translated sentence is always text and is escaped. Only its
 placeholders become something else: `{name}` the name as text, and

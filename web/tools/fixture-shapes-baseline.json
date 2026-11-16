@@ -178,14 +178,10 @@
  ],
  "POST /projects/{project}/conversations/{agent}/messages": [
   ".from_instance: the fixture leaves it out",
-  ".mentions: the fixture leaves it out",
-  ".redacted: the fixture leaves it out",
-  ".redaction: the fixture leaves it out"
+  ".mentions: the fixture leaves it out"
  ],
  "POST /projects/{project}/conversations/{group}/messages": [
   ".from_instance: the fixture leaves it out",
-  ".redacted: the fixture leaves it out",
-  ".redaction: the fixture leaves it out",
   ".to_instance: the fixture leaves it out"
  ],
  "POST /projects/{project}/tasks": [

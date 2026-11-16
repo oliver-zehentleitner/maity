@@ -115,6 +115,11 @@ PUBLIC_PATHS = re.compile(
 # once the picture stops being public.
 PUBLIC_AVATARS = re.compile(r"/api/v1/avatars/public/[^/]+")
 PUBLIC_AVATARS_CACHE = b"public, max-age=86400, s-maxage=60"
+# A member's picture asked for under its current digest (§6.10): that address never names
+# another picture, so the reader's browser keeps it for good; `private`, because the route
+# answers only a caller who may read it. Any other request keeps `private, no-cache`.
+AVATARS = re.compile(r"/api/v1/avatars/[^/]+")
+AVATARS_CACHE = b"private, max-age=31536000, immutable"
 # The two plain files a crawler asks for (§16.7), cached for an hour.
 SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # The landing page's own files (§16.7): a file asked for under its digest may be cached for good;
@@ -168,6 +173,8 @@ class HubMiddleware:
                 public = b"public, max-age=60"
             elif PUBLIC_AVATARS.fullmatch(path):
                 public = PUBLIC_AVATARS_CACHE
+            elif AVATARS.fullmatch(path):
+                public = AVATARS_CACHE  # only `routes.avatars.get_avatar` chooses it
             elif SEO_PATHS.fullmatch(path):
                 public = b"public, max-age=3600"  # robots.txt and sitemap.xml (§16.7)
             elif LANDING_FILES.fullmatch(path) or DASHBOARD_FILES.fullmatch(path):

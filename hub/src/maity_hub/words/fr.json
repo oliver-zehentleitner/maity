@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "Cette boîte aux lettres est aussi votre second facteur : quiconque la lit peut réinitialiser votre mot de passe et se connecter. Configurez une application d'authentification dans Sécurité, dans votre compte : une réinitialisation demandera alors aussi son code.\n\n",
   "password_reset.subject": "[Maity] Réinitialiser votre mot de passe",
   "product.bug": "Vous avez trouvé un bug ?",
+  "product.discord": "Discutez avec nous sur Discord",
   "product.love": "amour",
   "product.made_by": "Fait avec {heart} par {name} sur {github} & {maity}",
   "product.security": "Vous avez trouvé une vulnérabilité ?",
