@@ -13,6 +13,7 @@ from maity_hub import settings_overview
 from maity_hub.config import Settings
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.test_orgs import make_org
 
 PATH = "/admin/instance"
 SRC = Path(__file__).resolve().parents[1] / "src" / "maity_hub"
@@ -54,6 +55,7 @@ def by_name(answer: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def test_the_version_the_schema_and_every_setting(admin: flow.Human) -> None:
     got = admin.get(PATH)
     assert got.status_code == 200, got.text
+    assert got.headers["cache-control"] == "no-store"  # settings are never kept by a cache (§1.1)
     body = got.json()
     assert set(body) == {"version", "schema", "settings", "docs"}
     assert body["docs"] == "hub/README.md#configuration"
@@ -178,11 +180,14 @@ def test_only_the_instance_admin_reads_it(
 ) -> None:
     other = flow.human(make_client, migrated, "other")
     assert other.get(PATH).status_code == 403
+    # owning an organisation (its admin) makes no instance admin
+    make_org(other, "other-org", "Other Org")
+    assert other.get(PATH).status_code == 403
     flow.project(admin, "maity")
     bot = flow.agent(make_client, admin, role="admin")
-    # an agent is answered as it is for every other human-only admin route
+    # an agent is refused as on every other human-only admin route (§16.1)
     assert bot.get(PATH).status_code == bot.get("/admin/settings/sign-in").status_code
-    assert bot.get(PATH).status_code in (403, 404)
+    assert bot.get(PATH).status_code == 403
 
 
 def _names_in_code() -> set[str]:
