@@ -2218,6 +2218,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
    while it runs, the admin's form and changes, the owner's choice on /agents. */
 .maintenance-banner { margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
 .maintenance-banner.running { font-weight: 600; }
+/* A newer dashboard deployed under an open page (docs/api.md §1.1, js/new-version.js): a band
+   above the header with Reload and Later; it never reloads by itself. */
+.new-version-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
 .maintenance-page { display: grid; gap: 12px; max-width: 36rem; width: 100%; margin: 24px auto; box-sizing: border-box; }
 .maintenance-page h2 { margin: 0; }
 .maintenance-page p { margin: 0; }

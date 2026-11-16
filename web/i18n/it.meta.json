@@ -11395,6 +11395,18 @@
     "en": "5b1135b6e592a10b",
     "text": "39cb373b426614fa"
   },
+  "new_version.later": {
+    "en": "c19525e91f26d3c4",
+    "text": "cebdaf45dbd1e5ca"
+  },
+  "new_version.reload": {
+    "en": "854555777b69a4b1",
+    "text": "8ee9e977a056e16c"
+  },
+  "new_version.text": {
+    "en": "ce862d0017121cf2",
+    "text": "01bb36782df4df04"
+  },
   "not_found.all": {
     "en": "8fb26740bbfd564c",
     "text": "bf42e34dfa98a0b7"

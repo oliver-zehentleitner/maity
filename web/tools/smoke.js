@@ -18373,12 +18373,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The fake hub's clock is 10 minutes behind this one.
   const HUB_TIME = new Date(Date.now() - 10 * 60000).toISOString().replace(/\.\d+Z$/, "Z");
   let mode = "ok";
+  // The dashboard the fake hub serves (Maity-Web-Version, docs/api.md §1.1); none until a case sets it.
+  let hubWeb = null;
   ctx.fetch = async (url, init) => {
     if (mode === "down") throw new Error("connection refused");
     calls.push({ url, method: init.method, headers: Object.assign({}, init.headers) });
     const [p, q] = url.replace("/api/v1", "").split("?");
     const json = (status, data) => ({ ok: status < 400, status, statusText: "x",
-      headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : null) }, json: async () => data });
+      headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : k === "Maity-Web-Version" ? hubWeb : null) }, json: async () => data });
     if (mode === "expired" && p !== "/openapi.json" && p !== "/auth/methods") return json(401, { error: { code: "unauthenticated", message: "Session ended" } });
     // 204 No Content: a body that is no JSON at all.
     if (init.method === "DELETE") return { ok: true, status: 204, statusText: "No Content", headers: { get: (k) => (k === "Maity-Server-Time" ? HUB_TIME : null) },
@@ -18397,6 +18399,62 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelector(".error"), "API mode against a fake hub renders the inbox");
   expect(Math.abs(win.Maity.api.now() - Date.parse(HUB_TIME)) < 5000, "API mode: the hub's clock from Maity-Server-Time");
+  // A newer dashboard deployed under the open page (docs/api.md §1.1, §16.11, tsk-y19gcsk731aa): the
+  // band above the header offers a reload, never reloads by itself; Later hides it for that version.
+  {
+    const OWN = "0123456789abcdef", NEWER = "fedcba9876543210", NEWEST = "00000000ffffffff";
+    const nvMeta = document.createElement("meta");
+    nvMeta.setAttribute("name", "maity-web-version"); nvMeta.setAttribute("content", OWN);
+    head.appendChild(nvMeta);
+    // Above the header, wherever the page's frame holds it (js/site-chrome.js).
+    const band = () => (header.parentNode ? header.parentNode.childNodes.find((n) => n.id === "new-version-banner") : null) || null;
+    const nvReload0 = win.Maity.newVersion.reloadPage;
+    let reloads = 0, prevented = null;
+    win.Maity.newVersion.reloadPage = () => {
+      reloads++;
+      // As the browser does on a reload: the page's beforeunload listeners are asked first.
+      const e = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, returnValue: undefined };
+      if (win.onbeforeunload) win.onbeforeunload(e);
+      prevented = e.defaultPrevented;
+    };
+    hubWeb = OWN;
+    await win.Maity.api.get("/me");
+    expect(!band(), "new version: an answer naming the page's own dashboard draws no band");
+    hubWeb = NEWER;
+    await win.Maity.api.get("/me");
+    const b1 = band();
+    expect(b1 && b1.nextSibling === header && text(b1).includes("A new version of Maity is available.")
+      && b1.getAttribute("role") === "status" && b1.querySelectorAll("button").map((x) => text(x)).join("|") === "Reload|Later",
+      "new version: an answer naming another dashboard draws the band above the header, Reload and Later " + (b1 && text(b1)));
+    hubWeb = OWN;
+    await win.Maity.api.get("/me");
+    expect(!!b1 && band() === b1 && !reloads, "new version: an old hub answering again during the deploy leaves the band, and nothing reloads by itself");
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    expect(!!band(), "new version: the band stands over a page switch");
+    band().querySelector("button.new-version-later").click();
+    expect(!band(), "new version: Later hides the band");
+    hubWeb = NEWER;
+    await win.Maity.api.get("/me");
+    expect(!band(), "new version: Later holds for that version");
+    hubWeb = NEWEST;
+    await win.Maity.api.get("/me");
+    expect(!!band(), "new version: a newer one still brings the band back");
+    band().querySelector("button.new-version-reload").click();
+    expect(reloads === 1 && prevented === false, "new version: Reload reloads at once with nothing typed");
+    const nvTyped = document.createElement("textarea");
+    nvTyped.value = "half a sentence";
+    body.appendChild(nvTyped);
+    band().querySelector("button.new-version-reload").click();
+    expect(reloads === 2 && prevented === true, "new version: with text typed, the browser asks before the reload loses it");
+    body.removeChild(nvTyped);
+    await new Promise((r) => setTimeout(r, 5));
+    expect(!win.onbeforeunload, "new version: the guard is gone after the click");
+    band().querySelector("button.new-version-later").click();
+    win.Maity.newVersion.reloadPage = nvReload0;
+    head.removeChild(nvMeta);
+    hubWeb = null;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  }
   expect(!text(header).includes("Fixtures"), "no fixture label in API mode");
   let noContent = "unset";
   try { noContent = await win.Maity.api.del("/orgs/oz-team/members/invitations/oinv-1"); } catch (err) { noContent = err; }
