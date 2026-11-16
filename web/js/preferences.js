@@ -161,8 +161,6 @@ window.Maity = window.Maity || {};
         shown = await M.api.put("/me/preferences", { markdown: text.value, base_version: baseVersion });
         drawLine();
         status.done();
-        // Saved, the editor keeps the text: it is no longer unsent input (js/new-version.js).
-        if (M.newVersion) M.newVersion.clean(text);
         append(status.el, h("span", { class: "ok" }, M.t("prefs.saved", { version: String(shown.version) })));
       } catch (err) {
         if (err.code === "conflict") await conflicted();
@@ -286,13 +284,6 @@ window.Maity = window.Maity || {};
     // What the human typed outlives a redraw: a conflict shows the review
     // again against the newer version, with their edit and reason kept.
     const kept = { draft: null, editing: false, why: "" };
-    // What a reload would lose (js/new-version.js): the reason and the edit typed here, kept
-    // over a redraw; gone once the review is answered or its page left.
-    const holder = "pref-review:" + req.id;
-    if (M.newVersion) {
-      M.newVersion.holds(holder, () => box.isConnected !== false && (kept.why.trim() !== "" || kept.draft !== null));
-      if (ctx && ctx.onDispose) ctx.onDispose(() => M.newVersion.holds(holder, null));
-    }
     let drawn = false;
     const draw = (full) => {
       drawn = true;
@@ -308,7 +299,6 @@ window.Maity = window.Maity || {};
         status.busy(words);
         try {
           await answer(payload);
-          if (M.newVersion) M.newVersion.holds(holder, null); // answered: nothing left to lose
         } catch (err) {
           busy(false);
           if (err.code === "conflict") {

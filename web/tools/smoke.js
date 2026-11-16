@@ -5357,14 +5357,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const clPanelKept = [clPanelHeld, !!clChoice, !!clBefore, clAt === clParent(), !!clAt && clPanel().contains(clAt), clParent().value === clChoice];
     expect(clPanelKept.every(Boolean),
       "board: the late draw keeps the focus and a chosen parent in the opened card's panel " + JSON.stringify(clPanelKept));
-    // Carried onto controls drawn anew, by no event of the reader's: the board says it holds it (js/new-version.js).
-    {
-      const nvKept = new Map(win.Maity.chatParts.drafts);
-      win.Maity.chatParts.drafts.clear();
-      const nvHeld = win.Maity.newVersion.unsentInput();
-      nvKept.forEach((v, k) => win.Maity.chatParts.drafts.set(k, v));
-      expect(!!clChoice && nvHeld, "board: a parent chosen and not saved, carried over the late draw, is input a reload would lose");
-    }
 
     // A New subtask form opened in the panel after it was drawn keeps its draft and the focus through the late
     // draw, after a success and after a failure (review of #1622, round 3).
@@ -18429,14 +18421,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // Above the header, wherever the page's frame holds it (js/site-chrome.js).
     const band = () => (header.parentNode ? header.parentNode.childNodes.find((n) => n.id === "new-version-banner") : null) || null;
     const nvReload0 = win.Maity.newVersion.reloadPage;
-    let reloads = 0, prevented = null;
-    win.Maity.newVersion.reloadPage = () => {
-      reloads++;
-      // As the browser does on a reload: the page's beforeunload listeners are asked first.
-      const e = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, returnValue: undefined };
-      if (win.onbeforeunload) win.onbeforeunload(e);
-      prevented = e.defaultPrevented;
-    };
+    let reloads = 0;
+    win.Maity.newVersion.reloadPage = () => { reloads++; };
+    // The page's own question before the reload (window.confirm), its answer chosen by the test.
+    const nvConfirm0 = win.confirm;
+    let asked = [], answer = true;
+    win.confirm = (q) => { asked.push(q); return answer; };
     hubWeb = OWN;
     await win.Maity.api.get("/me");
     expect(!band(), "new version: an answer naming the page's own dashboard draws no band");
@@ -18471,24 +18461,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const nvDrafts = new Map(win.Maity.chatParts.drafts);
     win.Maity.chatParts.drafts.clear();
     band().querySelector("button.new-version-reload").click();
-    expect(reloads === 1 && prevented === false, "new version: Reload reloads at once with nothing typed");
-    // What the browser does with a reader's input: a trusted event, at the document, in the capture phase.
-    const nvBy = (type, f, trusted) => docListeners[type]({ target: f, isTrusted: trusted !== false });
-    const nvAsks = () => { band().querySelector("button.new-version-reload").click(); return prevented; };
-    // A field the page filled in (a setting read from the hub) is no input; a script's own event neither.
+    expect(reloads === 1 && !asked.length, "new version: Reload reloads at once with nothing typed, nothing asked");
+    // What the browser does with a person's typing: a trusted input event, at the document, in the capture phase.
+    const nvTyped = (f, trusted) => docListeners.input({ target: f, isTrusted: trusted !== false });
+    const nvClick = () => { const r0 = reloads, a0 = asked.length; band().querySelector("button.new-version-reload").click(); return { asked: asked.length > a0, reloaded: reloads > r0 }; };
+    const nvSays = (x) => JSON.stringify(x);
+    // A field the page filled in, or a value a script set, is no typing.
     const nvForm = document.createElement("form");
     const nvFilled = document.createElement("input");
     nvFilled.value = "3";
     nvForm.appendChild(nvFilled);
     body.appendChild(nvForm);
-    expect(nvAsks() === false, "new version: a field the page filled in asks nothing");
-    nvFilled.value = "5"; nvBy("input", nvFilled, false);
-    expect(nvAsks() === false, "new version: a value a script set, its event untrusted, asks nothing");
-    nvBy("input", nvFilled);
-    expect(nvAsks() === true, "new version: a field the reader changed asks before the reload loses it");
-    win.Maity.newVersion.clean(nvForm);
-    expect(nvAsks() === false, "new version: a form that stays after its saving says so, and asks nothing");
+    let nv = nvClick();
+    expect(!nv.asked && nv.reloaded, "new version: a field the page filled in asks nothing " + nvSays(nv));
+    nvFilled.value = "5"; nvTyped(nvFilled, false);
+    nv = nvClick();
+    expect(!nv.asked && nv.reloaded, "new version: a value a script set, its event untrusted, asks nothing " + nvSays(nv));
+    // Typed into: the page asks in the dashboard's words; No keeps the page, Yes reloads.
+    nvTyped(nvFilled);
+    answer = false;
+    nv = nvClick();
+    expect(nv.asked && !nv.reloaded && asked[asked.length - 1] === "You have unsent input. Reload anyway?",
+      "new version: with text typed, the page asks first, and No keeps the page " + nvSays(nv) + " " + asked[asked.length - 1]);
+    answer = true;
+    nv = nvClick();
+    expect(nv.asked && nv.reloaded, "new version: Yes reloads " + nvSays(nv));
     body.removeChild(nvForm);
+    // In a form or not: a textarea, a search field, a contenteditable, typed into, hold text too.
+    const nvLoose = document.createElement("textarea");
+    body.appendChild(nvLoose);
+    nvLoose.value = "a reason"; nvTyped(nvLoose);
+    expect(nvClick().asked, "new version: text typed into a field outside a form asks");
+    body.removeChild(nvLoose);
+    const nvEdit = document.createElement("div");
+    nvEdit.setAttribute("contenteditable", "true");
+    nvEdit.appendChild(document.createTextNode("a note"));
+    body.appendChild(nvEdit);
+    nvTyped(nvEdit);
+    expect(nvClick().asked, "new version: text typed into a contenteditable asks");
+    body.removeChild(nvEdit);
     // Sent asynchronously, as every form here is: a failed sending keeps the text and asks, one that
     // succeeded cleared its field and asks nothing.
     let nvOk = false;
@@ -18500,77 +18511,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       try { await (nvOk ? Promise.resolve() : Promise.reject(new Error("conflict"))); nvNote.value = ""; } catch (err) { /* kept, said */ }
     });
     body.appendChild(nvNoteForm);
-    nvNote.value = "half a sentence"; nvBy("input", nvNote);
-    expect(nvAsks() === true, "new version: with text typed, the browser asks before the reload loses it");
+    nvNote.value = "half a sentence"; nvTyped(nvNote);
     nvNoteForm.dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
-    expect(nvNote.value === "half a sentence" && nvAsks() === true, "new version: a sending that failed keeps the text, and a reload still asks");
+    expect(nvNote.value === "half a sentence" && nvClick().asked, "new version: a sending that failed keeps the text, and Reload still asks");
     nvOk = true;
     nvNoteForm.dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
-    expect(nvNote.value === "" && nvAsks() === false, "new version: a sending that succeeded cleared the field, and a reload asks nothing");
+    nv = nvClick();
+    expect(nvNote.value === "" && !nv.asked && nv.reloaded, "new version: a sending that succeeded cleared the field, and Reload asks nothing " + nvSays(nv));
     body.removeChild(nvNoteForm);
-    // A box clicked without its focus (WebKit), a choice in a multiple select: changes too, in a form.
-    const nvSettings = document.createElement("form");
-    body.appendChild(nvSettings);
-    const nvBox = document.createElement("input");
-    nvBox.setAttribute("type", "checkbox");
-    nvSettings.appendChild(nvBox);
-    nvBox.checked = true; nvBy("change", nvBox);
-    expect(nvAsks() === true, "new version: a box ticked without the focus is input");
-    nvSettings.removeChild(nvBox);
-    const nvMany = document.createElement("select");
-    nvMany.multiple = true;
-    nvSettings.appendChild(nvMany);
-    nvBy("change", nvMany);
-    expect(nvAsks() === true, "new version: a choice in a multiple select is input");
-    nvSettings.removeChild(nvMany);
-    // A switch in a form that saves itself at once says so.
-    const nvSelf = document.createElement("input");
-    nvSelf.setAttribute("type", "checkbox"); nvSelf.setAttribute("data-saves-itself", "");
-    nvSettings.appendChild(nvSelf);
-    nvSelf.checked = true; nvBy("change", nvSelf);
-    expect(nvAsks() === false, "new version: a switch marked as saving itself asks nothing");
-    body.removeChild(nvSettings);
-    // A filter, a sort, a switch outside any form, a search form's field: nothing waits for a sending.
-    const nvSort = document.createElement("select");
-    body.appendChild(nvSort);
-    nvBy("change", nvSort);
-    const nvSwitch = document.createElement("input");
-    nvSwitch.setAttribute("type", "checkbox");
-    body.appendChild(nvSwitch);
-    nvSwitch.checked = true; nvBy("change", nvSwitch);
-    const nvSearch = document.createElement("form");
-    nvSearch.setAttribute("role", "search");
-    const nvQuery = document.createElement("input");
-    nvSearch.appendChild(nvQuery);
-    body.appendChild(nvSearch);
-    nvQuery.value = "release"; nvBy("input", nvQuery);
-    expect(nvAsks() === false, "new version: a sort select, a switch outside a form and a search field ask nothing");
-    body.removeChild(nvSort); body.removeChild(nvSwitch); body.removeChild(nvSearch);
-    // A textarea is text waiting to be sent, in a form or not; a file loaded into it as well.
-    const nvLoose = document.createElement("textarea");
-    body.appendChild(nvLoose);
-    nvLoose.value = "a reason"; nvBy("input", nvLoose);
-    expect(nvAsks() === true, "new version: text typed into a textarea outside a form asks");
-    body.removeChild(nvLoose);
-    const nvJson = document.createElement("textarea");
-    body.appendChild(nvJson);
-    nvJson.value = "{\"pages\": {}}"; win.Maity.newVersion.changed(nvJson);
-    expect(nvAsks() === true, "new version: a file the reader loaded into a field asks, though no event of theirs came");
-    body.removeChild(nvJson);
-    // A page's unsaved edits by row (members, agents): text not blank or a switch on.
-    const nvEdits = new Map([["agt-a", { reason: "  " }], ["agt-b", { liftHide: false }]]);
-    const nvHeldBefore = win.Maity.newVersion.editsHeld(nvEdits);
-    nvEdits.set("agt-c", { isolate: "noisy" });
-    expect(!nvHeldBefore && win.Maity.newVersion.editsHeld(nvEdits), "new version: row edits hold input only with text or a switch on");
-    // What a page keeps outside its fields: a chat's draft in another chat, blanks alone none.
+    // The chats' drafts, kept outside any field: one not blank asks, in a chat not open too.
     win.Maity.chatParts.drafts.set("maintainer/maity/agt-b", "   ");
-    expect(nvAsks() === false, "new version: a chat draft of blanks alone asks nothing");
+    expect(!nvClick().asked, "new version: a chat draft of blanks alone asks nothing");
     win.Maity.chatParts.drafts.set("maintainer/maity/agt-b", "for later");
-    expect(nvAsks() === true, "new version: a draft in a chat not open asks before the reload loses it");
+    expect(nvClick().asked, "new version: a draft in a chat not open asks");
     win.Maity.chatParts.drafts.clear();
     nvDrafts.forEach((v, k) => win.Maity.chatParts.drafts.set(k, v));
-    await new Promise((r) => setTimeout(r, 5));
-    expect(!win.onbeforeunload, "new version: the guard is gone after the click");
+    win.confirm = nvConfirm0;
     band().querySelector("button.new-version-later").click();
     win.Maity.newVersion.reloadPage = nvReload0;
     head.removeChild(nvMeta);

@@ -400,13 +400,6 @@ window.Maity = window.Maity || {};
     };
     let draft = editable(saved);
     let lang = draft.default_language || Object.keys(draft.pages)[0] || "en";
-    // What a reload would lose (js/new-version.js): the draft against the setting as saved, the
-    // editor drawn anew from it on every change of shape, and a JSON text not loaded.
-    if (M.newVersion) {
-      const said = (x) => JSON.stringify([!!x.enabled, x.default_language, x.pages, x.footer, x.variants, x.campaigns]);
-      M.newVersion.holds("landing-editor", () => box.isConnected !== false && (said(draft) !== said(editable(saved)) || jsonPending()));
-      if (ctx && ctx.onDispose) ctx.onDispose(() => M.newVersion.holds("landing-editor", null));
-    }
     // The page being edited: the main page (null) or a variant's slug.
     let which = null;
     const pagesOf = () => (which ? draft.variants[which].pages : draft.pages);
@@ -569,11 +562,7 @@ window.Maity = window.Maity || {};
       file.addEventListener("change", async () => {
         const chosen = file.files && file.files[0];
         if (!chosen) return;
-        try {
-          area.value = await chosen.text();
-          if (M.newVersion) M.newVersion.changed(area); // the reader's file: a reload would lose it
-          io.done();
-        } catch (err) { io.fail(M.t("landing.json.file_failed"), err); }
+        try { area.value = await chosen.text(); io.done(); } catch (err) { io.fail(M.t("landing.json.file_failed"), err); }
       });
       const bodyOf = () => ({ enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer,
         variants: draft.variants, campaigns: draft.campaigns });

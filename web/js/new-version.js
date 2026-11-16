@@ -2,8 +2,8 @@
 // answer names the dashboard the hub serves, the shell names the one this page runs. When they
 // differ, a band above the header offers a reload; the page never reloads by itself
 // (web/context/refresh.md 9d7aee6c). "Later" hides the band for that version in this tab, a
-// newer one brings it back. Over a reload, input the reader typed and has not sent (a chat's
-// draft, a note, a changed setting) asks first: the dashboard keeps none of them over a reload.
+// newer one brings it back. Reload asks first while typed text may be lost; the dashboard keeps
+// none of it over a reload.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -25,55 +25,32 @@ window.Maity = window.Maity || {};
     return own;
   }
 
-  // What a reload would lose (web/context/refresh.md 9d7aee6c). Two sources, because no rule on
-  // the DOM alone can tell a sent form from an unsent one when forms send asynchronously and
-  // pages draw their fields anew:
-  // - A field the reader changed: marked by a trusted `input` or `change` event (typing, pasting,
-  //   autofill, a drop, a click on a checkbox, a choice in a select), never by a value a script
-  //   sets; a file loaded into a field by the reader's choice is marked by its page (`changed`).
-  //   Only a field whose value waits for a sending counts: a textarea, or a field of a form that
-  //   is no search; a filter, a sort or a switch that saves itself at once stands outside a form,
-  //   and one inside a form says so with `data-saves-itself`. It holds input while it still has
-  //   some: text that is not blank, a box or choice the reader set. A form that sent clears its
-  //   field, so it holds none; one whose sending failed keeps the text, so it still does.
-  // - What a page keeps outside its fields (a chat's draft in another chat, a card panel drawn
-  //   anew with what was typed): the page says so itself through `holds(name, fn)`.
-  const NOT_TYPED = /^(button|submit|reset|image|hidden)$/;
-  const CHOSEN = /^(checkbox|radio)$/;
-  const kind = (f) => ((f && f.getAttribute && f.getAttribute("type")) || "").toLowerCase();
-  const typable = (f) => !!f && (f.tagName === "TEXTAREA" || f.tagName === "SELECT"
-    || (f.tagName === "INPUT" && !NOT_TYPED.test(kind(f))));
-  const byReader = new WeakSet();
-  function mark(e) { if (e && e.isTrusted && typable(e.target)) byReader.add(e.target); }
-  document.addEventListener("input", mark, true);
-  document.addEventListener("change", mark, true);
-  const sendsLater = (f) => {
-    if (f.getAttribute("data-saves-itself") != null) return false;
-    if (f.tagName === "TEXTAREA") return true;
-    for (let n = f.parentNode; n; n = n.parentNode) {
-      if (n.tagName === "FORM") return (n.getAttribute("role") || "") !== "search";
-    }
-    return false;
-  };
-  const stillHolds = (f) => (f.tagName === "SELECT" || CHOSEN.test(kind(f)) ? true
-    : typeof f.value === "string" && f.value.trim() !== "");
+  // Before the reload the person asked for, a question while they may lose something
+  // (web/context/refresh.md 9d7aee6c). A simple rule, not a complete one: any text field (an
+  // input, a textarea, a contenteditable), in a form or not, that they typed into (a trusted
+  // `input` event, never a value a script set) and that still holds text; or a chat draft that is
+  // not blank (js/chat.js says so through `holds`). An extra question costs a click; a case it
+  // misses (a field a redraw replaced) is still a reload the person chose.
+  const TEXT = /^(|text|search|email|url|tel|number|password)$/;
+  const editable = (f) => !!f && f.getAttribute && f.getAttribute("contenteditable") != null
+    && f.getAttribute("contenteditable") !== "false";
+  const textField = (f) => !!f && (f.tagName === "TEXTAREA" || editable(f)
+    || (f.tagName === "INPUT" && TEXT.test(((f.getAttribute && f.getAttribute("type")) || "").toLowerCase())));
+  const textOf = (f) => (f.tagName === "TEXTAREA" || f.tagName === "INPUT" ? f.value : f.textContent);
+  const FIELDS = ["textarea", "input"].concat(["true", "", "plaintext-only"].map((v) => '[contenteditable="' + v + '"]')).join(",");
+  const typedInto = new WeakSet();
+  document.addEventListener("input", (e) => { if (e && e.isTrusted && textField(e.target)) typedInto.add(e.target); }, true);
   const holders = new Map();
 
   function unsentInput() {
-    const fields = document.body ? document.body.querySelectorAll("textarea, input, select") : [];
-    if (Array.from(fields).some((f) => byReader.has(f) && sendsLater(f) && stillHolds(f))) return true;
+    const fields = document.body ? document.body.querySelectorAll(FIELDS) : [];
+    if (Array.from(fields).some((f) => typedInto.has(f) && typeof textOf(f) === "string" && textOf(f).trim() !== "")) return true;
     return Array.from(holders.values()).some((fn) => { try { return !!fn(); } catch (err) { return false; } });
   }
 
-  // The browser's own "leave the page?" while an input would be lost; one prompt, whichever
-  // listener asks (js/project-message.js asks for its own body as well).
-  function guard(e) { if (unsentInput()) { e.preventDefault(); e.returnValue = ""; } }
-
   function reload() {
-    window.addEventListener("beforeunload", guard);
+    if (unsentInput() && !window.confirm(M.t("new_version.unsent"))) return;
     M.newVersion.reloadPage();
-    // Kept from the guard after a reload the reader stopped: it belongs to the click alone.
-    window.setTimeout(() => window.removeEventListener("beforeunload", guard), 0);
   }
 
   function draw() {
@@ -110,22 +87,7 @@ window.Maity = window.Maity || {};
     // window.location.reload, here so that the smoke test can see it called.
     reloadPage: () => window.location.reload(),
     unsentInput,
-    // A page that keeps typed input outside its fields names it here: `fn()` true while it
-    // holds some. One per name; a later one replaces it, none (null) removes it.
+    // What a page keeps outside its fields (the chats' drafts): `fn()` true while it holds some.
     holds: (name, fn) => { if (fn) holders.set(name, fn); else holders.delete(name); },
-    // A form that stays as it is after its saving succeeded (a setting) says so: its fields, or
-    // the one field given, hold no input until the reader changes them again.
-    clean: (root) => {
-      if (!root) return;
-      if (typable(root)) byReader.delete(root);
-      if (root.querySelectorAll) Array.from(root.querySelectorAll("textarea, input, select")).forEach((f) => byReader.delete(f));
-    },
-    // A value the reader brought in by a way that fires no event of theirs (a file loaded into
-    // the field): input as if typed.
-    changed: (f) => { if (typable(f)) byReader.add(f); },
-    // For a page's `holds`: whether a map of unsaved edits (id -> {field: value}) holds any, text
-    // that is not blank or a switch turned on.
-    editsHeld: (edits) => Array.from(edits.values()).some((d) => d && Object.values(d)
-      .some((v) => v === true || (typeof v === "string" && v.trim() !== ""))),
   };
 })(window.Maity);

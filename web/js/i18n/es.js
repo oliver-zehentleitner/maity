@@ -3046,6 +3046,7 @@ window.MAITY_I18N["es"] = {
   "new_version.later": "Más tarde",
   "new_version.reload": "Recargar",
   "new_version.text": "Hay una nueva versión de Maity.",
+  "new_version.unsent": "Tienes texto sin enviar. ¿Recargar de todos modos?",
   "not_found.all": "Todo lo que te espera",
   "not_found.explore": "Proyectos públicos",
   "not_found.member": "Esta página no existe, o no puedes verla.",

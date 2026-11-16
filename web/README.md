@@ -1638,19 +1638,13 @@ key not yet translated. `make check` fails on a code of `docs/api.md` §1.3 with
 - Every API answer names the dashboard the hub serves (`Maity-Web-Version`,
   `docs/api.md` §1.1); the shell names the one the page runs (§16.11). When
   they differ, `js/new-version.js` draws a band above the header with
-  **Reload** and **Later**; it never reloads by itself, and over a reload
-  with input the reader has not sent the browser asks first
-  (`context/refresh.md` 9d7aee6c): a field the reader changed (a trusted
-  `input` or `change` event, never a value a script sets; a loaded file via
-  `M.newVersion.changed`) in a textarea or a form that is no search, while it
-  is not blank, and what a page keeps outside its fields and names with
-  `M.newVersion.holds` (the chats' drafts, the board's open panel, the
-  landing page editor, row edits on the members and agents pages, a
-  preference review). A form that stays after its save calls
-  `M.newVersion.clean`; a switch in a form that saves at once carries
-  `data-saves-itself`. **Later** holds for
-  each version it was chosen for. No request of its own: it reads the header
-  of the answers above.
+  **Reload** and **Later**; it never reloads by itself. Before the reload
+  it asks "You have unsent input. Reload anyway?" by a simple rule, not a
+  complete one (`context/refresh.md` 9d7aee6c): a text field typed into (a
+  trusted `input` event) that still holds text, or a chat draft that is not
+  blank (`M.newVersion.holds`, js/chat.js). **Later** holds for each version
+  it was chosen for. No request of its own: it reads the header of the
+  answers above.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
   members, then `after=<cursor>&wait=0` every 15 seconds, page by page,

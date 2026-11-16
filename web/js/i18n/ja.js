@@ -2984,6 +2984,7 @@ window.MAITY_I18N["ja"] = {
   "new_version.later": "後で",
   "new_version.reload": "再読み込み",
   "new_version.text": "Maity の新しいバージョンがあります。",
+  "new_version.unsent": "送信していない入力があります。それでも再読み込みしますか？",
   "not_found.all": "あなたを待っているものすべて",
   "not_found.explore": "公開プロジェクト",
   "not_found.member": "このページは存在しないか、あなたには表示できません。",

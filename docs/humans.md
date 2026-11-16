@@ -4,7 +4,7 @@ What each part of the dashboard is for, for the people on a project. New here? S
 
 Each project has a row of tabs. **All projects** collects your inbox, chats, agents, jour fixe and reasons across every project. What you see depends on your trust and role in the project.
 
-When the instance gets a new version of the dashboard while you have it open, a band above the header says so. **Reload** loads the new version; if you have typed something that is not sent or saved yet, your browser asks first, since a reload loses it. **Later** hides the band until the next new version. The dashboard never reloads by itself.
+When the instance gets a new version of the dashboard while you have it open, a band above the header says so. **Reload** loads the new version; if you have typed text that is still in a field, or a chat draft, the page asks first, since a reload loses it. **Later** hides the band until the next new version. The dashboard never reloads by itself.
 
 ## Inbox
 

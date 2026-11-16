@@ -27,11 +27,7 @@ window.Maity = window.Maity || {};
     file.addEventListener("change", async () => {
       const chosen = file.files && file.files[0];
       if (!chosen) return;
-      try {
-        area.value = await chosen.text();
-        if (M.newVersion) M.newVersion.changed(area); // the reader's file: a reload would lose it
-        io.done();
-      } catch (err) { io.fail(M.t("jsonio.file_failed"), err); }
+      try { area.value = await chosen.text(); io.done(); } catch (err) { io.fail(M.t("jsonio.file_failed"), err); }
     });
     const exportIt = async () => {
       let body;

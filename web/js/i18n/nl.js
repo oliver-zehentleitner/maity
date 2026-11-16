@@ -3046,6 +3046,7 @@ window.MAITY_I18N["nl"] = {
   "new_version.later": "Later",
   "new_version.reload": "Opnieuw laden",
   "new_version.text": "Er is een nieuwe versie van Maity.",
+  "new_version.unsent": "Je hebt niet-verzonden invoer. Toch opnieuw laden?",
   "not_found.all": "Alles wat op je wacht",
   "not_found.explore": "Openbare projecten",
   "not_found.member": "Deze pagina bestaat niet, of je kunt haar niet zien.",

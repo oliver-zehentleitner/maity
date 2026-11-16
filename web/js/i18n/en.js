@@ -3183,6 +3183,7 @@ window.MAITY_I18N["en"] = {
   "new_version.later": "Later",
   "new_version.reload": "Reload",
   "new_version.text": "A new version of Maity is available.",
+  "new_version.unsent": "You have unsent input. Reload anyway?",
   "not_found.all": "Everything waiting for you",
   "not_found.explore": "Public projects",
   "not_found.member": "This page does not exist, or you cannot see it.",
