@@ -511,11 +511,24 @@ under the same version. Per deploy:
    MERGE-READY the fold is redone on the newest main: merge main, undo the
    fold (`git revert --no-commit <fold commit>`), run the same command again,
    and commit both as one.
+   The same pull request adds the version's upgrade page,
+   `docs/upgrade/<version>.md`, from the template in
+   [docs/upgrade/README.md](../docs/upgrade/README.md): what changes for
+   users, what the operator must do, what happens by itself on upgrade, what
+   cannot be undone, and the way back. Its author lists every migration and
+   every new or changed default since the last tag in "What happens by itself
+   on upgrade"; the lead and ops confirm that list before the tag. ci refuses
+   the fold without a complete page (`python3 tools/upgrade_page.py check`).
+   The pull request also carries a docs pass: `docs/install/quickstart.md`,
+   `docs/getting-started.md` and `docs/install/README.md` read against the
+   release, with fixes in the same pull request.
 2. ci passes on the push of that merge to main (`ci-ok`).
 3. The maintainer pushes the tag `v<version>` on that merge commit, and
    nobody else pushes a `v*` tag. The tag runs `release-hub.yml` (the package
    on PyPI) and `publish-image.yml` (the image), and both wait for ci on that
-   commit and for hub-mariadb on the same hub files.
+   commit and for hub-mariadb on the same hub files. Both also refuse a
+   version without its complete upgrade page (`tools/release_gate.py
+   --upgrade-page`).
 4. Ops deploys the image that tag built, pinned by its digest, after
    checking its signature as the chart README shows. That check accepts
    only a `v*` tag's signature: an image built by hand from `main` is not

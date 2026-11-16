@@ -14,6 +14,10 @@ writes:
   nothing, and only main's own workflow file counts: the run's ref is main
   and the commit it ran is on main.
 
+- with --upgrade-page (the hub): the tagged checkout's docs/upgrade/<version>.md
+  for the version in hub/pyproject.toml, complete (tools/upgrade_page.py). It is
+  looked at first and never waited for.
+
 While the ci run, or a hub-mariadb run, is still queued or running, it waits
 (up to --wait-minutes), so a tag pushed right after a merge works; a newer
 matching MariaDB run still going is waited for even when an older one is
@@ -35,6 +39,9 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
+
+import upgrade_page
 
 # The files the MariaDB suite reads: the same list as the `decide` job of
 # .github/workflows/hub-mariadb.yml (test_release_gate.py holds them equal).
@@ -292,6 +299,20 @@ def gate(
         sleep(interval)
 
 
+def page_state(root: Path = upgrade_page.ROOT) -> State:
+    """The hub version's upgrade page in the checkout (tools/upgrade_page.py)."""
+    version = upgrade_page.hub_version(root)
+    found = upgrade_page.problems(root, version)
+    if found:
+        for text in found:
+            print(f"fail: {text}", flush=True)
+            print(f"::error::{text}", flush=True)
+        return State("fail", "; ".join(found))
+    text = f"docs/upgrade/{version}.md is complete"
+    print(f"ok: {text}", flush=True)
+    return State("ok", text)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sha", default=os.environ.get("GITHUB_SHA"), help="the tagged commit")
@@ -300,9 +321,16 @@ def main(argv: list[str] | None = None) -> int:
         "--wait-minutes", type=float, default=0, help="how long to wait for running checks"
     )
     parser.add_argument("--interval", type=float, default=60, help="seconds between looks")
+    parser.add_argument(
+        "--upgrade-page",
+        action="store_true",
+        help="also require the hub version's docs/upgrade/<version>.md in the checkout",
+    )
     args = parser.parse_args(argv)
     if not args.sha or not re.fullmatch(r"[0-9a-f]{40}", args.sha):
         parser.error("--sha needs the full commit id")
+    if args.upgrade_page and page_state().kind == "fail":
+        return 1
     api = Api(os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"])
     return gate(api, args.sha, args.mariadb, args.wait_minutes * 60, args.interval)
 

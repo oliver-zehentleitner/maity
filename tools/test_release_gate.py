@@ -5,10 +5,13 @@ from __future__ import annotations
 import contextlib
 import io
 import re
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import release_gate as g
+import upgrade_page
 
 TAG = "a" * 40
 LATER = "b" * 40  # a later commit of main with the same hub files
@@ -406,6 +409,8 @@ class Workflows(unittest.TestCase):
             text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
             self.assertIn('python tools/release_gate.py --sha "$GITHUB_SHA"', text, name)
             self.assertEqual("--mariadb" in text, mariadb, name)
+            # The hub's releases (package and image) ask for the version's upgrade page.
+            self.assertEqual("--upgrade-page" in text, mariadb, name)
             self.assertNotIn("make check", text, name)
             dependent = "publish" if name.startswith("release") else "image"
             block = text[text.index(f"\n  {dependent}:") :]
@@ -494,6 +499,37 @@ class Main(unittest.TestCase):
     def test_short_sha_is_refused(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             g.main(["--sha", "abc123"])
+
+    def test_a_missing_upgrade_page_stops_before_any_api_call(self):
+        failing = g.State("fail", "docs/upgrade/0.1.0a9.md is missing")
+        with mock.patch.object(g, "page_state", return_value=failing), mock.patch.object(
+            g, "Api", side_effect=AssertionError("no API call")
+        ):
+            self.assertEqual(g.main(["--sha", TAG, "--upgrade-page"]), 1)
+
+
+class UpgradePage(unittest.TestCase):
+    def page_state(self, page):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "hub").mkdir()
+            (root / "hub" / "pyproject.toml").write_text('version = "0.1.0a9"\n', encoding="utf-8")
+            if page is not None:
+                (root / "docs" / "upgrade").mkdir(parents=True)
+                (root / "docs" / "upgrade" / "0.1.0a9.md").write_text(page, encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                state = g.page_state(root)
+        return state, out.getvalue()
+
+    def test_the_tagged_versions_page_must_exist(self):
+        state, out = self.page_state(None)
+        self.assertEqual(state.kind, "fail")
+        self.assertIn("::error::docs/upgrade/0.1.0a9.md is missing", out)
+
+    def test_a_complete_page_passes(self):
+        page = "".join(f"## {s}\n\nNothing.\n\n" for s in upgrade_page.SECTIONS)
+        state, _ = self.page_state(page)
+        self.assertEqual(state.kind, "ok")
 
 
 if __name__ == "__main__":
